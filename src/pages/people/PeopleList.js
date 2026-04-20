@@ -6,6 +6,7 @@ import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderPeopleList(container) {
   const customers = store.getAll('customers');
@@ -42,32 +43,32 @@ export function renderPeopleList(container) {
     {
       key: 'company',
       label: 'Company / Name',
-      render: (row) => `<span class="cell-link font-medium">${row.company}</span>`,
+      render: (row) => `<span class="cell-link font-medium">${escapeHTML(row.company)}</span>`,
     },
     {
       key: 'contact',
       label: 'Contact',
-      render: (row) => `${row.firstName} ${row.lastName}`,
+      render: (row) => `${escapeHTML(row.firstName)} ${escapeHTML(row.lastName)}`,
     },
     {
       key: 'email',
       label: 'Email',
-      render: (row) => `<span class="text-secondary">${row.email}</span>`,
+      render: (row) => `<span class="text-secondary">${escapeHTML(row.email)}</span>`,
     },
     {
       key: 'phone',
       label: 'Phone',
-      render: (row) => `<span class="text-secondary">${row.phone}</span>`,
+      render: (row) => `<span class="text-secondary">${escapeHTML(row.phone)}</span>`,
     },
     {
       key: 'type',
       label: 'Type',
-      render: (row) => `<span class="badge badge-neutral">${row.type}</span>`,
+      render: (row) => `<span class="badge badge-neutral">${escapeHTML(row.type)}</span>`,
     },
     {
       key: 'status',
       label: 'Status',
-      render: (row) => `<span class="badge ${row.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${row.status}</span>`,
+      render: (row) => `<span class="badge ${row.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(row.status)}</span>`,
     },
   ];
 

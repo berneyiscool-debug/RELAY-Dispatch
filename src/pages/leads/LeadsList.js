@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderLeadsList(container) {
   const leads = store.getAll('leads');
@@ -44,11 +45,11 @@ export function renderLeadsList(container) {
   const priorityBadges = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger' };
 
   const columns = [
-    { key: 'title', label: 'Lead', render: (r) => `<span class="cell-link font-medium">${r.title}</span>` },
-    { key: 'customerName', label: 'Customer', render: (r) => `<span class="text-secondary">${r.customerName}</span>` },
-    { key: 'source', label: 'Source', render: (r) => `<span class="text-secondary">${r.source}</span>` },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${statusBadges[r.status] || 'badge-neutral'}">${r.status}</span>` },
-    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${priorityBadges[r.priority] || 'badge-neutral'}">${r.priority}</span>` },
+    { key: 'title', label: 'Lead', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.title)}</span>` },
+    { key: 'customerName', label: 'Customer', render: (r) => `<span class="text-secondary">${escapeHTML(r.customerName)}</span>` },
+    { key: 'source', label: 'Source', render: (r) => `<span class="text-secondary">${escapeHTML(r.source)}</span>` },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${statusBadges[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>` },
+    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${priorityBadges[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>` },
     { key: 'value', label: 'Value', render: (r) => `<span class="font-medium">$${(r.value || 0).toLocaleString()}</span>`, getValue: (r) => r.value },
     { key: 'createdAt', label: 'Created', render: (r) => `<span class="text-secondary">${new Date(r.createdAt).toLocaleDateString()}</span>`, getValue: (r) => new Date(r.createdAt).getTime() },
   ];

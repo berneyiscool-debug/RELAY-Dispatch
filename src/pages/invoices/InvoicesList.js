@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
@@ -36,10 +37,10 @@ export function renderInvoicesList(container) {
   const sb = { 'Draft':'badge-neutral','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-neutral' };
 
   const columns = [
-    { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${r.number}</span>`, width: '110px' },
+    { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '110px' },
     { key: 'customerName', label: 'Customer' },
-    { key: 'jobNumber', label: 'Job Ref', render: (r) => r.jobNumber ? `<span class="text-secondary">${r.jobNumber}</span>` : '—', width: '100px' },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${r.status}</span>`, width: '100px' },
+    { key: 'jobNumber', label: 'Job Ref', render: (r) => r.jobNumber ? `<span class="text-secondary">${escapeHTML(r.jobNumber)}</span>` : '—', width: '100px' },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '100px' },
     { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '110px' },
     { key: 'issueDate', label: 'Issue Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '100px' },
     { key: 'dueDate', label: 'Due Date', render: (r) => r.dueDate ? new Date(r.dueDate).toLocaleDateString() : '—', getValue: (r) => r.dueDate ? new Date(r.dueDate).getTime() : 0, width: '100px' },
