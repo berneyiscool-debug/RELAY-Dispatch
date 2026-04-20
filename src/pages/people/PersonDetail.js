@@ -1,0 +1,505 @@
+// ============================================
+// SIMPRO CLONE — PERSON DETAIL PAGE
+// ============================================
+
+import { store } from '../../data/store.js';
+import { router } from '../../router.js';
+import { showModal } from '../../components/Modal.js';
+import { showToast } from '../../components/Notifications.js';
+import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
+
+export function renderPersonDetail(container, { id }) {
+  const person = store.getById('customers', id);
+  if (!person) {
+    container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Customer not found</h3></div>';
+    return;
+  }
+
+  updateBreadcrumbDetail(person.company);
+
+  const jobs = store.getAll('jobs').filter(j => j.customerId === id);
+  const quotes = store.getAll('quotes').filter(q => q.customerId === id);
+  const invoices = store.getAll('invoices').filter(i => i.customerId === id);
+
+  let activeTab = 'details';
+
+  function render() {
+    container.innerHTML = `
+      <div class="detail-header">
+        <div class="detail-header-info">
+          <div class="detail-header-icon">
+            <span class="material-icons-outlined">${person.type === 'Company' ? 'business' : 'person'}</span>
+          </div>
+          <div>
+            <div class="detail-header-text">
+              <h2>${person.company}</h2>
+            </div>
+            <div class="detail-header-meta">
+              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${person.firstName} ${person.lastName}</span>
+              <span><span class="material-icons-outlined" style="font-size:14px">email</span> ${person.email}</span>
+              <span><span class="material-icons-outlined" style="font-size:14px">phone</span> ${person.phone}</span>
+              <span class="badge ${person.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${person.status}</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-sm">
+          <button class="btn btn-secondary" id="btn-edit-person">
+            <span class="material-icons-outlined">edit</span> Edit
+          </button>
+          <button class="btn btn-danger" id="btn-delete-person">
+            <span class="material-icons-outlined">delete</span> Delete
+          </button>
+        </div>
+      </div>
+
+      <div class="tabs" id="person-tabs">
+        <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Details</button>
+        <button class="tab ${activeTab === 'contacts' ? 'active' : ''}" data-tab="contacts">Contacts (${(person.contacts || []).length})</button>
+        <button class="tab ${activeTab === 'sites' ? 'active' : ''}" data-tab="sites">Sites (${(person.sites || []).length})</button>
+        <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets (${(person.assets || []).length})</button>
+        <button class="tab ${activeTab === 'communications' ? 'active' : ''}" data-tab="communications">Communications (${(person.communications || []).length})</button>
+        <button class="tab ${activeTab === 'jobs' ? 'active' : ''}" data-tab="jobs">Jobs (${jobs.length})</button>
+        <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes (${quotes.length})</button>
+        <button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices">Invoices (${invoices.length})</button>
+      </div>
+
+      <div class="tab-content" id="tab-content"></div>
+    `;
+
+    renderTabContent();
+
+    // Tab switching
+    container.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        activeTab = tab.dataset.tab;
+        container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        renderTabContent();
+      });
+    });
+
+    // Edit
+    container.querySelector('#btn-edit-person').addEventListener('click', () => {
+      router.navigate(`/people/${id}/edit`);
+    });
+
+    // Delete
+    container.querySelector('#btn-delete-person').addEventListener('click', () => {
+      showModal({
+        title: 'Delete Customer',
+        content: `<p>Are you sure you want to delete <strong>${person.company}</strong>? This action cannot be undone.</p>`,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Delete', className: 'btn-danger', onClick: (close) => {
+            store.delete('customers', id);
+            showToast('Customer deleted successfully', 'success');
+            close();
+            router.navigate('/people');
+          }},
+        ],
+      });
+    });
+  }
+
+  function renderTabContent() {
+    const tabContent = container.querySelector('#tab-content');
+
+    if (activeTab === 'details') {
+      tabContent.innerHTML = `
+        <div class="card">
+          <div class="card-body">
+            <div class="grid-2">
+              <div>
+                <h4 style="margin-bottom:var(--space-base)">Contact Information</h4>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  ${detailRow('Company', person.company)}
+                  ${detailRow('Contact', `${person.firstName} ${person.lastName}`)}
+                  ${detailRow('Email', person.email)}
+                  ${detailRow('Phone', person.phone)}
+                  ${detailRow('Type', person.type)}
+                  ${detailRow('Status', person.status)}
+                </div>
+              </div>
+              <div>
+                <h4 style="margin-bottom:var(--space-base)">Address</h4>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  ${detailRow('Address', person.address || 'Not set')}
+                </div>
+                <h4 style="margin-top:var(--space-xl);margin-bottom:var(--space-base)">History</h4>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  ${detailRow('Created', new Date(person.createdAt).toLocaleDateString())}
+                  ${detailRow('Last Updated', new Date(person.updatedAt).toLocaleDateString())}
+                  ${detailRow('Total Jobs', jobs.length)}
+                  ${detailRow('Total Quotes', quotes.length)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else if (activeTab === 'contacts') {
+      const contacts = person.contacts || [];
+      tabContent.innerHTML = `
+        <div class="card" style="margin-bottom:var(--space-lg)">
+          <div class="card-header">
+            <h4>Contacts (${contacts.length})</h4>
+            <button class="btn btn-primary btn-sm" id="btn-toggle-contact"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Contact</button>
+          </div>
+          <div id="contact-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Name *</label><input type="text" id="new-c-name" class="form-input"></div>
+              <div class="form-group"><label class="form-label">Role</label><input type="text" id="new-c-role" class="form-input"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Email</label><input type="email" id="new-c-email" class="form-input"></div>
+              <div class="form-group"><label class="form-label">Phone</label><input type="text" id="new-c-phone" class="form-input"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button class="btn btn-secondary btn-sm" id="btn-cancel-contact">Cancel</button>
+              <button class="btn btn-primary btn-sm" id="btn-save-contact">Save Contact</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th style="width:50px"></th></tr></thead>
+              <tbody>
+                ${contacts.map((c, i) => `
+                  <tr>
+                    <td class="font-medium">${c.name}</td>
+                    <td>${c.role || '—'}</td>
+                    <td><a href="mailto:${c.email}" class="cell-link">${c.email}</a></td>
+                    <td><a href="tel:${c.phone}" class="cell-link">${c.phone}</a></td>
+                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-contact" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
+                  </tr>
+                `).join('')}
+                ${!contacts.length ? '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No additional contacts</td></tr>' : ''}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      tabContent.querySelector('#btn-toggle-contact').addEventListener('click', () => { tabContent.querySelector('#contact-form').style.display = 'block'; });
+      tabContent.querySelector('#btn-cancel-contact').addEventListener('click', () => { tabContent.querySelector('#contact-form').style.display = 'none'; });
+      tabContent.querySelector('#btn-save-contact').addEventListener('click', () => {
+        const name = tabContent.querySelector('#new-c-name').value.trim();
+        if (!name) return showToast('Name is required', 'error');
+        if (!person.contacts) person.contacts = [];
+        person.contacts.push({
+          name, role: tabContent.querySelector('#new-c-role').value,
+          email: tabContent.querySelector('#new-c-email').value,
+          phone: tabContent.querySelector('#new-c-phone').value
+        });
+        store.update('customers', id, { contacts: person.contacts });
+        showToast('Contact added', 'success');
+        renderTabContent();
+        render(); // update tab count
+      });
+      tabContent.querySelectorAll('.btn-delete-contact').forEach(btn => {
+        btn.addEventListener('click', () => {
+          person.contacts.splice(btn.dataset.index, 1);
+          store.update('customers', id, { contacts: person.contacts });
+          showToast('Contact deleted', 'success');
+          renderTabContent();
+          render();
+        });
+      });
+
+    } else if (activeTab === 'sites') {
+      const sites = person.sites || [];
+      tabContent.innerHTML = `
+        <div class="card" style="margin-bottom:var(--space-lg)">
+          <div class="card-header">
+            <h4>Sites (${sites.length})</h4>
+            <button class="btn btn-primary btn-sm" id="btn-toggle-site"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Site</button>
+          </div>
+          <div id="site-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Site Name *</label><input type="text" id="new-s-name" class="form-input" placeholder="e.g. Headquarters"></div>
+              <div class="form-group"><label class="form-label">Address *</label><input type="text" id="new-s-address" class="form-input"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="grid-column: span 2"><label class="form-label">Notes</label><input type="text" id="new-s-notes" class="form-input"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button class="btn btn-secondary btn-sm" id="btn-cancel-site">Cancel</button>
+              <button class="btn btn-primary btn-sm" id="btn-save-site">Save Site</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-table">
+              <thead><tr><th>Site Name</th><th>Address</th><th>Notes</th><th style="width:50px"></th></tr></thead>
+              <tbody>
+                ${sites.map((s, i) => `
+                  <tr>
+                    <td class="font-medium">${s.name}</td>
+                    <td>${s.address}</td>
+                    <td class="text-secondary">${s.notes || '—'}</td>
+                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-site" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
+                  </tr>
+                `).join('')}
+                ${!sites.length ? '<tr><td colspan="4" style="text-align:center;padding:20px" class="text-secondary">No sites added</td></tr>' : ''}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      tabContent.querySelector('#btn-toggle-site').addEventListener('click', () => { tabContent.querySelector('#site-form').style.display = 'block'; });
+      tabContent.querySelector('#btn-cancel-site').addEventListener('click', () => { tabContent.querySelector('#site-form').style.display = 'none'; });
+      tabContent.querySelector('#btn-save-site').addEventListener('click', () => {
+        const name = tabContent.querySelector('#new-s-name').value.trim();
+        const address = tabContent.querySelector('#new-s-address').value.trim();
+        if (!name || !address) return showToast('Name and Address are required', 'error');
+        if (!person.sites) person.sites = [];
+        person.sites.push({ name, address, notes: tabContent.querySelector('#new-s-notes').value });
+        store.update('customers', id, { sites: person.sites });
+        showToast('Site added', 'success');
+        renderTabContent();
+        render(); // update tab count
+      });
+      tabContent.querySelectorAll('.btn-delete-site').forEach(btn => {
+        btn.addEventListener('click', () => {
+          person.sites.splice(btn.dataset.index, 1);
+          store.update('customers', id, { sites: person.sites });
+          showToast('Site deleted', 'success');
+          renderTabContent();
+          render();
+        });
+      });
+
+    } else if (activeTab === 'assets') {
+      const assets = person.assets || [];
+      const sites = person.sites || [];
+      tabContent.innerHTML = `
+        <div class="card" style="margin-bottom:var(--space-lg)">
+          <div class="card-header">
+            <h4>Assets/Equipment (${assets.length})</h4>
+            <button class="btn btn-primary btn-sm" id="btn-toggle-asset"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Asset</button>
+          </div>
+          <div id="asset-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Asset Name *</label><input type="text" id="new-a-name" class="form-input" placeholder="e.g. Carrier HVAC Unit"></div>
+              <div class="form-group"><label class="form-label">Serial Number</label><input type="text" id="new-a-serial" class="form-input"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Location / Site</label>
+                <select id="new-a-site" class="form-select">
+                  <option value="">-- No specific site --</option>
+                  ${sites.map(s => `<option value="${s.name}">${s.name}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group"><label class="form-label">Install Date</label><input type="date" id="new-a-date" class="form-input"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button class="btn btn-secondary btn-sm" id="btn-cancel-asset">Cancel</button>
+              <button class="btn btn-primary btn-sm" id="btn-save-asset">Save Asset</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-table">
+              <thead><tr><th>Asset Name</th><th>Serial No.</th><th>Site</th><th>Install Date</th><th style="width:50px"></th></tr></thead>
+              <tbody>
+                ${assets.map((a, i) => `
+                  <tr>
+                    <td class="font-medium">${a.name}</td>
+                    <td style="font-family:monospace" class="text-secondary">${a.serial || '—'}</td>
+                    <td>${a.site || '—'}</td>
+                    <td>${a.installDate ? new Date(a.installDate).toLocaleDateString() : '—'}</td>
+                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-asset" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
+                  </tr>
+                `).join('')}
+                ${!assets.length ? '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No assets tracked</td></tr>' : ''}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      tabContent.querySelector('#btn-toggle-asset').addEventListener('click', () => { tabContent.querySelector('#asset-form').style.display = 'block'; });
+      tabContent.querySelector('#btn-cancel-asset').addEventListener('click', () => { tabContent.querySelector('#asset-form').style.display = 'none'; });
+      tabContent.querySelector('#btn-save-asset').addEventListener('click', () => {
+        const name = tabContent.querySelector('#new-a-name').value.trim();
+        if (!name) return showToast('Asset Name is required', 'error');
+        if (!person.assets) person.assets = [];
+        person.assets.push({
+          name, serial: tabContent.querySelector('#new-a-serial').value,
+          site: tabContent.querySelector('#new-a-site').value,
+          installDate: tabContent.querySelector('#new-a-date').value
+        });
+        store.update('customers', id, { assets: person.assets });
+        showToast('Asset tracking started', 'success');
+        renderTabContent();
+        render(); // update tab count
+      });
+      tabContent.querySelectorAll('.btn-delete-asset').forEach(btn => {
+        btn.addEventListener('click', () => {
+          person.assets.splice(btn.dataset.index, 1);
+          store.update('customers', id, { assets: person.assets });
+          showToast('Asset disabled/deleted', 'success');
+          renderTabContent();
+          render();
+        });
+      });
+
+    } else if (activeTab === 'communications') {
+      const comms = person.communications || [];
+      const sortedComms = [...comms].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      tabContent.innerHTML = `
+        <div class="card" style="margin-bottom:var(--space-lg)">
+          <div class="card-header">
+            <h4>Communication History</h4>
+            <button class="btn btn-primary btn-sm" id="btn-toggle-comm"><span class="material-icons-outlined" style="font-size:16px">add</span> Log Activity</button>
+          </div>
+          <div id="comm-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Type</label>
+                <select id="new-comm-type" class="form-select">
+                  <option value="Note">Note</option>
+                  <option value="Call">Call</option>
+                  <option value="Email">Email</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Date</label>
+                <input type="date" id="new-comm-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Details / Content</label>
+              <textarea id="new-comm-content" class="form-input" rows="3" placeholder="Enter notes here..."></textarea>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+              <button class="btn btn-secondary btn-sm" id="btn-cancel-comm">Cancel</button>
+              <button class="btn btn-primary btn-sm" id="btn-save-comm">Save Activity</button>
+            </div>
+          </div>
+          <div class="card-body">
+            ${sortedComms.length === 0 ? '<div style="text-align:center;padding:20px" class="text-secondary">No communications logged</div>' : `
+              <div style="display:flex;flex-direction:column;gap:16px">
+                ${sortedComms.map((c, i) => `
+                  <div style="display:flex;gap:12px;border-bottom:1px solid var(--border-color);padding-bottom:12px">
+                    <div style="background:var(--color-${c.type === 'Email' ? 'info' : c.type === 'Call' ? 'success' : 'neutral'}-bg);color:var(--color-${c.type === 'Email' ? 'info' : c.type === 'Call' ? 'success' : 'neutral'});padding:8px;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                      <span class="material-icons-outlined" style="font-size:20px">${c.type === 'Email' ? 'mail' : c.type === 'Call' ? 'phone' : 'sticky_note_2'}</span>
+                    </div>
+                    <div style="flex:1">
+                      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                        <strong style="font-size:var(--font-size-md)">${c.type}</strong>
+                        <span style="font-size:var(--font-size-sm);color:var(--text-tertiary)">${new Date(c.date).toLocaleDateString()}</span>
+                      </div>
+                      <div style="color:var(--text-secondary);white-space:pre-wrap;font-size:var(--font-size-sm)">${c.content}</div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+
+      tabContent.querySelector('#btn-toggle-comm').addEventListener('click', () => { tabContent.querySelector('#comm-form').style.display = 'block'; });
+      tabContent.querySelector('#btn-cancel-comm').addEventListener('click', () => { tabContent.querySelector('#comm-form').style.display = 'none'; });
+      tabContent.querySelector('#btn-save-comm').addEventListener('click', () => {
+        const content = tabContent.querySelector('#new-comm-content').value.trim();
+        if (!content) return showToast('Details are required', 'error');
+        if (!person.communications) person.communications = [];
+        person.communications.push({
+          id: Date.now().toString(),
+          type: tabContent.querySelector('#new-comm-type').value,
+          date: tabContent.querySelector('#new-comm-date').value,
+          content
+        });
+        store.update('customers', id, { communications: person.communications });
+        showToast('Activity logged', 'success');
+        renderTabContent();
+        render(); // update tab count
+      });
+
+    } else if (activeTab === 'jobs') {
+      tabContent.innerHTML = renderRelatedTable(jobs, [
+        { label: 'Job #', key: 'number' },
+        { label: 'Title', key: 'title' },
+        { label: 'Status', key: 'status', badge: true },
+        { label: 'Technician', key: 'technicianName' },
+      ], 'jobs', 'No jobs for this customer');
+    } else if (activeTab === 'quotes') {
+      tabContent.innerHTML = `
+        <div style="margin-bottom:var(--space-base);display:flex;justify-content:flex-end">
+          <button class="btn btn-primary btn-sm" id="btn-create-quote">
+            <span class="material-icons-outlined">add</span> Create Quote
+          </button>
+        </div>
+        ${renderRelatedTable(quotes, [
+          { label: 'Quote #', key: 'number' },
+          { label: 'Title', key: 'title' },
+          { label: 'Status', key: 'status', badge: true },
+          { label: 'Total', key: 'total', format: 'currency' },
+        ], 'quotes', 'No quotes for this customer')}
+      `;
+
+      tabContent.querySelector('#btn-create-quote').addEventListener('click', () => {
+        router.navigate('/quotes/new?customerId=' + id);
+      });
+    } else if (activeTab === 'invoices') {
+      tabContent.innerHTML = renderRelatedTable(invoices, [
+        { label: 'Invoice #', key: 'number' },
+        { label: 'Status', key: 'status', badge: true },
+        { label: 'Total', key: 'total', format: 'currency' },
+        { label: 'Due', key: 'dueDate', format: 'date' },
+      ], 'invoices', 'No invoices for this customer');
+    }
+  }
+
+  render();
+}
+
+function detailRow(label, value) {
+  return `
+    <div style="display:flex;gap:8px">
+      <span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span>
+      <span style="font-size:var(--font-size-base)">${value}</span>
+    </div>
+  `;
+}
+
+function renderRelatedTable(items, cols, module, emptyMsg) {
+  if (items.length === 0) {
+    return `<div class="card"><div class="empty-state" style="padding:32px"><span class="material-icons-outlined">inbox</span><h3>${emptyMsg}</h3></div></div>`;
+  }
+
+  const statusBadge = (status) => {
+    const cls = { 'Active': 'success', 'Completed': 'success', 'Paid': 'success', 'Accepted': 'success',
+      'In Progress': 'primary', 'Sent': 'info', 'Scheduled': 'info',
+      'Pending': 'warning', 'Draft': 'neutral', 'On Hold': 'neutral',
+      'Overdue': 'danger', 'Declined': 'danger', 'Void': 'danger',
+      'Invoiced': 'primary',
+    };
+    return `<span class="badge badge-${cls[status] || 'neutral'}">${status}</span>`;
+  };
+
+  return `
+    <div class="card">
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${items.map(item => `
+              <tr style="cursor:pointer" onclick="window.location.hash='/${module}/${item.id}'">
+                ${cols.map(c => {
+                  let val = item[c.key];
+                  if (c.badge) val = statusBadge(val);
+                  else if (c.format === 'currency') val = `$${(val || 0).toLocaleString('en-AU', { minimumFractionDigits: 2 })}`;
+                  else if (c.format === 'date') val = val ? new Date(val).toLocaleDateString() : '—';
+                  return `<td>${val}</td>`;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
