@@ -2,12 +2,14 @@
 // SIMPRO CLONE — CLIENT-SIDE ROUTER
 // ============================================
 
-class Router {
+export class Router {
   constructor() {
     this.routes = {};
     this.currentRoute = null;
     this.onNavigate = null;
-    window.addEventListener('hashchange', () => this.resolve());
+    if (typeof window !== 'undefined') {
+      window.addEventListener('hashchange', () => this.resolve());
+    }
   }
 
   register(path, handler) {
@@ -15,11 +17,13 @@ class Router {
   }
 
   navigate(path) {
-    window.location.hash = path;
+    if (typeof window !== 'undefined') {
+      window.location.hash = path;
+    }
   }
 
-  resolve() {
-    let hash = window.location.hash.slice(1) || '/';
+  resolve(hashOverride) {
+    let hash = hashOverride || (typeof window !== 'undefined' ? window.location.hash.slice(1) : '/') || '/';
     const queryIndex = hash.indexOf('?');
     const queryParams = {};
     if (queryIndex !== -1) {
@@ -73,7 +77,10 @@ class Router {
   }
 
   getCurrentPath() {
-    return window.location.hash.slice(1) || '/';
+    if (typeof window !== 'undefined') {
+      return window.location.hash.slice(1) || '/';
+    }
+    return '/';
   }
 
   getBasePath() {
