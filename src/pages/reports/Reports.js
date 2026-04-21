@@ -59,7 +59,13 @@ export function renderReports(container) {
     const lowStockItems = stock.filter(i => i.quantity <= i.reorderLevel);
     const timesheets = store.getAll('timesheets');
 
-    return { jobs, quotes, invoices, customers, stock, technicians, leads, totalRevenue, totalOutstanding, avgJobValue, quoteWinRate, leadConvRate, jobsByStatus, invByStatus, techStats, topCustomers, totalStockValue, lowStockItems, timesheets };
+    // Pre-calculate hours by job for performance
+    const hoursByJob = {};
+    timesheets.forEach(t => {
+      hoursByJob[t.jobId] = (hoursByJob[t.jobId] || 0) + (t.hours || 0);
+    });
+
+    return { jobs, quotes, invoices, customers, stock, technicians, leads, totalRevenue, totalOutstanding, avgJobValue, quoteWinRate, leadConvRate, jobsByStatus, invByStatus, techStats, topCustomers, totalStockValue, lowStockItems, timesheets, hoursByJob };
   }
 
   function render() {
@@ -154,7 +160,7 @@ export function renderReports(container) {
       const costingData = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').map(j => {
         const estH = j.estimatedHours || 0;
         const estLabor = j.laborCost || 0;
-        const actualH = d.timesheets.filter(t => t.jobId === j.id).reduce((s, t) => s + (t.hours || 0), 0);
+        const actualH = d.hoursByJob[j.id] || 0;
         const actualLabor = actualH * 85;
         return { num: j.number, tech: j.technicianName || '', estH, actualH, estLabor, actualLabor, variance: estLabor - actualLabor };
       });
@@ -368,7 +374,7 @@ function renderJobCostingReport(d) {
   const costingData = completedJobs.map(j => {
     const estH = j.estimatedHours || 0;
     const estLabor = j.laborCost || 0;
-    const actualH = d.timesheets.filter(t => t.jobId === j.id).reduce((s, t) => s + (t.hours || 0), 0);
+    const actualH = d.hoursByJob[j.id] || 0;
     const laborRate = 85; // Standard rate assumption
     const actualLabor = actualH * laborRate;
     return {
