@@ -2,6 +2,8 @@
 // SIMPRO CLONE — PDF PREVIEW & PRINT
 // ============================================
 
+import { escapeHTML } from '../utils/security.js';
+
 export function showPrintPreview({ type, data }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -155,7 +157,7 @@ function generateDocument(type, data) {
         <tbody>
           ${lineItems.map(item => `
             <tr>
-              <td>${item.description || '—'}</td>
+              <td>${item.description ? escapeHTML(item.description) : '—'}</td>
               ${isQuote ? `
                 <td style="text-align:center"><span class="pdf-type-tag">${(item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1)}</span></td>
                 <td style="text-align:center">${item.qty || 1}</td>
@@ -186,7 +188,7 @@ function generateDocument(type, data) {
       ${data.notes ? `
         <div class="pdf-notes">
           <div class="pdf-notes-title">Notes</div>
-          <div class="pdf-notes-text">${data.notes}</div>
+          <div class="pdf-notes-text">${escapeHTML(data.notes).replace(/\n/g, '<br>')}</div>
         </div>
       ` : ''}
 
