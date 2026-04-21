@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderJobDetail(container, { id }) {
   const job = store.getById('jobs', id);
@@ -31,12 +32,12 @@ export function renderJobDetail(container, { id }) {
             <span class="material-icons-outlined">build</span>
           </div>
           <div>
-            <div class="detail-header-text"><h2>${job.number} — ${job.title}</h2></div>
+            <div class="detail-header-text"><h2>${escapeHTML(job.number)} — ${escapeHTML(job.title)}</h2></div>
             <div class="detail-header-meta">
-              <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${job.customerName}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${job.technicianName || 'Unassigned'}</span>
-              <span class="badge ${sb[job.status] || 'badge-neutral'}">${job.status}</span>
-              <span class="badge ${pb[job.priority] || 'badge-neutral'}">${job.priority}</span>
+              <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(job.customerName)}</span>
+              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
+              <span class="badge ${sb[job.status] || 'badge-neutral'}">${escapeHTML(job.status)}</span>
+              <span class="badge ${pb[job.priority] || 'badge-neutral'}">${escapeHTML(job.priority)}</span>
             </div>
           </div>
         </div>
@@ -70,8 +71,8 @@ export function renderJobDetail(container, { id }) {
 
     if (activeTab === 'overview') {
       const techNames = job.technicians && job.technicians.length > 0 
-        ? job.technicians.map(t => `${t.name} (${t.hours}h)`).join(', ') 
-        : (job.technicianName || 'Unassigned');
+        ? job.technicians.map(t => `${escapeHTML(t.name)} (${t.hours}h)`).join(', ')
+        : escapeHTML(job.technicianName || 'Unassigned');
 
       tc.innerHTML = `
         <div class="grid-2">
@@ -79,13 +80,13 @@ export function renderJobDetail(container, { id }) {
             <div class="card-header"><h4>Job Information</h4></div>
             <div class="card-body">
               <div style="display:flex;flex-direction:column;gap:12px">
-                ${r('Job Number', job.number)}
-                ${r('Title', job.title)}
-                ${r('Type', job.type)}
-                ${r('Status', job.status)}
-                ${r('Priority', job.priority)}
-                ${r('Customer', job.customerName)}
-                ${r('Contact', job.contactName || '—')}
+                ${r('Job Number', escapeHTML(job.number))}
+                ${r('Title', escapeHTML(job.title))}
+                ${r('Type', escapeHTML(job.type))}
+                ${r('Status', escapeHTML(job.status))}
+                ${r('Priority', escapeHTML(job.priority))}
+                ${r('Customer', escapeHTML(job.customerName))}
+                ${r('Contact', escapeHTML(job.contactName || '—'))}
               </div>
             </div>
           </div>
@@ -101,8 +102,8 @@ export function renderJobDetail(container, { id }) {
                 ${r('Technicians', techNames)}
                 ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
                 ${r('Est. Hours', job.estimatedHours || '—')}
-                ${r('Site Address', job.siteAddress || '—')}
-                ${r('Quote Ref', job.quoteId ? `<a href="#/quotes/${job.quoteId}">${job.quoteId}</a>` : '—')}
+                ${r('Site Address', escapeHTML(job.siteAddress || '—'))}
+                ${r('Quote Ref', job.quoteId ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : '—')}
                 ${r('Created', new Date(job.createdAt).toLocaleDateString())}
               </div>
             </div>
@@ -130,7 +131,7 @@ export function renderJobDetail(container, { id }) {
               <tbody>
                 ${job.phases.map((p, i) => `
                   <tr data-index="${i}">
-                    <td><input type="text" class="form-input phase-input" data-field="name" value="${p.name || ''}" style="width:200px" /></td>
+                    <td><input type="text" class="form-input phase-input" data-field="name" value="${escapeHTML(p.name || '')}" style="width:200px" /></td>
                     <td>
                       <select class="form-select phase-input" data-field="status">
                         ${['Not Started','In Progress','Completed'].map(s => `<option ${p.status === s ? 'selected' : ''}>${s}</option>`).join('')}
@@ -230,7 +231,7 @@ export function renderJobDetail(container, { id }) {
                   ${(job.materials || []).map((m, i) => `
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid var(--border-color);border-radius:4px">
                       <div>
-                        <div class="font-medium">${m.name}</div>
+                        <div class="font-medium">${escapeHTML(m.name)}</div>
                         <div class="text-secondary" style="font-size:12px">${m.quantity} x $${(m.unitCost || 0).toFixed(2)}</div>
                       </div>
                       <div class="font-medium">$${(m.quantity * (m.unitCost || 0)).toFixed(2)}</div>
@@ -415,16 +416,16 @@ export function renderJobDetail(container, { id }) {
                   <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative">
                     <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                       <span class="text-secondary" style="font-size:var(--font-size-xs)">${new Date(log.date).toLocaleString()}</span>
-                      <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${log.id}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+                      <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
                     </div>
-                    ${log.type === 'note' ? `<div style="font-size:var(--font-size-sm);white-space:pre-wrap">${log.content}</div>` : 
+                    ${log.type === 'note' ? `<div style="font-size:var(--font-size-sm);white-space:pre-wrap">${escapeHTML(log.content)}</div>` :
                       `<div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
                          ${log.file.type && log.file.type.startsWith('image/') ? 
-                            `<div style="width:40px;height:40px;background:url('${log.file.data}') center/cover;border-radius:4px"></div>` : 
+                            `<div style="width:40px;height:40px;background:url('${escapeHTML(log.file.data)}') center/cover;border-radius:4px"></div>` :
                             `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
                          }
                          <div style="overflow:hidden">
-                           <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${log.file.name}">${log.file.name}</div>
+                           <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${escapeHTML(log.file.name)}">${escapeHTML(log.file.name)}</div>
                            <div class="text-secondary" style="font-size:10px">${(log.file.size / 1024).toFixed(1)} KB</div>
                          </div>
                        </div>`
@@ -493,8 +494,8 @@ export function renderJobDetail(container, { id }) {
                 ${timesheets.length ? timesheets.map(t => `
                   <tr>
                     <td>${new Date(t.date).toLocaleDateString()}</td>
-                    <td>${t.technicianName}</td>
-                    <td class="text-secondary">${t.description || '—'}</td>
+                    <td>${escapeHTML(t.technicianName)}</td>
+                    <td class="text-secondary">${escapeHTML(t.description || '—')}</td>
                     <td style="text-align:right;font-weight:600">${t.hours}</td>
                     <td><span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">${t.status}</span></td>
                   </tr>
@@ -579,9 +580,9 @@ export function renderJobDetail(container, { id }) {
               <tbody>
                 ${job.forms.length ? job.forms.map(f => `
                   <tr>
-                    <td class="font-medium">${f.type}</td>
+                    <td class="font-medium">${escapeHTML(f.type)}</td>
                     <td>${new Date(f.date).toLocaleString()}</td>
-                    <td>${f.completedBy || 'System'}</td>
+                    <td>${escapeHTML(f.completedBy || 'System')}</td>
                   </tr>
                 `).join('') : '<tr><td colspan="3" style="text-align:center;padding:20px" class="text-secondary">No forms completed yet</td></tr>'}
               </tbody>
@@ -648,8 +649,8 @@ export function renderJobDetail(container, { id }) {
               <tbody>
                 ${pos.length ? pos.map(p => `
                   <tr>
-                    <td><a href="#/purchase-orders/${p.id}">${p.number}</a></td>
-                    <td>${p.supplierName || '—'}</td>
+                    <td><a href="#/purchase-orders/${escapeHTML(p.id)}">${escapeHTML(p.number)}</a></td>
+                    <td>${escapeHTML(p.supplierName || '—')}</td>
                     <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
                     <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
                     <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
@@ -683,8 +684,8 @@ export function renderJobDetail(container, { id }) {
               <tbody>
                 ${invoices.length ? invoices.map(i => `
                   <tr>
-                    <td><a href="#/invoices/${i.id}">${i.number}</a></td>
-                    <td><span class="badge badge-neutral">${i.invoiceType || 'Standard'}</span></td>
+                    <td><a href="#/invoices/${escapeHTML(i.id)}">${escapeHTML(i.number)}</a></td>
+                    <td><span class="badge badge-neutral">${escapeHTML(i.invoiceType || 'Standard')}</span></td>
                     <td>${i.issueDate ? i.issueDate.split('T')[0] : '—'}</td>
                     <td>${i.dueDate ? i.dueDate.split('T')[0] : '—'}</td>
                     <td style="font-weight:600;">$${(i.total || 0).toFixed(2)}</td>
@@ -785,7 +786,7 @@ export function renderJobDetail(container, { id }) {
 
     container.querySelector('#btn-delete-job')?.addEventListener('click', () => {
       showModal({
-        title: 'Delete Job', content: `<p>Delete job <strong>${job.number}</strong>?</p>`,
+        title: 'Delete Job', content: `<p>Delete job <strong>${escapeHTML(job.number)}</strong>?</p>`,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('jobs', id); showToast('Job deleted', 'success'); close(); router.navigate('/jobs'); }},
