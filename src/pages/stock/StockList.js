@@ -7,6 +7,7 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderStockList(container) {
   const stock = store.getAll('stock');
@@ -37,16 +38,16 @@ export function renderStockList(container) {
   let filteredData = [...stock];
 
   const columns = [
-    { key: 'name', label: 'Item Name', render: (r) => `<span class="cell-link font-medium">${r.name}</span>` },
-    { key: 'sku', label: 'SKU', render: (r) => `<span class="text-secondary" style="font-family:monospace">${r.sku}</span>`, width: '90px' },
-    { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${r.category}</span>`, width: '110px' },
+    { key: 'name', label: 'Item Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
+    { key: 'sku', label: 'SKU', render: (r) => `<span class="text-secondary" style="font-family:monospace">${escapeHTML(r.sku)}</span>`, width: '90px' },
+    { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category)}</span>`, width: '110px' },
     { key: 'quantity', label: 'Qty', render: (r) => {
       const low = r.quantity <= r.reorderLevel;
       return `<span style="font-weight:600;color:${low ? 'var(--color-danger)' : 'var(--text-primary)'}">${r.quantity}</span>${low ? ' <span class="badge badge-danger" style="margin-left:4px">LOW</span>' : ''}`;
     }, getValue: (r) => r.quantity, width: '100px' },
     { key: 'unitPrice', label: 'Unit Price', render: (r) => `$${r.unitPrice.toFixed(2)}`, getValue: (r) => r.unitPrice, width: '100px' },
-    { key: 'location', label: 'Location', render: (r) => `<span class="text-secondary">${r.location}</span>`, width: '120px' },
-    { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${r.supplier}</span>` },
+    { key: 'location', label: 'Location', render: (r) => `<span class="text-secondary">${escapeHTML(r.location)}</span>`, width: '120px' },
+    { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplier)}</span>` },
   ];
 
   const table = createDataTable({ columns, data: filteredData, onRowClick: (id) => router.navigate(`/stock/${id}`), emptyMessage: 'No stock items', emptyIcon: 'inventory_2' });

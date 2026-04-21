@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderPersonDetail(container, { id }) {
   const person = store.getById('customers', id);
@@ -32,13 +33,13 @@ export function renderPersonDetail(container, { id }) {
           </div>
           <div>
             <div class="detail-header-text">
-              <h2>${person.company}</h2>
+              <h2>${escapeHTML(person.company)}</h2>
             </div>
             <div class="detail-header-meta">
-              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${person.firstName} ${person.lastName}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">email</span> ${person.email}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">phone</span> ${person.phone}</span>
-              <span class="badge ${person.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${person.status}</span>
+              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(person.firstName)} ${escapeHTML(person.lastName)}</span>
+              <span><span class="material-icons-outlined" style="font-size:14px">email</span> ${escapeHTML(person.email)}</span>
+              <span><span class="material-icons-outlined" style="font-size:14px">phone</span> ${escapeHTML(person.phone)}</span>
+              <span class="badge ${person.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(person.status)}</span>
             </div>
           </div>
         </div>
@@ -459,8 +460,8 @@ export function renderPersonDetail(container, { id }) {
 function detailRow(label, value) {
   return `
     <div style="display:flex;gap:8px">
-      <span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span>
-      <span style="font-size:var(--font-size-base)">${value}</span>
+      <span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${escapeHTML(label)}</span>
+      <span style="font-size:var(--font-size-base)">${escapeHTML(value)}</span>
     </div>
   `;
 }
@@ -477,22 +478,23 @@ function renderRelatedTable(items, cols, module, emptyMsg) {
       'Overdue': 'danger', 'Declined': 'danger', 'Void': 'danger',
       'Invoiced': 'primary',
     };
-    return `<span class="badge badge-${cls[status] || 'neutral'}">${status}</span>`;
+    return `<span class="badge badge-${cls[status] || 'neutral'}">${escapeHTML(status)}</span>`;
   };
 
   return `
     <div class="card">
       <div class="data-table-wrapper">
         <table class="data-table">
-          <thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
+          <thead><tr>${cols.map(c => `<th>${escapeHTML(c.label)}</th>`).join('')}</tr></thead>
           <tbody>
             ${items.map(item => `
-              <tr style="cursor:pointer" onclick="window.location.hash='/${module}/${item.id}'">
+              <tr style="cursor:pointer" onclick="window.location.hash='#/${module}/${escapeHTML(item.id)}'">
                 ${cols.map(c => {
                   let val = item[c.key];
                   if (c.badge) val = statusBadge(val);
                   else if (c.format === 'currency') val = `$${(val || 0).toLocaleString('en-AU', { minimumFractionDigits: 2 })}`;
                   else if (c.format === 'date') val = val ? new Date(val).toLocaleDateString() : '—';
+                  else val = escapeHTML(val);
                   return `<td>${val}</td>`;
                 }).join('')}
               </tr>

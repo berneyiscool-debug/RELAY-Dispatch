@@ -2,6 +2,8 @@
 // SIMPRO CLONE — REUSABLE DATA TABLE
 // ============================================
 
+import { escapeHTML } from '../utils/security.js';
+
 export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox' }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'card';
@@ -36,8 +38,8 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     if (data.length === 0) {
       wrapper.innerHTML = `
         <div class="empty-state">
-          <span class="material-icons-outlined">${emptyIcon}</span>
-          <h3>${emptyMessage}</h3>
+          <span class="material-icons-outlined">${escapeHTML(emptyIcon)}</span>
+          <h3>${escapeHTML(emptyMessage)}</h3>
           <p>Get started by creating a new record.</p>
         </div>
       `;
@@ -51,7 +53,7 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
       const sortClass = isSorted ? ' sorted' : '';
       const sortIcon = isSorted ? (sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more';
       html += `<th class="${sortClass}" data-key="${col.key}" style="${col.width ? 'width:' + col.width : ''}">
-        ${col.label}
+        ${escapeHTML(col.label)}
         <span class="material-icons-outlined sort-icon">${sortIcon}</span>
       </th>`;
     });
@@ -60,9 +62,9 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
     paged.forEach(row => {
       const rowId = getId ? getId(row) : row.id;
-      html += `<tr data-id="${rowId}" style="cursor:pointer">`;
+      html += `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer">`;
       columns.forEach(col => {
-        const value = col.render ? col.render(row) : (row[col.key] ?? '');
+        const value = col.render ? col.render(row) : escapeHTML(row[col.key] ?? '');
         html += `<td>${value}</td>`;
       });
       html += '</tr>';
