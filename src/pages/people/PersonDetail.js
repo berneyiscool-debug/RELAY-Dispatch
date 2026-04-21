@@ -8,6 +8,7 @@ import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderPersonDetail(container, { id }) {
   const person = store.getById('customers', id);
@@ -26,32 +27,26 @@ export function renderPersonDetail(container, { id }) {
 
   function render() {
     container.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-header-info">
-          <div class="detail-header-icon">
-            <span class="material-icons-outlined">${person.type === 'Company' ? 'business' : 'person'}</span>
-          </div>
-          <div>
-            <div class="detail-header-text">
-              <h2>${escapeHTML(person.company)}</h2>
-            </div>
-            <div class="detail-header-meta">
-              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(person.firstName)} ${escapeHTML(person.lastName)}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">email</span> ${escapeHTML(person.email)}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">phone</span> ${escapeHTML(person.phone)}</span>
-              <span class="badge ${person.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(person.status)}</span>
-            </div>
-          </div>
-        </div>
-        <div class="flex gap-sm">
+      ${renderDetailHeader({
+        title: escapeHTML(person.company),
+        icon: person.type === 'Company' ? 'business' : 'person',
+        iconBgColor: 'var(--color-primary-light)',
+        iconTextColor: 'var(--color-primary)',
+        metaHtml: `
+          <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(person.firstName)} ${escapeHTML(person.lastName)}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">email</span> ${escapeHTML(person.email)}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">phone</span> ${escapeHTML(person.phone)}</span>
+          <span class="badge ${person.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(person.status)}</span>
+        `,
+        actionsHtml: `
           <button class="btn btn-secondary" id="btn-edit-person">
             <span class="material-icons-outlined">edit</span> Edit
           </button>
           <button class="btn btn-danger" id="btn-delete-person">
             <span class="material-icons-outlined">delete</span> Delete
           </button>
-        </div>
-      </div>
+        `
+      })}
 
       <div class="tabs" id="person-tabs">
         <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Details</button>
