@@ -107,260 +107,30 @@ export function renderReports(container) {
   function renderReport(d) {
     const rc = container.querySelector('#report-content');
 
-    if (activeReport === 'overview') {
-      rc.innerHTML = `
-        <div class="grid-4" style="margin-bottom:var(--space-lg)">
-          ${kpi('Total Revenue', `$${d.totalRevenue.toLocaleString('en-AU',{minimumFractionDigits:0})}`, 'account_balance', 'green')}
-          ${kpi('Outstanding', `$${d.totalOutstanding.toLocaleString('en-AU',{minimumFractionDigits:0})}`, 'pending', 'orange')}
-          ${kpi('Quote Win Rate', `${d.quoteWinRate.toFixed(0)}%`, 'emoji_events', 'blue')}
-          ${kpi('Lead Conversion', `${d.leadConvRate.toFixed(0)}%`, 'trending_up', 'green')}
-        </div>
-        <div class="grid-2" style="margin-bottom:var(--space-lg)">
-          <div class="card">
-            <div class="card-header"><h4>Jobs by Status</h4></div>
-            <div class="card-body">${barChart(d.jobsByStatus, { 'Pending':'#F59E0B','Scheduled':'#3B82F6','In Progress':'#1B6DE0','On Hold':'#6B7280','Completed':'#10B981','Invoiced':'#8B5CF6' })}</div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h4>Invoices by Status</h4></div>
-            <div class="card-body">${barChart(d.invByStatus, { 'Draft':'#6B7280','Sent':'#3B82F6','Paid':'#10B981','Overdue':'#EF4444' })}</div>
-          </div>
-        </div>
-        <div class="grid-3">
-          ${miniStat('Total Jobs', d.jobs.length, 'build')}
-          ${miniStat('Total Quotes', d.quotes.length, 'request_quote')}
-          ${miniStat('Total Invoices', d.invoices.length, 'receipt_long')}
-          ${miniStat('Total Customers', d.customers.length, 'people')}
-          ${miniStat('Avg Job Value', `$${d.avgJobValue.toFixed(0)}`, 'paid')}
-          ${miniStat('Stock Items', `${d.stock.length} (${d.lowStockItems.length} low)`, 'inventory_2')}
-        </div>
-      `;
-    } else if (activeReport === 'revenue') {
-      const paidInvoices = d.invoices.filter(i => i.status === 'Paid');
-      const monthlyRev = {};
-      paidInvoices.forEach(i => {
-        const m = new Date(i.issueDate || i.createdAt).toLocaleDateString('en-AU', { month: 'short', year: '2-digit' });
-        monthlyRev[m] = (monthlyRev[m] || 0) + (i.total || 0);
-      });
-
-      const totalCost = d.jobs.reduce((s, j) => s + (j.materialCost || 0), 0);
-      const totalLabor = d.jobs.reduce((s, j) => s + (j.laborCost || 0), 0);
-      const grossProfit = d.totalRevenue - totalCost;
-
-      rc.innerHTML = `
-        <div class="grid-4" style="margin-bottom:var(--space-lg)">
-          ${kpi('Gross Revenue', `$${d.totalRevenue.toFixed(0)}`, 'account_balance', 'green')}
-          ${kpi('Total Labor', `$${totalLabor.toFixed(0)}`, 'engineering', 'blue')}
-          ${kpi('Material Costs', `$${totalCost.toFixed(0)}`, 'inventory_2', 'orange')}
-          ${kpi('Gross Profit', `$${grossProfit.toFixed(0)}`, 'savings', 'green')}
-        </div>
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header"><h4>Revenue by Month</h4></div>
-          <div class="card-body">${barChart(monthlyRev, {}, '#1B6DE0')}</div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h4>Profit Breakdown</h4></div>
-          <div class="card-body">
-            ${progressBar('Revenue', d.totalRevenue, d.totalRevenue, '#10B981')}
-            ${progressBar('Labor Cost', totalLabor, d.totalRevenue, '#3B82F6')}
-            ${progressBar('Material Cost', totalCost, d.totalRevenue, '#F59E0B')}
-            ${progressBar('Gross Profit', grossProfit, d.totalRevenue, '#10B981')}
-          </div>
-        </div>
-      `;
-    } else if (activeReport === 'jobs') {
-      const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
-      const avgHours = completedJobs.length > 0 ? completedJobs.reduce((s, j) => s + (j.estimatedHours || 0), 0) / completedJobs.length : 0;
-
-      rc.innerHTML = `
-        <div class="grid-4" style="margin-bottom:var(--space-lg)">
-          ${kpi('Total Jobs', d.jobs.length, 'build', 'blue')}
-          ${kpi('Completed', completedJobs.length, 'check_circle', 'green')}
-          ${kpi('In Progress', d.jobsByStatus['In Progress'] || 0, 'pending', 'orange')}
-          ${kpi('Avg Hours', avgHours.toFixed(1), 'schedule', 'blue')}
-        </div>
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header"><h4>Job Status Distribution</h4></div>
-          <div class="card-body">${barChart(d.jobsByStatus, { 'Pending':'#F59E0B','Scheduled':'#3B82F6','In Progress':'#1B6DE0','On Hold':'#6B7280','Completed':'#10B981','Invoiced':'#8B5CF6' })}</div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h4>Top Jobs by Value</h4></div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th>Job</th><th>Customer</th><th>Status</th><th style="text-align:right">Value</th></tr></thead>
-              <tbody>
-                ${d.jobs.sort((a, b) => ((b.laborCost||0)+(b.materialCost||0)) - ((a.laborCost||0)+(a.materialCost||0))).slice(0, 8).map(j => `
-                  <tr>
-                    <td class="font-medium">${j.number}</td>
-                    <td class="text-secondary">${j.customerName}</td>
-                    <td><span class="badge badge-neutral">${j.status}</span></td>
-                    <td style="text-align:right;font-weight:600">$${((j.laborCost||0)+(j.materialCost||0)).toFixed(0)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-    } else if (activeReport === 'job_costing') {
-      const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
-      const costingData = completedJobs.map(j => {
-        const estH = j.estimatedHours || 0;
-        const estLabor = j.laborCost || 0;
-        const actualH = d.timesheets.filter(t => t.jobId === j.id).reduce((s, t) => s + (t.hours || 0), 0);
-        const laborRate = 85; // Standard rate assumption
-        const actualLabor = actualH * laborRate;
-        return {
-          ...j, estH, actualH, estLabor, actualLabor,
-          hVariance: estH - actualH,
-          laborVariance: estLabor - actualLabor
-        };
-      });
-      
-      const totalEstLabor = costingData.reduce((s, j) => s + j.estLabor, 0);
-      const totalActualLabor = costingData.reduce((s, j) => s + j.actualLabor, 0);
-      const totalVariance = totalEstLabor - totalActualLabor;
-      
-      rc.innerHTML = `
-        <div class="grid-3" style="margin-bottom:var(--space-lg)">
-          ${kpi('Est. Total Labor', '$' + totalEstLabor.toFixed(0), 'engineering', 'blue')}
-          ${kpi('Actual Total Labor', '$' + totalActualLabor.toFixed(0), 'timer', 'orange')}
-          ${kpi('Overall Variance', '$' + Math.abs(totalVariance).toFixed(0) + ' ' + (totalVariance >= 0 ? 'Under Budget' : 'Over Budget'), 'trending_flat', totalVariance >= 0 ? 'green' : 'red')}
-        </div>
-        <div class="card">
-          <div class="card-header"><h4>Labor Costing Analysis (Completed Jobs)</h4></div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Job</th>
-                  <th>Technician</th>
-                  <th style="text-align:right">Est. Hrs</th>
-                  <th style="text-align:right">Actual Hrs</th>
-                  <th style="text-align:right">Est. Labor</th>
-                  <th style="text-align:right">Actual Labor</th>
-                  <th style="text-align:right">Variance</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${costingData.map(j => `
-                  <tr>
-                    <td class="font-medium"><a href="#/jobs/${j.id}" class="cell-link">${j.number}</a></td>
-                    <td>${j.technicianName || '—'}</td>
-                    <td style="text-align:right">${j.estH}</td>
-                    <td style="text-align:right;font-weight:${j.actualH > j.estH ? '600' : '400'};color:${j.actualH > j.estH ? 'var(--color-danger)' : 'inherit'}">${j.actualH}</td>
-                    <td style="text-align:right">$${j.estLabor.toFixed(0)}</td>
-                    <td style="text-align:right">$${j.actualLabor.toFixed(0)}</td>
-                    <td style="text-align:right;font-weight:600;color:${j.laborVariance >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
-                      ${j.laborVariance >= 0 ? '+' : '-'}$${Math.abs(j.laborVariance).toFixed(0)}
-                    </td>
-                  </tr>
-                `).join('')}
-                ${!costingData.length ? '<tr><td colspan="7" style="text-align:center;padding:20px" class="text-secondary">No completed jobs to analyze</td></tr>' : ''}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-    } else if (activeReport === 'technicians') {
-      rc.innerHTML = `
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header"><h4>Technician Performance</h4></div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th></th><th>Name</th><th>Role</th><th style="text-align:center">Total Jobs</th><th style="text-align:center">Completed</th><th style="text-align:right">Revenue</th></tr></thead>
-              <tbody>
-                ${d.techStats.sort((a, b) => b.revenue - a.revenue).map(t => `
-                  <tr>
-                    <td><div style="width:8px;height:8px;border-radius:50%;background:${t.color}"></div></td>
-                    <td class="font-medium">${t.name}</td>
-                    <td class="text-secondary">${t.role}</td>
-                    <td style="text-align:center">${t.totalJobs}</td>
-                    <td style="text-align:center"><span class="badge badge-success">${t.completed}</span></td>
-                    <td style="text-align:right;font-weight:600">$${t.revenue.toLocaleString()}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h4>Revenue by Technician</h4></div>
-          <div class="card-body">
-            ${d.techStats.map(t => progressBar(t.name, t.revenue, Math.max(...d.techStats.map(x => x.revenue)), t.color)).join('')}
-          </div>
-        </div>
-      `;
-    } else if (activeReport === 'customers') {
-      rc.innerHTML = `
-        <div class="grid-3" style="margin-bottom:var(--space-lg)">
-          ${kpi('Total Customers', d.customers.length, 'people', 'blue')}
-          ${kpi('Active Customers', d.customers.filter(c => c.status === 'Active').length, 'check_circle', 'green')}
-          ${kpi('Total Leads', d.leads.length, 'trending_up', 'orange')}
-        </div>
-        <div class="card">
-          <div class="card-header"><h4>Top Customers by Revenue</h4></div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th>#</th><th>Customer</th><th style="text-align:right">Revenue</th><th>Share</th></tr></thead>
-              <tbody>
-                ${d.topCustomers.map(([name, rev], i) => `
-                  <tr>
-                    <td class="text-secondary">${i + 1}</td>
-                    <td class="font-medium">${name}</td>
-                    <td style="text-align:right;font-weight:600">$${rev.toLocaleString()}</td>
-                    <td>
-                      <div style="display:flex;align-items:center;gap:8px">
-                        <div style="flex:1;height:6px;background:var(--border-color);border-radius:3px;overflow:hidden">
-                          <div style="height:100%;width:${d.totalRevenue > 0 ? (rev/d.totalRevenue*100) : 0}%;background:var(--color-primary);border-radius:3px"></div>
-                        </div>
-                        <span class="text-secondary" style="font-size:var(--font-size-xs)">${d.totalRevenue > 0 ? (rev/d.totalRevenue*100).toFixed(0) : 0}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-    } else if (activeReport === 'inventory') {
-      const sellValue = d.stock.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
-      rc.innerHTML = `
-        <div class="grid-3" style="margin-bottom:var(--space-lg)">
-          ${kpi('Total Items', d.stock.length, 'inventory_2', 'blue')}
-          ${kpi('Stock Value (Cost)', `$${d.totalStockValue.toFixed(0)}`, 'account_balance', 'orange')}
-          ${kpi('Stock Value (Sell)', `$${sellValue.toFixed(0)}`, 'paid', 'green')}
-        </div>
-        ${d.lowStockItems.length > 0 ? `
-          <div class="card" style="margin-bottom:var(--space-lg);border-color:var(--color-danger)">
-            <div class="card-header" style="background:var(--color-danger-bg)">
-              <h4 style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle">warning</span> Low Stock Alert (${d.lowStockItems.length} items)</h4>
-            </div>
-            <div class="card-body" style="padding:0">
-              <table class="data-table">
-                <thead><tr><th>Item</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:center">Reorder Level</th><th>Supplier</th></tr></thead>
-                <tbody>
-                  ${d.lowStockItems.map(i => `
-                    <tr>
-                      <td class="font-medium">${i.name}</td>
-                      <td class="text-secondary" style="font-family:monospace">${i.sku}</td>
-                      <td style="text-align:center;color:var(--color-danger);font-weight:600">${i.quantity}</td>
-                      <td style="text-align:center">${i.reorderLevel}</td>
-                      <td class="text-secondary">${i.supplier}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ` : ''}
-        <div class="card">
-          <div class="card-header"><h4>Stock by Category</h4></div>
-          <div class="card-body">
-            ${barChart(d.stock.reduce((acc, i) => { acc[i.category] = (acc[i.category] || 0) + i.quantity; return acc; }, {}), {}, '#1B6DE0')}
-          </div>
-        </div>
-      `;
+    switch (activeReport) {
+      case 'overview':
+        rc.innerHTML = renderOverviewReport(d);
+        break;
+      case 'revenue':
+        rc.innerHTML = renderRevenueReport(d);
+        break;
+      case 'jobs':
+        rc.innerHTML = renderJobsReport(d);
+        break;
+      case 'job_costing':
+        rc.innerHTML = renderJobCostingReport(d);
+        break;
+      case 'technicians':
+        rc.innerHTML = renderTechniciansReport(d);
+        break;
+      case 'customers':
+        rc.innerHTML = renderCustomersReport(d);
+        break;
+      case 'inventory':
+        rc.innerHTML = renderInventoryReport(d);
+        break;
+      default:
+        rc.innerHTML = '<div class="text-secondary">Select a report to view</div>';
     }
   }
 
@@ -488,6 +258,274 @@ function progressBar(label, value, max, color) {
       </div>
       <div style="height:8px;background:var(--border-color);border-radius:4px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width 0.5s ease"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderOverviewReport(d) {
+  return `
+    <div class="grid-4" style="margin-bottom:var(--space-lg)">
+      ${kpi('Total Revenue', `$${d.totalRevenue.toLocaleString('en-AU',{minimumFractionDigits:0})}`, 'account_balance', 'green')}
+      ${kpi('Outstanding', `$${d.totalOutstanding.toLocaleString('en-AU',{minimumFractionDigits:0})}`, 'pending', 'orange')}
+      ${kpi('Quote Win Rate', `${d.quoteWinRate.toFixed(0)}%`, 'emoji_events', 'blue')}
+      ${kpi('Lead Conversion', `${d.leadConvRate.toFixed(0)}%`, 'trending_up', 'green')}
+    </div>
+    <div class="grid-2" style="margin-bottom:var(--space-lg)">
+      <div class="card">
+        <div class="card-header"><h4>Jobs by Status</h4></div>
+        <div class="card-body">${barChart(d.jobsByStatus, { 'Pending':'#F59E0B','Scheduled':'#3B82F6','In Progress':'#1B6DE0','On Hold':'#6B7280','Completed':'#10B981','Invoiced':'#8B5CF6' })}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h4>Invoices by Status</h4></div>
+        <div class="card-body">${barChart(d.invByStatus, { 'Draft':'#6B7280','Sent':'#3B82F6','Paid':'#10B981','Overdue':'#EF4444' })}</div>
+      </div>
+    </div>
+    <div class="grid-3">
+      ${miniStat('Total Jobs', d.jobs.length, 'build')}
+      ${miniStat('Total Quotes', d.quotes.length, 'request_quote')}
+      ${miniStat('Total Invoices', d.invoices.length, 'receipt_long')}
+      ${miniStat('Total Customers', d.customers.length, 'people')}
+      ${miniStat('Avg Job Value', `$${d.avgJobValue.toFixed(0)}`, 'paid')}
+      ${miniStat('Stock Items', `${d.stock.length} (${d.lowStockItems.length} low)`, 'inventory_2')}
+    </div>
+  `;
+}
+
+function renderRevenueReport(d) {
+  const paidInvoices = d.invoices.filter(i => i.status === 'Paid');
+  const monthlyRev = {};
+  paidInvoices.forEach(i => {
+    const m = new Date(i.issueDate || i.createdAt).toLocaleDateString('en-AU', { month: 'short', year: '2-digit' });
+    monthlyRev[m] = (monthlyRev[m] || 0) + (i.total || 0);
+  });
+
+  const totalCost = d.jobs.reduce((s, j) => s + (j.materialCost || 0), 0);
+  const totalLabor = d.jobs.reduce((s, j) => s + (j.laborCost || 0), 0);
+  const grossProfit = d.totalRevenue - totalCost;
+
+  return `
+    <div class="grid-4" style="margin-bottom:var(--space-lg)">
+      ${kpi('Gross Revenue', `$${d.totalRevenue.toFixed(0)}`, 'account_balance', 'green')}
+      ${kpi('Total Labor', `$${totalLabor.toFixed(0)}`, 'engineering', 'blue')}
+      ${kpi('Material Costs', `$${totalCost.toFixed(0)}`, 'inventory_2', 'orange')}
+      ${kpi('Gross Profit', `$${grossProfit.toFixed(0)}`, 'savings', 'green')}
+    </div>
+    <div class="card" style="margin-bottom:var(--space-lg)">
+      <div class="card-header"><h4>Revenue by Month</h4></div>
+      <div class="card-body">${barChart(monthlyRev, {}, '#1B6DE0')}</div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h4>Profit Breakdown</h4></div>
+      <div class="card-body">
+        ${progressBar('Revenue', d.totalRevenue, d.totalRevenue, '#10B981')}
+        ${progressBar('Labor Cost', totalLabor, d.totalRevenue, '#3B82F6')}
+        ${progressBar('Material Cost', totalCost, d.totalRevenue, '#F59E0B')}
+        ${progressBar('Gross Profit', grossProfit, d.totalRevenue, '#10B981')}
+      </div>
+    </div>
+  `;
+}
+
+function renderJobsReport(d) {
+  const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
+  const avgHours = completedJobs.length > 0 ? completedJobs.reduce((s, j) => s + (j.estimatedHours || 0), 0) / completedJobs.length : 0;
+
+  return `
+    <div class="grid-4" style="margin-bottom:var(--space-lg)">
+      ${kpi('Total Jobs', d.jobs.length, 'build', 'blue')}
+      ${kpi('Completed', completedJobs.length, 'check_circle', 'green')}
+      ${kpi('In Progress', d.jobsByStatus['In Progress'] || 0, 'pending', 'orange')}
+      ${kpi('Avg Hours', avgHours.toFixed(1), 'schedule', 'blue')}
+    </div>
+    <div class="card" style="margin-bottom:var(--space-lg)">
+      <div class="card-header"><h4>Job Status Distribution</h4></div>
+      <div class="card-body">${barChart(d.jobsByStatus, { 'Pending':'#F59E0B','Scheduled':'#3B82F6','In Progress':'#1B6DE0','On Hold':'#6B7280','Completed':'#10B981','Invoiced':'#8B5CF6' })}</div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h4>Top Jobs by Value</h4></div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table">
+          <thead><tr><th>Job</th><th>Customer</th><th>Status</th><th style="text-align:right">Value</th></tr></thead>
+          <tbody>
+            ${d.jobs.sort((a, b) => ((b.laborCost||0)+(b.materialCost||0)) - ((a.laborCost||0)+(a.materialCost||0))).slice(0, 8).map(j => `
+              <tr>
+                <td class="font-medium">${j.number}</td>
+                <td class="text-secondary">${j.customerName}</td>
+                <td><span class="badge badge-neutral">${j.status}</span></td>
+                <td style="text-align:right;font-weight:600">$${((j.laborCost||0)+(j.materialCost||0)).toFixed(0)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderJobCostingReport(d) {
+  const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
+  const costingData = completedJobs.map(j => {
+    const estH = j.estimatedHours || 0;
+    const estLabor = j.laborCost || 0;
+    const actualH = d.timesheets.filter(t => t.jobId === j.id).reduce((s, t) => s + (t.hours || 0), 0);
+    const laborRate = 85; // Standard rate assumption
+    const actualLabor = actualH * laborRate;
+    return {
+      ...j, estH, actualH, estLabor, actualLabor,
+      hVariance: estH - actualH,
+      laborVariance: estLabor - actualLabor
+    };
+  });
+
+  const totalEstLabor = costingData.reduce((s, j) => s + j.estLabor, 0);
+  const totalActualLabor = costingData.reduce((s, j) => s + j.actualLabor, 0);
+  const totalVariance = totalEstLabor - totalActualLabor;
+
+  return `
+    <div class="grid-3" style="margin-bottom:var(--space-lg)">
+      ${kpi('Est. Total Labor', '$' + totalEstLabor.toFixed(0), 'engineering', 'blue')}
+      ${kpi('Actual Total Labor', '$' + totalActualLabor.toFixed(0), 'timer', 'orange')}
+      ${kpi('Overall Variance', '$' + Math.abs(totalVariance).toFixed(0) + ' ' + (totalVariance >= 0 ? 'Under Budget' : 'Over Budget'), 'trending_flat', totalVariance >= 0 ? 'green' : 'red')}
+    </div>
+    <div class="card">
+      <div class="card-header"><h4>Labor Costing Analysis (Completed Jobs)</h4></div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>Technician</th>
+              <th style="text-align:right">Est. Hrs</th>
+              <th style="text-align:right">Actual Hrs</th>
+              <th style="text-align:right">Est. Labor</th>
+              <th style="text-align:right">Actual Labor</th>
+              <th style="text-align:right">Variance</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${costingData.map(j => `
+              <tr>
+                <td class="font-medium"><a href="#/jobs/${j.id}" class="cell-link">${j.number}</a></td>
+                <td>${j.technicianName || '—'}</td>
+                <td style="text-align:right">${j.estH}</td>
+                <td style="text-align:right;font-weight:${j.actualH > j.estH ? '600' : '400'};color:${j.actualH > j.estH ? 'var(--color-danger)' : 'inherit'}">${j.actualH}</td>
+                <td style="text-align:right">$${j.estLabor.toFixed(0)}</td>
+                <td style="text-align:right">$${j.actualLabor.toFixed(0)}</td>
+                <td style="text-align:right;font-weight:600;color:${j.laborVariance >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+                  ${j.laborVariance >= 0 ? '+' : '-'}$${Math.abs(j.laborVariance).toFixed(0)}
+                </td>
+              </tr>
+            `).join('')}
+            ${!costingData.length ? '<tr><td colspan="7" style="text-align:center;padding:20px" class="text-secondary">No completed jobs to analyze</td></tr>' : ''}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderTechniciansReport(d) {
+  return `
+    <div class="card" style="margin-bottom:var(--space-lg)">
+      <div class="card-header"><h4>Technician Performance</h4></div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table">
+          <thead><tr><th></th><th>Name</th><th>Role</th><th style="text-align:center">Total Jobs</th><th style="text-align:center">Completed</th><th style="text-align:right">Revenue</th></tr></thead>
+          <tbody>
+            ${d.techStats.sort((a, b) => b.revenue - a.revenue).map(t => `
+              <tr>
+                <td><div style="width:8px;height:8px;border-radius:50%;background:${t.color}"></div></td>
+                <td class="font-medium">${t.name}</td>
+                <td class="text-secondary">${t.role}</td>
+                <td style="text-align:center">${t.totalJobs}</td>
+                <td style="text-align:center"><span class="badge badge-success">${t.completed}</span></td>
+                <td style="text-align:right;font-weight:600">$${t.revenue.toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h4>Revenue by Technician</h4></div>
+      <div class="card-body">
+        ${d.techStats.map(t => progressBar(t.name, t.revenue, Math.max(...d.techStats.map(x => x.revenue)), t.color)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderCustomersReport(d) {
+  return `
+    <div class="grid-3" style="margin-bottom:var(--space-lg)">
+      ${kpi('Total Customers', d.customers.length, 'people', 'blue')}
+      ${kpi('Active Customers', d.customers.filter(c => c.status === 'Active').length, 'check_circle', 'green')}
+      ${kpi('Total Leads', d.leads.length, 'trending_up', 'orange')}
+    </div>
+    <div class="card">
+      <div class="card-header"><h4>Top Customers by Revenue</h4></div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Customer</th><th style="text-align:right">Revenue</th><th>Share</th></tr></thead>
+          <tbody>
+            ${d.topCustomers.map(([name, rev], i) => `
+              <tr>
+                <td class="text-secondary">${i + 1}</td>
+                <td class="font-medium">${name}</td>
+                <td style="text-align:right;font-weight:600">$${rev.toLocaleString()}</td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <div style="flex:1;height:6px;background:var(--border-color);border-radius:3px;overflow:hidden">
+                      <div style="height:100%;width:${d.totalRevenue > 0 ? (rev/d.totalRevenue*100) : 0}%;background:var(--color-primary);border-radius:3px"></div>
+                    </div>
+                    <span class="text-secondary" style="font-size:var(--font-size-xs)">${d.totalRevenue > 0 ? (rev/d.totalRevenue*100).toFixed(0) : 0}%</span>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderInventoryReport(d) {
+  const sellValue = d.stock.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
+  return `
+    <div class="grid-3" style="margin-bottom:var(--space-lg)">
+      ${kpi('Total Items', d.stock.length, 'inventory_2', 'blue')}
+      ${kpi('Stock Value (Cost)', `$${d.totalStockValue.toFixed(0)}`, 'account_balance', 'orange')}
+      ${kpi('Stock Value (Sell)', `$${sellValue.toFixed(0)}`, 'paid', 'green')}
+    </div>
+    ${d.lowStockItems.length > 0 ? `
+      <div class="card" style="margin-bottom:var(--space-lg);border-color:var(--color-danger)">
+        <div class="card-header" style="background:var(--color-danger-bg)">
+          <h4 style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle">warning</span> Low Stock Alert (${d.lowStockItems.length} items)</h4>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table">
+            <thead><tr><th>Item</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:center">Reorder Level</th><th>Supplier</th></tr></thead>
+            <tbody>
+              ${d.lowStockItems.map(i => `
+                <tr>
+                  <td class="font-medium">${i.name}</td>
+                  <td class="text-secondary" style="font-family:monospace">${i.sku}</td>
+                  <td style="text-align:center;color:var(--color-danger);font-weight:600">${i.quantity}</td>
+                  <td style="text-align:center">${i.reorderLevel}</td>
+                  <td class="text-secondary">${i.supplier}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+    <div class="card">
+      <div class="card-header"><h4>Stock by Category</h4></div>
+      <div class="card-body">
+        ${barChart(d.stock.reduce((acc, i) => { acc[i.category] = (acc[i.category] || 0) + i.quantity; return acc; }, {}), {}, '#1B6DE0')}
       </div>
     </div>
   `;
