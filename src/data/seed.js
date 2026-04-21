@@ -275,7 +275,6 @@ export function seedData() {
   store.save('technicians', technicians);
 
   store.markSeeded();
-  console.log('✅ Simpro seed data loaded');
 }
 
 export { technicians };
