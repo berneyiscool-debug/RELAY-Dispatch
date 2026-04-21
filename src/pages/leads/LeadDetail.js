@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderLeadDetail(container, { id }) {
   const lead = store.getById('leads', id);
@@ -20,21 +21,17 @@ export function renderLeadDetail(container, { id }) {
   const statusBadges = { 'New': 'badge-info', 'Contacted': 'badge-primary', 'Qualified': 'badge-warning', 'Proposal': 'badge-warning', 'Negotiation': 'badge-primary', 'Won': 'badge-success', 'Lost': 'badge-danger' };
 
   container.innerHTML = `
-    <div class="detail-header">
-      <div class="detail-header-info">
-        <div class="detail-header-icon" style="background:var(--color-info-bg);color:var(--color-info)">
-          <span class="material-icons-outlined">trending_up</span>
-        </div>
-        <div>
-          <div class="detail-header-text"><h2>${lead.title}</h2></div>
-          <div class="detail-header-meta">
-            <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${lead.customerName}</span>
-            <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${lead.contactName}</span>
-            <span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${lead.status}</span>
-          </div>
-        </div>
-      </div>
-      <div class="flex gap-sm">
+    ${renderDetailHeader({
+      title: lead.title,
+      icon: 'trending_up',
+      iconBgColor: 'var(--color-info-bg)',
+      iconTextColor: 'var(--color-info)',
+      metaHtml: `
+        <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${lead.customerName}</span>
+        <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${lead.contactName}</span>
+        <span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${lead.status}</span>
+      `,
+      actionsHtml: `
         <button class="btn btn-primary" id="btn-convert-quote">
           <span class="material-icons-outlined">request_quote</span> Convert to Quote
         </button>
@@ -44,8 +41,8 @@ export function renderLeadDetail(container, { id }) {
         <button class="btn btn-danger" id="btn-delete-lead">
           <span class="material-icons-outlined">delete</span>
         </button>
-      </div>
-    </div>
+      `
+    })}
 
     <div class="grid-2">
       <div class="card">

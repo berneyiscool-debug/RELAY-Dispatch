@@ -8,6 +8,7 @@ import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
@@ -31,33 +32,27 @@ export function renderInvoiceDetail(container, { id }) {
 
   function render() {
     container.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-header-info">
-          <div class="detail-header-icon" style="background:var(--color-success-bg);color:var(--color-success)">
-            <span class="material-icons-outlined">receipt_long</span>
-          </div>
-          <div>
-            <div class="detail-header-text">
-              <h2>
-                ${isNew ? 'New Invoice' : invoice.number}
-                ${invoice.invoiceType === 'CreditNote' ? '<span class="badge badge-danger">CREDIT NOTE</span>' : invoice.invoiceType && invoice.invoiceType !== 'Standard' ? `<span class="badge badge-primary">${invoice.invoiceType.toUpperCase()}</span>` : ''}
-              </h2>
-            </div>
-            <div class="detail-header-meta">
-              ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${invoice.customerName}</span>` : ''}
-              ${invoice.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${invoice.jobNumber}</span>` : ''}
-              <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${invoice.status}</span>
-            </div>
-          </div>
-        </div>
-        <div class="flex gap-sm">
+      ${renderDetailHeader({
+        title: `
+          ${isNew ? 'New Invoice' : invoice.number}
+          ${invoice.invoiceType === 'CreditNote' ? '<span class="badge badge-danger">CREDIT NOTE</span>' : invoice.invoiceType && invoice.invoiceType !== 'Standard' ? `<span class="badge badge-primary">${invoice.invoiceType.toUpperCase()}</span>` : ''}
+        `,
+        icon: 'receipt_long',
+        iconBgColor: 'var(--color-success-bg)',
+        iconTextColor: 'var(--color-success)',
+        metaHtml: `
+          ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${invoice.customerName}</span>` : ''}
+          ${invoice.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${invoice.jobNumber}</span>` : ''}
+          <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${invoice.status}</span>
+        `,
+        actionsHtml: `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf"><span class="material-icons-outlined">picture_as_pdf</span> Preview PDF</button>` : ''}
           ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice"><span class="material-icons-outlined">send</span> Send</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder"><span class="material-icons-outlined">notifications</span> Send Reminder</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
           ${!isNew ? `<button class="btn btn-danger btn-icon" id="btn-delete-invoice"><span class="material-icons-outlined">delete</span></button>` : ''}
-        </div>
-      </div>
+        `
+      })}
 
       <!-- Invoice form -->
       <div class="card" style="margin-bottom:var(--space-lg)">

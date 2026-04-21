@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderJobDetail(container, { id }) {
   const job = store.getById('jobs', id);
@@ -25,27 +26,21 @@ export function renderJobDetail(container, { id }) {
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
 
     container.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-header-info">
-          <div class="detail-header-icon" style="background:var(--color-primary-light);color:var(--color-primary)">
-            <span class="material-icons-outlined">build</span>
-          </div>
-          <div>
-            <div class="detail-header-text"><h2>${job.number} — ${job.title}</h2></div>
-            <div class="detail-header-meta">
-              <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${job.customerName}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${job.technicianName || 'Unassigned'}</span>
-              <span class="badge ${sb[job.status] || 'badge-neutral'}">${job.status}</span>
-              <span class="badge ${pb[job.priority] || 'badge-neutral'}">${job.priority}</span>
-            </div>
-          </div>
-        </div>
-        <div class="flex gap-sm">
+      ${renderDetailHeader({
+        title: `${job.number} — ${job.title}`,
+        icon: 'build',
+        metaHtml: `
+          <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${job.customerName}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${job.technicianName || 'Unassigned'}</span>
+          <span class="badge ${sb[job.status] || 'badge-neutral'}">${job.status}</span>
+          <span class="badge ${pb[job.priority] || 'badge-neutral'}">${job.priority}</span>
+        `,
+        actionsHtml: `
           <!-- Moved invoice creation to Invoices tab -->
           <button class="btn btn-secondary" id="btn-edit-job"><span class="material-icons-outlined">edit</span> Edit</button>
           <button class="btn btn-danger btn-icon" id="btn-delete-job"><span class="material-icons-outlined">delete</span></button>
-        </div>
-      </div>
+        `
+      })}
 
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
         <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>

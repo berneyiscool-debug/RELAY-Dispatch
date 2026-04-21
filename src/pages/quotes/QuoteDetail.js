@@ -8,6 +8,7 @@ import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderQuoteDetail(container, { id, customerId }) {
   const isNew = id === 'new';
@@ -40,22 +41,16 @@ export function renderQuoteDetail(container, { id, customerId }) {
 
   function render() {
     container.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-header-info">
-          <div class="detail-header-icon" style="background:var(--color-warning-bg);color:var(--color-warning)">
-            <span class="material-icons-outlined">request_quote</span>
-          </div>
-          <div>
-            <div class="detail-header-text">
-              <h2>${isNew ? 'New Quote' : quote.number} ${quote.version > 1 ? `<span class="badge badge-neutral">v${quote.version}</span>` : ''}</h2>
-            </div>
-            <div class="detail-header-meta">
-              ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${quote.customerName}</span>` : ''}
-              <span class="badge ${sb[quote.status] || 'badge-neutral'}">${quote.status}</span>
-            </div>
-          </div>
-        </div>
-        <div class="flex gap-sm">
+      ${renderDetailHeader({
+        title: `${isNew ? 'New Quote' : quote.number} ${quote.version > 1 ? `<span class="badge badge-neutral">v${quote.version}</span>` : ''}`,
+        icon: 'request_quote',
+        iconBgColor: 'var(--color-warning-bg)',
+        iconTextColor: 'var(--color-warning)',
+        metaHtml: `
+          ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${quote.customerName}</span>` : ''}
+          <span class="badge ${sb[quote.status] || 'badge-neutral'}">${quote.status}</span>
+        `,
+        actionsHtml: `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
           ${!isNew && quote.status !== 'Archived' ? `<button class="btn btn-secondary" id="btn-create-revision"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
           ${!isNew && quote.status === 'Accepted' ? `<button class="btn btn-primary" id="btn-convert-job"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
@@ -67,8 +62,8 @@ export function renderQuoteDetail(container, { id, customerId }) {
                 ${!isNew ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Quote</a>` : ''}
              </div>
           </div>
-        </div>
-      </div>
+        `
+      })}
 
       <!-- Quote Builder Form -->
       <div class="card" style="margin-bottom:var(--space-lg)">
