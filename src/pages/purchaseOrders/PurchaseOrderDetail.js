@@ -6,6 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderPurchaseOrderDetail(container, { id, jobId }) {
   const isNew = id === 'new';
@@ -40,25 +41,19 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
 
   function render() {
     container.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-header-info">
-          <div class="detail-header-icon" style="background:var(--color-primary-light);color:var(--color-primary)">
-            <span class="material-icons-outlined">shopping_cart</span>
-          </div>
-          <div>
-            <div class="detail-header-text"><h2>${po.number || 'New Purchase Order'}</h2></div>
-            <div class="detail-header-meta">
-              <span class="badge ${po.status === 'Draft' ? 'badge-neutral' : po.status === 'Issued' ? 'badge-primary' : po.status === 'Received' ? 'badge-success' : 'badge-danger'}">${po.status}</span>
-            </div>
-          </div>
-        </div>
-        <div class="flex gap-sm">
+      ${renderDetailHeader({
+        title: po.number || 'New Purchase Order',
+        icon: 'shopping_cart',
+        metaHtml: `
+          <span class="badge ${po.status === 'Draft' ? 'badge-neutral' : po.status === 'Issued' ? 'badge-primary' : po.status === 'Received' ? 'badge-success' : 'badge-danger'}">${po.status}</span>
+        `,
+        actionsHtml: `
           <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
           <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> Save PO</button>
           ${!isNew && po.status === 'Draft' ? `<button class="btn btn-primary" id="btn-issue"><span class="material-icons-outlined">send</span> Issue PO</button>` : ''}
           ${!isNew && po.status === 'Issued' ? `<button class="btn btn-success" id="btn-receive"><span class="material-icons-outlined">inventory</span> Receive PO</button>` : ''}
-        </div>
-      </div>
+        `
+      })}
 
       <div class="grid-2">
         <div class="card">

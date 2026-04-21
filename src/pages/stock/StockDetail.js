@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderStockDetail(container, { id }) {
   const item = store.getById('stock', id);
@@ -20,25 +21,21 @@ export function renderStockDetail(container, { id }) {
   const margin = item.unitPrice > 0 ? ((item.unitPrice - item.costPrice) / item.unitPrice * 100).toFixed(1) : 0;
 
   container.innerHTML = `
-    <div class="detail-header">
-      <div class="detail-header-info">
-        <div class="detail-header-icon" style="background:${isLow ? 'var(--color-danger-bg)' : 'var(--color-success-bg)'};color:${isLow ? 'var(--color-danger)' : 'var(--color-success)'}">
-          <span class="material-icons-outlined">inventory_2</span>
-        </div>
-        <div>
-          <div class="detail-header-text"><h2>${item.name}</h2></div>
-          <div class="detail-header-meta">
-            <span style="font-family:monospace">${item.sku}</span>
-            <span class="badge badge-neutral">${item.category}</span>
-            ${isLow ? '<span class="badge badge-danger">LOW STOCK</span>' : '<span class="badge badge-success">IN STOCK</span>'}
-          </div>
-        </div>
-      </div>
-      <div class="flex gap-sm">
+    ${renderDetailHeader({
+      title: item.name,
+      icon: 'inventory_2',
+      iconBgColor: isLow ? 'var(--color-danger-bg)' : 'var(--color-success-bg)',
+      iconTextColor: isLow ? 'var(--color-danger)' : 'var(--color-success)',
+      metaHtml: `
+        <span style="font-family:monospace">${item.sku}</span>
+        <span class="badge badge-neutral">${item.category}</span>
+        ${isLow ? '<span class="badge badge-danger">LOW STOCK</span>' : '<span class="badge badge-success">IN STOCK</span>'}
+      `,
+      actionsHtml: `
         <button class="btn btn-secondary" id="btn-edit-stock"><span class="material-icons-outlined">edit</span> Edit</button>
         <button class="btn btn-danger btn-icon" id="btn-delete-stock"><span class="material-icons-outlined">delete</span></button>
-      </div>
-    </div>
+      `
+    })}
 
     <div class="grid-3" style="margin-bottom:var(--space-lg)">
       <div class="stat-card">

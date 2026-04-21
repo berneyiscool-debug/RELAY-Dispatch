@@ -206,7 +206,7 @@ function generateDocument(type, data) {
   `;
 }
 
-function formatDate(dateStr) {
+export function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
     const d = new Date(dateStr);

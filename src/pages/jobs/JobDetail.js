@@ -45,8 +45,8 @@ export function renderJobDetail(container, { id }) {
           <!-- Moved invoice creation to Invoices tab -->
           <button class="btn btn-secondary" id="btn-edit-job"><span class="material-icons-outlined">edit</span> Edit</button>
           <button class="btn btn-danger btn-icon" id="btn-delete-job"><span class="material-icons-outlined">delete</span></button>
-        </div>
-      </div>
+        `
+      })}
 
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
         <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
