@@ -69,8 +69,3 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
 
   return { close, modal, overlay };
 }
-
-export function closeModal() {
-  const overlay = document.getElementById('modal-overlay');
-  if (overlay) overlay.remove();
-}
