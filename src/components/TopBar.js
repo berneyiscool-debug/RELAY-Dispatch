@@ -115,9 +115,18 @@ function toggleNotificationsDropdown(btn) {
   markAllBtn.className = 'btn btn-ghost btn-sm';
   markAllBtn.textContent = 'Mark all as read';
   markAllBtn.onclick = () => {
-    notifs.forEach(n => {
-      if (!n.read) store.update('notifications', n.id, { read: true });
+    const allNotifs = store.getAll('notifications');
+    let changed = false;
+    allNotifs.forEach(n => {
+      if (!n.read) {
+        n.read = true;
+        n.updatedAt = new Date().toISOString();
+        changed = true;
+      }
     });
+    if (changed) {
+      store.save('notifications', allNotifs);
+    }
     dropdown.remove();
   };
   header.appendChild(markAllBtn);
