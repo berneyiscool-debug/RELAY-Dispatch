@@ -14,6 +14,7 @@ export function renderInvoicesList(container) {
     <div class="page-header">
       <h1>Invoices</h1>
       <div class="page-header-actions">
+        <button class="btn btn-outline" id="btn-export-accounting" style="display:none;"><span class="material-icons-outlined">download</span> Export to Accounting</button>
         <button class="btn btn-primary" id="btn-new-invoice"><span class="material-icons-outlined">add</span> New Invoice</button>
       </div>
     </div>
@@ -50,6 +51,19 @@ export function renderInvoicesList(container) {
   container.querySelector('#invoices-table-container').appendChild(table);
   container.querySelector('#btn-new-invoice').addEventListener('click', () => router.navigate('/invoices/new'));
 
+  const btnExport = container.querySelector('#btn-export-accounting');
+
+  function updateExportButtonVisibility(data) {
+    // Show export button if there's at least one paid invoice in the current view
+    if (data.some(i => i.status === 'Paid')) {
+      btnExport.style.display = 'inline-flex';
+    } else {
+      btnExport.style.display = 'none';
+    }
+  }
+
+  updateExportButtonVisibility(filteredData);
+
   container.querySelectorAll('.toolbar-filter').forEach(btn => {
     btn.addEventListener('click', () => {
       container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
@@ -57,6 +71,42 @@ export function renderInvoicesList(container) {
       const f = btn.dataset.filter;
       filteredData = f === 'all' ? [...invoices] : invoices.filter(i => i.status === f);
       table.updateData(filteredData);
+      updateExportButtonVisibility(filteredData);
+    });
+  });
+
+  btnExport.addEventListener('click', () => {
+    const paidInvoices = filteredData.filter(i => i.status === 'Paid');
+    if (paidInvoices.length === 0) return;
+
+    // Generate mock CSV
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "InvoiceNumber,ContactName,EmailAddress,InvoiceDate,DueDate,TotalAmount,TaxAmount,AccountCode\n";
+
+    paidInvoices.forEach(inv => {
+      const row = [
+        inv.number,
+        `"${inv.customerName.replace(/"/g, '""')}"`,
+        inv.email || '',
+        inv.issueDate ? inv.issueDate.split('T')[0] : '',
+        inv.dueDate ? inv.dueDate.split('T')[0] : '',
+        (inv.total || 0).toFixed(2),
+        (inv.tax || 0).toFixed(2),
+        "200" // Mock account code
+      ].join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `accounting_export_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    import('../../components/Notifications.js').then(({ showToast }) => {
+      showToast(`Exported ${paidInvoices.length} paid invoices`, 'success');
     });
   });
 
@@ -64,5 +114,6 @@ export function renderInvoicesList(container) {
     const q = e.target.value.toLowerCase();
     filteredData = invoices.filter(i => i.number.toLowerCase().includes(q) || i.customerName.toLowerCase().includes(q) || (i.jobNumber||'').toLowerCase().includes(q));
     table.updateData(filteredData);
+    updateExportButtonVisibility(filteredData);
   });
 }

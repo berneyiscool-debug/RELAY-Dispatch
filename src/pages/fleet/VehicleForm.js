@@ -1,0 +1,84 @@
+import { store } from '../../data/store.js';
+import { router } from '../../router.js';
+
+export function renderVehicleForm(container, params) {
+  const isNew = params.id === 'new';
+  let vehicle = isNew ? { status: 'Active' } : store.getById('fleet', params.id);
+
+  if (!vehicle && !isNew) {
+    container.innerHTML = `<div class="card"><p>Vehicle not found.</p></div>`;
+    return;
+  }
+
+  const staff = store.getAll('people').filter(p => p.type === 'Staff');
+
+  container.innerHTML = `
+    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h1>${isNew ? 'New Vehicle' : 'Edit Vehicle'}</h1>
+      <div>
+        <button class="btn btn-outline" id="btn-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-save">Save</button>
+      </div>
+    </div>
+
+    <div class="card" style="max-width: 600px;">
+      <form id="vehicle-form" style="display: flex; flex-direction: column; gap: 15px;">
+        <div class="form-group">
+          <label>Vehicle Name/ID *</label>
+          <input type="text" id="name" class="form-control" value="${vehicle.name || ''}" required />
+        </div>
+        <div class="form-group">
+          <label>License Plate</label>
+          <input type="text" id="licensePlate" class="form-control" value="${vehicle.licensePlate || ''}" />
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="type" class="form-control">
+            ${['Van', 'Truck', 'Car', 'Other'].map(t => `<option value="${t}" ${vehicle.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="status" class="form-control">
+            ${['Active', 'Maintenance', 'Inactive'].map(s => `<option value="${s}" ${vehicle.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Assign To (Staff)</label>
+          <select id="assignedToId" class="form-control">
+            <option value="">Unassigned</option>
+            ${staff.map(s => `<option value="${s.id}" ${vehicle.assignedToId === s.id ? 'selected' : ''}>${s.firstName} ${s.lastName}</option>`).join('')}
+          </select>
+        </div>
+      </form>
+    </div>
+  `;
+
+  container.querySelector('#btn-cancel').addEventListener('click', () => {
+    router.navigate(isNew ? '/fleet' : `/fleet/${params.id}`);
+  });
+
+  container.querySelector('#btn-save').addEventListener('click', () => {
+    const data = {
+      name: container.querySelector('#name').value,
+      licensePlate: container.querySelector('#licensePlate').value,
+      type: container.querySelector('#type').value,
+      status: container.querySelector('#status').value,
+      assignedToId: container.querySelector('#assignedToId').value
+    };
+
+    if (!data.name) {
+      alert('Vehicle Name is required.');
+      return;
+    }
+
+    if (isNew) {
+      data.logs = [];
+      store.create('fleet', data);
+    } else {
+      store.update('fleet', params.id, data);
+    }
+
+    router.navigate('/fleet');
+  });
+}

@@ -9,6 +9,7 @@ import { showToast } from '../../components/Notifications.js';
 export function renderStockForm(container, { id }) {
   const isEdit = id && id !== 'new';
   const item = isEdit ? store.getById('stock', id) : {};
+  const vehicles = store.getAll('fleet');
 
   container.innerHTML = `
     <div class="page-header"><h1>${isEdit ? 'Edit Stock Item' : 'New Stock Item'}</h1></div>
@@ -64,7 +65,10 @@ export function renderStockForm(container, { id }) {
           <div class="form-group">
             <label class="form-label">Location</label>
             <select class="form-select" name="location">
-              ${['Warehouse A','Warehouse B','Van Stock','On Order'].map(l => `<option ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+              ${['Warehouse A','Warehouse B','On Order'].map(l => `<option ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+              <optgroup label="Fleet Vehicles">
+                ${vehicles.map(v => `<option value="${v.name}" ${item.location === v.name ? 'selected' : ''}>${v.name}</option>`).join('')}
+              </optgroup>
             </select>
           </div>
         </form>
@@ -86,7 +90,36 @@ export function renderStockForm(container, { id }) {
     data.unitPrice = parseFloat(data.unitPrice) || 0;
     data.reorderLevel = parseInt(data.reorderLevel) || 10;
 
-    if (isEdit) { store.update('stock', id, data); showToast('Item updated', 'success'); router.navigate(`/stock/${id}`); }
-    else { data.sku = data.sku || `SKU-${Date.now().toString().slice(-4)}`; const n = store.create('stock', data); showToast('Item created', 'success'); router.navigate(`/stock/${n.id}`); }
+    if (isEdit) {
+      store.update('stock', id, data);
+      showToast('Item updated', 'success');
+      checkReorderLevel(data);
+      router.navigate(`/stock/${id}`);
+    }
+    else {
+      data.sku = data.sku || `SKU-${Date.now().toString().slice(-4)}`;
+      const n = store.create('stock', data);
+      showToast('Item created', 'success');
+      checkReorderLevel(data);
+      router.navigate(`/stock/${n.id}`);
+    }
   });
+}
+
+function checkReorderLevel(data) {
+  if (data.quantity <= data.reorderLevel) {
+    const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+    if (currentUser.permissions && currentUser.permissions.includes('stock_maintenance')) {
+      import('../../components/Notifications.js').then(({ showToast }) => {
+        showToast(`Auto-Reorder Alert: ${data.name} is at or below its reorder level (${data.quantity} left).`, 'warning');
+      });
+      // Optionally create a global notification
+      store.create('notifications', {
+        title: 'Stock Auto-Reorder',
+        message: `${data.name} (SKU: ${data.sku}) has reached its reorder level. Current quantity: ${data.quantity}. Please reorder from ${data.supplier || 'supplier'}.`,
+        read: false,
+        link: '/stock'
+      });
+    }
+  }
 }
