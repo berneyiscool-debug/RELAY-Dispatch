@@ -5,9 +5,9 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
+import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
-import { escapeHTML } from '../../utils/security.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderPersonDetail(container, { id }) {
@@ -81,9 +81,11 @@ export function renderPersonDetail(container, { id }) {
 
     // Delete
     container.querySelector('#btn-delete-person').addEventListener('click', () => {
+      const content = document.createElement('div');
+      content.innerHTML = `<p>Are you sure you want to delete <strong>${escapeHTML(person.company)}</strong>? This action cannot be undone.</p>`;
       showModal({
         title: 'Delete Customer',
-        content: `<p>Are you sure you want to delete <strong>${person.company}</strong>? This action cannot be undone.</p>`,
+        content,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Delete', className: 'btn-danger', onClick: (close) => {

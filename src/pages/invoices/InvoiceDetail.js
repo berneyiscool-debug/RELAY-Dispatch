@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
+import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
@@ -270,8 +271,10 @@ export function renderInvoiceDetail(container, { id }) {
     });
 
     container.querySelector('#btn-delete-invoice')?.addEventListener('click', () => {
+      const content = document.createElement('div');
+      content.innerHTML = `<p>Delete invoice <strong>${escapeHTML(invoice.number)}</strong>?</p>`;
       showModal({
-        title: 'Delete Invoice', content: `<p>Delete invoice <strong>${invoice.number}</strong>?</p>`,
+        title: 'Delete Invoice', content,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('invoices', id); showToast('Invoice deleted', 'success'); close(); router.navigate('/invoices'); }},

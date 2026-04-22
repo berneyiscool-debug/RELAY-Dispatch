@@ -592,9 +592,8 @@ export function renderJobDetail(container, { id }) {
       `;
 
       tc.querySelector('#btn-add-form')?.addEventListener('click', () => {
-        showModal({
-          title: 'Complete Form',
-          content: `
+        const content = document.createElement('div');
+        content.innerHTML = `
             <div class="form-group">
               <label class="form-label">Form Type</label>
               <select class="form-select" id="new-form-type">
@@ -616,7 +615,10 @@ export function renderJobDetail(container, { id }) {
               <label class="form-label">Notes</label>
               <textarea class="form-textarea" id="new-form-notes"></textarea>
             </div>
-          `,
+          `;
+        showModal({
+          title: 'Complete Form',
+          content,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
             { label: 'Submit', className: 'btn-primary', onClick: (close) => {
@@ -747,14 +749,16 @@ export function renderJobDetail(container, { id }) {
       });
 
       tc.querySelector('#btn-create-progress-invoice')?.addEventListener('click', () => {
-        showModal({
-          title: 'Create Progress Invoice',
-          content: `
+        const content = document.createElement('div');
+        content.innerHTML = `
             <div class="form-group">
               <label class="form-label">Percentage Complete (%)</label>
               <input type="number" id="progress-percent" class="form-input" min="1" max="100" value="50" />
             </div>
-          `,
+          `;
+        showModal({
+          title: 'Create Progress Invoice',
+          content,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
             { label: 'Create', className: 'btn-primary', onClick: (close) => {
@@ -785,8 +789,10 @@ export function renderJobDetail(container, { id }) {
     container.querySelector('#btn-edit-job')?.addEventListener('click', () => router.navigate(`/jobs/${id}/edit`));
 
     container.querySelector('#btn-delete-job')?.addEventListener('click', () => {
+      const content = document.createElement('div');
+      content.innerHTML = `<p>Delete job <strong>${escapeHTML(job.number)}</strong>?</p>`;
       showModal({
-        title: 'Delete Job', content: `<p>Delete job <strong>${escapeHTML(job.number)}</strong>?</p>`,
+        title: 'Delete Job', content,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('jobs', id); showToast('Job deleted', 'success'); close(); router.navigate('/jobs'); }},

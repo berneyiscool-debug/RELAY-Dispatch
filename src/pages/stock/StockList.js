@@ -61,14 +61,13 @@ export function renderStockList(container) {
       showToast('No stock items available to transfer', 'error');
       return;
     }
-    showModal({
-      title: 'Transfer Stock',
-      content: `
+    const content = document.createElement('div');
+    content.innerHTML = `
         <div class="form-group">
           <label class="form-label">Item to Transfer *</label>
           <select class="form-select" id="transfer-item">
             <option value="">Select item...</option>
-            ${stockItems.map(s => `<option value="${s.id}">${s.name} (Qty: ${s.quantity}) - ${s.location}</option>`).join('')}
+            ${stockItems.map(s => `<option value="${escapeHTML(s.id)}">${escapeHTML(s.name)} (Qty: ${s.quantity}) - ${escapeHTML(s.location)}</option>`).join('')}
           </select>
         </div>
         <div class="form-row">
@@ -77,7 +76,7 @@ export function renderStockList(container) {
             <select class="form-select" id="transfer-to">
               <option value="">Select location...</option>
               <option value="Main Warehouse">Main Warehouse</option>
-              ${technicians.map(t => `<option value="Vehicle - ${t.name}">Vehicle - ${t.name}</option>`).join('')}
+              ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
@@ -85,7 +84,10 @@ export function renderStockList(container) {
             <input type="number" class="form-input" id="transfer-qty" min="1" value="1" />
           </div>
         </div>
-      `,
+      `;
+    showModal({
+      title: 'Transfer Stock',
+      content,
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
         { label: 'Transfer', className: 'btn-primary', onClick: (close) => {
