@@ -135,4 +135,59 @@ describe('DataStore', () => {
       assert.strictEqual(result, null);
     });
   });
+
+  describe('getSettings', () => {
+    test('returns default settings when no data exists', () => {
+      const settings = store.getSettings();
+      assert.strictEqual(settings.markupPercent, 20);
+      assert.strictEqual(settings.laborRates.length, 3);
+      assert.strictEqual(settings.laborRates[0].name, 'Standard Rate');
+    });
+
+    test('returns stored settings when they exist', () => {
+      const customSettings = {
+        markupPercent: 25,
+        laborRates: [{ id: 'r1', name: 'Custom', rate: 100 }]
+      };
+      global.localStorage.setItem(store._key('settings'), JSON.stringify(customSettings));
+
+      const result = store.getSettings();
+      assert.deepStrictEqual(result, customSettings);
+    });
+
+    test('returns defaults on parse failure', () => {
+      global.localStorage.setItem(store._key('settings'), 'invalid json');
+
+      const result = store.getSettings();
+      assert.strictEqual(result.markupPercent, 20);
+      assert.strictEqual(result.laborRates.length, 3);
+      assert.strictEqual(result.laborRates[0].name, 'Standard Rate');
+    });
+  });
+
+  describe('saveSettings', () => {
+    test('saves settings to localStorage', () => {
+      const settings = { markupPercent: 30, laborRates: [] };
+      store.saveSettings(settings);
+
+      const stored = global.localStorage.getItem(store._key('settings'));
+      assert.strictEqual(stored, JSON.stringify(settings));
+    });
+
+    test('emits event on saveSettings', () => {
+      const settings = { markupPercent: 30, laborRates: [] };
+      let emittedData = null;
+      let emitCount = 0;
+
+      store.on('settings', (data) => {
+        emittedData = data;
+        emitCount++;
+      });
+
+      store.saveSettings(settings);
+
+      assert.strictEqual(emitCount, 1);
+      assert.deepStrictEqual(emittedData, settings);
+    });
+  });
 });
