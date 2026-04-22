@@ -21,6 +21,16 @@ export function renderJobDetail(container, { id }) {
   const sb = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary' };
   const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
   let activeTab = 'overview';
+  let cachedStockOptionsHtml = null;
+
+  function getStockOptionsHtml() {
+    if (!cachedStockOptionsHtml) {
+      cachedStockOptionsHtml = store.getAll('stock')
+        .map(s => `<option value="${s.id}">${escapeHTML(s.name)} (Qty: ${s.quantity}) - $${s.costPrice || s.unitPrice}</option>`)
+        .join('');
+    }
+    return cachedStockOptionsHtml;
+  }
 
   function render() {
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
@@ -242,7 +252,7 @@ export function renderJobDetail(container, { id }) {
                 <div style="display:flex;gap:8px">
                   <select class="form-select" id="mat-select" style="flex:2">
                     <option value="">Select from Stock...</option>
-                    ${store.getAll('stock').map(s => `<option value="${s.id}">${s.name} (Qty: ${s.quantity}) - $${s.costPrice || s.unitPrice}</option>`).join('')}
+                    ${getStockOptionsHtml()}
                   </select>
                   <input type="number" class="form-input" id="mat-qty" value="1" min="1" style="flex:1" />
                   <button class="btn btn-primary" id="btn-add-material">Add</button>
@@ -331,6 +341,7 @@ export function renderJobDetail(container, { id }) {
 
         // Deduct from stock
         store.update('stock', stockId, { quantity: stockItem.quantity - qty });
+        cachedStockOptionsHtml = null; // Invalidate cache
         
         // Add to job materials
         if (!job.materials) job.materials = [];
