@@ -179,59 +179,58 @@ export function renderScheduleView(container) {
       <!-- Calendar Grid -->
       <div class="card" style="overflow:hidden">
         <div style="display:flex;height:calc(100vh - 310px);overflow:hidden">
-          <!-- Technician sidebar -->
-          <div style="width:160px;min-width:160px;border-right:1px solid var(--border-color);overflow-y:auto;background:var(--content-bg);flex-shrink:0">
-            <div style="height:44px;border-bottom:1px solid var(--border-color);padding:12px;font-size:var(--font-size-xs);font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">
-              Technicians
-            </div>
-            ${(selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId)).map(tech => `
-              <div style="height:${hours.length * 48}px;padding:10px 12px;border-bottom:1px solid var(--border-color);display:flex;align-items:flex-start;gap:8px">
-                <div style="width:8px;height:8px;border-radius:50%;background:${tech.color};margin-top:4px;flex-shrink:0"></div>
-                <div>
-                  <div style="font-size:var(--font-size-sm);font-weight:600">${tech.name}</div>
-                  <div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">${tech.role}</div>
-                  <div style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-top:4px">
-                    ${blocks.filter(b => b.technicianId === tech.id).length} jobs
-                  </div>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-
           <!-- Calendar -->
           <div style="flex:1;overflow:auto" id="calendar-scroll">
-            <!-- Day headers -->
-            <div style="display:grid;grid-template-columns:52px repeat(${days.length}, 1fr);border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:2">
-              <div style="height:44px;border-right:1px solid var(--border-color)"></div>
-              ${days.map(d => {
-                const isToday = d.toDateString() === new Date().toDateString();
-                return `
-                  <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);${isToday ? 'background:var(--color-primary-light)' : ''}">
-                    <div style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase">${dayNames[d.getDay()]}</div>
-                    <div style="font-size:var(--font-size-md);font-weight:600;${isToday ? 'color:var(--color-primary)' : ''}">${d.getDate()}</div>
+            <!-- Top headers: Technicians -->
+            <div style="display:grid;grid-template-columns:80px repeat(${(selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId)).length}, minmax(160px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
+              <!-- Sticky Top-Left corner for Time/Date header -->
+              <div style="height:44px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
+                Time
+              </div>
+              ${(selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId)).map(tech => `
+                <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
+                  <div style="font-size:var(--font-size-sm);font-weight:600;display:flex;align-items:center;gap:6px">
+                    <div style="width:8px;height:8px;border-radius:50%;background:${tech.color};flex-shrink:0"></div>
+                    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">${tech.name}</span>
                   </div>
-                `;
-              }).join('')}
+                </div>
+              `).join('')}
             </div>
 
-            <!-- Time rows per technician -->
-            ${(selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId)).map(tech => {
-              const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+            <!-- Rows: Days -->
+            ${days.map((day, dayIdx) => {
+              const isToday = day.toDateString() === new Date().toDateString();
+              const visibleTechs = selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId);
               return `
-                <div style="display:grid;grid-template-columns:52px repeat(${days.length}, 1fr);border-bottom:2px solid var(--border-color)" data-tech-id="${tech.id}">
-                  <div>
+                <!-- Day Header Row -->
+                <div style="display:flex;background:var(--content-bg);border-bottom:1px solid var(--border-color);position:sticky;left:0;z-index:2;width:fit-content;min-width:100%">
+                   <div style="padding:6px 12px;font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};position:sticky;left:0;background:var(--content-bg);">
+                     ${dayNames[day.getDay()]}, ${day.getDate()} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][day.getMonth()]}
+                   </div>
+                </div>
+
+                <!-- Day Grid -->
+                <div style="display:grid;grid-template-columns:80px repeat(${visibleTechs.length}, minmax(160px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
+
+                  <!-- Hours Column (Sticky Left) -->
+                  <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                     ${hours.map(h => `
-                      <div style="height:48px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);padding:2px 4px;font-size:var(--font-size-xs);color:var(--text-tertiary);text-align:right">
+                      <div style="height:48px;border-bottom:1px solid var(--border-color);padding:4px 8px;font-size:var(--font-size-xs);color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
                         ${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}
                       </div>
                     `).join('')}
                   </div>
-                  ${days.map((day, dayIdx) => `
-                    <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
-                      ${hours.map(h => `<div class="schedule-hour-slot" style="height:48px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
-                      ${renderBlocks(techBlocks, dayIdx, tech.color)}
-                    </div>
-                  `).join('')}
+
+                  <!-- Technician Columns for this Day -->
+                  ${visibleTechs.map(tech => {
+                    const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+                    return `
+                      <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
+                        ${hours.map(h => `<div class="schedule-hour-slot" style="height:48px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                        ${renderBlocks(techBlocks, dayIdx, tech.color)}
+                      </div>
+                    `;
+                  }).join('')}
                 </div>
               `;
             }).join('')}
