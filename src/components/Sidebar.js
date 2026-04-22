@@ -9,15 +9,18 @@ const navItems = [
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
   { section: 'WORKFLOW' },
   { id: 'people', icon: 'people', label: 'People', path: '/people' },
+  { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
   { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
   { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
   { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
   { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
+  { id: 'fleet', icon: 'local_shipping', label: 'Fleet', path: '/fleet' },
   { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
   { section: 'RESOURCES' },
   { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
   { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
   { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' },
+  { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
   { section: 'ANALYTICS' },
   { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports' },
   { section: 'SYSTEM' },
@@ -41,9 +44,11 @@ export function createSidebar() {
     <nav class="sidebar-nav">
   `;
 
+  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+
   navItems.forEach(item => {
     if (item.section) {
-      html += `<div class="sidebar-section-label">${item.section}</div>`;
+      html += `<div class="sidebar-section-label" data-section="${item.section}">${item.section}</div>`;
     } else {
       html += `
         <button class="sidebar-nav-item" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}">
@@ -56,6 +61,9 @@ export function createSidebar() {
 
   html += `
     </nav>
+    <div style="padding: 1rem;">
+      <button id="btn-logout" class="btn btn-outline" style="width: 100%;">Logout</button>
+    </div>
     <button class="sidebar-toggle" id="sidebar-toggle">
       <span class="material-icons-outlined" id="sidebar-toggle-icon">${isExpanded ? 'chevron_left' : 'chevron_right'}</span>
     </button>
@@ -78,7 +86,37 @@ export function createSidebar() {
   const toggleBtn = sidebar.querySelector('#sidebar-toggle');
   toggleBtn.addEventListener('click', () => toggleSidebar(sidebar));
 
+  const logoutBtn = sidebar.querySelector('#btn-logout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      sessionStorage.removeItem('currentUser');
+      router.navigate('/login');
+    });
+  }
+
+  // Initial access update
+  updateSidebarAccess();
+
   return sidebar;
+}
+
+export function updateSidebarAccess() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+
+  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+
+  if (currentUser.role === 'customer') {
+    // Customers shouldn't see the sidebar at all really, but if they do, hide everything
+    sidebar.style.display = 'none';
+  } else {
+    sidebar.style.display = '';
+    // Optional: Hide specific items based on role (e.g., settings for non-admins)
+    const settingsBtn = sidebar.querySelector('#nav-settings');
+    if (settingsBtn) {
+      settingsBtn.style.display = currentUser.role === 'admin' ? '' : 'none';
+    }
+  }
 }
 
 function toggleSidebar(sidebar) {

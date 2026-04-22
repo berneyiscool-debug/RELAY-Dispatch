@@ -10,7 +10,7 @@ export function renderJobForm(container, { id }) {
   const isEdit = id && id !== 'new';
   const job = isEdit ? store.getById('jobs', id) : {};
   const customers = store.getAll('customers');
-  const technicians = store.getAll('technicians');
+  const contractors = store.getAll('contractors').filter(c => c.active);
 
   container.innerHTML = `
     <div class="page-header"><h1>${isEdit ? 'Edit Job' : 'New Job'}</h1></div>
@@ -37,6 +37,15 @@ export function renderJobForm(container, { id }) {
             </div>
           </div>
           <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">Assign to Contractor (Optional)</label>
+              <select class="form-select" name="contractorId">
+                <option value="">None (Internal Techs)</option>
+                ${contractors.map(c => `<option value="${c.id}" ${job.contractorId === c.id ? 'selected' : ''}>${c.businessName}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
             <div class="form-group">
               <label class="form-label">Status</label>
               <select class="form-select" name="status">
@@ -49,6 +58,16 @@ export function renderJobForm(container, { id }) {
                 ${['Low','Medium','High','Urgent'].map(p => `<option ${job.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
               </select>
             </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="is-emergency" style="width:16px;height:16px" ${job.isEmergency ? 'checked' : ''} />
+              <label class="form-label" style="margin:0; color: var(--color-danger);" for="is-emergency">Is Emergency (Applies Callout Fee)</label>
+            </div>
+          </div>
+          <div id="emergency-dispatch-suggestion" style="display: none; background: var(--color-warning-bg); border: 1px solid var(--color-warning); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+            <strong>Emergency Dispatch Suggestion:</strong>
+            <p style="margin: 5px 0 0 0;" id="dispatch-reason">Loading best technician...</p>
           </div>
           ${!isEdit ? `
           <div class="form-row">
@@ -93,6 +112,38 @@ export function renderJobForm(container, { id }) {
     </div>
   `;
 
+  const emergencyToggle = container.querySelector('#is-emergency');
+  const suggestionBox = container.querySelector('#emergency-dispatch-suggestion');
+  const dispatchReason = container.querySelector('#dispatch-reason');
+  const prioritySelect = container.querySelector('#job-priority');
+
+  function updateEmergencyUI(isEmg) {
+    if (isEmg) {
+      prioritySelect.value = 'Urgent';
+      suggestionBox.style.display = 'block';
+
+      // Mock GPS/Zone logic
+      const techs = store.getAll('people').filter(p => p.type === 'Staff');
+      if (techs.length > 0) {
+        const randomTech = techs[Math.floor(Math.random() * techs.length)];
+        const mins = Math.floor(Math.random() * 15) + 5; // 5-20 mins away
+        dispatchReason.innerHTML = `Based on current GPS location and schedule, <strong>${randomTech.firstName} ${randomTech.lastName}</strong> is the most suitable technician (approx. ${mins} mins away from site).`;
+      } else {
+        dispatchReason.innerHTML = "No internal technicians available for dispatch.";
+      }
+    } else {
+      suggestionBox.style.display = 'none';
+    }
+  }
+
+  emergencyToggle?.addEventListener('change', (e) => {
+    updateEmergencyUI(e.target.checked);
+  });
+
+  // Init state
+  if (job.isEmergency) updateEmergencyUI(true);
+
+
   if (!isEdit) {
     const isRecurring = container.querySelector('#is-recurring');
     const recurringOptions = container.querySelector('#recurring-options');
@@ -111,11 +162,20 @@ export function renderJobForm(container, { id }) {
     data.contactName = cust ? `${cust.firstName} ${cust.lastName}` : '';
     data.number = job.number || `J-${Date.now().toString().slice(-6)}`;
 
+    const isEmg = container.querySelector('#is-emergency')?.checked;
+    data.isEmergency = isEmg;
+
     if (!isEdit) {
       data.technicians = [];
-      data.laborCost = 0;
+      data.laborCost = isEmg ? 150 : 0; // Emergency Callout Fee mock
       data.materialCost = 0;
       data.estimatedHours = 0;
+    } else {
+      if (isEmg && !job.isEmergency) {
+        data.laborCost = (job.laborCost || 0) + 150; // Add fee
+      } else if (!isEmg && job.isEmergency) {
+        data.laborCost = Math.max(0, (job.laborCost || 0) - 150); // Remove fee
+      }
     }
 
     if (!isEdit && container.querySelector('#is-recurring')?.checked) {

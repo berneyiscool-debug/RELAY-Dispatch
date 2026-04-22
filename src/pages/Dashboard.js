@@ -92,14 +92,31 @@ export function renderDashboard(container) {
         </div>
       </div>
 
-      <!-- Recent Activity -->
-      <div class="card">
+      <!-- Technician GPS Map -->
+      <div class="card" style="grid-column: span 1;">
         <div class="card-header">
-          <h4>Recent Activity</h4>
+          <h4>Technician Locations</h4>
+          <span style="font-size:12px;color:var(--color-success);display:flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;">gps_fixed</span> Live Tracking</span>
         </div>
-        <div class="card-body" style="max-height:300px;overflow-y:auto">
-          ${renderActivityFeed(jobs, quotes, invoices)}
+        <div class="card-body" style="padding: 0; position: relative; height: 300px; background: #e5e3df; overflow: hidden;">
+          <!-- Mock Map Background (Grid Pattern) -->
+          <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px); background-size: 20px 20px;"></div>
+
+          <!-- Mock Map Markers -->
+          ${renderMapMarkers()}
+
+          <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(255,255,255,0.8); padding: 5px; font-size: 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">Mock Google Maps</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Recent Activity moved to full width below -->
+    <div class="card" style="margin-bottom:var(--space-xl)">
+      <div class="card-header">
+        <h4>Recent Activity</h4>
+      </div>
+      <div class="card-body" style="max-height:300px;overflow-y:auto">
+        ${renderActivityFeed(jobs, quotes, invoices)}
       </div>
     </div>
 
@@ -252,6 +269,32 @@ function renderTodaySchedule(jobs) {
       </div>
     `).join('')}
   </div>`;
+}
+
+function renderMapMarkers() {
+  const techs = store.getAll('people').filter(p => p.type === 'Staff');
+  const activeTechs = techs.slice(0, 4); // Show up to 4 techs on map
+
+  if (activeTechs.length === 0) return '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;">No technicians active</div>';
+
+  return activeTechs.map((t, i) => {
+    // Generate some pseudo-random fixed positions for the mock map
+    const top = 20 + (i * 25) + (Math.sin(i) * 15);
+    const left = 20 + (i * 20) + (Math.cos(i) * 20);
+    const initial = t.firstName.charAt(0);
+
+    return `
+      <div style="position: absolute; top: ${top}%; left: ${left}%; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; z-index: 10;">
+        <div style="background: var(--bg-surface); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.2); margin-bottom: 2px; white-space: nowrap;">
+          ${t.firstName}
+        </div>
+        <div style="width: 24px; height: 24px; background: var(--color-primary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+          ${initial}
+        </div>
+        <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid var(--color-primary); margin-top: -2px;"></div>
+      </div>
+    `;
+  }).join('');
 }
 
 function formatTimeAgo(dateString) {

@@ -38,6 +38,18 @@ import { renderPurchaseOrderDetail } from './pages/purchaseOrders/PurchaseOrderD
 import { renderReports } from './pages/reports/Reports.js';
 import { renderSettings } from './pages/Settings.js';
 
+import { renderLogin } from './pages/login/Login.js';
+import { renderCustomerPortal } from './pages/portal/Portal.js';
+import { renderContractorsList } from './pages/contractors/ContractorsList.js';
+import { renderContractorForm } from './pages/contractors/ContractorForm.js';
+import { renderContractorDetail } from './pages/contractors/ContractorDetail.js';
+
+import { renderFleetList } from './pages/fleet/FleetList.js';
+import { renderVehicleForm } from './pages/fleet/VehicleForm.js';
+import { renderVehicleDetail } from './pages/fleet/VehicleDetail.js';
+
+import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
+
 // ---- Initialize ----
 seedData();
 
@@ -76,6 +88,12 @@ function renderPage(handler) {
   };
 }
 
+// Login
+router.register('/login', renderPage(renderLogin));
+
+// Customer Portal
+router.register('/portal', renderPage(renderCustomerPortal));
+
 // Dashboard
 router.register('/', renderPage(renderDashboard));
 
@@ -84,6 +102,12 @@ router.register('/people', renderPage(renderPeopleList));
 router.register('/people/new', renderPage((c, p) => renderPersonForm(c, { id: 'new' })));
 router.register('/people/:id', renderPage(renderPersonDetail));
 router.register('/people/:id/edit', renderPage((c, p) => renderPersonForm(c, p)));
+
+// Contractors
+router.register('/contractors', renderPage(renderContractorsList));
+router.register('/contractors/new', renderPage((c, p) => renderContractorForm(c, { id: 'new' })));
+router.register('/contractors/:id', renderPage(renderContractorDetail));
+router.register('/contractors/:id/edit', renderPage((c, p) => renderContractorForm(c, p)));
 
 // Leads
 router.register('/leads', renderPage(renderLeadsList));
@@ -105,6 +129,12 @@ router.register('/jobs/:id/edit', renderPage((c, p) => renderJobForm(c, p)));
 // Timesheets
 router.register('/timesheets', renderPage(renderTimesheetsList));
 
+// Fleet
+router.register('/fleet', renderPage(renderFleetList));
+router.register('/fleet/new', renderPage((c, p) => renderVehicleForm(c, { id: 'new' })));
+router.register('/fleet/:id', renderPage(renderVehicleDetail));
+router.register('/fleet/:id/edit', renderPage((c, p) => renderVehicleForm(c, p)));
+
 // Schedule
 router.register('/schedule', renderPage(renderScheduleView));
 
@@ -124,17 +154,50 @@ router.register('/purchase-orders', renderPage(renderPurchaseOrdersList));
 router.register('/purchase-orders/new', renderPage((c, p) => renderPurchaseOrderDetail(c, { id: 'new', jobId: p.jobId })));
 router.register('/purchase-orders/:id', renderPage(renderPurchaseOrderDetail));
 
+// Documents
+router.register('/documents', renderPage(renderDocumentBrowser));
+
 // Reports
 router.register('/reports', renderPage(renderReports));
 
 // Settings
 router.register('/settings', renderPage(renderSettings));
 
-// ---- Navigation Hook ----
-router.onNavigate = (path) => {
+// ---- Auth Guard Hook ----
+const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/quotes', '/jobs', '/timesheets', '/fleet', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings'];
+const customerRoutes = ['/portal'];
+
+router.onNavigate = (path, params) => {
+  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
+  const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
+
+  if (!currentUser && path !== '/login') {
+    // Redirect to login if not authenticated
+    router.navigate('/login');
+    return false; // Prevent further navigation handling if we had a way, but since we call it directly we just navigate
+  }
+
+  if (currentUser) {
+    if (currentUser.role === 'customer' && protectedRoutes.includes(basePath)) {
+       // Customer trying to access staff pages -> force to portal
+       router.navigate('/portal');
+       return false;
+    } else if (currentUser.role !== 'customer' && basePath === '/portal') {
+       // Staff trying to access customer portal directly (could allow this, but let's send to dashboard)
+       router.navigate('/');
+       return false;
+    }
+  }
+
   updateSidebarActive(path);
   createBreadcrumb(path);
 };
 
 // ---- Boot ----
+// Before resolving, check if we need to redirect to login
+const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
+if (!currentUser && window.location.hash !== '#/login') {
+  window.location.hash = '#/login';
+}
+
 router.resolve();

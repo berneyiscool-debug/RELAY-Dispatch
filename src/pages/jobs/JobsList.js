@@ -42,7 +42,14 @@ export function renderJobsList(container) {
     { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '100px' },
     { key: 'title', label: 'Title', render: (r) => `<span class="truncate" style="max-width:200px;display:inline-block">${escapeHTML(r.title)}</span>` },
     { key: 'customerName', label: 'Customer' },
-    { key: 'technicians', label: 'Technicians', render: (r) => `<span class="text-secondary truncate" style="max-width:150px;display:inline-block">${r.technicians && r.technicians.length > 0 ? r.technicians.map(t => escapeHTML(t.name)).join(', ') : escapeHTML(r.technicianName || '—')}</span>` },
+    { key: 'technicians', label: 'Assignee', render: (r) => {
+        if (r.contractorId) {
+          const contractor = store.getById('contractors', r.contractorId);
+          return `<span class="text-secondary truncate" style="max-width:150px;display:inline-block"><span class="material-icons-outlined" style="font-size:12px;vertical-align:middle;">engineering</span> ${contractor ? escapeHTML(contractor.businessName) : 'Unknown Contractor'}</span>`;
+        }
+        return `<span class="text-secondary truncate" style="max-width:150px;display:inline-block">${r.technicians && r.technicians.length > 0 ? r.technicians.map(t => escapeHTML(t.name)).join(', ') : escapeHTML(r.technicianName || '—')}</span>`;
+      }
+    },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '110px' },
     { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${pb[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '90px' },
     { key: 'scheduledDate', label: 'Scheduled', render: (r) => r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : '—', getValue: (r) => r.scheduledDate ? new Date(r.scheduledDate).getTime() : 0, width: '100px' },

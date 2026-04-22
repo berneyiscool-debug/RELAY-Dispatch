@@ -5,12 +5,14 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderScheduleView(container) {
   const technicians = store.getAll('technicians');
   const jobs = store.getAll('jobs');
 
   let viewMode = 'week';
+  let calendarType = 'schedule'; // 'schedule' or 'activity'
   let currentDate = new Date();
   const hours = Array.from({ length: 12 }, (_, i) => i + 7); // 7am–6pm
   let dragState = null;
@@ -119,6 +121,12 @@ export function renderScheduleView(container) {
     const days = getWeekDays();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+    if (calendarType === 'activity') {
+      renderActivityCalendar();
+      return;
+    }
+
     const blocks = getScheduleBlocks();
 
     container.innerHTML = `
@@ -138,6 +146,10 @@ export function renderScheduleView(container) {
               <option value="all">All Technicians</option>
               ${technicians.map(t => `<option value="${t.id}" ${selectedTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
             </select>
+          </div>
+          <div class="flex gap-xs" style="margin-right:16px;">
+            <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
+            <button class="toolbar-filter ${calendarType === 'activity' ? 'active' : ''}" data-cal="activity">Activities</button>
           </div>
           <div class="flex gap-xs">
             <button class="toolbar-filter ${viewMode === 'day' ? 'active' : ''}" data-view="day">Day</button>
@@ -275,6 +287,9 @@ export function renderScheduleView(container) {
     });
     container.querySelectorAll('[data-view]').forEach(btn => {
       btn.addEventListener('click', () => { viewMode = btn.dataset.view; render(); });
+    });
+    container.querySelectorAll('[data-cal]').forEach(btn => {
+      btn.addEventListener('click', () => { calendarType = btn.dataset.cal; render(); });
     });
 
     container.querySelector('#schedule-tech-filter')?.addEventListener('change', (e) => {
@@ -458,6 +473,90 @@ export function renderScheduleView(container) {
         dragState = null;
         render();
       });
+    });
+  }
+
+  function renderActivityCalendar() {
+    const days = getWeekDays();
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+    const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+    const activities = store.getAll('activities').filter(a => a.assignedToId === currentUser.id);
+
+    container.innerHTML = `
+      <div class="page-header">
+        <h1>Activity Calendar</h1>
+        <div class="page-header-actions">
+          <div class="flex gap-sm items-center">
+            <button class="btn btn-secondary btn-sm" id="btn-prev"><span class="material-icons-outlined">chevron_left</span></button>
+            <button class="btn btn-secondary btn-sm" id="btn-today">Today</button>
+            <button class="btn btn-secondary btn-sm" id="btn-next"><span class="material-icons-outlined">chevron_right</span></button>
+            <span style="font-weight:600;font-size:var(--font-size-md);margin:0 8px">
+              ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}
+            </span>
+          </div>
+          <div class="flex gap-sm items-center" style="margin-left:auto;margin-right:16px">
+             <!-- Spacer -->
+          </div>
+          <div class="flex gap-xs" style="margin-right:16px;">
+            <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
+            <button class="toolbar-filter ${calendarType === 'activity' ? 'active' : ''}" data-cal="activity">Activities</button>
+          </div>
+          <div class="flex gap-xs">
+            <button class="toolbar-filter ${viewMode === 'day' ? 'active' : ''}" data-view="day">Day</button>
+            <button class="toolbar-filter ${viewMode === 'week' ? 'active' : ''}" data-view="week">Week</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="height:calc(100vh - 160px); display:flex; flex-direction:column;">
+        <div style="padding: 15px; border-bottom: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">My Activities</h3>
+          <button class="btn btn-primary btn-sm" id="btn-new-activity">New Activity</button>
+        </div>
+        <div style="flex:1; overflow-y:auto; padding: 15px;">
+          ${days.map(day => {
+            const dateStr = day.toISOString().split('T')[0];
+            const dayActs = activities.filter(a => a.date === dateStr);
+            return `
+              <div style="margin-bottom: 20px;">
+                <h4 style="margin: 0 0 10px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">${day.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })}</h4>
+                ${dayActs.length === 0 ? '<p style="color:var(--text-tertiary); font-size: 13px; margin: 0;">No activities.</p>' : `
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    ${dayActs.map(a => `
+                      <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:6px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                          <strong style="color:var(--text-primary);">${escapeHTML(a.title)}</strong>
+                          <span style="font-size:12px; color:var(--text-secondary);">${a.time ? escapeHTML(a.time) : ''}</span>
+                        </div>
+                        ${a.linkedTo ? `<div style="font-size:12px; color:var(--text-secondary); margin-bottom:5px;">Linked to: ${escapeHTML(a.linkedTo)}</div>` : ''}
+                        ${a.notes ? `<div style="font-size:13px;">${escapeHTML(a.notes)}</div>` : ''}
+                      </div>
+                    `).join('')}
+                  </div>
+                `}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    bindEvents(); // Re-bind top toolbar events
+
+    container.querySelector('#btn-new-activity')?.addEventListener('click', () => {
+      const title = prompt('Activity Title:');
+      if (!title) return;
+      const date = prompt('Date (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+      if (!date) return;
+      const time = prompt('Time (e.g. 10:00 AM):', '');
+      const linkedTo = prompt('Linked To (Job/Customer Name):', '');
+      const notes = prompt('Notes:', '');
+
+      store.create('activities', {
+        title, date, time, linkedTo, notes, assignedToId: currentUser.id
+      });
+      showToast('Activity added', 'success');
+      render();
     });
   }
 

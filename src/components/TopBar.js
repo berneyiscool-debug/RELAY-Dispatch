@@ -26,12 +26,11 @@ export function createTopBar() {
         <span class="notification-dot"></span>
       </button>
       <div class="topbar-user" id="topbar-user">
-        <div class="topbar-avatar">JD</div>
+        <div class="topbar-avatar" id="topbar-avatar">--</div>
         <div class="topbar-user-info">
-          <span class="topbar-user-name">John Doe</span>
-          <span class="topbar-user-role">Administrator</span>
+          <span class="topbar-user-name" id="topbar-name">Loading...</span>
+          <span class="topbar-user-role" id="topbar-role">Role</span>
         </div>
-        <span class="material-icons-outlined" style="font-size:16px;color:var(--text-tertiary)">expand_more</span>
       </div>
     </div>
   `;
@@ -90,7 +89,37 @@ export function createTopBar() {
     toggleNotificationsDropdown(notifBtn);
   });
 
+  updateTopbarAccess(topbar);
+
   return topbar;
+}
+
+export function updateTopbarAccess(topbarEl) {
+  const topbar = topbarEl || document.getElementById('topbar');
+  if (!topbar) return;
+
+  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+
+  const nameEl = topbar.querySelector('#topbar-name');
+  const roleEl = topbar.querySelector('#topbar-role');
+  const avatarEl = topbar.querySelector('#topbar-avatar');
+
+  if (nameEl) nameEl.textContent = currentUser.name || 'Unknown User';
+  if (roleEl) {
+    const roleMap = {
+      'admin': 'Administrator',
+      'manager': 'Manager',
+      'technician': 'Technician',
+      'customer': 'Customer'
+    };
+    roleEl.textContent = roleMap[currentUser.role] || currentUser.role;
+  }
+
+  if (avatarEl) {
+    const nameStr = currentUser.name || '';
+    const initials = nameStr.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
+    avatarEl.textContent = initials;
+  }
 }
 
 function toggleNotificationsDropdown(btn) {
