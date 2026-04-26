@@ -181,59 +181,102 @@ export function renderScheduleView(container) {
         <div style="display:flex;height:calc(100vh - 310px);overflow:hidden">
           <!-- Calendar -->
           <div style="flex:1;overflow:auto" id="calendar-scroll">
-            <!-- Top headers: Technicians -->
-            <div style="display:grid;grid-template-columns:80px repeat(${(selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId)).length}, minmax(160px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
-              <!-- Sticky Top-Left corner for Time/Date header -->
-              <div style="height:44px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
-                Time
+            ${selectedTechId === 'all' ? `
+              <!-- Top headers: Technicians -->
+              <div style="display:grid;grid-template-columns:80px repeat(${technicians.length}, minmax(160px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
+                <!-- Sticky Top-Left corner for Time/Date header -->
+                <div style="height:44px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
+                  Time
+                </div>
+                ${technicians.map(tech => `
+                  <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
+                    <div style="font-size:var(--font-size-sm);font-weight:600;display:flex;align-items:center;gap:6px">
+                      <div style="width:8px;height:8px;border-radius:50%;background:${tech.color};flex-shrink:0"></div>
+                      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">${tech.name}</span>
+                    </div>
+                  </div>
+                `).join('')}
               </div>
-              ${(selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId)).map(tech => `
-                <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
-                  <div style="font-size:var(--font-size-sm);font-weight:600;display:flex;align-items:center;gap:6px">
-                    <div style="width:8px;height:8px;border-radius:50%;background:${tech.color};flex-shrink:0"></div>
-                    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">${tech.name}</span>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
 
-            <!-- Rows: Days -->
-            ${days.map((day, dayIdx) => {
-              const isToday = day.toDateString() === new Date().toDateString();
-              const visibleTechs = selectedTechId === 'all' ? technicians : technicians.filter(t => t.id === selectedTechId);
-              return `
-                <!-- Day Header Row -->
-                <div style="display:flex;background:var(--content-bg);border-bottom:1px solid var(--border-color);position:sticky;left:0;z-index:2;width:fit-content;min-width:100%">
-                   <div style="padding:6px 12px;font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};position:sticky;left:0;background:var(--content-bg);">
-                     ${dayNames[day.getDay()]}, ${day.getDate()} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][day.getMonth()]}
-                   </div>
-                </div>
-
-                <!-- Day Grid -->
-                <div style="display:grid;grid-template-columns:80px repeat(${visibleTechs.length}, minmax(160px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
-
-                  <!-- Hours Column (Sticky Left) -->
-                  <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
-                    ${hours.map(h => `
-                      <div style="height:48px;border-bottom:1px solid var(--border-color);padding:4px 8px;font-size:var(--font-size-xs);color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
-                        ${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}
-                      </div>
-                    `).join('')}
+              <!-- Rows: Days -->
+              ${days.map((day, dayIdx) => {
+                const isToday = day.toDateString() === new Date().toDateString();
+                return `
+                  <!-- Day Header Row -->
+                  <div style="display:flex;background:var(--content-bg);border-bottom:1px solid var(--border-color);position:sticky;left:0;z-index:2;width:fit-content;min-width:100%">
+                     <div style="padding:6px 12px;font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};position:sticky;left:0;background:var(--content-bg);">
+                       ${dayNames[day.getDay()]}, ${day.getDate()} ${monthNames[day.getMonth()]}
+                     </div>
                   </div>
 
-                  <!-- Technician Columns for this Day -->
-                  ${visibleTechs.map(tech => {
-                    const techBlocks = blocks.filter(b => b.technicianId === tech.id);
-                    return `
-                      <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
-                        ${hours.map(h => `<div class="schedule-hour-slot" style="height:48px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
-                        ${renderBlocks(techBlocks, dayIdx, tech.color)}
-                      </div>
-                    `;
-                  }).join('')}
+                  <!-- Day Grid -->
+                  <div style="display:grid;grid-template-columns:80px repeat(${technicians.length}, minmax(160px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
+
+                    <!-- Hours Column (Sticky Left) -->
+                    <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
+                      ${hours.map(h => `
+                        <div style="height:48px;border-bottom:1px solid var(--border-color);padding:4px 8px;font-size:var(--font-size-xs);color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
+                          ${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}
+                        </div>
+                      `).join('')}
+                    </div>
+
+                    <!-- Technician Columns for this Day -->
+                    ${technicians.map(tech => {
+                      const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+                      return `
+                        <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
+                          ${hours.map(h => `<div class="schedule-hour-slot" style="height:48px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                          ${renderBlocks(techBlocks, dayIdx, tech.color)}
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                `;
+              }).join('')}
+            ` : `
+              <!-- Top headers: Days -->
+              <div style="display:grid;grid-template-columns:80px repeat(${days.length}, minmax(160px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
+                <!-- Sticky Top-Left corner for Time/Date header -->
+                <div style="height:44px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
+                  Time
                 </div>
-              `;
-            }).join('')}
+                ${days.map(day => {
+                  const isToday = day.toDateString() === new Date().toDateString();
+                  return `
+                    <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
+                      <div style="font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};display:flex;align-items:center;gap:6px">
+                        <span>${dayNames[day.getDay()]} ${day.getDate()} ${monthNames[day.getMonth()]}</span>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+
+              <!-- Day Grid -->
+              <div style="display:grid;grid-template-columns:80px repeat(${days.length}, minmax(160px, 1fr));width:fit-content;min-width:100%">
+                <!-- Hours Column (Sticky Left) -->
+                <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
+                  ${hours.map(h => `
+                    <div style="height:48px;border-bottom:1px solid var(--border-color);padding:4px 8px;font-size:var(--font-size-xs);color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
+                      ${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}
+                    </div>
+                  `).join('')}
+                </div>
+
+                <!-- Day Columns for the selected Technician -->
+                ${days.map((day, dayIdx) => {
+                  const tech = technicians.find(t => t.id === selectedTechId);
+                  const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+                  return `
+                    <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
+                      ${hours.map(h => `<div class="schedule-hour-slot" style="height:48px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                      ${renderBlocks(techBlocks, dayIdx, tech.color)}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
           </div>
         </div>
       </div>
