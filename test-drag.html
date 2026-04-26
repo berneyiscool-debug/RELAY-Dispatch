@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Test Drag</title>
+</head>
+<body>
+<div id="container"></div>
+<script type="module">
+import { store } from './src/data/store.js';
+import { seedData } from './src/data/seed.js';
+import { renderScheduleView } from './src/pages/schedule/ScheduleView.js';
+
+window.sessionStorage.setItem('currentUser', JSON.stringify({ id: '1', name: 'Test' }));
+
+seedData();
+const container = document.getElementById('container');
+renderScheduleView(container);
+
+// Simulate drag and drop
+setTimeout(() => {
+    const unscheduledJob = document.querySelector('.unscheduled-job');
+    const dayCol = document.querySelector('.schedule-day-col');
+
+    if (unscheduledJob && dayCol) {
+        console.log("Starting drag event on unscheduled job");
+        const dragStartEvent = new DragEvent('dragstart', { bubbles: true, cancelable: true });
+        Object.defineProperty(dragStartEvent, 'dataTransfer', {
+            value: { effectAllowed: 'none', setData: () => {} }
+        });
+        unscheduledJob.dispatchEvent(dragStartEvent);
+
+        console.log("Dropping on day col");
+        const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, clientY: 100 });
+        Object.defineProperty(dropEvent, 'dataTransfer', {
+            value: { getData: () => {} }
+        });
+        dayCol.dispatchEvent(dropEvent);
+
+        console.log("Checking if job updated");
+        const jobs = store.getAll('jobs');
+        const updatedJob = jobs.find(j => j.id === unscheduledJob.dataset.jobId);
+        console.log("Updated job tech ID:", updatedJob.technicianId);
+        console.log("Updated job scheduled date:", updatedJob.scheduledDate);
+    }
+}, 500);
+
+</script>
+</body>
+</html>
