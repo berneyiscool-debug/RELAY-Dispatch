@@ -5,27 +5,33 @@ import { escapeHTML } from '../../utils/security.js';
 export function renderContractorDetail(container, params) {
   const contractor = store.getById('contractors', params.id);
   if (!contractor) {
-    container.innerHTML = `<div class="card"><p>Contractor not found.</p></div>`;
+    container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Contractor not found</h3></div>`;
     return;
   }
 
   container.innerHTML = `
-    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-      <div>
+    <div class="page-header">
+      <div class="page-header-info">
         <h1 style="margin: 0;">${escapeHTML(contractor.businessName)}</h1>
-        <p style="margin: 5px 0 0 0; color: var(--text-secondary);">Contact: ${escapeHTML(contractor.contactName)}</p>
+        <p class="text-secondary" style="margin: 5px 0 0 0;">Contact: ${escapeHTML(contractor.contactName)}</p>
       </div>
-      <button class="btn btn-outline" id="btn-edit">Edit</button>
+      <div class="page-header-actions">
+        <button class="btn btn-secondary" id="btn-edit"><span class="material-icons-outlined">edit</span> Edit</button>
+      </div>
     </div>
 
     <div class="card">
-      <h3 style="margin-top: 0;">Details</h3>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-        <div><strong>Email:</strong> ${escapeHTML(contractor.email || '-')}</div>
-        <div><strong>Phone:</strong> ${escapeHTML(contractor.phone || '-')}</div>
-        <div><strong>License:</strong> ${escapeHTML(contractor.licenseNumber || '-')}</div>
-        <div><strong>Insurance Expiry:</strong> ${escapeHTML(contractor.insuranceExpiry || '-')}</div>
-        <div><strong>Status:</strong> <span class="badge ${contractor.active ? 'badge-success' : 'badge-neutral'}">${contractor.active ? 'Active' : 'Inactive'}</span></div>
+      <div class="card-header">
+        <h4 style="margin: 0;">Details</h4>
+      </div>
+      <div class="card-body">
+        <div class="grid-2">
+          <div><strong class="text-secondary" style="display:block;margin-bottom:4px;font-size:12px;">Email</strong> ${escapeHTML(contractor.email || '—')}</div>
+          <div><strong class="text-secondary" style="display:block;margin-bottom:4px;font-size:12px;">Phone</strong> ${escapeHTML(contractor.phone || '—')}</div>
+          <div><strong class="text-secondary" style="display:block;margin-bottom:4px;font-size:12px;">License</strong> ${escapeHTML(contractor.licenseNumber || '—')}</div>
+          <div><strong class="text-secondary" style="display:block;margin-bottom:4px;font-size:12px;">Insurance Expiry</strong> ${escapeHTML(contractor.insuranceExpiry || '—')}</div>
+          <div><strong class="text-secondary" style="display:block;margin-bottom:4px;font-size:12px;">Status</strong> <span class="badge ${contractor.active ? 'badge-success' : 'badge-neutral'}">${contractor.active ? 'Active' : 'Inactive'}</span></div>
+        </div>
       </div>
     </div>
   `;

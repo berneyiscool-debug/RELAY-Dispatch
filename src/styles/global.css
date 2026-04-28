@@ -126,11 +126,11 @@ input, select, textarea, button {
 
 /* ---- Material Icons sizing ---- */
 .material-icons-outlined {
-  font-size: 20px;
+  font-size: 16px;
   vertical-align: middle;
   line-height: 1;
 }
 .icon-sm .material-icons-outlined,
-.material-icons-outlined.icon-sm { font-size: 16px; }
+.material-icons-outlined.icon-sm { font-size: 13px; }
 .icon-lg .material-icons-outlined,
-.material-icons-outlined.icon-lg { font-size: 24px; }
+.material-icons-outlined.icon-lg { font-size: 19px; }

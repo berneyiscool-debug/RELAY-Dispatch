@@ -3,13 +3,13 @@
 // ============================================
 
 import { router } from '../router.js';
+import { store } from '../data/store.js';
 
 const navItems = [
   { section: 'MAIN' },
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
   { section: 'WORKFLOW' },
-  { id: 'people', icon: 'people', label: 'People', path: '/people' },
-  { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
+  { id: 'people', icon: 'people', label: 'Customers', path: '/people' },
   { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
   { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
   { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
@@ -17,6 +17,7 @@ const navItems = [
   { id: 'fleet', icon: 'local_shipping', label: 'Fleet', path: '/fleet' },
   { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
   { section: 'RESOURCES' },
+  { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
   { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
   { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
   { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' },
@@ -111,11 +112,54 @@ export function updateSidebarAccess() {
     sidebar.style.display = 'none';
   } else {
     sidebar.style.display = '';
-    // Optional: Hide specific items based on role (e.g., settings for non-admins)
-    const settingsBtn = sidebar.querySelector('#nav-settings');
-    if (settingsBtn) {
-      settingsBtn.style.display = currentUser.role === 'admin' ? '' : 'none';
+    
+    let permissions = null;
+    if (currentUser.userTypeId) {
+      const ut = store.getById('userTypes', currentUser.userTypeId);
+      if (ut && ut.permissions) {
+        permissions = ut.permissions;
+      }
     }
+
+    // Hide specific items based on permissions
+    document.querySelectorAll('.sidebar-nav-item').forEach(item => {
+      const labelEl = item.querySelector('.nav-label');
+      if (!labelEl) return;
+      const label = labelEl.textContent.trim();
+
+      if (currentUser.role === 'admin') {
+        item.style.display = '';
+        return;
+      }
+
+      if (permissions) {
+        const p = permissions.find(m => m.module === label);
+        if (p && (p.view || p.create || p.edit || p.delete)) {
+          item.style.display = '';
+        } else {
+          item.style.display = 'none';
+        }
+      } else {
+        // Fallbacks for default roles if not using new permissions system
+        if (label === 'Settings' || label === 'Reports' || label === 'Invoices') {
+          item.style.display = 'none';
+        }
+      }
+    });
+
+    // Hide empty section labels
+    document.querySelectorAll('.sidebar-section-label').forEach(sec => {
+       let hasVisibleItems = false;
+       let next = sec.nextElementSibling;
+       while(next && next.classList.contains('sidebar-nav-item')) {
+          if (next.style.display !== 'none') {
+             hasVisibleItems = true;
+             break;
+          }
+          next = next.nextElementSibling;
+       }
+       sec.style.display = hasVisibleItems ? '' : 'none';
+    });
   }
 }
 

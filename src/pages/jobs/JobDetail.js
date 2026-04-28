@@ -21,6 +21,9 @@ export function renderJobDetail(container, { id }) {
   const sb = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary' };
   const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
   let activeTab = 'overview';
+  let taskExpandedPath = [0];
+  let taskViewPath = [];
+  let isInfoPanelEditing = false;
   let cachedStockOptionsHtml = null;
 
   function getStockOptionsHtml() {
@@ -55,12 +58,11 @@ export function renderJobDetail(container, { id }) {
           <!-- Moved invoice creation to Invoices tab -->
           <button class="btn btn-secondary" id="btn-edit-job"><span class="material-icons-outlined">edit</span> Edit</button>
           <button class="btn btn-danger btn-icon" id="btn-delete-job"><span class="material-icons-outlined">delete</span></button>
-        `
-      })}
-
+        </div>
+      </div>
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
         <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
-        <button class="tab ${activeTab === 'phases' ? 'active' : ''}" data-tab="phases">Phases</button>
+        <button class="tab ${activeTab === 'phases' ? 'active' : ''}" data-tab="phases">TaskLists</button>
         <button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs">Costs</button>
         <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms">Forms</button>
         <button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos">POs</button>
@@ -80,6 +82,18 @@ export function renderJobDetail(container, { id }) {
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
 
     if (activeTab === 'overview') {
+      let jobProgress = 0;
+      if (job.phases && job.phases.length > 0) {
+         let totalWeight = 0;
+         let completedWeight = 0;
+         job.phases.forEach(sp => {
+            const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
+            totalWeight += weight;
+            completedWeight += weight * ((sp.progress || 0) / 100);
+         });
+         jobProgress = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+      }
+
       const techNames = job.technicians && job.technicians.length > 0 
         ? job.technicians.map(t => `${escapeHTML(t.name)} (${t.hours}h)`).join(', ')
         : escapeHTML(job.technicianName || 'Unassigned');
@@ -94,6 +108,7 @@ export function renderJobDetail(container, { id }) {
                 ${r('Title', escapeHTML(job.title))}
                 ${r('Type', escapeHTML(job.type))}
                 ${r('Status', escapeHTML(job.status))}
+                ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
                 ${r('Priority', escapeHTML(job.priority))}
                 ${r('Customer', escapeHTML(job.customerName))}
                 ${r('Contact', escapeHTML(job.contactName || '—'))}
@@ -125,74 +140,487 @@ export function renderJobDetail(container, { id }) {
         router.navigate(`/schedule?jobId=${id}`);
       });
     } else if (activeTab === 'phases') {
+      const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+      let canEditTasks = true;
+      if (currentUser.userTypeId) {
+        const ut = store.getById('userTypes', currentUser.userTypeId);
+        if (ut && ut.permissions) {
+          const p = ut.permissions.find(p => p.module === 'Jobs');
+          if (p) canEditTasks = p.edit;
+        }
+      } else if (currentUser.role === 'customer' || currentUser.role === 'technician') {
+        canEditTasks = false;
+      }
+
       if (!job.phases) {
-        job.phases = [{ id: store.generateId(), name: 'Main Phase', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [] }];
+        job.phases = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] }];
       }
       
+      // Ensure existing phases have subPhases array
+      job.phases.forEach(p => { if (!p.subPhases) p.subPhases = []; });
+
+      function getPhaseByPath(phases, path) {
+        let curr = phases[path[0]];
+        if (!curr) return null;
+        for (let i = 1; i < path.length; i++) {
+          if (!curr.subPhases) return null;
+          curr = curr.subPhases[path[i]];
+          if (!curr) return null;
+        }
+        return curr;
+      }
+
+      function calculateTotalHours(node) {
+        if (!node.subPhases || node.subPhases.length === 0) {
+           return (parseFloat(node.estimatedHours) || 0) * (parseInt(node.people) || 1);
+        }
+        return node.subPhases.reduce((sum, sp) => sum + calculateTotalHours(sp), 0);
+      }
+
+      function updateParentProgress(phases, path) {
+        if (path.length <= 1) return;
+        const parentPath = path.slice(0, -1);
+        const parent = getPhaseByPath(phases, parentPath);
+        if (parent && parent.subPhases && parent.subPhases.length > 0) {
+          let totalWeight = 0;
+          let completedWeight = 0;
+          parent.subPhases.forEach(sp => {
+             const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
+             totalWeight += weight;
+             completedWeight += weight * ((sp.progress || 0) / 100);
+          });
+          parent.progress = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+          if (parent.progress === 100) parent.status = 'Completed';
+          else if (parent.progress > 0) parent.status = 'In Progress';
+          else parent.status = 'Not Started';
+          updateParentProgress(phases, parentPath); // recurse up
+        }
+      }
+
+      // Cleanup invalid paths
+      let isValidPath = true;
+      let curr = job.phases;
+      for (let i=0; i<taskExpandedPath.length; i++) {
+         if (!curr || !curr[taskExpandedPath[i]]) { isValidPath = false; break; }
+         curr = curr[taskExpandedPath[i]].subPhases;
+      }
+      if (!isValidPath) {
+         taskExpandedPath = [];
+      }
+
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-            <h4>Project Phases / Milestones</h4>
-            <button class="btn btn-sm btn-primary" id="btn-add-phase"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Phase</button>
+            <h4>Tasklists</h4>
+            <div style="display:flex; gap:8px">
+              ${canEditTasks ? `<button class="btn btn-sm btn-secondary" id="btn-save-tasklist-template"><span class="material-icons-outlined" style="font-size:14px">bookmark_add</span> Save as Template</button>` : ''}
+              ${canEditTasks ? `<button class="btn btn-sm btn-primary" id="btn-save-phases"><span class="material-icons-outlined" style="font-size:14px">save</span> Save Tasks</button>` : ''}
+            </div>
           </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th>Phase Name</th><th>Status</th><th>Progress</th><th>Start Date</th><th></th></tr></thead>
-              <tbody>
-                ${job.phases.map((p, i) => `
-                  <tr data-index="${i}">
-                    <td><input type="text" class="form-input phase-input" data-field="name" value="${escapeHTML(p.name || '')}" style="width:200px" /></td>
-                    <td>
-                      <select class="form-select phase-input" data-field="status">
-                        ${['Not Started','In Progress','Completed'].map(s => `<option ${p.status === s ? 'selected' : ''}>${s}</option>`).join('')}
-                      </select>
-                    </td>
-                    <td>
-                      <div style="display:flex;align-items:center;gap:8px">
-                        <input type="range" class="phase-input" data-field="progress" min="0" max="100" value="${p.progress || 0}" style="width:100px" />
-                        <span style="font-size:12px;width:32px">${p.progress || 0}%</span>
-                      </div>
-                    </td>
-                    <td><input type="date" class="form-input phase-input" data-field="startDate" value="${p.startDate ? p.startDate.split('T')[0] : ''}" /></td>
-                    <td><button class="btn btn-ghost btn-icon btn-sm btn-remove-phase" data-index="${i}"><span class="material-icons-outlined" style="font-size:16px">close</span></button></td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-          <div class="card-footer">
-            <button class="btn btn-primary" id="btn-save-phases" style="width:100%"><span class="material-icons-outlined">save</span> Save Phases</button>
+          <div class="card-body" style="padding:16px; display:flex; gap:16px; overflow-x:auto; min-height:400px; align-items:stretch">
+            
+            <!-- Drill-Down List -->
+            ${(() => {
+              const viewParentNode = taskViewPath.length > 0 ? getPhaseByPath(job.phases, taskViewPath) : null;
+              const viewList = viewParentNode ? (viewParentNode.subPhases || []) : job.phases;
+              const viewTitle = viewParentNode ? escapeHTML(viewParentNode.name) : 'Main Tasks';
+              
+              return `
+                <div style="flex: 0 0 300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg);">
+                  <div style="padding:12px; border-bottom:1px solid var(--border-color); font-weight:600; display:flex; justify-content:space-between; align-items:center">
+                    <div style="display:flex; align-items:center; gap:8px; overflow:hidden">
+                      ${taskViewPath.length > 0 ? `<button class="btn btn-ghost btn-sm btn-icon btn-view-back" title="Back"><span class="material-icons-outlined" style="font-size:18px">arrow_back</span></button>` : ''}
+                      <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${viewTitle}">${viewTitle}</span>
+                    </div>
+                    ${canEditTasks ? (taskViewPath.length === 0 ? `<button class="btn btn-ghost btn-sm btn-icon" id="btn-add-main-task" title="Add Main Task"><span class="material-icons-outlined">add</span></button>` : `<button class="btn btn-ghost btn-sm btn-icon btn-add-child-task" data-path="${taskViewPath.join('-')}" title="Add Task"><span class="material-icons-outlined">add</span></button>`) : ''}
+                  </div>
+                  <div style="padding:8px; display:flex; flex-direction:column; gap:4px; overflow-y:auto; flex:1">
+                    ${viewList.map((p, i) => {
+                      const currentPath = [...taskViewPath, i];
+                      const isSelected = currentPath.join('-') === taskExpandedPath.join('-');
+                      return `
+                        <div class="task-list-item" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color)'}">
+                          <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
+                          ${p.subPhases && p.subPhases.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="margin-left:8px; width:18px; height:18px; cursor:pointer;" />`}
+                        </div>
+                      `;
+                    }).join('')}
+                    ${viewList.length === 0 ? '<div style="color:var(--text-tertiary);font-size:12px;text-align:center;padding:12px">No tasks</div>' : ''}
+                  </div>
+                </div>
+              `;
+            })()}
+
+            <!-- Task Details Form -->
+            ${taskExpandedPath.length > 0 ? (() => {
+              const path = taskExpandedPath;
+              const node = getPhaseByPath(job.phases, path);
+              if (!node) return '';
+              const hasSubs = node.subPhases && node.subPhases.length > 0;
+              return `
+                <div style="flex: 1; min-width:300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg); padding:16px">
+                  ${!isInfoPanelEditing ? `
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Info Panel: ${escapeHTML(node.name)}</h4>
+                    <div style="display:flex;gap:8px">
+                      ${canEditTasks && path.length < 3 ? `<button class="btn btn-sm btn-secondary btn-add-child-task" data-path="${path.join('-')}" title="Add Sub-task"><span class="material-icons-outlined" style="font-size:16px">add_task</span> Add Sub-task</button>` : ''}
+                      <button class="btn btn-sm btn-secondary btn-book-time" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time</button>
+                      ${canEditTasks ? `<button class="btn btn-sm btn-primary btn-edit-info" title="Edit"><span class="material-icons-outlined" style="font-size:16px">edit</span> Edit</button>` : ''}
+                    </div>
+                  </div>
+                  <div style="margin-bottom:16px">
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Task Name</div>
+                    <div style="font-size:16px; font-weight:500">${escapeHTML(node.name)}</div>
+                  </div>
+                  ${hasSubs ? `
+                  <div style="margin-bottom:16px">
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Total Hours</div>
+                    <div style="font-size:14px; font-weight:500">${calculateTotalHours(node)} hrs</div>
+                  </div>
+                  ` : `
+                  <div style="display:flex; gap:24px; margin-bottom:16px">
+                    <div style="flex:1">
+                      <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Start Date</div>
+                      <div style="font-size:14px">${node.startDate ? node.startDate.split('T')[0] : '-'}</div>
+                    </div>
+                    <div style="flex:1">
+                      <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Estimated Hours</div>
+                      <div style="font-size:14px">${node.estimatedHours ? node.estimatedHours + ' hrs' : '-'}</div>
+                    </div>
+                    <div style="flex:1">
+                      <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">People</div>
+                      <div style="font-size:14px">${node.people || '1'}</div>
+                    </div>
+                  </div>
+                  `}
+                  <div>
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Progress</div>
+                    <div style="width:100%;background:var(--border-color);height:24px;border-radius:4px;overflow:hidden;position:relative">
+                      <div style="width:${node.progress || 0}%;background:var(--color-primary);height:100%;transition:width 0.3s"></div>
+                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:${node.progress > 50 ? '#fff' : '#000'}">${node.progress || 0}%</div>
+                    </div>
+                  </div>
+                  <div style="margin-top:16px">
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Description</div>
+                    <div style="font-size:14px; white-space:pre-wrap">${escapeHTML(node.description || 'No description provided.')}</div>
+                  </div>
+                  ` : `
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Edit Info Panel</h4>
+                    <div style="display:flex;gap:8px">
+                      <button class="btn btn-sm btn-primary btn-done-info">Done</button>
+                      ${canEditTasks ? `<button class="btn btn-sm btn-secondary btn-duplicate-task" data-path="${path.join('-')}" title="Duplicate Task"><span class="material-icons-outlined" style="font-size:16px">content_copy</span></button>` : ''}
+                      ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Task Name</label>
+                    <input type="text" class="form-input detail-input" data-field="name" value="${escapeHTML(node.name)}" ${!canEditTasks ? 'disabled' : ''} />
+                  </div>
+                  ${hasSubs ? `
+                  <div style="margin-bottom:16px">
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Total Hours</div>
+                    <div style="font-size:14px; font-weight:500">${calculateTotalHours(node)} hrs</div>
+                  </div>
+                  ` : `
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label">Start Date</label>
+                      <input type="date" class="form-input detail-input" data-field="startDate" value="${node.startDate ? node.startDate.split('T')[0] : ''}" ${!canEditTasks ? 'disabled' : ''} />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Estimated Hours</label>
+                      <input type="number" class="form-input detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" ${!canEditTasks ? 'disabled' : ''} />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">People</label>
+                      <input type="number" class="form-input detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" ${!canEditTasks ? 'disabled' : ''} />
+                    </div>
+                  </div>
+                  `}
+                  <div class="form-group">
+                    <label class="form-label">Progress</label>
+                    <div style="width:100%;background:var(--border-color);height:36px;border-radius:4px;overflow:hidden;position:relative">
+                      <div style="width:${node.progress || 0}%;background:var(--color-primary);height:100%;transition:width 0.3s"></div>
+                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;color:${node.progress > 50 ? '#fff' : '#000'}">${node.progress || 0}%</div>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-input detail-input" data-field="description" rows="3" ${!canEditTasks ? 'disabled' : ''}>${escapeHTML(node.description || '')}</textarea>
+                  </div>
+                  `}
+                </div>
+              `;
+            })() : ''}
           </div>
         </div>
       `;
 
-      tc.querySelector('#btn-add-phase')?.addEventListener('click', () => {
-        job.phases.push({ id: store.generateId(), name: 'New Phase', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [] });
-        renderTabContent();
+      tc.querySelector('.btn-view-back')?.addEventListener('click', () => {
+         taskViewPath.pop();
+         renderTabContent();
       });
 
-      tc.querySelectorAll('.phase-input').forEach(input => {
-        input.addEventListener('change', () => {
-          const idx = parseInt(input.closest('tr').dataset.index);
-          const field = input.dataset.field;
-          job.phases[idx][field] = field === 'progress' ? parseInt(input.value) : input.value;
-          if (field === 'progress') renderTabContent();
-        });
-      });
-
-      tc.querySelectorAll('.btn-remove-phase').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt(btn.dataset.index);
-          if (confirm('Delete this phase?')) {
-            job.phases.splice(idx, 1);
+      tc.querySelectorAll('.btn-drill-down').forEach(el => {
+         el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            taskViewPath = el.dataset.path.split('-').map(Number);
+            taskExpandedPath = [...taskViewPath];
             renderTabContent();
-          }
-        });
+         });
+      });
+
+      tc.querySelectorAll('.task-list-checkbox').forEach(chk => {
+         chk.addEventListener('change', (e) => {
+            const path = e.target.dataset.path.split('-').map(Number);
+            const node = getPhaseByPath(job.phases, path);
+            node.progress = e.target.checked ? 100 : 0;
+            node.status = e.target.checked ? 'Completed' : 'Not Started';
+            updateParentProgress(job.phases, path);
+            renderTabContent();
+         });
+         chk.addEventListener('click', (e) => e.stopPropagation());
+      });
+
+      tc.querySelectorAll('.task-list-item').forEach(el => {
+         el.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-drill-down')) return;
+            const path = e.currentTarget.dataset.path.split('-').map(Number);
+            taskExpandedPath = path;
+            isInfoPanelEditing = false;
+            renderTabContent();
+         });
+      });
+
+      tc.querySelector('.btn-edit-info')?.addEventListener('click', () => {
+         isInfoPanelEditing = true;
+         renderTabContent();
+      });
+
+      tc.querySelector('.btn-done-info')?.addEventListener('click', () => {
+         isInfoPanelEditing = false;
+         renderTabContent();
+      });
+
+      tc.querySelector('#btn-add-main-task')?.addEventListener('click', () => {
+         if (!job.phases) job.phases = [];
+         job.phases.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] });
+         taskExpandedPath = [job.phases.length - 1];
+         renderTabContent();
+      });
+
+      tc.querySelectorAll('.btn-add-child-task').forEach(btn => {
+         btn.addEventListener('click', (e) => {
+            const path = e.currentTarget.dataset.path.split('-').map(Number);
+            const parent = getPhaseByPath(job.phases, path);
+            if (!parent.subPhases) parent.subPhases = [];
+            parent.subPhases.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] });
+            taskExpandedPath = [...path, parent.subPhases.length - 1];
+            renderTabContent();
+         });
+      });
+
+      tc.querySelectorAll('.detail-input').forEach(input => {
+         input.addEventListener('change', (e) => {
+            const node = getPhaseByPath(job.phases, taskExpandedPath);
+            const field = e.target.dataset.field;
+            
+            if (field === 'progress-check') {
+               node.progress = e.target.checked ? 100 : 0;
+               node.status = e.target.checked ? 'Completed' : 'Not Started';
+            } else if (field === 'progress') {
+               node.progress = parseInt(e.target.value);
+               if (node.progress === 100) node.status = 'Completed';
+               else if (node.progress === 0) node.status = 'Not Started';
+               else node.status = 'In Progress';
+            } else if (field === 'estimatedHours') {
+               node.estimatedHours = parseFloat(e.target.value) || 0;
+            } else {
+               node[field] = e.target.value;
+            }
+
+            updateParentProgress(job.phases, taskExpandedPath);
+            renderTabContent();
+         });
+      });
+
+      tc.querySelectorAll('.btn-remove-task').forEach(btn => {
+         btn.addEventListener('click', (e) => {
+            if (confirm('Delete this task and all its sub-tasks?')) {
+               const path = e.currentTarget.dataset.path.split('-').map(Number);
+               if (path.length === 1) {
+                  job.phases.splice(path[0], 1);
+               } else {
+                  const parentPath = path.slice(0, -1);
+                  const parent = getPhaseByPath(job.phases, parentPath);
+                  parent.subPhases.splice(path[path.length-1], 1);
+                  updateParentProgress(job.phases, parentPath);
+               }
+               taskExpandedPath = path.slice(0, -1); // jump up one level
+               renderTabContent();
+            }
+         });
       });
 
       tc.querySelector('#btn-save-phases')?.addEventListener('click', () => {
-        store.update('jobs', id, { phases: job.phases });
-        showToast('Phases saved', 'success');
+         store.update('jobs', id, { phases: job.phases });
+         showToast('Tasks saved', 'success');
+      });
+
+      tc.querySelector('#btn-save-tasklist-template')?.addEventListener('click', () => {
+         const tmplName = prompt('Enter a name for this Tasklist template:');
+         if (tmplName) {
+            function deepClonePhases(phases) {
+               return phases.map(p => ({
+                  ...p,
+                  id: store.generateId(),
+                  subPhases: p.subPhases ? deepClonePhases(p.subPhases) : []
+               }));
+            }
+            store.create('tasklistTemplates', {
+               name: tmplName,
+               phases: deepClonePhases(job.phases),
+               createdAt: new Date().toISOString()
+            });
+            showToast('Tasklist saved as template', 'success');
+         }
+      });
+
+      tc.querySelectorAll('.btn-duplicate-task').forEach(btn => {
+         btn.addEventListener('click', (e) => {
+            const path = e.currentTarget.dataset.path.split('-').map(Number);
+            const nodeToCopy = getPhaseByPath(job.phases, path);
+            
+            function cloneNode(node, isRootCopy) {
+               return {
+                  ...node,
+                  id: store.generateId(),
+                  name: node.name + (isRootCopy ? ' (Copy)' : ''),
+                  progress: 0,
+                  status: 'Not Started',
+                  subPhases: node.subPhases ? node.subPhases.map(child => cloneNode(child, false)) : []
+               };
+            }
+            
+            const cloned = cloneNode(nodeToCopy, true);
+            
+            if (path.length === 1) {
+               job.phases.splice(path[0] + 1, 0, cloned);
+            } else {
+               const parentPath = path.slice(0, -1);
+               const parent = getPhaseByPath(job.phases, parentPath);
+               parent.subPhases.splice(path[path.length - 1] + 1, 0, cloned);
+               updateParentProgress(job.phases, parentPath);
+            }
+            renderTabContent();
+         });
+      });
+
+      tc.querySelectorAll('.btn-book-time').forEach(btn => {
+         btn.addEventListener('click', (e) => {
+            const path = e.currentTarget.dataset.path.split('-').map(Number);
+            const node = getPhaseByPath(job.phases, path);
+            const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+            
+            const allTimesheets = store.getAll('timesheets').filter(t => t.jobId === id);
+            const techs = store.getAll('technicians');
+            
+            const now = new Date();
+            const p = n => n.toString().padStart(2, '0');
+            const dateStr = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())}`;
+            const startStr = `${dateStr}T09:00`;
+            const finishStr = `${dateStr}T10:00`;
+
+            const content = document.createElement('div');
+            content.innerHTML = `
+            <div style="margin-bottom:var(--space-lg)">
+              <h5 style="margin-bottom:8px">All Logged Time for this Job (${allTimesheets.reduce((s,t)=>s+(t.hours||0),0).toFixed(2)} hrs)</h5>
+              <div style="max-height:150px;overflow-y:auto;background:var(--content-bg);border-radius:4px;border:1px solid var(--border-color)">
+                <table class="data-table" style="font-size:13px">
+                  <thead><tr><th>Date</th><th>Tech</th><th>Task</th><th>Hours</th></tr></thead>
+                  <tbody>
+                    ${allTimesheets.length ? allTimesheets.map(t => `
+                      <tr>
+                        <td>${t.startTime ? new Date(t.startTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : new Date(t.date).toLocaleDateString()}</td>
+                        <td>${escapeHTML(t.technicianName)}</td>
+                        <td>${escapeHTML(t.phaseName || 'ΓÇö')}</td>
+                        <td style="font-weight:600">${t.hours}</td>
+                      </tr>
+                    `).join('') : '<tr><td colspan="4" style="text-align:center" class="text-secondary">No time logged</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Start Time *</label>
+                <input type="datetime-local" class="form-input" id="bt-start" value="${startStr}" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Finish Time *</label>
+                <input type="datetime-local" class="form-input" id="bt-finish" value="${finishStr}" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Technician *</label>
+              <select class="form-select" id="bt-tech">
+                <option value="">Select tech...</option>
+                ${techs.map(t => `<option value="${t.id}" ${t.name === currentUser.name ? 'selected' : ''}>${t.name}</option>`).join('')}
+              </select>
+            </div>
+            `;
+            
+            showModal({
+              title: 'Book Time: ' + escapeHTML(node.name),
+              content,
+              size: 'modal-70',
+              actions: [
+                { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+                { label: 'Log Time', className: 'btn-primary', onClick: (close) => {
+                  const startVal = content.querySelector('#bt-start').value;
+                  const finishVal = content.querySelector('#bt-finish').value;
+                  const techId = content.querySelector('#bt-tech').value;
+                  const desc = '';
+                  
+                  if (!startVal || !finishVal || !techId) {
+                    showToast('Please fill all required fields', 'error');
+                    return;
+                  }
+
+                  const startDate = new Date(startVal);
+                  const finishDate = new Date(finishVal);
+                  
+                  if (finishDate <= startDate) {
+                    showToast('Finish time must be after start time', 'error');
+                    return;
+                  }
+                  
+                  const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
+                  const tech = techs.find(t => t.id === techId);
+                  
+                  store.create('timesheets', {
+                    jobId: id,
+                    jobNumber: job.number,
+                    phaseId: node.id,
+                    phaseName: node.name,
+                    technicianId: techId,
+                    technicianName: tech.name,
+                    date: startVal.split('T')[0],
+                    startTime: startVal,
+                    finishTime: finishVal,
+                    description: desc,
+                    hours,
+                    status: 'Approved'
+                  });
+                  
+                  showToast('Time booked successfully', 'success');
+                  renderTabContent();
+                  close();
+                }}
+              ]
+            });
+         });
       });
     } else if (activeTab === 'costs') {
       if (job.technicianId && (!job.technicians || job.technicians.length === 0)) {
@@ -515,67 +943,7 @@ export function renderJobDetail(container, { id }) {
             </table>
           </div>
         </div>
-        
-        <div class="card" style="max-width:600px">
-          <div class="card-header"><h4>Log Time</h4></div>
-          <div class="card-body">
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Date *</label>
-                <input type="date" class="form-input" id="ts-date" value="${new Date().toISOString().split('T')[0]}" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Technician *</label>
-                <select class="form-select" id="ts-tech">
-                  <option value="">Select technician...</option>
-                  ${techs.map(t => `<option value="${t.id}" ${job.technicianId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group" style="grid-column: span 2">
-                <label class="form-label">Description</label>
-                <input type="text" class="form-input" id="ts-desc" placeholder="What work was completed?" />
-              </div>
-            </div>
-            <div class="form-row" style="align-items:flex-end">
-              <div class="form-group" style="margin-bottom:0">
-                <label class="form-label">Hours *</label>
-                <input type="number" class="form-input" id="ts-hours" value="1" step="0.5" min="0.5" />
-              </div>
-              <button class="btn btn-primary" id="btn-log-time"><span class="material-icons-outlined">add_task</span> Log Time</button>
-            </div>
-          </div>
-        </div>
       `;
-      
-      tc.querySelector('#btn-log-time')?.addEventListener('click', () => {
-        const date = tc.querySelector('#ts-date').value;
-        const techId = tc.querySelector('#ts-tech').value;
-        const desc = tc.querySelector('#ts-desc').value;
-        const hours = parseFloat(tc.querySelector('#ts-hours').value);
-        
-        if (!date || !techId || !hours) {
-          showToast('Please fill all required fields', 'error');
-          return;
-        }
-        
-        const tech = techs.find(t => t.id === techId);
-        
-        store.create('timesheets', {
-          jobId: id,
-          jobNumber: job.number,
-          technicianId: techId,
-          technicianName: tech.name,
-          date,
-          description: desc,
-          hours,
-          status: 'Pending'
-        });
-        
-        showToast('Time logged successfully', 'success');
-        renderTabContent();
-      });
     } else if (activeTab === 'forms') {
       job.forms = job.forms || [];
       

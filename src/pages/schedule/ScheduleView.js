@@ -9,15 +9,47 @@ import { escapeHTML } from '../../utils/security.js';
 
 export function renderScheduleView(container) {
   const technicians = store.getAll('technicians');
-  const jobs = store.getAll('jobs');
+  // jobs read fresh each render — do NOT cache here
+
+  // Role-based access: read who is logged in
+  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+  const isTechnician = currentUser.role === 'technician';
 
   let viewMode = 'week';
   let calendarType = 'schedule'; // 'schedule' or 'activity'
   let currentDate = new Date();
-  const hours = Array.from({ length: 12 }, (_, i) => i + 7); // 7am–6pm
+  const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00–23:00
   let dragState = null;
-  let selectedTechId = 'all';
+  let resizeState = null;
+  // Technicians are always locked to their own view; admins/managers can see all
+  let selectedTechId = isTechnician ? currentUser.id : 'all';
   let contextMenu = null;
+  let savedScrollTop = 0;
+  let savedScrollLeft = 0;
+
+  // 15-min precision: 1 hour = 32px, so 1 quarter = 8px
+  const PX_PER_HOUR = 32;
+  const PX_PER_QUARTER = PX_PER_HOUR / 4; // 8px
+
+  function snapToQuarter(hours) {
+    return Math.round(hours * 4) / 4;
+  }
+
+  function formatHour(h) {
+    const hrs = Math.floor(h);
+    const mins = Math.round((h - hrs) * 60);
+    return `${hrs.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}`;
+  }
+
+  function saveScroll() {
+    const el = document.getElementById('calendar-scroll');
+    if (el) { savedScrollTop = el.scrollTop; savedScrollLeft = el.scrollLeft; }
+  }
+
+  function restoreScroll() {
+    const el = document.getElementById('calendar-scroll');
+    if (el) { el.scrollTop = savedScrollTop; el.scrollLeft = savedScrollLeft; }
+  }
 
   function closeContextMenu() {
     if (contextMenu) {
@@ -39,8 +71,9 @@ export function renderScheduleView(container) {
     });
   }
 
-  // Build schedule blocks from jobs
+  // Build schedule blocks from jobs (always reads fresh from store)
   function getScheduleBlocks() {
+    const jobs = store.getAll('jobs');
     const blocks = [];
     const days = getWeekDays();
 
@@ -49,11 +82,11 @@ export function renderScheduleView(container) {
         const jobDate = new Date(job.scheduledDate);
         days.forEach((day, dayIdx) => {
           if (jobDate.toDateString() === day.toDateString()) {
-            const startHour = job.startHour || (7 + (Math.abs(hashStr(job.id)) % 6)); // use saved or deterministic
+            const startHour = job.startHour !== undefined ? job.startHour : (7 + (Math.abs(hashStr(job.id)) % 6));
             
             if (job.technicians && job.technicians.length > 0) {
               job.technicians.forEach(t => {
-                const duration = Math.min(t.hours || 2, 5);
+                const duration = t.hours || 2;
                 blocks.push({
                   jobId: job.id,
                   jobNumber: job.number,
@@ -68,7 +101,7 @@ export function renderScheduleView(container) {
                 });
               });
             } else if (job.technicianId) {
-              const duration = Math.min(job.estimatedHours || 2, 5);
+              const duration = job.estimatedHours || 2;
               blocks.push({
                 jobId: job.id,
                 jobNumber: job.number,
@@ -118,6 +151,7 @@ export function renderScheduleView(container) {
   }
 
   function render() {
+    saveScroll();
     const days = getWeekDays();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -142,10 +176,12 @@ export function renderScheduleView(container) {
             </span>
           </div>
           <div class="flex gap-sm items-center" style="margin-left:auto;margin-right:16px">
+            ${!isTechnician ? `
             <select class="form-select form-select-sm" id="schedule-tech-filter" style="min-width:180px">
               <option value="all">All Technicians</option>
               ${technicians.map(t => `<option value="${t.id}" ${selectedTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
             </select>
+            ` : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${currentUser.name}</span>`}
           </div>
           <div class="flex gap-xs" style="margin-right:16px;">
             <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
@@ -178,21 +214,21 @@ export function renderScheduleView(container) {
 
       <!-- Calendar Grid -->
       <div class="card" style="overflow:hidden">
-        <div style="display:flex;height:calc(100vh - 310px);overflow:hidden">
+        <div style="display:flex;height:calc(100vh - 260px);overflow:hidden">
           <!-- Calendar -->
           <div style="flex:1;overflow:auto" id="calendar-scroll">
             ${selectedTechId === 'all' ? `
               <!-- Top headers: Technicians -->
-              <div style="display:grid;grid-template-columns:80px repeat(${technicians.length}, minmax(160px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
+              <div style="display:grid;grid-template-columns:56px repeat(${technicians.length}, minmax(120px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
                 <!-- Sticky Top-Left corner for Time/Date header -->
-                <div style="height:44px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
+                <div style="height:34px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
                   Time
                 </div>
                 ${technicians.map(tech => `
-                  <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
-                    <div style="font-size:var(--font-size-sm);font-weight:600;display:flex;align-items:center;gap:6px">
-                      <div style="width:8px;height:8px;border-radius:50%;background:${tech.color};flex-shrink:0"></div>
-                      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">${tech.name}</span>
+                  <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
+                    <div style="font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px">
+                      <div style="width:6px;height:6px;border-radius:50%;background:${tech.color};flex-shrink:0"></div>
+                      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px">${tech.name}</span>
                     </div>
                   </div>
                 `).join('')}
@@ -210,13 +246,13 @@ export function renderScheduleView(container) {
                   </div>
 
                   <!-- Day Grid -->
-                  <div style="display:grid;grid-template-columns:80px repeat(${technicians.length}, minmax(160px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
+                  <div style="display:grid;grid-template-columns:56px repeat(${technicians.length}, minmax(120px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
 
                     <!-- Hours Column (Sticky Left) -->
                     <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                       ${hours.map(h => `
-                        <div style="height:48px;border-bottom:1px solid var(--border-color);padding:4px 8px;font-size:var(--font-size-xs);color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
-                          ${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}
+                        <div style="height:32px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
+                          ${h.toString().padStart(2,'0')}:00
                         </div>
                       `).join('')}
                     </div>
@@ -225,8 +261,8 @@ export function renderScheduleView(container) {
                     ${technicians.map(tech => {
                       const techBlocks = blocks.filter(b => b.technicianId === tech.id);
                       return `
-                        <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
-                          ${hours.map(h => `<div class="schedule-hour-slot" style="height:48px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                        <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].toISOString().split('T')[0]}">
+                          ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
                           ${renderBlocks(techBlocks, dayIdx, tech.color)}
                         </div>
                       `;
@@ -236,16 +272,16 @@ export function renderScheduleView(container) {
               }).join('')}
             ` : `
               <!-- Top headers: Days -->
-              <div style="display:grid;grid-template-columns:80px repeat(${days.length}, minmax(160px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
+              <div style="display:grid;grid-template-columns:56px repeat(${days.length}, minmax(120px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
                 <!-- Sticky Top-Left corner for Time/Date header -->
-                <div style="height:44px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
+                <div style="height:34px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
                   Time
                 </div>
                 ${days.map(day => {
                   const isToday = day.toDateString() === new Date().toDateString();
                   return `
-                    <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
-                      <div style="font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};display:flex;align-items:center;gap:6px">
+                    <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
+                      <div style="font-size:11px;font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};display:flex;align-items:center;gap:6px">
                         <span>${dayNames[day.getDay()]} ${day.getDate()} ${monthNames[day.getMonth()]}</span>
                       </div>
                     </div>
@@ -254,12 +290,12 @@ export function renderScheduleView(container) {
               </div>
 
               <!-- Day Grid -->
-              <div style="display:grid;grid-template-columns:80px repeat(${days.length}, minmax(160px, 1fr));width:fit-content;min-width:100%">
+              <div style="display:grid;grid-template-columns:56px repeat(${days.length}, minmax(120px, 1fr));width:fit-content;min-width:100%">
                 <!-- Hours Column (Sticky Left) -->
                 <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                   ${hours.map(h => `
-                    <div style="height:48px;border-bottom:1px solid var(--border-color);padding:4px 8px;font-size:var(--font-size-xs);color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
-                      ${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}
+                    <div style="height:32px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
+                      ${h.toString().padStart(2,'0')}:00
                     </div>
                   `).join('')}
                 </div>
@@ -270,7 +306,7 @@ export function renderScheduleView(container) {
                   const techBlocks = blocks.filter(b => b.technicianId === tech.id);
                   return `
                     <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
-                      ${hours.map(h => `<div class="schedule-hour-slot" style="height:48px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                      ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
                       ${renderBlocks(techBlocks, dayIdx, tech.color)}
                     </div>
                   `;
@@ -283,10 +319,13 @@ export function renderScheduleView(container) {
     `;
 
     bindEvents();
-    bindDragAndDrop();
+    bindDragAndDrop(days);
+    bindResize();
+    restoreScroll();
   }
 
   function getUnscheduledJobs() {
+    const jobs = store.getAll('jobs');
     return jobs.filter(j => (!j.scheduledDate || !j.technicianId) && j.status !== 'Completed' && j.status !== 'Invoiced');
   }
 
@@ -295,20 +334,27 @@ export function renderScheduleView(container) {
     return techBlocks
       .filter(b => b.dayIdx === dayIdx)
       .map(b => {
-        const top = (b.startHour - 7) * 48;
-        const height = (b.endHour - b.startHour) * 48 - 2;
+        const top = b.startHour * PX_PER_HOUR;
+        const height = Math.max((b.endHour - b.startHour) * PX_PER_HOUR - 2, PX_PER_QUARTER);
         const borderColor = priorityBorders[b.priority] || color;
+        const timeLabel = `${formatHour(b.startHour)} — ${formatHour(b.endHour)}`;
         return `
-          <div class="schedule-block" draggable="true" data-block-job-id="${b.jobId}" data-start="${b.startHour}" data-end="${b.endHour}" style="
-            top:${top}px;height:${height}px;
-            background:${color}12;
-            border-color:${borderColor};
-            color:${color};
-            pointer-events: auto;
-          ">
-            <div style="pointer-events:none;font-weight:600;font-size:11px;line-height:1.3">${b.jobNumber}</div>
-            <div style="pointer-events:none;font-size:10px;opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>
-            ${height > 50 ? `<div style="pointer-events:none;font-size:9px;opacity:0.6;margin-top:2px">${b.startHour > 12 ? b.startHour - 12 : b.startHour}${b.startHour >= 12 ? 'pm' : 'am'} — ${b.endHour > 12 ? b.endHour - 12 : b.endHour}${b.endHour >= 12 ? 'pm' : 'am'}</div>` : ''}
+          <div class="schedule-block" draggable="true"
+            data-block-job-id="${b.jobId}"
+            data-start="${b.startHour}"
+            data-end="${b.endHour}"
+            style="
+              top:${top}px;
+              height:${height}px;
+              background:${color}12;
+              border-color:${borderColor};
+              color:${color};
+              pointer-events:auto;
+            ">
+            <div style="pointer-events:none;font-weight:600;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.jobNumber}</div>
+            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
+            ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.6;margin-top:2px">${timeLabel}</div>` : ''}
+            <div class="schedule-resize-handle" data-block-job-id="${b.jobId}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
           </div>
         `;
       }).join('');
@@ -352,7 +398,8 @@ export function renderScheduleView(container) {
     // Click existing blocks to navigate to job
     container.querySelectorAll('.schedule-block').forEach(block => {
       block.addEventListener('click', (e) => {
-        if (e.defaultPrevented) return; // skip if drag happened
+        if (e.defaultPrevented) return; // skip if drag/resize happened
+        if (block.dataset.resized === 'true') { block.dataset.resized = 'false'; return; }
         router.navigate(`/jobs/${block.dataset.blockJobId}`);
       });
       block.addEventListener('contextmenu', (e) => {
@@ -396,8 +443,8 @@ export function renderScheduleView(container) {
     });
   }
 
-  function bindDragAndDrop() {
-    const days = getWeekDays();
+  function bindDragAndDrop(days) {
+    // 'days' is passed from render() so it always matches the currently rendered DOM
 
     // Draggable: unscheduled jobs
     container.querySelectorAll('.unscheduled-job').forEach(el => {
@@ -449,6 +496,7 @@ export function renderScheduleView(container) {
         col.style.background = '';
       });
       col.addEventListener('drop', (e) => {
+        const jobs = store.getAll('jobs'); // fresh read
         e.preventDefault();
         col.style.background = '';
 
@@ -456,13 +504,14 @@ export function renderScheduleView(container) {
 
         const targetTechId = col.dataset.tech;
         const targetDayIdx = parseInt(col.dataset.day);
-        const targetDay = days[targetDayIdx];
+        // Use the stamped date string as the ground truth — avoids index drift
+        const targetDay = col.dataset.date ? new Date(col.dataset.date + 'T12:00:00') : days[targetDayIdx];
 
         // Calculate drop hour from mouse position
         const rect = col.getBoundingClientRect();
         const relY = e.clientY - rect.top;
-        const hourIdx = Math.floor(relY / 48);
-        const dropHour = Math.max(7, Math.min(18, 7 + hourIdx));
+        const hourIdx = Math.floor(relY / 32);
+        const dropHour = Math.max(0, Math.min(23, hourIdx));
 
         const tech = technicians.find(t => t.id === targetTechId);
         const job = jobs.find(j => j.id === dragState.jobId);
@@ -514,6 +563,96 @@ export function renderScheduleView(container) {
 
         dragState = null;
         render();
+      });
+    });
+  }
+
+  function bindResize() {
+    container.querySelectorAll('.schedule-resize-handle').forEach(handle => {
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const block = handle.closest('.schedule-block');
+        const col = block.closest('.schedule-day-col');
+        const startHour = parseFloat(handle.dataset.start);
+        const initialEndHour = parseFloat(handle.dataset.end);
+        const colRect = col.getBoundingClientRect();
+
+        resizeState = {
+          jobId: handle.dataset.blockJobId,
+          block,
+          startHour,
+          endHour: initialEndHour,
+          colRect,
+        };
+
+        block.dataset.resized = 'false';
+        block.style.opacity = '0.85';
+        block.style.userSelect = 'none';
+        document.body.style.cursor = 'ns-resize';
+
+        function onMouseMove(ev) {
+          if (!resizeState) return;
+          const scrollEl = document.getElementById('calendar-scroll');
+          const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
+          const relY = ev.clientY - resizeState.colRect.top + scrollTop;
+          // Snap to nearest 15 min
+          const rawHours = relY / PX_PER_HOUR;
+          const snapped = snapToQuarter(rawHours);
+          // Minimum 15 min duration
+          const minEnd = resizeState.startHour + 0.25;
+          const newEnd = Math.max(snapped, minEnd);
+
+          if (newEnd !== resizeState.endHour) {
+            resizeState.endHour = newEnd;
+            resizeState.block.dataset.resized = 'true';
+            const newHeight = Math.max((newEnd - resizeState.startHour) * PX_PER_HOUR - 2, PX_PER_QUARTER);
+            resizeState.block.style.height = newHeight + 'px';
+            // Update time label live
+            const timeEl = resizeState.block.querySelector('.schedule-block-time');
+            if (timeEl) timeEl.textContent = `${formatHour(resizeState.startHour)} — ${formatHour(newEnd)}`;
+          }
+        }
+
+        function onMouseUp() {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          document.body.style.cursor = '';
+
+          if (!resizeState) return;
+
+          const { jobId, startHour, endHour } = resizeState;
+          const duration = endHour - startHour;
+          resizeState.block.style.opacity = '';
+          resizeState.block.style.userSelect = '';
+
+          if (Math.abs(endHour - initialEndHour) >= 0.25) {
+            const job = store.getAll('jobs').find(j => j.id === jobId);
+            if (job) {
+              // Update technicians hours if present
+              let updatedTechs = job.technicians || [];
+              if (updatedTechs.length > 0) {
+                updatedTechs = updatedTechs.map(t => ({ ...t, hours: duration }));
+              }
+              store.update('jobs', jobId, {
+                startHour,
+                estimatedHours: parseFloat(duration.toFixed(4)),
+                technicians: updatedTechs.length > 0 ? updatedTechs : job.technicians,
+              });
+              showToast(`Duration set to ${formatHour(duration).replace('0', '').trim() || duration + 'h'}`, 'success');
+            }
+            // Re-render to sync state cleanly
+            resizeState = null;
+            render();
+            return;
+          }
+
+          resizeState = null;
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
       });
     });
   }

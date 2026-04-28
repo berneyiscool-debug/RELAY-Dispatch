@@ -4,7 +4,7 @@
 
 const routeLabels = {
   '/': 'Dashboard',
-  '/people': 'People',
+  '/people': 'Customers',
   '/leads': 'Leads',
   '/quotes': 'Quotes',
   '/jobs': 'Jobs',

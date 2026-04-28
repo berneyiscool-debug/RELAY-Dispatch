@@ -109,7 +109,17 @@ export function renderStockForm(container, { id }) {
 function checkReorderLevel(data) {
   if (data.quantity <= data.reorderLevel) {
     const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
-    if (currentUser.permissions && currentUser.permissions.includes('stock_maintenance')) {
+    let hasStockPerm = false;
+    if (currentUser.role === 'admin') hasStockPerm = true;
+    else if (currentUser.userTypeId) {
+      const ut = store.getById('userTypes', currentUser.userTypeId);
+      if (ut && ut.permissions) {
+        const p = ut.permissions.find(p => p.module === 'Stock');
+        if (p) hasStockPerm = p.edit || p.create;
+      }
+    }
+    
+    if (hasStockPerm) {
       import('../../components/Notifications.js').then(({ showToast }) => {
         showToast(`Auto-Reorder Alert: ${data.name} is at or below its reorder level (${data.quantity} left).`, 'warning');
       });

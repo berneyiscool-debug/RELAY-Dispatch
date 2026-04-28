@@ -16,13 +16,13 @@
   --sidebar-text-hover: #FFFFFF;
   --sidebar-active-bg: rgba(27, 109, 224, 0.15);
   --sidebar-active-text: #5BA0F5;
-  --sidebar-width-collapsed: 64px;
-  --sidebar-width-expanded: 240px;
+  --sidebar-width-collapsed: 51px;
+  --sidebar-width-expanded: 192px;
   --sidebar-transition: 0.2s ease;
 
   /* ---- Top Bar ---- */
   --topbar-bg: #FFFFFF;
-  --topbar-height: 56px;
+  --topbar-height: 45px;
   --topbar-border: #E4E9F0;
   --topbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 
@@ -58,26 +58,26 @@
   --border-radius-lg: 12px;
 
   /* ---- Spacing ---- */
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 12px;
-  --space-base: 16px;
-  --space-lg: 20px;
-  --space-xl: 24px;
-  --space-2xl: 32px;
-  --space-3xl: 40px;
-  --space-4xl: 48px;
+  --space-xs: 3px;
+  --space-sm: 6px;
+  --space-md: 10px;
+  --space-base: 13px;
+  --space-lg: 16px;
+  --space-xl: 19px;
+  --space-2xl: 26px;
+  --space-3xl: 32px;
+  --space-4xl: 38px;
 
   /* ---- Typography ---- */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-base: 13px;
-  --font-size-md: 14px;
-  --font-size-lg: 16px;
-  --font-size-xl: 18px;
-  --font-size-2xl: 22px;
-  --font-size-3xl: 28px;
+  --font-size-xs: 9px;
+  --font-size-sm: 10px;
+  --font-size-base: 11px;
+  --font-size-md: 11px;
+  --font-size-lg: 13px;
+  --font-size-xl: 14px;
+  --font-size-2xl: 18px;
+  --font-size-3xl: 22px;
   --font-weight-light: 300;
   --font-weight-normal: 400;
   --font-weight-medium: 500;

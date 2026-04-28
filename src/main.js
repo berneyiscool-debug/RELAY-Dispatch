@@ -187,6 +187,41 @@ router.onNavigate = (path, params) => {
        router.navigate('/');
        return false;
     }
+
+    // Check page permissions
+    if (currentUser.role !== 'admin' && currentUser.role !== 'customer' && currentUser.userTypeId && path !== '/login') {
+       const ut = store.getById('userTypes', currentUser.userTypeId);
+       if (ut && ut.permissions) {
+          const pathMap = {
+             '/': 'Dashboard',
+             '/people': 'Customers',
+             '/leads': 'Leads',
+             '/quotes': 'Quotes',
+             '/jobs': 'Jobs',
+             '/timesheets': 'Timesheets',
+             '/fleet': 'Fleet',
+             '/schedule': 'Schedule',
+             '/contractors': 'Contractors',
+             '/stock': 'Stock',
+             '/purchase-orders': 'Purchase Orders',
+             '/invoices': 'Invoices',
+             '/documents': 'Documents',
+             '/reports': 'Reports',
+             '/settings': 'Settings'
+          };
+          const moduleName = pathMap[basePath];
+          if (moduleName) {
+             const p = ut.permissions.find(m => m.module === moduleName);
+             if (!p || (!p.view && !p.create && !p.edit && !p.delete)) {
+                // No permissions at all for this page, redirect to Dashboard
+                if (basePath !== '/') {
+                   router.navigate('/');
+                   return false;
+                }
+             }
+          }
+       }
+    }
   }
 
   updateSidebarActive(path);

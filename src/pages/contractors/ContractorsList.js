@@ -1,4 +1,9 @@
+// ============================================
+// SIMPRO CLONE — CONTRACTORS LIST PAGE
+// ============================================
+
 import { store } from '../../data/store.js';
+import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 
@@ -6,59 +11,62 @@ export function renderContractorsList(container) {
   const contractors = store.getAll('contractors');
 
   container.innerHTML = `
-    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div class="page-header">
       <h1>Contractors</h1>
-      <button class="btn btn-primary" id="btn-new-contractor">Add Contractor</button>
-    </div>
-
-    <div class="card">
-      <div class="table-responsive">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Business Name</th>
-              <th>Contact Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${contractors.length === 0 ? `<tr><td colspan="6" class="text-center">No contractors found.</td></tr>` :
-              contractors.map(c => `
-                <tr class="contractor-row" data-id="${c.id}" style="cursor: pointer;">
-                  <td>${escapeHTML(c.businessName)}</td>
-                  <td>${escapeHTML(c.contactName)}</td>
-                  <td>${escapeHTML(c.email || '-')}</td>
-                  <td>${escapeHTML(c.phone || '-')}</td>
-                  <td><span class="badge ${c.active ? 'badge-success' : 'badge-neutral'}">${c.active ? 'Active' : 'Inactive'}</span></td>
-                  <td>
-                    <button class="btn btn-ghost btn-sm contractor-edit-btn" data-id="${c.id}">Edit</button>
-                  </td>
-                </tr>
-              `).join('')
-            }
-          </tbody>
-        </table>
+      <div class="page-header-actions">
+        <button class="btn btn-primary" id="btn-new-contractor"><span class="material-icons-outlined">add</span> Add Contractor</button>
       </div>
     </div>
+    
+    <div class="page-toolbar">
+      <div class="toolbar-search">
+        <span class="material-icons-outlined">search</span>
+        <input type="text" placeholder="Search contractors..." id="contractors-search" />
+      </div>
+    </div>
+
+    <div id="contractors-table-container"></div>
   `;
 
-  container.querySelectorAll('.contractor-row').forEach(row => {
-    row.addEventListener('click', () => {
-      router.navigate(`/contractors/${row.dataset.id}`);
-    });
+  let filteredData = [...contractors];
+
+  const columns = [
+    { key: 'businessName', label: 'Business Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.businessName)}</span>` },
+    { key: 'contactName', label: 'Contact Name' },
+    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—') },
+    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—') },
+    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>` },
+    { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm contractor-edit-btn" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
+  ];
+
+  const table = createDataTable({ 
+    columns, 
+    data: filteredData, 
+    onRowClick: (id) => router.navigate(`/contractors/${id}`), 
+    emptyMessage: 'No contractors found', 
+    emptyIcon: 'engineering' 
+  });
+  
+  container.querySelector('#contractors-table-container').appendChild(table);
+  
+  container.querySelector('#btn-new-contractor').addEventListener('click', () => router.navigate('/contractors/new'));
+
+  container.querySelector('#contractors-search').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    filteredData = contractors.filter(c => 
+      c.businessName.toLowerCase().includes(q) || 
+      c.contactName.toLowerCase().includes(q) || 
+      (c.email || '').toLowerCase().includes(q)
+    );
+    table.updateData(filteredData);
   });
 
-  container.querySelectorAll('.contractor-edit-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  // Action button clicks inside the table should navigate to edit instead of triggering row click
+  container.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.contractor-edit-btn');
+    if (editBtn) {
       e.stopPropagation();
-      router.navigate(`/contractors/${btn.dataset.id}/edit`);
-    });
-  });
-
-  container.querySelector('#btn-new-contractor').addEventListener('click', () => {
-    router.navigate('/contractors/new');
+      router.navigate(`/contractors/${editBtn.dataset.id}/edit`);
+    }
   });
 }

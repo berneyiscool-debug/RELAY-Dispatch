@@ -37,8 +37,8 @@
   cursor: pointer;
 }
 .sidebar-logo .logo-icon {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   background: linear-gradient(135deg, #1B6DE0, #3B95FF);
   border-radius: var(--border-radius);
   display: flex;
@@ -97,7 +97,7 @@
 }
 .sidebar-nav-item .nav-icon {
   flex-shrink: 0;
-  width: 32px;
+  width: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -218,8 +218,8 @@
 
 .topbar-action-btn {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 29px;
+  height: 29px;
   border-radius: var(--border-radius);
   display: flex;
   align-items: center;
@@ -258,8 +258,8 @@
   background: var(--content-bg);
 }
 .topbar-avatar {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--color-primary), #3B95FF);
   display: flex;
@@ -373,13 +373,13 @@
   font-size: var(--font-size-sm);
   background: white;
   outline: none;
-  width: 220px;
+  width: 176px;
   transition: all var(--transition-fast);
 }
 .toolbar-search input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(27, 109, 224, 0.12);
-  width: 280px;
+  width: 224px;
 }
 .toolbar-search .material-icons-outlined {
   position: absolute;
@@ -434,8 +434,8 @@
   gap: var(--space-lg);
 }
 .detail-header-icon {
-  width: 56px;
-  height: 56px;
+  width: 45px;
+  height: 45px;
   border-radius: var(--border-radius-lg);
   background: var(--color-primary-light);
   color: var(--color-primary);
@@ -469,8 +469,8 @@
   height: calc(100vh - var(--topbar-height) - 120px);
 }
 .schedule-sidebar {
-  width: 220px;
-  min-width: 220px;
+  width: 176px;
+  min-width: 176px;
   border-right: 1px solid var(--border-color);
   background: white;
   overflow-y: auto;
@@ -490,8 +490,8 @@
   background: white;
 }
 .schedule-time-col {
-  width: 60px;
-  min-width: 60px;
+  width: 48px;
+  min-width: 48px;
   text-align: right;
   padding-right: var(--space-sm);
   font-size: var(--font-size-xs);

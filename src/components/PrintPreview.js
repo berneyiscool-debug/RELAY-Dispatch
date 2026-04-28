@@ -3,6 +3,7 @@
 // ============================================
 
 import { escapeHTML } from '../utils/security.js';
+import { store } from '../data/store.js';
 
 export function showPrintPreview({ type, data }) {
   const overlay = document.createElement('div');
@@ -46,8 +47,7 @@ export function showPrintPreview({ type, data }) {
 
   // Print
   toolbar.querySelector('#btn-print-pdf').addEventListener('click', () => {
-    const printWindow = window.open('', '_blank', 'width=800,height=1000');
-    printWindow.document.write(`
+    const htmlString = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -59,7 +59,36 @@ export function showPrintPreview({ type, data }) {
         ${generateDocument(type, data)}
       </body>
       </html>
-    `);
+    `;
+
+    // Save to Document System
+    const docName = `${type === 'quote' ? 'Quote' : 'Invoice'} ${data.number}`;
+    
+    // Check if it already exists to avoid duplicates
+    const existingDocs = store.getAll('documents');
+    const exists = existingDocs.find(d => d.entityId === data.id && d.name === docName);
+    
+    if (!exists) {
+      const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlString)}`;
+      store.create('documents', {
+        name: docName,
+        type: type === 'quote' ? 'Quote PDF' : 'Invoice PDF',
+        size: htmlString.length,
+        url: dataUrl,
+        folder: type === 'quote' ? 'Quotes' : 'Invoices',
+        uploadedAt: new Date().toISOString(),
+        entityType: type === 'quote' ? 'Quote' : 'Invoice',
+        entityId: data.id,
+        entityName: data.customerName || 'Unknown Customer'
+      });
+      
+      import('./Notifications.js').then(({ showToast }) => {
+        showToast(`${docName} saved to Documents`, 'success');
+      });
+    }
+
+    const printWindow = window.open('', '_blank', 'width=800,height=1000');
+    printWindow.document.write(htmlString);
     printWindow.document.close();
     setTimeout(() => {
       printWindow.print();

@@ -40,7 +40,10 @@ export class Router {
     if (handler) {
       this.currentRoute = hash;
       const allParams = { ...params, ...queryParams };
-      if (this.onNavigate) this.onNavigate(hash, allParams);
+      if (this.onNavigate) {
+        const allowed = this.onNavigate(hash, allParams);
+        if (allowed === false) return; // Guard blocked the navigation
+      }
       handler(allParams);
     }
   }

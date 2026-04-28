@@ -11,65 +11,96 @@ export function renderLogin(container) {
   if (topbar) topbar.style.display = 'none';
   if (breadcrumb) breadcrumb.style.display = 'none';
 
+  const techs = store.getAll('technicians').filter(t => !t.deactivated);
+  const userTypes = store.getAll('userTypes');
+
   container.innerHTML = `
     <div class="login-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: var(--bg-primary);">
-      <div class="login-box" style="background: var(--bg-surface); padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center;">
+      <div class="login-box" style="background: var(--bg-surface); padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; max-height: 80vh; overflow-y:auto;">
         <h1 style="margin-bottom: 10px; color: var(--text-primary);">Simpro Clone</h1>
-        <p style="margin-bottom: 30px; color: var(--text-secondary);">Select a role to log in</p>
+        <p style="margin-bottom: 30px; color: var(--text-secondary);">Select a user to log in</p>
 
         <div style="display: flex; flex-direction: column; gap: 15px;">
-          <button class="btn btn-primary" id="btn-login-admin" style="width: 100%; padding: 12px; font-size: 16px;">Log in as Admin</button>
-          <button class="btn btn-secondary" id="btn-login-manager" style="width: 100%; padding: 12px; font-size: 16px;">Log in as Manager</button>
-          <button class="btn btn-secondary" id="btn-login-tech" style="width: 100%; padding: 12px; font-size: 16px;">Log in as Technician</button>
+          ${techs.map(t => {
+            const ut = userTypes.find(u => u.id === t.userTypeId);
+            return `<button class="btn btn-secondary btn-login-user" data-id="${t.id}" style="width: 100%; padding: 12px; font-size: 16px; display:flex; justify-content:space-between; align-items:center;">
+              <span>${t.name}</span>
+              <span class="badge" style="background:var(--color-primary-light); color:var(--color-primary); font-size:12px;">${ut ? ut.name : 'Unassigned'}</span>
+            </button>`;
+          }).join('')}
+          ${techs.length === 0 ? '<p class="text-secondary">No users found. Please seed data.</p>' : ''}
+          <hr style="margin: 10px 0; border-color: var(--border-color);">
           <button class="btn btn-outline" id="btn-login-customer" style="width: 100%; padding: 12px; font-size: 16px;">Log in as Customer</button>
         </div>
       </div>
     </div>
   `;
 
-  const loginAs = (role) => {
-    const user = {
-      id: role + '-user',
-      name: role.charAt(0).toUpperCase() + role.slice(1) + ' User',
-      role: role,
-      permissions: role === 'admin' ? ['stock_maintenance'] : [] // Example for future step
-    };
+  const loginAsUser = (techId) => {
+    const t = techs.find(x => x.id === techId);
+    const ut = userTypes.find(u => u.id === t?.userTypeId);
+    
+    let role = 'technician';
+    if (ut && ut.name.toLowerCase().includes('admin')) role = 'admin';
+    else if (ut && ut.name.toLowerCase().includes('manager')) role = 'manager';
 
-    // Check if we have customer seeded data, if customer login pick first customer
-    if (role === 'customer') {
-      const customers = store.get('people').filter(p => p.type === 'Customer');
-      if (customers.length > 0) {
-        user.customerId = customers[0].id;
-        user.name = customers[0].firstName + ' ' + customers[0].lastName;
-      }
-    }
+    const user = {
+      id: t.id,
+      name: t.name,
+      role: role,
+      userTypeId: t.userTypeId,
+      color: t.color
+    };
 
     sessionStorage.setItem('currentUser', JSON.stringify(user));
 
-    // Restore shell UI elements
     if (sidebar) sidebar.style.display = '';
     if (topbar) topbar.style.display = '';
     if (breadcrumb) breadcrumb.style.display = '';
 
-    // Update sidebar access visually
     import('../../components/Sidebar.js').then(({ updateSidebarAccess }) => {
       if (updateSidebarAccess) updateSidebarAccess();
     });
 
-    // Update topbar access visually
     import('../../components/TopBar.js').then(({ updateTopbarAccess }) => {
       if (updateTopbarAccess) updateTopbarAccess();
     });
 
-    if (role === 'customer') {
-      router.navigate('/portal');
-    } else {
-      router.navigate('/');
-    }
+    router.navigate('/');
   };
 
-  container.querySelector('#btn-login-admin').addEventListener('click', () => loginAs('admin'));
-  container.querySelector('#btn-login-manager').addEventListener('click', () => loginAs('manager'));
-  container.querySelector('#btn-login-tech').addEventListener('click', () => loginAs('technician'));
-  container.querySelector('#btn-login-customer').addEventListener('click', () => loginAs('customer'));
+  container.querySelectorAll('.btn-login-user').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+       const btnEl = e.target.closest('.btn-login-user');
+       loginAsUser(btnEl.dataset.id);
+    });
+  });
+
+  const loginAsCustomer = () => {
+    const user = {
+      id: 'customer-user',
+      name: 'Customer User',
+      role: 'customer'
+    };
+    const customers = store.get('people').filter(p => p.type === 'Customer');
+    if (customers.length > 0) {
+      user.customerId = customers[0].id;
+      user.name = customers[0].firstName + ' ' + customers[0].lastName;
+    }
+    sessionStorage.setItem('currentUser', JSON.stringify(user));
+
+    if (sidebar) sidebar.style.display = '';
+    if (topbar) topbar.style.display = '';
+    if (breadcrumb) breadcrumb.style.display = '';
+
+    import('../../components/Sidebar.js').then(({ updateSidebarAccess }) => {
+      if (updateSidebarAccess) updateSidebarAccess();
+    });
+    import('../../components/TopBar.js').then(({ updateTopbarAccess }) => {
+      if (updateTopbarAccess) updateTopbarAccess();
+    });
+    router.navigate('/portal');
+  };
+
+  container.querySelector('#btn-login-customer')?.addEventListener('click', loginAsCustomer);
 }

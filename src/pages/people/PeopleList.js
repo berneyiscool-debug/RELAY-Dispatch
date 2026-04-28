@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — PEOPLE LIST PAGE
+// SIMPRO CLONE — CUSTOMERS LIST PAGE
 // ============================================
 
 import { store } from '../../data/store.js';
@@ -13,7 +13,7 @@ export function renderPeopleList(container) {
 
   container.innerHTML = `
     <div class="page-header">
-      <h1>People</h1>
+      <h1>Customers</h1>
       <div class="page-header-actions">
         <button class="btn btn-secondary" id="btn-export-people">
           <span class="material-icons-outlined">download</span> Export
@@ -31,7 +31,7 @@ export function renderPeopleList(container) {
       </div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search people..." id="people-search" />
+        <input type="text" placeholder="Search customers..." id="people-search" />
       </div>
     </div>
     <div id="people-table-container"></div>
@@ -89,7 +89,7 @@ export function renderPeopleList(container) {
 
   // Export
   container.querySelector('#btn-export-people').addEventListener('click', () => {
-    showToast('People data exported successfully', 'success');
+    showToast('Customer data exported successfully', 'success');
   });
 
   // Filters

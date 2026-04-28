@@ -6,50 +6,56 @@ export function renderContractorForm(container, params) {
   let contractor = isNew ? { active: true } : store.getById('contractors', params.id);
 
   if (!contractor && !isNew) {
-    container.innerHTML = `<div class="card"><p>Contractor not found.</p></div>`;
+    container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Contractor not found</h3></div>`;
     return;
   }
 
   container.innerHTML = `
-    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div class="page-header">
       <h1>${isNew ? 'New Contractor' : 'Edit Contractor'}</h1>
-      <div>
-        <button class="btn btn-outline" id="btn-cancel">Cancel</button>
-        <button class="btn btn-primary" id="btn-save">Save</button>
+      <div class="page-header-actions">
+        <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> Save</button>
       </div>
     </div>
 
     <div class="card" style="max-width: 600px;">
-      <form id="contractor-form" style="display: flex; flex-direction: column; gap: 15px;">
-        <div class="form-group">
-          <label>Business Name</label>
-          <input type="text" id="businessName" class="form-control" value="${contractor.businessName || ''}" required />
-        </div>
-        <div class="form-group">
-          <label>Contact Name</label>
-          <input type="text" id="contactName" class="form-control" value="${contractor.contactName || ''}" required />
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" id="email" class="form-control" value="${contractor.email || ''}" />
-        </div>
-        <div class="form-group">
-          <label>Phone</label>
-          <input type="text" id="phone" class="form-control" value="${contractor.phone || ''}" />
-        </div>
-        <div class="form-group">
-          <label>License Number</label>
-          <input type="text" id="licenseNumber" class="form-control" value="${contractor.licenseNumber || ''}" />
-        </div>
-        <div class="form-group">
-          <label>Insurance Expiry</label>
-          <input type="date" id="insuranceExpiry" class="form-control" value="${contractor.insuranceExpiry || ''}" />
-        </div>
-        <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
-          <input type="checkbox" id="active" ${contractor.active ? 'checked' : ''} />
-          <label for="active" style="margin: 0;">Active</label>
-        </div>
-      </form>
+      <div class="card-body">
+        <form id="contractor-form" style="display: flex; flex-direction: column; gap: 15px;">
+          <div class="form-group">
+            <label class="form-label">Business Name</label>
+            <input type="text" id="businessName" class="form-input" value="${contractor.businessName || ''}" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contact Name</label>
+            <input type="text" id="contactName" class="form-input" value="${contractor.contactName || ''}" required />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" id="email" class="form-input" value="${contractor.email || ''}" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input type="text" id="phone" class="form-input" value="${contractor.phone || ''}" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">License Number</label>
+              <input type="text" id="licenseNumber" class="form-input" value="${contractor.licenseNumber || ''}" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Insurance Expiry</label>
+              <input type="date" id="insuranceExpiry" class="form-input" value="${contractor.insuranceExpiry || ''}" />
+            </div>
+          </div>
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+            <input type="checkbox" id="active" ${contractor.active ? 'checked' : ''} />
+            <label for="active" style="margin: 0;" class="form-label">Active</label>
+          </div>
+        </form>
+      </div>
     </div>
   `;
 
