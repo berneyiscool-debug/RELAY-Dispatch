@@ -119,24 +119,9 @@ export function renderScheduleView(container) {
         });
       });
 
-    // Add stored schedule blocks
-    // Add stored schedule blocks (legacy support, but we should scope to week if possible)
-    const storedBlocks = store.getAll('schedule');
-    storedBlocks.forEach(b => {
-      // Avoid cross-week locking by matching the scheduled date if available
-      if (b.date) {
-        const bDate = new Date(b.date);
-        const dayMatch = days.findIndex(d => d.toDateString() === bDate.toDateString());
-        if (dayMatch !== -1 && !blocks.find(existing => existing.jobId === b.jobId && existing.dayIdx === dayMatch)) {
-          blocks.push({ ...b, dayIdx: dayMatch });
-        }
-      } else {
-        // Fallback for old data without date
-        if (!blocks.find(existing => existing.jobId === b.jobId && existing.dayIdx === b.dayOffset)) {
-          blocks.push({ ...b, dayIdx: b.dayOffset });
-        }
-      }
-    });
+    // NOTE: The legacy 'schedule' store merge is intentionally removed.
+    // All blocks are derived solely from the 'jobs' store to prevent
+    // ghost/duplicate blocks appearing after a drag-and-drop move.
 
     return blocks;
   }
@@ -582,9 +567,9 @@ export function renderScheduleView(container) {
         resizeState = {
           jobId: handle.dataset.blockJobId,
           block,
+          col,          // store the element, not its rect
           startHour,
           endHour: initialEndHour,
-          colRect,
         };
 
         block.dataset.resized = 'false';
@@ -594,9 +579,9 @@ export function renderScheduleView(container) {
 
         function onMouseMove(ev) {
           if (!resizeState) return;
-          const scrollEl = document.getElementById('calendar-scroll');
-          const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
-          const relY = ev.clientY - resizeState.colRect.top + scrollTop;
+          // Re-fetch rect live on every move — avoids stale rect + scroll double-counting
+          const liveRect = resizeState.col.getBoundingClientRect();
+          const relY = ev.clientY - liveRect.top;
           // Snap to nearest 15 min
           const rawHours = relY / PX_PER_HOUR;
           const snapped = snapToQuarter(rawHours);
