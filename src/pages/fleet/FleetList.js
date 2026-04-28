@@ -1,9 +1,54 @@
 import { store } from '../../data/store.js';
+import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 
 export function renderFleetList(container) {
   const vehicles = store.getAll('fleet');
+
+  const columns = [
+    {
+      key: 'name',
+      label: 'Name / ID',
+      render: (v) => escapeHTML(v.name)
+    },
+    {
+      key: 'licensePlate',
+      label: 'License Plate',
+      render: (v) => escapeHTML(v.licensePlate || '-')
+    },
+    {
+      key: 'type',
+      label: 'Type',
+      render: (v) => escapeHTML(v.type || '-')
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (v) => {
+        const status = v.status || 'Active';
+        const badgeClass = status === 'Active' ? 'badge-success' : (status === 'Maintenance' ? 'badge-warning' : 'badge-neutral');
+        return `<span class="badge ${badgeClass}">${escapeHTML(status)}</span>`;
+      }
+    },
+    {
+      key: 'assignedToId',
+      label: 'Assigned To',
+      render: (v) => {
+        let assigneeName = '—';
+        if (v.assignedToId) {
+          const tech = store.getById('people', v.assignedToId);
+          if (tech) assigneeName = `${tech.firstName} ${tech.lastName}`;
+        }
+        return escapeHTML(assigneeName);
+      }
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (v) => `<button class="btn btn-ghost btn-sm fleet-edit-btn" data-id="${v.id}">Edit</button>`
+    }
+  ];
 
   container.innerHTML = `
     <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -11,59 +56,31 @@ export function renderFleetList(container) {
       <button class="btn btn-primary" id="btn-new-vehicle">Add Vehicle</button>
     </div>
 
-    <div class="card">
-      <div class="table-responsive">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Name / ID</th>
-              <th>License Plate</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Assigned To</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${vehicles.length === 0 ? `<tr><td colspan="6" class="text-center">No vehicles found.</td></tr>` :
-              vehicles.map(v => {
-                let assigneeName = '—';
-                if (v.assignedToId) {
-                  const tech = store.getById('people', v.assignedToId);
-                  if (tech) assigneeName = `${tech.firstName} ${tech.lastName}`;
-                }
-
-                return `
-                  <tr class="fleet-row" data-id="${v.id}" style="cursor: pointer;">
-                    <td>${escapeHTML(v.name)}</td>
-                    <td>${escapeHTML(v.licensePlate || '-')}</td>
-                    <td>${escapeHTML(v.type || '-')}</td>
-                    <td><span class="badge ${v.status === 'Active' ? 'badge-success' : (v.status === 'Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(v.status || 'Active')}</span></td>
-                    <td>${escapeHTML(assigneeName)}</td>
-                    <td>
-                      <button class="btn btn-ghost btn-sm fleet-edit-btn" data-id="${v.id}">Edit</button>
-                    </td>
-                  </tr>
-                `;
-              }).join('')
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <div id="fleet-table-container"></div>
   `;
 
-  container.querySelectorAll('.fleet-row').forEach(row => {
-    row.addEventListener('click', () => {
-      router.navigate(`/fleet/${row.dataset.id}`);
-    });
+  const table = createDataTable({
+    columns,
+    data: vehicles,
+    emptyMessage: 'No vehicles found',
+    emptyIcon: 'local_shipping'
   });
 
-  container.querySelectorAll('.fleet-edit-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  container.querySelector('#fleet-table-container').appendChild(table);
+
+  // Use event delegation for both row clicks and edit buttons
+  container.querySelector('#fleet-table-container').addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.fleet-edit-btn');
+    if (editBtn) {
       e.stopPropagation();
-      router.navigate(`/fleet/${btn.dataset.id}/edit`);
-    });
+      router.navigate(`/fleet/${editBtn.dataset.id}/edit`);
+      return;
+    }
+
+    const row = e.target.closest('tr[data-id]');
+    if (row) {
+      router.navigate(`/fleet/${row.dataset.id}`);
+    }
   });
 
   container.querySelector('#btn-new-vehicle').addEventListener('click', () => {
