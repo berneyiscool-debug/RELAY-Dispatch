@@ -62,18 +62,20 @@ class DataStore {
   }
 
   getSettings() {
+    const defaultSettings = {
+      markupPercent: 20,
+      laborRates: [
+        { id: 'rate_1', name: 'Standard Rate', rate: 85.00 },
+        { id: 'rate_2', name: 'After Hours Rate', rate: 127.50 },
+        { id: 'rate_3', name: 'Emergency Rate', rate: 170.00 }
+      ]
+    };
+
     try {
       const data = localStorage.getItem(this._key('settings'));
-      return data ? JSON.parse(data) : {
-        markupPercent: 20,
-        laborRates: [
-          { id: 'rate_1', name: 'Standard Rate', rate: 85.00 },
-          { id: 'rate_2', name: 'After Hours Rate', rate: 127.50 },
-          { id: 'rate_3', name: 'Emergency Rate', rate: 170.00 }
-        ]
-      };
+      return data ? JSON.parse(data) : defaultSettings;
     } catch {
-      return { markupPercent: 20, laborRates: [] };
+      return defaultSettings;
     }
   }
 
