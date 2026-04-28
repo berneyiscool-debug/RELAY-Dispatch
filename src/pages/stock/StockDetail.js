@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
+import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
@@ -85,8 +86,10 @@ export function renderStockDetail(container, { id }) {
 
   container.querySelector('#btn-edit-stock').addEventListener('click', () => router.navigate(`/stock/${id}/edit`));
   container.querySelector('#btn-delete-stock').addEventListener('click', () => {
+    const content = document.createElement('div');
+    content.innerHTML = `<p>Delete <strong>${escapeHTML(item.name)}</strong>?</p>`;
     showModal({
-      title: 'Delete Stock Item', content: `<p>Delete <strong>${item.name}</strong>?</p>`,
+      title: 'Delete Stock Item', content,
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
         { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('stock', id); showToast('Item deleted', 'success'); close(); router.navigate('/stock'); }},

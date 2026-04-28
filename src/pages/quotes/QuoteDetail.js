@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
+import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
@@ -447,8 +448,10 @@ export function renderQuoteDetail(container, { id, customerId }) {
     });
 
     container.querySelector('#btn-delete-quote')?.addEventListener('click', () => {
+      const content = document.createElement('div');
+      content.innerHTML = `<p>Delete quote <strong>${escapeHTML(quote.number)}</strong>?</p>`;
       showModal({
-        title: 'Delete Quote', content: `<p>Delete quote <strong>${quote.number}</strong>?</p>`,
+        title: 'Delete Quote', content,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('quotes', id); showToast('Quote deleted', 'success'); close(); router.navigate('/quotes'); }},
