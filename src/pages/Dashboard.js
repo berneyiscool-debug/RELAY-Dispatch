@@ -1,405 +1,571 @@
 // ============================================
-// SIMPRO CLONE — DASHBOARD PAGE (Tile Size System)
+// SIMPRO CLONE — DASHBOARD (CSS Grid System)
 // ============================================
 import { store } from '../data/store.js';
 
 let isEditMode = false;
-let grid = null;
 
-// Tile sizes: S=small, M=medium, L=large, XL=extra-large
-const TILE_SIZES = {
-  S:  { w: 3,  h: 3,  label: 'Small' },
-  M:  { w: 6,  h: 3,  label: 'Medium' },
-  L:  { w: 6,  h: 5,  label: 'Large' },
-  XL: { w: 12, h: 4,  label: 'Extra Large' },
-};
+// Width class → grid-column span
+const WIDTH_CLASS = { S: 'module-s', M: 'module-m', L: 'module-l', XL: 'module-xl' };
+// Height class → grid-row span
+const HEIGHT_CLASS = { standard: '', tall: 'module-tall', xtall: 'module-xtall' };
 
-// Order to cycle through
-const SIZE_ORDER = ['S', 'M', 'L', 'XL'];
-
-const MODULES = {
-  'kpi-cards':            { title: 'KPI Cards',                   sizes: ['XL'],        defaultSize: 'XL', render: renderKpiCards },
-  'job-status-chart':     { title: 'Job Status Chart',            sizes: ['M','L'],     defaultSize: 'M',  render: renderJobStatusChart },
-  'tech-map':             { title: 'Technician GPS Map',          sizes: ['M','L'],     defaultSize: 'L',  render: renderTechMap },
-  'recent-activity':      { title: 'Recent Activity',             sizes: ['M','XL'],    defaultSize: 'XL', render: renderRecentActivity },
-  'recent-leads':         { title: 'Recent Leads',                sizes: ['M','L'],     defaultSize: 'L',  render: renderRecentLeads },
-  'today-schedule':       { title: "Today's Schedule",            sizes: ['M','L'],     defaultSize: 'L',  render: renderTodaySchedule },
-  'pinned-job':           { title: 'Pinned Job Progress',         sizes: ['S','M'],     defaultSize: 'M',  render: () => renderPlaceholder('Select a job to pin') },
-  'unassigned-jobs':      { title: 'Unassigned Jobs Queue',       sizes: ['M','L'],     defaultSize: 'M',  render: () => renderPlaceholder('No unassigned jobs') },
-  'uninvoiced-completed': { title: 'Uninvoiced Completed Jobs',   sizes: ['M','L'],     defaultSize: 'M',  render: () => renderPlaceholder('All completed jobs invoiced') },
-  'low-stock':            { title: 'Low Stock Alerts',            sizes: ['S','M'],     defaultSize: 'S',  render: () => renderPlaceholder('Inventory looks good') },
-  'profitability-chart':  { title: 'Profitability Chart',         sizes: ['M','L','XL'],defaultSize: 'L',  render: () => renderPlaceholder('Mock Profitability Data') },
-  'staff-availability':   { title: 'Staff Availability Board',    sizes: ['M','L'],     defaultSize: 'M',  render: () => renderPlaceholder('All staff active') },
-  'timesheet-exceptions': { title: 'Timesheet Exceptions',        sizes: ['S','M'],     defaultSize: 'S',  render: () => renderPlaceholder('No timesheet alerts') },
-  'fleet-status':         { title: 'Fleet Status Alerts',         sizes: ['S','M'],     defaultSize: 'M',  render: () => renderPlaceholder('Fleet operational') },
-  'overdue-maintenance':  { title: 'Overdue Maintenance',         sizes: ['S','M'],     defaultSize: 'M',  render: () => renderPlaceholder('No overdue maintenance') },
-  'top-customers':        { title: 'Top Customers Leaderboard',   sizes: ['M','L'],     defaultSize: 'M',  render: () => renderPlaceholder('Mock Top Customers') },
-  'daily-todo':           { title: 'Daily Quick To-Do',           sizes: ['S','M'],     defaultSize: 'S',  render: () => renderPlaceholder('No tasks added') },
-  'pending-approvals':    { title: 'Pending Approvals',           sizes: ['S','M'],     defaultSize: 'M',  render: () => renderPlaceholder('No pending quotes') },
-  'customer-nps':         { title: 'Customer Satisfaction (NPS)', sizes: ['S','M'],     defaultSize: 'S',  render: () => renderPlaceholder('NPS Score: 8.5/10') },
-  'cash-flow':            { title: 'Cash Flow Summary',           sizes: ['S','M'],     defaultSize: 'M',  render: () => renderPlaceholder('+ $15,240 this week') },
-  'weather-forecast':     { title: 'Weather Forecast',            sizes: ['S','M'],     defaultSize: 'S',  render: () => renderPlaceholder('Sunny, 24\u00b0C') },
-};
-
-function renderPlaceholder(msg) {
-  return `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:14px;text-align:center;padding:16px;">${msg}</div>`;
+function getLayoutKey() {
+  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
+  return currentUser ? `dashboardLayout_v2_${currentUser.id}` : 'dashboardLayout_v2';
 }
 
+// Each module declares its default width + height, and which options are sensible
+const MODULES = {
+  'kpi-cards':            { title: 'KPI Cards',                   defaultW: 'XL', defaultH: 'standard', widths: ['M','L','XL'],      heights: ['standard'],               kpiStrip: true,  render: renderKpiCards },
+  'job-status-chart':     { title: 'Job Status Chart',            defaultW: 'M',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: renderJobStatusChart },
+  'tech-map':             { title: 'Technician Map',              defaultW: 'M',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: renderTechMap },
+  'recent-activity':      { title: 'Recent Activity',             defaultW: 'M',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: renderRecentActivity },
+  'recent-leads':         { title: 'Recent Leads',                defaultW: 'M',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderRecentLeads },
+  'today-schedule':       { title: "Today's Schedule",            defaultW: 'M',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderTodaySchedule },
+  'pinned-job':           { title: 'Pinned Job Progress',         defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        configurable: true,  render: renderPinnedJob },
+  'unassigned-jobs':      { title: 'Unassigned Jobs Queue',       defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('assignment_late', 'No unassigned jobs') },
+  'uninvoiced-completed': { title: 'Uninvoiced Completed Jobs',   defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('receipt_long', 'All jobs invoiced') },
+  'low-stock':            { title: 'Low Stock Alerts',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard','tall'],        render: () => renderPlaceholder('inventory', 'Inventory looks good') },
+  'profitability-chart':  { title: 'Profitability Chart',         defaultW: 'L',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: () => renderPlaceholder('trending_up', 'Mock Profitability Data') },
+  'staff-availability':   { title: 'Staff Availability',          defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('people', 'All staff active') },
+  'timesheet-exceptions': { title: 'Timesheet Exceptions',        defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('schedule', 'No timesheet alerts') },
+  'fleet-status':         { title: 'Fleet Status',                defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('local_shipping', 'Fleet operational') },
+  'overdue-maintenance':  { title: 'Overdue Maintenance',         defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('build', 'No overdue maintenance') },
+  'top-customers':        { title: 'Top Customers',               defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('emoji_events', 'Mock Top Customers') },
+  'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     widths: ['S','M'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('checklist', 'No tasks added') },
+  'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('approval', 'No pending approvals') },
+  'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: () => renderPlaceholder('star', 'NPS Score: 8.5/10') },
+  'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('account_balance', '+ $15,240 this week') },
+  'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: () => renderPlaceholder('wb_sunny', 'Sunny, 24°C') },
+};
+
 const DEFAULT_LAYOUT = [
-  { id: 'kpi-cards',        x: 0, y: 0, size: 'XL' },
-  { id: 'job-status-chart', x: 0, y: 4, size: 'M'  },
-  { id: 'tech-map',         x: 6, y: 4, size: 'L'  },
-  { id: 'recent-activity',  x: 0, y: 9, size: 'XL' },
-  { id: 'recent-leads',     x: 0, y: 13, size: 'L' },
-  { id: 'today-schedule',   x: 6, y: 13, size: 'L' },
+  { id: 'kpi-cards',        w: 'XL', h: 'standard' },
+  { id: 'job-status-chart', w: 'M',  h: 'tall' },
+  { id: 'today-schedule',   w: 'M',  h: 'tall' },
+  { id: 'recent-activity',  w: 'M',  h: 'tall' },
+  { id: 'tech-map',         w: 'M',  h: 'tall' },
+  { id: 'recent-leads',     w: 'M',  h: 'tall' },
+  { id: 'cash-flow',        w: 'M',  h: 'standard' },
 ];
 
+function renderPlaceholder(icon, msg) {
+  return `<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text-tertiary);padding:16px;text-align:center;">
+    <span class="material-icons-outlined" style="font-size:28px;opacity:0.4;">${icon}</span>
+    <span style="font-size:13px;">${msg}</span>
+  </div>`;
+}
+
 export function renderDashboard(container) {
-  let layout = DEFAULT_LAYOUT;
-  try { const s = localStorage.getItem('dashboardLayout'); if (s) layout = JSON.parse(s); } catch(e) {}
+  let layout = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+  try { const s = localStorage.getItem(getLayoutKey()); if (s) layout = JSON.parse(s); } catch(e) {}
+
+  // Ensure every item has a unique instanceId for precise tracking
+  layout.forEach(item => {
+    if (!item.instanceId) item.instanceId = 'inst_' + Math.random().toString(36).substr(2, 9);
+  });
 
   const data = {
-    customers: store.getAll('customers'),
-    jobs:      store.getAll('jobs'),
-    quotes:    store.getAll('quotes'),
-    invoices:  store.getAll('invoices'),
-    leads:     store.getAll('leads'),
-    people:    store.getAll('people'),
+    jobs:     store.getAll('jobs'),
+    quotes:   store.getAll('quotes'),
+    invoices: store.getAll('invoices'),
+    leads:    store.getAll('leads'),
+    people:   store.getAll('people'),
   };
 
   container.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <h1 style="margin:0;">Dashboard</h1>
-        <button id="btn-edit-dashboard" class="btn btn-secondary btn-sm" style="display:flex;align-items:center;gap:4px;">
-          <span class="material-icons-outlined" style="font-size:18px;">edit</span> Customise
-        </button>
+    <div class="page-content-wrapper">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-lg);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <h1 style="margin:0;">Dashboard</h1>
+          <button id="btn-edit-dashboard" class="btn btn-secondary btn-sm" style="display:flex;align-items:center;gap:4px;">
+            <span class="material-icons-outlined" style="font-size:16px;">dashboard_customize</span> Customise
+          </button>
+        </div>
+        <div id="dashboard-header-actions" style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
+            <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
+            <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
+          </button>
+        </div>
       </div>
-      <div id="dashboard-actions" style="display:flex;gap:8px;"></div>
-    </div>
-    <div id="grid-container" class="grid-stack"></div>`;
+      <div id="dashboard-grid" class="dashboard-grid"></div>
+    </div>`;
 
-  const gridContainer = container.querySelector('#grid-container');
+  const grid = container.querySelector('#dashboard-grid');
+  renderGrid(grid, layout, data);
 
-  function buildItemHTML(item, editMode) {
+  container.querySelector('#btn-edit-dashboard').addEventListener('click', () => {
+    isEditMode = true;
+    renderGrid(grid, layout, data);
+    showEditHeader(container, grid, layout, data);
+  });
+}
+
+function renderGrid(grid, layout, data) {
+  grid.innerHTML = '';
+  layout.forEach(item => {
     const mod = MODULES[item.id];
-    if (!mod) return '';
-    const tile = TILE_SIZES[item.size] || TILE_SIZES[mod.defaultSize];
-    const sizeIdx = SIZE_ORDER.indexOf(item.size);
-    const allowedSizes = mod.sizes;
-    const nextSize = allowedSizes[(allowedSizes.indexOf(item.size) + 1) % allowedSizes.length];
+    if (!mod) return;
+    const wClass = WIDTH_CLASS[item.w] || 'module-m';
+    const hClass = HEIGHT_CLASS[item.h] || '';
+    const classes = ['dashboard-module', wClass, hClass, isEditMode ? 'edit-mode' : ''].filter(Boolean).join(' ');
 
-    const editControls = editMode ? `
+    const canResizeW = mod.widths.length > 1;
+    const canResizeH = mod.heights.length > 1;
+
+    const resizeHandles = isEditMode ? `
+      ${canResizeW ? `<div class="resize-handle resize-r" title="Drag to resize width"><span class="material-icons-outlined" style="font-size:12px;transform:rotate(90deg);">unfold_more</span></div>` : ''}
+      ${canResizeH ? `<div class="resize-handle resize-b" title="Drag to resize height"><span class="material-icons-outlined" style="font-size:12px;">unfold_more</span></div>` : ''}
+      ${canResizeW && canResizeH ? `<div class="resize-handle resize-br" title="Drag to resize"><span class="material-icons-outlined" style="font-size:12px;transform:rotate(45deg);">open_in_full</span></div>` : ''}
+    ` : '';
+
+    const editControls = isEditMode ? `
       <div style="display:flex;align-items:center;gap:4px;">
-        <button class="btn btn-ghost btn-icon btn-sm btn-cycle-size" data-id="${item.id}" data-next="${nextSize}" title="Size: ${item.size} → ${nextSize}">
-          <span class="material-icons-outlined" style="font-size:15px;">aspect_ratio</span>
-        </button>
-        <span style="font-size:11px;color:var(--text-tertiary);font-weight:600;">${item.size}</span>
-        <button class="btn btn-ghost btn-icon btn-sm btn-remove-module" data-id="${item.id}">
+        ${mod.configurable ? `
+          <button class="btn btn-ghost btn-icon btn-sm btn-configure" data-instance-id="${item.instanceId}" title="Configure widget" style="pointer-events:auto;position:relative;z-index:20;">
+            <span class="material-icons-outlined" style="font-size:15px;">settings</span>
+          </button>
+        ` : ''}
+        <button class="btn btn-ghost btn-icon btn-sm btn-remove" data-instance-id="${item.instanceId}" title="Remove widget" style="pointer-events:auto;position:relative;z-index:20;">
           <span class="material-icons-outlined" style="font-size:15px;">close</span>
         </button>
       </div>` : '';
 
-    return `
-      <div class="grid-stack-item" gs-id="${item.id}" gs-x="${item.x || 0}" gs-y="${item.y || 0}" gs-w="${tile.w}" gs-h="${tile.h}" gs-no-resize="true">
-        <div class="grid-stack-item-content" style="border-radius:8px;overflow:hidden;display:flex;flex-direction:column;height:100%;background:var(--card-bg);border:1px solid var(--card-border);box-shadow:var(--card-shadow);">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-color);flex-shrink:0;${editMode ? 'background:rgba(27,109,224,0.04);' : ''}">
+    const headerBg = isEditMode ? 'background:rgba(27,109,224,0.04);' : '';
+
+    grid.insertAdjacentHTML('beforeend', `
+      <div class="${classes}" data-instance-id="${item.instanceId}" data-id="${item.id}" style="position:relative;">
+        <div class="card ${mod.kpiStrip ? 'kpi-strip' : ''}">
+          <div class="card-header" style="${headerBg}">
             <span style="font-weight:600;font-size:14px;">${mod.title}</span>
             ${editControls}
           </div>
-          <div style="flex:1;overflow:hidden;min-height:0;">
-            ${mod.render(data)}
-          </div>
+          <div class="card-body">${mod.render(data, item)}</div>
         </div>
-      </div>`;
-  }
-
-  function renderGrid() {
-    gridContainer.innerHTML = '';
-    layout.forEach(item => {
-      const mod = MODULES[item.id];
-      if (!mod) return;
-      if (!item.size) item.size = mod.defaultSize;
-      gridContainer.insertAdjacentHTML('beforeend', buildItemHTML(item, isEditMode));
-    });
-
-    if (grid) { try { grid.destroy(false); } catch(e) {} }
-
-    if (typeof GridStack === 'undefined') {
-      gridContainer.innerHTML = '<div style="padding:24px;text-align:center;color:var(--color-danger);">GridStack failed to load. Check index.html CDN links.</div>';
-      return;
-    }
-
-    grid = GridStack.init({
-      column: 12,
-      cellHeight: 70,
-      margin: 12,
-      marginUnit: 'px',
-      staticGrid: !isEditMode,
-      disableResize: true,
-      disableOneColumnMode: true,
-      animate: true,
-    }, gridContainer);
-
-    // Wire up edit-mode buttons
-    gridContainer.querySelectorAll('.btn-remove-module').forEach(btn => {
-      btn.addEventListener('click', e => {
-        const id = e.currentTarget.dataset.id;
-        layout = layout.filter(i => i.id !== id);
-        const el = gridContainer.querySelector(`.grid-stack-item[gs-id="${id}"]`);
-        if (el && grid) grid.removeWidget(el);
-      });
-    });
-
-    gridContainer.querySelectorAll('.btn-cycle-size').forEach(btn => {
-      btn.addEventListener('click', e => {
-        const id = e.currentTarget.dataset.id;
-        const nextSize = e.currentTarget.dataset.next;
-        const item = layout.find(i => i.id === id);
-        if (!item) return;
-        item.size = nextSize;
-        const tile = TILE_SIZES[nextSize];
-        const el = gridContainer.querySelector(`.grid-stack-item[gs-id="${id}"]`);
-        if (el && grid) grid.update(el, { w: tile.w, h: tile.h });
-        // Refresh the header controls to show updated size label
-        const header = el.querySelector('.btn-cycle-size');
-        const mod = MODULES[id];
-        const allowedSizes = mod.sizes;
-        const newNext = allowedSizes[(allowedSizes.indexOf(nextSize) + 1) % allowedSizes.length];
-        if (header) {
-          header.dataset.next = newNext;
-          header.title = `Size: ${nextSize} → ${newNext}`;
-          const sizeLabel = header.parentElement.querySelector('span:not(.material-icons-outlined)');
-          if (sizeLabel) sizeLabel.textContent = nextSize;
-        }
-      });
-    });
-  }
-
-  function updateHeader() {
-    const actions = container.querySelector('#dashboard-actions');
-    const editBtn = container.querySelector('#btn-edit-dashboard');
-
-    if (isEditMode) {
-      editBtn.style.display = 'none';
-      actions.innerHTML = `
-        <button class="btn btn-secondary btn-sm" id="btn-add-module"><span class="material-icons-outlined" style="font-size:16px;">add</span> Add Widget</button>
-        <button class="btn btn-secondary btn-sm" id="btn-cancel-edit">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="btn-save-layout"><span class="material-icons-outlined" style="font-size:16px;">save</span> Save Layout</button>`;
-
-      actions.querySelector('#btn-save-layout').addEventListener('click', () => {
-        if (grid) {
-          layout = grid.engine.nodes.map(n => ({
-            id: n.el.getAttribute('gs-id'),
-            x: n.x, y: n.y,
-            size: layout.find(i => i.id === n.el.getAttribute('gs-id'))?.size || MODULES[n.el.getAttribute('gs-id')]?.defaultSize || 'M'
-          }));
-          localStorage.setItem('dashboardLayout', JSON.stringify(layout));
-        }
-        isEditMode = false;
-        updateHeader();
-        renderGrid();
-      });
-
-      actions.querySelector('#btn-cancel-edit').addEventListener('click', () => {
-        // Restore saved layout
-        try { const s = localStorage.getItem('dashboardLayout'); if (s) layout = JSON.parse(s); else layout = DEFAULT_LAYOUT; } catch(e) { layout = DEFAULT_LAYOUT; }
-        isEditMode = false;
-        updateHeader();
-        renderGrid();
-      });
-
-      actions.querySelector('#btn-add-module').addEventListener('click', showAddModuleModal);
-    } else {
-      editBtn.style.display = '';
-      actions.innerHTML = `
-        <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'"><span class="material-icons-outlined" style="font-size:16px;">add</span> New Job</button>
-        <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'"><span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote</button>`;
-    }
-  }
-
-  container.querySelector('#btn-edit-dashboard').addEventListener('click', () => {
-    isEditMode = true;
-    updateHeader();
-    renderGrid();
+        ${resizeHandles}
+      </div>`);
   });
 
-  function showAddModuleModal() {
-    const activeIds = layout.map(i => i.id);
-    const available = Object.entries(MODULES).filter(([id]) => !activeIds.includes(id));
+  if (isEditMode) wireEditControls(grid, layout, data);
+}
+
+function wireEditControls(grid, layout, data) {
+  // Configure button
+  grid.querySelectorAll('.btn-configure').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const instId = e.currentTarget.dataset.instanceId;
+      const item = layout.find(i => i.instanceId === instId);
+      if (!item) return;
+
+      if (item.id === 'pinned-job') {
+        const jobs = data.jobs;
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+            ${jobs.map(j => `
+              <div class="job-option" data-job-id="${j.id}" style="padding:10px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.15s;"
+                onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
+                onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
+                <div style="font-weight:600;font-size:13px;">#${j.number} - ${j.title}</div>
+                <div style="font-size:11px;color:var(--text-tertiary);">${j.customerName}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        import('../components/Modal.js').then(({ showModal }) => {
+          showModal({ 
+            title: 'Select Job to Pin', 
+            content, 
+            actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: c => c() }] 
+          });
+          
+          content.querySelectorAll('.job-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+              item.config = { ...item.config, jobId: opt.dataset.jobId };
+              document.querySelector('.modal-overlay')?.remove();
+              renderGrid(grid, layout, data);
+            });
+          });
+        });
+      }
+    });
+  });
+
+  // Remove button
+  grid.querySelectorAll('.btn-remove').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const instId = e.currentTarget.dataset.instanceId;
+      const idx = layout.findIndex(i => i.instanceId === instId);
+      if (idx !== -1) {
+        layout.splice(idx, 1);
+        renderGrid(grid, layout, data);
+      }
+    });
+  });
+
+  // Initialize SortableJS for smooth drag and drop reordering
+  if (window.Sortable && !grid.sortableInstance) {
+    grid.sortableInstance = new window.Sortable(grid, {
+      handle: '.card',
+      animation: 250,
+      easing: 'cubic-bezier(0.2, 0, 0, 1)',
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag',
+      swapThreshold: 0.65, // iOS style: must significantly overlap to trigger swap
+      forceFallback: true, // Forces custom smooth dragging instead of clunky HTML5 ghost image
+      fallbackClass: 'sortable-drag',
+      fallbackOnBody: true,
+      filter: '.btn-remove, .resize-handle',
+      preventOnFilter: false,
+      onEnd: function() {
+        // Sync the layout array to match the new DOM order Sortable created
+        const domOrder = Array.from(grid.children).map(el => el.dataset.instanceId);
+        const newLayout = [];
+        domOrder.forEach(instId => {
+          const item = layout.find(i => i.instanceId === instId);
+          if (item) newLayout.push(item);
+        });
+        layout.splice(0, layout.length, ...newLayout);
+      }
+    });
+  }
+  if (grid.sortableInstance) {
+    grid.sortableInstance.option('disabled', false);
+  }
+
+  // Resize logic
+  grid.querySelectorAll('.resize-handle').forEach(handle => {
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const moduleEl = e.target.closest('.dashboard-module');
+      const instId = moduleEl.dataset.instanceId;
+      const item = layout.find(i => i.instanceId === instId);
+      const mod = MODULES[item?.id];
+      if (!item || !mod) return;
+
+      const handleEl = e.target.closest('.resize-handle');
+      const isRight = handleEl && (handleEl.classList.contains('resize-r') || handleEl.classList.contains('resize-br'));
+      const isBottom = handleEl && (handleEl.classList.contains('resize-b') || handleEl.classList.contains('resize-br'));
+
+      let lastX = e.clientX;
+      let lastY = e.clientY;
+      let accX = 0;
+      let accY = 0;
+
+      // Distance the mouse must move to trigger a size bump
+      const threshold = 60;
+
+      const wOrder = ['S','M','L','XL'].filter(o => mod.widths.includes(o));
+      const hOrder = ['standard','tall','xtall'].filter(o => mod.heights.includes(o));
+
+      function onMouseMove(moveEvent) {
+        if (isRight) {
+          accX += (moveEvent.clientX - lastX);
+          if (accX > threshold) {
+            let idx = wOrder.indexOf(item.w);
+            if (idx < wOrder.length - 1) {
+              item.w = wOrder[idx + 1];
+              moduleEl.className = ['dashboard-module', WIDTH_CLASS[item.w] || 'module-m', HEIGHT_CLASS[item.h] || '', 'edit-mode'].filter(Boolean).join(' ');
+            }
+            accX = 0;
+          } else if (accX < -threshold) {
+            let idx = wOrder.indexOf(item.w);
+            if (idx > 0) {
+              item.w = wOrder[idx - 1];
+              moduleEl.className = ['dashboard-module', WIDTH_CLASS[item.w] || 'module-m', HEIGHT_CLASS[item.h] || '', 'edit-mode'].filter(Boolean).join(' ');
+            }
+            accX = 0;
+          }
+        }
+        
+        if (isBottom) {
+          accY += (moveEvent.clientY - lastY);
+          if (accY > threshold) {
+            let idx = hOrder.indexOf(item.h);
+            if (idx < hOrder.length - 1) {
+              item.h = hOrder[idx + 1];
+              moduleEl.className = ['dashboard-module', WIDTH_CLASS[item.w] || 'module-m', HEIGHT_CLASS[item.h] || '', 'edit-mode'].filter(Boolean).join(' ');
+            }
+            accY = 0;
+          } else if (accY < -threshold) {
+            let idx = hOrder.indexOf(item.h);
+            if (idx > 0) {
+              item.h = hOrder[idx - 1];
+              moduleEl.className = ['dashboard-module', WIDTH_CLASS[item.w] || 'module-m', HEIGHT_CLASS[item.h] || '', 'edit-mode'].filter(Boolean).join(' ');
+            }
+            accY = 0;
+          }
+        }
+
+        lastX = moveEvent.clientX;
+        lastY = moveEvent.clientY;
+      }
+
+      function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = window.getComputedStyle(e.target).cursor;
+      document.body.style.userSelect = 'none';
+    });
+  });
+}
+
+function showEditHeader(container, grid, layout, data) {
+  const headerActions = container.querySelector('#dashboard-header-actions');
+  const editBtn = container.querySelector('#btn-edit-dashboard');
+  editBtn.style.display = 'none';
+  headerActions.innerHTML = `
+    <button class="btn btn-secondary btn-sm" id="btn-add-widget">
+      <span class="material-icons-outlined" style="font-size:16px;">add</span> Add Widget
+    </button>
+    <button class="btn btn-ghost btn-sm" id="btn-reset-default" title="Reset to default dashboard">Reset to Default</button>
+    <div style="width:1px; height:20px; background:var(--border-color); margin:0 4px;"></div>
+    <button class="btn btn-secondary btn-sm" id="btn-cancel-edit">Cancel</button>
+    <button class="btn btn-primary btn-sm" id="btn-save-layout">
+      <span class="material-icons-outlined" style="font-size:16px;">save</span> Save Layout
+    </button>`;
+
+  headerActions.querySelector('#btn-reset-default').addEventListener('click', () => {
+    if (confirm('Are you sure you want to reset your dashboard to the default layout?')) {
+      layout.splice(0, layout.length, ...JSON.parse(JSON.stringify(DEFAULT_LAYOUT)));
+      renderGrid(grid, layout, data);
+      wireEditControls(grid, layout, data);
+    }
+  });
+
+  headerActions.querySelector('#btn-save-layout').addEventListener('click', () => {
+    localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
+    isEditMode = false;
+    if (grid.sortableInstance) grid.sortableInstance.option('disabled', true);
+    editBtn.style.display = '';
+    headerActions.innerHTML = `
+      <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
+        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
+        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
+      </button>`;
+    renderGrid(grid, layout, data);
+  });
+
+  headerActions.querySelector('#btn-cancel-edit').addEventListener('click', () => {
+    try { const s = localStorage.getItem(getLayoutKey()); if (s) layout.splice(0, layout.length, ...JSON.parse(s)); } catch(e) {}
+    isEditMode = false;
+    if (grid.sortableInstance) grid.sortableInstance.option('disabled', true);
+    editBtn.style.display = '';
+    headerActions.innerHTML = `
+      <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
+        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
+        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
+      </button>`;
+    renderGrid(grid, layout, data);
+  });
+
+  headerActions.querySelector('#btn-add-widget').addEventListener('click', () => {
+    const available = Object.entries(MODULES);
     const content = document.createElement('div');
-    content.innerHTML = available.length === 0
-      ? `<p style="text-align:center;color:var(--text-tertiary);">All modules are on your dashboard!</p>`
-      : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:420px;overflow-y:auto;">
+    content.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:420px;overflow-y:auto;">
           ${available.map(([id, mod]) => `
-            <div data-id="${id}" style="padding:12px 14px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;" 
+            <div data-id="${id}" style="padding:12px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;"
               onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
               onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
-              <span class="material-icons-outlined" style="color:var(--color-primary);font-size:20px;">widgets</span>
+              <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">widgets</span>
               <div>
                 <div style="font-weight:600;font-size:13px;">${mod.title}</div>
-                <div style="font-size:11px;color:var(--text-tertiary);">Sizes: ${mod.sizes.join(', ')}</div>
+                <div style="font-size:11px;color:var(--text-tertiary);">Default: ${mod.defaultW} · ${mod.defaultH}</div>
               </div>
             </div>`).join('')}
         </div>`;
 
     import('../components/Modal.js').then(({ showModal }) => {
-      showModal({ title: 'Add Widget', content, actions: [{ label: 'Close', className: 'btn-secondary', onClick: close => close() }] });
-
+      showModal({ title: 'Add Widget', content, actions: [{ label: 'Close', className: 'btn-secondary', onClick: c => c() }] });
       content.querySelectorAll('[data-id]').forEach(el => {
         el.addEventListener('click', e => {
           const id = e.currentTarget.dataset.id;
           const mod = MODULES[id];
-          const newItem = { id, x: 0, y: 0, size: mod.defaultSize };
-          layout.push(newItem);
-          const tile = TILE_SIZES[mod.defaultSize];
-          const html = buildItemHTML(newItem, true);
-          if (grid) {
-            const widget = grid.addWidget(html.trim());
-            widget.querySelector('.btn-remove-module')?.addEventListener('click', () => {
-              layout = layout.filter(i => i.id !== id);
-              grid.removeWidget(widget);
-            });
-            widget.querySelector('.btn-cycle-size')?.addEventListener('click', ev => {
-              const nextSize = ev.currentTarget.dataset.next;
-              newItem.size = nextSize;
-              const t = TILE_SIZES[nextSize];
-              grid.update(widget, { w: t.w, h: t.h });
-            });
-          }
+          layout.push({ id, instanceId: 'inst_' + Math.random().toString(36).substr(2, 9), w: mod.defaultW, h: mod.defaultH });
           document.querySelector('.modal-overlay')?.remove();
+          renderGrid(grid, layout, data);
+          wireEditControls(grid, layout, data);
         });
       });
     });
-  }
-
-  updateHeader();
-  renderGrid();
+  });
 }
 
-// ─── MODULE RENDERERS ────────────────────────────────────────────────────────
+// ── Module renderers ──────────────────────────────────────────────────────────
 
-function renderKpiCards(data) {
-  const activeJobs = data.jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled').length;
+function renderKpiCards(data, item) {
+  const activeJobs    = data.jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled').length;
   const pendingQuotes = data.quotes.filter(q => q.status === 'Sent' || q.status === 'Draft').length;
-  const overdueInvoices = data.invoices.filter(i => i.status === 'Overdue').length;
-  const totalRevenue = data.invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
-  const kpis = [
-    { label: 'Total Revenue', value: '$' + totalRevenue.toLocaleString('en-AU'), icon: 'payments', color: 'blue', sub: '+12.5% vs last month', positive: true },
-    { label: 'Active Jobs', value: activeJobs, icon: 'build', color: 'green', sub: `${data.jobs.length} total`, positive: true },
-    { label: 'Pending Quotes', value: pendingQuotes, icon: 'request_quote', color: 'orange', sub: `${data.quotes.length} total`, positive: null },
-    { label: 'Overdue Invoices', value: overdueInvoices, icon: 'warning', color: 'red', sub: overdueInvoices > 0 ? 'Requires attention' : 'All on track', positive: overdueInvoices === 0 },
-  ];
-  return `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:12px;height:100%;box-sizing:border-box;">
-    ${kpis.map(k => `
-      <div class="stat-card" style="margin:0;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div class="stat-label">${k.label}</div>
-          <div class="stat-icon ${k.color}"><span class="material-icons-outlined">${k.icon}</span></div>
+  const overdue       = data.invoices.filter(i => i.status === 'Overdue').length;
+  const revenue       = data.invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
+  return [
+    { label: 'Total Revenue',    value: '$' + revenue.toLocaleString('en-AU'), icon: 'payments',       color: 'blue',   sub: '+12.5% vs last month', pos: true },
+    { label: 'Active Jobs',      value: activeJobs,                             icon: 'build',           color: 'green',  sub: `${data.jobs.length} total`, pos: true },
+    { label: 'Pending Quotes',   value: pendingQuotes,                          icon: 'request_quote',   color: 'orange', sub: `${data.quotes.length} total`, pos: null },
+    { label: 'Overdue Invoices', value: overdue,                                icon: 'warning',         color: 'red',    sub: overdue > 0 ? 'Requires attention' : 'All on track', pos: overdue === 0 },
+  ].map(k => `
+    <div class="stat-card" style="margin:0;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div class="stat-label">${k.label}</div>
+        <div class="stat-icon ${k.color}"><span class="material-icons-outlined">${k.icon}</span></div>
+      </div>
+      <div class="stat-value">${k.value}</div>
+      <div class="stat-change ${k.pos === true ? 'positive' : k.pos === false ? 'negative' : ''}">
+        <span style="font-size:12px;">${k.sub}</span>
+      </div>
+    </div>`).join('');
+}
+
+function renderJobStatusChart(data, item) {
+  const counts = {};
+  data.jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
+  const total = data.jobs.length || 1;
+  const colors = { 'Pending':'var(--color-warning)','Scheduled':'var(--color-info)','In Progress':'var(--color-primary)','On Hold':'var(--text-tertiary)','Completed':'var(--color-success)','Invoiced':'#8B5CF6' };
+  return `<div style="display:flex;flex-direction:column;gap:10px;padding:4px 0;">
+    ${Object.entries(counts).map(([s, c]) => `
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:88px;font-size:12px;color:var(--text-secondary);flex-shrink:0;">${s}</span>
+        <div style="flex:1;height:20px;background:var(--content-bg);border-radius:4px;overflow:hidden;">
+          <div style="width:${(c/total*100).toFixed(1)}%;height:100%;background:${colors[s]||'var(--text-tertiary)'};border-radius:4px;transition:width 0.5s;min-width:${c>0?'6px':'0'};"></div>
         </div>
-        <div class="stat-value">${k.value}</div>
-        <div class="stat-change ${k.positive === true ? 'positive' : k.positive === false ? 'negative' : ''}">
-          <span style="font-size:12px;">${k.sub}</span>
-        </div>
+        <span style="width:22px;text-align:right;font-size:12px;font-weight:600;">${c}</span>
       </div>`).join('')}
   </div>`;
 }
 
-function renderJobStatusChart(data) {
-  const counts = {};
-  data.jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
-  const total = data.jobs.length;
-  const colors = { 'Pending': 'var(--color-warning)', 'Scheduled': 'var(--color-info)', 'In Progress': 'var(--color-primary)', 'On Hold': 'var(--text-tertiary)', 'Completed': 'var(--color-success)', 'Invoiced': '#8B5CF6' };
-  return `<div style="padding:16px;display:flex;flex-direction:column;gap:10px;height:100%;box-sizing:border-box;overflow-y:auto;">
-    ${Object.entries(counts).map(([status, count]) => {
-      const pct = total > 0 ? (count / total * 100).toFixed(1) : 0;
-      const color = colors[status] || 'var(--text-tertiary)';
-      return `<div style="display:flex;align-items:center;gap:10px;">
-        <span style="width:90px;font-size:13px;color:var(--text-secondary);flex-shrink:0;">${status}</span>
-        <div style="flex:1;height:20px;background:var(--content-bg);border-radius:4px;overflow:hidden;">
-          <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.5s;min-width:${count > 0 ? '6px' : '0'};"></div>
-        </div>
-        <span style="width:24px;text-align:right;font-size:13px;font-weight:600;">${count}</span>
-      </div>`;
-    }).join('')}
-  </div>`;
-}
-
-function renderTechMap(data) {
+function renderTechMap(data, item) {
   const techs = data.people.filter(p => p.type === 'Staff').slice(0, 4);
-  const markers = techs.length === 0
-    ? '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;">No technicians active</div>'
-    : techs.map((t, i) => {
-        const top = 15 + (i * 22) + (Math.sin(i) * 12);
-        const left = 15 + (i * 18) + (Math.cos(i) * 18);
-        return `<div style="position:absolute;top:${top}%;left:${left}%;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;z-index:10;">
-          <div style="background:white;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;box-shadow:0 2px 4px rgba(0,0,0,0.2);margin-bottom:2px;white-space:nowrap;">${t.firstName}</div>
-          <div style="width:22px;height:22px;background:var(--color-primary);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">${t.firstName[0]}</div>
-          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--color-primary);margin-top:-1px;"></div>
-        </div>`;
-      }).join('');
+  const markers = techs.map((t, i) => {
+    const top = 15 + i * 22 + Math.sin(i) * 12, left = 15 + i * 18 + Math.cos(i) * 18;
+    return `<div style="position:absolute;top:${top}%;left:${left}%;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;z-index:10;">
+      <div style="background:white;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;box-shadow:0 2px 4px rgba(0,0,0,.2);margin-bottom:2px;white-space:nowrap;">${t.firstName}</div>
+      <div style="width:22px;height:22px;background:var(--color-primary);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid white;">${t.firstName[0]}</div>
+      <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--color-primary);margin-top:-1px;"></div>
+    </div>`;
+  }).join('');
   return `<div style="position:relative;width:100%;height:100%;background:#e5e3df;overflow:hidden;">
-    <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(0,0,0,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,0.05) 1px,transparent 1px);background-size:20px 20px;"></div>
-    ${markers}
-    <div style="position:absolute;bottom:8px;right:8px;background:rgba(255,255,255,0.85);padding:4px 8px;font-size:10px;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);">Mock Map</div>
+    <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(0,0,0,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.05) 1px,transparent 1px);background-size:20px 20px;"></div>
+    ${markers || '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;font-size:13px;">No technicians</div>'}
+    <div style="position:absolute;bottom:8px;right:8px;background:rgba(255,255,255,.85);padding:4px 8px;font-size:10px;border-radius:4px;">Mock Map</div>
   </div>`;
 }
 
-function renderRecentActivity(data) {
+
+function renderRecentActivity(data, item) {
   const acts = [];
-  data.jobs.slice(0,3).forEach(j => acts.push({ icon:'build', color:'var(--color-primary)', text:`Job <strong>${j.number}</strong> — ${j.title}`, sub: j.customerName, time: j.updatedAt }));
+  data.jobs.slice(0,4).forEach(j => acts.push({ icon:'build', color:'var(--color-primary)', text:`Job <strong>${j.number}</strong> — ${j.title}`, sub: j.customerName, time: j.updatedAt }));
   data.quotes.slice(0,3).forEach(q => acts.push({ icon:'request_quote', color:'var(--color-warning)', text:`Quote <strong>${q.number}</strong> ${q.status.toLowerCase()}`, sub: q.customerName, time: q.updatedAt }));
-  data.invoices.slice(0,2).forEach(inv => acts.push({ icon:'receipt_long', color: inv.status==='Paid' ? 'var(--color-success)' : 'var(--color-danger)', text:`Invoice <strong>${inv.number}</strong> — ${inv.status}`, sub: inv.customerName, time: inv.updatedAt }));
+  data.invoices.slice(0,2).forEach(inv => acts.push({ icon:'receipt_long', color: inv.status==='Paid'?'var(--color-success)':'var(--color-danger)', text:`Invoice <strong>${inv.number}</strong> — ${inv.status}`, sub: inv.customerName, time: inv.updatedAt }));
   acts.sort((a,b) => new Date(b.time) - new Date(a.time));
-  return `<div style="overflow-y:auto;height:100%;padding:0 16px;">
-    ${acts.map(a => `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);">
-      <div style="width:30px;height:30px;border-radius:50%;background:${a.color}20;color:${a.color};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        <span class="material-icons-outlined" style="font-size:15px;">${a.icon}</span>
+  return acts.map(a => `
+    <div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);">
+      <div style="width:28px;height:28px;border-radius:50%;background:${a.color}20;color:${a.color};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <span class="material-icons-outlined" style="font-size:14px;">${a.icon}</span>
       </div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;">${a.text}</div>
-        <div style="font-size:11px;color:var(--text-tertiary);">${a.sub} · ${formatTimeAgo(a.time)}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">${a.sub} · ${fmtAgo(a.time)}</div>
       </div>
-    </div>`).join('')}
-  </div>`;
+    </div>`).join('');
 }
 
-function renderRecentLeads(data) {
-  const bc = { 'New':'badge-info','Contacted':'badge-primary','Qualified':'badge-warning','Won':'badge-success','Lost':'badge-danger' };
-  return `<div style="overflow-y:auto;height:100%;">
-    <table class="data-table" style="width:100%;">
-      <thead><tr><th>Lead</th><th>Customer</th><th>Status</th></tr></thead>
-      <tbody>${data.leads.slice(0,6).map(l => `
-        <tr style="cursor:pointer;" onclick="window.location.hash='/leads/${l.id}'">
-          <td class="cell-link font-medium">${l.title}</td>
-          <td style="color:var(--text-secondary);">${l.customerName}</td>
-          <td><span class="badge ${bc[l.status]||'badge-neutral'}">${l.status}</span></td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>`;
+function renderRecentLeads(data, item) {
+  const bc = { New:'badge-info', Contacted:'badge-primary', Qualified:'badge-warning', Won:'badge-success', Lost:'badge-danger' };
+  return `<table class="data-table" style="width:100%;">
+    <thead><tr><th>Lead</th><th>Customer</th><th>Status</th></tr></thead>
+    <tbody>${data.leads.slice(0,8).map(l => `
+      <tr style="cursor:pointer;" onclick="window.location.hash='/leads/${l.id}'">
+        <td class="cell-link font-medium">${l.title}</td>
+        <td style="color:var(--text-secondary);">${l.customerName}</td>
+        <td><span class="badge ${bc[l.status]||'badge-neutral'}">${l.status}</span></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
 }
 
-function renderTodaySchedule(data) {
-  const jobs = data.jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress').slice(0,6);
-  if (!jobs.length) return `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);">No jobs scheduled today</div>`;
-  return `<div style="overflow-y:auto;height:100%;display:flex;flex-direction:column;">
-    ${jobs.map(j => `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="window.location.hash='/jobs/${j.id}'">
-        <div style="width:3px;height:32px;border-radius:2px;flex-shrink:0;background:${j.status==='In Progress'?'var(--color-primary)':'var(--color-warning)'};"></div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${j.title}</div>
-          <div style="font-size:11px;color:var(--text-tertiary);">${j.technicianName} · ${j.customerName}</div>
-        </div>
-        <span class="badge ${j.status==='In Progress'?'badge-primary':'badge-warning'}">${j.status}</span>
-      </div>`).join('')}
-  </div>`;
+function renderTodaySchedule(data, item) {
+  const jobs = data.jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress').slice(0, 8);
+  if (!jobs.length) return `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:13px;">No jobs scheduled today</div>`;
+  return jobs.map(j => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="window.location.hash='/jobs/${j.id}'">
+      <div style="width:3px;height:30px;border-radius:2px;flex-shrink:0;background:${j.status==='In Progress'?'var(--color-primary)':'var(--color-warning)'};"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${j.title}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">${j.technicianName} · ${j.customerName}</div>
+      </div>
+      <span class="badge ${j.status==='In Progress'?'badge-primary':'badge-warning'}">${j.status}</span>
+    </div>`).join('');
 }
 
-function formatTimeAgo(d) {
+function fmtAgo(d) {
   const m = Math.floor((Date.now() - new Date(d)) / 60000);
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function renderPinnedJob(data, item) {
+  const jobId = item.config?.jobId;
+  if (!jobId) return renderPlaceholder('push_pin', 'Click settings to pin a job');
+  
+  const job = data.jobs.find(j => j.id === jobId);
+  if (!job) return renderPlaceholder('warning', 'Job not found');
+
+  // Use tasks from job or mock them for visual testing
+  const tasks = job.tasks || [
+    { label: 'Site Safety Audit', completed: true },
+    { label: 'Materials Delivery', completed: job.status !== 'Pending' },
+    { label: 'Initial Rough-in', completed: job.status === 'In Progress' || job.status === 'Completed' },
+    { label: 'Quality Inspection', completed: job.status === 'Completed' },
+    { label: 'Client Sign-off', completed: false }
+  ];
+
+  const completedCount = tasks.filter(t => t.completed).length;
+  const progress = Math.round((completedCount / tasks.length) * 100);
+
+  return `
+    <div style="padding:2px 0;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center;">
+        <span style="font-size:12px;font-weight:700;color:var(--text-primary);letter-spacing:0.5px;">JOB #${job.number}</span>
+        <span style="font-size:14px;font-weight:700;color:var(--color-primary);">${progress}%</span>
+      </div>
+      
+      <div style="height:6px;background:var(--border-color);border-radius:3px;overflow:hidden;margin-bottom:14px;">
+        <div style="width:${progress}%;height:100%;background:var(--color-primary);border-radius:3px;transition:width 0.8s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+        ${tasks.map(t => `
+          <div style="display:flex;align-items:center;gap:10px;opacity:${t.completed ? 0.6 : 1}">
+            <span class="material-icons-outlined" style="font-size:16px;color:${t.completed ? 'var(--color-success)' : 'var(--text-tertiary)'};">
+              ${t.completed ? 'check_circle' : 'radio_button_unchecked'}
+            </span>
+            <span style="font-size:12px;text-decoration:${t.completed ? 'line-through' : 'none'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;color:var(--text-secondary);">${t.label}</span>
+          </div>
+        `).join('')}
+      </div>
+
+      <div style="background:var(--bg-primary);padding:8px;border-radius:6px;border:1px dashed var(--border-color);">
+        <div style="font-weight:700;font-size:12px;color:var(--text-primary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${job.title}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">${job.customerName}</div>
+      </div>
+    </div>
+  `;
 }

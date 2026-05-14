@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 
 export function renderPurchaseOrdersList(container) {
@@ -51,7 +52,87 @@ export function renderPurchaseOrdersList(container) {
     data: filteredData, 
     onRowClick: (id) => router.navigate(`/purchase-orders/${id}`), 
     emptyMessage: 'No purchase orders found', 
-    emptyIcon: 'shopping_cart' 
+    emptyIcon: 'shopping_cart',
+    selectable: true,
+    onSelectionChange: (selectedIds) => {
+      createBulkActionBar({
+        container,
+        selectedIds,
+        onClear: () => table.clearSelection(),
+        actions: [
+          {
+            label: 'Mark Received',
+            icon: 'inventory',
+            onClick: (ids) => {
+              ids.forEach(id => store.update('purchaseOrders', id, { status: 'Received', receivedDate: new Date().toISOString() }));
+              table.clearSelection();
+              renderPurchaseOrdersList(container);
+              import('../../components/Notifications.js').then(({ showToast }) => showToast(`Marked ${ids.length} POs as Received`, 'success'));
+            }
+          },
+          {
+            label: 'Change Status',
+            icon: 'sync_alt',
+            onClick: (ids) => {
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">New Status</label>
+                  <select class="form-select" id="bulk-status">
+                    <option value="Draft">Draft</option>
+                    <option value="Issued">Issued</option>
+                    <option value="Received">Received</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Update ${ids.length} Purchase Orders`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Apply', className: 'btn-primary', onClick: c => {
+                      const newStatus = content.querySelector('#bulk-status').value;
+                      ids.forEach(id => store.update('purchaseOrders', id, { status: newStatus }));
+                      table.clearSelection();
+                      renderPurchaseOrdersList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Updated ${ids.length} POs to ${newStatus}`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Delete Selected',
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `<p>Are you sure you want to delete ${ids.length} purchase orders? This action cannot be undone.</p>`;
+                showModal({
+                  title: 'Confirm Bulk Delete',
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Delete', className: 'btn-danger', onClick: c => {
+                      ids.forEach(id => store.delete('purchaseOrders', id));
+                      table.clearSelection();
+                      renderPurchaseOrdersList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Deleted ${ids.length} purchase orders`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          }
+        ]
+      });
+    }
   });
   
   container.querySelector('#po-table-container').appendChild(table);

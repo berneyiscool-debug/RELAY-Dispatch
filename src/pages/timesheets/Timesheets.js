@@ -3,23 +3,30 @@
 // ============================================
 
 import { store } from '../../data/store.js';
+import { createDataTable } from '../../components/DataTable.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { router } from '../../router.js';
+import { showToast } from '../../components/Notifications.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderTimesheetsList(container) {
   const timesheets = store.getAll('timesheets').sort((a, b) => new Date(b.date) - new Date(a.date));
+  let filteredData = [...timesheets];
   let filterStatus = 'All';
 
+  function updateFilteredData() {
+    filteredData = filterStatus === 'All' ? [...timesheets] : timesheets.filter(t => t.status === filterStatus);
+  }
+
   function render() {
-    const filtered = filterStatus === 'All' ? timesheets : timesheets.filter(t => t.status === filterStatus);
-    
-    // Stats calculation
     const totalPending = timesheets.filter(t => t.status === 'Pending').reduce((s, t) => s + (t.hours || 0), 0);
     const totalApproved = timesheets.filter(t => t.status === 'Approved').reduce((s, t) => s + (t.hours || 0), 0);
-    
+
     container.innerHTML = `
       <div class="page-header">
         <h1>Timesheets & Approval</h1>
         <div class="page-header-actions">
-          <button class="btn btn-primary" id="btn-approve-all" ${!timesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
+          <button class="btn btn-primary" id="btn-approve-all-pending" ${!timesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
             <span class="material-icons-outlined">done_all</span> Approve All Pending
           </button>
         </div>
@@ -36,89 +43,86 @@ export function renderTimesheetsList(container) {
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:var(--space-base)">
-        <div class="card-header">
-          <div style="display:flex;gap:var(--space-sm)">
-            <button class="toolbar-filter ${filterStatus === 'All' ? 'active' : ''}" data-status="All">All</button>
-            <button class="toolbar-filter ${filterStatus === 'Pending' ? 'active' : ''}" data-status="Pending">Pending</button>
-            <button class="toolbar-filter ${filterStatus === 'Approved' ? 'active' : ''}" data-status="Approved">Approved</button>
-            <button class="toolbar-filter ${filterStatus === 'Rejected' ? 'active' : ''}" data-status="Rejected">Rejected</button>
-          </div>
-        </div>
-        <div class="card-body" style="padding:0">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Technician</th>
-                <th>Job</th>
-                <th>Description</th>
-                <th style="text-align:right">Hours</th>
-                <th>Status</th>
-                <th style="text-align:right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filtered.length ? filtered.map(t => `
-                <tr data-id="${t.id}">
-                  <td>${new Date(t.date).toLocaleDateString()}</td>
-                  <td class="font-medium">${t.technicianName}</td>
-                  <td><a href="#/jobs/${t.jobId}" class="cell-link">${t.jobNumber || t.jobId}</a></td>
-                  <td class="text-secondary">${t.description || '—'}</td>
-                  <td style="text-align:right;font-weight:600">${t.hours}</td>
-                  <td><span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">${t.status}</span></td>
-                  <td style="text-align:right">
-                    ${t.status === 'Pending' ? `
-                      <button class="btn btn-sm btn-ghost btn-icon btn-approve" title="Approve"><span class="material-icons-outlined" style="color:var(--color-success)">check_circle</span></button>
-                      <button class="btn btn-sm btn-ghost btn-icon btn-reject" title="Reject"><span class="material-icons-outlined" style="color:var(--color-danger)">cancel</span></button>
-                    ` : '—'}
-                  </td>
-                </tr>
-              `).join('') : `<tr><td colspan="7" style="text-align:center;padding:40px" class="text-secondary">No ${filterStatus !== 'All' ? filterStatus.toLowerCase() : ''} timesheets found</td></tr>`}
-            </tbody>
-          </table>
+      <div class="page-toolbar">
+        <div class="toolbar-filters">
+          <button class="toolbar-filter ${filterStatus === 'All' ? 'active' : ''}" data-status="All">All</button>
+          <button class="toolbar-filter ${filterStatus === 'Pending' ? 'active' : ''}" data-status="Pending">Pending</button>
+          <button class="toolbar-filter ${filterStatus === 'Approved' ? 'active' : ''}" data-status="Approved">Approved</button>
+          <button class="toolbar-filter ${filterStatus === 'Rejected' ? 'active' : ''}" data-status="Rejected">Rejected</button>
         </div>
       </div>
+
+      <div id="timesheets-table-container"></div>
     `;
 
-    bindEvents();
-  }
+    const columns = [
+      { key: 'date', label: 'Date', render: (r) => new Date(r.date).toLocaleDateString(), getValue: (r) => new Date(r.date).getTime(), width: '110px' },
+      { key: 'technicianName', label: 'Technician', render: (r) => `<span class="font-medium">${escapeHTML(r.technicianName)}</span>` },
+      { key: 'job', label: 'Job', render: (r) => `<a href="#/jobs/${r.jobId}" class="cell-link">${escapeHTML(r.jobNumber || r.jobId)}</a>` },
+      { key: 'description', label: 'Description', render: (r) => `<span class="text-secondary truncate" style="max-width:250px;display:inline-block">${escapeHTML(r.description || '—')}</span>` },
+      { key: 'hours', label: 'Hours', render: (r) => `<span style="font-weight:600">${r.hours}</span>`, getValue: (r) => r.hours, width: '80px', align: 'right' },
+      { key: 'status', label: 'Status', render: (r) => {
+          const b = { 'Approved': 'badge-success', 'Rejected': 'badge-danger', 'Pending': 'badge-warning' };
+          return `<span class="badge ${b[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`;
+      }, width: '100px' },
+    ];
 
-  function bindEvents() {
+    updateFilteredData();
+
+    const table = createDataTable({
+      columns,
+      data: filteredData,
+      emptyMessage: 'No timesheets found',
+      emptyIcon: 'schedule',
+      selectable: true,
+      onSelectionChange: (selectedIds) => {
+        createBulkActionBar({
+          container,
+          selectedIds,
+          onClear: () => table.clearSelection(),
+          actions: [
+            {
+              label: 'Approve Selected',
+              icon: 'check_circle',
+              onClick: (ids) => {
+                ids.forEach(id => store.update('timesheets', id, { status: 'Approved' }));
+                table.clearSelection();
+                renderTimesheetsList(container);
+                showToast(`Approved ${ids.length} timesheets`, 'success');
+              }
+            },
+            {
+              label: 'Reject Selected',
+              icon: 'cancel',
+              className: 'btn-danger',
+              onClick: (ids) => {
+                ids.forEach(id => store.update('timesheets', id, { status: 'Rejected' }));
+                table.clearSelection();
+                renderTimesheetsList(container);
+                showToast(`Rejected ${ids.length} timesheets`, 'warning');
+              }
+            }
+          ]
+        });
+      }
+    });
+
+    container.querySelector('#timesheets-table-container').appendChild(table);
+
+    // Filter events
     container.querySelectorAll('.toolbar-filter').forEach(btn => {
-      btn.addEventListener('click', () => { filterStatus = btn.dataset.status; render(); });
-    });
-
-    container.querySelectorAll('.btn-approve').forEach(btn => {
       btn.addEventListener('click', () => {
-        const id = btn.closest('tr').dataset.id;
-        const ts = timesheets.find(t => t.id === id);
-        if (ts) {
-          ts.status = 'Approved';
-          store.update('timesheets', id, { status: 'Approved' });
-          render();
-        }
+        filterStatus = btn.dataset.status;
+        render();
       });
     });
 
-    container.querySelectorAll('.btn-reject').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.closest('tr').dataset.id;
-        const ts = timesheets.find(t => t.id === id);
-        if (ts) {
-          ts.status = 'Rejected';
-          store.update('timesheets', id, { status: 'Rejected' });
-          render();
-        }
-      });
-    });
-
-    container.querySelector('#btn-approve-all')?.addEventListener('click', () => {
-      timesheets.filter(t => t.status === 'Pending').forEach(ts => {
-        ts.status = 'Approved';
-        store.update('timesheets', ts.id, { status: 'Approved' });
-      });
-      render();
+    // Bulk Approve All Pending (Legacy button support)
+    container.querySelector('#btn-approve-all-pending')?.addEventListener('click', () => {
+      const pending = timesheets.filter(t => t.status === 'Pending');
+      pending.forEach(ts => store.update('timesheets', ts.id, { status: 'Approved' }));
+      showToast(`Approved ${pending.length} pending timesheets`, 'success');
+      renderTimesheetsList(container);
     });
   }
 

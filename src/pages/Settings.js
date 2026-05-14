@@ -6,6 +6,122 @@ import { store } from '../data/store.js';
 import { showToast } from '../components/Notifications.js';
 import { showModal } from '../components/Modal.js';
 
+// ---- Granular Permission Definitions ----
+export const MODULE_PERMS = {
+  'Dashboard': [
+    { key: 'view', label: 'View Dashboard' },
+  ],
+  'Customers': [
+    { key: 'view', label: 'View Customers' },
+    { key: 'create', label: 'Create Customers' },
+    { key: 'edit', label: 'Edit Customer Details' },
+    { key: 'delete', label: 'Delete Customers' },
+    { key: 'manage_contacts', label: 'Manage Contacts & Sites' },
+  ],
+  'Leads': [
+    { key: 'view', label: 'View Leads' },
+    { key: 'create', label: 'Create Leads' },
+    { key: 'edit', label: 'Edit Leads' },
+    { key: 'delete', label: 'Delete Leads' },
+    { key: 'convert', label: 'Convert Lead to Quote / Job' },
+  ],
+  'Quotes': [
+    { key: 'view', label: 'View Quotes' },
+    { key: 'create', label: 'Create Quotes' },
+    { key: 'edit', label: 'Edit Quotes' },
+    { key: 'delete', label: 'Delete Quotes' },
+    { key: 'approve', label: 'Approve / Accept Quotes' },
+    { key: 'convert', label: 'Convert to Job' },
+    { key: 'generate_pdf', label: 'Generate & Save PDF' },
+  ],
+  'Jobs': [
+    { key: 'view', label: 'View Jobs' },
+    { key: 'create', label: 'Create Jobs' },
+    { key: 'edit', label: 'Edit Job Details' },
+    { key: 'delete', label: 'Delete Jobs' },
+    { key: 'manage_tasks', label: 'Manage Tasks & Phases' },
+    { key: 'book_time', label: 'Book Time to Tasks' },
+    { key: 'view_costs', label: 'View Costs & Financials' },
+    { key: 'manage_materials', label: 'Manage Materials & Stock' },
+    { key: 'create_invoice', label: 'Create Invoices from Job' },
+  ],
+  'Timesheets': [
+    { key: 'view_own', label: 'View Own Timesheets' },
+    { key: 'view', label: 'View All Timesheets' },
+    { key: 'create', label: 'Create Timesheet Entries' },
+    { key: 'edit', label: 'Edit Timesheets' },
+    { key: 'approve', label: 'Approve Timesheets' },
+    { key: 'delete', label: 'Delete Timesheets' },
+  ],
+  'Assets': [
+    { key: 'view', label: 'View Assets' },
+    { key: 'create', label: 'Add Assets' },
+    { key: 'edit', label: 'Edit Assets' },
+    { key: 'delete', label: 'Delete Assets' },
+  ],
+  'Schedule': [
+    { key: 'view_own', label: 'View Own Schedule' },
+    { key: 'view', label: 'View All Technicians\' Schedules' },
+    { key: 'create', label: 'Create Bookings' },
+    { key: 'edit', label: 'Edit / Move Bookings' },
+    { key: 'delete', label: 'Delete Bookings' },
+  ],
+  'Contractors': [
+    { key: 'view', label: 'View Contractors' },
+    { key: 'create', label: 'Add Contractors' },
+    { key: 'edit', label: 'Edit Contractors' },
+    { key: 'delete', label: 'Delete Contractors' },
+  ],
+  'Stock': [
+    { key: 'view', label: 'View Stock' },
+    { key: 'create', label: 'Add Stock Items' },
+    { key: 'edit', label: 'Edit Stock Items' },
+    { key: 'delete', label: 'Delete Stock Items' },
+    { key: 'transfer', label: 'Transfer Stock Between Locations' },
+    { key: 'adjust', label: 'Adjust Stock Quantities' },
+  ],
+  'Purchase Orders': [
+    { key: 'view', label: 'View Purchase Orders' },
+    { key: 'create', label: 'Create Purchase Orders' },
+    { key: 'edit', label: 'Edit Purchase Orders' },
+    { key: 'delete', label: 'Delete Purchase Orders' },
+    { key: 'approve', label: 'Approve Purchase Orders' },
+  ],
+  'Invoices': [
+    { key: 'view', label: 'View Invoices' },
+    { key: 'create', label: 'Create Invoices' },
+    { key: 'edit', label: 'Edit Invoices' },
+    { key: 'delete', label: 'Delete Invoices' },
+    { key: 'record_payment', label: 'Record Payments' },
+    { key: 'generate_pdf', label: 'Generate & Save PDF' },
+  ],
+  'Documents': [
+    { key: 'view', label: 'View Documents' },
+    { key: 'upload', label: 'Upload Documents' },
+    { key: 'delete', label: 'Delete Documents' },
+  ],
+  'Reports': [
+    { key: 'view', label: 'View Reports' },
+    { key: 'export', label: 'Export Reports' },
+  ],
+  'Settings': [
+    { key: 'view', label: 'View Settings' },
+    { key: 'edit_company', label: 'Edit Company Information' },
+    { key: 'manage_users', label: 'Manage Users' },
+    { key: 'manage_permissions', label: 'Manage User Types & Permissions' },
+    { key: 'manage_tax', label: 'Manage Tax & Labor Rates' },
+  ],
+};
+
+// Build a permissions array with all granular keys
+function buildGranularPerms(valueFn) {
+  return Object.entries(MODULE_PERMS).map(([module, perms]) => {
+    const obj = { module };
+    perms.forEach(({ key }) => { obj[key] = valueFn(module, key); });
+    return obj;
+  });
+}
+
 export function renderSettings(container) {
   let activeTab = 'company';
   const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
@@ -58,8 +174,8 @@ export function renderSettings(container) {
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">Email</label>
-              <input class="form-input" value="admin@simprogroup.com" />
+              <label class="form-label">Company Domain</label>
+              <input class="form-input" value="simprogroup.com.au" placeholder="e.g. yourcompany.com.au" />
             </div>
             <div class="form-group">
               <label class="form-label">Address</label>
@@ -77,12 +193,22 @@ export function renderSettings(container) {
       const techs = store.getAll('technicians');
       let userTypes = store.getAll('userTypes');
       if (!userTypes || userTypes.length === 0) {
-        const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Fleet', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
-        const buildPerms = (all) => baseModules.map(m => ({ module: m, view: all, create: all, edit: all, delete: all }));
         userTypes = [
-          { id: 'ut_admin', name: 'Admin', description: 'Full system access', permissions: buildPerms(true) },
-          { id: 'ut_manager', name: 'Manager', description: 'Can manage most workflows but limited settings', permissions: buildPerms(true).map(p => p.module === 'Settings' ? {...p, edit:false, delete:false, create:false} : p) },
-          { id: 'ut_tech', name: 'Technician', description: 'Field staff with limited access', permissions: buildPerms(false).map(p => ['Dashboard', 'Jobs', 'Timesheets', 'Schedule'].includes(p.module) ? {...p, view:true, create: p.module!=='Dashboard', edit: p.module!=='Dashboard'} : p) }
+          { id: 'ut_admin', name: 'Admin', description: 'Full system access',
+            permissions: buildGranularPerms(() => true) },
+          { id: 'ut_manager', name: 'Manager', description: 'Can manage most workflows but limited settings',
+            permissions: buildGranularPerms((mod, key) => {
+              if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
+              return true;
+            }) },
+          { id: 'ut_tech', name: 'Technician', description: 'Field staff with limited access',
+            permissions: buildGranularPerms((mod, key) => {
+              if (mod === 'Dashboard') return key === 'view';
+              if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
+              if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
+              if (mod === 'Schedule') return ['view_own'].includes(key);
+              return false;
+            }) },
         ];
         store.save('userTypes', userTypes);
       }
@@ -466,7 +592,7 @@ export function renderSettings(container) {
     } else if (activeTab === 'permissions' && currentUser.role === 'admin') {
       let userTypes = store.getAll('userTypes');
       if (!userTypes || userTypes.length === 0) {
-        const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Fleet', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
+        const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Assets', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
         const buildPerms = (all) => baseModules.map(m => ({ module: m, view: all, create: all, edit: all, delete: all }));
         userTypes = [
           { id: 'ut_admin', name: 'Admin', description: 'Full system access', permissions: buildPerms(true) },
@@ -606,9 +732,7 @@ export function renderSettings(container) {
            return;
          }
          
-         const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Fleet', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
-         const perms = baseModules.map(m => ({ module: m, view: false, create: false, edit: false, delete: false }));
-         
+         const perms = buildGranularPerms(() => false);
          const newUt = store.create('userTypes', { name, description: desc, permissions: perms });
          
          document.getElementById('modal-close-btn')?.click();
@@ -633,12 +757,21 @@ export function renderSettings(container) {
           if (editId) {
             store.update('userTypes', editId, { name, description: desc });
           } else {
-            const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Fleet', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
+            const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Assets', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
             let perms = [];
-            if (template === 'Admin') perms = baseModules.map(m => ({ module: m, view: true, create: true, edit: true, delete: true }));
-            else if (template === 'Manager') perms = baseModules.map(m => ({ module: m, view: true, create: true, edit: true, delete: true })).map(p => p.module === 'Settings' ? {...p, edit:false, delete:false, create:false} : p);
-            else if (template === 'Technician') perms = baseModules.map(m => ({ module: m, view: false, create: false, edit: false, delete: false })).map(p => ['Dashboard', 'Jobs', 'Timesheets', 'Schedule'].includes(p.module) ? {...p, view:true, create: p.module!=='Dashboard', edit: p.module!=='Dashboard'} : p);
-            else perms = baseModules.map(m => ({ module: m, view: false, create: false, edit: false, delete: false }));
+            if (template === 'Admin') perms = buildGranularPerms(() => true);
+            else if (template === 'Manager') perms = buildGranularPerms((mod, key) => {
+              if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
+              return true;
+            });
+            else if (template === 'Technician') perms = buildGranularPerms((mod, key) => {
+              if (mod === 'Dashboard') return key === 'view';
+              if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
+              if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
+              if (mod === 'Schedule') return ['view_own'].includes(key);
+              return false;
+            });
+            else perms = buildGranularPerms(() => false);
 
             store.create('userTypes', { name, description: desc, permissions: perms });
           }
@@ -653,34 +786,77 @@ export function renderSettings(container) {
   function openPermissionsModal(id) {
     const ut = store.getById('userTypes', id);
     if (!ut) return;
-    
+
+    // Ensure permissions exist for all module keys (migrate old data)
+    const existingPerms = ut.permissions || [];
+    const permsMap = {};
+    existingPerms.forEach(p => { permsMap[p.module] = p; });
+
     const contentDiv = document.createElement('div');
+
+    const moduleSections = Object.entries(MODULE_PERMS).map(([module, permDefs]) => {
+      const existing = permsMap[module] || {};
+      const allChecked = permDefs.every(({ key }) => existing[key]);
+      const anyChecked = permDefs.some(({ key }) => existing[key]);
+      const permCheckboxes = permDefs.map(({ key, label }) => `
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; padding:4px 0">
+          <input type="checkbox" class="perm-chk" data-module="${module}" data-key="${key}" ${existing[key] ? 'checked' : ''}
+            style="width:15px;height:15px;cursor:pointer" />
+          <span>${label}</span>
+        </label>
+      `).join('');
+      return `
+        <div style="border:1px solid var(--border-color); border-radius:6px; overflow:hidden; margin-bottom:8px">
+          <div style="padding:8px 14px; background:var(--content-bg); display:flex; align-items:center; justify-content:space-between">
+            <span style="font-weight:600; font-size:13px">${module}</span>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:var(--text-secondary)">
+              <input type="checkbox" class="module-select-all" data-module="${module}" ${allChecked ? 'checked' : ''}
+                style="width:14px;height:14px;cursor:pointer" />
+              Select All
+            </label>
+          </div>
+          <div style="padding:10px 16px; display:grid; grid-template-columns:1fr 1fr; gap:2px">
+            ${permCheckboxes}
+          </div>
+        </div>
+      `;
+    }).join('');
+
     contentDiv.innerHTML = `
-      <div style="max-height: 60vh; overflow-y: auto;">
-        <table class="data-table" style="width:100%">
-          <thead style="position:sticky; top:0; background:white; z-index:10;">
-            <tr>
-              <th>Module</th>
-              <th style="text-align:center">View</th>
-              <th style="text-align:center">Create</th>
-              <th style="text-align:center">Edit</th>
-              <th style="text-align:center">Delete</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${ut.permissions.map((p, i) => `
-              <tr>
-                <td class="font-medium">${p.module}</td>
-                <td style="text-align:center"><input type="checkbox" class="perm-chk" data-idx="${i}" data-key="view" ${p.view ? 'checked' : ''} /></td>
-                <td style="text-align:center"><input type="checkbox" class="perm-chk" data-idx="${i}" data-key="create" ${p.create ? 'checked' : ''} /></td>
-                <td style="text-align:center"><input type="checkbox" class="perm-chk" data-idx="${i}" data-key="edit" ${p.edit ? 'checked' : ''} /></td>
-                <td style="text-align:center"><input type="checkbox" class="perm-chk" data-idx="${i}" data-key="delete" ${p.delete ? 'checked' : ''} /></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      <div style="display:flex; gap:8px; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--border-color)">
+        <button id="btn-select-all-perms" class="btn btn-sm btn-ghost">Select All</button>
+        <button id="btn-deselect-all-perms" class="btn btn-sm btn-ghost">Deselect All</button>
+      </div>
+      <div style="max-height:62vh; overflow-y:auto; padding-right:4px">
+        ${moduleSections}
       </div>
     `;
+
+    contentDiv.querySelector('#btn-select-all-perms').addEventListener('click', () => {
+      contentDiv.querySelectorAll('.perm-chk, .module-select-all').forEach(c => c.checked = true);
+    });
+    contentDiv.querySelector('#btn-deselect-all-perms').addEventListener('click', () => {
+      contentDiv.querySelectorAll('.perm-chk, .module-select-all').forEach(c => c.checked = false);
+    });
+    contentDiv.querySelectorAll('.module-select-all').forEach(toggle => {
+      toggle.addEventListener('change', (e) => {
+        const mod = e.target.dataset.module;
+        contentDiv.querySelectorAll(`.perm-chk[data-module="${mod}"]`).forEach(c => c.checked = e.target.checked);
+      });
+    });
+    // Sync module-level toggle when individual checkboxes change
+    contentDiv.querySelectorAll('.perm-chk').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const mod = chk.dataset.module;
+        const defs = MODULE_PERMS[mod] || [];
+        const allChecked = defs.every(({ key }) => {
+          const c = contentDiv.querySelector(`.perm-chk[data-module="${mod}"][data-key="${key}"]`);
+          return c && c.checked;
+        });
+        const toggle = contentDiv.querySelector(`.module-select-all[data-module="${mod}"]`);
+        if (toggle) toggle.checked = allChecked;
+      });
+    });
 
     showModal({
       title: `Edit Permissions: ${ut.name}`,
@@ -688,15 +864,17 @@ export function renderSettings(container) {
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
         { label: 'Save Permissions', className: 'btn-primary', onClick: c => {
-          const checkboxes = document.querySelectorAll('.perm-chk');
-          const newPerms = JSON.parse(JSON.stringify(ut.permissions));
-          checkboxes.forEach(chk => {
-            const idx = parseInt(chk.dataset.idx);
-            const key = chk.dataset.key;
-            newPerms[idx][key] = chk.checked;
+          const newPerms = Object.entries(MODULE_PERMS).map(([module, permDefs]) => {
+            const obj = { module };
+            permDefs.forEach(({ key }) => {
+              const chk = contentDiv.querySelector(`.perm-chk[data-module="${module}"][data-key="${key}"]`);
+              obj[key] = chk ? chk.checked : false;
+            });
+            return obj;
           });
           store.update('userTypes', id, { permissions: newPerms });
           showToast('Permissions updated successfully', 'success');
+          renderContent();
           c();
         }}
       ]

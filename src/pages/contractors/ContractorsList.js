@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 
 export function renderContractorsList(container) {
@@ -44,7 +45,62 @@ export function renderContractorsList(container) {
     data: filteredData, 
     onRowClick: (id) => router.navigate(`/contractors/${id}`), 
     emptyMessage: 'No contractors found', 
-    emptyIcon: 'engineering' 
+    emptyIcon: 'engineering',
+    selectable: true,
+    onSelectionChange: (selectedIds) => {
+      createBulkActionBar({
+        container,
+        selectedIds,
+        onClear: () => table.clearSelection(),
+        actions: [
+          {
+            label: 'Activate',
+            icon: 'check_circle',
+            onClick: (ids) => {
+              ids.forEach(id => store.update('contractors', id, { active: true }));
+              table.clearSelection();
+              renderContractorsList(container);
+              import('../../components/Notifications.js').then(({ showToast }) => showToast(`Activated ${ids.length} contractors`, 'success'));
+            }
+          },
+          {
+            label: 'Deactivate',
+            icon: 'block',
+            onClick: (ids) => {
+              ids.forEach(id => store.update('contractors', id, { active: false }));
+              table.clearSelection();
+              renderContractorsList(container);
+              import('../../components/Notifications.js').then(({ showToast }) => showToast(`Deactivated ${ids.length} contractors`, 'warning'));
+            }
+          },
+          {
+            label: 'Delete Selected',
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `<p>Are you sure you want to delete ${ids.length} contractors? This action cannot be undone.</p>`;
+                showModal({
+                  title: 'Confirm Bulk Delete',
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Delete', className: 'btn-danger', onClick: c => {
+                      ids.forEach(id => store.delete('contractors', id));
+                      table.clearSelection();
+                      renderContractorsList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Deleted ${ids.length} contractors`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          }
+        ]
+      });
+    }
   });
   
   container.querySelector('#contractors-table-container').appendChild(table);

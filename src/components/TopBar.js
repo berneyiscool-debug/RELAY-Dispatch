@@ -106,13 +106,18 @@ export function updateTopbarAccess(topbarEl) {
 
   if (nameEl) nameEl.textContent = currentUser.name || 'Unknown User';
   if (roleEl) {
-    const roleMap = {
-      'admin': 'Administrator',
-      'manager': 'Manager',
-      'technician': 'Technician',
-      'customer': 'Customer'
-    };
-    roleEl.textContent = roleMap[currentUser.role] || currentUser.role;
+    // Look up user type name from localStorage for accurate display
+    let displayRole = currentUser.role;
+    if (currentUser.userTypeId) {
+      const userTypes = JSON.parse(localStorage.getItem('simpro_userTypes') || '[]');
+      const ut = userTypes.find(u => u.id === currentUser.userTypeId);
+      if (ut) displayRole = ut.name;
+    }
+    if (!displayRole || displayRole === currentUser.role) {
+      const roleMap = { 'admin': 'Administrator', 'manager': 'Manager', 'technician': 'Technician', 'customer': 'Customer' };
+      displayRole = roleMap[currentUser.role] || currentUser.role;
+    }
+    roleEl.textContent = displayRole;
   }
 
   if (avatarEl) {

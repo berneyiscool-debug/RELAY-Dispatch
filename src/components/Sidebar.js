@@ -8,15 +8,16 @@ import { store } from '../data/store.js';
 const navItems = [
   { section: 'MAIN' },
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
+  { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
   { section: 'WORKFLOW' },
   { id: 'people', icon: 'people', label: 'Customers', path: '/people' },
   { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
+  { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
   { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
   { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
   { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
-  { id: 'fleet', icon: 'local_shipping', label: 'Fleet', path: '/fleet' },
-  { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
   { section: 'RESOURCES' },
+  { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
   { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
   { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
   { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
@@ -42,7 +43,10 @@ export function createSidebar() {
       <div class="logo-icon">S</div>
       <span class="logo-text">SimPro</span>
     </div>
-    <nav class="sidebar-nav">
+    <div class="sidebar-scroll-arrow up" id="sidebar-scroll-up">
+      <span class="material-icons-outlined">keyboard_arrow_up</span>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav">
   `;
 
   const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
@@ -62,8 +66,14 @@ export function createSidebar() {
 
   html += `
     </nav>
-    <div style="padding: 1rem;">
-      <button id="btn-logout" class="btn btn-outline" style="width: 100%;">Logout</button>
+    <div class="sidebar-scroll-arrow down" id="sidebar-scroll-down">
+      <span class="material-icons-outlined">keyboard_arrow_down</span>
+    </div>
+    <div style="padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+      <button id="btn-logout" class="sidebar-nav-item" style="width: calc(100% - 16px);">
+        <span class="nav-icon"><span class="material-icons-outlined">logout</span></span>
+        <span class="nav-label">Logout</span>
+      </button>
     </div>
     <button class="sidebar-toggle" id="sidebar-toggle">
       <span class="material-icons-outlined" id="sidebar-toggle-icon">${isExpanded ? 'chevron_left' : 'chevron_right'}</span>
@@ -86,6 +96,35 @@ export function createSidebar() {
 
   const toggleBtn = sidebar.querySelector('#sidebar-toggle');
   toggleBtn.addEventListener('click', () => toggleSidebar(sidebar));
+
+  const nav = sidebar.querySelector('#sidebar-nav');
+  const upArrow = sidebar.querySelector('#sidebar-scroll-up');
+  const downArrow = sidebar.querySelector('#sidebar-scroll-down');
+
+  const updateArrows = () => {
+    if (sidebar.classList.contains('expanded')) {
+      upArrow.classList.remove('visible');
+      downArrow.classList.remove('visible');
+      return;
+    }
+    
+    const { scrollTop, scrollHeight, clientHeight } = nav;
+    upArrow.classList.toggle('visible', scrollTop > 0);
+    downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
+  };
+
+  nav.addEventListener('scroll', updateArrows);
+  
+  upArrow.addEventListener('click', () => {
+    nav.scrollBy({ top: -100, behavior: 'smooth' });
+  });
+  
+  downArrow.addEventListener('click', () => {
+    nav.scrollBy({ top: 100, behavior: 'smooth' });
+  });
+
+  // Call after some delay to ensure layout is done
+  setTimeout(updateArrows, 100);
 
   const logoutBtn = sidebar.querySelector('#btn-logout');
   if (logoutBtn) {
@@ -134,7 +173,9 @@ export function updateSidebarAccess() {
 
       if (permissions) {
         const p = permissions.find(m => m.module === label);
-        if (p && (p.view || p.create || p.edit || p.delete)) {
+        // Page visible if ANY permission key is truthy
+        const hasAnyPerm = p && Object.entries(p).some(([k, v]) => k !== 'module' && v === true);
+        if (hasAnyPerm || label === 'Notifications' || label === 'Dashboard') {
           item.style.display = '';
         } else {
           item.style.display = 'none';
@@ -160,6 +201,16 @@ export function updateSidebarAccess() {
        }
        sec.style.display = hasVisibleItems ? '' : 'none';
     });
+
+    // Update arrows
+    const nav = sidebar.querySelector('#sidebar-nav');
+    const upArrow = sidebar.querySelector('#sidebar-scroll-up');
+    const downArrow = sidebar.querySelector('#sidebar-scroll-down');
+    if (nav && upArrow && downArrow && !sidebar.classList.contains('expanded')) {
+      const { scrollTop, scrollHeight, clientHeight } = nav;
+      upArrow.classList.toggle('visible', scrollTop > 0);
+      downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
+    }
   }
 }
 
@@ -169,6 +220,21 @@ function toggleSidebar(sidebar) {
   localStorage.setItem('simpro_sidebar_expanded', isExpanded);
   const icon = sidebar.querySelector('#sidebar-toggle-icon');
   icon.textContent = isExpanded ? 'chevron_left' : 'chevron_right';
+  
+  // Update arrows state
+  const nav = sidebar.querySelector('#sidebar-nav');
+  const upArrow = sidebar.querySelector('#sidebar-scroll-up');
+  const downArrow = sidebar.querySelector('#sidebar-scroll-down');
+  if (nav && upArrow && downArrow) {
+    if (isExpanded) {
+      upArrow.classList.remove('visible');
+      downArrow.classList.remove('visible');
+    } else {
+      const { scrollTop, scrollHeight, clientHeight } = nav;
+      upArrow.classList.toggle('visible', scrollTop > 0);
+      downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
+    }
+  }
 }
 
 export function updateSidebarActive(path) {

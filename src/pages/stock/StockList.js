@@ -5,7 +5,9 @@
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { showModal } from '../../components/Modal.js';
+import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 
@@ -50,9 +52,173 @@ export function renderStockList(container) {
     { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplier)}</span>` },
   ];
 
-  const table = createDataTable({ columns, data: filteredData, onRowClick: (id) => router.navigate(`/stock/${id}`), emptyMessage: 'No stock items', emptyIcon: 'inventory_2' });
+  const table = createDataTable({ 
+    columns, 
+    data: filteredData, 
+    onRowClick: (id) => router.navigate(`/stock/${id}`), 
+    emptyMessage: 'No stock items', 
+    emptyIcon: 'inventory_2',
+    selectable: true,
+    onSelectionChange: (selectedIds) => {
+      createBulkActionBar({
+        container,
+        selectedIds,
+        onClear: () => table.clearSelection(),
+        actions: [
+          {
+            label: 'Change Category',
+            icon: 'category',
+            onClick: (ids) => {
+              const categories = [...new Set(store.getAll('stock').map(s => s.category))];
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">Select Category</label>
+                  <select class="form-select" id="bulk-category">
+                    ${categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}
+                    <option value="NEW">New Category...</option>
+                  </select>
+                </div>
+                <div id="new-cat-field" style="display:none; margin-top: 10px;">
+                   <input type="text" class="form-input" id="bulk-new-category" placeholder="Enter new category name">
+                </div>
+              `;
+              content.querySelector('#bulk-category').addEventListener('change', (e) => {
+                content.querySelector('#new-cat-field').style.display = e.target.value === 'NEW' ? 'block' : 'none';
+              });
+              showModal({
+                title: `Update ${ids.length} Items`,
+                content,
+                actions: [
+                  { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                  { label: 'Apply', className: 'btn-primary', onClick: c => {
+                    let newCat = content.querySelector('#bulk-category').value;
+                    if (newCat === 'NEW') newCat = content.querySelector('#bulk-new-category').value.trim();
+                    if (!newCat) return;
+                    ids.forEach(id => store.update('stock', id, { category: newCat }));
+                    table.clearSelection();
+                    renderStockList(container);
+                    showToast(`Updated ${ids.length} items to category: ${newCat}`, 'success');
+                    c();
+                  }}
+                ]
+              });
+            }
+          },
+          {
+            label: 'Adjust Price',
+            icon: 'payments',
+            onClick: (ids) => {
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">Price Adjustment (%)</label>
+                  <input type="number" class="form-input" id="bulk-price-adjust" value="5" placeholder="e.g. 5 for +5%, -5 for -5%">
+                  <small class="text-tertiary">Adjusts unit price by the specified percentage.</small>
+                </div>
+              `;
+              showModal({
+                title: `Adjust Price for ${ids.length} Items`,
+                content,
+                actions: [
+                  { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                  { label: 'Apply', className: 'btn-primary', onClick: c => {
+                    const percent = parseFloat(content.querySelector('#bulk-price-adjust').value);
+                    if (isNaN(percent)) return;
+                    const factor = 1 + (percent / 100);
+                    ids.forEach(id => {
+                      const item = store.getById('stock', id);
+                      if (item) store.update('stock', id, { unitPrice: item.unitPrice * factor });
+                    });
+                    table.clearSelection();
+                    renderStockList(container);
+                    showToast(`Adjusted prices for ${ids.length} items by ${percent}%`, 'success');
+                    c();
+                  }}
+                ]
+              });
+            }
+          },
+          {
+            label: 'Delete Selected',
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: (ids) => {
+              showModal({
+                title: 'Confirm Bulk Delete',
+                content: `<p>Are you sure you want to delete ${ids.length} stock items? This action cannot be undone.</p>`,
+                actions: [
+                  { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                  { label: 'Delete', className: 'btn-danger', onClick: c => {
+                    ids.forEach(id => store.delete('stock', id));
+                    table.clearSelection();
+                    renderStockList(container);
+                    showToast(`Deleted ${ids.length} stock items`, 'success');
+                    c();
+                  }}
+                ]
+              });
+            }
+          }
+        ]
+      });
+    }
+  });
   container.querySelector('#stock-table-container').appendChild(table);
-  container.querySelector('#btn-new-stock').addEventListener('click', () => router.navigate('/stock/new'));
+
+  container.querySelector('#btn-new-stock').addEventListener('click', () => {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Item Name *</label>
+        <input type="text" class="form-input" id="new-stock-name" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <input type="text" class="form-input" id="new-stock-category" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cost Price ($) *</label>
+          <input type="number" class="form-input" id="new-stock-cost" step="0.01" />
+        </div>
+      </div>
+    `;
+
+    showDrawer({
+      title: 'New Stock Item',
+      content: content.outerHTML,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+        { label: 'Create', className: 'btn-primary', onClick: (close) => {
+          const dOverlay = document.querySelector('.drawer-overlay');
+          const name = dOverlay.querySelector('#new-stock-name').value.trim();
+          const category = dOverlay.querySelector('#new-stock-category').value.trim() || 'Uncategorized';
+          const costPrice = parseFloat(dOverlay.querySelector('#new-stock-cost').value);
+
+          if (!name || isNaN(costPrice)) {
+            showToast('Please fill all required fields correctly', 'error');
+            return;
+          }
+
+          store.create('stock', {
+            name,
+            sku: 'SKU-' + Date.now().toString().slice(-6),
+            category,
+            quantity: 0,
+            unitPrice: costPrice * 1.5, // default 50% markup
+            costPrice,
+            location: 'Main Warehouse',
+            supplier: 'Unknown'
+          });
+
+          showToast('Stock item created', 'success');
+          renderStockList(container);
+          close();
+        }}
+      ]
+    });
+  });
 
   container.querySelector('#btn-transfer-stock')?.addEventListener('click', () => {
     const stockItems = store.getAll('stock');
@@ -85,15 +251,16 @@ export function renderStockList(container) {
           </div>
         </div>
       `;
-    showModal({
+    showDrawer({
       title: 'Transfer Stock',
-      content,
+      content: content.outerHTML,
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
         { label: 'Transfer', className: 'btn-primary', onClick: (close) => {
-          const itemId = document.getElementById('transfer-item').value;
-          const toLoc = document.getElementById('transfer-to').value;
-          const qty = parseInt(document.getElementById('transfer-qty').value) || 0;
+          const dOverlay = document.querySelector('.drawer-overlay');
+          const itemId = dOverlay.querySelector('#transfer-item').value;
+          const toLoc = dOverlay.querySelector('#transfer-to').value;
+          const qty = parseInt(dOverlay.querySelector('#transfer-qty').value) || 0;
 
           if (!itemId || !toLoc || qty <= 0) {
             showToast('Please fill all fields correctly', 'error');

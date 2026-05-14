@@ -9,6 +9,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { showDrawer } from '../../components/Drawer.js';
 
 export function renderPersonDetail(container, { id }) {
   const person = store.getById('customers', id);
@@ -52,7 +53,7 @@ export function renderPersonDetail(container, { id }) {
         <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Details</button>
         <button class="tab ${activeTab === 'contacts' ? 'active' : ''}" data-tab="contacts">Contacts (${(person.contacts || []).length})</button>
         <button class="tab ${activeTab === 'sites' ? 'active' : ''}" data-tab="sites">Sites (${(person.sites || []).length})</button>
-        <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets (${(person.assets || []).length})</button>
+        <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets (${store.getAll('assets').filter(a => a.ownerType === 'Customer' && a.customerId === id).length})</button>
         <button class="tab ${activeTab === 'communications' ? 'active' : ''}" data-tab="communications">Communications (${(person.communications || []).length})</button>
         <button class="tab ${activeTab === 'jobs' ? 'active' : ''}" data-tab="jobs">Jobs (${jobs.length})</button>
         <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes (${quotes.length})</button>
@@ -143,30 +144,16 @@ export function renderPersonDetail(container, { id }) {
             <h4>Contacts (${contacts.length})</h4>
             <button class="btn btn-primary btn-sm" id="btn-toggle-contact"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Contact</button>
           </div>
-          <div id="contact-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
-            <div class="form-row">
-              <div class="form-group"><label class="form-label">Name *</label><input type="text" id="new-c-name" class="form-input"></div>
-              <div class="form-group"><label class="form-label">Role</label><input type="text" id="new-c-role" class="form-input"></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label class="form-label">Email</label><input type="email" id="new-c-email" class="form-input"></div>
-              <div class="form-group"><label class="form-label">Phone</label><input type="text" id="new-c-phone" class="form-input"></div>
-            </div>
-            <div style="display:flex;justify-content:flex-end;gap:8px">
-              <button class="btn btn-secondary btn-sm" id="btn-cancel-contact">Cancel</button>
-              <button class="btn btn-primary btn-sm" id="btn-save-contact">Save Contact</button>
-            </div>
-          </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
               <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th style="width:50px"></th></tr></thead>
               <tbody>
                 ${contacts.map((c, i) => `
                   <tr>
-                    <td class="font-medium">${c.name}</td>
-                    <td>${c.role || '—'}</td>
-                    <td><a href="mailto:${c.email}" class="cell-link">${c.email}</a></td>
-                    <td><a href="tel:${c.phone}" class="cell-link">${c.phone}</a></td>
+                    <td class="font-medium">${escapeHTML(c.name)}</td>
+                    <td>${escapeHTML(c.role || '—')}</td>
+                    <td><a href="mailto:${escapeHTML(c.email)}" class="cell-link">${escapeHTML(c.email)}</a></td>
+                    <td><a href="tel:${escapeHTML(c.phone)}" class="cell-link">${escapeHTML(c.phone)}</a></td>
                     <td><button class="btn btn-icon btn-sm btn-danger btn-delete-contact" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
                   </tr>
                 `).join('')}
@@ -177,21 +164,41 @@ export function renderPersonDetail(container, { id }) {
         </div>
       `;
 
-      tabContent.querySelector('#btn-toggle-contact').addEventListener('click', () => { tabContent.querySelector('#contact-form').style.display = 'block'; });
-      tabContent.querySelector('#btn-cancel-contact').addEventListener('click', () => { tabContent.querySelector('#contact-form').style.display = 'none'; });
-      tabContent.querySelector('#btn-save-contact').addEventListener('click', () => {
-        const name = tabContent.querySelector('#new-c-name').value.trim();
-        if (!name) return showToast('Name is required', 'error');
-        if (!person.contacts) person.contacts = [];
-        person.contacts.push({
-          name, role: tabContent.querySelector('#new-c-role').value,
-          email: tabContent.querySelector('#new-c-email').value,
-          phone: tabContent.querySelector('#new-c-phone').value
+      tabContent.querySelector('#btn-toggle-contact').addEventListener('click', () => {
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Name *</label><input type="text" id="new-c-name" class="form-input"></div>
+            <div class="form-group"><label class="form-label">Role</label><input type="text" id="new-c-role" class="form-input"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Email</label><input type="email" id="new-c-email" class="form-input"></div>
+            <div class="form-group"><label class="form-label">Phone</label><input type="text" id="new-c-phone" class="form-input"></div>
+          </div>
+        `;
+        showDrawer({
+          title: 'Add Contact',
+          content: content.outerHTML,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save', className: 'btn-primary', onClick: (close) => {
+              const dOverlay = document.querySelector('.drawer-overlay');
+              const name = dOverlay.querySelector('#new-c-name').value.trim();
+              if (!name) return showToast('Name is required', 'error');
+              if (!person.contacts) person.contacts = [];
+              person.contacts.push({
+                name, role: dOverlay.querySelector('#new-c-role').value,
+                email: dOverlay.querySelector('#new-c-email').value,
+                phone: dOverlay.querySelector('#new-c-phone').value
+              });
+              store.update('customers', id, { contacts: person.contacts });
+              showToast('Contact added', 'success');
+              renderTabContent();
+              render(); // update tab count
+              close();
+            }}
+          ]
         });
-        store.update('customers', id, { contacts: person.contacts });
-        showToast('Contact added', 'success');
-        renderTabContent();
-        render(); // update tab count
       });
       tabContent.querySelectorAll('.btn-delete-contact').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -211,28 +218,15 @@ export function renderPersonDetail(container, { id }) {
             <h4>Sites (${sites.length})</h4>
             <button class="btn btn-primary btn-sm" id="btn-toggle-site"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Site</button>
           </div>
-          <div id="site-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
-            <div class="form-row">
-              <div class="form-group"><label class="form-label">Site Name *</label><input type="text" id="new-s-name" class="form-input" placeholder="e.g. Headquarters"></div>
-              <div class="form-group"><label class="form-label">Address *</label><input type="text" id="new-s-address" class="form-input"></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group" style="grid-column: span 2"><label class="form-label">Notes</label><input type="text" id="new-s-notes" class="form-input"></div>
-            </div>
-            <div style="display:flex;justify-content:flex-end;gap:8px">
-              <button class="btn btn-secondary btn-sm" id="btn-cancel-site">Cancel</button>
-              <button class="btn btn-primary btn-sm" id="btn-save-site">Save Site</button>
-            </div>
-          </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
               <thead><tr><th>Site Name</th><th>Address</th><th>Notes</th><th style="width:50px"></th></tr></thead>
               <tbody>
                 ${sites.map((s, i) => `
                   <tr>
-                    <td class="font-medium">${s.name}</td>
-                    <td>${s.address}</td>
-                    <td class="text-secondary">${s.notes || '—'}</td>
+                    <td class="font-medium">${escapeHTML(s.name)}</td>
+                    <td>${escapeHTML(s.address)}</td>
+                    <td class="text-secondary">${escapeHTML(s.notes || '—')}</td>
                     <td><button class="btn btn-icon btn-sm btn-danger btn-delete-site" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
                   </tr>
                 `).join('')}
@@ -243,18 +237,35 @@ export function renderPersonDetail(container, { id }) {
         </div>
       `;
 
-      tabContent.querySelector('#btn-toggle-site').addEventListener('click', () => { tabContent.querySelector('#site-form').style.display = 'block'; });
-      tabContent.querySelector('#btn-cancel-site').addEventListener('click', () => { tabContent.querySelector('#site-form').style.display = 'none'; });
-      tabContent.querySelector('#btn-save-site').addEventListener('click', () => {
-        const name = tabContent.querySelector('#new-s-name').value.trim();
-        const address = tabContent.querySelector('#new-s-address').value.trim();
-        if (!name || !address) return showToast('Name and Address are required', 'error');
-        if (!person.sites) person.sites = [];
-        person.sites.push({ name, address, notes: tabContent.querySelector('#new-s-notes').value });
-        store.update('customers', id, { sites: person.sites });
-        showToast('Site added', 'success');
-        renderTabContent();
-        render(); // update tab count
+      tabContent.querySelector('#btn-toggle-site').addEventListener('click', () => {
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Site Name *</label><input type="text" id="new-s-name" class="form-input" placeholder="e.g. Headquarters"></div>
+            <div class="form-group"><label class="form-label">Address *</label><input type="text" id="new-s-address" class="form-input"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Notes</label><input type="text" id="new-s-notes" class="form-input"></div>
+        `;
+        showDrawer({
+          title: 'Add Site',
+          content: content.outerHTML,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save', className: 'btn-primary', onClick: (close) => {
+              const dOverlay = document.querySelector('.drawer-overlay');
+              const name = dOverlay.querySelector('#new-s-name').value.trim();
+              const address = dOverlay.querySelector('#new-s-address').value.trim();
+              if (!name || !address) return showToast('Name and Address are required', 'error');
+              if (!person.sites) person.sites = [];
+              person.sites.push({ name, address, notes: dOverlay.querySelector('#new-s-notes').value });
+              store.update('customers', id, { sites: person.sites });
+              showToast('Site added', 'success');
+              renderTabContent();
+              render(); // update tab count
+              close();
+            }}
+          ]
+        });
       });
       tabContent.querySelectorAll('.btn-delete-site').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -267,7 +278,25 @@ export function renderPersonDetail(container, { id }) {
       });
 
     } else if (activeTab === 'assets') {
-      const assets = person.assets || [];
+      // Migrate legacy person.assets to global store
+      if (person.assets && person.assets.length > 0) {
+        person.assets.forEach(a => {
+          store.create('assets', {
+             name: a.name,
+             serial: a.serial,
+             site: a.site,
+             installDate: a.installDate,
+             ownerType: 'Customer',
+             customerId: id,
+             status: 'Active',
+             type: 'Equipment'
+          });
+        });
+        person.assets = [];
+        store.update('customers', id, { assets: [] });
+      }
+
+      const assets = store.getAll('assets').filter(a => a.ownerType === 'Customer' && a.customerId === id);
       const sites = person.sites || [];
       tabContent.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
@@ -275,37 +304,17 @@ export function renderPersonDetail(container, { id }) {
             <h4>Assets/Equipment (${assets.length})</h4>
             <button class="btn btn-primary btn-sm" id="btn-toggle-asset"><span class="material-icons-outlined" style="font-size:16px">add</span> Add Asset</button>
           </div>
-          <div id="asset-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
-            <div class="form-row">
-              <div class="form-group"><label class="form-label">Asset Name *</label><input type="text" id="new-a-name" class="form-input" placeholder="e.g. Carrier HVAC Unit"></div>
-              <div class="form-group"><label class="form-label">Serial Number</label><input type="text" id="new-a-serial" class="form-input"></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Location / Site</label>
-                <select id="new-a-site" class="form-select">
-                  <option value="">-- No specific site --</option>
-                  ${sites.map(s => `<option value="${s.name}">${s.name}</option>`).join('')}
-                </select>
-              </div>
-              <div class="form-group"><label class="form-label">Install Date</label><input type="date" id="new-a-date" class="form-input"></div>
-            </div>
-            <div style="display:flex;justify-content:flex-end;gap:8px">
-              <button class="btn btn-secondary btn-sm" id="btn-cancel-asset">Cancel</button>
-              <button class="btn btn-primary btn-sm" id="btn-save-asset">Save Asset</button>
-            </div>
-          </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
               <thead><tr><th>Asset Name</th><th>Serial No.</th><th>Site</th><th>Install Date</th><th style="width:50px"></th></tr></thead>
               <tbody>
                 ${assets.map((a, i) => `
                   <tr>
-                    <td class="font-medium">${a.name}</td>
-                    <td style="font-family:monospace" class="text-secondary">${a.serial || '—'}</td>
-                    <td>${a.site || '—'}</td>
+                    <td class="font-medium">${escapeHTML(a.name)}</td>
+                    <td style="font-family:monospace" class="text-secondary">${escapeHTML(a.serial || '—')}</td>
+                    <td>${escapeHTML(a.site || '—')}</td>
                     <td>${a.installDate ? new Date(a.installDate).toLocaleDateString() : '—'}</td>
-                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-asset" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
+                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-asset" data-id="${a.id}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
                   </tr>
                 `).join('')}
                 ${!assets.length ? '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No assets tracked</td></tr>' : ''}
@@ -315,26 +324,60 @@ export function renderPersonDetail(container, { id }) {
         </div>
       `;
 
-      tabContent.querySelector('#btn-toggle-asset').addEventListener('click', () => { tabContent.querySelector('#asset-form').style.display = 'block'; });
-      tabContent.querySelector('#btn-cancel-asset').addEventListener('click', () => { tabContent.querySelector('#asset-form').style.display = 'none'; });
-      tabContent.querySelector('#btn-save-asset').addEventListener('click', () => {
-        const name = tabContent.querySelector('#new-a-name').value.trim();
-        if (!name) return showToast('Asset Name is required', 'error');
-        if (!person.assets) person.assets = [];
-        person.assets.push({
-          name, serial: tabContent.querySelector('#new-a-serial').value,
-          site: tabContent.querySelector('#new-a-site').value,
-          installDate: tabContent.querySelector('#new-a-date').value
+      tabContent.querySelector('#btn-toggle-asset').addEventListener('click', () => {
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-group"><label class="form-label">Asset Name *</label><input type="text" id="new-a-name" class="form-input" placeholder="e.g. Carrier HVAC Unit"></div>
+          <div class="form-group"><label class="form-label">Serial Number</label><input type="text" id="new-a-serial" class="form-input"></div>
+          <div class="form-group">
+            <label class="form-label">Location / Site</label>
+            <select id="new-a-site" class="form-select">
+              <option value="">-- No specific site --</option>
+              ${sites.map(s => `<option value="${escapeHTML(s.name)}">${escapeHTML(s.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label class="form-label">Install Date</label><input type="date" id="new-a-date" class="form-input"></div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea id="new-a-description" class="form-input" rows="2"></textarea>
+          </div>
+        `;
+
+        showDrawer({
+          title: 'Add Asset',
+          content: content.outerHTML,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save', className: 'btn-primary', onClick: (close) => {
+              const dOverlay = document.querySelector('.drawer-overlay');
+              const name = dOverlay.querySelector('#new-a-name').value.trim();
+              if (!name) return showToast('Asset Name is required', 'error');
+              
+              store.create('assets', {
+                name, 
+                serial: dOverlay.querySelector('#new-a-serial').value,
+                site: dOverlay.querySelector('#new-a-site').value,
+                installDate: dOverlay.querySelector('#new-a-date').value,
+                description: dOverlay.querySelector('#new-a-description').value,
+                ownerType: 'Customer',
+                customerId: id,
+                status: 'Active',
+                type: 'Equipment'
+              });
+              showToast('Asset tracking started', 'success');
+              renderTabContent();
+              render(); // update tab count
+              close();
+            }}
+          ],
+          width: 450
         });
-        store.update('customers', id, { assets: person.assets });
-        showToast('Asset tracking started', 'success');
-        renderTabContent();
-        render(); // update tab count
       });
+
       tabContent.querySelectorAll('.btn-delete-asset').forEach(btn => {
         btn.addEventListener('click', () => {
-          person.assets.splice(btn.dataset.index, 1);
-          store.update('customers', id, { assets: person.assets });
+          const assetId = btn.dataset.id;
+          store.delete('assets', assetId);
           showToast('Asset disabled/deleted', 'success');
           renderTabContent();
           render();
@@ -350,30 +393,6 @@ export function renderPersonDetail(container, { id }) {
           <div class="card-header">
             <h4>Communication History</h4>
             <button class="btn btn-primary btn-sm" id="btn-toggle-comm"><span class="material-icons-outlined" style="font-size:16px">add</span> Log Activity</button>
-          </div>
-          <div id="comm-form" style="display:none;padding:var(--space-base);background:var(--content-bg);border-bottom:1px solid var(--border-color)">
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Type</label>
-                <select id="new-comm-type" class="form-select">
-                  <option value="Note">Note</option>
-                  <option value="Call">Call</option>
-                  <option value="Email">Email</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Date</label>
-                <input type="date" id="new-comm-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Details / Content</label>
-              <textarea id="new-comm-content" class="form-input" rows="3" placeholder="Enter notes here..."></textarea>
-            </div>
-            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-              <button class="btn btn-secondary btn-sm" id="btn-cancel-comm">Cancel</button>
-              <button class="btn btn-primary btn-sm" id="btn-save-comm">Save Activity</button>
-            </div>
           </div>
           <div class="card-body">
             ${sortedComms.length === 0 ? '<div style="text-align:center;padding:20px" class="text-secondary">No communications logged</div>' : `
@@ -398,22 +417,52 @@ export function renderPersonDetail(container, { id }) {
         </div>
       `;
 
-      tabContent.querySelector('#btn-toggle-comm').addEventListener('click', () => { tabContent.querySelector('#comm-form').style.display = 'block'; });
-      tabContent.querySelector('#btn-cancel-comm').addEventListener('click', () => { tabContent.querySelector('#comm-form').style.display = 'none'; });
-      tabContent.querySelector('#btn-save-comm').addEventListener('click', () => {
-        const content = tabContent.querySelector('#new-comm-content').value.trim();
-        if (!content) return showToast('Details are required', 'error');
-        if (!person.communications) person.communications = [];
-        person.communications.push({
-          id: Date.now().toString(),
-          type: tabContent.querySelector('#new-comm-type').value,
-          date: tabContent.querySelector('#new-comm-date').value,
-          content
+      tabContent.querySelector('#btn-toggle-comm').addEventListener('click', () => {
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <select id="new-comm-type" class="form-select">
+                <option value="Note">Note</option>
+                <option value="Call">Call</option>
+                <option value="Email">Email</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date</label>
+              <input type="date" id="new-comm-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Details / Content</label>
+            <textarea id="new-comm-content" class="form-input" rows="3" placeholder="Enter notes here..."></textarea>
+          </div>
+        `;
+        showDrawer({
+          title: 'Log Activity',
+          content: content.outerHTML,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save', className: 'btn-primary', onClick: (close) => {
+              const dOverlay = document.querySelector('.drawer-overlay');
+              const contentVal = dOverlay.querySelector('#new-comm-content').value.trim();
+              if (!contentVal) return showToast('Details are required', 'error');
+              if (!person.communications) person.communications = [];
+              person.communications.push({
+                id: Date.now().toString(),
+                type: dOverlay.querySelector('#new-comm-type').value,
+                date: dOverlay.querySelector('#new-comm-date').value,
+                content: contentVal
+              });
+              store.update('customers', id, { communications: person.communications });
+              showToast('Activity logged', 'success');
+              renderTabContent();
+              render(); // update tab count
+              close();
+            }}
+          ]
         });
-        store.update('customers', id, { communications: person.communications });
-        showToast('Activity logged', 'success');
-        renderTabContent();
-        render(); // update tab count
       });
 
     } else if (activeTab === 'jobs') {

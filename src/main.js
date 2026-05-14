@@ -21,6 +21,7 @@ import { renderPersonForm } from './pages/people/PersonForm.js';
 import { renderLeadsList } from './pages/leads/LeadsList.js';
 import { renderLeadDetail } from './pages/leads/LeadDetail.js';
 import { renderLeadForm } from './pages/leads/LeadForm.js';
+import { renderNotificationsList } from './pages/notifications/NotificationsList.js';
 import { renderQuotesList } from './pages/quotes/QuotesList.js';
 import { renderQuoteDetail } from './pages/quotes/QuoteDetail.js';
 import { renderJobsList } from './pages/jobs/JobsList.js';
@@ -44,9 +45,9 @@ import { renderContractorsList } from './pages/contractors/ContractorsList.js';
 import { renderContractorForm } from './pages/contractors/ContractorForm.js';
 import { renderContractorDetail } from './pages/contractors/ContractorDetail.js';
 
-import { renderFleetList } from './pages/fleet/FleetList.js';
-import { renderVehicleForm } from './pages/fleet/VehicleForm.js';
-import { renderVehicleDetail } from './pages/fleet/VehicleDetail.js';
+import { renderAssetList } from './pages/assets/AssetList.js';
+import { renderAssetForm } from './pages/assets/AssetForm.js';
+import { renderAssetDetail } from './pages/assets/AssetDetail.js';
 
 import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
 
@@ -115,6 +116,9 @@ router.register('/leads/new', renderPage((c, p) => renderLeadForm(c, { id: 'new'
 router.register('/leads/:id', renderPage(renderLeadDetail));
 router.register('/leads/:id/edit', renderPage((c, p) => renderLeadForm(c, p)));
 
+// Notifications
+router.register('/notifications', renderPage(renderNotificationsList));
+
 // Quotes
 router.register('/quotes', renderPage(renderQuotesList));
 router.register('/quotes/new', renderPage((c, p) => renderQuoteDetail(c, { id: 'new' })));
@@ -129,11 +133,11 @@ router.register('/jobs/:id/edit', renderPage((c, p) => renderJobForm(c, p)));
 // Timesheets
 router.register('/timesheets', renderPage(renderTimesheetsList));
 
-// Fleet
-router.register('/fleet', renderPage(renderFleetList));
-router.register('/fleet/new', renderPage((c, p) => renderVehicleForm(c, { id: 'new' })));
-router.register('/fleet/:id', renderPage(renderVehicleDetail));
-router.register('/fleet/:id/edit', renderPage((c, p) => renderVehicleForm(c, p)));
+// Assets
+router.register('/assets', renderPage(renderAssetList));
+router.register('/assets/new', renderPage((c, p) => renderAssetForm(c, { id: 'new' })));
+router.register('/assets/:id', renderPage(renderAssetDetail));
+router.register('/assets/:id/edit', renderPage((c, p) => renderAssetForm(c, p)));
 
 // Schedule
 router.register('/schedule', renderPage(renderScheduleView));
@@ -164,7 +168,7 @@ router.register('/reports', renderPage(renderReports));
 router.register('/settings', renderPage(renderSettings));
 
 // ---- Auth Guard Hook ----
-const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/quotes', '/jobs', '/timesheets', '/fleet', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings'];
+const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings'];
 const customerRoutes = ['/portal'];
 
 router.onNavigate = (path, params) => {
@@ -196,10 +200,11 @@ router.onNavigate = (path, params) => {
              '/': 'Dashboard',
              '/people': 'Customers',
              '/leads': 'Leads',
+             '/notifications': 'Notifications',
              '/quotes': 'Quotes',
              '/jobs': 'Jobs',
              '/timesheets': 'Timesheets',
-             '/fleet': 'Fleet',
+             '/assets': 'Assets',
              '/schedule': 'Schedule',
              '/contractors': 'Contractors',
              '/stock': 'Stock',
@@ -211,13 +216,24 @@ router.onNavigate = (path, params) => {
           };
           const moduleName = pathMap[basePath];
           if (moduleName) {
-             const p = ut.permissions.find(m => m.module === moduleName);
-             if (!p || (!p.view && !p.create && !p.edit && !p.delete)) {
-                // No permissions at all for this page, redirect to Dashboard
-                if (basePath !== '/') {
-                   router.navigate('/');
-                   return false;
-                }
+             if (moduleName === 'Notifications' || moduleName === 'Dashboard') {
+                // globally accessible, allow
+             } else {
+               const p = ut.permissions.find(m => m.module === moduleName);
+               if (!p || (Object.entries(p || {}).every(([k,v]) => k === 'module' || !v))) {
+                  // Not permitted — find first page they CAN access
+                  const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/assets', '/documents', '/settings'];
+                  const fallback = PRIORITY.find(route => {
+                    const mod = pathMap[route];
+                    if (mod === 'Notifications' || mod === 'Dashboard') return true;
+                    const perm = ut.permissions.find(m => m.module === mod);
+                    return perm && Object.entries(perm).some(([k,v]) => k !== 'module' && v === true);
+                  }) || '/';
+                  if (basePath !== fallback) {
+                     router.navigate(fallback);
+                     return false;
+                  }
+               }
              }
           }
        }

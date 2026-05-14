@@ -4,7 +4,7 @@
 
 import { escapeHTML } from '../utils/security.js';
 
-export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox' }) {
+export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'card';
 
@@ -12,6 +12,13 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
   let sortDir = 'asc';
   let currentPage = 1;
   const pageSize = 15;
+  const selectedIds = new Set();
+
+  function triggerSelectionChange() {
+    if (onSelectionChange) {
+      onSelectionChange(Array.from(selectedIds));
+    }
+  }
 
   function render() {
     let sorted = [...data];
@@ -48,6 +55,12 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
     let html = '<div class="data-table-wrapper"><table class="data-table"><thead><tr>';
 
+    // Select All Checkbox
+    if (selectable) {
+      const allSelectedOnPage = paged.length > 0 && paged.every(r => selectedIds.has(String(getId ? getId(r) : r.id)));
+      html += `<th style="width: 40px; text-align: center;"><input type="checkbox" class="dt-select-all" ${allSelectedOnPage ? 'checked' : ''}></th>`;
+    }
+
     columns.forEach(col => {
       const isSorted = sortCol && sortCol.key === col.key;
       const sortClass = isSorted ? ' sorted' : '';
@@ -61,8 +74,16 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     html += '</tr></thead><tbody>';
 
     paged.forEach(row => {
-      const rowId = getId ? getId(row) : row.id;
-      html += `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer">`;
+      const rowId = String(getId ? getId(row) : row.id);
+      const isSelected = selectedIds.has(rowId);
+      html += `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}">`;
+      
+      if (selectable) {
+        html += `<td style="width: 40px; text-align: center;" class="dt-select-cell">
+          <input type="checkbox" class="dt-select-row" value="${escapeHTML(rowId)}" ${isSelected ? 'checked' : ''}>
+        </td>`;
+      }
+
       columns.forEach(col => {
         const value = col.render ? col.render(row) : escapeHTML(row[col.key] ?? '');
         html += `<td>${value}</td>`;
@@ -111,8 +132,37 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     // Event: row click
     if (onRowClick) {
       wrapper.querySelectorAll('tbody tr[data-id]').forEach(tr => {
-        tr.addEventListener('click', () => onRowClick(tr.dataset.id));
+        tr.addEventListener('click', (e) => {
+          if (e.target.closest('.dt-select-cell')) return;
+          onRowClick(tr.dataset.id);
+        });
       });
+    }
+
+    // Event: row selection
+    if (selectable) {
+      wrapper.querySelectorAll('.dt-select-row').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+          if (e.target.checked) selectedIds.add(e.target.value);
+          else selectedIds.delete(e.target.value);
+          triggerSelectionChange();
+          render(); // update styles and header checkbox
+        });
+      });
+
+      const selectAll = wrapper.querySelector('.dt-select-all');
+      if (selectAll) {
+        selectAll.addEventListener('change', (e) => {
+          const checked = e.target.checked;
+          paged.forEach(row => {
+            const rowId = String(getId ? getId(row) : row.id);
+            if (checked) selectedIds.add(rowId);
+            else selectedIds.delete(rowId);
+          });
+          triggerSelectionChange();
+          render();
+        });
+      }
     }
 
     // Event: pagination
@@ -131,6 +181,12 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
   wrapper.updateData = (newData) => {
     data = newData;
+    render();
+  };
+
+  wrapper.clearSelection = () => {
+    selectedIds.clear();
+    triggerSelectionChange();
     render();
   };
 

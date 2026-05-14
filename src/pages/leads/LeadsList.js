@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 
 export function renderLeadsList(container) {
@@ -58,6 +59,77 @@ export function renderLeadsList(container) {
     columns, data: filteredData,
     onRowClick: (id) => router.navigate(`/leads/${id}`),
     emptyMessage: 'No leads found', emptyIcon: 'trending_up',
+    selectable: true,
+    onSelectionChange: (selectedIds) => {
+      createBulkActionBar({
+        container,
+        selectedIds,
+        onClear: () => table.clearSelection(),
+        actions: [
+          {
+            label: 'Change Status',
+            icon: 'sync_alt',
+            onClick: (ids) => {
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">New Status</label>
+                  <select class="form-select" id="bulk-status">
+                    <option value="New">New</option>
+                    <option value="Contacted">Contacted</option>
+                    <option value="Qualified">Qualified</option>
+                    <option value="Won">Won</option>
+                    <option value="Lost">Lost</option>
+                  </select>
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Update ${ids.length} Leads`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Apply', className: 'btn-primary', onClick: c => {
+                      const newStatus = content.querySelector('#bulk-status').value;
+                      ids.forEach(id => store.update('leads', id, { status: newStatus }));
+                      table.clearSelection();
+                      renderLeadsList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Updated ${ids.length} leads to ${newStatus}`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Delete Selected',
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `<p>Are you sure you want to delete ${ids.length} leads? This action cannot be undone.</p>`;
+                showModal({
+                  title: 'Confirm Bulk Delete',
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Delete', className: 'btn-danger', onClick: c => {
+                      ids.forEach(id => store.delete('leads', id));
+                      table.clearSelection();
+                      renderLeadsList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Deleted ${ids.length} leads`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          }
+        ]
+      });
+    }
   });
 
   container.querySelector('#leads-table-container').appendChild(table);

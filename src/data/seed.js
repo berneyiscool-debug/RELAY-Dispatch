@@ -3,6 +3,69 @@
 // ============================================
 
 import { store } from './store.js';
+import { MODULE_PERMS } from '../pages/Settings.js';
+
+// ---- Build granular permissions helper (mirrors Settings.js) ----
+function buildGranularPerms(valueFn) {
+  return Object.entries(MODULE_PERMS).map(([module, perms]) => {
+    const obj = { module };
+    perms.forEach(({ key }) => { obj[key] = valueFn(module, key); });
+    return obj;
+  });
+}
+
+// ---- Default User Types ----
+function seedUserTypes() {
+  const existing = store.getAll('userTypes');
+  if (existing && existing.length > 0) return existing;
+
+  const userTypes = [
+    {
+      id: 'ut_admin',
+      name: 'Admin',
+      description: 'Full system access',
+      permissions: buildGranularPerms(() => true),
+    },
+    {
+      id: 'ut_manager',
+      name: 'Manager',
+      description: 'Can manage most workflows but limited settings access',
+      permissions: buildGranularPerms((mod, key) => {
+        // Managers can see Settings but only edit company info — no user management
+        if (mod === 'Settings') return ['view', 'edit_company', 'manage_tax'].includes(key);
+        // Everything else: full access
+        return true;
+      }),
+    },
+    {
+      id: 'ut_tech',
+      name: 'Technician',
+      description: 'Field staff — limited to their own jobs, schedule and timesheets',
+      permissions: buildGranularPerms((mod, key) => {
+        if (mod === 'Dashboard') return key === 'view';
+        if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
+        if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
+        if (mod === 'Schedule') return ['view_own'].includes(key);
+        return false;
+      }),
+    },
+    {
+      id: 'ut_office',
+      name: 'Office Staff',
+      description: 'Admin / reception — can manage customers, quotes, invoices but not system settings',
+      permissions: buildGranularPerms((mod, key) => {
+        if (mod === 'Settings') return false;
+        if (mod === 'Reports') return key === 'view';
+        // No delete on financial records
+        if (['Invoices', 'Purchase Orders'].includes(mod) && key === 'delete') return false;
+        return true;
+      }),
+    },
+  ];
+
+  store.save('userTypes', userTypes);
+  return userTypes;
+}
 
 const customerNames = [
   { company: 'Acme Electrical Services', first: 'James', last: 'Henderson' },
@@ -20,12 +83,12 @@ const customerNames = [
 ];
 
 const technicians = [
-  { id: 'tech1', name: 'Mark Sullivan', role: 'Senior Electrician', color: '#3B82F6' },
-  { id: 'tech2', name: 'Jake Patterson', role: 'Plumber', color: '#10B981' },
-  { id: 'tech3', name: 'Ryan Cooper', role: 'HVAC Technician', color: '#F59E0B' },
-  { id: 'tech4', name: 'Tom Bradley', role: 'Fire Systems Specialist', color: '#EF4444' },
-  { id: 'tech5', name: 'Nathan Brooks', role: 'Security Installer', color: '#8B5CF6' },
-  { id: 'tech6', name: 'Carlos Ramírez', role: 'General Technician', color: '#EC4899' },
+  { id: 'tech1', name: 'Mark Sullivan',  role: 'Senior Electrician',       color: '#3B82F6', userTypeId: 'ut_admin'   },
+  { id: 'tech2', name: 'Jake Patterson', role: 'Operations Manager',        color: '#10B981', userTypeId: 'ut_manager' },
+  { id: 'tech3', name: 'Ryan Cooper',    role: 'HVAC Technician',            color: '#F59E0B', userTypeId: 'ut_tech'    },
+  { id: 'tech4', name: 'Tom Bradley',    role: 'Fire Systems Specialist',    color: '#EF4444', userTypeId: 'ut_tech'    },
+  { id: 'tech5', name: 'Nathan Brooks',  role: 'Security Installer',         color: '#8B5CF6', userTypeId: 'ut_tech'    },
+  { id: 'tech6', name: 'Carlos Ramírez', role: 'Office Administrator',       color: '#EC4899', userTypeId: 'ut_office'  },
 ];
 
 const jobTypes = ['Electrical', 'Plumbing', 'HVAC', 'Fire Protection', 'Security', 'General Maintenance'];
@@ -48,21 +111,34 @@ function randomAmount(min, max) {
 }
 
 function generateCustomers() {
-  return customerNames.map((c, i) => ({
-    id: `cust_${i + 1}`,
-    company: c.company,
-    firstName: c.first,
-    lastName: c.last,
-    email: `${c.first.toLowerCase()}.${c.last.toLowerCase()}@${c.company.split(' ')[0].toLowerCase()}.com.au`,
-    phone: `04${Math.floor(10000000 + Math.random() * 90000000)}`,
-    address: `${randomItem(streets)}, ${randomItem(suburbs)}, VIC 3000`,
-    status: randomItem(['Active', 'Active', 'Active', 'Inactive']),
-    type: randomItem(['Company', 'Company', 'Individual']),
-    notes: '',
-    createdAt: randomDate(365),
-    updatedAt: randomDate(30),
-  }));
+  return customerNames.map((c, i) => {
+    const street1 = randomItem(streets);
+    const street2 = randomItem(streets);
+    return {
+      id: `cust_${i + 1}`,
+      company: c.company,
+      firstName: c.first,
+      lastName: c.last,
+      email: `${c.first.toLowerCase()}.${c.last.toLowerCase()}@${c.company.split(' ')[0].toLowerCase()}.com.au`,
+      phone: `04${Math.floor(10000000 + Math.random() * 90000000)}`,
+      address: `${street1}, ${randomItem(suburbs)}, VIC 3000`,
+      status: randomItem(['Active', 'Active', 'Active', 'Inactive']),
+      type: randomItem(['Company', 'Company', 'Individual']),
+      notes: '',
+      createdAt: randomDate(365),
+      updatedAt: randomDate(30),
+      sites: [
+        { name: 'Main Office', address: `${street1}, ${randomItem(suburbs)}, VIC 3000` },
+        { name: 'Warehouse', address: `${street2}, ${randomItem(suburbs)}, VIC 3001` },
+      ],
+      contacts: [
+        { name: `${c.first} ${c.last}`, role: 'Primary', email: `${c.first.toLowerCase()}@${c.company.split(' ')[0].toLowerCase()}.com.au`, phone: `04${Math.floor(10000000 + Math.random() * 90000000)}` },
+        { name: `${randomItem(['Alex','Sam','Jordan','Casey','Morgan'])} ${c.last}`, role: 'Site Manager', email: `site@${c.company.split(' ')[0].toLowerCase()}.com.au`, phone: `04${Math.floor(10000000 + Math.random() * 90000000)}` },
+      ],
+    };
+  });
 }
+
 
 function generateLeads(customers) {
   const statuses = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
@@ -256,6 +332,9 @@ function generateScheduleBlocks(jobs) {
 
 export function seedData() {
   if (store.isSeeded()) return;
+
+  // Always seed user types first so technician userTypeIds resolve correctly
+  seedUserTypes();
 
   const customers = generateCustomers();
   const leads = generateLeads(customers);

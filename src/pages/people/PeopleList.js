@@ -7,6 +7,7 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 
 export function renderPeopleList(container) {
   const customers = store.getAll('customers');
@@ -78,6 +79,75 @@ export function renderPeopleList(container) {
     onRowClick: (id) => router.navigate(`/people/${id}`),
     emptyMessage: 'No customers found',
     emptyIcon: 'people',
+    selectable: true,
+    onSelectionChange: (selectedIds) => {
+      createBulkActionBar({
+        container,
+        selectedIds,
+        onClear: () => table.clearSelection(),
+        actions: [
+          {
+            label: 'Change Status',
+            icon: 'sync_alt',
+            onClick: (ids) => {
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">New Status</label>
+                  <select class="form-select" id="bulk-status">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Blacklisted">Blacklisted</option>
+                  </select>
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Update ${ids.length} Customers`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Apply', className: 'btn-primary', onClick: c => {
+                      const newStatus = content.querySelector('#bulk-status').value;
+                      ids.forEach(id => store.update('customers', id, { status: newStatus }));
+                      table.clearSelection();
+                      renderPeopleList(container); // reload
+                      showToast(`Updated ${ids.length} customers to ${newStatus}`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Delete Selected',
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `<p>Are you sure you want to delete ${ids.length} customers? This cannot be undone.</p>`;
+                showModal({
+                  title: 'Confirm Bulk Delete',
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Delete', className: 'btn-danger', onClick: c => {
+                      ids.forEach(id => store.delete('customers', id));
+                      table.clearSelection();
+                      renderPeopleList(container);
+                      showToast(`Deleted ${ids.length} customers`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          }
+        ]
+      });
+    }
   });
 
   container.querySelector('#people-table-container').appendChild(table);

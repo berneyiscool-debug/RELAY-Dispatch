@@ -9,7 +9,7 @@ import { showToast } from '../../components/Notifications.js';
 export function renderStockForm(container, { id }) {
   const isEdit = id && id !== 'new';
   const item = isEdit ? store.getById('stock', id) : {};
-  const vehicles = store.getAll('fleet');
+  const assets = store.getAll('assets');
 
   container.innerHTML = `
     <div class="page-header"><h1>${isEdit ? 'Edit Stock Item' : 'New Stock Item'}</h1></div>
@@ -66,8 +66,8 @@ export function renderStockForm(container, { id }) {
             <label class="form-label">Location</label>
             <select class="form-select" name="location">
               ${['Warehouse A','Warehouse B','On Order'].map(l => `<option ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}
-              <optgroup label="Fleet Vehicles">
-                ${vehicles.map(v => `<option value="${v.name}" ${item.location === v.name ? 'selected' : ''}>${v.name}</option>`).join('')}
+              <optgroup label="Assets">
+                ${assets.map(a => `<option value="${a.name}" ${item.location === a.name ? 'selected' : ''}>${a.name}</option>`).join('')}
               </optgroup>
             </select>
           </div>

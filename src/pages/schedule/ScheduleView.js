@@ -6,6 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showDrawer } from '../../components/Drawer.js';
 
 export function renderScheduleView(container) {
   const technicians = store.getAll('technicians');
@@ -21,8 +22,8 @@ export function renderScheduleView(container) {
   const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00–23:00
   let dragState = null;
   let resizeState = null;
-  // Technicians are always locked to their own view; admins/managers can see all
-  let selectedTechId = isTechnician ? currentUser.id : 'all';
+  // Technicians are locked to their own view; admins/managers can toggle multiple
+  let visibleTechIds = new Set(isTechnician ? [currentUser.id] : technicians.map(t => t.id));
   let contextMenu = null;
   let savedScrollTop = 0;
   let savedScrollLeft = 0;
@@ -38,7 +39,7 @@ export function renderScheduleView(container) {
   function formatHour(h) {
     const hrs = Math.floor(h);
     const mins = Math.round((h - hrs) * 60);
-    return `${hrs.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}`;
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
   }
 
   function saveScroll() {
@@ -74,20 +75,55 @@ export function renderScheduleView(container) {
   // Build schedule blocks from jobs (always reads fresh from store)
   function getScheduleBlocks() {
     const jobs = store.getAll('jobs');
+    const timesheets = store.getAll('timesheets');
     const blocks = [];
     const days = getWeekDays();
 
-    jobs.filter(j => j.scheduledDate && j.status !== 'Completed' && j.status !== 'Invoiced')
+    // 1. Process timesheets for scheduled blocks
+    timesheets.filter(ts => ts.startTime && ts.finishTime).forEach(ts => {
+      const job = jobs.find(j => j.id === ts.jobId);
+      if (!job || job.status === 'Completed' || job.status === 'Invoiced') return;
+
+      const tsDate = new Date(ts.startTime);
+      days.forEach((day, dayIdx) => {
+        if (tsDate.toDateString() === day.toDateString()) {
+          const startHour = tsDate.getHours() + (tsDate.getMinutes() / 60);
+          const endTsDate = new Date(ts.finishTime);
+          const endHour = endTsDate.getHours() + (endTsDate.getMinutes() / 60);
+
+          blocks.push({
+            id: ts.id,
+            type: 'timesheet',
+            jobId: job.id,
+            jobNumber: job.number,
+            customerName: job.customerName,
+            title: job.title,
+            technicianId: ts.technicianId,
+            dayIdx,
+            startHour,
+            endHour,
+            status: job.status,
+            priority: job.priority,
+          });
+        }
+      });
+    });
+
+    // 2. Legacy fallback for jobs without timesheets
+    const jobIdsWithTimesheets = new Set(timesheets.map(t => t.jobId));
+    jobs.filter(j => j.scheduledDate && !jobIdsWithTimesheets.has(j.id) && j.status !== 'Completed' && j.status !== 'Invoiced')
       .forEach(job => {
         const jobDate = new Date(job.scheduledDate);
         days.forEach((day, dayIdx) => {
           if (jobDate.toDateString() === day.toDateString()) {
             const startHour = job.startHour !== undefined ? job.startHour : (7 + (Math.abs(hashStr(job.id)) % 6));
-            
+
             if (job.technicians && job.technicians.length > 0) {
               job.technicians.forEach(t => {
                 const duration = t.hours || 2;
                 blocks.push({
+                  id: `legacy-${job.id}-${t.id}`,
+                  type: 'legacy',
                   jobId: job.id,
                   jobNumber: job.number,
                   customerName: job.customerName,
@@ -103,6 +139,8 @@ export function renderScheduleView(container) {
             } else if (job.technicianId) {
               const duration = job.estimatedHours || 2;
               blocks.push({
+                id: `legacy-${job.id}`,
+                type: 'legacy',
                 jobId: job.id,
                 jobNumber: job.number,
                 customerName: job.customerName,
@@ -118,10 +156,6 @@ export function renderScheduleView(container) {
           }
         });
       });
-
-    // NOTE: The legacy 'schedule' store merge is intentionally removed.
-    // All blocks are derived solely from the 'jobs' store to prevent
-    // ghost/duplicate blocks appearing after a drag-and-drop move.
 
     return blocks;
   }
@@ -147,6 +181,7 @@ export function renderScheduleView(container) {
     }
 
     const blocks = getScheduleBlocks();
+    const visibleTechs = technicians.filter(t => visibleTechIds.has(t.id));
 
     container.innerHTML = `
       <div class="page-header">
@@ -161,12 +196,7 @@ export function renderScheduleView(container) {
             </span>
           </div>
           <div class="flex gap-sm items-center" style="margin-left:auto;margin-right:16px">
-            ${!isTechnician ? `
-            <select class="form-select form-select-sm" id="schedule-tech-filter" style="min-width:180px">
-              <option value="all">All Technicians</option>
-              ${technicians.map(t => `<option value="${t.id}" ${selectedTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
-            </select>
-            ` : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${currentUser.name}</span>`}
+            ${!isTechnician ? '' : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${currentUser.name}</span>`}
           </div>
           <div class="flex gap-xs" style="margin-right:16px;">
             <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
@@ -179,37 +209,20 @@ export function renderScheduleView(container) {
         </div>
       </div>
 
-      <!-- Unscheduled jobs drawer -->
-      <div class="card" style="margin-bottom:var(--space-base)" id="unscheduled-section">
-        <div class="card-header" style="padding:8px 16px;cursor:pointer" id="unscheduled-toggle">
-          <h4 style="font-size:var(--font-size-sm)"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle">pending_actions</span> Unscheduled Jobs</h4>
-          <span class="material-icons-outlined" style="font-size:16px" id="unscheduled-chevron">expand_more</span>
-        </div>
-        <div id="unscheduled-drawer" style="padding:8px 16px;display:flex;flex-wrap:wrap;gap:8px;border-top:1px solid var(--border-color)">
-          ${getUnscheduledJobs().map(j => `
-            <div class="unscheduled-job" draggable="true" data-job-id="${j.id}" data-job-number="${j.number}" data-customer="${j.customerName}" data-title="${j.title}" data-hours="${j.estimatedHours || 2}" data-priority="${j.priority}">
-              <span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary)">drag_indicator</span>
-              <span class="font-medium" style="font-size:var(--font-size-sm)">${j.number}</span>
-              <span class="text-secondary" style="font-size:var(--font-size-xs)">${j.customerName}</span>
-              <span class="badge ${j.priority === 'High' || j.priority === 'Urgent' ? 'badge-danger' : 'badge-neutral'}" style="font-size:9px">${j.priority}</span>
-            </div>
-          `).join('') || '<span class="text-secondary" style="font-size:var(--font-size-sm);padding:4px">All jobs are scheduled</span>'}
-        </div>
-      </div>
-
-      <!-- Calendar Grid -->
+      <!-- Calendar Grid + Right Sidebar -->
       <div class="card" style="overflow:hidden">
-        <div style="display:flex;height:calc(100vh - 260px);overflow:hidden">
+        <div style="display:flex;height:calc(100vh - 160px);overflow:hidden">
+          
           <!-- Calendar -->
           <div style="flex:1;overflow:auto" id="calendar-scroll">
-            ${selectedTechId === 'all' ? `
+            ${visibleTechIds.size !== 1 ? `
               <!-- Top headers: Technicians -->
-              <div style="display:grid;grid-template-columns:56px repeat(${technicians.length}, minmax(120px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
+              <div style="display:grid;grid-template-columns:56px repeat(${visibleTechs.length}, minmax(120px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
                 <!-- Sticky Top-Left corner for Time/Date header -->
                 <div style="height:34px;border-right:1px solid var(--border-color);background:var(--card-bg);position:sticky;left:0;z-index:11;display:flex;align-items:center;justify-content:center;font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:600;text-transform:uppercase">
                   Time
                 </div>
-                ${technicians.map(tech => `
+                ${visibleTechs.map(tech => `
                   <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
                     <div style="font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px">
                       <div style="width:6px;height:6px;border-radius:50%;background:${tech.color};flex-shrink:0"></div>
@@ -221,8 +234,8 @@ export function renderScheduleView(container) {
 
               <!-- Rows: Days -->
               ${days.map((day, dayIdx) => {
-                const isToday = day.toDateString() === new Date().toDateString();
-                return `
+      const isToday = day.toDateString() === new Date().toDateString();
+      return `
                   <!-- Day Header Row -->
                   <div style="display:flex;background:var(--content-bg);border-bottom:1px solid var(--border-color);position:sticky;left:0;z-index:2;width:fit-content;min-width:100%">
                      <div style="padding:6px 12px;font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};position:sticky;left:0;background:var(--content-bg);">
@@ -231,30 +244,30 @@ export function renderScheduleView(container) {
                   </div>
 
                   <!-- Day Grid -->
-                  <div style="display:grid;grid-template-columns:56px repeat(${technicians.length}, minmax(120px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
+                  <div style="display:grid;grid-template-columns:56px repeat(${visibleTechs.length}, minmax(120px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
 
                     <!-- Hours Column (Sticky Left) -->
                     <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                       ${hours.map(h => `
                         <div style="height:32px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
-                          ${h.toString().padStart(2,'0')}:00
+                          ${h.toString().padStart(2, '0')}:00
                         </div>
                       `).join('')}
                     </div>
 
                     <!-- Technician Columns for this Day -->
-                    ${technicians.map(tech => {
-                      const techBlocks = blocks.filter(b => b.technicianId === tech.id);
-                      return `
-                        <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].toISOString().split('T')[0]}">
+                    ${visibleTechs.map(tech => {
+        const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+        return `
+                        <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
                           ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
                           ${renderBlocks(techBlocks, dayIdx, tech.color)}
                         </div>
                       `;
-                    }).join('')}
+      }).join('')}
                   </div>
                 `;
-              }).join('')}
+    }).join('')}
             ` : `
               <!-- Top headers: Days -->
               <div style="display:grid;grid-template-columns:56px repeat(${days.length}, minmax(120px, 1fr));border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--card-bg);z-index:10;width:fit-content;min-width:100%">
@@ -263,15 +276,15 @@ export function renderScheduleView(container) {
                   Time
                 </div>
                 ${days.map(day => {
-                  const isToday = day.toDateString() === new Date().toDateString();
-                  return `
+      const isToday = day.toDateString() === new Date().toDateString();
+      return `
                     <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
                       <div style="font-size:11px;font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};display:flex;align-items:center;gap:6px">
                         <span>${dayNames[day.getDay()]} ${day.getDate()} ${monthNames[day.getMonth()]}</span>
                       </div>
                     </div>
                   `;
-                }).join('')}
+    }).join('')}
               </div>
 
               <!-- Day Grid -->
@@ -280,25 +293,66 @@ export function renderScheduleView(container) {
                 <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                   ${hours.map(h => `
                     <div style="height:32px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
-                      ${h.toString().padStart(2,'0')}:00
+                      ${h.toString().padStart(2, '0')}:00
                     </div>
                   `).join('')}
                 </div>
 
                 <!-- Day Columns for the selected Technician -->
                 ${days.map((day, dayIdx) => {
-                  const tech = technicians.find(t => t.id === selectedTechId);
-                  const techBlocks = blocks.filter(b => b.technicianId === tech.id);
-                  return `
-                    <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}">
+      const tech = technicians.find(t => t.id === [...visibleTechIds][0]);
+      const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+      return `
+                    <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
                       ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
                       ${renderBlocks(techBlocks, dayIdx, tech.color)}
                     </div>
                   `;
-                }).join('')}
+    }).join('')}
               </div>
             `}
           </div>
+
+          <!-- Right Sidebar (For Non-Technicians) -->
+          ${!isTechnician ? `
+          <div style="width:280px; border-left:1px solid var(--border-color); display:flex; flex-direction:column; background:var(--card-bg); overflow-y:auto; flex-shrink:0;">
+            
+            <!-- Visible Technicians Module -->
+            <div style="padding:16px; border-bottom:1px solid var(--border-color);">
+              <h4 style="font-size:var(--font-size-sm); margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined" style="font-size:16px;">people</span> Visible Technicians
+              </h4>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                ${technicians.map(t => `
+                  <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer;">
+                    <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
+                    <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
+                    <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Unscheduled Jobs Module -->
+            <div style="padding:16px;">
+              <h4 style="font-size:var(--font-size-sm); margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined" style="font-size:16px;">pending_actions</span> Unscheduled Jobs
+              </h4>
+              <div id="unscheduled-drawer" style="display:flex; flex-direction:column; gap:8px;">
+                ${getUnscheduledJobs().map(j => `
+                  <div class="unscheduled-job" draggable="true" data-job-id="${j.id}" data-job-number="${j.number}" data-customer="${j.customerName}" data-title="${j.title}" data-hours="${j.estimatedHours || 2}" data-priority="${j.priority}" style="padding:10px; background:var(--content-bg); border:1px solid var(--border-color); border-radius:4px; cursor:grab; transition:all 0.2s;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                      <span class="font-medium" style="font-size:var(--font-size-sm)">${j.number}</span>
+                      <span class="badge ${j.priority === 'High' || j.priority === 'Urgent' ? 'badge-danger' : 'badge-neutral'}" style="font-size:9px">${j.priority}</span>
+                    </div>
+                    <div class="text-secondary" style="font-size:var(--font-size-xs); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${j.customerName}</div>
+                  </div>
+                `).join('') || '<span class="text-secondary" style="font-size:var(--font-size-sm);">All jobs are scheduled</span>'}
+              </div>
+            </div>
+          </div>
+          ` : ''}
+
         </div>
       </div>
     `;
@@ -314,6 +368,8 @@ export function renderScheduleView(container) {
     return jobs.filter(j => (!j.scheduledDate || !j.technicianId) && j.status !== 'Completed' && j.status !== 'Invoiced');
   }
 
+
+
   function renderBlocks(techBlocks, dayIdx, color) {
     const priorityBorders = { 'Urgent': '#EF4444', 'High': '#F59E0B' };
     return techBlocks
@@ -326,6 +382,8 @@ export function renderScheduleView(container) {
         return `
           <div class="schedule-block" draggable="true"
             data-block-job-id="${b.jobId}"
+            data-timesheet-id="${b.id}"
+            data-block-type="${b.type}"
             data-start="${b.startHour}"
             data-end="${b.endHour}"
             style="
@@ -339,7 +397,7 @@ export function renderScheduleView(container) {
             <div style="pointer-events:none;font-weight:600;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.jobNumber}</div>
             ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
             ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.6;margin-top:2px">${timeLabel}</div>` : ''}
-            <div class="schedule-resize-handle" data-block-job-id="${b.jobId}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
+            <div class="schedule-resize-handle" data-block-job-id="${b.jobId}" data-timesheet-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
           </div>
         `;
       }).join('');
@@ -365,27 +423,58 @@ export function renderScheduleView(container) {
       btn.addEventListener('click', () => { calendarType = btn.dataset.cal; render(); });
     });
 
-    container.querySelector('#schedule-tech-filter')?.addEventListener('change', (e) => {
-      selectedTechId = e.target.value;
-      render();
+    container.querySelectorAll('.tech-visibility-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) visibleTechIds.add(e.target.value);
+        else visibleTechIds.delete(e.target.value);
+        render();
+      });
     });
 
-    // Toggle unscheduled drawer
-    const toggle = container.querySelector('#unscheduled-toggle');
-    const drawer = container.querySelector('#unscheduled-drawer');
-    const chevron = container.querySelector('#unscheduled-chevron');
-    toggle?.addEventListener('click', () => {
-      const isOpen = drawer.style.display !== 'none';
-      drawer.style.display = isOpen ? 'none' : 'flex';
-      chevron.textContent = isOpen ? 'expand_more' : 'expand_less';
-    });
 
-    // Click existing blocks to navigate to job
+
+    // Click existing blocks to navigate to job or show drawer
     container.querySelectorAll('.schedule-block').forEach(block => {
       block.addEventListener('click', (e) => {
         if (e.defaultPrevented) return; // skip if drag/resize happened
         if (block.dataset.resized === 'true') { block.dataset.resized = 'false'; return; }
-        router.navigate(`/jobs/${block.dataset.blockJobId}`);
+
+        const jobId = block.dataset.blockJobId;
+        const job = store.getById('jobs', jobId);
+        if (!job) return;
+
+        showDrawer({
+          title: `Job Quick View: ${job.number}`,
+          content: `
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div>
+                <label class="form-label">Title</label>
+                <div class="font-medium" style="font-size:16px">${job.title || 'Untitled'}</div>
+              </div>
+              <div>
+                <label class="form-label">Customer</label>
+                <div>${job.customerName || 'N/A'}</div>
+              </div>
+              <div>
+                <label class="form-label">Site Address</label>
+                <div>${job.siteAddress || 'No address provided'}</div>
+              </div>
+              <div>
+                <label class="form-label">Priority</label>
+                <div><span class="badge ${job.priority === 'Urgent' || job.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${job.priority || 'Normal'}</span></div>
+              </div>
+              <div>
+                <label class="form-label">Notes</label>
+                <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${job.notes || 'No notes available'}</div>
+              </div>
+            </div>
+          `,
+          actions: [
+            { label: 'Close', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Open Full Job', className: 'btn-primary', onClick: (close) => { close(); router.navigate(`/jobs/${jobId}`); } }
+          ],
+          width: 450
+        });
       });
       block.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -431,9 +520,34 @@ export function renderScheduleView(container) {
   function bindDragAndDrop(days) {
     // 'days' is passed from render() so it always matches the currently rendered DOM
 
+    const scrollContainer = document.getElementById('calendar-scroll');
+    if (scrollContainer) {
+      // Auto-scroll when mouse is near top/bottom edges
+      scrollContainer.addEventListener('dragover', (e) => {
+        if (!dragState) return;
+        const rect = scrollContainer.getBoundingClientRect();
+        const threshold = 60; // pixels from edge to trigger scroll
+        const speed = 15; // scroll speed per tick
+
+        if (e.clientY - rect.top < threshold) {
+          scrollContainer.scrollTop -= speed;
+        } else if (rect.bottom - e.clientY < threshold) {
+          scrollContainer.scrollTop += speed;
+        }
+      });
+
+      // Allow mouse wheel scrolling during drag
+      scrollContainer.addEventListener('wheel', (e) => {
+        if (dragState) {
+          scrollContainer.scrollTop += e.deltaY;
+        }
+      }, { passive: true });
+    }
+
     // Draggable: unscheduled jobs
     container.querySelectorAll('.unscheduled-job').forEach(el => {
       el.addEventListener('dragstart', (e) => {
+        const rect = el.getBoundingClientRect();
         dragState = {
           type: 'unscheduled',
           jobId: el.dataset.jobId,
@@ -441,13 +555,15 @@ export function renderScheduleView(container) {
           customerName: el.dataset.customer,
           title: el.dataset.title,
           hours: parseInt(el.dataset.hours) || 2,
+          offsetY: e.clientY - rect.top,
         };
         e.dataTransfer.effectAllowed = 'move';
         el.style.opacity = '0.5';
       });
-      el.addEventListener('dragend', () => { 
-        el.style.opacity = '1'; 
+      el.addEventListener('dragend', () => {
+        el.style.opacity = '1';
         dragState = null;
+        document.querySelectorAll('.schedule-drag-preview').forEach(p => p.remove());
       });
     });
 
@@ -455,18 +571,23 @@ export function renderScheduleView(container) {
     container.querySelectorAll('.schedule-block[draggable]').forEach(el => {
       el.addEventListener('dragstart', (e) => {
         e.stopPropagation();
+        const rect = el.getBoundingClientRect();
         dragState = {
           type: 'existing',
+          blockType: el.dataset.blockType,
+          timesheetId: el.dataset.timesheetId,
           jobId: el.dataset.blockJobId,
-          startHour: parseInt(el.dataset.start),
-          endHour: parseInt(el.dataset.end),
+          startHour: parseFloat(el.dataset.start),
+          endHour: parseFloat(el.dataset.end),
+          offsetY: e.clientY - rect.top,
         };
         e.dataTransfer.effectAllowed = 'move';
         el.style.opacity = '0.4';
       });
-      el.addEventListener('dragend', () => { 
-        el.style.opacity = '1'; 
+      el.addEventListener('dragend', () => {
+        el.style.opacity = '1';
         dragState = null;
+        document.querySelectorAll('.schedule-drag-preview').forEach(p => p.remove());
       });
     });
 
@@ -476,14 +597,53 @@ export function renderScheduleView(container) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         col.style.background = 'rgba(27, 109, 224, 0.05)';
+
+        if (!dragState) return;
+
+        const rect = col.getBoundingClientRect();
+        const offsetY = dragState.offsetY || 0;
+        const relY = e.clientY - offsetY - rect.top;
+        const rawHour = relY / PX_PER_HOUR;
+        const dropHour = Math.min(23.75, Math.max(0, snapToQuarter(rawHour)));
+
+        let preview = col.querySelector('.schedule-drag-preview');
+        if (!preview) {
+          preview = document.createElement('div');
+          preview.className = 'schedule-drag-preview';
+          preview.style.position = 'absolute';
+          preview.style.left = '3px';
+          preview.style.right = '3px';
+          preview.style.background = 'rgba(27, 109, 224, 0.15)';
+          preview.style.border = '2px dashed var(--color-primary)';
+          preview.style.borderRadius = '4px';
+          preview.style.pointerEvents = 'none';
+          preview.style.zIndex = '10';
+          col.appendChild(preview);
+        }
+
+        const duration = dragState.type === 'existing'
+          ? (dragState.endHour - dragState.startHour)
+          : (dragState.hours || 2);
+
+        const top = dropHour * PX_PER_HOUR;
+        const height = Math.max(duration * PX_PER_HOUR - 2, PX_PER_QUARTER);
+
+        preview.style.top = top + 'px';
+        preview.style.height = height + 'px';
       });
-      col.addEventListener('dragleave', () => {
-        col.style.background = '';
+      col.addEventListener('dragleave', (e) => {
+        if (!col.contains(e.relatedTarget)) {
+          col.style.background = '';
+          const preview = col.querySelector('.schedule-drag-preview');
+          if (preview) preview.remove();
+        }
       });
       col.addEventListener('drop', (e) => {
         const jobs = store.getAll('jobs'); // fresh read
         e.preventDefault();
         col.style.background = '';
+        const preview = col.querySelector('.schedule-drag-preview');
+        if (preview) preview.remove();
 
         if (!dragState) return;
 
@@ -492,11 +652,12 @@ export function renderScheduleView(container) {
         // Use the stamped date string as the ground truth — avoids index drift
         const targetDay = col.dataset.date ? new Date(col.dataset.date + 'T12:00:00') : days[targetDayIdx];
 
-        // Calculate drop hour from mouse position
+        // Calculate drop hour from mouse position — snap to 15-min grid
         const rect = col.getBoundingClientRect();
-        const relY = e.clientY - rect.top;
-        const hourIdx = Math.floor(relY / 32);
-        const dropHour = Math.max(0, Math.min(23, hourIdx));
+        const offsetY = dragState.offsetY || 0;
+        const relY = e.clientY - offsetY - rect.top;
+        const rawHour = relY / PX_PER_HOUR;
+        const dropHour = Math.min(23.75, Math.max(0, snapToQuarter(rawHour)));
 
         const tech = technicians.find(t => t.id === targetTechId);
         const job = jobs.find(j => j.id === dragState.jobId);
@@ -505,15 +666,15 @@ export function renderScheduleView(container) {
           const duration = dragState.type === 'existing'
             ? (dragState.endHour - dragState.startHour)
             : (dragState.hours || job.estimatedHours || 2);
-            
+
           const dropEndHour = dropHour + duration;
-          
+
           // Conflict Detection
           const blocks = getScheduleBlocks();
-          const hasConflict = blocks.some(b => 
-            b.technicianId === targetTechId && 
-            b.dayIdx === targetDayIdx && 
-            b.jobId !== job.id && // don't conflict with itself if just moving
+          const hasConflict = blocks.some(b =>
+            b.technicianId === targetTechId &&
+            b.dayIdx === targetDayIdx &&
+            (dragState.timesheetId ? b.id !== dragState.timesheetId : b.jobId !== job.id) &&
             Math.max(b.startHour, dropHour) < Math.min(b.endHour, dropEndHour)
           );
 
@@ -524,26 +685,48 @@ export function renderScheduleView(container) {
             }
           }
 
-          // Update job with new assignment
-
-          let newTechs = job.technicians || [];
-          if (!newTechs.find(t => t.id === targetTechId)) {
-            newTechs = [{ id: targetTechId, name: tech?.name || '', hours: duration, rate: 85 }]; // Replace or add
-          }
-
           const pad = n => n.toString().padStart(2, '0');
           const localDateStr = `${targetDay.getFullYear()}-${pad(targetDay.getMonth() + 1)}-${pad(targetDay.getDate())}`;
+          const startH = Math.floor(dropHour);
+          const startM = Math.round((dropHour - startH) * 60);
+          const endH = Math.floor(dropEndHour);
+          const endM = Math.round((dropEndHour - endH) * 60);
+          const startTimeStr = `${localDateStr}T${pad(startH)}:${pad(startM)}`;
+          const finishTimeStr = `${localDateStr}T${pad(endH)}:${pad(endM)}`;
 
-          store.update('jobs', job.id, {
-            technicianId: targetTechId,
-            technicianName: tech?.name || '',
-            technicians: newTechs,
-            scheduledDate: localDateStr,
-            startHour: dropHour,
-            status: job.status === 'Pending' ? 'Scheduled' : job.status,
-          });
+          if (dragState.type === 'existing' && dragState.blockType === 'timesheet') {
+            store.update('timesheets', dragState.timesheetId, {
+              technicianId: targetTechId,
+              technicianName: tech?.name || '',
+              date: localDateStr,
+              startTime: startTimeStr,
+              finishTime: finishTimeStr,
+              hours: duration
+            });
+            showToast(`Moved ${job.number} for ${tech?.name} to ${localDateStr}`, 'success');
+          } else {
+            // New timesheet for unscheduled or legacy blocks
+            store.create('timesheets', {
+              jobId: job.id,
+              jobNumber: job.number,
+              technicianId: targetTechId,
+              technicianName: tech?.name || '',
+              date: localDateStr,
+              startTime: startTimeStr,
+              finishTime: finishTimeStr,
+              hours: duration,
+              status: 'Approved'
+            });
 
-          showToast(`${job.number} → ${tech?.name || 'tech'} on ${targetDay.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}`, 'success');
+            if (dragState.type === 'unscheduled') {
+              store.update('jobs', job.id, {
+                scheduledDate: localDateStr,
+                startHour: dropHour,
+                status: job.status === 'Pending' ? 'Scheduled' : job.status,
+              });
+            }
+            showToast(`Assigned ${job.number} to ${tech?.name}`, 'success');
+          }
         }
 
         dragState = null;
@@ -565,6 +748,8 @@ export function renderScheduleView(container) {
         const colRect = col.getBoundingClientRect();
 
         resizeState = {
+          blockType: handle.dataset.blockType,
+          timesheetId: handle.dataset.timesheetId,
           jobId: handle.dataset.blockJobId,
           block,
           col,          // store the element, not its rect
@@ -613,24 +798,39 @@ export function renderScheduleView(container) {
           resizeState.block.style.userSelect = '';
 
           if (Math.abs(endHour - initialEndHour) >= 0.25) {
-            const job = store.getAll('jobs').find(j => j.id === jobId);
-            if (job) {
-              // Update technicians hours if present
-              let updatedTechs = job.technicians || [];
-              if (updatedTechs.length > 0) {
-                updatedTechs = updatedTechs.map(t => ({ ...t, hours: duration }));
+            if (resizeState.blockType === 'timesheet') {
+              const timesheet = store.getById('timesheets', resizeState.timesheetId);
+              if (timesheet) {
+                const tsDateStr = timesheet.date || timesheet.startTime.split('T')[0];
+                const pad = n => n.toString().padStart(2, '0');
+                const startH = Math.floor(startHour);
+                const startM = Math.round((startHour - startH) * 60);
+                const endH = Math.floor(endHour);
+                const endM = Math.round((endHour - endH) * 60);
+
+                store.update('timesheets', resizeState.timesheetId, {
+                  startTime: `${tsDateStr}T${pad(startH)}:${pad(startM)}`,
+                  finishTime: `${tsDateStr}T${pad(endH)}:${pad(endM)}`,
+                  hours: duration
+                });
+                showToast(`Time updated to ${formatHour(startHour)} — ${formatHour(endHour)}`, 'success');
               }
-              store.update('jobs', jobId, {
-                startHour,
-                estimatedHours: parseFloat(duration.toFixed(4)),
-                technicians: updatedTechs.length > 0 ? updatedTechs : job.technicians,
-              });
-              showToast(`Duration set to ${formatHour(duration).replace('0', '').trim() || duration + 'h'}`, 'success');
+            } else {
+              // Legacy update
+              const job = store.getAll('jobs').find(j => j.id === jobId);
+              if (job) {
+                let updatedTechs = job.technicians || [];
+                if (updatedTechs.length > 0) {
+                  updatedTechs = updatedTechs.map(t => ({ ...t, hours: duration }));
+                }
+                store.update('jobs', jobId, {
+                  startHour,
+                  estimatedHours: parseFloat(duration.toFixed(4)),
+                  technicians: updatedTechs.length > 0 ? updatedTechs : job.technicians,
+                });
+                showToast(`Job time updated`, 'success');
+              }
             }
-            // Re-render to sync state cleanly
-            resizeState = null;
-            render();
-            return;
           }
 
           resizeState = null;
@@ -681,9 +881,9 @@ export function renderScheduleView(container) {
         </div>
         <div style="flex:1; overflow-y:auto; padding: 15px;">
           ${days.map(day => {
-            const dateStr = day.toISOString().split('T')[0];
-            const dayActs = activities.filter(a => a.date === dateStr);
-            return `
+      const dateStr = day.toISOString().split('T')[0];
+      const dayActs = activities.filter(a => a.date === dateStr);
+      return `
               <div style="margin-bottom: 20px;">
                 <h4 style="margin: 0 0 10px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">${day.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })}</h4>
                 ${dayActs.length === 0 ? '<p style="color:var(--text-tertiary); font-size: 13px; margin: 0;">No activities.</p>' : `
@@ -702,7 +902,7 @@ export function renderScheduleView(container) {
                 `}
               </div>
             `;
-          }).join('')}
+    }).join('')}
         </div>
       </div>
     `;

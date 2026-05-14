@@ -20,6 +20,7 @@
   transition: width var(--sidebar-transition), min-width var(--sidebar-transition);
   z-index: var(--z-sidebar);
   overflow: hidden;
+  position: relative;
 }
 .sidebar.expanded {
   width: var(--sidebar-width-expanded);
@@ -66,12 +67,55 @@
   padding: var(--space-sm) 0;
   overflow-y: auto;
   overflow-x: hidden;
+  position: relative;
+}
+
+.sidebar:not(.expanded) .sidebar-nav {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sidebar:not(.expanded) .sidebar-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.sidebar-scroll-arrow {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  background: var(--sidebar-bg-dark);
+  z-index: 10;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.sidebar:not(.expanded) .sidebar-scroll-arrow.visible {
+  display: flex;
+}
+
+.sidebar-scroll-arrow:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-scroll-arrow .material-icons-outlined {
+  font-size: 18px;
+}
+
+.sidebar-scroll-arrow.up {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-scroll-arrow.down {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .sidebar-nav-item {
   display: flex;
   align-items: center;
-  padding: 10px var(--space-base);
+  padding: 10px 4px;
   margin: 2px var(--space-sm);
   gap: var(--space-md);
   color: var(--sidebar-text);
@@ -318,6 +362,13 @@
   padding: var(--space-xl);
 }
 
+/* ---- Page content wrapper (max-width cap for ultra-wide screens) ---- */
+.page-content-wrapper {
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
 /* ---- Page Header ---- */
 .page-header {
   display: flex;
@@ -521,4 +572,170 @@
 }
 .schedule-block:hover {
   box-shadow: var(--shadow-md);
+}
+
+/* ============================================================
+   DASHBOARD CSS GRID SYSTEM
+   ============================================================
+   4-column grid. Base row height 140px.
+   Width  : module-s (1 col)  module-m (2 col)  module-l (3 col)  module-xl (4 col)
+   Height : default (1 row)   module-tall (2 rows)  module-xtall (3 rows)
+   ============================================================ */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 140px;
+  gap: var(--space-lg);          /* 24px — uniform on ALL sides */
+}
+
+.dashboard-module {
+  position: relative;
+  transition: opacity 0.2s, transform 0.2s;
+  animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.95); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* --- Width classes --- */
+.module-s  { grid-column: span 1; }
+.module-m  { grid-column: span 2; }
+.module-l  { grid-column: span 3; }
+.module-xl { grid-column: span 4; }
+
+/* --- Height classes --- */
+/* default = 1 row = 140px, no extra class needed */
+.module-tall  { grid-row: span 2; }   /* 2 rows = ~304px inc gap */
+.module-xtall { grid-row: span 3; }   /* 3 rows = ~468px inc gap */
+
+/* --- Card must fill its grid cell --- */
+.dashboard-grid .card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0;
+}
+
+/* Card body fills remaining space and scrolls internally */
+.dashboard-grid .card .card-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;     /* critical — lets flex children shrink below content size */
+}
+
+/* KPI strip: body is a flex row of stat-cards */
+.dashboard-grid .card.kpi-strip .card-body {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-md);
+  align-items: stretch;
+  overflow: visible;
+  padding: var(--space-md);
+}
+.dashboard-grid .card.kpi-strip .stat-card {
+  margin: 0;
+  height: auto;
+}
+
+/* Edit mode overlay on each module */
+.dashboard-module.edit-mode > .card {
+  cursor: grab;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.dashboard-module.edit-mode > .card:hover {
+  box-shadow: var(--shadow-md);
+}
+.dashboard-module.edit-mode > .card:active {
+  cursor: grabbing;
+}
+
+/* --- Drag Resize Handles --- */
+.resize-handle {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s, color 0.2s;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  background: white;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+.dashboard-module.edit-mode:hover .resize-handle {
+  opacity: 1;
+}
+.resize-handle:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  z-index: 11;
+}
+
+/* Right Edge (Width) */
+.resize-r {
+  top: 0; bottom: 0; margin: auto 0;
+  right: -10px;
+  width: 16px; height: 32px;
+  border-radius: 8px;
+  cursor: col-resize;
+}
+
+/* Bottom Edge (Height) */
+.resize-b {
+  left: 0; right: 0; margin: 0 auto;
+  bottom: -10px;
+  height: 16px; width: 32px;
+  border-radius: 8px;
+  cursor: row-resize;
+}
+
+/* Corner (Both) */
+.resize-br {
+  right: -10px;
+  bottom: -10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: nwse-resize;
+}
+
+/* --- Drag Drop (Move) States --- */
+.sortable-ghost > .card {
+  opacity: 0.2;
+  background: var(--color-primary-light);
+  border: 2px dashed var(--color-primary);
+  box-shadow: none;
+}
+
+/* The element floating under the user's mouse */
+.sortable-drag {
+  opacity: 0.95 !important;
+  z-index: 9999 !important;
+}
+.sortable-drag > .card {
+  transform: scale(1.02) rotate(1deg);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15), 0 0 0 1px var(--color-primary) !important;
+  cursor: grabbing !important;
+}
+
+/* Responsive — collapse to 2 columns on narrower screens */
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .module-l  { grid-column: span 2; }
+  .module-xl { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+  }
+  .module-s, .module-m, .module-l, .module-xl { grid-column: span 1; }
+  .module-tall, .module-xtall { grid-row: span 1; height: auto; }
 }

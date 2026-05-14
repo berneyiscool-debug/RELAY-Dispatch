@@ -1,6 +1,46 @@
 import { router } from '../../router.js';
 import { store } from '../../data/store.js';
 
+// Ordered list of routes to try — first permitted one wins
+const ROUTE_PRIORITY = [
+  { path: '/',               module: 'Dashboard' },
+  { path: '/schedule',       module: 'Schedule' },
+  { path: '/jobs',           module: 'Jobs' },
+  { path: '/quotes',         module: 'Quotes' },
+  { path: '/leads',          module: 'Leads' },
+  { path: '/timesheets',     module: 'Timesheets' },
+  { path: '/invoices',       module: 'Invoices' },
+  { path: '/people',         module: 'Customers' },
+  { path: '/stock',          module: 'Stock' },
+  { path: '/purchase-orders',module: 'Purchase Orders' },
+  { path: '/reports',        module: 'Reports' },
+  { path: '/contractors',    module: 'Contractors' },
+  { path: '/assets',          module: 'Assets' },
+  { path: '/documents',      module: 'Documents' },
+  { path: '/settings',       module: 'Settings' },
+];
+
+function getLandingRoute(user, dataStore) {
+  // Admins and managers always go to Dashboard
+  if (user.role === 'admin' || user.role === 'manager') return '/';
+
+  // No userType assigned — fall back to schedule (safe default for technicians)
+  if (!user.userTypeId) return '/schedule';
+
+  const ut = dataStore.getById('userTypes', user.userTypeId);
+  if (!ut || !ut.permissions) return '/schedule';
+
+  for (const { path, module: mod } of ROUTE_PRIORITY) {
+    const perm = ut.permissions.find(p => p.module === mod);
+    if (perm && (perm.view || perm.create || perm.edit || perm.delete)) {
+      return path;
+    }
+  }
+
+  // Nothing permitted at all — send to a neutral page
+  return '/schedule';
+}
+
 export function renderLogin(container) {
   // We need to hide the sidebar and topbar when on login
   const sidebar = document.querySelector('.sidebar');
@@ -36,7 +76,7 @@ export function renderLogin(container) {
     </div>
   `;
 
-  const loginAsUser = (techId) => {
+  const loginAsUser = async (techId) => {
     const t = techs.find(x => x.id === techId);
     const ut = userTypes.find(u => u.id === t?.userTypeId);
     
@@ -66,7 +106,10 @@ export function renderLogin(container) {
       if (updateTopbarAccess) updateTopbarAccess();
     });
 
-    router.navigate('/');
+    // Find the first route this user actually has access to
+    const { store: dataStore } = await import('../../data/store.js');
+    const landingRoute = getLandingRoute(user, dataStore);
+    router.navigate(landingRoute);
   };
 
   container.querySelectorAll('.btn-login-user').forEach(btn => {

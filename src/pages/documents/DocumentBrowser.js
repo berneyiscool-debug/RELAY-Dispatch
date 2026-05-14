@@ -4,6 +4,7 @@
 
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
@@ -14,7 +15,7 @@ export function renderDocumentBrowser(container) {
   function render() {
     const allDocs = [];
 
-    // Global Documents
+    // 1. Global Documents
     store.getAll('documents').forEach(doc => {
       allDocs.push({
         id: doc.id,
@@ -30,8 +31,9 @@ export function renderDocumentBrowser(container) {
       });
     });
 
-    // Job Attachments & Forms
+    // 2. Job Attachments, Forms, and Activity Log
     store.getAll('jobs').forEach(job => {
+      // Legacy/Direct Attachments
       if (job.attachments && Array.isArray(job.attachments)) {
         job.attachments.forEach(att => {
           allDocs.push({
@@ -40,7 +42,7 @@ export function renderDocumentBrowser(container) {
             url: att.url || att.data || '#',
             type: att.type,
             size: att.size,
-            uploadedAt: att.uploadedAt || att.date || new Date().toISOString(),
+            uploadedAt: att.uploadedAt || att.date || job.createdAt || new Date().toISOString(),
             folder: 'Job Attachments',
             entityType: 'Job',
             entityId: job.id,
@@ -48,6 +50,26 @@ export function renderDocumentBrowser(container) {
           });
         });
       }
+      
+      // Activity Log Attachments (New Upload Pattern)
+      if (job.activityLog && Array.isArray(job.activityLog)) {
+        job.activityLog.filter(log => log.type === 'attachment').forEach(log => {
+          allDocs.push({
+            id: log.id,
+            name: log.file.name,
+            url: log.file.url || log.file.data || '#',
+            type: log.file.type,
+            size: log.file.size,
+            uploadedAt: log.date,
+            folder: 'Job Attachments',
+            entityType: 'Job',
+            entityId: job.id,
+            entityName: `${job.number} - ${job.title}`
+          });
+        });
+      }
+
+      // Digital Forms
       if (job.forms && Array.isArray(job.forms)) {
         job.forms.forEach((form, i) => {
           allDocs.push({
@@ -66,7 +88,7 @@ export function renderDocumentBrowser(container) {
       }
     });
 
-    // Customer Attachments
+    // 3. Customer Attachments
     store.getAll('customers').forEach(customer => {
       if (customer.attachments && Array.isArray(customer.attachments)) {
         customer.attachments.forEach(att => {
@@ -76,7 +98,7 @@ export function renderDocumentBrowser(container) {
             url: att.url || att.data || '#',
             type: att.type,
             size: att.size,
-            uploadedAt: att.uploadedAt || new Date().toISOString(),
+            uploadedAt: att.uploadedAt || customer.createdAt || new Date().toISOString(),
             folder: 'Customer Attachments',
             entityType: 'Customer',
             entityId: customer.id,
@@ -86,7 +108,53 @@ export function renderDocumentBrowser(container) {
       }
     });
 
+    // 4. Invoices
+    store.getAll('invoices').forEach(inv => {
+      allDocs.push({
+        id: inv.id,
+        name: `Invoice ${inv.number}.pdf`,
+        url: `#/invoices/${inv.id}`,
+        type: 'Invoice PDF',
+        size: null,
+        uploadedAt: inv.issueDate,
+        folder: 'Invoices',
+        entityType: 'Invoice',
+        entityId: inv.id,
+        entityName: `Inv ${inv.number} - ${inv.customerName}`
+      });
+    });
 
+    // 5. Quotes
+    store.getAll('quotes').forEach(quote => {
+      allDocs.push({
+        id: quote.id,
+        name: `Quote ${quote.number}.pdf`,
+        url: `#/quotes/${quote.id}`,
+        type: 'Quote PDF',
+        size: null,
+        uploadedAt: quote.createdAt,
+        folder: 'Quotes',
+        entityType: 'Quote',
+        entityId: quote.id,
+        entityName: `Quote ${quote.number} - ${quote.customerName}`
+      });
+    });
+
+    // 6. Purchase Orders
+    store.getAll('purchaseOrders').forEach(po => {
+      allDocs.push({
+        id: po.id,
+        name: `PO ${po.number}.pdf`,
+        url: `#/purchase-orders/${po.id}`,
+        type: 'PO PDF',
+        size: null,
+        uploadedAt: po.issueDate,
+        folder: 'Purchase Orders',
+        entityType: 'PO',
+        entityId: po.id,
+        entityName: `PO ${po.number} - ${po.supplierName}`
+      });
+    });
 
     allDocs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
 
@@ -95,7 +163,11 @@ export function renderDocumentBrowser(container) {
       displayDocs = allDocs.filter(d => d.folder === currentFolder);
     }
 
-    const folders = ['All Documents', 'Company Docs', 'Health & Safety', 'Templates', 'Job Attachments', 'Customer Attachments', 'Digital Forms', 'Invoices', 'Quotes'];
+    const folders = [
+      'All Documents', 'Company Docs', 'Health & Safety', 'Templates', 
+      'Job Attachments', 'Customer Attachments', 'Digital Forms', 
+      'Invoices', 'Quotes', 'Purchase Orders'
+    ];
 
     container.innerHTML = `
       <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -120,6 +192,7 @@ export function renderDocumentBrowser(container) {
                 else if (f === 'Digital Forms') icon = 'assignment';
                 else if (f === 'Invoices') icon = 'receipt_long';
                 else if (f === 'Quotes') icon = 'request_quote';
+                else if (f === 'Purchase Orders') icon = 'shopping_cart';
                 
                 const isActive = currentFolder === f;
                 const count = f === 'All Documents' ? allDocs.length : allDocs.filter(d => d.folder === f).length;
@@ -167,7 +240,7 @@ export function renderDocumentBrowser(container) {
     const columns = [
       { key: 'name', label: 'File Name', render: (r) => {
           let icon = 'insert_drive_file';
-          if (r.type === 'Invoice PDF' || r.type === 'Quote PDF') icon = 'picture_as_pdf';
+          if (r.type === 'Invoice PDF' || r.type === 'Quote PDF' || r.type === 'PO PDF') icon = 'picture_as_pdf';
           else if (r.type === 'Digital Form') icon = 'assignment';
           else if (r.type && r.type.includes('image')) icon = 'image';
           return `<div style="display:flex;align-items:center;gap:8px;"><span class="material-icons-outlined" style="color:var(--text-secondary)">${icon}</span> <span class="font-medium truncate" style="max-width:300px" title="${escapeHTML(r.name)}">${escapeHTML(r.name)}</span></div>`;
@@ -176,7 +249,13 @@ export function renderDocumentBrowser(container) {
       { key: 'size', label: 'Size', render: (r) => r.size ? (r.size / 1024).toFixed(1) + ' KB' : '—' },
       { key: 'entityName', label: 'Linked To', render: (r) => {
           if (r.entityType === 'Global') return '<span class="text-secondary" style="font-size:12px">Company Shared</span>';
-          const linkPath = r.entityType === 'Job' ? `#/jobs/${r.entityId}` : r.entityType === 'Customer' ? `#/people/${r.entityId}` : r.entityType === 'Invoice' ? `#/invoices/${r.entityId}` : `#/quotes/${r.entityId}`;
+          let linkPath = '#';
+          if (r.entityType === 'Job') linkPath = `#/jobs/${r.entityId}`;
+          else if (r.entityType === 'Customer') linkPath = `#/people/${r.entityId}`;
+          else if (r.entityType === 'Invoice') linkPath = `#/invoices/${r.entityId}`;
+          else if (r.entityType === 'Quote') linkPath = `#/quotes/${r.entityId}`;
+          else if (r.entityType === 'PO') linkPath = `#/purchase-orders/${r.entityId}`;
+          
           return `<span class="badge badge-neutral">${r.entityType}</span> <a href="${linkPath}">${escapeHTML(r.entityName)}</a>`;
         }
       },
@@ -188,7 +267,72 @@ export function renderDocumentBrowser(container) {
       columns, 
       data: filteredData, 
       emptyMessage: 'No documents found in this category.', 
-      emptyIcon: 'folder_open' 
+      emptyIcon: 'folder_open',
+      selectable: true,
+      onSelectionChange: (selectedIds) => {
+        createBulkActionBar({
+          container: container.querySelector('.main-wrapper') || container,
+          selectedIds,
+          onClear: () => table.clearSelection(),
+          actions: [
+            {
+              label: 'Change Category',
+              icon: 'folder_open',
+              onClick: (ids) => {
+                const uploadFolders = folders.filter(f => f !== 'All Documents');
+                const content = document.createElement('div');
+                content.innerHTML = `
+                  <div class="form-group">
+                    <label class="form-label">New Category</label>
+                    <select class="form-select" id="bulk-folder">
+                      ${uploadFolders.map(f => `<option value="${f}">${f}</option>`).join('')}
+                    </select>
+                  </div>
+                `;
+                showModal({
+                  title: `Move ${ids.length} Documents`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Move', className: 'btn-primary', onClick: c => {
+                      const newFolder = content.querySelector('#bulk-folder').value;
+                      ids.forEach(id => {
+                        const doc = store.getById('documents', id);
+                        if (doc) store.update('documents', id, { folder: newFolder });
+                      });
+                      table.clearSelection();
+                      render();
+                      showToast(`Moved ${ids.length} documents to ${newFolder}`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              }
+            },
+            {
+              label: 'Delete Selected',
+              icon: 'delete',
+              className: 'btn-danger',
+              onClick: (ids) => {
+                showModal({
+                  title: 'Confirm Bulk Delete',
+                  content: `<p>Are you sure you want to delete ${ids.length} documents? Only global documents will be removed from the system. Linked attachments must be deleted from their respective jobs/customers.</p>`,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Delete', className: 'btn-danger', onClick: c => {
+                      ids.forEach(id => store.delete('documents', id));
+                      table.clearSelection();
+                      render();
+                      showToast(`Deleted ${ids.length} documents`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              }
+            }
+          ]
+        });
+      }
     });
     
     container.querySelector('#docs-table-container').appendChild(table);

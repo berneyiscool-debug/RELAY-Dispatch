@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
+import { showDrawer } from '../../components/Drawer.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
@@ -264,10 +265,42 @@ export function renderInvoiceDetail(container, { id }) {
     });
 
     container.querySelector('#btn-mark-paid')?.addEventListener('click', () => {
-      store.update('invoices', id, { status: 'Paid', paidDate: new Date().toISOString() });
-      invoice.status = 'Paid';
-      showToast('Invoice marked as paid', 'success');
-      render();
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Date Paid</label>
+          <input type="date" class="form-input" id="paid-date" value="${new Date().toISOString().split('T')[0]}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Payment Method</label>
+          <select class="form-select" id="paid-method">
+            <option value="Credit Card">Credit Card</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Cash">Cash</option>
+            <option value="Cheque">Cheque</option>
+          </select>
+        </div>
+      `;
+      showDrawer({
+        title: 'Mark Invoice as Paid',
+        content: content.outerHTML,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Confirm Payment', className: 'btn-primary', onClick: (close) => {
+            const dOverlay = document.querySelector('.drawer-overlay');
+            const paidDate = dOverlay.querySelector('#paid-date').value;
+            const paymentMethod = dOverlay.querySelector('#paid-method').value;
+            store.update('invoices', id, { status: 'Paid', paidDate, paymentMethod });
+            invoice.status = 'Paid';
+            invoice.paidDate = paidDate;
+            invoice.paymentMethod = paymentMethod;
+            showToast('Invoice marked as paid', 'success');
+            render();
+            close();
+          }}
+        ],
+        width: 350
+      });
     });
 
     container.querySelector('#btn-delete-invoice')?.addEventListener('click', () => {

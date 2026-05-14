@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
+import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
@@ -25,6 +26,7 @@ export function renderJobDetail(container, { id }) {
   let taskViewPath = [];
   let isInfoPanelEditing = false;
   let cachedStockOptionsHtml = null;
+  let stagedFiles = [];
 
   function getStockOptionsHtml() {
     if (!cachedStockOptionsHtml) {
@@ -64,6 +66,7 @@ export function renderJobDetail(container, { id }) {
         <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
         <button class="tab ${activeTab === 'phases' ? 'active' : ''}" data-tab="phases">TaskLists</button>
         <button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs">Costs</button>
+        <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes</button>
         <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms">Forms</button>
         <button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos">POs</button>
         <button class="tab ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity">Activity</button>
@@ -137,8 +140,234 @@ export function renderJobDetail(container, { id }) {
       `;
 
       tc.querySelector('#btn-add-schedule')?.addEventListener('click', () => {
-        router.navigate(`/schedule?jobId=${id}`);
+        const techs = store.getAll('technicians');
+        const existingSchedules = store.getAll('timesheets').filter(t => t.jobId === id);
+
+        // Build the modal content element
+        const content = document.createElement('div');
+
+        function getFlatTasks(phases, currentPath = [], currentNamePath = []) {
+          let result = [];
+          if (!phases) return result;
+          phases.forEach((p, i) => {
+            const path = [...currentPath, i].join('-');
+            const namePath = [...currentNamePath, p.name].join(' > ');
+            result.push({ path, name: namePath, isLeaf: !p.subPhases || p.subPhases.length === 0 });
+            if (p.subPhases) {
+              result = result.concat(getFlatTasks(p.subPhases, [...currentPath, i], [...currentNamePath, p.name]));
+            }
+          });
+          return result;
+        }
+        const flatTasks = getFlatTasks(job.phases || []);
+
+        function renderEntries(entries) {
+          let html = '';
+          entries.forEach((e, i) => {
+            html += '<div class="sched-entry" data-index="' + i + '" style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+            html += '<span style="font-weight:600;font-size:13px;color:var(--text-secondary)">Entry ' + (i + 1) + '</span>';
+            if (entries.length > 1) {
+              html += '<button type="button" class="btn btn-sm btn-danger btn-remove-entry" data-index="' + i + '" style="padding:2px 8px">\u2715 Remove</button>';
+            }
+            html += '</div>';
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
+            html += '<div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">Task <span class="text-danger">*</span></label>';
+            html += '<select class="form-select sched-task" style="width:100%">';
+            html += '<option value="">-- Select a Task --</option>';
+            flatTasks.forEach(t => {
+              html += `<option value="${t.path}" ${e.taskPath === t.path ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
+            });
+            html += '</select></div>';
+            html += '<div class="form-group" style="margin:0"><label class="form-label">Start</label>';
+            html += '<input type="datetime-local" class="form-input sched-start" value="' + e.start + '"></div>';
+            html += '<div class="form-group" style="margin:0"><label class="form-label">Finish</label>';
+            html += '<input type="datetime-local" class="form-input sched-finish" value="' + e.finish + '"></div>';
+            html += '</div>';
+            html += '<div class="form-group" style="margin:0"><label class="form-label">Technicians</label>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="tech-chips">';
+            techs.forEach(t => {
+              const active = e.techIds.includes(t.id);
+              const border = active ? 'var(--color-primary)' : 'var(--border-color)';
+              const bg = active ? 'var(--color-primary-light)' : 'transparent';
+              const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
+              html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
+              html += '<input type="checkbox" class="tech-check" data-tech-id="' + t.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
+              html += '<span class="material-icons-outlined" style="font-size:14px">person</span>';
+              html += escapeHTML(t.name);
+              html += '</label>';
+            });
+            html += '</div></div></div>';
+          });
+          return html;
+        }
+
+
+        function renderModal(entries) {
+          // Inject scoped styles once
+          if (!document.getElementById('sched-modal-styles')) {
+            const s = document.createElement('style');
+            s.id = 'sched-modal-styles';
+            s.textContent = '.sched-summary-row{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;align-items:center}.sched-summary-row:last-child{border-bottom:none}';
+            document.head.appendChild(s);
+          }
+
+          let html = '';
+
+          if (existingSchedules.length > 0) {
+            html += '<div style="margin-bottom:16px">';
+            html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Current Schedule</div>';
+            existingSchedules.forEach(s => {
+              const dt = new Date(s.startTime || s.date).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+              html += '<div class="sched-summary-row" style="flex-wrap:wrap">';
+              html += '<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">schedule</span>';
+              html += '<span style="font-weight:500">' + escapeHTML(s.technicianName) + '</span>';
+              html += '<span style="color:var(--text-tertiary);font-size:12px;margin-left:8px;padding-left:8px;border-left:1px solid var(--border-color)">' + escapeHTML(s.taskName || 'General Task') + '</span>';
+              html += '<span style="color:var(--text-tertiary);margin-left:auto">' + dt + '</span>';
+              html += '<span style="font-weight:600;margin-left:12px">' + s.hours + 'h</span>';
+              html += '</div>';
+            });
+            html += '</div>';
+            html += '<hr style="border-color:var(--border-color);margin-bottom:16px">';
+          }
+
+          html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">New Schedule Entries</div>';
+          html += '<div id="sched-entries">' + renderEntries(entries) + '</div>';
+          html += '<button type="button" id="btn-add-entry" class="btn btn-secondary btn-sm" style="width:100%;margin-top:4px">';
+          html += '<span class="material-icons-outlined" style="font-size:16px">add</span> Add Another Entry</button>';
+
+          content.innerHTML = html;
+
+          // Tech chip toggles
+          content.querySelectorAll('.tech-check').forEach(chk => {
+            const label = chk.closest('label');
+            chk.addEventListener('change', () => {
+              if (chk.checked) {
+                label.style.borderColor = 'var(--color-primary)';
+                label.style.background = 'var(--color-primary-light)';
+                label.style.color = 'var(--color-primary)';
+              } else {
+                label.style.borderColor = 'var(--border-color)';
+                label.style.background = 'transparent';
+                label.style.color = 'var(--text-secondary)';
+              }
+            });
+          });
+
+          // Remove entry buttons
+          content.querySelectorAll('.btn-remove-entry').forEach(btn => {
+            btn.addEventListener('click', () => {
+              entries.splice(parseInt(btn.dataset.index), 1);
+              renderModal(entries);
+            });
+          });
+
+          // Add another entry
+          content.querySelector('#btn-add-entry').addEventListener('click', () => {
+            const p = n => n.toString().padStart(2, '0');
+            const d = new Date();
+            d.setDate(d.getDate() + 1);
+            const ds = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+            entries.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [] });
+            renderModal(entries);
+          });
+        }
+
+        // Default first entry: today 8am-4pm, pre-select job's assigned tech if any
+        const p = n => n.toString().padStart(2, '0');
+        const now2 = new Date();
+        const ds = `${now2.getFullYear()}-${p(now2.getMonth()+1)}-${p(now2.getDate())}`;
+        const defaultTechIds = job.technicianId ? [job.technicianId] : [];
+        const entries = [{ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: defaultTechIds }];
+        renderModal(entries);
+
+        function readCurrentEntries() {
+          const result = [];
+          content.querySelectorAll('.sched-entry').forEach((el, i) => {
+            const taskPath = el.querySelector('.sched-task')?.value;
+            const start = el.querySelector('.sched-start')?.value;
+            const finish = el.querySelector('.sched-finish')?.value;
+            const techIds = [...el.querySelectorAll('.tech-check:checked')].map(c => c.dataset.techId);
+            result.push({ taskPath, start, finish, techIds });
+          });
+          return result;
+        }
+
+        showModal({
+          title: `Schedule Job: ${escapeHTML(job.title || job.number)}`,
+          content,
+          size: 'modal-70',
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: close => close() },
+            { label: 'Save Schedule', className: 'btn-primary', onClick: close => {
+              const currentEntries = readCurrentEntries();
+              let saved = 0;
+              let errors = [];
+
+              currentEntries.forEach((e, i) => {
+                if (!e.taskPath) { errors.push(`Entry ${i+1}: please select a task`); return; }
+                if (!e.start || !e.finish) { errors.push(`Entry ${i+1}: missing start or finish`); return; }
+                const startDate = new Date(e.start);
+                const finishDate = new Date(e.finish);
+                if (finishDate <= startDate) { errors.push(`Entry ${i+1}: finish must be after start`); return; }
+                if (e.techIds.length === 0) { errors.push(`Entry ${i+1}: select at least one technician`); return; }
+
+                const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
+                const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
+
+                e.techIds.forEach(techId => {
+                  const tech = techs.find(t => t.id === techId);
+                  if (!tech) return;
+                  store.create('timesheets', {
+                    jobId: id,
+                    jobNumber: job.number,
+                    taskPath: e.taskPath,
+                    taskName: taskName,
+                    technicianId: techId,
+                    technicianName: tech.name,
+                    date: e.start.split('T')[0],
+                    startTime: e.start,
+                    finishTime: e.finish,
+                    hours,
+                    status: 'Approved'
+                  });
+                  saved++;
+                });
+              });
+
+              if (errors.length) {
+                showToast(errors[0], 'error');
+                return;
+              }
+
+              // Update job's scheduled date and technicians list from first entry
+              if (currentEntries.length > 0 && currentEntries[0].start) {
+                const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
+                const jobTechs = allTechIds.map(tid => {
+                  const t = techs.find(x => x.id === tid);
+                  const totalHours = currentEntries
+                    .filter(e => e.techIds.includes(tid))
+                    .reduce((sum, e) => {
+                      const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
+                      return sum + (isNaN(h) ? 0 : h);
+                    }, 0);
+                  return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
+                });
+                store.update('jobs', id, {
+                  scheduledDate: currentEntries[0].start.split('T')[0],
+                  technicians: jobTechs,
+                  technicianName: jobTechs.map(t => t.name).join(', ')
+                });
+              }
+
+              showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
+              close();
+              renderTabContent();
+            }}
+          ]
+        });
       });
+
     } else if (activeTab === 'phases') {
       const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
       let canEditTasks = true;
@@ -571,16 +800,16 @@ export function renderJobDetail(container, { id }) {
             </div>
             `;
             
-            showModal({
+            showDrawer({
               title: 'Book Time: ' + escapeHTML(node.name),
-              content,
-              size: 'modal-70',
+              content: content.outerHTML,
               actions: [
                 { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
                 { label: 'Log Time', className: 'btn-primary', onClick: (close) => {
-                  const startVal = content.querySelector('#bt-start').value;
-                  const finishVal = content.querySelector('#bt-finish').value;
-                  const techId = content.querySelector('#bt-tech').value;
+                  const dOverlay = document.querySelector('.drawer-overlay');
+                  const startVal = dOverlay.querySelector('#bt-start').value;
+                  const finishVal = dOverlay.querySelector('#bt-finish').value;
+                  const techId = dOverlay.querySelector('#bt-tech').value;
                   const desc = '';
                   
                   if (!startVal || !finishVal || !techId) {
@@ -623,41 +852,98 @@ export function renderJobDetail(container, { id }) {
          });
       });
     } else if (activeTab === 'costs') {
-      if (job.technicianId && (!job.technicians || job.technicians.length === 0)) {
-        job.technicians = [{ id: job.technicianId, name: job.technicianName, hours: job.estimatedHours || 0, rate: 85 }];
+      // Auto-pull materials from quote if empty
+      if (!job.materials) {
+         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
+         const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
+         
+         if (acceptedQuote && acceptedQuote.sections) {
+            job.materials = [];
+            acceptedQuote.sections.forEach(sec => {
+               (sec.lineItems || []).forEach(item => {
+                  if (item.type === 'material') {
+                     const sMatch = store.getAll('stock').find(s => s.name === item.description);
+                     job.materials.push({
+                        stockId: sMatch ? sMatch.id : null,
+                        name: item.description || 'Unknown Material',
+                        quantity: item.qty || 1,
+                        unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0
+                     });
+                  }
+               });
+            });
+            store.update('jobs', id, { materials: job.materials });
+         }
       }
-      if (!job.technicians) job.technicians = [];
+      if (!job.materials) job.materials = [];
 
+      // Auto-calculate labor from timesheets
+      const timesheets = store.getAll('timesheets').filter(t => t.jobId === id);
       const allTechs = store.getAll('technicians');
+      const loggedLabor = {};
+      let totalLoggedHours = 0;
+      let totalLaborCost = 0;
+
+      timesheets.forEach(t => {
+         if (!loggedLabor[t.technicianId]) {
+            const tech = allTechs.find(x => x.id === t.technicianId);
+            loggedLabor[t.technicianId] = {
+               id: t.technicianId,
+               name: t.technicianName || (tech ? tech.name : 'Unknown Tech'),
+               hours: 0,
+               rate: tech ? (tech.hourlyRate || 85) : 85
+            };
+         }
+         loggedLabor[t.technicianId].hours += (t.hours || 0);
+      });
+      const autoTechs = Object.values(loggedLabor);
+      autoTechs.forEach(t => {
+         totalLoggedHours += t.hours;
+         totalLaborCost += (t.hours * t.rate);
+      });
+
+      // Determine material cost
+      const matCost = job.materials.reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
+      const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
+      const totalMatCost = matCost + additionalMatCost;
+
+      // Update job properties silently if they changed
+      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost) {
+          job.laborCost = totalLaborCost;
+          job.estimatedHours = totalLoggedHours;
+          job.materialCost = totalMatCost;
+          store.update('jobs', id, { laborCost: totalLaborCost, estimatedHours: totalLoggedHours, materialCost: totalMatCost });
+      }
 
       tc.innerHTML = `
         <div class="grid-2">
           <div class="card">
-            <div class="card-header"><h4>Technicians & Internal Labor</h4></div>
+            <div class="card-header"><h4>Technicians & Internal Labor (Auto-Synced)</h4></div>
             <div class="card-body">
-              <div id="techs-container" style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-                ${job.technicians.map((t, i) => `
-                  <div class="tech-row form-row" data-index="${i}" style="align-items:flex-end">
-                    <div class="form-group" style="margin-bottom:0;flex:2">
-                      <label class="form-label">Technician</label>
-                      <select class="form-select tech-select">
-                        <option value="">Select...</option>
-                        ${allTechs.map(tech => `<option value="${tech.id}" ${t.id === tech.id ? 'selected' : ''}>${tech.name}</option>`).join('')}
-                      </select>
-                    </div>
-                    <div class="form-group" style="margin-bottom:0;flex:1">
-                      <label class="form-label">Est. Hours</label>
-                      <input type="number" class="form-input tech-hours" value="${t.hours || 0}" min="0" step="0.5" />
-                    </div>
-                    <div class="form-group" style="margin-bottom:0;flex:1">
-                      <label class="form-label">Pay Rate ($/hr)</label>
-                      <input type="number" class="form-input tech-rate" value="${t.rate || 0}" min="0" step="0.01" />
-                    </div>
-                    <button class="btn btn-danger btn-icon btn-remove-tech"><span class="material-icons-outlined">close</span></button>
-                  </div>
-                `).join('')}
+              <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
+                Labor hours are automatically calculated based on timesheets booked against this job's tasks.
               </div>
-              <button class="btn btn-secondary btn-sm" id="btn-add-tech" style="width:100%"><span class="material-icons-outlined">add</span> Add Technician</button>
+              <table class="data-table" style="font-size:13px">
+                <thead>
+                  <tr>
+                    <th>Technician</th>
+                    <th style="width:80px">Hours</th>
+                    <th style="width:80px">Rate</th>
+                    <th style="width:100px">Total Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${autoTechs.map(t => `
+                    <tr>
+                      <td>${escapeHTML(t.name)}</td>
+                      <td style="font-weight:600">${t.hours.toFixed(2)}</td>
+                      <td>$${t.rate.toFixed(2)}</td>
+                      <td style="font-weight:600">$${(t.hours * t.rate).toFixed(2)}</td>
+                    </tr>
+                  `).join('')}
+                  ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet. Book time in the TaskLists tab.</td></tr>' : ''}
+                </tbody>
+              </table>
             </div>
           </div>
           
@@ -666,16 +952,19 @@ export function renderJobDetail(container, { id }) {
               <div class="card-header"><h4>Material Costs</h4></div>
               <div class="card-body">
                 <div id="materials-container" style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-                  ${(job.materials || []).map((m, i) => `
+                  ${job.materials.map((m, i) => `
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid var(--border-color);border-radius:4px">
                       <div>
                         <div class="font-medium">${escapeHTML(m.name)}</div>
                         <div class="text-secondary" style="font-size:12px">${m.quantity} x $${(m.unitCost || 0).toFixed(2)}</div>
                       </div>
-                      <div class="font-medium">$${(m.quantity * (m.unitCost || 0)).toFixed(2)}</div>
+                      <div style="display:flex; align-items:center; gap:12px">
+                        <div class="font-medium">$${(m.quantity * (m.unitCost || 0)).toFixed(2)}</div>
+                        <button class="btn btn-ghost btn-sm btn-icon btn-remove-mat" data-index="${i}"><span class="material-icons-outlined" style="color:var(--color-danger);font-size:16px">delete</span></button>
+                      </div>
                     </div>
                   `).join('')}
-                  ${(!job.materials || job.materials.length === 0) ? '<div class="text-secondary" style="font-size:14px">No materials added.</div>' : ''}
+                  ${(job.materials.length === 0) ? '<div class="text-secondary" style="font-size:14px">No materials added.</div>' : ''}
                 </div>
                 <div style="display:flex;gap:8px">
                   <select class="form-select" id="mat-select" style="flex:2">
@@ -683,75 +972,71 @@ export function renderJobDetail(container, { id }) {
                     ${getStockOptionsHtml()}
                   </select>
                   <input type="number" class="form-input" id="mat-qty" value="1" min="1" style="flex:1" />
-                  <button class="btn btn-primary" id="btn-add-material">Add</button>
+                  <button class="btn btn-primary" id="btn-add-material">Add Item</button>
                 </div>
                 <div class="form-group" style="margin-top:16px;margin-bottom:0">
-                  <label class="form-label">Manual Add. Cost ($)</label>
+                  <label class="form-label">Manual Add. Cost ($) (Permits, Travel, etc.)</label>
                   <input type="number" class="form-input" id="inp-material-cost" value="${job.additionalMaterialCost || 0}" step="0.01" />
                 </div>
               </div>
             </div>
 
             <div class="card">
-              <div class="card-header"><h4>Internal Cost Summary</h4></div>
+              <div class="card-header"><h4>Job Cost Summary</h4></div>
               <div class="card-body">
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Est. Hours</span><span id="sum-hours" class="font-medium">${job.estimatedHours || 0}</span>
+                  <span class="text-secondary">Logged Hours</span><span id="sum-hours" class="font-medium">${totalLoggedHours.toFixed(2)}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Labor Cost</span><span id="sum-labor" class="font-medium">$${(job.laborCost || 0).toFixed(2)}</span>
+                  <span class="text-secondary">Labor Cost</span><span id="sum-labor" class="font-medium">$${totalLaborCost.toFixed(2)}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Material Cost</span><span id="sum-mat" class="font-medium">$${(job.materialCost || 0).toFixed(2)}</span>
+                  <span class="text-secondary">Material Cost</span><span id="sum-mat" class="font-medium">$${totalMatCost.toFixed(2)}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:12px 0;font-size:var(--font-size-lg);font-weight:700">
-                  <span>Total Internal Cost</span><span id="sum-total">$${((job.laborCost || 0) + (job.materialCost || 0)).toFixed(2)}</span>
+                  <span>Total Internal Cost</span><span id="sum-total">$${(totalLaborCost + totalMatCost).toFixed(2)}</span>
                 </div>
+                ${job.quoteId ? (() => {
+                  const q = store.getById('quotes', job.quoteId);
+                  if (!q) return '';
+                  const profit = (q.subtotal || 0) - (totalLaborCost + totalMatCost);
+                  const margin = (q.subtotal || 0) > 0 ? (profit / q.subtotal) * 100 : 0;
+                  return `
+                    <div style="display:flex;justify-content:space-between;padding:12px 0;border-top:2px solid var(--border-color);margin-top:8px">
+                      <span class="text-secondary">Quoted Revenue (Ex. Tax)</span><span class="font-medium">$${(q.subtotal || 0).toFixed(2)}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;padding:12px 0;font-size:var(--font-size-lg);font-weight:700;color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+                      <span>Est. Profit</span><span>$${profit.toFixed(2)} (${margin.toFixed(1)}%)</span>
+                    </div>
+                  `;
+                })() : ''}
               </div>
               <div class="card-footer">
-                <button class="btn btn-primary" id="btn-save-costs" style="width:100%"><span class="material-icons-outlined">save</span> Save Costs & Techs</button>
+                <button class="btn btn-primary" id="btn-save-costs" style="width:100%"><span class="material-icons-outlined">save</span> Save Additional Costs</button>
               </div>
             </div>
           </div>
         </div>
       `;
 
-      tc.querySelector('#btn-add-tech')?.addEventListener('click', () => {
-        job.technicians.push({ id: '', name: '', hours: 2, rate: 85 });
-        renderTabContent();
-      });
-
       tc.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-remove-tech')) {
-          const idx = e.target.closest('.tech-row').dataset.index;
-          job.technicians.splice(idx, 1);
+        const removeMatBtn = e.target.closest('.btn-remove-mat');
+        if (removeMatBtn) {
+          const idx = parseInt(removeMatBtn.dataset.index);
+          job.materials.splice(idx, 1);
           renderTabContent();
         }
       });
 
-      function updateSummary() {
-        let h = 0, l = 0;
-        tc.querySelectorAll('.tech-row').forEach(row => {
-          const hrs = parseFloat(row.querySelector('.tech-hours').value) || 0;
-          const rate = parseFloat(row.querySelector('.tech-rate').value) || 0;
-          h += hrs;
-          l += (hrs * rate);
-        });
-        const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
-        const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
-        const m = addedMat + addCost;
-        
-        tc.querySelector('#sum-hours').textContent = h;
-        tc.querySelector('#sum-labor').textContent = '$' + l.toFixed(2);
-        tc.querySelector('#sum-mat').textContent = '$' + m.toFixed(2);
-        tc.querySelector('#sum-total').textContent = '$' + (l + m).toFixed(2);
+      function updateMaterialCostLive() {
+         const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
+         const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
+         const m = addedMat + addCost;
+         tc.querySelector('#sum-mat').textContent = '$' + m.toFixed(2);
+         tc.querySelector('#sum-total').textContent = '$' + (totalLaborCost + m).toFixed(2);
       }
 
-      tc.addEventListener('input', (e) => {
-        if (e.target.matches('.tech-hours, .tech-rate, #inp-material-cost')) {
-          updateSummary();
-        }
-      });
+      tc.querySelector('#inp-material-cost')?.addEventListener('input', updateMaterialCostLive);
 
       tc.querySelector('#btn-add-material')?.addEventListener('click', () => {
         const matSel = tc.querySelector('#mat-select');
@@ -772,7 +1057,6 @@ export function renderJobDetail(container, { id }) {
         cachedStockOptionsHtml = null; // Invalidate cache
         
         // Add to job materials
-        if (!job.materials) job.materials = [];
         job.materials.push({
           stockId: stockItem.id,
           name: stockItem.name,
@@ -780,95 +1064,149 @@ export function renderJobDetail(container, { id }) {
           unitCost: stockItem.costPrice || stockItem.unitPrice || 0
         });
 
-        // Recalculate materialCost
-        job.materialCost = job.materials.reduce((sum, m) => sum + (m.quantity * m.unitCost), 0) + (parseFloat(tc.querySelector('#inp-material-cost').value) || 0);
-        store.update('jobs', id, { materials: job.materials, materialCost: job.materialCost });
         showToast(`Added ${qty}x ${stockItem.name}`, 'success');
         renderTabContent();
       });
 
       tc.querySelector('#btn-save-costs')?.addEventListener('click', () => {
-        let totalH = 0, totalL = 0;
-        const newTechs = Array.from(tc.querySelectorAll('.tech-row')).map(row => {
-          const tSel = row.querySelector('.tech-select');
-          const id = tSel.value;
-          const name = tSel.options[tSel.selectedIndex].text;
-          const hours = parseFloat(row.querySelector('.tech-hours').value) || 0;
-          const rate = parseFloat(row.querySelector('.tech-rate').value) || 0;
-          totalH += hours;
-          totalL += (hours * rate);
-          return { id, name, hours, rate };
-        });
-
         const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
         const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
         const mat = addedMat + addCost;
         
-        job.technicians = newTechs;
-        job.estimatedHours = totalH;
-        job.laborCost = totalL;
         job.materialCost = mat;
         job.additionalMaterialCost = addCost;
         
         store.update('jobs', id, {
-          technicians: newTechs,
-          estimatedHours: totalH,
-          laborCost: totalL,
+          materials: job.materials,
           materialCost: mat,
           additionalMaterialCost: addCost
         });
-        showToast('Costs and Technicians saved', 'success');
-        // If we want to refresh overview or just stay
+        showToast('Additional costs saved', 'success');
+        renderTabContent();
+      });
+    } else if (activeTab === 'quotes') {
+      const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
+      
+      tc.innerHTML = `
+        <div class="card" style="margin-bottom:var(--space-lg)">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+             <h4>Associated Quotes</h4>
+             <button class="btn btn-primary btn-sm" id="btn-new-quote"><span class="material-icons-outlined">add</span> New Quote</button>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Number</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${linkedQuotes.length ? linkedQuotes.map(q => `
+                  <tr>
+                    <td><a href="#/quotes/${q.id}" style="color:var(--color-primary);text-decoration:none;font-weight:500">${escapeHTML(q.number)}</a></td>
+                    <td>${escapeHTML(q.title || 'Untitled Quote')}</td>
+                    <td><span class="badge ${q.status==='Accepted'?'badge-success':(q.status==='Declined'?'badge-danger':(q.status==='Sent'?'badge-info':'badge-neutral'))}">${escapeHTML(q.status)}</span></td>
+                    <td style="font-weight:600">$${(q.total || 0).toFixed(2)}</td>
+                    <td style="text-align:right">
+                      <a href="#/quotes/${q.id}" class="btn btn-secondary btn-sm">View</a>
+                    </td>
+                  </tr>
+                `).join('') : `<tr><td colspan="5" class="text-secondary" style="text-align:center">No quotes linked to this job.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      tc.querySelector('#btn-new-quote')?.addEventListener('click', () => {
+         const newQ = store.create('quotes', {
+            customerId: job.customerId,
+            customerName: job.customerName,
+            title: job.title,
+            jobId: job.id, 
+            status: 'Draft',
+            version: 1,
+            sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
+            subtotal: 0, tax: 0, total: 0,
+            number: 'Q-' + Date.now().toString().slice(-7)
+         });
+         showToast('Draft quote created', 'success');
+         router.navigate('/quotes/' + newQ.id);
       });
     } else if (activeTab === 'activity') {
-      if (!job.activityLog) {
-        job.activityLog = [];
-        if (job.notes) {
-          job.activityLog.push({ id: Math.random().toString(36).substr(2,9), type: 'note', content: job.notes, date: job.createdAt || new Date().toISOString() });
-        }
-        if (job.attachments) {
-          job.attachments.forEach(a => {
-            job.activityLog.push({ id: Math.random().toString(36).substr(2,9), type: 'attachment', file: a, date: job.updatedAt || new Date().toISOString() });
-          });
-        }
-        job.activityLog.sort((a,b) => new Date(b.date) - new Date(a.date));
-      }
+      if (!job.activityLog) job.activityLog = [];
+      // Migrate old logs
+      job.activityLog = job.activityLog.map(l => {
+         if (l.type === 'note' || l.type === 'attachment') {
+            return {
+               id: l.id,
+               type: 'combined',
+               date: l.date,
+               content: l.type === 'note' ? l.content : '',
+               files: l.type === 'attachment' ? [l.file] : []
+            };
+         }
+         return l;
+      });
 
       tc.innerHTML = `
         <div class="card" style="max-width:800px;margin-bottom:var(--space-lg)">
           <div class="card-body">
             <div style="display:flex;gap:8px;margin-bottom:var(--space-base)">
               <input type="text" class="form-input" id="new-note-input" placeholder="Type a new note..." style="flex:1" />
-              <button class="btn btn-primary" id="btn-add-note">Post</button>
               <label class="btn btn-secondary" for="upload-attachment" style="cursor:pointer">
                 <span class="material-icons-outlined" style="font-size:16px">attach_file</span> Attach
                 <input type="file" id="upload-attachment" style="display:none" multiple accept="image/*,.pdf,.doc,.docx" />
               </label>
+              <button class="btn btn-primary" id="btn-add-note">Post</button>
+            </div>
+            
+            <div id="staged-files-container" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: ${stagedFiles.length ? '16px' : '0'}">
+              ${stagedFiles.map((f, i) => `
+                <div style="display:flex;align-items:center;background:var(--content-bg);padding:4px 8px;border-radius:4px;font-size:12px;border:1px solid var(--border-color)">
+                   <span class="truncate" style="max-width:100px">${escapeHTML(f.name)}</span>
+                   <span class="material-icons-outlined text-danger btn-remove-staged" data-idx="${i}" style="font-size:14px;cursor:pointer;margin-left:8px">close</span>
+                </div>
+              `).join('')}
             </div>
             
             <div class="activity-feed" style="display:flex;flex-direction:column;gap:16px;margin-top:24px">
               ${job.activityLog.length ? job.activityLog.map((log, i) => `
                 <div style="display:flex;gap:12px">
                   <div style="width:36px;height:36px;border-radius:50%;background:var(--content-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-secondary)">
-                    <span class="material-icons-outlined" style="font-size:18px">${log.type === 'note' ? 'chat_bubble_outline' : 'attachment'}</span>
+                    <span class="material-icons-outlined" style="font-size:18px">${(log.files && log.files.length) ? 'attachment' : 'chat_bubble_outline'}</span>
                   </div>
-                  <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative">
+                  <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative;" class="activity-log-item" data-expanded="false">
                     <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                       <span class="text-secondary" style="font-size:var(--font-size-xs)">${new Date(log.date).toLocaleString()}</span>
-                      <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+                      <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px;z-index:2"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
                     </div>
-                    ${log.type === 'note' ? `<div style="font-size:var(--font-size-sm);white-space:pre-wrap">${escapeHTML(log.content)}</div>` :
-                      `<div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
-                         ${log.file.type && log.file.type.startsWith('image/') ? 
-                            `<div style="width:40px;height:40px;background:url('${escapeHTML(log.file.data)}') center/cover;border-radius:4px"></div>` :
-                            `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
-                         }
-                         <div style="overflow:hidden">
-                           <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${escapeHTML(log.file.name)}">${escapeHTML(log.file.name)}</div>
-                           <div class="text-secondary" style="font-size:10px">${(log.file.size / 1024).toFixed(1)} KB</div>
-                         </div>
-                       </div>`
-                    }
+                    <div class="activity-content-wrapper" style="max-height: 200px; overflow: hidden; position: relative; transition: max-height 0.3s ease;">
+                      ${log.content ? `<div style="font-size:var(--font-size-sm);white-space:pre-wrap;margin-bottom:8px">${escapeHTML(log.content)}</div>` : ''}
+                      ${log.files && log.files.length ? `
+                        <div style="display:flex; flex-wrap:wrap; gap:8px">
+                          ${log.files.map(f => `
+                            <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
+                               ${f.type && f.type.startsWith('image/') ? 
+                                  `<div style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px"></div>` :
+                                  `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
+                               }
+                               <div style="overflow:hidden">
+                                 <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${escapeHTML(f.name)}">${escapeHTML(f.name)}</div>
+                                 <div class="text-secondary" style="font-size:10px">${(f.size / 1024).toFixed(1)} KB</div>
+                               </div>
+                             </div>
+                          `).join('')}
+                        </div>
+                      ` : ''}
+                    </div>
+                    <div class="expand-overlay" style="display:none; position:absolute;bottom:0;left:0;right:0;height:40px;background:linear-gradient(transparent, var(--content-bg));align-items:flex-end;justify-content:center;padding-bottom:4px;cursor:pointer;border-bottom-left-radius:var(--border-radius);border-bottom-right-radius:var(--border-radius)">
+                       <span class="text-primary font-medium" style="font-size:12px">Expand to view</span>
+                    </div>
                   </div>
                 </div>
               `).join('') : '<div class="text-secondary text-center" style="padding:24px">No activity yet.</div>'}
@@ -877,11 +1215,53 @@ export function renderJobDetail(container, { id }) {
         </div>
       `;
 
+      // Show/Hide expand buttons based on content height
+      setTimeout(() => {
+         tc.querySelectorAll('.activity-log-item').forEach(item => {
+            const wrapper = item.querySelector('.activity-content-wrapper');
+            const overlay = item.querySelector('.expand-overlay');
+            if (wrapper && wrapper.scrollHeight > 200) {
+               overlay.style.display = 'flex';
+               item.style.paddingBottom = '32px'; // make room for the overlay
+               overlay.addEventListener('click', () => {
+                  if (item.dataset.expanded === 'false') {
+                     wrapper.style.maxHeight = wrapper.scrollHeight + 'px';
+                     overlay.style.background = 'transparent';
+                     overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Collapse</span>';
+                     item.dataset.expanded = 'true';
+                  } else {
+                     wrapper.style.maxHeight = '200px';
+                     overlay.style.background = 'linear-gradient(transparent, var(--content-bg))';
+                     overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Expand to view</span>';
+                     item.dataset.expanded = 'false';
+                  }
+               });
+            }
+         });
+      }, 0);
+
+      tc.querySelectorAll('.btn-remove-staged').forEach(btn => {
+         btn.addEventListener('click', (e) => {
+            const idx = parseInt(e.currentTarget.dataset.idx);
+            stagedFiles.splice(idx, 1);
+            renderTabContent();
+         });
+      });
+
       tc.querySelector('#btn-add-note')?.addEventListener('click', () => {
         const val = tc.querySelector('#new-note-input').value.trim();
-        if (!val) return;
-        job.activityLog.unshift({ id: Math.random().toString(36).substr(2,9), type: 'note', content: val, date: new Date().toISOString() });
+        if (!val && !stagedFiles.length) return;
+        
+        job.activityLog.unshift({
+           id: Math.random().toString(36).substr(2,9),
+           type: 'combined',
+           content: val,
+           files: [...stagedFiles],
+           date: new Date().toISOString()
+        });
+        
         store.update('jobs', id, { activityLog: job.activityLog });
+        stagedFiles = []; // clear staging
         renderTabContent();
       });
 
@@ -892,16 +1272,14 @@ export function renderJobDetail(container, { id }) {
         files.forEach(file => {
           const reader = new FileReader();
           reader.onload = (ev) => {
-            job.activityLog.unshift({
-              id: Math.random().toString(36).substr(2,9),
-              type: 'attachment',
-              date: new Date().toISOString(),
-              file: { name: file.name, size: file.size, type: file.type, data: ev.target.result }
+            stagedFiles.push({
+               name: file.name,
+               size: file.size,
+               type: file.type,
+               data: ev.target.result
             });
             processed++;
             if (processed === files.length) {
-              store.update('jobs', id, { activityLog: job.activityLog });
-              showToast(`${files.length} file(s) attached`, 'success');
               renderTabContent();
             }
           };
@@ -923,8 +1301,9 @@ export function renderJobDetail(container, { id }) {
       
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header">
-            <h4>Timesheets (${totalHours} hrs total)</h4>
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0">Timesheets (${totalHours} hrs total)</h4>
+            <button class="btn btn-sm btn-primary" id="btn-log-time-tab"><span class="material-icons-outlined" style="font-size:16px;">add_task</span> Log Time</button>
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
@@ -944,6 +1323,76 @@ export function renderJobDetail(container, { id }) {
           </div>
         </div>
       `;
+
+      tc.querySelector('#btn-log-time-tab')?.addEventListener('click', () => {
+        const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+        const now = new Date();
+        const p = n => n.toString().padStart(2, '0');
+        const dateStr = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())}`;
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Date *</label>
+              <input type="date" class="form-input" id="lt-date" value="${dateStr}" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Technician *</label>
+              <select class="form-select" id="lt-tech">
+                <option value="">Select tech...</option>
+                ${techs.map(t => `<option value="${t.id}" ${t.name === currentUser.name ? 'selected' : ''}>${t.name}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Hours *</label>
+              <input type="number" class="form-input" id="lt-hours" value="1" min="0.5" step="0.5" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <input type="text" class="form-input" id="lt-desc" placeholder="Brief description..." />
+            </div>
+          </div>
+        `;
+
+        showDrawer({
+          title: 'Log Time',
+          content: content.outerHTML,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save', className: 'btn-primary', onClick: (close) => {
+              const dOverlay = document.querySelector('.drawer-overlay');
+              const dateVal = dOverlay.querySelector('#lt-date').value;
+              const techId = dOverlay.querySelector('#lt-tech').value;
+              const hoursVal = parseFloat(dOverlay.querySelector('#lt-hours').value);
+              const descVal = dOverlay.querySelector('#lt-desc').value;
+
+              if (!dateVal || !techId || isNaN(hoursVal)) {
+                showToast('Please fill all required fields', 'error');
+                return;
+              }
+
+              const tech = techs.find(t => t.id === techId);
+              store.create('timesheets', {
+                jobId: id,
+                jobNumber: job.number,
+                technicianId: techId,
+                technicianName: tech.name,
+                date: dateVal,
+                hours: hoursVal,
+                description: descVal,
+                status: 'Pending'
+              });
+
+              showToast('Time logged successfully', 'success');
+              renderTabContent();
+              close();
+            }}
+          ]
+        });
+      });
     } else if (activeTab === 'forms') {
       job.forms = job.forms || [];
       
@@ -995,15 +1444,16 @@ export function renderJobDetail(container, { id }) {
               <textarea class="form-textarea" id="new-form-notes"></textarea>
             </div>
           `;
-        showModal({
+        showDrawer({
           title: 'Complete Form',
-          content,
+          content: content.outerHTML,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
             { label: 'Submit', className: 'btn-primary', onClick: (close) => {
+              const dOverlay = document.querySelector('.drawer-overlay');
               job.forms.push({
-                type: document.getElementById('new-form-type').value,
-                notes: document.getElementById('new-form-notes').value,
+                type: dOverlay.querySelector('#new-form-type').value,
+                notes: dOverlay.querySelector('#new-form-notes').value,
                 date: new Date().toISOString(),
                 completedBy: 'Current User' // Placeholder for logged-in user
               });
@@ -1044,7 +1494,71 @@ export function renderJobDetail(container, { id }) {
       `;
 
       tc.querySelector('#btn-raise-po')?.addEventListener('click', () => {
-        router.navigate(`/purchase-orders/new?jobId=${id}`);
+        const suppliers = store.getAll('suppliers'); // Assuming a suppliers collection exists or use basic array
+        const stockItems = store.getAll('stock');
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-group">
+            <label class="form-label">Supplier *</label>
+            <input type="text" class="form-input" id="po-supplier" placeholder="e.g. Reece Plumbing" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Part Required *</label>
+            <select class="form-select" id="po-part">
+              <option value="">Select or type...</option>
+              ${stockItems.map(s => `<option value="${s.id}">${s.name} - $${s.costPrice || 0}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Quantity *</label>
+              <input type="number" class="form-input" id="po-qty" value="1" min="1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Expected Date</label>
+              <input type="date" class="form-input" id="po-date" value="${new Date().toISOString().split('T')[0]}" />
+            </div>
+          </div>
+        `;
+
+        showDrawer({
+          title: 'Quick Purchase Order',
+          content: content.outerHTML, // Pass HTML string or handle element appending
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Create PO', className: 'btn-primary', onClick: (close) => {
+              // Note: showDrawer content is recreated via innerHTML, so we must query the document
+              const dOverlay = document.querySelector('.drawer-overlay');
+              const supplier = dOverlay.querySelector('#po-supplier').value;
+              const partId = dOverlay.querySelector('#po-part').value;
+              const qty = parseInt(dOverlay.querySelector('#po-qty').value) || 1;
+              const date = dOverlay.querySelector('#po-date').value;
+
+              if (!supplier || !partId) {
+                showToast('Supplier and Part are required', 'error');
+                return;
+              }
+
+              const part = stockItems.find(s => s.id === partId);
+              
+              store.create('purchaseOrders', {
+                number: `PO-${Date.now().toString().slice(-5)}`,
+                jobId: id,
+                supplierName: supplier,
+                issueDate: new Date().toISOString(),
+                expectedDate: date,
+                status: 'Draft',
+                items: [{ stockId: partId, name: part.name, quantity: qty, unitCost: part.costPrice || 0, total: (part.costPrice || 0) * qty }],
+                total: (part.costPrice || 0) * qty
+              });
+
+              showToast('Quick PO Created', 'success');
+              renderTabContent();
+              close();
+            }}
+          ]
+        });
       });
     } else if (activeTab === 'invoices') {
       const invoices = store.getAll('invoices').filter(i => i.jobId === id);
