@@ -187,18 +187,24 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
     container.querySelector('#btn-receive')?.addEventListener('click', () => {
       // Receive items into stock
       let receiveCount = 0;
+      const allStock = store.getAll('stock');
+      const stockMap = new Map(allStock.map(s => [s.id, s]));
+
       po.lineItems.forEach(item => {
         if (item.stockId) {
-          const s = store.getById('stock', item.stockId);
+          const s = stockMap.get(item.stockId);
           if (s) {
-            store.update('stock', s.id, { quantity: (s.quantity || 0) + item.quantity });
+            s.quantity = (s.quantity || 0) + item.quantity;
+            s.updatedAt = new Date().toISOString();
             receiveCount++;
           }
-        } else {
-          // It's a custom item, optionally create a new stock item?
-          // For now, we only update existing stock items to keep it simple.
         }
       });
+
+      if (receiveCount > 0) {
+        store.save('stock', allStock);
+      }
+
       showToast(`Received ${receiveCount} items into stock.`, 'success');
       po.status = 'Received';
       store.update('purchaseOrders', po.id, { status: 'Received' });
