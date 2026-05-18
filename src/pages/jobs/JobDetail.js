@@ -1,14 +1,14 @@
 // ============================================
-// SIMPRO CLONE — JOB DETAIL PAGE
+// FIELDFORGE — JOB DETAIL PAGE
 // ============================================
 
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
-import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
+import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
 
 export function renderJobDetail(container, { id }) {
   const job = store.getById('jobs', id);
@@ -64,7 +64,7 @@ export function renderJobDetail(container, { id }) {
       </div>
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
         <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
-        <button class="tab ${activeTab === 'phases' ? 'active' : ''}" data-tab="phases">TaskLists</button>
+        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Tasklists</button>
         <button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs">Costs</button>
         <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes</button>
         <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms">Forms</button>
@@ -84,12 +84,17 @@ export function renderJobDetail(container, { id }) {
     const tc = container.querySelector('#tab-content');
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
 
+    if (activeTab === 'forms') {
+      renderFormsTab(tc);
+      return;
+    }
+
     if (activeTab === 'overview') {
       let jobProgress = 0;
-      if (job.phases && job.phases.length > 0) {
+      if (job.tasks && job.tasks.length > 0) {
          let totalWeight = 0;
          let completedWeight = 0;
-         job.phases.forEach(sp => {
+         job.tasks.forEach(sp => {
             const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
             totalWeight += weight;
             completedWeight += weight * ((sp.progress || 0) / 100);
@@ -146,20 +151,20 @@ export function renderJobDetail(container, { id }) {
         // Build the modal content element
         const content = document.createElement('div');
 
-        function getFlatTasks(phases, currentPath = [], currentNamePath = []) {
+        function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
           let result = [];
-          if (!phases) return result;
-          phases.forEach((p, i) => {
+          if (!tasks) return result;
+          tasks.forEach((p, i) => {
             const path = [...currentPath, i].join('-');
             const namePath = [...currentNamePath, p.name].join(' > ');
-            result.push({ path, name: namePath, isLeaf: !p.subPhases || p.subPhases.length === 0 });
-            if (p.subPhases) {
-              result = result.concat(getFlatTasks(p.subPhases, [...currentPath, i], [...currentNamePath, p.name]));
+            result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
+            if (p.subTasks) {
+              result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
             }
           });
           return result;
         }
-        const flatTasks = getFlatTasks(job.phases || []);
+        const flatTasks = getFlatTasks(job.tasks || []);
 
         function renderEntries(entries) {
           let html = '';
@@ -184,7 +189,8 @@ export function renderJobDetail(container, { id }) {
             html += '<div class="form-group" style="margin:0"><label class="form-label">Finish</label>';
             html += '<input type="datetime-local" class="form-input sched-finish" value="' + e.finish + '"></div>';
             html += '</div>';
-            html += '<div class="form-group" style="margin:0"><label class="form-label">Technicians</label>';
+            
+            html += '<div class="form-group" style="margin:12px 0 0 0"><label class="form-label">Technicians</label>';
             html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="tech-chips">';
             techs.forEach(t => {
               const active = e.techIds.includes(t.id);
@@ -197,6 +203,24 @@ export function renderJobDetail(container, { id }) {
               html += escapeHTML(t.name);
               html += '</label>';
             });
+            html += '</div></div>';
+
+            // Assets Section
+            const assets = store.getAll('assets').filter(a => a.category === 'Business');
+            html += '<div class="form-group" style="margin:16px 0 0 0"><label class="form-label">Business Assets / Tools</label>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="asset-chips">';
+            assets.forEach(a => {
+              const active = e.assetIds && e.assetIds.includes(a.id);
+              const border = active ? 'var(--color-primary)' : 'var(--border-color)';
+              const bg = active ? 'var(--color-primary-light)' : 'transparent';
+              const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
+              html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
+              html += '<input type="checkbox" class="asset-check" data-asset-id="' + a.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
+              html += '<span class="material-icons-outlined" style="font-size:14px">handyman</span>';
+              html += escapeHTML(a.name);
+              html += '</label>';
+            });
+            if (assets.length === 0) html += '<span class="text-tertiary" style="font-size:12px">No business assets configured.</span>';
             html += '</div></div></div>';
           });
           return html;
@@ -254,6 +278,22 @@ export function renderJobDetail(container, { id }) {
             });
           });
 
+          // Asset chip toggles
+          content.querySelectorAll('.asset-check').forEach(chk => {
+            const label = chk.closest('label');
+            chk.addEventListener('change', () => {
+              if (chk.checked) {
+                label.style.borderColor = 'var(--color-primary)';
+                label.style.background = 'var(--color-primary-light)';
+                label.style.color = 'var(--color-primary)';
+              } else {
+                label.style.borderColor = 'var(--border-color)';
+                label.style.background = 'transparent';
+                label.style.color = 'var(--text-secondary)';
+              }
+            });
+          });
+
           // Remove entry buttons
           content.querySelectorAll('.btn-remove-entry').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -268,7 +308,7 @@ export function renderJobDetail(container, { id }) {
             const d = new Date();
             d.setDate(d.getDate() + 1);
             const ds = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
-            entries.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [] });
+            entries.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
             renderModal(entries);
           });
         }
@@ -278,7 +318,7 @@ export function renderJobDetail(container, { id }) {
         const now2 = new Date();
         const ds = `${now2.getFullYear()}-${p(now2.getMonth()+1)}-${p(now2.getDate())}`;
         const defaultTechIds = job.technicianId ? [job.technicianId] : [];
-        const entries = [{ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: defaultTechIds }];
+        const entries = [{ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: defaultTechIds, assetIds: [] }];
         renderModal(entries);
 
         function readCurrentEntries() {
@@ -288,7 +328,8 @@ export function renderJobDetail(container, { id }) {
             const start = el.querySelector('.sched-start')?.value;
             const finish = el.querySelector('.sched-finish')?.value;
             const techIds = [...el.querySelectorAll('.tech-check:checked')].map(c => c.dataset.techId);
-            result.push({ taskPath, start, finish, techIds });
+            const assetIds = [...el.querySelectorAll('.asset-check:checked')].map(c => c.dataset.assetId);
+            result.push({ taskPath, start, finish, techIds, assetIds });
           });
           return result;
         }
@@ -315,7 +356,7 @@ export function renderJobDetail(container, { id }) {
                 const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
                 const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
 
-                e.techIds.forEach(techId => {
+                  e.techIds.forEach(techId => {
                   const tech = techs.find(t => t.id === techId);
                   if (!tech) return;
                   store.create('timesheets', {
@@ -329,10 +370,29 @@ export function renderJobDetail(container, { id }) {
                     startTime: e.start,
                     finishTime: e.finish,
                     hours,
-                    status: 'Approved'
+                    status: 'Pending'
                   });
                   saved++;
                 });
+
+                // Create Asset Usage records for this entry (only once per entry duration)
+                if (e.assetIds && e.assetIds.length > 0) {
+                  e.assetIds.forEach(assetId => {
+                    const asset = store.getById('assets', assetId);
+                    if (!asset) return;
+                    store.create('assetUsage', {
+                      jobId: id,
+                      assetId: assetId,
+                      assetName: asset.name,
+                      taskPath: e.taskPath,
+                      taskName: taskName,
+                      startTime: e.start,
+                      finishTime: e.finish,
+                      hours,
+                      recoveryRate: asset.recoveryRate || 0
+                    });
+                  });
+                }
               });
 
               if (errors.length) {
@@ -368,7 +428,7 @@ export function renderJobDetail(container, { id }) {
         });
       });
 
-    } else if (activeTab === 'phases') {
+    } else if (activeTab === 'tasks') {
       const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
       let canEditTasks = true;
       if (currentUser.userTypeId) {
@@ -381,39 +441,39 @@ export function renderJobDetail(container, { id }) {
         canEditTasks = false;
       }
 
-      if (!job.phases) {
-        job.phases = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] }];
+      if (!job.tasks) {
+        job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
       }
       
-      // Ensure existing phases have subPhases array
-      job.phases.forEach(p => { if (!p.subPhases) p.subPhases = []; });
+      // Ensure existing tasks have subTasks array
+      job.tasks.forEach(p => { if (!p.subTasks) p.subTasks = []; });
 
-      function getPhaseByPath(phases, path) {
-        let curr = phases[path[0]];
+      function getTaskByPath(tasks, path) {
+        let curr = tasks[path[0]];
         if (!curr) return null;
         for (let i = 1; i < path.length; i++) {
-          if (!curr.subPhases) return null;
-          curr = curr.subPhases[path[i]];
+          if (!curr.subTasks) return null;
+          curr = curr.subTasks[path[i]];
           if (!curr) return null;
         }
         return curr;
       }
 
       function calculateTotalHours(node) {
-        if (!node.subPhases || node.subPhases.length === 0) {
+        if (!node.subTasks || node.subTasks.length === 0) {
            return (parseFloat(node.estimatedHours) || 0) * (parseInt(node.people) || 1);
         }
-        return node.subPhases.reduce((sum, sp) => sum + calculateTotalHours(sp), 0);
+        return node.subTasks.reduce((sum, sp) => sum + calculateTotalHours(sp), 0);
       }
 
-      function updateParentProgress(phases, path) {
+      function updateParentProgress(tasks, path) {
         if (path.length <= 1) return;
         const parentPath = path.slice(0, -1);
-        const parent = getPhaseByPath(phases, parentPath);
-        if (parent && parent.subPhases && parent.subPhases.length > 0) {
+        const parent = getTaskByPath(tasks, parentPath);
+        if (parent && parent.subTasks && parent.subTasks.length > 0) {
           let totalWeight = 0;
           let completedWeight = 0;
-          parent.subPhases.forEach(sp => {
+          parent.subTasks.forEach(sp => {
              const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
              totalWeight += weight;
              completedWeight += weight * ((sp.progress || 0) / 100);
@@ -422,16 +482,16 @@ export function renderJobDetail(container, { id }) {
           if (parent.progress === 100) parent.status = 'Completed';
           else if (parent.progress > 0) parent.status = 'In Progress';
           else parent.status = 'Not Started';
-          updateParentProgress(phases, parentPath); // recurse up
+          updateParentProgress(tasks, parentPath); // recurse up
         }
       }
 
       // Cleanup invalid paths
       let isValidPath = true;
-      let curr = job.phases;
+      let curr = job.tasks;
       for (let i=0; i<taskExpandedPath.length; i++) {
          if (!curr || !curr[taskExpandedPath[i]]) { isValidPath = false; break; }
-         curr = curr[taskExpandedPath[i]].subPhases;
+         curr = curr[taskExpandedPath[i]].subTasks;
       }
       if (!isValidPath) {
          taskExpandedPath = [];
@@ -442,16 +502,17 @@ export function renderJobDetail(container, { id }) {
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
             <h4>Tasklists</h4>
             <div style="display:flex; gap:8px">
+              ${canEditTasks ? `<button class="btn btn-sm btn-secondary" id="btn-import-tasklist"><span class="material-icons-outlined" style="font-size:14px">download</span> Import</button>` : ''}
               ${canEditTasks ? `<button class="btn btn-sm btn-secondary" id="btn-save-tasklist-template"><span class="material-icons-outlined" style="font-size:14px">bookmark_add</span> Save as Template</button>` : ''}
-              ${canEditTasks ? `<button class="btn btn-sm btn-primary" id="btn-save-phases"><span class="material-icons-outlined" style="font-size:14px">save</span> Save Tasks</button>` : ''}
+              ${canEditTasks ? `<button class="btn btn-sm btn-primary" id="btn-save-tasks"><span class="material-icons-outlined" style="font-size:14px">save</span> Save Tasks</button>` : ''}
             </div>
           </div>
           <div class="card-body" style="padding:16px; display:flex; gap:16px; overflow-x:auto; min-height:400px; align-items:stretch">
             
             <!-- Drill-Down List -->
             ${(() => {
-              const viewParentNode = taskViewPath.length > 0 ? getPhaseByPath(job.phases, taskViewPath) : null;
-              const viewList = viewParentNode ? (viewParentNode.subPhases || []) : job.phases;
+              const viewParentNode = taskViewPath.length > 0 ? getTaskByPath(job.tasks, taskViewPath) : null;
+              const viewList = viewParentNode ? (viewParentNode.subTasks || []) : job.tasks;
               const viewTitle = viewParentNode ? escapeHTML(viewParentNode.name) : 'Main Tasks';
               
               return `
@@ -470,7 +531,7 @@ export function renderJobDetail(container, { id }) {
                       return `
                         <div class="task-list-item" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color)'}">
                           <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
-                          ${p.subPhases && p.subPhases.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="margin-left:8px; width:18px; height:18px; cursor:pointer;" />`}
+                          ${p.subTasks && p.subTasks.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="margin-left:8px; width:18px; height:18px; cursor:pointer;" />`}
                         </div>
                       `;
                     }).join('')}
@@ -483,9 +544,9 @@ export function renderJobDetail(container, { id }) {
             <!-- Task Details Form -->
             ${taskExpandedPath.length > 0 ? (() => {
               const path = taskExpandedPath;
-              const node = getPhaseByPath(job.phases, path);
+              const node = getTaskByPath(job.tasks, path);
               if (!node) return '';
-              const hasSubs = node.subPhases && node.subPhases.length > 0;
+              const hasSubs = node.subTasks && node.subTasks.length > 0;
               return `
                 <div style="flex: 1; min-width:300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg); padding:16px">
                   ${!isInfoPanelEditing ? `
@@ -495,6 +556,7 @@ export function renderJobDetail(container, { id }) {
                       ${canEditTasks && path.length < 3 ? `<button class="btn btn-sm btn-secondary btn-add-child-task" data-path="${path.join('-')}" title="Add Sub-task"><span class="material-icons-outlined" style="font-size:16px">add_task</span> Add Sub-task</button>` : ''}
                       <button class="btn btn-sm btn-secondary btn-book-time" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time</button>
                       ${canEditTasks ? `<button class="btn btn-sm btn-primary btn-edit-info" title="Edit"><span class="material-icons-outlined" style="font-size:16px">edit</span> Edit</button>` : ''}
+                      ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>` : ''}
                     </div>
                   </div>
                   <div style="margin-bottom:16px">
@@ -539,7 +601,7 @@ export function renderJobDetail(container, { id }) {
                     <div style="display:flex;gap:8px">
                       <button class="btn btn-sm btn-primary btn-done-info">Done</button>
                       ${canEditTasks ? `<button class="btn btn-sm btn-secondary btn-duplicate-task" data-path="${path.join('-')}" title="Duplicate Task"><span class="material-icons-outlined" style="font-size:16px">content_copy</span></button>` : ''}
-                      ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
+                      ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>` : ''}
                     </div>
                   </div>
                   <div class="form-group">
@@ -603,10 +665,10 @@ export function renderJobDetail(container, { id }) {
       tc.querySelectorAll('.task-list-checkbox').forEach(chk => {
          chk.addEventListener('change', (e) => {
             const path = e.target.dataset.path.split('-').map(Number);
-            const node = getPhaseByPath(job.phases, path);
+            const node = getTaskByPath(job.tasks, path);
             node.progress = e.target.checked ? 100 : 0;
             node.status = e.target.checked ? 'Completed' : 'Not Started';
-            updateParentProgress(job.phases, path);
+            updateParentProgress(job.tasks, path);
             renderTabContent();
          });
          chk.addEventListener('click', (e) => e.stopPropagation());
@@ -633,26 +695,26 @@ export function renderJobDetail(container, { id }) {
       });
 
       tc.querySelector('#btn-add-main-task')?.addEventListener('click', () => {
-         if (!job.phases) job.phases = [];
-         job.phases.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] });
-         taskExpandedPath = [job.phases.length - 1];
+         if (!job.tasks) job.tasks = [];
+         job.tasks.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
+         taskExpandedPath = [job.tasks.length - 1];
          renderTabContent();
       });
 
       tc.querySelectorAll('.btn-add-child-task').forEach(btn => {
          btn.addEventListener('click', (e) => {
             const path = e.currentTarget.dataset.path.split('-').map(Number);
-            const parent = getPhaseByPath(job.phases, path);
-            if (!parent.subPhases) parent.subPhases = [];
-            parent.subPhases.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] });
-            taskExpandedPath = [...path, parent.subPhases.length - 1];
+            const parent = getTaskByPath(job.tasks, path);
+            if (!parent.subTasks) parent.subTasks = [];
+            parent.subTasks.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
+            taskExpandedPath = [...path, parent.subTasks.length - 1];
             renderTabContent();
          });
       });
 
       tc.querySelectorAll('.detail-input').forEach(input => {
          input.addEventListener('change', (e) => {
-            const node = getPhaseByPath(job.phases, taskExpandedPath);
+            const node = getTaskByPath(job.tasks, taskExpandedPath);
             const field = e.target.dataset.field;
             
             if (field === 'progress-check') {
@@ -669,57 +731,217 @@ export function renderJobDetail(container, { id }) {
                node[field] = e.target.value;
             }
 
-            updateParentProgress(job.phases, taskExpandedPath);
+            updateParentProgress(job.tasks, taskExpandedPath);
             renderTabContent();
          });
       });
 
       tc.querySelectorAll('.btn-remove-task').forEach(btn => {
          btn.addEventListener('click', (e) => {
-            if (confirm('Delete this task and all its sub-tasks?')) {
-               const path = e.currentTarget.dataset.path.split('-').map(Number);
+            const path = btn.dataset.path.split('-').map(Number);
+            if (confirm('Are you sure you want to delete this task and all its sub-tasks?')) {
                if (path.length === 1) {
-                  job.phases.splice(path[0], 1);
+                  job.tasks.splice(path[0], 1);
                } else {
                   const parentPath = path.slice(0, -1);
-                  const parent = getPhaseByPath(job.phases, parentPath);
-                  parent.subPhases.splice(path[path.length-1], 1);
-                  updateParentProgress(job.phases, parentPath);
+                  const parent = getTaskByPath(job.tasks, parentPath);
+                  if (parent && parent.subTasks) {
+                     parent.subTasks.splice(path[path.length-1], 1);
+                  }
+                  updateParentProgress(job.tasks, parentPath);
                }
                taskExpandedPath = path.slice(0, -1); // jump up one level
+               isInfoPanelEditing = false;
                renderTabContent();
             }
          });
       });
 
-      tc.querySelector('#btn-save-phases')?.addEventListener('click', () => {
-         store.update('jobs', id, { phases: job.phases });
+      tc.querySelector('#btn-save-tasks')?.addEventListener('click', () => {
+         store.update('jobs', id, { tasks: job.tasks });
          showToast('Tasks saved', 'success');
       });
 
       tc.querySelector('#btn-save-tasklist-template')?.addEventListener('click', () => {
-         const tmplName = prompt('Enter a name for this Tasklist template:');
-         if (tmplName) {
-            function deepClonePhases(phases) {
-               return phases.map(p => ({
-                  ...p,
-                  id: store.generateId(),
-                  subPhases: p.subPhases ? deepClonePhases(p.subPhases) : []
-               }));
-            }
-            store.create('tasklistTemplates', {
-               name: tmplName,
-               phases: deepClonePhases(job.phases),
-               createdAt: new Date().toISOString()
-            });
-            showToast('Tasklist saved as template', 'success');
-         }
+         const content = document.createElement('div');
+         content.innerHTML = `
+           <div class="form-group">
+             <label class="form-label">Template Name</label>
+             <input type="text" class="form-input" id="tmpl-name" placeholder="e.g. Standard 50pt Maintenance" required />
+           </div>
+           <div class="form-group">
+             <label class="form-label">Description</label>
+             <textarea class="form-input" id="tmpl-desc" rows="3" placeholder="Describe when to use this template..."></textarea>
+           </div>
+           <div class="form-group">
+             <label class="form-label">Tags (comma separated)</label>
+             <input type="text" class="form-input" id="tmpl-tags" placeholder="Electrical, Maintenance, Commercial" />
+           </div>
+         `;
+
+         showModal({
+            title: 'Save Tasklist as Template',
+            content,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Save Template', className: 'btn-primary', onClick: (close) => {
+                const name = content.querySelector('#tmpl-name').value;
+                const description = content.querySelector('#tmpl-desc').value;
+                const tags = content.querySelector('#tmpl-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+
+                if (!name) {
+                  showToast('Template name is required', 'error');
+                  return;
+                }
+
+                function deepCloneTasks(tasks) {
+                   return tasks.map(p => ({
+                      ...p,
+                      id: store.generateId(),
+                      status: 'Not Started',
+                      progress: 0,
+                      subTasks: (p.subTasks || p.subPhases) ? deepCloneTasks(p.subTasks || p.subPhases) : []
+                   }));
+                }
+                store.create('taskTemplates', {
+                   name,
+                   description,
+                   tags,
+                   tasks: deepCloneTasks(job.tasks || job.phases || []),
+                   createdAt: new Date().toISOString()
+                });
+                showToast('Tasklist saved as template', 'success');
+                close();
+              }}
+            ]
+         });
       });
+
+      tc.querySelector('#btn-import-tasklist')?.addEventListener('click', () => {
+         const templates = store.getAll('taskTemplates');
+         const otherJobs = store.getAll('jobs').filter(j => j.id !== id && ((j.tasks && j.tasks.length > 0) || (j.phases && j.phases.length > 0)));
+         let currentTab = 'templates';
+
+         const content = document.createElement('div');
+         content.innerHTML = `
+           <div class="tabs" id="import-tabs" style="margin-bottom:12px">
+             <button class="tab active" data-tab="templates">Templates</button>
+             <button class="tab" data-tab="jobs">Other Jobs</button>
+           </div>
+           <div class="toolbar-search" style="margin-bottom:12px">
+             <span class="material-icons-outlined">search</span>
+             <input type="text" id="import-search" placeholder="Search templates..." style="width:100%" />
+           </div>
+           <div id="import-content" style="max-height:400px; overflow-y:auto"></div>
+         `;
+
+         function renderImportList(query = '') {
+           const listDiv = content.querySelector('#import-content');
+           const q = query.toLowerCase();
+
+           if (currentTab === 'templates') {
+             const filtered = templates.filter(t => 
+               t.name.toLowerCase().includes(q) || 
+               (t.description || '').toLowerCase().includes(q) ||
+               (t.tags || []).some(tag => tag.toLowerCase().includes(q))
+             );
+
+             listDiv.innerHTML = filtered.length ? filtered.map(t => {
+               const tasksList = t.tasks || t.phases || [];
+               return `
+               <div class="import-item" data-id="${t.id}" data-type="template" style="padding:12px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; cursor:pointer; transition:all 0.2s">
+                 <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:4px">
+                   <div style="font-weight:600; font-size:14px">${escapeHTML(t.name)}</div>
+                   <div style="font-size:11px; color:var(--text-tertiary)">${tasksList.length} tasks</div>
+                 </div>
+                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; line-height:1.4">${escapeHTML(t.description || 'No description.')}</div>
+                 <div style="display:flex; gap:4px; flex-wrap:wrap">
+                   ${(t.tags || []).map(tag => `<span style="font-size:10px; background:var(--bg-color); padding:2px 6px; border-radius:10px; border:1px solid var(--border-color)">${escapeHTML(tag)}</span>`).join('')}
+                 </div>
+               </div>
+             `}).join('') : `<div class="text-secondary text-center" style="padding:24px">No templates matching "${query}"</div>`;
+           } else {
+             const filtered = otherJobs.filter(j => 
+               j.number.toLowerCase().includes(q) || 
+               j.title.toLowerCase().includes(q) ||
+               j.customerName.toLowerCase().includes(q)
+             );
+
+             listDiv.innerHTML = filtered.length ? filtered.map(j => {
+               const tasksList = j.tasks || j.phases || [];
+               return `
+               <div class="import-item" data-id="${j.id}" data-type="job" style="padding:12px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; cursor:pointer; transition:all 0.2s">
+                 <div style="font-weight:600; font-size:14px; margin-bottom:2px">${escapeHTML(j.number)} - ${escapeHTML(j.title)}</div>
+                 <div style="font-size:12px; color:var(--text-secondary)">${escapeHTML(j.customerName)} · ${tasksList.length} tasks</div>
+               </div>
+             `}).join('') : `<div class="text-secondary text-center" style="padding:24px">No jobs matching "${query}"</div>`;
+           }
+
+            // Direct binding to newly created items to prevent bubbles / type mismatch bugs
+            listDiv.querySelectorAll('.import-item').forEach(item => {
+              item.addEventListener('click', () => {
+                const sourceId = item.dataset.id;
+                const type = item.dataset.type;
+                
+                const freshTemplates = store.getAll('taskTemplates');
+                const freshJobs = store.getAll('jobs');
+                const source = type === 'template' 
+                  ? freshTemplates.find(t => String(t.id) === String(sourceId)) 
+                  : freshJobs.find(j => String(j.id) === String(sourceId));
+                
+                if (source && (source.tasks || source.phases)) {
+                  if (confirm(`Replace current tasklist with "${source.name || source.number}"?`)) {
+                    function deepClone(tasks) {
+                      return tasks.map(p => ({
+                        ...p,
+                        id: store.generateId(),
+                        status: 'Not Started', 
+                        progress: 0,
+                        subTasks: (p.subTasks || p.subPhases) ? deepClone(p.subTasks || p.subPhases) : []
+                      }));
+                    }
+                    job.tasks = deepClone(source.tasks || source.phases);
+                    taskExpandedPath = [0];
+                    taskViewPath = [];
+                    showToast(`Imported ${source.name || source.number}`, 'success');
+                    renderTabContent();
+                    document.querySelector('.modal-overlay')?.remove();
+                  }
+                } else {
+                  showToast('Could not find source data', 'error');
+                }
+              });
+            });
+          }
+
+           renderImportList();
+
+          // Attach tab listeners
+          content.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+              content.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+              tab.classList.add('active');
+              currentTab = tab.dataset.tab;
+              content.querySelector('#import-search').placeholder = currentTab === 'templates' ? 'Search templates...' : 'Search jobs...';
+              renderImportList(content.querySelector('#import-search').value);
+            });
+          });
+
+          content.querySelector('#import-search').addEventListener('input', (e) => {
+            renderImportList(e.target.value);
+          });
+
+                    showModal({
+            title: 'Import Tasklist',
+            content,
+            actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() }]
+          });
+       });
 
       tc.querySelectorAll('.btn-duplicate-task').forEach(btn => {
          btn.addEventListener('click', (e) => {
             const path = e.currentTarget.dataset.path.split('-').map(Number);
-            const nodeToCopy = getPhaseByPath(job.phases, path);
+            const nodeToCopy = getTaskByPath(job.tasks, path);
             
             function cloneNode(node, isRootCopy) {
                return {
@@ -728,19 +950,19 @@ export function renderJobDetail(container, { id }) {
                   name: node.name + (isRootCopy ? ' (Copy)' : ''),
                   progress: 0,
                   status: 'Not Started',
-                  subPhases: node.subPhases ? node.subPhases.map(child => cloneNode(child, false)) : []
+                  subTasks: node.subTasks ? node.subTasks.map(child => cloneNode(child, false)) : []
                };
             }
             
             const cloned = cloneNode(nodeToCopy, true);
             
             if (path.length === 1) {
-               job.phases.splice(path[0] + 1, 0, cloned);
+               job.tasks.splice(path[0] + 1, 0, cloned);
             } else {
                const parentPath = path.slice(0, -1);
-               const parent = getPhaseByPath(job.phases, parentPath);
-               parent.subPhases.splice(path[path.length - 1] + 1, 0, cloned);
-               updateParentProgress(job.phases, parentPath);
+               const parent = getTaskByPath(job.tasks, parentPath);
+               parent.subTasks.splice(path[path.length - 1] + 1, 0, cloned);
+               updateParentProgress(job.tasks, parentPath);
             }
             renderTabContent();
          });
@@ -749,7 +971,7 @@ export function renderJobDetail(container, { id }) {
       tc.querySelectorAll('.btn-book-time').forEach(btn => {
          btn.addEventListener('click', (e) => {
             const path = e.currentTarget.dataset.path.split('-').map(Number);
-            const node = getPhaseByPath(job.phases, path);
+            const node = getTaskByPath(job.tasks, path);
             const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
             
             const allTimesheets = store.getAll('timesheets').filter(t => t.jobId === id);
@@ -773,7 +995,7 @@ export function renderJobDetail(container, { id }) {
                       <tr>
                         <td>${t.startTime ? new Date(t.startTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : new Date(t.date).toLocaleDateString()}</td>
                         <td>${escapeHTML(t.technicianName)}</td>
-                        <td>${escapeHTML(t.phaseName || 'ΓÇö')}</td>
+                        <td>${escapeHTML(t.taskName || t.phaseName || '—')}</td>
                         <td style="font-weight:600">${t.hours}</td>
                       </tr>
                     `).join('') : '<tr><td colspan="4" style="text-align:center" class="text-secondary">No time logged</td></tr>'}
@@ -800,17 +1022,17 @@ export function renderJobDetail(container, { id }) {
             </div>
             `;
             
-            showDrawer({
+            showModal({
               title: 'Book Time: ' + escapeHTML(node.name),
-              content: content.outerHTML,
+              size: 'modal-70',
+              content: content,
               actions: [
                 { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
                 { label: 'Log Time', className: 'btn-primary', onClick: (close) => {
-                  const dOverlay = document.querySelector('.drawer-overlay');
-                  const startVal = dOverlay.querySelector('#bt-start').value;
-                  const finishVal = dOverlay.querySelector('#bt-finish').value;
-                  const techId = dOverlay.querySelector('#bt-tech').value;
-                  const desc = '';
+                  const startVal = document.getElementById('bt-start').value;
+                  const finishVal = document.getElementById('bt-finish').value;
+                  const techId = document.getElementById('bt-tech').value;
+                  const desc = node.name;
                   
                   if (!startVal || !finishVal || !techId) {
                     showToast('Please fill all required fields', 'error');
@@ -831,6 +1053,8 @@ export function renderJobDetail(container, { id }) {
                   store.create('timesheets', {
                     jobId: id,
                     jobNumber: job.number,
+                    taskId: node.id,
+                    taskName: node.name,
                     phaseId: node.id,
                     phaseName: node.name,
                     technicianId: techId,
@@ -840,7 +1064,7 @@ export function renderJobDetail(container, { id }) {
                     finishTime: finishVal,
                     description: desc,
                     hours,
-                    status: 'Approved'
+                    status: 'Pending'
                   });
                   
                   showToast('Time booked successfully', 'success');
@@ -867,7 +1091,8 @@ export function renderJobDetail(container, { id }) {
                         stockId: sMatch ? sMatch.id : null,
                         name: item.description || 'Unknown Material',
                         quantity: item.qty || 1,
-                        unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0
+                        unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
+                        fromQuote: true
                      });
                   }
                });
@@ -891,7 +1116,7 @@ export function renderJobDetail(container, { id }) {
                id: t.technicianId,
                name: t.technicianName || (tech ? tech.name : 'Unknown Tech'),
                hours: 0,
-               rate: tech ? (tech.hourlyRate || 85) : 85
+               rate: tech ? (tech.payRate || tech.hourlyRate || 45) : 45
             };
          }
          loggedLabor[t.technicianId].hours += (t.hours || 0);
@@ -902,34 +1127,75 @@ export function renderJobDetail(container, { id }) {
          totalLaborCost += (t.hours * t.rate);
       });
 
-      // Determine material cost
+      // ---- NEW: Calculate Asset Recovery Costs ----
+      const assetUsage = store.getAll('assetUsage').filter(au => au.jobId === id);
+      const allAssets = store.getAll('assets');
+      let totalAssetCost = 0;
+      const usageList = assetUsage.map(au => {
+         const asset = allAssets.find(a => a.id === au.assetId);
+         const rate = au.recoveryRate || (asset ? asset.recoveryRate : 0) || 0;
+         const cost = au.hours * rate;
+         totalAssetCost += cost;
+         return { ...au, rate, cost };
+      });
+
+      // Determine material cost (Internal)
       const matCost = job.materials.reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
       const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
       const totalMatCost = matCost + additionalMatCost;
 
+      // Determine billable material cost (with markup tiers)
+      const settings = store.getSettings();
+      const billableMatTotal = calculateTotalBillableMaterials(job.materials, settings);
+      // For additional costs, we apply the default markup or minimum
+      const billableAdditional = calculateBillableMaterialPrice(additionalMatCost, settings);
+      const totalBillableMat = billableMatTotal + (additionalMatCost > 0 ? billableAdditional - additionalMatCost : 0) + additionalMatCost;
+
       // Update job properties silently if they changed
-      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost) {
+      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost || job.assetCost !== totalAssetCost) {
           job.laborCost = totalLaborCost;
           job.estimatedHours = totalLoggedHours;
           job.materialCost = totalMatCost;
-          store.update('jobs', id, { laborCost: totalLaborCost, estimatedHours: totalLoggedHours, materialCost: totalMatCost });
+          job.assetCost = totalAssetCost;
+          store.update('jobs', id, { 
+            laborCost: totalLaborCost, 
+            estimatedHours: totalLoggedHours, 
+            materialCost: totalMatCost,
+            assetCost: totalAssetCost
+          });
       }
+
+      const currentProfile = settings.laborRates.find(r => r.id === job.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
+      const billableLabor = totalLoggedHours * (currentProfile ? currentProfile.rate : 85);
+      const minFee = currentProfile ? (currentProfile.minCallOutFee || 0) : 0;
+      const finalBillableLabor = Math.max(billableLabor, minFee);
+      const billableTotal = finalBillableLabor + totalBillableMat;
+      
+      // True Profit = Revenue - (Labor Cost + Material Cost + Asset Recovery)
+      const totalInternalCost = totalLaborCost + totalMatCost + totalAssetCost;
+      const profit = billableTotal - totalInternalCost;
+      const margin = billableTotal > 0 ? (profit / billableTotal) * 100 : 0;
 
       tc.innerHTML = `
         <div class="grid-2">
           <div class="card">
-            <div class="card-header"><h4>Technicians & Internal Labor (Auto-Synced)</h4></div>
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+              <h4 style="margin:0">Technicians & Internal Cost</h4>
+              <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
+                Actual Cost (Tech Pay)
+              </div>
+            </div>
             <div class="card-body">
               <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
-                Labor hours are automatically calculated based on timesheets booked against this job's tasks.
+                Labor costs are based on individual technician pay rates.
               </div>
               <table class="data-table" style="font-size:13px">
                 <thead>
                   <tr>
                     <th>Technician</th>
                     <th style="width:80px">Hours</th>
-                    <th style="width:80px">Rate</th>
-                    <th style="width:100px">Total Cost</th>
+                    <th style="width:80px">Pay Rate</th>
+                    <th style="width:100px">Actual Cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -937,19 +1203,93 @@ export function renderJobDetail(container, { id }) {
                     <tr>
                       <td>${escapeHTML(t.name)}</td>
                       <td style="font-weight:600">${t.hours.toFixed(2)}</td>
-                      <td>$${t.rate.toFixed(2)}</td>
-                      <td style="font-weight:600">$${(t.hours * t.rate).toFixed(2)}</td>
+                      <td>$${(t.payRate || t.rate).toFixed(2)}</td>
+                      <td style="font-weight:600">$${(t.hours * (t.payRate || t.rate)).toFixed(2)}</td>
                     </tr>
                   `).join('')}
-                  ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet. Book time in the TaskLists tab.</td></tr>' : ''}
+                  ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet.</td></tr>' : ''}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+              <h4 style="margin:0">Asset Recovery</h4>
+              <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
+                Internal Recovery (Tool/Van)
+              </div>
+            </div>
+            <div class="card-body">
+              <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
+                Calculated as (Asset Recovery Rate × Hours Used).
+              </div>
+              <table class="data-table" style="font-size:13px">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th style="width:80px">Hours</th>
+                    <th style="width:80px">Rate</th>
+                    <th style="width:100px">Recovery</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${usageList.map(u => `
+                    <tr>
+                      <td>${escapeHTML(u.assetName)}</td>
+                      <td style="font-weight:600">${u.hours.toFixed(2)}</td>
+                      <td>$${u.rate.toFixed(2)}</td>
+                      <td style="font-weight:600">$${u.cost.toFixed(2)}</td>
+                    </tr>
+                  `).join('')}
+                  ${usageList.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No asset usage recorded.</td></tr>' : ''}
+                </tbody>
+                ${usageList.length > 0 ? `
+                  <tfoot>
+                    <tr style="border-top:2px solid var(--border-color)">
+                      <td colspan="3" style="text-align:right; font-weight:700">Total Asset Recovery:</td>
+                      <td style="font-weight:700; color:var(--color-primary)">$${totalAssetCost.toFixed(2)}</td>
+                    </tr>
+                  </tfoot>
+                ` : ''}
+              </table>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header"><h4>Billing & Labor Profiles</h4></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Labour Rate Profile (Billable)</label>
+                <select class="form-select" id="inp-labor-profile">
+                  ${settings.laborRates.map(r => `<option value="${r.id}" ${currentProfile.id === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
+                </select>
+                <div style="margin-top:12px; padding:12px; background:var(--bg-color); border-radius:6px; border:1px solid var(--border-color); font-size:13px">
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px">
+                    <span class="text-secondary">Charge-out Rate:</span>
+                    <span class="font-medium">$${currentProfile.rate.toFixed(2)}/hr</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px">
+                    <span class="text-secondary">Min Call-out Fee:</span>
+                    <span class="font-medium">$${(currentProfile.minCallOutFee || 0).toFixed(2)}</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border-color); margin-top:8px; padding-top:8px">
+                    <span class="text-secondary">Billable Labor:</span>
+                    <span class="font-medium" style="color:var(--color-primary)">$${finalBillableLabor.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           
           <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
             <div class="card">
-              <div class="card-header"><h4>Material Costs</h4></div>
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+                <h4 style="margin:0">Material Costs</h4>
+                <button class="btn btn-ghost btn-sm" id="btn-refresh-materials" title="Sync materials with the linked quote">
+                  <span class="material-icons-outlined" style="font-size:16px; margin-right:4px;">sync</span> Sync Quote
+                </button>
+              </div>
               <div class="card-body">
                 <div id="materials-container" style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
                   ${job.materials.map((m, i) => `
@@ -985,31 +1325,19 @@ export function renderJobDetail(container, { id }) {
               <div class="card-header"><h4>Job Cost Summary</h4></div>
               <div class="card-body">
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Logged Hours</span><span id="sum-hours" class="font-medium">${totalLoggedHours.toFixed(2)}</span>
+                  <span class="text-secondary">Logged Hours</span><span class="font-medium">${totalLoggedHours.toFixed(2)}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Labor Cost</span><span id="sum-labor" class="font-medium">$${totalLaborCost.toFixed(2)}</span>
+                  <span class="text-secondary">Actual Internal Cost</span><span class="font-medium">$${(totalLaborCost + totalMatCost).toFixed(2)}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Material Cost</span><span id="sum-mat" class="font-medium">$${totalMatCost.toFixed(2)}</span>
+                  <span class="text-secondary">Total Billable Amount</span><span class="font-medium" style="color:var(--color-primary)">$${billableTotal.toFixed(2)}</span>
                 </div>
-                <div style="display:flex;justify-content:space-between;padding:12px 0;font-size:var(--font-size-lg);font-weight:700">
-                  <span>Total Internal Cost</span><span id="sum-total">$${(totalLaborCost + totalMatCost).toFixed(2)}</span>
+                <div style="margin-top:16px; padding:16px; border-radius:8px; background:${profit >= 0 ? 'var(--color-success-bg)' : 'var(--color-danger-bg)'}; color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}; display:flex; flex-direction:column; align-items:center; gap:4px">
+                  <div style="font-size:12px; opacity:0.8; text-transform:uppercase; letter-spacing:0.5px">Est. Profit / Loss</div>
+                  <div style="font-size:24px; font-weight:700">$${profit.toFixed(2)}</div>
+                  <div style="font-size:14px; font-weight:600">${margin.toFixed(1)}% Margin</div>
                 </div>
-                ${job.quoteId ? (() => {
-                  const q = store.getById('quotes', job.quoteId);
-                  if (!q) return '';
-                  const profit = (q.subtotal || 0) - (totalLaborCost + totalMatCost);
-                  const margin = (q.subtotal || 0) > 0 ? (profit / q.subtotal) * 100 : 0;
-                  return `
-                    <div style="display:flex;justify-content:space-between;padding:12px 0;border-top:2px solid var(--border-color);margin-top:8px">
-                      <span class="text-secondary">Quoted Revenue (Ex. Tax)</span><span class="font-medium">$${(q.subtotal || 0).toFixed(2)}</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;padding:12px 0;font-size:var(--font-size-lg);font-weight:700;color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
-                      <span>Est. Profit</span><span>$${profit.toFixed(2)} (${margin.toFixed(1)}%)</span>
-                    </div>
-                  `;
-                })() : ''}
               </div>
               <div class="card-footer">
                 <button class="btn btn-primary" id="btn-save-costs" style="width:100%"><span class="material-icons-outlined">save</span> Save Additional Costs</button>
@@ -1019,6 +1347,12 @@ export function renderJobDetail(container, { id }) {
         </div>
       `;
 
+      tc.querySelector('#inp-labor-profile')?.addEventListener('change', (e) => {
+        job.laborRateProfileId = e.target.value;
+        store.update('jobs', id, { laborRateProfileId: job.laborRateProfileId });
+        renderTabContent();
+      });
+
       tc.addEventListener('click', (e) => {
         const removeMatBtn = e.target.closest('.btn-remove-mat');
         if (removeMatBtn) {
@@ -1026,6 +1360,39 @@ export function renderJobDetail(container, { id }) {
           job.materials.splice(idx, 1);
           renderTabContent();
         }
+      });
+
+      tc.querySelector('#btn-refresh-materials')?.addEventListener('click', () => {
+         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
+         const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
+         
+         if (!acceptedQuote) {
+            showToast('No linked accepted quote found.', 'error');
+            return;
+         }
+
+         const manualItems = (job.materials || []).filter(m => !m.fromQuote);
+         const newQuoteItems = [];
+         
+         acceptedQuote.sections.forEach(sec => {
+            (sec.lineItems || []).forEach(item => {
+               if (item.type === 'material') {
+                  const sMatch = store.getAll('stock').find(s => s.name === item.description);
+                  newQuoteItems.push({
+                     stockId: sMatch ? sMatch.id : null,
+                     name: item.description || 'Unknown Material',
+                     quantity: item.qty || 1,
+                     unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
+                     fromQuote: true
+                  });
+               }
+            });
+         });
+
+         job.materials = [...newQuoteItems, ...manualItems];
+         store.update('jobs', id, { materials: job.materials });
+         showToast('Materials refreshed from Quote', 'success');
+         renderTabContent();
       });
 
       function updateMaterialCostLive() {
@@ -1061,7 +1428,8 @@ export function renderJobDetail(container, { id }) {
           stockId: stockItem.id,
           name: stockItem.name,
           quantity: qty,
-          unitCost: stockItem.costPrice || stockItem.unitPrice || 0
+          unitCost: stockItem.costPrice || stockItem.unitPrice || 0,
+          fromQuote: false
         });
 
         showToast(`Added ${qty}x ${stockItem.name}`, 'success');
@@ -1307,22 +1675,78 @@ export function renderJobDetail(container, { id }) {
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
-              <thead><tr><th>Date</th><th>Technician</th><th>Description</th><th style="text-align:right">Hours</th><th>Status</th></tr></thead>
+              <thead><tr><th>Date</th><th>Technician</th><th>Description</th><th style="text-align:right">Hours</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
-                ${timesheets.length ? timesheets.map(t => `
+                ${timesheets.length ? timesheets.map(t => {
+                  const canEdit = currentUser.role === 'admin' || (t.technicianId === currentUser.id && t.status !== 'Approved');
+                  return `
                   <tr>
                     <td>${new Date(t.date).toLocaleDateString()}</td>
                     <td>${escapeHTML(t.technicianName)}</td>
                     <td class="text-secondary">${escapeHTML(t.description || '—')}</td>
                     <td style="text-align:right;font-weight:600">${t.hours}</td>
                     <td><span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">${t.status}</span></td>
+                    <td style="text-align:right">
+                      ${canEdit ? `
+                        <button class="btn btn-ghost btn-sm btn-icon btn-edit-ts-job" data-id="${t.id}">
+                          <span class="material-icons-outlined" style="font-size:16px">edit</span>
+                        </button>
+                      ` : ''}
+                    </td>
                   </tr>
-                `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No time logged yet</td></tr>'}
+                `;}).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No time logged yet</td></tr>'}
               </tbody>
             </table>
           </div>
         </div>
       `;
+
+      tc.querySelectorAll('.btn-edit-ts-job').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tsId = btn.dataset.id;
+          const ts = store.getById('timesheets', tsId);
+          if (!ts) return;
+
+          const content = document.createElement('div');
+          content.innerHTML = `
+            <div class="form-group">
+              <label class="form-label">Date</label>
+              <input type="date" class="form-input" id="edit-ts-date" value="${ts.date}" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Hours</label>
+              <input type="number" class="form-input" id="edit-ts-hours" value="${ts.hours}" step="0.25" min="0" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <textarea class="form-input" id="edit-ts-desc" rows="3">${escapeHTML(ts.description || '')}</textarea>
+            </div>
+          `;
+
+          showModal({
+            title: 'Edit Timesheet Entry',
+            content,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Save Changes', className: 'btn-primary', onClick: (close) => {
+                const date = document.getElementById('edit-ts-date').value;
+                const hours = parseFloat(document.getElementById('edit-ts-hours').value);
+                const description = document.getElementById('edit-ts-desc').value;
+
+                if (!date || isNaN(hours)) {
+                  showToast('Please enter valid date and hours', 'error');
+                  return;
+                }
+
+                store.update('timesheets', tsId, { date, hours, description });
+                showToast('Timesheet updated', 'success');
+                close();
+                renderTabContent();
+              }}
+            ]
+          });
+        });
+      });
 
       tc.querySelector('#btn-log-time-tab')?.addEventListener('click', () => {
         const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
@@ -1593,14 +2017,14 @@ export function renderJobDetail(container, { id }) {
         </div>
       `;
 
-      function createDraftInvoice(type, lineItems, subtotal) {
+      function createDraftInvoice(type, sections, subtotal) {
         const inv = store.create('invoices', {
           number: `INV-${Date.now().toString().slice(-6)}`,
           invoiceType: type,
           jobId: id, jobNumber: job.number,
           customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
           status: 'Draft',
-          lineItems: lineItems,
+          sections: sections,
           subtotal: subtotal, tax: subtotal * 0.1, total: subtotal * 1.1,
           issueDate: new Date().toISOString(), dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
         });
@@ -1609,36 +2033,75 @@ export function renderJobDetail(container, { id }) {
         router.navigate(`/invoices/${inv.id}`);
       }
 
-      function getJobTotalCosts() {
-        let lineItems = [];
+      function getJobInvoiceData() {
+        let sections = [];
         let subtotal = 0;
+        
+        // 1. Try to pull from Quote Sections first
         if (job.quoteId) {
           const quote = store.getById('quotes', job.quoteId);
-          if (quote && quote.lineItems && quote.lineItems.length > 0) {
-            lineItems = quote.lineItems.map(i => ({...i}));
-            subtotal = quote.subtotal || quote.lineItems.reduce((s, i) => s + (i.total || 0), 0);
+          if (quote && quote.sections && quote.sections.length > 0) {
+            sections = JSON.parse(JSON.stringify(quote.sections));
+            subtotal = quote.subtotal || 0;
+          } else if (quote && quote.lineItems) {
+            // Legacy quote fallback
+            sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(quote.lineItems)) }];
+            subtotal = quote.subtotal || 0;
           }
         }
-        if (lineItems.length === 0) {
-          const lCost = job.laborCost || 0;
-          const mCost = job.materialCost || 0;
-          lineItems = [
-            { description: `${job.title} - Labor`, type: 'labor', qty: 1, rate: lCost, total: lCost },
-            { description: `${job.title} - Materials`, type: 'material', qty: 1, rate: mCost, total: mCost },
-          ];
-          subtotal = lCost + mCost;
+        
+        // 2. If no quote or no items, use Job Tasks
+        if (sections.length === 0) {
+          const tasksSource = job.tasks || job.phases || [];
+          if (tasksSource.length > 0) {
+            sections = tasksSource.map(p => ({
+              id: store.generateId(),
+              name: p.name,
+              lineItems: [
+                { description: `${p.name} - Labor & Materials`, type: 'other', qty: 1, rate: 0, total: 0 }
+              ],
+              subtotal: 0
+            }));
+            // Add a catch-all for existing costs if no quote
+            const lCost = job.laborCost || 0;
+            const mCost = job.materialCost || 0;
+            if (lCost > 0 || mCost > 0) {
+               sections[0].lineItems.push({ description: 'Estimated Job Labor', type: 'labor', qty: 1, rate: lCost, total: lCost });
+               sections[0].lineItems.push({ description: 'Estimated Job Materials', type: 'material', qty: 1, rate: mCost, total: mCost });
+            }
+          } else {
+            // Absolute fallback
+            const lCost = job.laborCost || 0;
+            const mCost = job.materialCost || 0;
+            sections = [{
+              id: store.generateId(),
+              name: 'General Items',
+              lineItems: [
+                { description: `${job.title} - Labor`, type: 'labor', qty: 1, rate: lCost, total: lCost },
+                { description: `${job.title} - Materials`, type: 'material', qty: 1, rate: mCost, total: mCost },
+              ]
+            }];
+          }
+          // Calculate subtotal for fallback cases
+          subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
         }
-        return { lineItems, subtotal };
+        
+        return { sections, subtotal };
       }
 
       tc.querySelector('#btn-create-standard-invoice')?.addEventListener('click', () => {
-        const { lineItems, subtotal } = getJobTotalCosts();
-        createDraftInvoice('Standard', lineItems, subtotal);
+        const { sections, subtotal } = getJobInvoiceData();
+        createDraftInvoice('Standard', sections, subtotal);
       });
 
       tc.querySelector('#btn-create-deposit-invoice')?.addEventListener('click', () => {
-        const lineItems = [{ description: `Deposit for Job ${job.number}`, type: 'other', qty: 1, rate: 0, total: 0 }];
-        createDraftInvoice('Deposit', lineItems, 0);
+        const sections = [{ 
+          id: store.generateId(),
+          name: 'Deposit',
+          lineItems: [{ description: `Deposit for Job ${job.number}`, type: 'other', qty: 1, rate: 0, total: 0 }],
+          subtotal: 0
+        }];
+        createDraftInvoice('Deposit', sections, 0);
       });
 
       tc.querySelector('#btn-create-progress-invoice')?.addEventListener('click', () => {
@@ -1657,10 +2120,15 @@ export function renderJobDetail(container, { id }) {
             { label: 'Create', className: 'btn-primary', onClick: (close) => {
               const pct = parseFloat(document.getElementById('progress-percent').value) || 0;
               if (pct <= 0 || pct > 100) { showToast('Enter a valid percentage (1-100)', 'error'); return; }
-              const { subtotal } = getJobTotalCosts();
+              const { subtotal } = getJobInvoiceData();
               const partialAmount = subtotal * (pct / 100);
-              const lineItems = [{ description: `Progress Payment (${pct}% of job)`, type: 'other', qty: 1, rate: partialAmount, total: partialAmount }];
-              createDraftInvoice('Progress', lineItems, partialAmount);
+              const sections = [{ 
+                id: store.generateId(),
+                name: `Progress Payment (${pct}%)`,
+                lineItems: [{ description: `Progress Payment (${pct}% of job)`, type: 'other', qty: 1, rate: partialAmount, total: partialAmount }],
+                subtotal: partialAmount
+              }];
+              createDraftInvoice('Progress', sections, partialAmount);
               close();
             }}
           ]
@@ -1702,3 +2170,242 @@ export function renderJobDetail(container, { id }) {
 function r(label, value) {
   return `<div style="display:flex;gap:8px"><span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span><span>${value}</span></div>`;
 }
+  function renderFormsTab(tc) {
+    const instances = store.getAll('formInstances').filter(fi => fi.jobId === id);
+    const templates = store.getAll('formTemplates');
+
+    tc.innerHTML = `
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+          <h4 style="margin:0">Job Compliance Forms</h4>
+          <button class="btn btn-primary btn-sm" id="btn-attach-form">
+            <span class="material-icons-outlined" style="font-size:16px">add</span> Attach Form
+          </button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Form Name</th>
+                <th>Status</th>
+                <th>Submitted By</th>
+                <th>Date</th>
+                <th style="width:100px; text-align:right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${instances.map(fi => {
+                const template = templates.find(t => t.id === fi.templateId);
+                const isComplete = fi.status === 'Completed';
+                const submitter = fi.submittedBy ? store.getById('people', fi.submittedBy) : null;
+                return `
+                  <tr>
+                    <td class="font-medium">${escapeHTML(template?.name || 'Unknown Form')}</td>
+                    <td><span class="badge ${isComplete ? 'badge-success' : 'badge-warning'}">${fi.status}</span></td>
+                    <td>${submitter ? escapeHTML(`${submitter.firstName} ${submitter.lastName}`) : '—'}</td>
+                    <td style="font-size:12px; color:var(--text-tertiary)">${fi.submittedAt ? new Date(fi.submittedAt).toLocaleDateString() : '—'}</td>
+                    <td style="text-align:right">
+                      <div style="display:flex; gap:4px; justify-content:flex-end">
+                        <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm fill-form" data-id="${fi.id}">
+                          <span class="material-icons-outlined" style="font-size:16px">${isComplete ? 'visibility' : 'edit_note'}</span>
+                        </button>
+                        ${!isComplete ? `<button class="btn btn-ghost btn-icon btn-sm remove-form-instance" data-id="${fi.id}" style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>` : ''}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+              ${!instances.length ? '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-tertiary)">No forms attached to this job. Click "Attach Form" to add one.</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    tc.querySelector('#btn-attach-form').addEventListener('click', () => showAttachFormModal());
+
+    tc.querySelectorAll('.fill-form').forEach(btn => {
+      btn.addEventListener('click', () => showFillFormModal(btn.dataset.id));
+    });
+
+    tc.querySelectorAll('.remove-form-instance').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to remove this form from the job?')) {
+          const fid = btn.dataset.id;
+          const all = store.getAll('formInstances');
+          store.save('formInstances', all.filter(i => i.id !== fid));
+          renderFormsTab(tc);
+        }
+      });
+    });
+  }
+
+  function showAttachFormModal() {
+    const allTemplates = store.getAll('formTemplates');
+    const existingInstances = store.getAll('formInstances').filter(fi => fi.jobId === id);
+    const existingTemplateIds = existingInstances.map(fi => fi.templateId);
+    
+    const content = document.createElement('div');
+    content.style.minWidth = '450px';
+    
+    content.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:12px">
+        ${allTemplates.map(t => {
+          const alreadyAttached = existingTemplateIds.includes(t.id);
+          return `
+            <div class="card attach-template-item ${alreadyAttached ? 'disabled' : ''}" data-id="${t.id}" style="cursor:${alreadyAttached ? 'not-allowed' : 'pointer'}; opacity:${alreadyAttached ? '0.6' : '1'}; border:1px solid var(--border-color); transition:all 0.2s">
+              <div class="card-body" style="padding:12px; display:flex; justify-content:space-between; align-items:center">
+                <div>
+                  <div style="font-weight:600; font-size:14px">${escapeHTML(t.name)}</div>
+                  <div style="font-size:12px; color:var(--text-tertiary)">${(t.sections || []).reduce((sum, s) => sum + s.fields.length, 0)} fields</div>
+                </div>
+                ${alreadyAttached ? '<span class="badge badge-neutral">Already Attached</span>' : '<span class="material-icons-outlined" style="color:var(--color-primary)">add_circle</span>'}
+              </div>
+            </div>
+          `;
+        }).join('')}
+        ${!allTemplates.length ? '<div class="text-center text-tertiary">No templates available.</div>' : ''}
+      </div>
+    `;
+
+    content.querySelectorAll('.attach-template-item:not(.disabled)').forEach(el => {
+      el.addEventListener('click', () => {
+        const tid = el.dataset.id;
+        const all = store.getAll('formInstances');
+        all.push({
+          id: 'fi_' + Math.random().toString(36).substr(2, 9),
+          jobId: id,
+          templateId: tid,
+          responses: {},
+          status: 'Pending',
+          createdAt: new Date().toISOString()
+        });
+        store.save('formInstances', all);
+        showToast('Form attached to job', 'success');
+        document.querySelector('.modal-overlay')?.remove();
+        renderFormsTab(container.querySelector('#tab-content'));
+      });
+    });
+
+    showModal({
+      title: 'Attach Compliance Form',
+      content,
+      actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: c => c() }]
+    });
+  }
+
+  function showFillFormModal(instanceId) {
+    const instances = store.getAll('formInstances');
+    const fi = instances.find(i => i.id === instanceId);
+    const template = store.getById('formTemplates', fi.templateId);
+    const isComplete = fi.status === 'Completed';
+
+    const content = document.createElement('div');
+    content.style.minWidth = '600px';
+
+    content.innerHTML = `
+      <div style="margin-bottom:24px; border-bottom:1px solid var(--border-color); padding-bottom:16px">
+        <h3 style="margin:0">${escapeHTML(template.name)}</h3>
+        <div style="font-size:14px; color:var(--text-secondary); margin-top:6px">${escapeHTML(template.description || '')}</div>
+      </div>
+      <form id="active-job-form">
+        <div style="display:flex; flex-direction:column; gap:32px">
+          ${(template.sections || []).map(sec => `
+            <div class="form-section">
+              <div style="background:var(--bg-color); padding:8px 16px; border-radius:6px; margin-bottom:16px; border-left:4px solid var(--color-primary)">
+                <h4 style="margin:0; font-size:15px; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(sec.title)}</h4>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:16px; padding:0 8px">
+                ${sec.fields.map(f => {
+                  const val = fi.responses[f.id] || '';
+                  let fieldHtml = '';
+                  
+                  if (f.type === 'text') {
+                     fieldHtml = `<input class="form-input" name="${f.id}" value="${escapeHTML(val)}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
+                  } else if (f.type === 'textarea') {
+                     fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>${escapeHTML(val)}</textarea>`;
+                  } else if (f.type === 'checkbox') {
+                     fieldHtml = `
+                       <label style="display:flex; align-items:center; gap:10px; cursor:pointer">
+                         <input type="checkbox" name="${f.id}" ${val ? 'checked' : ''} ${isComplete ? 'disabled' : ''} style="width:18px; height:18px" />
+                         <span style="font-size:14px">${f.label}</span>
+                       </label>`;
+                  } else if (f.type === 'select') {
+                     fieldHtml = `
+                       <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>
+                         <option value="">Select option...</option>
+                         ${(f.options || []).map(opt => `<option value="${escapeHTML(opt)}" ${val === opt ? 'selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
+                       </select>`;
+                  } else if (f.type === 'date') {
+                     fieldHtml = `<input type="date" class="form-input" name="${f.id}" value="${val}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
+                  } else if (f.type === 'signature') {
+                     fieldHtml = `
+                       <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic">
+                         ${val ? `<span style="font-family:'Brush Script MT', cursive; font-size:24px; color:var(--text-primary)">${escapeHTML(val)}</span>` : 'Digitally Signed on submission'}
+                       </div>`;
+                  }
+
+                  return `
+                    <div class="form-group" style="margin:0">
+                      ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(f.label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
+                      ${fieldHtml}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </form>
+    `;
+
+    showModal({
+      title: isComplete ? 'View Form Response' : 'Complete Job Form',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        !isComplete ? { label: 'Submit Form', className: 'btn-primary', onClick: c => {
+          const form = content.querySelector('#active-job-form');
+          if (!form.checkValidity()) return form.reportValidity();
+          
+          const formData = new FormData(form);
+          const responses = {};
+          (template.sections || []).forEach(sec => {
+            sec.fields.forEach(f => {
+              if (f.type === 'checkbox') responses[f.id] = formData.has(f.id);
+              else responses[f.id] = formData.get(f.id);
+              
+              if (f.type === 'signature') responses[f.id] = JSON.parse(sessionStorage.getItem('currentUser'))?.name || 'Unknown';
+            });
+          });
+
+          const currentInstances = store.getAll('formInstances');
+          const idx = currentInstances.findIndex(i => i.id === instanceId);
+          currentInstances[idx] = {
+            ...currentInstances[idx],
+            responses,
+            status: 'Completed',
+            submittedBy: JSON.parse(sessionStorage.getItem('currentUser'))?.id,
+            submittedAt: new Date().toISOString()
+          };
+          
+          store.save('formInstances', currentInstances);
+          showToast('Form submitted successfully', 'success');
+          c();
+          renderFormsTab(container.querySelector('#tab-content'));
+          
+          // Log activity
+          const activity = store.getAll('activity') || [];
+          activity.push({
+            id: Date.now(),
+            jobId: id,
+            type: 'form_submission',
+            text: `Form "${template.name}" submitted.`,
+            user: JSON.parse(sessionStorage.getItem('currentUser'))?.name,
+            timestamp: new Date().toISOString()
+          });
+          store.save('activity', activity);
+        }} : null
+      ].filter(Boolean)
+    });
+  }

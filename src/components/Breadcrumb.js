@@ -52,7 +52,7 @@ export function createBreadcrumb(path) {
   // Click handlers
   container.querySelectorAll('.breadcrumb-item[data-path]').forEach(item => {
     item.addEventListener('click', () => {
-      const { router } = window.__simproApp || {};
+      const { router } = window.__fieldForge || {};
       if (router) router.navigate(item.dataset.path);
     });
   });

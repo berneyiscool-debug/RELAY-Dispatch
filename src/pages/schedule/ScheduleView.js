@@ -715,7 +715,7 @@ export function renderScheduleView(container) {
               startTime: startTimeStr,
               finishTime: finishTimeStr,
               hours: duration,
-              status: 'Approved'
+              status: 'Pending'
             });
 
             if (dragState.type === 'unscheduled') {

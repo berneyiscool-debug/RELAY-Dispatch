@@ -65,10 +65,20 @@ export function renderStockForm(container, { id }) {
           <div class="form-group">
             <label class="form-label">Location</label>
             <select class="form-select" name="location">
-              ${['Warehouse A','Warehouse B','On Order'].map(l => `<option ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+              <option value="Main Warehouse" ${item.location === 'Main Warehouse' ? 'selected' : ''}>Main Warehouse</option>
+              <optgroup label="Warehouses">
+                ${['Warehouse A', 'Warehouse B'].map(l => `<option ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+              </optgroup>
+              <optgroup label="Vehicles">
+                ${store.getAll('technicians').map(t => {
+                  const locName = `Vehicle - ${t.name}`;
+                  return `<option value="${locName}" ${item.location === locName ? 'selected' : ''}>${locName}</option>`;
+                }).join('')}
+              </optgroup>
               <optgroup label="Assets">
                 ${assets.map(a => `<option value="${a.name}" ${item.location === a.name ? 'selected' : ''}>${a.name}</option>`).join('')}
               </optgroup>
+              <option value="On Order" ${item.location === 'On Order' ? 'selected' : ''}>On Order</option>
             </select>
           </div>
         </form>

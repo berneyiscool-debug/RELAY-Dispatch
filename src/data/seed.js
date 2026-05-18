@@ -1,9 +1,9 @@
 // ============================================
-// SIMPRO CLONE — SEED DATA
+// FIELDFORGE — SEED DATA
 // ============================================
 
 import { store } from './store.js';
-import { MODULE_PERMS } from '../pages/Settings.js';
+import { MODULE_PERMS } from '../utils/permissions.js';
 
 // ---- Build granular permissions helper (mirrors Settings.js) ----
 function buildGranularPerms(valueFn) {
@@ -83,12 +83,12 @@ const customerNames = [
 ];
 
 const technicians = [
-  { id: 'tech1', name: 'Mark Sullivan',  role: 'Senior Electrician',       color: '#3B82F6', userTypeId: 'ut_admin'   },
-  { id: 'tech2', name: 'Jake Patterson', role: 'Operations Manager',        color: '#10B981', userTypeId: 'ut_manager' },
-  { id: 'tech3', name: 'Ryan Cooper',    role: 'HVAC Technician',            color: '#F59E0B', userTypeId: 'ut_tech'    },
-  { id: 'tech4', name: 'Tom Bradley',    role: 'Fire Systems Specialist',    color: '#EF4444', userTypeId: 'ut_tech'    },
-  { id: 'tech5', name: 'Nathan Brooks',  role: 'Security Installer',         color: '#8B5CF6', userTypeId: 'ut_tech'    },
-  { id: 'tech6', name: 'Carlos Ramírez', role: 'Office Administrator',       color: '#EC4899', userTypeId: 'ut_office'  },
+  { id: 'tech1', name: 'Mark Sullivan',  role: 'Senior Electrician',       color: '#3B82F6', userTypeId: 'ut_admin',   payRate: 95.00 },
+  { id: 'tech2', name: 'Jake Patterson', role: 'Operations Manager',        color: '#10B981', userTypeId: 'ut_manager', payRate: 85.00 },
+  { id: 'tech3', name: 'Ryan Cooper',    role: 'HVAC Technician',           color: '#F59E0B', userTypeId: 'ut_tech',    payRate: 58.00 },
+  { id: 'tech4', name: 'Tom Bradley',    role: 'Fire Systems Specialist',   color: '#EF4444', userTypeId: 'ut_tech',    payRate: 62.00 },
+  { id: 'tech5', name: 'Nathan Brooks',  role: 'Security Installer',        color: '#8B5CF6', userTypeId: 'ut_tech',    payRate: 55.00 },
+  { id: 'tech6', name: 'Carlos Ramírez', role: 'Office Administrator',      color: '#EC4899', userTypeId: 'ut_office',  payRate: 42.00 },
 ];
 
 const jobTypes = ['Electrical', 'Plumbing', 'HVAC', 'Fire Protection', 'Security', 'General Maintenance'];
@@ -139,6 +139,56 @@ function generateCustomers() {
   });
 }
 
+function generateTaskTemplates() {
+  return [
+    {
+      id: 'tmpl_elec_std',
+      name: 'Standard Electrical Inspection',
+      description: 'A comprehensive tasklist for residential or commercial electrical safety inspections.',
+      tags: ['Electrical', 'Maintenance', 'Compliance'],
+      createdAt: new Date().toISOString(),
+      tasks: [
+        {
+          id: 'p1', name: 'Main Board Inspection', status: 'Not Started', progress: 0,
+          subTasks: [
+            { id: 'sp1', name: 'RCD Testing', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0 },
+            { id: 'sp2', name: 'Terminal Tightness', estimatedHours: 0.5, people: 1, status: 'Not Started', progress: 0 }
+          ]
+        },
+        {
+          id: 'p2', name: 'Circuit Testing', status: 'Not Started', progress: 0,
+          subTasks: [
+            { id: 'sp3', name: 'Insulation Resistance', estimatedHours: 2, people: 1, status: 'Not Started', progress: 0 },
+            { id: 'sp4', name: 'Earth Loop Impedance', estimatedHours: 1.5, people: 1, status: 'Not Started', progress: 0 }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'tmpl_solar_maint',
+      name: 'Solar Panel Maintenance',
+      description: 'Annual maintenance checklist for PV solar systems.',
+      tags: ['Solar', 'Renewable', 'Maintenance'],
+      createdAt: new Date().toISOString(),
+      tasks: [
+        {
+          id: 'p3', name: 'Physical Inspection', status: 'Not Started', progress: 0,
+          subTasks: [
+            { id: 'sp5', name: 'Module Cleaning', estimatedHours: 3, people: 2, status: 'Not Started', progress: 0 },
+            { id: 'sp6', name: 'Mounting Hardware Check', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0 }
+          ]
+        },
+        {
+          id: 'p4', name: 'Electrical Performance', status: 'Not Started', progress: 0,
+          subTasks: [
+            { id: 'sp7', name: 'Inverter Diagnostics', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0 },
+            { id: 'sp8', name: 'String Voltage Testing', estimatedHours: 2, people: 1, status: 'Not Started', progress: 0 }
+          ]
+        }
+      ]
+    }
+  ];
+}
 
 function generateLeads(customers) {
   const statuses = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
@@ -217,6 +267,32 @@ function generateJobs(customers, quotes) {
       estimatedHours: Math.ceil(Math.random() * 8),
       laborCost: randomAmount(200, 4000),
       materialCost: randomAmount(100, 3000),
+      tasks: [
+        { 
+          id: 'p1', 
+          name: 'Site Preparation', 
+          status: status === 'Pending' ? 'Not Started' : 'Completed', 
+          progress: status === 'Pending' ? 0 : 100,
+          estimatedHours: 4,
+          people: 1,
+          subTasks: [
+            { id: 'sp1', name: 'Safety Audit', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 1, people: 1 },
+            { id: 'sp2', name: 'Site Setup', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 3, people: 1 }
+          ]
+        },
+        { 
+          id: 'p2', 
+          name: 'Installation Phase', 
+          status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : (status === 'In Progress' ? 'In Progress' : 'Not Started'), 
+          progress: (status === 'Completed' || status === 'Invoiced') ? 100 : (status === 'In Progress' ? 50 : 0),
+          estimatedHours: 12,
+          people: 2,
+          subTasks: [
+            { id: 'sp3', name: 'Main Installation', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : (status === 'In Progress' ? 'In Progress' : 'Not Started'), progress: (status === 'Completed' || status === 'Invoiced') ? 100 : (status === 'In Progress' ? 100 : 0), estimatedHours: 8, people: 2 },
+            { id: 'sp4', name: 'Final Commissioning', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : 'Not Started', progress: (status === 'Completed' || status === 'Invoiced') ? 100 : 0, estimatedHours: 4, people: 2 }
+          ]
+        }
+      ],
       notes: '',
       createdAt: randomDate(90),
       updatedAt: randomDate(7),
@@ -256,6 +332,69 @@ function generateInvoices(jobs) {
       updatedAt: randomDate(7),
     };
   });
+}
+
+function generateFormTemplates() {
+  return [
+    {
+      id: 'fmt_1',
+      name: 'Job Safety Analysis (JSA)',
+      description: 'Daily safety assessment before starting work.',
+      sections: [
+        {
+          id: 'sec_1',
+          title: 'Personal Protective Equipment',
+          fields: [
+            { id: 'f1', type: 'checkbox', label: 'Gloves worn?', required: true },
+            { id: 'f2', type: 'checkbox', label: 'Safety Glasses worn?', required: true },
+            { id: 'f3', type: 'checkbox', label: 'Steel Cap Boots worn?', required: true }
+          ]
+        },
+        {
+          id: 'sec_2',
+          title: 'Site Hazards',
+          fields: [
+            { id: 'f4', type: 'select', label: 'Overall Site Risk', options: ['Low', 'Medium', 'High'], required: true },
+            { id: 'f5', type: 'textarea', label: 'Identified Hazards', placeholder: 'Describe any trip hazards, live wires, etc.' }
+          ]
+        },
+        {
+          id: 'sec_3',
+          title: 'Authorization',
+          fields: [
+            { id: 'f6', type: 'signature', label: 'Technician Signature', required: true }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'fmt_2',
+      name: 'Site Assessment',
+      description: 'Detailed site inspection and requirements.',
+      sections: [
+        {
+          id: 'sec_4',
+          title: 'Client Details',
+          fields: [
+            { id: 'f7', type: 'text', label: 'Customer Rep Name' },
+            { id: 'f8', type: 'date', label: 'Inspection Date' }
+          ]
+        },
+        {
+          id: 'sec_5',
+          title: 'Access & Logistics',
+          fields: [
+            { id: 'f9', type: 'checkbox', label: 'Access keys provided?' },
+            { id: 'f10', type: 'textarea', label: 'Parking / Entry Instructions' }
+          ]
+        }
+      ]
+    }
+  ];
+}
+
+function generateFormInstances(jobs, templates) {
+  return []; // Start empty
 }
 
 function generateStockItems() {
@@ -300,9 +439,27 @@ function generateStockItems() {
   }));
 }
 
+function generateAssets(customers) {
+  const assets = [
+    { name: 'Toyota Hilux 2022', type: 'Vehicle', serial: 'REG-123-FF', ownerType: 'Business', recoveryRate: 25.00, serviceIntervalMonths: 6, currentMeter: 45000, status: 'Active' },
+    { name: 'Isuzu NPR Truck', type: 'Vehicle', serial: 'REG-888-FF', ownerType: 'Business', recoveryRate: 45.00, serviceIntervalMonths: 6, currentMeter: 120000, status: 'Active' },
+    { name: 'Scissor Lift 19ft', type: 'Plant & Equipment', serial: 'SN-SL-9920', ownerType: 'Business', recoveryRate: 15.00, serviceIntervalMonths: 3, currentMeter: 840, status: 'Active' },
+    { name: 'Carrier Chiller Unit', type: 'Fixed Asset (HVAC/Solar/Fire)', serial: 'SN-CH-7721', ownerType: 'Customer', customerId: customers[0].id, site: customers[0].sites?.[0]?.name, serviceIntervalMonths: 12, currentMeter: 15400, status: 'Active' },
+    { name: 'Daikin Split System', type: 'Fixed Asset (HVAC/Solar/Fire)', serial: 'SN-DS-4410', ownerType: 'Customer', customerId: customers[1].id, site: customers[1].sites?.[0]?.name, serviceIntervalMonths: 12, currentMeter: 3200, status: 'Active' },
+    { name: 'Fire Alarm Panel v4', type: 'Fixed Asset (HVAC/Solar/Fire)', serial: 'SN-FP-2299', ownerType: 'Customer', customerId: customers[2].id, site: customers[2].sites?.[0]?.name, serviceIntervalMonths: 6, currentMeter: 0, status: 'Active' },
+  ];
+
+  return assets.map((a, i) => ({
+    id: `asset_${i + 1}`,
+    ...a,
+    logs: [
+      { id: `log_${i}_1`, type: 'Service', date: randomDate(90), technicianName: 'Jake Patterson', cost: 250, notes: 'Routine check' }
+    ]
+  }));
+}
+
 function generateScheduleBlocks(jobs) {
   const blocks = [];
-  const today = new Date();
   const scheduledJobs = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress');
 
   scheduledJobs.forEach((job, i) => {
@@ -331,10 +488,148 @@ function generateScheduleBlocks(jobs) {
 }
 
 export function seedData() {
-  if (store.isSeeded()) return;
+  if (store.isSeeded()) {
+    // Schema Migration: Convert "phases" -> "tasks" and "subPhases" -> "subTasks" for backward compatibility
+    const existingJobs = store.getAll('jobs');
+    let migratedJobs = false;
+    const updatedJobs = existingJobs.map(job => {
+      let needsMigration = false;
+      function migrateNode(node) {
+        const newNode = { ...node };
+        if ('subPhases' in newNode) {
+          newNode.subTasks = (newNode.subPhases || []).map(sp => migrateNode(sp));
+          delete newNode.subPhases;
+          needsMigration = true;
+        } else if (newNode.subTasks) {
+          newNode.subTasks = newNode.subTasks.map(st => migrateNode(st));
+        }
+        return newNode;
+      }
+      
+      const newJob = { ...job };
+      if ('phases' in newJob) {
+        newJob.tasks = (newJob.phases || []).map(p => migrateNode(p));
+        delete newJob.phases;
+        needsMigration = true;
+      } else if (newJob.tasks) {
+        newJob.tasks = newJob.tasks.map(t => migrateNode(t));
+      }
+      if (needsMigration) migratedJobs = true;
+      return newJob;
+    });
+    if (migratedJobs) {
+      store.save('jobs', updatedJobs);
+    }
 
-  // Always seed user types first so technician userTypeIds resolve correctly
-  seedUserTypes();
+    const existingTemplates = store.getAll('taskTemplates');
+    let migratedTemplates = false;
+    const updatedTemplates = existingTemplates.map(tmpl => {
+      let needsMigration = false;
+      function migrateNode(node) {
+        const newNode = { ...node };
+        if ('subPhases' in newNode) {
+          newNode.subTasks = (newNode.subPhases || []).map(sp => migrateNode(sp));
+          delete newNode.subPhases;
+          needsMigration = true;
+        } else if (newNode.subTasks) {
+          newNode.subTasks = newNode.subTasks.map(st => migrateNode(st));
+        }
+        return newNode;
+      }
+      const newTmpl = { ...tmpl };
+      if ('phases' in newTmpl) {
+        newTmpl.tasks = (newTmpl.phases || []).map(p => migrateNode(p));
+        delete newTmpl.phases;
+        needsMigration = true;
+      } else if (newTmpl.tasks) {
+        newTmpl.tasks = newTmpl.tasks.map(t => migrateNode(t));
+      }
+      if (needsMigration) migratedTemplates = true;
+      return newTmpl;
+    });
+    if (migratedTemplates) {
+      store.save('taskTemplates', updatedTemplates);
+    }
+
+    // Migration: ensure existing jobs have the hierarchical 'tasks' structure
+    const currentJobs = store.getAll('jobs');
+    if (currentJobs.length > 0 && !currentJobs[0].tasks) {
+      const updatedJobsWithTasks = currentJobs.map(job => {
+        const status = job.status;
+        return {
+          ...job,
+          tasks: [
+            { 
+              id: 'p1', 
+              name: 'Site Preparation', 
+              status: status === 'Pending' ? 'Not Started' : 'Completed', 
+              progress: status === 'Pending' ? 0 : 100,
+              estimatedHours: 4,
+              people: 1,
+              subTasks: [
+                { id: 'sp1', name: 'Safety Audit', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 1, people: 1 },
+                { id: 'sp2', name: 'Site Setup', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 3, people: 1 }
+              ]
+            },
+            { 
+              id: 'p2', 
+              name: 'Project Execution', 
+              status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : (status === 'In Progress' ? 'In Progress' : 'Not Started'), 
+              progress: (status === 'Completed' || status === 'Invoiced') ? 100 : (status === 'In Progress' ? 50 : 0),
+              estimatedHours: 16,
+              people: 2,
+              subTasks: [
+                { id: 'sp3', name: 'Installation', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : (status === 'In Progress' ? 'In Progress' : 'Not Started'), progress: (status === 'Completed' || status === 'Invoiced') ? 100 : (status === 'In Progress' ? 100 : 0), estimatedHours: 12, people: 2 },
+                { id: 'sp4', name: 'Cleanup & Handover', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : 'Not Started', progress: (status === 'Completed' || status === 'Invoiced') ? 100 : 0, estimatedHours: 4, people: 2 }
+              ]
+            }
+          ]
+        };
+      });
+      store.save('jobs', updatedJobsWithTasks);
+    }
+
+    // Always ensure User Types exist first
+    const existingTypes = store.getAll('userTypes');
+    if (!existingTypes || existingTypes.length === 0) {
+      seedUserTypes();
+    } else {
+      // Self-healing migration: Ensure ut_office (Office Staff) exists in the database
+      const hasOffice = existingTypes.some(ut => ut.id === 'ut_office');
+      if (!hasOffice) {
+         existingTypes.push({
+           id: 'ut_office',
+           name: 'Office Staff',
+           description: 'Admin / reception — can manage customers, quotes, invoices but not system settings',
+           permissions: buildGranularPerms((mod, key) => {
+             if (mod === 'Settings') return false;
+             if (mod === 'Reports') return key === 'view';
+             if (['Invoices', 'Purchase Orders'].includes(mod) && key === 'delete') return false;
+             return true;
+           })
+         });
+         store.save('userTypes', existingTypes);
+      }
+    }
+
+    // Check if technicians are missing their types
+    const techs = store.getAll('technicians');
+    const userTypes = store.getAll('userTypes');
+    if (techs.length > 0 && userTypes.length > 0) {
+       const firstTech = techs[0];
+       const hasValidType = userTypes.some(ut => ut.id === firstTech.userTypeId);
+       if (!hasValidType) {
+          store.save('technicians', technicians);
+       }
+    }
+    
+    // Ensure taskTemplates collection exists for existing users
+    const currentTemplates = store.getAll('taskTemplates');
+    if (!currentTemplates || currentTemplates.length === 0) {
+      store.save('taskTemplates', generateTaskTemplates());
+    }
+    return;
+  }
 
   const customers = generateCustomers();
   const leads = generateLeads(customers);
@@ -342,7 +637,9 @@ export function seedData() {
   const jobs = generateJobs(customers, quotes);
   const invoices = generateInvoices(jobs);
   const stockItems = generateStockItems();
+  const assets = generateAssets(customers);
   const scheduleBlocks = generateScheduleBlocks(jobs);
+  const templates = generateFormTemplates();
 
   store.save('customers', customers);
   store.save('leads', leads);
@@ -350,8 +647,12 @@ export function seedData() {
   store.save('jobs', jobs);
   store.save('invoices', invoices);
   store.save('stock', stockItems);
+  store.save('assets', assets);
   store.save('schedule', scheduleBlocks);
   store.save('technicians', technicians);
+  store.save('taskTemplates', generateTaskTemplates());
+  store.save('formTemplates', templates);
+  store.save('formInstances', []);
 
   store.markSeeded();
 }

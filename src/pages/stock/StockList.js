@@ -23,11 +23,19 @@ export function renderStockList(container) {
       </div>
     </div>
     <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter active" data-filter="all">All (${stock.length})</button>
-        ${[...new Set(stock.map(s => s.category))].map(cat =>
-          `<button class="toolbar-filter" data-filter="${cat}">${cat}</button>`
-        ).join('')}
+      <div class="toolbar-left" style="display:flex; gap:15px; align-items:center; flex-wrap:wrap">
+        <div class="toolbar-filters">
+          <button class="toolbar-filter active" data-filter="all">All (${stock.length})</button>
+          ${[...new Set(stock.map(s => s.category))].map(cat =>
+            `<button class="toolbar-filter" data-filter="${cat}">${cat}</button>`
+          ).join('')}
+        </div>
+        <div class="toolbar-selectors" style="display:flex; gap:10px; align-items:center;">
+           <span class="text-tertiary" style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Location:</span>
+           <select class="form-select select-sm" id="location-filter" style="width: 180px; height: 32px; font-size: 13px;">
+              <option value="all">All Locations</option>
+           </select>
+        </div>
       </div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
@@ -37,7 +45,61 @@ export function renderStockList(container) {
     <div id="stock-table-container"></div>
   `;
 
-  let filteredData = [...stock];
+  // Populate Location Filter with grouping
+  const locSelect = container.querySelector('#location-filter');
+  const locations = [...new Set(stock.map(s => s.location || 'Unassigned'))].sort();
+  const warehouses = locations.filter(l => l.toLowerCase().includes('warehouse') || l === 'Main');
+  const vehicles = locations.filter(l => l.toLowerCase().includes('vehicle') || l.toLowerCase().includes('van') || l.toLowerCase().includes('truck') || l.toLowerCase().includes('van stock'));
+  const otherLocs = locations.filter(l => !warehouses.includes(l) && !vehicles.includes(l));
+
+  if (warehouses.length > 0) {
+    const group = document.createElement('optgroup');
+    group.label = 'Warehouses';
+    warehouses.forEach(l => {
+      const opt = new Option(l, l);
+      group.appendChild(opt);
+    });
+    locSelect.appendChild(group);
+  }
+  if (vehicles.length > 0) {
+    const group = document.createElement('optgroup');
+    group.label = 'Vehicles / Vans';
+    vehicles.forEach(l => {
+      const opt = new Option(l, l);
+      group.appendChild(opt);
+    });
+    locSelect.appendChild(group);
+  }
+  if (otherLocs.length > 0) {
+    const group = document.createElement('optgroup');
+    group.label = 'Other';
+    otherLocs.forEach(l => {
+      const opt = new Option(l, l);
+      group.appendChild(opt);
+    });
+    locSelect.appendChild(group);
+  }
+
+  let filterState = {
+    category: 'all',
+    location: 'all',
+    search: ''
+  };
+
+  function applyFilters() {
+    const q = filterState.search.toLowerCase();
+    const filtered = stock.filter(s => {
+      const matchCat = filterState.category === 'all' || s.category === filterState.category;
+      const matchLoc = filterState.location === 'all' || s.location === filterState.location;
+      const matchSearch = !q || 
+        s.name.toLowerCase().includes(q) || 
+        s.sku.toLowerCase().includes(q) || 
+        s.category.toLowerCase().includes(q) || 
+        (s.location && s.location.toLowerCase().includes(q));
+      return matchCat && matchLoc && matchSearch;
+    });
+    table.updateData(filtered);
+  }
 
   const columns = [
     { key: 'name', label: 'Item Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
@@ -48,13 +110,19 @@ export function renderStockList(container) {
       return `<span style="font-weight:600;color:${low ? 'var(--color-danger)' : 'var(--text-primary)'}">${r.quantity}</span>${low ? ' <span class="badge badge-danger" style="margin-left:4px">LOW</span>' : ''}`;
     }, getValue: (r) => r.quantity, width: '100px' },
     { key: 'unitPrice', label: 'Unit Price', render: (r) => `$${r.unitPrice.toFixed(2)}`, getValue: (r) => r.unitPrice, width: '100px' },
-    { key: 'location', label: 'Location', render: (r) => `<span class="text-secondary">${escapeHTML(r.location)}</span>`, width: '120px' },
+    { key: 'location', label: 'Location', render: (r) => {
+      const isVehicle = r.location?.toLowerCase().includes('vehicle') || r.location?.toLowerCase().includes('van');
+      return `<div style="display:flex; align-items:center; gap:4px">
+        <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary)">${isVehicle ? 'local_shipping' : 'warehouse'}</span>
+        <span class="text-secondary">${escapeHTML(r.location)}</span>
+      </div>`;
+    }, width: '160px' },
     { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplier)}</span>` },
   ];
 
   const table = createDataTable({ 
     columns, 
-    data: filteredData, 
+    data: stock, 
     onRowClick: (id) => router.navigate(`/stock/${id}`), 
     emptyMessage: 'No stock items', 
     emptyIcon: 'inventory_2',
@@ -166,7 +234,28 @@ export function renderStockList(container) {
   });
   container.querySelector('#stock-table-container').appendChild(table);
 
+  // Event Listeners
+  container.querySelectorAll('.toolbar-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filterState.category = btn.dataset.filter;
+      applyFilters();
+    });
+  });
+
+  container.querySelector('#location-filter').addEventListener('change', (e) => {
+    filterState.location = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#stock-search').addEventListener('input', (e) => {
+    filterState.search = e.target.value;
+    applyFilters();
+  });
+
   container.querySelector('#btn-new-stock').addEventListener('click', () => {
+    const technicians = store.getAll('technicians');
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="form-group">
@@ -179,9 +268,22 @@ export function renderStockList(container) {
           <input type="text" class="form-input" id="new-stock-category" />
         </div>
         <div class="form-group">
-          <label class="form-label">Cost Price ($) *</label>
-          <input type="number" class="form-input" id="new-stock-cost" step="0.01" />
+          <label class="form-label">Initial Location</label>
+          <select class="form-select" id="new-stock-location">
+            <option value="Main Warehouse">Main Warehouse</option>
+            <optgroup label="Warehouses">
+              <option value="Warehouse A">Warehouse A</option>
+              <option value="Warehouse B">Warehouse B</option>
+            </optgroup>
+            <optgroup label="Vehicles">
+              ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
+            </optgroup>
+          </select>
         </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cost Price ($) *</label>
+        <input type="number" class="form-input" id="new-stock-cost" step="0.01" />
       </div>
     `;
 
@@ -194,6 +296,7 @@ export function renderStockList(container) {
           const dOverlay = document.querySelector('.drawer-overlay');
           const name = dOverlay.querySelector('#new-stock-name').value.trim();
           const category = dOverlay.querySelector('#new-stock-category').value.trim() || 'Uncategorized';
+          const location = dOverlay.querySelector('#new-stock-location').value;
           const costPrice = parseFloat(dOverlay.querySelector('#new-stock-cost').value);
 
           if (!name || isNaN(costPrice)) {
@@ -208,7 +311,7 @@ export function renderStockList(container) {
             quantity: 0,
             unitPrice: costPrice * 1.5, // default 50% markup
             costPrice,
-            location: 'Main Warehouse',
+            location,
             supplier: 'Unknown'
           });
 
@@ -297,21 +400,5 @@ export function renderStockList(container) {
         }}
       ]
     });
-  });
-
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const f = btn.dataset.filter;
-      filteredData = f === 'all' ? [...stock] : stock.filter(s => s.category === f);
-      table.updateData(filteredData);
-    });
-  });
-
-  container.querySelector('#stock-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = stock.filter(s => s.name.toLowerCase().includes(q) || s.sku.toLowerCase().includes(q) || s.category.toLowerCase().includes(q));
-    table.updateData(filteredData);
   });
 }

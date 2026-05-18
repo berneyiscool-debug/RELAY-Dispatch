@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
 
 const AVAILABLE_TAGS = [
@@ -104,7 +105,8 @@ export function renderJobForm(container, { id }) {
     </div>
     <div class="tabs" id="job-form-tabs" style="margin-bottom:16px">
       <button type="button" class="tab active" data-tab="details">Details</button>
-      <button type="button" class="tab" data-tab="phases">TaskLists / Phases</button>
+      <button type="button" class="tab" data-tab="tasks">Tasklists</button>
+      <button type="button" class="tab" data-tab="forms">Compliance Forms</button>
     </div>
     
     <div id="jf-tab-details">
@@ -262,8 +264,12 @@ export function renderJobForm(container, { id }) {
     </div>
   </div>
   
-  <div id="jf-tab-phases" style="display:none;">
+  <div id="jf-tab-tasks" style="display:none;">
     <div id="jf-task-container"></div>
+  </div>
+  
+  <div id="jf-tab-forms" style="display:none;">
+    <div id="jf-forms-container"></div>
   </div>
   `;
 
@@ -274,8 +280,10 @@ export function renderJobForm(container, { id }) {
       e.currentTarget.classList.add('active');
       const t = e.currentTarget.dataset.tab;
       container.querySelector('#jf-tab-details').style.display = t === 'details' ? 'block' : 'none';
-      container.querySelector('#jf-tab-phases').style.display = t === 'phases' ? 'block' : 'none';
-      if (t === 'phases') renderFormTasks();
+      container.querySelector('#jf-tab-tasks').style.display = t === 'tasks' ? 'block' : 'none';
+      container.querySelector('#jf-tab-forms').style.display = t === 'forms' ? 'block' : 'none';
+      if (t === 'tasks') renderFormTasks();
+      if (t === 'forms') renderFormSelection();
     });
   });
 
@@ -391,19 +399,19 @@ export function renderJobForm(container, { id }) {
   );
 
   // ==== Task List Management ====
-  let jobPhases = job.phases ? JSON.parse(JSON.stringify(job.phases)) : [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, estimatedHours: 2, people: 1, subPhases: [] }];
-  jobPhases.forEach(p => { if (!p.subPhases) p.subPhases = []; });
+  let jobTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, estimatedHours: 2, people: 1, subTasks: [] }];
+  jobTasks.forEach(p => { if (!p.subTasks) p.subTasks = []; });
 
   let taskExpandedPath = [0];
   let taskViewPath = [];
   let isInfoPanelEditing = true; // Default to editing in Job Form
 
-  function getPhaseByPath(phases, path) {
-    let curr = phases[path[0]];
+  function getTaskByPath(tasks, path) {
+    let curr = tasks[path[0]];
     if (!curr) return null;
     for (let i = 1; i < path.length; i++) {
-      if (!curr.subPhases) return null;
-      curr = curr.subPhases[path[i]];
+      if (!curr.subTasks) return null;
+      curr = curr.subTasks[path[i]];
       if (!curr) return null;
     }
     return curr;
@@ -415,18 +423,29 @@ export function renderJobForm(container, { id }) {
 
     // Cleanup invalid paths
     let isValidPath = true;
-    let curr = jobPhases;
+    let curr = jobTasks;
     for (let i=0; i<taskExpandedPath.length; i++) {
        if (!curr || !curr[taskExpandedPath[i]]) { isValidPath = false; break; }
-       curr = curr[taskExpandedPath[i]].subPhases;
+       curr = curr[taskExpandedPath[i]].subTasks;
     }
     if (!isValidPath) taskExpandedPath = [];
 
-    const viewParentNode = taskViewPath.length > 0 ? getPhaseByPath(jobPhases, taskViewPath) : null;
-    const viewList = viewParentNode ? (viewParentNode.subPhases || []) : jobPhases;
+    const viewParentNode = taskViewPath.length > 0 ? getTaskByPath(jobTasks, taskViewPath) : null;
+    const viewList = viewParentNode ? (viewParentNode.subTasks || []) : jobTasks;
     const viewTitle = viewParentNode ? escapeHTML(viewParentNode.name) : 'Main Tasks';
 
     tc.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h4 style="margin:0">Job Tasks</h4>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-import-tasklist">
+            <span class="material-icons-outlined" style="font-size:16px">download</span> Import
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-save-as-template">
+            <span class="material-icons-outlined" style="font-size:16px">bookmark_add</span> Save as Template
+          </button>
+        </div>
+      </div>
       <div class="card" style="margin-bottom:var(--space-lg)">
         <div class="card-body" style="padding:16px; display:flex; gap:16px; overflow-x:auto; min-height:400px; align-items:stretch">
           
@@ -446,7 +465,7 @@ export function renderJobForm(container, { id }) {
                 return `
                   <div class="task-list-item" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color)'}">
                     <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
-                    ${p.subPhases && p.subPhases.length > 0 ? `<button type="button" class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : ''}
+                    ${p.subTasks && p.subTasks.length > 0 ? `<button type="button" class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : ''}
                   </div>
                 `;
               }).join('')}
@@ -457,16 +476,16 @@ export function renderJobForm(container, { id }) {
           <!-- Task Details Form -->
           ${taskExpandedPath.length > 0 ? (() => {
             const path = taskExpandedPath;
-            const node = getPhaseByPath(jobPhases, path);
+            const node = getTaskByPath(jobTasks, path);
             if (!node) return '';
-            const hasSubs = node.subPhases && node.subPhases.length > 0;
+            const hasSubs = node.subTasks && node.subTasks.length > 0;
             return `
               <div style="flex: 1; min-width:300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg); padding:16px">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
                   <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Task Settings</h4>
                   <div style="display:flex;gap:8px">
                     ${path.length < 3 ? `<button type="button" class="btn btn-sm btn-secondary btn-add-child-task" data-path="${path.join('-')}" title="Add Sub-task"><span class="material-icons-outlined" style="font-size:16px">add_task</span> Add Sub-task</button>` : ''}
-                    <button type="button" class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>
+                    <button type="button" class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>
                   </div>
                 </div>
                 <div class="form-group">
@@ -522,19 +541,19 @@ export function renderJobForm(container, { id }) {
     });
 
     tc.querySelector('#btn-add-main-task')?.addEventListener('click', () => {
-       jobPhases.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] });
-       taskExpandedPath = [jobPhases.length - 1];
+       jobTasks.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
+       taskExpandedPath = [jobTasks.length - 1];
        renderFormTasks();
     });
 
     tc.querySelectorAll('.btn-add-child-task').forEach(el => {
        el.addEventListener('click', () => {
           const path = el.dataset.path.split('-').map(Number);
-          const node = getPhaseByPath(jobPhases, path);
+          const node = getTaskByPath(jobTasks, path);
           if (node) {
-             if (!node.subPhases) node.subPhases = [];
-             node.subPhases.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subPhases: [] });
-             taskExpandedPath = [...path, node.subPhases.length - 1];
+             if (!node.subTasks) node.subTasks = [];
+             node.subTasks.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
+             taskExpandedPath = [...path, node.subTasks.length - 1];
              taskViewPath = [...path];
              renderFormTasks();
           }
@@ -543,19 +562,20 @@ export function renderJobForm(container, { id }) {
 
     tc.querySelectorAll('.btn-remove-task').forEach(el => {
        el.addEventListener('click', () => {
-          if (!confirm('Are you sure you want to delete this task?')) return;
           const path = el.dataset.path.split('-').map(Number);
-          if (path.length === 1) {
-             jobPhases.splice(path[0], 1);
-             taskExpandedPath = jobPhases.length > 0 ? [0] : [];
-          } else {
-             const parent = getPhaseByPath(jobPhases, path.slice(0, -1));
-             if (parent && parent.subPhases) {
-                parent.subPhases.splice(path[path.length - 1], 1);
+          if (confirm('Are you sure you want to delete this task and all its sub-tasks?')) {
+             if (path.length === 1) {
+                jobTasks.splice(path[0], 1);
+                taskExpandedPath = jobTasks.length > 0 ? [0] : [];
+             } else {
+                const parent = getTaskByPath(jobTasks, path.slice(0, -1));
+                if (parent && parent.subTasks) {
+                   parent.subTasks.splice(path[path.length - 1], 1);
+                }
                 taskExpandedPath = [...path.slice(0, -1)];
              }
+             renderFormTasks();
           }
-          renderFormTasks();
        });
     });
 
@@ -563,7 +583,7 @@ export function renderJobForm(container, { id }) {
        inp.addEventListener('input', e => {
           const field = e.target.dataset.field;
           const val = e.target.value;
-          const node = getPhaseByPath(jobPhases, taskExpandedPath);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
           if (node) {
              if (field === 'estimatedHours') node[field] = parseFloat(val) || 0;
              else if (field === 'people') node[field] = parseInt(val) || 1;
@@ -579,7 +599,233 @@ export function renderJobForm(container, { id }) {
           }
        });
        
-       inp.addEventListener('change', () => renderFormTasks());
+    });
+
+    container.querySelector('#btn-save-as-template')?.addEventListener('click', () => {
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Template Name</label>
+          <input type="text" class="form-input" id="tmpl-name" placeholder="e.g. Standard 50pt Maintenance" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-input" id="tmpl-desc" rows="3" placeholder="Describe when to use this template..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tags (comma separated)</label>
+          <input type="text" class="form-input" id="tmpl-tags" placeholder="Electrical, Maintenance, Commercial" />
+        </div>
+      `;
+
+        showModal({
+          title: 'Save Tasklist as Template',
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save Template', className: 'btn-primary', onClick: (close) => {
+              const name = content.querySelector('#tmpl-name').value;
+              const description = content.querySelector('#tmpl-desc').value;
+              const tags = content.querySelector('#tmpl-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+
+              if (!name) {
+                showToast('Template name is required', 'error');
+                return;
+              }
+
+              function deepClone(tasks) {
+                return tasks.map(p => ({
+                  ...p,
+                  id: store.generateId(),
+                  status: 'Not Started',
+                  progress: 0,
+                  subTasks: p.subTasks ? deepClone(p.subTasks) : []
+                }));
+              }
+
+              store.create('taskTemplates', {
+                name,
+                description,
+                tags,
+                tasks: deepClone(jobTasks),
+                createdAt: new Date().toISOString()
+              });
+
+              showToast('Tasklist saved as template', 'success');
+              close();
+            }}
+          ]
+        });
+    });
+
+    container.querySelector('#btn-import-tasklist')?.addEventListener('click', () => {
+      const templates = store.getAll('taskTemplates');
+      const otherJobs = store.getAll('jobs').filter(j => j.id !== id && j.tasks && j.tasks.length > 0);
+      let currentTab = 'templates';
+
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div class="tabs" id="import-tabs" style="margin-bottom:12px">
+          <button class="tab active" data-tab="templates">Templates</button>
+          <button class="tab" data-tab="jobs">Other Jobs</button>
+        </div>
+        <div class="toolbar-search" style="margin-bottom:12px">
+          <span class="material-icons-outlined">search</span>
+          <input type="text" id="import-search" placeholder="Search templates..." style="width:100%" />
+        </div>
+        <div id="import-content" style="max-height:400px; overflow-y:auto">
+           <!-- Content injected here -->
+        </div>
+      `;
+
+      function renderImportList(query = '') {
+        const listDiv = content.querySelector('#import-content');
+        const q = query.toLowerCase();
+
+        if (currentTab === 'templates') {
+          const filtered = templates.filter(t => 
+            t.name.toLowerCase().includes(q) || 
+            (t.description || '').toLowerCase().includes(q) ||
+            (t.tags || []).some(tag => tag.toLowerCase().includes(q))
+          );
+
+          listDiv.innerHTML = filtered.length ? filtered.map(t => `
+            <div class="import-item" data-id="${t.id}" data-type="template" style="padding:12px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; cursor:pointer; transition:all 0.2s">
+              <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:4px">
+                <div style="font-weight:600; font-size:14px">${escapeHTML(t.name)}</div>
+                <div style="font-size:11px; color:var(--text-tertiary)">${(t.tasks || t.phases || []).length} tasks</div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; line-height:1.4">${escapeHTML(t.description || 'No description.')}</div>
+              <div style="display:flex; gap:4px; flex-wrap:wrap">
+                ${(t.tags || []).map(tag => `<span style="font-size:10px; background:var(--bg-color); padding:2px 6px; border-radius:10px; border:1px solid var(--border-color)">${escapeHTML(tag)}</span>`).join('')}
+              </div>
+            </div>
+          `).join('') : `<div class="text-secondary text-center" style="padding:24px">No templates matching "${query}"</div>`;
+        } else {
+          const filtered = otherJobs.filter(j => 
+            j.number.toLowerCase().includes(q) || 
+            j.title.toLowerCase().includes(q) ||
+            j.customerName.toLowerCase().includes(q)
+          );
+
+          listDiv.innerHTML = filtered.length ? filtered.map(j => `
+            <div class="import-item" data-id="${j.id}" data-type="job" style="padding:12px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; cursor:pointer; transition:all 0.2s">
+              <div style="font-weight:600; font-size:14px; margin-bottom:2px">${escapeHTML(j.number)} - ${escapeHTML(j.title)}</div>
+              <div style="font-size:12px; color:var(--text-secondary)">${escapeHTML(j.customerName)} · ${(j.tasks || j.phases || []).length} tasks</div>
+            </div>
+          `).join('') : `<div class="text-secondary text-center" style="padding:24px">No jobs matching "${query}"</div>`;
+        }
+
+        // Direct binding to newly created items to prevent bubbles / type mismatch bugs
+        listDiv.querySelectorAll('.import-item').forEach(item => {
+          item.addEventListener('click', () => {
+            const sourceId = item.dataset.id;
+            const type = item.dataset.type;
+            
+            const freshTemplates = store.getAll('taskTemplates');
+            const freshJobs = store.getAll('jobs');
+            const source = type === 'template' 
+              ? freshTemplates.find(t => String(t.id) === String(sourceId)) 
+              : freshJobs.find(j => String(j.id) === String(sourceId));
+            
+            if (source && (source.tasks || source.phases)) {
+              const sourceTasks = source.tasks || source.phases;
+              if (confirm(`Replace current tasklist with "${source.name || source.number}"?`)) {
+                function deepClone(tasks) {
+                  return tasks.map(p => ({
+                    ...p,
+                    id: store.generateId(),
+                    status: 'Not Started',
+                    progress: 0,
+                    subTasks: (p.subTasks || p.subPhases) ? deepClone(p.subTasks || p.subPhases) : []
+                  }));
+                }
+                jobTasks = deepClone(sourceTasks);
+                taskExpandedPath = [0];
+                taskViewPath = [];
+                
+                showToast(`Imported ${source.name || source.number}`, 'success');
+                renderFormTasks();
+                document.querySelector('.modal-overlay')?.remove();
+              }
+            } else {
+              showToast('Could not find source data', 'error');
+            }
+          });
+        });
+      }
+
+      renderImportList();
+
+      // Attach tab listeners
+      content.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          content.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          currentTab = tab.dataset.tab;
+          content.querySelector('#import-search').placeholder = currentTab === 'templates' ? 'Search templates...' : 'Search jobs...';
+          renderImportList(content.querySelector('#import-search').value);
+        });
+      });
+
+      content.querySelector('#import-search').addEventListener('input', (e) => {
+        renderImportList(e.target.value);
+      });
+
+      showModal({
+        title: 'Import Tasklist',
+        content,
+        actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() }]
+      });
+    });
+  }
+
+  // ==== Compliance Forms Selection ====
+  const allTemplates = store.getAll('formTemplates');
+  const existingInstances = isEdit ? store.getAll('formInstances').filter(fi => fi.jobId === id) : [];
+  let selectedFormTemplateIds = isEdit ? existingInstances.map(fi => fi.templateId) : [];
+
+  function renderFormSelection() {
+    const fc = container.querySelector('#jf-forms-container');
+    if (!fc) return;
+
+    fc.innerHTML = `
+      <div style="margin-bottom:var(--space-lg)">
+        <h4 style="margin-bottom:4px">Compliance & Safety Forms</h4>
+        <p style="font-size:13px; color:var(--text-tertiary); margin-bottom:16px">Select the forms required for this job. Technicians will be prompted to complete these.</p>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px">
+        ${allTemplates.map(t => {
+          const isSelected = selectedFormTemplateIds.includes(t.id);
+          return `
+            <div class="card form-template-selector ${isSelected ? 'active' : ''}" data-id="${t.id}" style="cursor:pointer; border:2px solid ${isSelected ? 'var(--color-primary)' : 'var(--border-color)'}; transition:all 0.2s">
+              <div class="card-body" style="display:flex; gap:12px; align-items:start">
+                <div style="width:20px; height:20px; border-radius:4px; border:2px solid ${isSelected ? 'var(--color-primary)' : 'var(--text-tertiary)'}; background:${isSelected ? 'var(--color-primary)' : 'transparent'}; display:flex; align-items:center; justify-content:center; flex-shrink:0">
+                  ${isSelected ? '<span class="material-icons-outlined" style="font-size:16px; color:white">check</span>' : ''}
+                </div>
+                <div>
+                  <div style="font-weight:600; font-size:14px; margin-bottom:4px">${escapeHTML(t.name)}</div>
+                  <div style="font-size:12px; color:var(--text-secondary); line-height:1.4">${escapeHTML(t.description || 'No description.')}</div>
+                  <div style="margin-top:8px; font-size:11px; color:var(--text-tertiary)">${(t.sections || []).reduce((sum, s) => sum + s.fields.length, 0)} Required Fields</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+        ${!allTemplates.length ? '<div style="grid-column: 1/-1; text-align:center; padding:40px; background:var(--bg-color); border-radius:8px">No form templates found. Create some in Settings first.</div>' : ''}
+      </div>
+    `;
+
+    fc.querySelectorAll('.form-template-selector').forEach(el => {
+      el.addEventListener('click', () => {
+        const tid = el.dataset.id;
+        if (selectedFormTemplateIds.includes(tid)) {
+          selectedFormTemplateIds = selectedFormTemplateIds.filter(id => id !== tid);
+        } else {
+          selectedFormTemplateIds.push(tid);
+        }
+        renderFormSelection();
+      });
     });
   }
 
@@ -587,11 +833,11 @@ export function renderJobForm(container, { id }) {
   container.querySelector('#btn-save').addEventListener('click', () => {
     const form = container.querySelector('#job-form');
     if (!form.checkValidity()) {
-      // Force switch back to Details tab to show validation error
       container.querySelectorAll('#job-form-tabs .tab').forEach(t => t.classList.remove('active'));
       container.querySelector('#job-form-tabs .tab[data-tab="details"]').classList.add('active');
       container.querySelector('#jf-tab-details').style.display = 'block';
-      container.querySelector('#jf-tab-phases').style.display = 'none';
+      container.querySelector('#jf-tab-tasks').style.display = 'none';
+      container.querySelector('#jf-tab-forms').style.display = 'none';
       form.reportValidity();
       return;
     }
@@ -601,12 +847,10 @@ export function renderJobForm(container, { id }) {
     const cust = customers.find(c => c.id === custId);
     data.customerName = cust?.company || '';
 
-    // Resolve site
     const selSiteOpt = siteSelect.selectedOptions[0];
     data.siteAddress = selSiteOpt?.dataset.address || '';
     data.siteName = selSiteOpt?.dataset.name || '';
 
-    // Resolve contacts by index
     const priIdx = parseInt(data.primaryContactId);
     const addIdx = parseInt(data.additionalContactId);
     const primaryContact = !isNaN(priIdx) ? cust?.contacts?.[priIdx] : null;
@@ -617,16 +861,16 @@ export function renderJobForm(container, { id }) {
     delete data.primaryContactId;
     delete data.additionalContactId;
 
-    // Tags & description & phases
     data.tags = selectedTags;
     data.description = editor.innerHTML;
-    data.phases = jobPhases;
+    data.tasks = jobTasks;
+    data.phases = jobTasks;
+    data.tasks.forEach(t => { 
+      if (!t.subTasks) t.subTasks = []; 
+      t.subPhases = t.subTasks; 
+    });
     
-    // Ensure all phases have subPhases array even if empty
-    data.phases.forEach(p => { if (!p.subPhases) p.subPhases = []; });
-    
-    delete data.notes; // replaced by description
-
+    delete data.notes;
     data.number = job.number || `J-${Date.now().toString().slice(-6)}`;
     const isEmg = container.querySelector('#is-emergency')?.checked;
     data.isEmergency = isEmg;
@@ -643,49 +887,66 @@ export function renderJobForm(container, { id }) {
 
     if (container.querySelector('#is-recurring')?.checked) {
       const freq = container.querySelector('#recurring-freq').value;
-      const start = new Date(container.querySelector('#recurring-start').value);
-      const end = new Date(container.querySelector('#recurring-end').value);
-      if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-        showToast('Invalid recurring dates', 'error'); return;
+      const startInput = container.querySelector('#recurring-start').value;
+      const endInput = container.querySelector('#recurring-end').value;
+      if (!startInput || !endInput) {
+        showToast('Recurring dates required', 'error'); return;
       }
-      
-      data.recurringConfig = { freq, start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] };
+      data.recurringConfig = { freq, start: startInput, end: endInput };
     }
 
-    if (isEdit) {
-      store.update('jobs', id, data);
-      showToast('Job updated', 'success');
-      router.navigate(`/jobs/${id}`);
-    } else {
-      const n = store.create('jobs', data);
-      
-      if (data.recurringConfig) {
-        let current = new Date(data.recurringConfig.start);
-        const end = new Date(data.recurringConfig.end);
-        let count = 0;
-        
-        while (current <= end && count < 50) {
-          store.create('notifications', {
-            type: 'Recurring Job Due',
-            jobId: n.id,
-            title: `Recurring: ${n.title || n.number}`,
-            description: `This recurring job is due on ${current.toISOString().split('T')[0]}`,
-            dueDate: current.toISOString().split('T')[0],
-            status: 'Pending',
-            priority: n.priority || 'Normal',
-            createdAt: new Date().toISOString()
+    // Save Job
+    const finalJob = isEdit ? store.update('jobs', id, data) : store.create('jobs', data);
+    const jobId = finalJob.id;
+
+    // Update Form Instances
+    const allInstances = store.getAll('formInstances') || [];
+    // Filter out removed forms IF they are empty
+    let filteredInstances = allInstances.filter(fi => {
+       if (fi.jobId !== jobId) return true;
+       const isStillSelected = selectedFormTemplateIds.includes(fi.templateId);
+       const hasData = fi.responses && Object.keys(fi.responses).length > 0;
+       return isStillSelected || hasData;
+    });
+
+    // Add new instances
+    selectedFormTemplateIds.forEach(tid => {
+       const exists = filteredInstances.find(fi => fi.jobId === jobId && fi.templateId === tid);
+       if (!exists) {
+          filteredInstances.push({
+             id: 'fi_' + Math.random().toString(36).substr(2, 9),
+             jobId,
+             templateId: tid,
+             responses: {},
+             status: 'Pending',
+             createdAt: new Date().toISOString()
           });
-          
-          if (data.recurringConfig.freq === 'Daily') current.setDate(current.getDate() + 1);
-          else if (data.recurringConfig.freq === 'Weekly') current.setDate(current.getDate() + 7);
-          else if (data.recurringConfig.freq === 'Monthly') current.setMonth(current.getMonth() + 1);
-          count++;
-        }
-        showToast(`Job created and ${count} future notifications scheduled`, 'success');
-      } else {
-        showToast('Job created', 'success');
+       }
+    });
+    store.save('formInstances', filteredInstances);
+
+    if (!isEdit && data.recurringConfig) {
+      // Setup notifications for recurring
+      let current = new Date(data.recurringConfig.start);
+      const end = new Date(data.recurringConfig.end);
+      let count = 0;
+      while (current <= end && count < 50) {
+        store.create('notifications', {
+          type: 'Recurring Job Due',
+          jobId: jobId,
+          title: `Recurring: ${finalJob.title || finalJob.number}`,
+          dueDate: current.toISOString().split('T')[0],
+          status: 'Pending',
+          createdAt: new Date().toISOString()
+        });
+        if (data.recurringConfig.freq === 'Daily') current.setDate(current.getDate() + 1);
+        else if (data.recurringConfig.freq === 'Weekly') current.setDate(current.getDate() + 7);
+        else if (data.recurringConfig.freq === 'Monthly') current.setMonth(current.getMonth() + 1);
+        count++;
       }
-      router.navigate(`/jobs/${n.id}`);
     }
+
+    showToast(`Job ${isEdit ? 'updated' : 'created'} successfully`, 'success');
+    router.navigate(`/jobs/${jobId}`);
   });
 }

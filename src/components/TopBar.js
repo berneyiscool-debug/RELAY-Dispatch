@@ -106,14 +106,17 @@ export function updateTopbarAccess(topbarEl) {
 
   if (nameEl) nameEl.textContent = currentUser.name || 'Unknown User';
   if (roleEl) {
-    // Look up user type name from localStorage for accurate display
-    let displayRole = currentUser.role;
-    if (currentUser.userTypeId) {
-      const userTypes = JSON.parse(localStorage.getItem('simpro_userTypes') || '[]');
-      const ut = userTypes.find(u => u.id === currentUser.userTypeId);
+    // Priority 1: Use the explicit userTypeName from session (set during login)
+    // Priority 2: Look up from userTypes collection
+    // Priority 3: Fallback to roleMap
+    let displayRole = currentUser.userTypeName;
+    
+    if (!displayRole && currentUser.userTypeId) {
+      const ut = store.getById('userTypes', currentUser.userTypeId);
       if (ut) displayRole = ut.name;
     }
-    if (!displayRole || displayRole === currentUser.role) {
+
+    if (!displayRole) {
       const roleMap = { 'admin': 'Administrator', 'manager': 'Manager', 'technician': 'Technician', 'customer': 'Customer' };
       displayRole = roleMap[currentUser.role] || currentUser.role;
     }
@@ -183,7 +186,7 @@ function toggleNotificationsDropdown(btn) {
       item.addEventListener('click', () => {
         store.update('notifications', n.id, { read: true });
         if (n.link) {
-          const { router } = window.__simproApp || {};
+          const { router } = window.__fieldForge || {};
           if (router) router.navigate(n.link);
         }
         dropdown.remove();
@@ -207,7 +210,7 @@ function toggleNotificationsDropdown(btn) {
 function showSearchResults(query) {
   hideSearchResults();
 
-  const { store } = window.__simproApp || {};
+  const { store } = window.__fieldForge || {};
   if (!store) return;
 
   const results = [];
@@ -257,7 +260,7 @@ function showSearchResults(query) {
       <span class="badge badge-neutral" style="font-size:10px">${r.type}</span>
     `;
     item.addEventListener('click', () => {
-      const { router } = window.__simproApp || {};
+      const { router } = window.__fieldForge || {};
       if (router) router.navigate(r.path);
       hideSearchResults();
       document.querySelector('#global-search').value = '';

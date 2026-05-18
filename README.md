@@ -1,4 +1,4 @@
-# Simpro Clone — Feature Priority List
+# FieldForge — Feature Priority List
 
 ## ✅ Phase 1: Core Clone (COMPLETE)
 - [x] App shell, sidebar, top bar, routing, design system

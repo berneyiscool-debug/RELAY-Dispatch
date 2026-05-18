@@ -57,7 +57,7 @@ export function renderLogin(container) {
   container.innerHTML = `
     <div class="login-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: var(--bg-primary);">
       <div class="login-box" style="background: var(--bg-surface); padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; max-height: 80vh; overflow-y:auto;">
-        <h1 style="margin-bottom: 10px; color: var(--text-primary);">Simpro Clone</h1>
+        <h1 style="margin-bottom: 10px; color: var(--text-primary);">FieldForge</h1>
         <p style="margin-bottom: 30px; color: var(--text-secondary);">Select a user to log in</p>
 
         <div style="display: flex; flex-direction: column; gap: 15px;">
@@ -80,14 +80,20 @@ export function renderLogin(container) {
     const t = techs.find(x => x.id === techId);
     const ut = userTypes.find(u => u.id === t?.userTypeId);
     
+    // Determine the internal "system role" for legacy checks
     let role = 'technician';
-    if (ut && ut.name.toLowerCase().includes('admin')) role = 'admin';
-    else if (ut && ut.name.toLowerCase().includes('manager')) role = 'manager';
+    if (ut) {
+      const nameLower = ut.name.toLowerCase();
+      if (nameLower.includes('admin')) role = 'admin';
+      else if (nameLower.includes('manager')) role = 'manager';
+      else if (nameLower.includes('office')) role = 'office';
+    }
 
     const user = {
       id: t.id,
       name: t.name,
       role: role,
+      userTypeName: ut ? ut.name : 'Unassigned',
       userTypeId: t.userTypeId,
       color: t.color
     };

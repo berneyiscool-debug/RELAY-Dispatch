@@ -13,7 +13,7 @@ global.localStorage = {
 global.window = {
   sessionStorage: {
     getItem: () => JSON.stringify({ id: '1', name: 'Test' }),
-    setItem: () => {}
+    setItem: () => { }
   },
   confirm: () => true,
   alert: console.log

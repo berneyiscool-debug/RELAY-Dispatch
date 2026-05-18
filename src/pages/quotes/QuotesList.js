@@ -22,6 +22,7 @@ export function renderQuotesList(container) {
       <div class="toolbar-filters">
         <button class="toolbar-filter active" data-filter="all">All (${quotes.length})</button>
         <button class="toolbar-filter" data-filter="Draft">Draft</button>
+        <button class="toolbar-filter" data-filter="Finalised">Finalised</button>
         <button class="toolbar-filter" data-filter="Sent">Sent</button>
         <button class="toolbar-filter" data-filter="Accepted">Accepted</button>
         <button class="toolbar-filter" data-filter="Declined">Declined</button>
@@ -35,7 +36,7 @@ export function renderQuotesList(container) {
   `;
 
   let filteredData = [...quotes];
-  const sb = { 'Draft': 'badge-neutral', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger' };
+  const sb = { 'Draft': 'badge-neutral', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger' };
 
   const columns = [
     { key: 'number', label: 'Quote #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '110px' },
@@ -69,6 +70,7 @@ export function renderQuotesList(container) {
                   <label class="form-label">New Status</label>
                   <select class="form-select" id="bulk-status">
                     <option value="Draft">Draft</option>
+                    <option value="Finalised">Finalised</option>
                     <option value="Sent">Sent</option>
                     <option value="Accepted">Accepted</option>
                     <option value="Declined">Declined</option>

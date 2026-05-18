@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — MAIN ENTRY POINT
+// FIELDFORGE — MAIN ENTRY POINT
 // ============================================
 
 import './styles/global.css';
@@ -38,6 +38,7 @@ import { renderPurchaseOrdersList } from './pages/purchaseOrders/PurchaseOrdersL
 import { renderPurchaseOrderDetail } from './pages/purchaseOrders/PurchaseOrderDetail.js';
 import { renderReports } from './pages/reports/Reports.js';
 import { renderSettings } from './pages/Settings.js';
+import { renderFormBuilder } from './pages/forms/FormBuilder.js';
 
 import { renderLogin } from './pages/login/Login.js';
 import { renderCustomerPortal } from './pages/portal/Portal.js';
@@ -55,7 +56,7 @@ import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
 seedData();
 
 // Expose app globals for cross-component access
-window.__simproApp = { router, store };
+window.__fieldForge = { router, store };
 
 // ---- Build App Shell ----
 const app = document.getElementById('app');
@@ -155,7 +156,6 @@ router.register('/invoices/:id', renderPage(renderInvoiceDetail));
 
 // Purchase Orders
 router.register('/purchase-orders', renderPage(renderPurchaseOrdersList));
-router.register('/purchase-orders/new', renderPage((c, p) => renderPurchaseOrderDetail(c, { id: 'new', jobId: p.jobId })));
 router.register('/purchase-orders/:id', renderPage(renderPurchaseOrderDetail));
 
 // Documents
@@ -166,9 +166,11 @@ router.register('/reports', renderPage(renderReports));
 
 // Settings
 router.register('/settings', renderPage(renderSettings));
+router.register('/settings/forms/new', renderPage((c, p) => renderFormBuilder(c, { id: 'new' })));
+router.register('/settings/forms/:id/edit', renderPage((c, p) => renderFormBuilder(c, p)));
 
 // ---- Auth Guard Hook ----
-const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings'];
+const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms'];
 const customerRoutes = ['/portal'];
 
 router.onNavigate = (path, params) => {
@@ -243,6 +245,18 @@ router.onNavigate = (path, params) => {
   updateSidebarActive(path);
   createBreadcrumb(path);
 };
+
+// Handle logout events globally
+window.addEventListener('fieldforge-logout', () => {
+  sessionStorage.removeItem('currentUser');
+  const sidebar = document.querySelector('.sidebar');
+  const topbar = document.querySelector('.topbar');
+  const breadcrumb = document.getElementById('breadcrumb');
+  if (sidebar) sidebar.style.display = 'none';
+  if (topbar) topbar.style.display = 'none';
+  if (breadcrumb) breadcrumb.style.display = 'none';
+  router.navigate('/login');
+});
 
 // ---- Boot ----
 // Before resolving, check if we need to redirect to login

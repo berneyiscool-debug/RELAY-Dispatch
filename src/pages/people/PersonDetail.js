@@ -10,6 +10,7 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
+import { showAssetQuickAdd } from '../../utils/quickModals.js';
 
 export function renderPersonDetail(container, { id }) {
   const person = store.getById('customers', id);
@@ -325,52 +326,12 @@ export function renderPersonDetail(container, { id }) {
       `;
 
       tabContent.querySelector('#btn-toggle-asset').addEventListener('click', () => {
-        const content = document.createElement('div');
-        content.innerHTML = `
-          <div class="form-group"><label class="form-label">Asset Name *</label><input type="text" id="new-a-name" class="form-input" placeholder="e.g. Carrier HVAC Unit"></div>
-          <div class="form-group"><label class="form-label">Serial Number</label><input type="text" id="new-a-serial" class="form-input"></div>
-          <div class="form-group">
-            <label class="form-label">Location / Site</label>
-            <select id="new-a-site" class="form-select">
-              <option value="">-- No specific site --</option>
-              ${sites.map(s => `<option value="${escapeHTML(s.name)}">${escapeHTML(s.name)}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group"><label class="form-label">Install Date</label><input type="date" id="new-a-date" class="form-input"></div>
-          <div class="form-group">
-            <label class="form-label">Description</label>
-            <textarea id="new-a-description" class="form-input" rows="2"></textarea>
-          </div>
-        `;
-
-        showDrawer({
-          title: 'Add Asset',
-          content: content.outerHTML,
-          actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Save', className: 'btn-primary', onClick: (close) => {
-              const dOverlay = document.querySelector('.drawer-overlay');
-              const name = dOverlay.querySelector('#new-a-name').value.trim();
-              if (!name) return showToast('Asset Name is required', 'error');
-              
-              store.create('assets', {
-                name, 
-                serial: dOverlay.querySelector('#new-a-serial').value,
-                site: dOverlay.querySelector('#new-a-site').value,
-                installDate: dOverlay.querySelector('#new-a-date').value,
-                description: dOverlay.querySelector('#new-a-description').value,
-                ownerType: 'Customer',
-                customerId: id,
-                status: 'Active',
-                type: 'Equipment'
-              });
-              showToast('Asset tracking started', 'success');
-              renderTabContent();
-              render(); // update tab count
-              close();
-            }}
-          ],
-          width: 450
+        showAssetQuickAdd({
+          customerId: id,
+          onSave: () => {
+            renderTabContent();
+            render(); // update tab count
+          }
         });
       });
 

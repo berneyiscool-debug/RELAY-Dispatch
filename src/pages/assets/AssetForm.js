@@ -3,7 +3,15 @@ import { router } from '../../router.js';
 
 export function renderAssetForm(container, params) {
   const isNew = params.id === 'new';
-  let asset = isNew ? { status: 'Active', ownerType: 'Business' } : store.getById('assets', params.id);
+  let asset = isNew ? { 
+    status: 'Active', 
+    ownerType: 'Business', 
+    type: 'Plant & Equipment',
+    serviceIntervalMonths: 6,
+    currentMeter: 0,
+    recoveryRate: 0,
+    logs: []
+  } : store.getById('assets', params.id);
 
   if (!asset && !isNew) {
     container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Asset not found</h3></div>`;
@@ -46,16 +54,58 @@ export function renderAssetForm(container, params) {
             <div class="form-group">
               <label class="form-label">Owner Type</label>
               <select id="ownerType" class="form-select">
-                <option value="Business" ${asset.ownerType === 'Business' ? 'selected' : ''}>My Business</option>
-                <option value="Customer" ${asset.ownerType === 'Customer' ? 'selected' : ''}>Customer</option>
+                <option value="Business" ${asset.ownerType === 'Business' ? 'selected' : ''}>My Business (Revenue Tool)</option>
+                <option value="Customer" ${asset.ownerType === 'Customer' ? 'selected' : ''}>Customer (Service Target)</option>
               </select>
             </div>
             <div class="form-group" id="customer-select-group" style="display: ${asset.ownerType === 'Customer' ? 'block' : 'none'};">
-              <label class="form-label">Customer</label>
+              <label class="form-label">Customer *</label>
               <select id="customerId" class="form-select">
                 <option value="">Select customer...</option>
                 ${customers.map(c => `<option value="${c.id}" ${asset.customerId === c.id ? 'selected' : ''}>${c.company || c.firstName + ' ' + c.lastName}</option>`).join('')}
               </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Type / Category</label>
+              <select id="type" class="form-select">
+                ${['Vehicle', 'Plant & Equipment', 'Specialized Tool', 'Fixed Asset (HVAC/Solar/Fire)', 'Other'].map(t => `<option value="${t}" ${asset.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Serial / ID / License</label>
+              <input type="text" id="serial" class="form-input" value="${asset.serial || asset.identifier || ''}" placeholder="e.g. S/N 12345 or REG-123" />
+            </div>
+          </div>
+
+          <div class="form-row" id="business-fields" style="display: ${asset.ownerType === 'Business' ? 'flex' : 'none'};">
+            <div class="form-group">
+              <label class="form-label">Recovery Rate ($/hr)</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="text-tertiary">$</span>
+                <input type="number" id="recoveryRate" class="form-input" value="${asset.recoveryRate || 0}" step="0.5" />
+              </div>
+              <div class="form-help">Amount charged to jobs for using this asset.</div>
+            </div>
+            <div class="form-group">
+               <label class="form-label">Assign to Default Staff</label>
+               <select id="assignedToId" class="form-select">
+                 <option value="">Unassigned</option>
+                 ${staff.map(s => `<option value="${s.id}" ${asset.assignedToId === s.id ? 'selected' : ''}>${s.firstName} ${s.lastName}</option>`).join('')}
+               </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Service Interval (Months)</label>
+              <input type="number" id="serviceIntervalMonths" class="form-input" value="${asset.serviceIntervalMonths || 6}" min="1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Current Meter / Hours</label>
+              <input type="number" id="currentMeter" class="form-input" value="${asset.currentMeter || 0}" step="1" />
             </div>
           </div>
 
@@ -68,38 +118,16 @@ export function renderAssetForm(container, params) {
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Install Date</label>
+              <label class="form-label">Install / Purchase Date</label>
               <input type="date" id="installDate" class="form-input" value="${asset.installDate || ''}" />
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Type</label>
-              <select id="type" class="form-select">
-                ${['Vehicle', 'Equipment', 'Tool', 'Other'].map(t => `<option value="${t}" ${asset.type === t ? 'selected' : ''}>${t}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Serial Number / Identifier</label>
-              <input type="text" id="serial" class="form-input" value="${asset.serial || asset.identifier || asset.licensePlate || ''}" />
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Status</label>
-              <select id="status" class="form-select">
-                ${['Active', 'Maintenance', 'Inactive'].map(s => `<option value="${s}" ${asset.status === s ? 'selected' : ''}>${s}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Assign To (Staff)</label>
-              <select id="assignedToId" class="form-select">
-                <option value="">Unassigned</option>
-                ${staff.map(s => `<option value="${s.id}" ${asset.assignedToId === s.id ? 'selected' : ''}>${s.firstName} ${s.lastName}</option>`).join('')}
-              </select>
-            </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select id="status" class="form-select">
+              ${['Active', 'In Maintenance', 'Commissioning', 'Decommissioned', 'Lost/Stolen'].map(s => `<option value="${s}" ${asset.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
           </div>
         </form>
       </div>
@@ -111,9 +139,12 @@ export function renderAssetForm(container, params) {
   const customerSelect = container.querySelector('#customerId');
   const siteSelect = container.querySelector('#site');
   
+  const bizFields = container.querySelector('#business-fields');
+  
   ownerTypeSelect.addEventListener('change', (e) => {
     const isCustomer = e.target.value === 'Customer';
     customerGroup.style.display = isCustomer ? 'block' : 'none';
+    bizFields.style.display = isCustomer ? 'none' : 'flex';
     siteSelect.disabled = !isCustomer;
     if (!isCustomer) {
       siteSelect.innerHTML = '<option value="">-- No specific site --</option>';
@@ -149,14 +180,17 @@ export function renderAssetForm(container, params) {
       name: container.querySelector('#name').value,
       description: container.querySelector('#description').value,
       serial: container.querySelector('#serial').value,
-      identifier: container.querySelector('#serial').value, // keeping identifier for backwards compat for now
+      identifier: container.querySelector('#serial').value,
       type: container.querySelector('#type').value,
       status: container.querySelector('#status').value,
       assignedToId: container.querySelector('#assignedToId').value,
       ownerType: container.querySelector('#ownerType').value,
       customerId: container.querySelector('#ownerType').value === 'Customer' ? container.querySelector('#customerId').value : null,
       site: container.querySelector('#site').value,
-      installDate: container.querySelector('#installDate').value
+      installDate: container.querySelector('#installDate').value,
+      recoveryRate: parseFloat(container.querySelector('#recoveryRate')?.value || 0),
+      serviceIntervalMonths: parseInt(container.querySelector('#serviceIntervalMonths').value || 6),
+      currentMeter: parseFloat(container.querySelector('#currentMeter').value || 0)
     };
 
     if (!data.name) {

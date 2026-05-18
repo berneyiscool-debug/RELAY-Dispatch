@@ -3,16 +3,15 @@ import { router } from '../../router.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { createDataTable } from '../../components/DataTable.js';
 
 export function renderNotificationsList(container) {
   const allNotifications = store.getAll('notifications') || [];
   let searchTerm = '';
   let activeFilter = 'all';
   
-  function render() {
-    allNotifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    let filtered = allNotifications.filter(n => {
+  function getFilteredData() {
+    return allNotifications.filter(n => {
       const search = searchTerm.toLowerCase();
       const matchesSearch = (
         n.title?.toLowerCase().includes(search) ||
@@ -21,130 +20,144 @@ export function renderNotificationsList(container) {
         n.type?.toLowerCase().includes(search) ||
         n.priority?.toLowerCase().includes(search)
       );
-
       const matchesFilter = (activeFilter === 'all') || (n.status === activeFilter);
-      
       return matchesSearch && matchesFilter;
-    });
-
-    container.innerHTML = `
-      <div class="page-header">
-        <h1>Notifications</h1>
-        <div class="page-header-actions">
-          <button class="btn btn-primary" id="btn-raise-notification">
-            <span class="material-icons-outlined">campaign</span> Raise Notification
-          </button>
-        </div>
-      </div>
-
-      <div class="page-toolbar">
-        <div class="toolbar-filters">
-          <button class="toolbar-filter ${activeFilter === 'all' ? 'active' : ''}" data-filter="all">All (${allNotifications.length})</button>
-          <button class="toolbar-filter ${activeFilter === 'Pending' ? 'active' : ''}" data-filter="Pending">Pending (${allNotifications.filter(n => n.status === 'Pending').length})</button>
-          <button class="toolbar-filter ${activeFilter === 'Converted' ? 'active' : ''}" data-filter="Converted">Converted (${allNotifications.filter(n => n.status === 'Converted').length})</button>
-        </div>
-        <div class="toolbar-search">
-          <span class="material-icons-outlined">search</span>
-          <input type="text" id="notif-search" placeholder="Search notifications..." value="${escapeHTML(searchTerm)}" />
-        </div>
-      </div>
-      
-      <div class="card" style="margin-bottom:var(--space-lg)">
-        <div class="card-body" style="padding:0">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Title / Job Name</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Raised By</th>
-                <th style="text-align:right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filtered.length ? filtered.map(n => `
-                <tr>
-                  <td>${n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—'}</td>
-                  <td><span class="badge badge-neutral">${escapeHTML(n.type || 'Field Alert')}</span></td>
-                  <td>
-                    <div style="font-weight:500">${escapeHTML(n.title)}</div>
-                    <div style="font-size:12px;color:var(--text-tertiary);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description)}</div>
-                  </td>
-                  <td><span class="badge ${n.priority === 'Urgent' || n.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${escapeHTML(n.priority || 'Normal')}</span></td>
-                  <td><span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status)}</span></td>
-                  <td>${escapeHTML(n.createdBy || 'System')}</td>
-                  <td style="text-align:right">
-                    ${n.status !== 'Converted' ? `
-                      <button class="btn btn-sm btn-ghost btn-convert-quote" data-id="${n.id}" title="Convert to Quote"><span class="material-icons-outlined">request_quote</span></button>
-                      <button class="btn btn-sm btn-ghost btn-convert-job" data-id="${n.id}" title="Convert to Job"><span class="material-icons-outlined">build</span></button>
-                    ` : ''}
-                    <button class="btn btn-sm btn-ghost btn-view-notification" data-id="${n.id}" title="View Details"><span class="material-icons-outlined">visibility</span></button>
-                    <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit"><span class="material-icons-outlined">edit</span></button>
-                  </td>
-                </tr>
-              `).join('') : `<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-secondary)">No notifications found.</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-
-    // Maintain focus and cursor position
-    const searchInput = container.querySelector('#notif-search');
-    if (document.activeElement?.id === 'notif-search') {
-      searchInput.focus();
-      searchInput.setSelectionRange(searchTerm.length, searchTerm.length);
-    }
-
-    searchInput.addEventListener('input', (e) => {
-      searchTerm = e.target.value;
-      render();
-      container.querySelector('#notif-search').focus();
-    });
-
-    container.querySelectorAll('.toolbar-filter').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeFilter = btn.dataset.filter;
-        render();
-      });
-    });
-
-    container.querySelector('#btn-raise-notification').addEventListener('click', () => openNotificationFormDrawer());
-
-    container.querySelectorAll('.btn-view-notification').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const id = e.currentTarget.dataset.id;
-        const notification = allNotifications.find(n => n.id === id);
-        if (notification) openNotificationDetails(notification);
-      });
-    });
-
-    container.querySelectorAll('.btn-edit-notification').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const id = e.currentTarget.dataset.id;
-        const notification = allNotifications.find(n => n.id === id);
-        if (notification) openNotificationFormDrawer(notification);
-      });
-    });
-
-    container.querySelectorAll('.btn-convert-quote').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const id = e.currentTarget.dataset.id;
-        convertToQuote(id);
-      });
-    });
-
-    container.querySelectorAll('.btn-convert-job').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const id = e.currentTarget.dataset.id;
-        convertToJob(id);
-      });
     });
   }
 
-  render();
+  container.innerHTML = `
+    <div class="page-header">
+      <h1>Notifications</h1>
+      <div class="page-header-actions">
+        <button class="btn btn-primary" id="btn-raise-notification">
+          <span class="material-icons-outlined">campaign</span> Raise Notification
+        </button>
+      </div>
+    </div>
+
+    <div class="page-toolbar">
+      <div class="toolbar-filters">
+        <button class="toolbar-filter ${activeFilter === 'all' ? 'active' : ''}" data-filter="all">All (${allNotifications.length})</button>
+        <button class="toolbar-filter ${activeFilter === 'Pending' ? 'active' : ''}" data-filter="Pending">Pending (${allNotifications.filter(n => n.status === 'Pending').length})</button>
+        <button class="toolbar-filter ${activeFilter === 'Converted' ? 'active' : ''}" data-filter="Converted">Converted (${allNotifications.filter(n => n.status === 'Converted').length})</button>
+      </div>
+      <div class="toolbar-search">
+        <span class="material-icons-outlined">search</span>
+        <input type="text" id="notif-search" placeholder="Search notifications..." value="${escapeHTML(searchTerm)}" />
+      </div>
+    </div>
+    
+    <div id="notifications-table-container"></div>
+  `;
+
+  const columns = [
+    { 
+      key: 'createdAt', 
+      label: 'Date', 
+      render: (n) => n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—',
+      getValue: (n) => n.createdAt ? new Date(n.createdAt).getTime() : 0,
+      width: '100px'
+    },
+    { 
+      key: 'type', 
+      label: 'Type', 
+      render: (n) => `<span class="badge badge-neutral">${escapeHTML(n.type || 'Field Alert')}</span>`,
+      width: '120px'
+    },
+    { 
+      key: 'title', 
+      label: 'Title / Job Name', 
+      render: (n) => `
+        <div style="font-weight:500">${escapeHTML(n.title)}</div>
+        <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description)}</div>
+      `
+    },
+    { 
+      key: 'priority', 
+      label: 'Priority', 
+      render: (n) => `<span class="badge ${n.priority === 'Urgent' || n.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${escapeHTML(n.priority || 'Normal')}</span>`,
+      width: '100px'
+    },
+    { 
+      key: 'status', 
+      label: 'Status', 
+      render: (n) => `<span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status)}</span>`,
+      width: '110px'
+    },
+    { 
+      key: 'createdBy', 
+      label: 'Raised By',
+      width: '150px'
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (n) => `
+        <div style="text-align:right">
+          ${n.status !== 'Converted' ? `
+            <button class="btn btn-sm btn-ghost btn-convert-quote" data-id="${n.id}" title="Convert to Quote"><span class="material-icons-outlined">request_quote</span></button>
+            <button class="btn btn-sm btn-ghost btn-convert-job" data-id="${n.id}" title="Convert to Job"><span class="material-icons-outlined">build</span></button>
+          ` : ''}
+          <button class="btn btn-sm btn-ghost btn-view-notification" data-id="${n.id}" title="View Details"><span class="material-icons-outlined">visibility</span></button>
+          <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit"><span class="material-icons-outlined">edit</span></button>
+        </div>
+      `,
+      width: '150px'
+    }
+  ];
+
+  const table = createDataTable({
+    columns,
+    data: getFilteredData(),
+    onRowClick: (id) => {
+      const n = allNotifications.find(notif => notif.id === id);
+      if (n) openNotificationDetails(n);
+    },
+    emptyMessage: 'No notifications found',
+    emptyIcon: 'campaign'
+  });
+
+  container.querySelector('#notifications-table-container').appendChild(table);
+
+  const searchInput = container.querySelector('#notif-search');
+  searchInput.addEventListener('input', (e) => {
+    searchTerm = e.target.value;
+    table.updateData(getFilteredData());
+  });
+
+  container.querySelectorAll('.toolbar-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.filter;
+      table.updateData(getFilteredData());
+    });
+  });
+
+  container.querySelector('#btn-raise-notification').addEventListener('click', () => openNotificationFormDrawer());
+
+  table.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    
+    e.stopPropagation();
+    const id = btn.dataset.id;
+    if (btn.classList.contains('btn-view-notification')) {
+      const n = allNotifications.find(notif => notif.id === id);
+      if (n) openNotificationDetails(n);
+    } else if (btn.classList.contains('btn-edit-notification')) {
+      const n = allNotifications.find(notif => notif.id === id);
+      if (n) openNotificationFormDrawer(n);
+    } else if (btn.classList.contains('btn-convert-quote')) {
+      convertToQuote(id);
+    } else if (btn.classList.contains('btn-convert-job')) {
+      convertToJob(id);
+    }
+  });
+
+  function refreshAll() {
+    renderNotificationsList(container);
+  }
 
   function openNotificationFormDrawer(existingN = null) {
     const jobs = store.getAll('jobs');

@@ -1,7 +1,8 @@
 // ============================================
-// SIMPRO CLONE — DATA STORE (localStorage)
+// FIELDFORGE — DATA STORE (localStorage)
 // ============================================
 
+// Legacy prefix kept to prevent data loss during rebranding
 const STORE_PREFIX = 'simpro_';
 
 class DataStore {
@@ -63,11 +64,25 @@ class DataStore {
 
   getSettings() {
     const defaultSettings = {
-      markupPercent: 20,
+      markupPercent: 20, // Legacy support
+      materialMarkup: {
+        defaultPercent: 30,
+        minMarkupAmount: 5.00,
+        useTiers: true,
+        tiers: [
+          { upTo: 50, percent: 60 },
+          { upTo: 200, percent: 45 },
+          { upTo: 1000, percent: 30 },
+          { upTo: null, percent: 15 }
+        ]
+      },
+      materialCategories: ['Consumables', 'Electrical', 'Plumbing', 'HVAC Parts', 'Fixings', 'General'],
       laborRates: [
-        { id: 'rate_1', name: 'Standard Rate', rate: 85.00 },
-        { id: 'rate_2', name: 'After Hours Rate', rate: 127.50 },
-        { id: 'rate_3', name: 'Emergency Rate', rate: 170.00 }
+        { id: 'rate_1', name: 'Standard Rate',    rate: 85.00,  description: 'Normal business hours Mon–Fri', overtimeMultiplier: 1.0,  minCallOutFee: 0, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], isDefault: true  },
+        { id: 'rate_2', name: 'After Hours Rate', rate: 127.50, description: 'Evenings and early mornings',      overtimeMultiplier: 1.5,  minCallOutFee: 45, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], isDefault: false },
+        { id: 'rate_3', name: 'Saturday Rate',    rate: 127.50, description: 'Saturday work',                   overtimeMultiplier: 1.5,  minCallOutFee: 65, applicableDays: ['Sat'],                        isDefault: false },
+        { id: 'rate_4', name: 'Sunday Rate',      rate: 170.00, description: 'Sunday and public holidays',       overtimeMultiplier: 2.0,  minCallOutFee: 85, applicableDays: ['Sun','PH'],                   isDefault: false },
+        { id: 'rate_5', name: 'Emergency Rate',   rate: 195.00, description: 'Urgent call-outs any day',        overtimeMultiplier: 2.0,  minCallOutFee: 120, applicableDays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'], isDefault: false },
       ]
     };
 

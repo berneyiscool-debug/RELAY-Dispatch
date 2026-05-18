@@ -59,13 +59,26 @@ export function renderReports(container) {
     const lowStockItems = stock.filter(i => i.quantity <= i.reorderLevel);
     const timesheets = store.getAll('timesheets');
 
-    // Pre-calculate hours by job for performance
+    // Pre-calculate hours and costs by job for performance
     const hoursByJob = {};
+    const internalLaborCostByJob = {};
+    
+    const people = store.getAll('people');
+    const techRates = {};
+    people.forEach(p => { if (p.payRate) techRates[p.id] = p.payRate; });
+
     timesheets.forEach(t => {
       hoursByJob[t.jobId] = (hoursByJob[t.jobId] || 0) + (t.hours || 0);
+      const rate = t.payRate || techRates[t.technicianId] || 0;
+      internalLaborCostByJob[t.jobId] = (internalLaborCostByJob[t.jobId] || 0) + (t.hours * rate);
     });
 
-    return { jobs, quotes, invoices, customers, stock, technicians, leads, totalRevenue, totalOutstanding, avgJobValue, quoteWinRate, leadConvRate, jobsByStatus, invByStatus, techStats, topCustomers, totalStockValue, lowStockItems, timesheets, hoursByJob };
+    return { 
+      jobs, quotes, invoices, customers, stock, technicians, leads, 
+      totalRevenue, totalOutstanding, avgJobValue, quoteWinRate, leadConvRate, 
+      jobsByStatus, invByStatus, techStats, topCustomers, totalStockValue, 
+      lowStockItems, timesheets, hoursByJob, internalLaborCostByJob 
+    };
   }
 
   function render() {
@@ -154,19 +167,24 @@ export function renderReports(container) {
       csv = 'Invoice #,Customer,Status,Total,Issue Date,Due Date\n';
       d.invoices.forEach(i => {
         csv += `"${i.number}","${i.customerName}","${i.status}",${i.total || 0},"${i.issueDate || ''}","${i.dueDate || ''}"\n`;
-      });
-    } else if (activeReport === 'job_costing') {
-      csv = 'Job #,Technician,Est. Hrs,Actual Hrs,Est. Labor,Actual Labor,Variance\n';
+      });    } else if (activeReport === 'job_costing') {
+      const settings = store.getSettings();
+      csv = 'Job #,Technician,Actual Hrs,Internal Labor Cost,Billable Labor,Profit,Margin %\n';
       const costingData = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').map(j => {
-        const estH = j.estimatedHours || 0;
-        const estLabor = j.laborCost || 0;
         const actualH = d.hoursByJob[j.id] || 0;
-        const actualLabor = actualH * 85;
-        return { num: j.number, tech: j.technicianName || '', estH, actualH, estLabor, actualLabor, variance: estLabor - actualLabor };
+        const actualLabor = d.internalLaborCostByJob[j.id] || j.laborCost || 0;
+        
+        const profile = settings.laborRates.find(r => r.id === j.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
+        const billableLabor = Math.max(actualH * (profile?.rate || 85), profile?.minCallOutFee || 0);
+        const profit = billableLabor - actualLabor;
+        const margin = billableLabor > 0 ? (profit / billableLabor * 100) : 0;
+        
+        return { num: j.number, tech: j.technicianName || '', actualH, actualLabor, billableLabor, profit, margin };
       });
       costingData.forEach(j => {
-        csv += `"${j.num}","${j.tech}",${j.estH},${j.actualH},${j.estLabor},${j.actualLabor},${j.variance}\n`;
+        csv += `"${j.num}","${j.tech}",${j.actualH},${j.actualLabor.toFixed(2)},${j.billableLabor.toFixed(2)},${j.profit.toFixed(2)},${j.margin.toFixed(1)}%\n`;
       });
+
     } else if (activeReport === 'jobs') {
       csv = 'Job #,Title,Customer,Technician,Status,Priority,Labor,Material\n';
       d.jobs.forEach(j => {
@@ -370,43 +388,51 @@ function renderJobsReport(d) {
 }
 
 function renderJobCostingReport(d) {
+  const settings = store.getSettings();
   const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
+  
   const costingData = completedJobs.map(j => {
-    const estH = j.estimatedHours || 0;
-    const estLabor = j.laborCost || 0;
     const actualH = d.hoursByJob[j.id] || 0;
-    const laborRate = 85; // Standard rate assumption
-    const actualLabor = actualH * laborRate;
+    const actualLabor = d.internalLaborCostByJob[j.id] || j.laborCost || 0;
+    
+    const profile = settings.laborRates.find(r => r.id === j.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
+    const billableLabor = Math.max(actualH * (profile?.rate || 85), profile?.minCallOutFee || 0);
+    
+    const profit = billableLabor - actualLabor;
+    const margin = billableLabor > 0 ? (profit / billableLabor * 100) : 0;
+    
     return {
-      ...j, estH, actualH, estLabor, actualLabor,
-      hVariance: estH - actualH,
-      laborVariance: estLabor - actualLabor
+      ...j, actualH, actualLabor, billableLabor, profit, margin
     };
   });
 
-  const totalEstLabor = costingData.reduce((s, j) => s + j.estLabor, 0);
   const totalActualLabor = costingData.reduce((s, j) => s + j.actualLabor, 0);
-  const totalVariance = totalEstLabor - totalActualLabor;
+  const totalBillableLabor = costingData.reduce((s, j) => s + j.billableLabor, 0);
+  const totalProfit = totalBillableLabor - totalActualLabor;
+  const avgMargin = totalBillableLabor > 0 ? (totalProfit / totalBillableLabor * 100) : 0;
 
   return `
     <div class="grid-3" style="margin-bottom:var(--space-lg)">
-      ${kpi('Est. Total Labor', '$' + totalEstLabor.toFixed(0), 'engineering', 'blue')}
-      ${kpi('Actual Total Labor', '$' + totalActualLabor.toFixed(0), 'timer', 'orange')}
-      ${kpi('Overall Variance', '$' + Math.abs(totalVariance).toFixed(0) + ' ' + (totalVariance >= 0 ? 'Under Budget' : 'Over Budget'), 'trending_flat', totalVariance >= 0 ? 'green' : 'red')}
+      ${kpi('Internal Labor Cost', '$' + totalActualLabor.toLocaleString(), 'engineering', 'orange')}
+      ${kpi('Billable Labor Rev.', '$' + totalBillableLabor.toLocaleString(), 'payments', 'green')}
+      ${kpi('Labor Profitability', (avgMargin.toFixed(1)) + '% Margin', 'trending_up', avgMargin >= 40 ? 'green' : 'orange')}
     </div>
     <div class="card">
-      <div class="card-header"><h4>Labor Costing Analysis (Completed Jobs)</h4></div>
+      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+        <h4 style="margin:0">Labor Costing Analysis (Completed Jobs)</h4>
+        <div style="font-size:12px; color:var(--text-tertiary)">Actual Tech Pay vs. Profile Billable Rate</div>
+      </div>
       <div class="card-body" style="padding:0">
         <table class="data-table">
           <thead>
             <tr>
               <th>Job</th>
               <th>Technician</th>
-              <th style="text-align:right">Est. Hrs</th>
-              <th style="text-align:right">Actual Hrs</th>
-              <th style="text-align:right">Est. Labor</th>
-              <th style="text-align:right">Actual Labor</th>
-              <th style="text-align:right">Variance</th>
+              <th style="text-align:right">Hrs</th>
+              <th style="text-align:right">Internal Cost</th>
+              <th style="text-align:right">Billable</th>
+              <th style="text-align:right">Profit</th>
+              <th style="text-align:right">Margin</th>
             </tr>
           </thead>
           <tbody>
@@ -414,12 +440,16 @@ function renderJobCostingReport(d) {
               <tr>
                 <td class="font-medium"><a href="#/jobs/${j.id}" class="cell-link">${j.number}</a></td>
                 <td>${j.technicianName || '—'}</td>
-                <td style="text-align:right">${j.estH}</td>
-                <td style="text-align:right;font-weight:${j.actualH > j.estH ? '600' : '400'};color:${j.actualH > j.estH ? 'var(--color-danger)' : 'inherit'}">${j.actualH}</td>
-                <td style="text-align:right">$${j.estLabor.toFixed(0)}</td>
-                <td style="text-align:right">$${j.actualLabor.toFixed(0)}</td>
-                <td style="text-align:right;font-weight:600;color:${j.laborVariance >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
-                  ${j.laborVariance >= 0 ? '+' : '-'}$${Math.abs(j.laborVariance).toFixed(0)}
+                <td style="text-align:right">${j.actualH.toFixed(2)}</td>
+                <td style="text-align:right">$${j.actualLabor.toFixed(2)}</td>
+                <td style="text-align:right">$${j.billableLabor.toFixed(2)}</td>
+                <td style="text-align:right;font-weight:600;color:${j.profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+                  $${j.profit.toFixed(2)}
+                </td>
+                <td style="text-align:right">
+                   <span class="badge ${j.margin >= 40 ? 'badge-success' : j.margin >= 20 ? 'badge-warning' : 'badge-danger'}">
+                    ${j.margin.toFixed(1)}%
+                   </span>
                 </td>
               </tr>
             `).join('')}

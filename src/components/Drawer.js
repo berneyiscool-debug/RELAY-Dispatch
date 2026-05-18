@@ -18,7 +18,11 @@ export function showDrawer({ title, content, actions = [], width = 400 }) {
 
   const body = document.createElement('div');
   body.className = 'drawer-body';
-  body.innerHTML = content;
+  if (typeof content === 'string') {
+    body.innerHTML = content;
+  } else {
+    body.appendChild(content);
+  }
 
   drawer.appendChild(header);
   drawer.appendChild(body);

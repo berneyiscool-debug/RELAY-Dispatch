@@ -7,6 +7,7 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showPurchaseOrderDrawer } from '../../utils/quickModals.js';
 
 export function renderPurchaseOrdersList(container) {
   const pos = store.getAll('purchaseOrders');
@@ -50,7 +51,10 @@ export function renderPurchaseOrdersList(container) {
   const table = createDataTable({ 
     columns, 
     data: filteredData, 
-    onRowClick: (id) => router.navigate(`/purchase-orders/${id}`), 
+    onRowClick: (id) => showPurchaseOrderDrawer({ 
+      id, 
+      onSave: () => renderPurchaseOrdersList(container) 
+    }), 
     emptyMessage: 'No purchase orders found', 
     emptyIcon: 'shopping_cart',
     selectable: true,
@@ -136,7 +140,11 @@ export function renderPurchaseOrdersList(container) {
   });
   
   container.querySelector('#po-table-container').appendChild(table);
-  container.querySelector('#btn-new-po').addEventListener('click', () => router.navigate('/purchase-orders/new'));
+  container.querySelector('#btn-new-po').addEventListener('click', () => {
+    showPurchaseOrderDrawer({
+      onSave: () => renderPurchaseOrdersList(container)
+    });
+  });
 
   container.querySelectorAll('.toolbar-filter').forEach(btn => {
     btn.addEventListener('click', () => {

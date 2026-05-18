@@ -359,7 +359,7 @@
 .main-content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-xl);
+  padding: 10px 10px 0 10px;
 }
 
 /* ---- Page content wrapper (max-width cap for ultra-wide screens) ---- */
@@ -385,13 +385,19 @@
   gap: var(--space-sm);
 }
 
-/* ---- Page Toolbar ---- */
+/* ---- Page Toolbar (Sticky) ---- */
 .page-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-base);
   margin-bottom: var(--space-base);
+  position: sticky;
+  top: -10px; /* Offset to stay at top of padded area */
+  background: var(--content-bg);
+  z-index: 100;
+  padding: 5px 0 15px; /* Add some padding to prevent overlap and provide breathing room */
+  margin-top: -5px;
 }
 .toolbar-filters {
   display: flex;
@@ -586,7 +592,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   grid-auto-rows: 140px;
-  gap: var(--space-lg);          /* 24px — uniform on ALL sides */
+  gap: 10px;          /* Uniform 10px gap */
 }
 
 .dashboard-module {

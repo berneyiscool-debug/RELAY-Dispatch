@@ -3,6 +3,7 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showAssetQuickAdd } from '../../utils/quickModals.js';
 
 export function renderAssetList(container) {
   let assets = store.getAll('assets');
@@ -41,21 +42,34 @@ export function renderAssetList(container) {
 
   const columns = [
     { key: 'name', label: 'Name / ID', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
-    { key: 'identifier', label: 'Identifier/Serial', render: (r) => escapeHTML(r.serial || r.identifier || r.licensePlate || '—') },
-    { key: 'type', label: 'Type', render: (r) => escapeHTML(r.type || '—') },
-    { key: 'owner', label: 'Owner', render: (r) => {
+    { key: 'owner', label: 'Owner Type', render: (r) => {
         if (r.ownerType === 'Customer' && r.customerId) {
-          const cust = store.getById('customers', r.customerId) || store.getById('people', r.customerId);
-          return cust ? `<span class="badge badge-info">${escapeHTML(cust.company || cust.firstName + ' ' + cust.lastName)}</span>` : 'Customer';
+          const cust = store.getById('customers', r.customerId);
+          return cust ? `<span class="badge badge-neutral">${escapeHTML(cust.company)}</span>` : 'Customer';
         }
-        return `<span class="badge badge-neutral">My Business</span>`;
+        return `<span class="badge badge-primary">My Business</span>`;
       } 
     },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>` },
+    { key: 'type', label: 'Category', render: (r) => escapeHTML(r.type || '—') },
+    { key: 'service', label: 'Service Status', render: (r) => {
+        const logs = r.logs || [];
+        const lastS = logs.filter(l => l.type === 'Service').sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+        if (!lastS || !r.serviceIntervalMonths) return '<span class="text-tertiary" style="font-size:12px">Not Scheduled</span>';
+        
+        const d = new Date(lastS.date);
+        d.setMonth(d.getMonth() + parseInt(r.serviceIntervalMonths));
+        const isOverdue = d < new Date();
+        
+        return `<span style="color:${isOverdue ? 'var(--color-danger)' : 'var(--text-secondary)'}; font-size:12px; font-weight:${isOverdue ? '600' : '400'}">
+          ${isOverdue ? 'OVERDUE' : d.toLocaleDateString()}
+        </span>`;
+      }
+    },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>` },
     { key: 'assignedTo', label: 'Assigned To', render: (r) => {
         if (!r.assignedToId) return '—';
-        const tech = store.getById('people', r.assignedToId);
-        return tech ? escapeHTML(`${tech.firstName} ${tech.lastName}`) : '—';
+        const tech = store.getById('technicians', r.assignedToId);
+        return tech ? escapeHTML(tech.name) : '—';
       }
     },
     { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm asset-edit-btn" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
@@ -84,9 +98,10 @@ export function renderAssetList(container) {
                   <label class="form-label">New Status</label>
                   <select class="form-select" id="bulk-status">
                     <option value="Active">Active</option>
-                    <option value="Maintenance">Maintenance</option>
-                    <option value="Broken">Broken</option>
-                    <option value="Inactive">Inactive</option>
+                    <option value="In Maintenance">In Maintenance</option>
+                    <option value="Commissioning">Commissioning</option>
+                    <option value="Decommissioned">Decommissioned</option>
+                    <option value="Lost/Stolen">Lost/Stolen</option>
                   </select>
                 </div>
               `;
@@ -148,7 +163,11 @@ export function renderAssetList(container) {
   
   container.querySelector('#asset-table-container').appendChild(table);
   
-  container.querySelector('#btn-new-asset').addEventListener('click', () => router.navigate('/assets/new'));
+  container.querySelector('#btn-new-asset').addEventListener('click', () => {
+    showAssetQuickAdd({
+      onSave: () => renderAssetList(container)
+    });
+  });
 
   container.querySelector('#asset-search').addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();

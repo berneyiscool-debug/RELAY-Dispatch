@@ -2,6 +2,7 @@
 // SIMPRO CLONE — DASHBOARD (CSS Grid System)
 // ============================================
 import { store } from '../data/store.js';
+import { calculateTotalBillableMaterials } from '../utils/pricing.js';
 
 let isEditMode = false;
 
@@ -27,10 +28,10 @@ const MODULES = {
   'unassigned-jobs':      { title: 'Unassigned Jobs Queue',       defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('assignment_late', 'No unassigned jobs') },
   'uninvoiced-completed': { title: 'Uninvoiced Completed Jobs',   defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('receipt_long', 'All jobs invoiced') },
   'low-stock':            { title: 'Low Stock Alerts',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard','tall'],        render: () => renderPlaceholder('inventory', 'Inventory looks good') },
-  'profitability-chart':  { title: 'Profitability Chart',         defaultW: 'L',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: () => renderPlaceholder('trending_up', 'Mock Profitability Data') },
+  'profitability-chart':  { title: 'Projected Profitability',     defaultW: 'L',  defaultH: 'tall',     widths: ['L','XL'],          heights: ['tall','xtall'],           render: renderProfitabilityChart },
   'staff-availability':   { title: 'Staff Availability',          defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('people', 'All staff active') },
   'timesheet-exceptions': { title: 'Timesheet Exceptions',        defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('schedule', 'No timesheet alerts') },
-  'fleet-status':         { title: 'Fleet Status',                defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('local_shipping', 'Fleet operational') },
+  'asset-status':         { title: 'Asset Status',                defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('precision_manufacturing', 'All assets operational') },
   'overdue-maintenance':  { title: 'Overdue Maintenance',         defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('build', 'No overdue maintenance') },
   'top-customers':        { title: 'Top Customers',               defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('emoji_events', 'Mock Top Customers') },
   'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     widths: ['S','M'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('checklist', 'No tasks added') },
@@ -123,17 +124,19 @@ function renderGrid(grid, layout, data) {
       ${canResizeW && canResizeH ? `<div class="resize-handle resize-br" title="Drag to resize"><span class="material-icons-outlined" style="font-size:12px;transform:rotate(45deg);">open_in_full</span></div>` : ''}
     ` : '';
 
-    const editControls = isEditMode ? `
+    const widgetControls = `
       <div style="display:flex;align-items:center;gap:4px;">
         ${mod.configurable ? `
           <button class="btn btn-ghost btn-icon btn-sm btn-configure" data-instance-id="${item.instanceId}" title="Configure widget" style="pointer-events:auto;position:relative;z-index:20;">
-            <span class="material-icons-outlined" style="font-size:15px;">settings</span>
+            <span class="material-icons-outlined" style="font-size:15px;${!isEditMode ? 'opacity:0.5;' : ''}">settings</span>
           </button>
         ` : ''}
-        <button class="btn btn-ghost btn-icon btn-sm btn-remove" data-instance-id="${item.instanceId}" title="Remove widget" style="pointer-events:auto;position:relative;z-index:20;">
-          <span class="material-icons-outlined" style="font-size:15px;">close</span>
-        </button>
-      </div>` : '';
+        ${isEditMode ? `
+          <button class="btn btn-ghost btn-icon btn-sm btn-remove" data-instance-id="${item.instanceId}" title="Remove widget" style="pointer-events:auto;position:relative;z-index:20;">
+            <span class="material-icons-outlined" style="font-size:15px;">close</span>
+          </button>
+        ` : ''}
+      </div>`;
 
     const headerBg = isEditMode ? 'background:rgba(27,109,224,0.04);' : '';
 
@@ -142,7 +145,7 @@ function renderGrid(grid, layout, data) {
         <div class="card ${mod.kpiStrip ? 'kpi-strip' : ''}">
           <div class="card-header" style="${headerBg}">
             <span style="font-weight:600;font-size:14px;">${mod.title}</span>
-            ${editControls}
+            ${widgetControls}
           </div>
           <div class="card-body">${mod.render(data, item)}</div>
         </div>
@@ -150,11 +153,12 @@ function renderGrid(grid, layout, data) {
       </div>`);
   });
 
+  wireWidgetControls(grid, layout, data);
   if (isEditMode) wireEditControls(grid, layout, data);
 }
 
-function wireEditControls(grid, layout, data) {
-  // Configure button
+function wireWidgetControls(grid, layout, data) {
+  // Configure button (always available if widget is configurable)
   grid.querySelectorAll('.btn-configure').forEach(btn => {
     btn.addEventListener('click', e => {
       const instId = e.currentTarget.dataset.instanceId;
@@ -165,17 +169,55 @@ function wireEditControls(grid, layout, data) {
         const jobs = data.jobs;
         const content = document.createElement('div');
         content.innerHTML = `
-          <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
-            ${jobs.map(j => `
-              <div class="job-option" data-job-id="${j.id}" style="padding:10px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.15s;"
-                onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
-                onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
-                <div style="font-weight:600;font-size:13px;">#${j.number} - ${j.title}</div>
-                <div style="font-size:11px;color:var(--text-tertiary);">${j.customerName}</div>
-              </div>
-            `).join('')}
+          <div style="margin-bottom: 12px;">
+            <input type="text" id="job-search" placeholder="Search by Job #, Title or Customer..." 
+              style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; outline: none; transition: border-color 0.2s;"
+              onfocus="this.style.borderColor='var(--color-primary)'"
+              onblur="this.style.borderColor='var(--border-color)'">
+          </div>
+          <div id="job-list-container" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+            <!-- Jobs will be rendered here -->
           </div>
         `;
+
+        function updateJobList(filter = '') {
+          const container = content.querySelector('#job-list-container');
+          const filtered = jobs.filter(j => 
+            j.number.toLowerCase().includes(filter.toLowerCase()) ||
+            j.title.toLowerCase().includes(filter.toLowerCase()) ||
+            j.customerName.toLowerCase().includes(filter.toLowerCase())
+          );
+
+          container.innerHTML = filtered.length > 0 ? filtered.map(j => `
+            <div class="job-option" data-job-id="${j.id}" style="padding:10px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.15s;"
+              onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
+              onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
+              <div style="font-weight:600;font-size:13px;">#${j.number} - ${j.title}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);">${j.customerName}</div>
+            </div>
+          `).join('') : `<div style="text-align:center; padding:20px; color:var(--text-tertiary); font-size:13px;">No matching jobs found</div>`;
+
+          // Re-attach click listeners
+          container.querySelectorAll('.job-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+              item.config = { ...item.config, jobId: opt.dataset.jobId };
+              
+              // If we are not in edit mode, auto-save the change to localStorage
+              if (!isEditMode) {
+                localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
+              }
+
+              document.querySelector('.modal-overlay')?.remove();
+              renderGrid(grid, layout, data);
+            });
+          });
+        }
+
+        updateJobList();
+
+        content.querySelector('#job-search').addEventListener('input', e => {
+          updateJobList(e.target.value);
+        });
 
         import('../components/Modal.js').then(({ showModal }) => {
           showModal({ 
@@ -183,19 +225,13 @@ function wireEditControls(grid, layout, data) {
             content, 
             actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: c => c() }] 
           });
-          
-          content.querySelectorAll('.job-option').forEach(opt => {
-            opt.addEventListener('click', () => {
-              item.config = { ...item.config, jobId: opt.dataset.jobId };
-              document.querySelector('.modal-overlay')?.remove();
-              renderGrid(grid, layout, data);
-            });
-          });
         });
       }
     });
   });
+}
 
+function wireEditControls(grid, layout, data) {
   // Remove button
   grid.querySelectorAll('.btn-remove').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -528,17 +564,29 @@ function renderPinnedJob(data, item) {
   const job = data.jobs.find(j => j.id === jobId);
   if (!job) return renderPlaceholder('warning', 'Job not found');
 
-  // Use tasks from job or mock them for visual testing
-  const tasks = job.tasks || [
-    { label: 'Site Safety Audit', completed: true },
-    { label: 'Materials Delivery', completed: job.status !== 'Pending' },
-    { label: 'Initial Rough-in', completed: job.status === 'In Progress' || job.status === 'Completed' },
-    { label: 'Quality Inspection', completed: job.status === 'Completed' },
-    { label: 'Client Sign-off', completed: false }
-  ];
+  function getTaskHierarchy(tasks, depth = 0) {
+    let result = [];
+    if (!tasks) return result;
+    tasks.forEach((p) => {
+      const isParent = (p.subTasks && p.subTasks.length > 0) || (p.subPhases && p.subPhases.length > 0);
+      result.push({ ...p, depth, isParent });
+      if (isParent) {
+        result = result.concat(getTaskHierarchy(p.subTasks || p.subPhases, depth + 1));
+      }
+    });
+    return result;
+  }
 
-  const completedCount = tasks.filter(t => t.completed).length;
-  const progress = Math.round((completedCount / tasks.length) * 100);
+  const jobTasks = job.tasks || job.phases || [];
+  const hierarchy = getTaskHierarchy(jobTasks);
+  const totalTasks = hierarchy.length;
+  
+  // Calculate overall progress from top-level tasks
+  let progress = 0;
+  if (jobTasks.length > 0) {
+    const sum = jobTasks.reduce((acc, p) => acc + (p.progress || 0), 0);
+    progress = Math.round(sum / jobTasks.length);
+  }
 
   return `
     <div style="padding:2px 0;">
@@ -551,20 +599,105 @@ function renderPinnedJob(data, item) {
         <div style="width:${progress}%;height:100%;background:var(--color-primary);border-radius:3px;transition:width 0.8s cubic-bezier(0.4, 0, 0.2, 1);"></div>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
-        ${tasks.map(t => `
-          <div style="display:flex;align-items:center;gap:10px;opacity:${t.completed ? 0.6 : 1}">
-            <span class="material-icons-outlined" style="font-size:16px;color:${t.completed ? 'var(--color-success)' : 'var(--text-tertiary)'};">
-              ${t.completed ? 'check_circle' : 'radio_button_unchecked'}
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;max-height:240px;overflow-y:auto;padding-right:4px;">
+        ${totalTasks > 0 ? hierarchy.map(t => {
+          const completed = t.progress === 100;
+          const indent = t.depth * 14;
+          return `
+          <div style="display:flex;align-items:center;gap:8px;padding-left:${indent}px; opacity:${!t.isParent && completed ? 0.6 : 1}">
+            ${t.isParent ? 
+              `<span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary);margin-top:2px;">folder</span>` :
+              `<span class="material-icons-outlined" style="font-size:16px;color:${completed ? 'var(--color-success)' : 'var(--text-tertiary)'};">
+                ${completed ? 'check_circle' : 'radio_button_unchecked'}
+              </span>`
+            }
+            <span style="font-size:12px;font-weight:${t.isParent ? '700' : '400'};text-decoration:${!t.isParent && completed ? 'line-through' : 'none'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;color:${t.isParent ? 'var(--text-primary)' : 'var(--text-secondary)'};">
+              ${t.name}
             </span>
-            <span style="font-size:12px;text-decoration:${t.completed ? 'line-through' : 'none'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;color:var(--text-secondary);">${t.label}</span>
-          </div>
-        `).join('')}
+            ${t.isParent ? `<span style="font-size:10px;font-weight:600;color:var(--text-tertiary);">${t.progress}%</span>` : ''}
+          </div>`;
+        }).join('') : `<div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px;">No tasks assigned</div>`}
       </div>
 
-      <div style="background:var(--bg-primary);padding:8px;border-radius:6px;border:1px dashed var(--border-color);">
-        <div style="font-weight:700;font-size:12px;color:var(--text-primary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${job.title}</div>
-        <div style="font-size:11px;color:var(--text-tertiary);">${job.customerName}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-primary);padding:8px;border-radius:6px;border:1px dashed var(--border-color);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:12px;color:var(--text-primary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${job.title}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);">${job.customerName}</div>
+        </div>
+        <button class="btn btn-ghost btn-icon btn-sm" onclick="window.location.hash='/jobs/${job.id}'" title="View Job Details" style="margin-left:8px;">
+          <span class="material-icons-outlined" style="font-size:18px;color:var(--color-primary);">open_in_new</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderProfitabilityChart(data, item) {
+  const settings = store.getSettings();
+  const jobs = data.jobs.filter(j => j.status !== 'Invoiced' && j.status !== 'Archived');
+  
+  let totalInternalCost = 0;
+  let totalProjectedRevenue = 0;
+
+  jobs.forEach(job => {
+    // 1. Calculate Internal Cost
+    const matCost = (job.materials || []).reduce((s, m) => s + (m.quantity * (m.unitCost || 0)), 0);
+    const labCost = (job.laborCost || 0);
+    totalInternalCost += (matCost + labCost);
+
+    // 2. Calculate Projected Revenue (using tiered markup)
+    const billableMat = calculateTotalBillableMaterials(job.materials || [], settings);
+    
+    const profile = settings.laborRates.find(r => r.id === job.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
+    const labHours = (job.estimatedHours || 0);
+    const billableLab = Math.max(labHours * (profile?.rate || 85), profile?.minCallOutFee || 0);
+    
+    totalProjectedRevenue += (billableMat + billableLab);
+  });
+
+  const profit = totalProjectedRevenue - totalInternalCost;
+  const margin = totalProjectedRevenue > 0 ? (profit / totalProjectedRevenue) * 100 : 0;
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:20px; height:100%; padding:4px;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div style="background:var(--bg-color); padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+          <div style="font-size:11px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Projected Rev.</div>
+          <div style="font-size:18px; font-weight:700; color:var(--text-primary);">$${totalProjectedRevenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </div>
+        <div style="background:var(--bg-color); padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+          <div style="font-size:11px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Avg. Margin</div>
+          <div style="font-size:18px; font-weight:700; color:${margin >= 30 ? 'var(--color-success)' : 'var(--color-warning)'};">${margin.toFixed(1)}%</div>
+        </div>
+      </div>
+
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:16px;">
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px;">
+            <span style="color:var(--text-secondary);">Projected Profit</span>
+            <span style="font-weight:600; color:var(--color-success);">+$${profit.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div style="height:12px; background:var(--bg-color); border-radius:6px; overflow:hidden; border:1px solid var(--border-color);">
+            <div style="width:${Math.min(margin, 100)}%; height:100%; background:linear-gradient(90deg, var(--color-primary), var(--color-success));"></div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+            <div style="width:10px; height:10px; border-radius:2px; background:var(--color-primary);"></div>
+            <span style="color:var(--text-secondary); flex:1;">Internal Costs (Labor + Mat)</span>
+            <span style="font-weight:500;">$${totalInternalCost.toLocaleString()}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+            <div style="width:10px; height:10px; border-radius:2px; background:var(--color-success);"></div>
+            <span style="color:var(--text-secondary); flex:1;">Tiered Markup (Proj. Profit)</span>
+            <span style="font-weight:500;">$${profit.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size:11px; color:var(--text-tertiary); text-align:center; padding-top:8px; border-top:1px solid var(--border-color);">
+        Based on ${jobs.length} active jobs using tiered material markups.
       </div>
     </div>
   `;

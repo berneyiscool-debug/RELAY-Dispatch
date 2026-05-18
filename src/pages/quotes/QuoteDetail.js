@@ -10,6 +10,7 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 
 export function renderQuoteDetail(container, { id, customerId }) {
   const isNew = id === 'new';
@@ -38,7 +39,7 @@ export function renderQuoteDetail(container, { id, customerId }) {
   const customers = store.getAll('customers');
   const stockItems = store.getAll('stock');
   const settings = store.getSettings();
-  const sb = { 'Draft': 'badge-neutral', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger', 'Archived': 'badge-neutral' };
+  const sb = { 'Draft': 'badge-neutral', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger', 'Archived': 'badge-neutral' };
 
   function render() {
     container.innerHTML = `
@@ -59,6 +60,7 @@ export function renderQuoteDetail(container, { id, customerId }) {
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
              <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:100;min-width:160px">
+                <a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Import Template</a>
                 <a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Save as Template</a>
                 ${!isNew ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Quote</a>` : ''}
              </div>
@@ -87,7 +89,7 @@ export function renderQuoteDetail(container, { id, customerId }) {
             <div class="form-group">
               <label class="form-label">Status</label>
               <select class="form-select" id="quote-status" ${quote.status === 'Archived' ? 'disabled' : ''}>
-                ${['Draft','Sent','Accepted','Declined','Archived'].map(s => `<option ${quote.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                ${['Draft','Finalised','Sent','Accepted','Declined','Archived'].map(s => `<option ${quote.status === s ? 'selected' : ''}>${s}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -119,20 +121,45 @@ export function renderQuoteDetail(container, { id, customerId }) {
         <span class="material-icons-outlined" style="font-size:16px">add</span> Add New Phase/Section
       </button>` : ''}
 
-      <!-- Totals -->
-      <div class="card" style="max-width:360px;margin-left:auto;margin-bottom:var(--space-lg)">
-        <div class="card-body">
-          <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-md)">
-            <span class="text-secondary">Subtotal</span>
-            <span id="subtotal">$${(quote.subtotal || 0).toFixed(2)}</span>
+      <!-- Totals & Estimation -->
+      <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:flex-start">
+        <!-- Internal Estimation (Only for internal use) -->
+        ${quote.status !== 'Archived' ? `
+        <div class="card" style="width:300px; border:1px dashed var(--border-color); background:var(--bg-color)">
+          <div class="card-header" style="padding:10px 16px; border-bottom:1px dashed var(--border-color)">
+            <h5 style="margin:0; font-size:13px; color:var(--text-secondary)">Internal Estimation</h5>
           </div>
-          <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-md)">
-            <span class="text-secondary">GST (10%)</span>
-            <span id="tax">$${(quote.tax || 0).toFixed(2)}</span>
+          <div class="card-body" style="padding:12px 16px">
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
+              <span class="text-secondary">Est. Cost</span>
+              <span>$${(quote.totalInternalCost || 0).toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; font-weight:600; color:${(quote.subtotal - (quote.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+              <span>Est. Margin</span>
+              <span>$${(quote.subtotal - (quote.totalInternalCost || 0)).toFixed(2)} (${quote.subtotal > 0 ? Math.round(((quote.subtotal - quote.totalInternalCost) / quote.subtotal) * 100) : 0}%)</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-tertiary); margin-top:8px">
+              * Based on stock cost and internal labor rates.
+            </div>
           </div>
-          <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:var(--font-size-lg);font-weight:700;border-top:2px solid var(--border-color);margin-top:4px">
-            <span>Total</span>
-            <span id="total">$${(quote.total || 0).toFixed(2)}</span>
+        </div>
+        ` : ''}
+
+        <!-- Client Totals -->
+        <div class="card" style="width:360px">
+          <div class="card-body">
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-md)">
+              <span class="text-secondary">Subtotal</span>
+              <span id="subtotal">$${(quote.subtotal || 0).toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-md)">
+              <span class="text-secondary">GST (10%)</span>
+              <span id="tax">$${(quote.tax || 0).toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:var(--font-size-lg);font-weight:700;border-top:2px solid var(--border-color);margin-top:4px">
+              <span>Total</span>
+              <span id="total">$${(quote.total || 0).toFixed(2)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -198,21 +225,37 @@ export function renderQuoteDetail(container, { id, customerId }) {
       </tr>
     `;
   }
-
   function recalculate() {
     quote.subtotal = 0;
+    quote.totalInternalCost = 0;
+    let totalLaborAmount = 0;
+    
+    const settings = store.getSettings();
+    const profile = settings.laborRates.find(r => r.id === quote.laborProfileId);
+
     (quote.sections || []).forEach(sec => {
       sec.subtotal = 0;
       (sec.lineItems || []).forEach(item => {
         item.total = (item.qty || 0) * (item.rate || 0);
+        if (item.type === 'labor') totalLaborAmount += item.total;
+        
+        // Calculate internal cost
+        if (!item.internalCost) {
+           // Fallback defaults if no cost stored
+           if (item.type === 'labor') item.internalCost = 45; // Default internal labor cost
+           else item.internalCost = item.rate * 0.7; // Fallback 30% margin for materials
+        }
+        quote.totalInternalCost += (item.qty || 0) * (item.internalCost || 0);
+        
         sec.subtotal += item.total;
       });
       quote.subtotal += sec.subtotal;
     });
+
     quote.tax = quote.subtotal * 0.1;
     quote.total = quote.subtotal + quote.tax;
 
-    render(); // Re-render to update phase subtotals and grand totals easily
+    render();
   }
 
   function bindEvents() {
@@ -250,12 +293,90 @@ export function renderQuoteDetail(container, { id, customerId }) {
 
     container.querySelector('#btn-save-template')?.addEventListener('click', (e) => {
       e.preventDefault();
-      const templateData = {
-        name: quote.title || 'Custom Template',
-        sections: JSON.parse(JSON.stringify(quote.sections))
-      };
-      store.create('quoteTemplates', templateData);
-      showToast('Saved to Quote Templates', 'success');
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Template Name</label>
+          <input type="text" class="form-input" id="tmpl-name" value="${quote.title || 'Custom Quote Template'}" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-input" id="tmpl-desc" rows="3" placeholder="Describe when to use this template..."></textarea>
+        </div>
+      `;
+
+      showModal({
+        title: 'Save Quote as Template',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Save Template', className: 'btn-primary', onClick: (close) => {
+            const name = content.querySelector('#tmpl-name').value;
+            const description = content.querySelector('#tmpl-desc').value;
+
+            if (!name) {
+              showToast('Template name is required', 'error');
+              return;
+            }
+
+            const templateData = {
+              name,
+              description,
+              sections: JSON.parse(JSON.stringify(quote.sections)),
+              createdAt: new Date().toISOString()
+            };
+            store.create('quoteTemplates', templateData);
+            showToast('Saved to Quote Templates', 'success');
+            close();
+          }}
+        ]
+      });
+    });
+
+    container.querySelector('#btn-import-template')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const templates = store.getAll('quoteTemplates');
+      
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div class="toolbar-search" style="margin-bottom:12px">
+          <span class="material-icons-outlined">search</span>
+          <input type="text" id="import-search" placeholder="Search templates..." style="width:100%" />
+        </div>
+        <div id="import-content" style="max-height:400px; overflow-y:auto">
+          ${templates.length ? templates.map(t => `
+            <div class="import-item" data-id="${t.id}" style="padding:12px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; cursor:pointer; transition:all 0.2s">
+              <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:4px">
+                <div style="font-weight:600; font-size:14px">${escapeHTML(t.name)}</div>
+                <div style="font-size:11px; color:var(--text-tertiary)">${t.sections.length} sections</div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); line-height:1.4">${escapeHTML(t.description || 'No description.')}</div>
+            </div>
+          `).join('') : '<div class="text-secondary text-center" style="padding:24px">No templates saved yet.</div>'}
+        </div>
+      `;
+
+      showModal({
+        title: 'Import Quote Template',
+        content,
+        actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() }]
+      });
+
+      content.querySelectorAll('.import-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const t = templates.find(x => x.id === item.dataset.id);
+          if (t && confirm(`Replace current quote sections with "${t.name}"?`)) {
+            quote.sections = JSON.parse(JSON.stringify(t.sections));
+            // Regenerate IDs to avoid conflicts
+            quote.sections.forEach(s => {
+              s.id = store.generateId();
+              s.lineItems.forEach(li => li.id = store.generateId());
+            });
+            recalculate();
+            document.querySelector('.modal-overlay')?.remove();
+          }
+        });
+      });
     });
 
     container.querySelectorAll('#quote-customer, #quote-title, #quote-status, #quote-valid, #quote-labor-profile').forEach(input => {
@@ -268,12 +389,32 @@ export function renderQuoteDetail(container, { id, customerId }) {
         else if (input.id === 'quote-labor-profile') {
           quote.laborProfileId = val;
           const rateObj = settings.laborRates.find(r => r.id === val);
-          if (rateObj && quote.sections) {
-            quote.sections.forEach(sec => {
-              sec.lineItems.forEach(i => {
-                if (i.type === 'labor') i.rate = rateObj.rate;
+          if (rateObj) {
+            if (quote.sections) {
+              quote.sections.forEach(sec => {
+                sec.lineItems.forEach(i => {
+                  if (i.type === 'labor') i.rate = rateObj.rate;
+                });
               });
-            });
+            }
+            
+            // Auto-add Call-out Fee line item if applicable
+            if (rateObj.minCallOutFee > 0) {
+              // Add to first section if it doesn't already have one
+              const firstSec = quote.sections[0];
+              if (firstSec) {
+                const hasFee = firstSec.lineItems.some(li => li.description.includes('Call-out Fee'));
+                if (!hasFee) {
+                  firstSec.lineItems.unshift({
+                    description: 'Call-out Fee',
+                    type: 'other',
+                    qty: 1,
+                    rate: rateObj.minCallOutFee,
+                    total: rateObj.minCallOutFee
+                  });
+                }
+              }
+            }
             recalculate();
           }
         }
@@ -281,8 +422,15 @@ export function renderQuoteDetail(container, { id, customerId }) {
     });
 
     container.querySelector('#btn-add-section')?.addEventListener('click', () => {
-      quote.sections.push({ id: store.generateId(), name: 'New Phase', lineItems: [] });
-      render();
+      const laborRate = settings.laborRates.find(r => r.id === quote.laborProfileId) || settings.laborRates.find(r => r.isDefault);
+      quote.sections.push({ 
+        id: store.generateId(), 
+        name: 'New Phase', 
+        lineItems: [
+          { description: 'Labour', type: 'labor', qty: 1, rate: laborRate ? laborRate.rate : 85, total: laborRate ? laborRate.rate : 85 }
+        ] 
+      });
+      recalculate();
     });
 
     container.querySelectorAll('.section-name-input').forEach((input, sIdx) => {
@@ -324,13 +472,21 @@ export function renderQuoteDetail(container, { id, customerId }) {
         if (field === 'description') {
           const match = stockItems.find(s => s.name === val);
           if (match) {
-            const isLabor = match.category && match.category.toLowerCase().includes('labor');
-            let appliedRate = match.unitPrice || 0;
-            if (!isLabor) {
-               appliedRate = appliedRate * (1 + (settings.markupPercent || 0) / 100);
+            const isLabor = (match.category || '').toLowerCase().includes('labor');
+            let appliedRate = 0;
+            let internalCost = 0;
+
+            if (isLabor) {
+               appliedRate = match.unitPrice || 85; 
+               internalCost = match.costPrice || 45;
+            } else {
+               const cost = match.costPrice || match.unitPrice || 0;
+               internalCost = cost;
+               appliedRate = calculateBillableMaterialPrice(cost, settings);
             }
             quote.sections[sIdx].lineItems[idx].type = isLabor ? 'labor' : 'material';
             quote.sections[sIdx].lineItems[idx].rate = appliedRate;
+            quote.sections[sIdx].lineItems[idx].internalCost = internalCost;
           }
         }
         recalculate();
@@ -385,8 +541,8 @@ export function renderQuoteDetail(container, { id, customerId }) {
         });
       });
 
-      // Map quote sections directly to job phases
-      const jobPhases = quote.sections.map(sec => ({
+      // Map quote sections directly to job tasks
+      const jobTasks = quote.sections.map(sec => ({
         id: store.generateId(),
         name: sec.name,
         status: 'Not Started',
@@ -407,7 +563,8 @@ export function renderQuoteDetail(container, { id, customerId }) {
         technicianId: tech?.id,
         technicianName: tech?.name,
         quoteId: id,
-        phases: jobPhases,
+        tasks: jobTasks,
+        phases: jobTasks,
         laborCost: laborCost,
         materialCost: materialCost,
       });

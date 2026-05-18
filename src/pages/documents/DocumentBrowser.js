@@ -11,13 +11,42 @@ import { showToast } from '../../components/Notifications.js';
 
 export function renderDocumentBrowser(container) {
   let currentFolder = 'All Documents';
+  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+  
+  // Define visibility rules
+  const allFolders = [
+    'All Documents', 'Company Docs', 'Health & Safety', 'Templates', 
+    'Job Attachments', 'Customer Attachments', 'Digital Forms', 
+    'Invoices', 'Quotes', 'Purchase Orders'
+  ];
+
+  function getVisibleFolders() {
+    if (currentUser.role === 'admin' || currentUser.role === 'manager') return allFolders;
+    
+    // Technicians/Others: only specific allowed folders
+    const allowed = ['All Documents', 'Health & Safety', 'Job Attachments', 'Customer Attachments', 'Digital Forms', 'Purchase Orders'];
+    
+    // Optional: could check granular permissions for Quotes/Invoices
+    const ut = currentUser.userTypeId ? store.getById('userTypes', currentUser.userTypeId) : null;
+    if (ut && ut.permissions) {
+      const qPerm = ut.permissions.find(p => p.module === 'Quotes');
+      const iPerm = ut.permissions.find(p => p.module === 'Invoices');
+      if (qPerm && qPerm.view) allowed.push('Quotes');
+      if (iPerm && iPerm.view) allowed.push('Invoices');
+    }
+    
+    return allFolders.filter(f => allowed.includes(f));
+  }
 
   function render() {
-    const allDocs = [];
+    const visibleFolders = getVisibleFolders();
+    if (!visibleFolders.includes(currentFolder)) currentFolder = 'All Documents';
+
+    const allDocsRaw = [];
 
     // 1. Global Documents
     store.getAll('documents').forEach(doc => {
-      allDocs.push({
+      allDocsRaw.push({
         id: doc.id,
         name: doc.name,
         url: doc.url,
@@ -36,7 +65,7 @@ export function renderDocumentBrowser(container) {
       // Legacy/Direct Attachments
       if (job.attachments && Array.isArray(job.attachments)) {
         job.attachments.forEach(att => {
-          allDocs.push({
+          allDocsRaw.push({
             id: att.id || Math.random().toString(36).substr(2, 9),
             name: att.name,
             url: att.url || att.data || '#',
@@ -51,28 +80,48 @@ export function renderDocumentBrowser(container) {
         });
       }
       
-      // Activity Log Attachments (New Upload Pattern)
+      // Activity Log Attachments (Centralized Indexing)
       if (job.activityLog && Array.isArray(job.activityLog)) {
-        job.activityLog.filter(log => log.type === 'attachment').forEach(log => {
-          allDocs.push({
-            id: log.id,
-            name: log.file.name,
-            url: log.file.url || log.file.data || '#',
-            type: log.file.type,
-            size: log.file.size,
-            uploadedAt: log.date,
-            folder: 'Job Attachments',
-            entityType: 'Job',
-            entityId: job.id,
-            entityName: `${job.number} - ${job.title}`
-          });
+        job.activityLog.forEach(log => {
+          // Handle old-style single file attachments
+          if (log.type === 'attachment' && log.file) {
+            allDocsRaw.push({
+              id: log.id,
+              name: log.file.name,
+              url: log.file.url || log.file.data || '#',
+              type: log.file.type,
+              size: log.file.size,
+              uploadedAt: log.date,
+              folder: 'Job Attachments',
+              entityType: 'Job',
+              entityId: job.id,
+              entityName: `${job.number} - ${job.title}`
+            });
+          }
+          // Handle new-style combined notes/multiple files
+          if (log.type === 'combined' && Array.isArray(log.files)) {
+            log.files.forEach((f, idx) => {
+              allDocsRaw.push({
+                id: `${log.id}_${idx}`,
+                name: f.name,
+                url: f.url || f.data || '#',
+                type: f.type,
+                size: f.size,
+                uploadedAt: log.date,
+                folder: 'Job Attachments',
+                entityType: 'Job',
+                entityId: job.id,
+                entityName: `${job.number} - ${job.title}`
+              });
+            });
+          }
         });
       }
 
       // Digital Forms
       if (job.forms && Array.isArray(job.forms)) {
         job.forms.forEach((form, i) => {
-          allDocs.push({
+          allDocsRaw.push({
             id: `form_${job.id}_${i}`,
             name: `${form.type} - ${new Date(form.date).toLocaleDateString()}`,
             url: `#/jobs/${job.id}`,
@@ -92,7 +141,7 @@ export function renderDocumentBrowser(container) {
     store.getAll('customers').forEach(customer => {
       if (customer.attachments && Array.isArray(customer.attachments)) {
         customer.attachments.forEach(att => {
-          allDocs.push({
+          allDocsRaw.push({
             id: att.id || Math.random().toString(36).substr(2, 9),
             name: att.name,
             url: att.url || att.data || '#',
@@ -110,7 +159,7 @@ export function renderDocumentBrowser(container) {
 
     // 4. Invoices
     store.getAll('invoices').forEach(inv => {
-      allDocs.push({
+      allDocsRaw.push({
         id: inv.id,
         name: `Invoice ${inv.number}.pdf`,
         url: `#/invoices/${inv.id}`,
@@ -126,7 +175,7 @@ export function renderDocumentBrowser(container) {
 
     // 5. Quotes
     store.getAll('quotes').forEach(quote => {
-      allDocs.push({
+      allDocsRaw.push({
         id: quote.id,
         name: `Quote ${quote.number}.pdf`,
         url: `#/quotes/${quote.id}`,
@@ -142,7 +191,7 @@ export function renderDocumentBrowser(container) {
 
     // 6. Purchase Orders
     store.getAll('purchaseOrders').forEach(po => {
-      allDocs.push({
+      allDocsRaw.push({
         id: po.id,
         name: `PO ${po.number}.pdf`,
         url: `#/purchase-orders/${po.id}`,
@@ -156,6 +205,40 @@ export function renderDocumentBrowser(container) {
       });
     });
 
+    // 7. Tasklist & Compliance Form Templates (populating the Templates folder in Document Center)
+    store.getAll('taskTemplates').forEach(t => {
+      allDocsRaw.push({
+        id: `task_tmpl_${t.id}`,
+        name: `${t.name} (Tasklist Template)`,
+        url: `#/settings`,
+        type: 'Tasklist Template',
+        size: null,
+        uploadedAt: t.createdAt || new Date().toISOString(),
+        folder: 'Templates',
+        entityType: 'Template',
+        entityId: t.id,
+        entityName: 'Settings / Tasklist Templates'
+      });
+    });
+
+    store.getAll('formTemplates').forEach(ft => {
+      allDocsRaw.push({
+        id: `form_tmpl_${ft.id}`,
+        name: `${ft.name} (Compliance Form Template)`,
+        url: `#/settings`,
+        type: 'Form Template',
+        size: null,
+        uploadedAt: ft.createdAt || ft.updatedAt || new Date().toISOString(),
+        folder: 'Templates',
+        entityType: 'Template',
+        entityId: ft.id,
+        entityName: 'Settings / Compliance Forms'
+      });
+    });
+
+    // Filter docs based on visible folders
+    const allDocs = allDocsRaw.filter(d => visibleFolders.includes(d.folder));
+
     allDocs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
 
     let displayDocs = allDocs;
@@ -163,11 +246,7 @@ export function renderDocumentBrowser(container) {
       displayDocs = allDocs.filter(d => d.folder === currentFolder);
     }
 
-    const folders = [
-      'All Documents', 'Company Docs', 'Health & Safety', 'Templates', 
-      'Job Attachments', 'Customer Attachments', 'Digital Forms', 
-      'Invoices', 'Quotes', 'Purchase Orders'
-    ];
+    const folders = visibleFolders;
 
     container.innerHTML = `
       <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -175,9 +254,9 @@ export function renderDocumentBrowser(container) {
         <button class="btn btn-primary" id="btn-upload-doc"><span class="material-icons-outlined">upload_file</span> Upload Document</button>
       </div>
 
-      <div style="display:flex; gap:24px; align-items:flex-start; margin-top:24px;">
+      <div style="display:flex; gap:10px; align-items:flex-start; margin-top:10px;">
         <!-- Sidebar Folders -->
-        <div class="card" style="width:250px; flex-shrink:0;">
+        <div class="card" style="width:250px; flex-shrink:0; position: sticky; top: 10px;">
           <div class="card-body" style="padding:12px">
             <h4 style="margin:0 0 12px 8px; font-size:12px; text-transform:uppercase; color:var(--text-tertiary)">Categories</h4>
             <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:4px;" id="folder-list">

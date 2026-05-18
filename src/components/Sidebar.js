@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — SIDEBAR COMPONENT
+// FIELDFORGE — SIDEBAR COMPONENT
 // ============================================
 
 import { router } from '../router.js';
@@ -38,10 +38,20 @@ export function createSidebar() {
   const isExpanded = localStorage.getItem('simpro_sidebar_expanded') === 'true';
   if (isExpanded) sidebar.classList.add('expanded');
 
+  const settings = store.getSettings();
+  const logoHtml = settings.logo 
+    ? `<div style="display:flex; align-items:center; justify-content:center; width:100%; gap:10px">
+         <img src="${settings.logo}" class="custom-logo" id="sidebar-logo-img" style="max-height: 28px; max-width: ${isExpanded ? '140px' : '32px'}; object-fit: contain;" />
+         <span class="logo-text" style="${isExpanded ? 'display: block;' : 'display: none;'}">${settings.name || 'FieldForge'}</span>
+       </div>`
+    : `
+      <div class="logo-icon">F</div>
+      <span class="logo-text">FieldForge</span>
+    `;
+
   let html = `
     <div class="sidebar-logo" id="sidebar-logo">
-      <div class="logo-icon">S</div>
-      <span class="logo-text">SimPro</span>
+      ${logoHtml}
     </div>
     <div class="sidebar-scroll-arrow up" id="sidebar-scroll-up">
       <span class="material-icons-outlined">keyboard_arrow_up</span>
@@ -85,9 +95,9 @@ export function createSidebar() {
   // Event listeners
   sidebar.addEventListener('click', (e) => {
     const navItem = e.target.closest('.sidebar-nav-item');
-    if (navItem) {
+    if (navItem && navItem.id !== 'btn-logout') {
       const path = navItem.dataset.path;
-      router.navigate(path);
+      if (path) router.navigate(path);
     }
   });
 
@@ -128,26 +138,41 @@ export function createSidebar() {
 
   const logoutBtn = sidebar.querySelector('#btn-logout');
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-      sessionStorage.removeItem('currentUser');
-      router.navigate('/login');
+    logoutBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent sidebar click handler
+      window.dispatchEvent(new CustomEvent('fieldforge-logout'));
     });
   }
 
-  // Initial access update
-  updateSidebarAccess();
+  // Listen for settings changes (e.g. logo update)
+  window.addEventListener('simpro-settings-updated', () => {
+    const s = store.getSettings();
+    const logoContainer = sidebar.querySelector('#sidebar-logo');
+    if (s.logo) {
+      logoContainer.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:center; width:100%; gap:10px">
+          <img src="${s.logo}" class="custom-logo" style="max-height: 28px; max-width: ${sidebar.classList.contains('expanded') ? '140px' : '32px'}; object-fit: contain;" />
+          <span class="logo-text" style="${sidebar.classList.contains('expanded') ? 'display: block;' : 'display: none;'}">${s.name || 'FieldForge'}</span>
+        </div>
+      `;
+    } else {
+      logoContainer.innerHTML = `
+        <div class="logo-icon">F</div>
+        <span class="logo-text">FieldForge</span>
+      `;
+    }
+  });
 
   return sidebar;
 }
 
-export function updateSidebarAccess() {
-  const sidebar = document.getElementById('sidebar');
+export function updateSidebarAccess(sidebarElement) {
+  const sidebar = sidebarElement || document.getElementById('sidebar');
   if (!sidebar) return;
 
   const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
 
   if (currentUser.role === 'customer') {
-    // Customers shouldn't see the sidebar at all really, but if they do, hide everything
     sidebar.style.display = 'none';
   } else {
     sidebar.style.display = '';
@@ -161,7 +186,13 @@ export function updateSidebarAccess() {
     }
 
     // Hide specific items based on permissions
-    document.querySelectorAll('.sidebar-nav-item').forEach(item => {
+    sidebar.querySelectorAll('.sidebar-nav-item').forEach(item => {
+      // Never hide the logout button
+      if (item.id === 'btn-logout') {
+        item.style.display = '';
+        return;
+      }
+
       const labelEl = item.querySelector('.nav-label');
       if (!labelEl) return;
       const label = labelEl.textContent.trim();
@@ -189,7 +220,7 @@ export function updateSidebarAccess() {
     });
 
     // Hide empty section labels
-    document.querySelectorAll('.sidebar-section-label').forEach(sec => {
+    sidebar.querySelectorAll('.sidebar-section-label').forEach(sec => {
        let hasVisibleItems = false;
        let next = sec.nextElementSibling;
        while(next && next.classList.contains('sidebar-nav-item')) {
@@ -221,6 +252,15 @@ function toggleSidebar(sidebar) {
   const icon = sidebar.querySelector('#sidebar-toggle-icon');
   icon.textContent = isExpanded ? 'chevron_left' : 'chevron_right';
   
+  // Toggle branding elements
+  const customImg = sidebar.querySelector('.custom-logo');
+  const logoText = sidebar.querySelector('.logo-text');
+  
+  if (customImg) {
+    customImg.style.maxWidth = isExpanded ? '140px' : '32px';
+  }
+  if (logoText) logoText.style.display = isExpanded ? 'block' : 'none';
+
   // Update arrows state
   const nav = sidebar.querySelector('#sidebar-nav');
   const upArrow = sidebar.querySelector('#sidebar-scroll-up');

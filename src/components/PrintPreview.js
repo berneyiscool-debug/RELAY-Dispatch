@@ -103,7 +103,7 @@ export function showPrintPreview({ type, data }) {
 function generateDocument(type, data) {
   const isQuote = type === 'quote';
   const statusColors = {
-    'Draft': '#6B7280', 'Sent': '#3B82F6', 'Accepted': '#10B981', 'Declined': '#EF4444',
+    'Draft': '#6B7280', 'Finalised': '#1B6DE0', 'Sent': '#3B82F6', 'Accepted': '#10B981', 'Declined': '#EF4444',
     'Paid': '#10B981', 'Overdue': '#EF4444', 'Void': '#6B7280',
   };
   const statusColor = statusColors[data.status] || '#6B7280';
@@ -111,18 +111,62 @@ function generateDocument(type, data) {
   const customer = data.customerName || 'Customer';
   const contact = data.contactName || '';
   const lineItems = data.lineItems || [];
+  const sections = data.sections || [];
+
+  const settings = store.getSettings();
+  const companyLogoHtml = settings.logo 
+    ? `<img src="${settings.logo}" style="max-height:60px; max-width:240px; object-fit:contain" />`
+    : `<div class="pdf-logo">F</div>`;
+
+  let tableContent = '';
+  if (sections.length > 0) {
+    sections.forEach(sec => {
+      tableContent += `
+        <tr class="pdf-section-header">
+          <td colspan="5" style="background:#F1F5F9; font-weight:700; color:#1E293B; border-bottom:2px solid #CBD5E1">${escapeHTML(sec.name || 'Phase')}</td>
+        </tr>
+      `;
+      sec.lineItems.forEach(item => {
+        tableContent += `
+          <tr>
+            <td>${item.description ? escapeHTML(item.description) : '—'}</td>
+            <td style="text-align:center"><span class="pdf-type-tag">${(item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1)}</span></td>
+            <td style="text-align:center">${item.qty || 1}</td>
+            <td style="text-align:right">$${(item.rate || 0).toFixed(2)}</td>
+            <td style="text-align:right;font-weight:600">$${(item.total || 0).toFixed(2)}</td>
+          </tr>
+        `;
+      });
+      tableContent += `
+        <tr class="pdf-section-footer">
+          <td colspan="4" style="text-align:right; font-size:11px; color:#64748B; padding:6px 12px">Phase Subtotal</td>
+          <td style="text-align:right; font-weight:700; color:#1E293B; padding:6px 12px">$${(sec.subtotal || 0).toFixed(2)}</td>
+        </tr>
+      `;
+    });
+  } else {
+    tableContent = lineItems.map(item => `
+      <tr>
+        <td>${item.description ? escapeHTML(item.description) : '—'}</td>
+        <td style="text-align:center"><span class="pdf-type-tag">${(item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1)}</span></td>
+        <td style="text-align:center">${item.qty || 1}</td>
+        <td style="text-align:right">$${(item.rate || 0).toFixed(2)}</td>
+        <td style="text-align:right;font-weight:600">$${(item.total || 0).toFixed(2)}</td>
+      </tr>
+    `).join('');
+  }
 
   return `
     <div class="pdf-page">
       <!-- Header -->
       <div class="pdf-header">
         <div class="pdf-company">
-          <div class="pdf-logo">S</div>
+          ${companyLogoHtml}
           <div>
-            <div class="pdf-company-name">SimPro Demo Company</div>
-            <div class="pdf-company-detail">ABN: 12 345 678 901</div>
-            <div class="pdf-company-detail">123 Business St, Melbourne VIC 3000</div>
-            <div class="pdf-company-detail">Phone: 1300 123 456</div>
+            <div class="pdf-company-name">${escapeHTML(settings.name || 'FieldForge Demo Company')}</div>
+            <div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn || '12 345 678 901')}</div>
+            <div class="pdf-company-detail">${escapeHTML(settings.address || '123 Business St, Melbourne VIC 3000')}</div>
+            <div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone || '1300 123 456')}</div>
           </div>
         </div>
         <div class="pdf-title-block">
@@ -174,27 +218,15 @@ function generateDocument(type, data) {
       <table class="pdf-table">
         <thead>
           <tr>
-            <th style="width:50%">Description</th>
-            ${isQuote ? `
-              <th style="width:12%;text-align:center">Type</th>
-              <th style="width:10%;text-align:center">Qty</th>
-              <th style="width:13%;text-align:right">Rate</th>
-            ` : ''}
-            <th style="width:${isQuote ? '15' : '25'}%;text-align:right">Amount</th>
+            <th style="width:40%">Description</th>
+            <th style="width:12%;text-align:center">Type</th>
+            <th style="width:10%;text-align:center">Qty</th>
+            <th style="width:13%;text-align:right">Rate</th>
+            <th style="width:15%;text-align:right">Amount</th>
           </tr>
         </thead>
         <tbody>
-          ${lineItems.map(item => `
-            <tr>
-              <td>${item.description ? escapeHTML(item.description) : '—'}</td>
-              ${isQuote ? `
-                <td style="text-align:center"><span class="pdf-type-tag">${(item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1)}</span></td>
-                <td style="text-align:center">${item.qty || 1}</td>
-                <td style="text-align:right">$${(item.rate || 0).toFixed(2)}</td>
-              ` : ''}
-              <td style="text-align:right;font-weight:600">$${(isQuote ? (item.total || 0) : (item.amount || 0)).toFixed(2)}</td>
-            </tr>
-          `).join('')}
+          ${tableContent}
         </tbody>
       </table>
 
@@ -214,6 +246,7 @@ function generateDocument(type, data) {
         </div>
       </div>
 
+
       ${data.notes ? `
         <div class="pdf-notes">
           <div class="pdf-notes-title">Notes</div>
@@ -229,7 +262,7 @@ function generateDocument(type, data) {
             ? 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.'
             : 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.'}
         </div>
-        <div class="pdf-footer-company">SimPro Demo Company — admin@simprogroup.com — 1300 123 456</div>
+        <div class="pdf-footer-company">${escapeHTML(settings.name || 'FieldForge Demo Company')} — ${escapeHTML(settings.email || 'hello@fieldforge.io')} — ${escapeHTML(settings.phone || '1300 123 456')}</div>
       </div>
     </div>
   `;
