@@ -140,7 +140,7 @@ describe('DataStore', () => {
     test('returns default settings when no data exists', () => {
       const settings = store.getSettings();
       assert.strictEqual(settings.markupPercent, 20);
-      assert.strictEqual(settings.laborRates.length, 3);
+      assert.strictEqual(settings.laborRates.length, 5);
       assert.strictEqual(settings.laborRates[0].name, 'Standard Rate');
     });
 
@@ -160,7 +160,7 @@ describe('DataStore', () => {
 
       const result = store.getSettings();
       assert.strictEqual(result.markupPercent, 20);
-      assert.strictEqual(result.laborRates.length, 3);
+      assert.strictEqual(result.laborRates.length, 5);
       assert.strictEqual(result.laborRates[0].name, 'Standard Rate');
     });
   });

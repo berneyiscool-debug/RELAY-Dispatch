@@ -118,7 +118,7 @@ export function renderStockForm(container, { id }) {
 
 function checkReorderLevel(data) {
   if (data.quantity <= data.reorderLevel) {
-    const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
     let hasStockPerm = false;
     if (currentUser.role === 'admin') hasStockPerm = true;
     else if (currentUser.userTypeId) {

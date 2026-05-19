@@ -82,7 +82,7 @@ export function renderAssetDetail(container, params) {
             ${asset.ownerType === 'Business' ? 'Total Maintenance Spend' : 'Current Meter Reading'}
           </div>
           <div style="font-weight:600; font-size:16px">
-            ${asset.ownerType === 'Business' ? `$${totalMaintCost.toLocaleString()}` : `${asset.currentMeter || 0} hrs/km`}
+            ${asset.ownerType === 'Business' ? `$${totalMaintCost.toLocaleString()}` : `${asset.currentMeter || 0} ${asset.meterUnit || 'hrs'}`}
           </div>
         </div>
       </div>
@@ -147,7 +147,7 @@ export function renderAssetDetail(container, params) {
             <thead>
               <tr>
                 <th style="width:100px">Date</th>
-                <th style="width:120px">Meter</th>
+                <th style="width:120px">Meter (${asset.meterUnit || 'hrs'})</th>
                 <th style="width:120px">Type</th>
                 <th>Notes</th>
                 <th style="text-align:right">Cost</th>
@@ -205,7 +205,7 @@ export function renderAssetDetail(container, params) {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Current Meter Reading</label>
+          <label class="form-label">Current Meter Reading (${asset.meterUnit || 'hrs'})</label>
           <input type="number" id="log-meter" class="form-input" value="${asset.currentMeter || 0}" />
         </div>
         <div class="form-group">

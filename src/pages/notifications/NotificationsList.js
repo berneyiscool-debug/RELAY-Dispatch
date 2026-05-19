@@ -161,7 +161,7 @@ export function renderNotificationsList(container) {
 
   function openNotificationFormDrawer(existingN = null) {
     const jobs = store.getAll('jobs');
-    const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
 
     showDrawer({
       title: existingN ? 'Edit Notification' : 'Raise Notification',

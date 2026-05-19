@@ -1,22 +1,21 @@
-// ============================================
-// SIMPRO CLONE — QUOTES LIST PAGE
-// ============================================
-
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
+import { hasPermission } from '../../utils/permissions.js';
 
 export function renderQuotesList(container) {
   const quotes = store.getAll('quotes');
+  const canCreate = hasPermission('Quotes', 'create');
 
   container.innerHTML = `
     <div class="page-header">
       <h1>Quotes</h1>
+      ${canCreate ? `
       <div class="page-header-actions">
         <button class="btn btn-primary" id="btn-new-quote"><span class="material-icons-outlined">add</span> New Quote</button>
-      </div>
+      </div>` : ''}
     </div>
     <div class="page-toolbar">
       <div class="toolbar-filters">
@@ -126,7 +125,10 @@ export function renderQuotesList(container) {
     }
   });
   container.querySelector('#quotes-table-container').appendChild(table);
-  container.querySelector('#btn-new-quote').addEventListener('click', () => router.navigate('/quotes/new'));
+  const btnNewQuote = container.querySelector('#btn-new-quote');
+  if (btnNewQuote) {
+    btnNewQuote.addEventListener('click', () => router.navigate('/quotes/new'));
+  }
 
   container.querySelectorAll('.toolbar-filter').forEach(btn => {
     btn.addEventListener('click', () => {

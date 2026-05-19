@@ -59,7 +59,7 @@ export function createSidebar() {
     <nav class="sidebar-nav" id="sidebar-nav">
   `;
 
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
   navItems.forEach(item => {
     if (item.section) {
@@ -170,7 +170,7 @@ export function updateSidebarAccess(sidebarElement) {
   const sidebar = sidebarElement || document.getElementById('sidebar');
   if (!sidebar) return;
 
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
   if (currentUser.role === 'customer') {
     sidebar.style.display = 'none';

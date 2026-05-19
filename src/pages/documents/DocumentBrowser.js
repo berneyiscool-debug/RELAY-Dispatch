@@ -11,7 +11,7 @@ import { showToast } from '../../components/Notifications.js';
 
 export function renderDocumentBrowser(container) {
   let currentFolder = 'All Documents';
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
   
   // Define visibility rules
   const allFolders = [
@@ -339,7 +339,14 @@ export function renderDocumentBrowser(container) {
         }
       },
       { key: 'uploadedAt', label: 'Uploaded', render: (r) => r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString() : '—' },
-      { key: 'actions', label: '', width: '80px', render: (r) => `<a href="${escapeHTML(r.url)}" target="_blank" class="btn btn-sm btn-outline" style="text-decoration:none">View</a>` }
+      { key: 'actions', label: '', width: '80px', render: (r) => {
+          if (r.url && r.url.startsWith('#/')) {
+            return `<a href="${escapeHTML(r.url)}" target="_blank" class="btn btn-sm btn-outline" style="text-decoration:none">View</a>`;
+          }
+          // Use data attributes for event delegation
+          return `<a href="#/document/view" target="_blank" class="btn btn-sm btn-outline btn-view-doc" data-doc-id="${escapeHTML(r.id)}" style="text-decoration:none">View</a>`;
+        }
+      }
     ];
 
     const table = createDataTable({ 
@@ -429,6 +436,22 @@ export function renderDocumentBrowser(container) {
     }
 
     searchInput.addEventListener('input', updateView);
+
+    // Event delegation for the View button to prep the DocumentViewer
+    container.querySelector('#docs-table-container').addEventListener('click', (e) => {
+      const viewBtn = e.target.closest('.btn-view-doc');
+      if (viewBtn) {
+        const id = viewBtn.dataset.docId;
+        const doc = displayDocs.find(d => d.id === id);
+        if (doc) {
+          localStorage.setItem('currentDocumentView', JSON.stringify({
+            name: doc.name,
+            url: doc.url,
+            type: doc.type
+          }));
+        }
+      }
+    });
 
     container.querySelector('#btn-upload-doc').addEventListener('click', () => {
       const uploadFolders = folders.filter(f => f !== 'All Documents');

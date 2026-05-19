@@ -11,6 +11,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
+import { hasPermission } from '../../utils/permissions.js';
 
 export function renderQuoteDetail(container, { id, customerId }) {
   const isNew = id === 'new';
@@ -54,15 +55,15 @@ export function renderQuoteDetail(container, { id, customerId }) {
         `,
         actionsHtml: `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
-          ${!isNew && quote.status !== 'Archived' ? `<button class="btn btn-secondary" id="btn-create-revision"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
-          ${!isNew && quote.status === 'Accepted' ? `<button class="btn btn-primary" id="btn-convert-job"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
-          ${!isNew && quote.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-quote"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
+          ${!isNew && quote.status !== 'Archived' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-secondary" id="btn-create-revision"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
+          ${!isNew && quote.status === 'Accepted' && hasPermission('Quotes', 'convert') ? `<button class="btn btn-primary" id="btn-convert-job"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
+          ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
              <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:100;min-width:160px">
-                <a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Import Template</a>
-                <a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Save as Template</a>
-                ${!isNew ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Quote</a>` : ''}
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Import Template</a>` : ''}
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Save as Template</a>` : ''}
+                ${!isNew && hasPermission('Quotes', 'delete') ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Quote</a>` : ''}
              </div>
           </div>
         `
@@ -164,11 +165,14 @@ export function renderQuoteDetail(container, { id, customerId }) {
         </div>
       </div>
 
-      ${quote.status !== 'Archived' ? `
+      ${quote.status !== 'Archived' && (isNew ? hasPermission('Quotes', 'create') : hasPermission('Quotes', 'edit')) ? `
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn btn-secondary" id="btn-cancel-quote">Cancel</button>
         <button class="btn btn-primary" id="btn-save-quote"><span class="material-icons-outlined">save</span> Save Quote</button>
-      </div>` : ''}
+      </div>` : `
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-secondary" id="btn-cancel-quote">Back</button>
+      </div>`}
     `;
 
     bindEvents();

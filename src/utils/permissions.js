@@ -2,6 +2,39 @@
 // FIELDFORGE — PERMISSION DEFINITIONS
 // ============================================
 
+import { store } from '../data/store.js';
+
+export function hasPermission(module, key) {
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  if (!currentUser) return false;
+  if (currentUser.role === 'admin') return true;
+  if (currentUser.role === 'customer') return false;
+
+  if (currentUser.userTypeId) {
+    const ut = store.getById('userTypes', currentUser.userTypeId);
+    if (ut && ut.permissions) {
+      const p = ut.permissions.find(p => p.module === module);
+      return p ? !!p[key] : false;
+    }
+  }
+
+  // Fallbacks if no userType is associated or defined:
+  if (currentUser.role === 'technician') {
+    if (module === 'Dashboard') return key === 'view';
+    if (module === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
+    if (module === 'Timesheets') return ['view_own', 'create'].includes(key);
+    if (module === 'Schedule') return ['view_own'].includes(key);
+    return false;
+  }
+
+  if (currentUser.role === 'manager') {
+    if (module === 'Settings') return ['view', 'edit_company', 'manage_tax'].includes(key);
+    return true;
+  }
+
+  return false;
+}
+
 export const MODULE_PERMS = {
   'Dashboard': [
     { key: 'view', label: 'View Dashboard' },

@@ -13,7 +13,7 @@ export function renderScheduleView(container) {
   // jobs read fresh each render — do NOT cache here
 
   // Role-based access: read who is logged in
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const isTechnician = currentUser.role === 'technician';
 
   let viewMode = 'week';
@@ -75,30 +75,55 @@ export function renderScheduleView(container) {
   // Build schedule blocks from jobs (always reads fresh from store)
   function getScheduleBlocks() {
     const jobs = store.getAll('jobs');
-    const timesheets = store.getAll('timesheets');
+    const schedules = store.getAll('schedule');
     const blocks = [];
     const days = getWeekDays();
 
-    // 1. Process timesheets for scheduled blocks
-    timesheets.filter(ts => ts.startTime && ts.finishTime).forEach(ts => {
-      const job = jobs.find(j => j.id === ts.jobId);
+    // 1. Process schedule allocations for scheduled blocks
+    schedules.forEach(s => {
+      const job = jobs.find(j => j.id === s.jobId);
       if (!job || job.status === 'Completed' || job.status === 'Invoiced') return;
 
-      const tsDate = new Date(ts.startTime);
+      // Handle both seeded dayOffset and absolute date!
+      let sDate = null;
+      if (s.date) {
+        sDate = new Date(s.date + 'T12:00:00'); // set mid-day to avoid timezone shifting issues
+      } else if (s.startTime) {
+        sDate = new Date(s.startTime);
+      } else if (s.dayOffset !== undefined) {
+        // Seeded relative dayOffset (Monday of the current week + dayOffset)
+        const monday = days[0]; // Monday
+        if (monday) {
+          sDate = new Date(monday);
+          sDate.setDate(sDate.getDate() + s.dayOffset);
+        }
+      }
+
+      if (!sDate) return;
+
       days.forEach((day, dayIdx) => {
-        if (tsDate.toDateString() === day.toDateString()) {
-          const startHour = tsDate.getHours() + (tsDate.getMinutes() / 60);
-          const endTsDate = new Date(ts.finishTime);
-          const endHour = endTsDate.getHours() + (endTsDate.getMinutes() / 60);
+        if (sDate.toDateString() === day.toDateString()) {
+          let startHour = 8;
+          let endHour = 10;
+
+          if (s.startTime && s.finishTime) {
+            const startD = new Date(s.startTime);
+            const finishD = new Date(s.finishTime);
+            startHour = startD.getHours() + (startD.getMinutes() / 60);
+            endHour = finishD.getHours() + (finishD.getMinutes() / 60);
+          } else if (s.startHour !== undefined && s.endHour !== undefined) {
+            startHour = s.startHour;
+            endHour = s.endHour;
+          }
 
           blocks.push({
-            id: ts.id,
-            type: 'timesheet',
+            id: s.id,
+            type: 'schedule',
             jobId: job.id,
             jobNumber: job.number,
             customerName: job.customerName,
             title: job.title,
-            technicianId: ts.technicianId,
+            technicianId: s.technicianId,
             dayIdx,
             startHour,
             endHour,
@@ -109,9 +134,9 @@ export function renderScheduleView(container) {
       });
     });
 
-    // 2. Legacy fallback for jobs without timesheets
-    const jobIdsWithTimesheets = new Set(timesheets.map(t => t.jobId));
-    jobs.filter(j => j.scheduledDate && !jobIdsWithTimesheets.has(j.id) && j.status !== 'Completed' && j.status !== 'Invoiced')
+    // 2. Legacy fallback for jobs without schedules
+    const jobIdsWithSchedules = new Set(schedules.map(s => s.jobId));
+    jobs.filter(j => j.scheduledDate && !jobIdsWithSchedules.has(j.id) && j.status !== 'Completed' && j.status !== 'Invoiced')
       .forEach(job => {
         const jobDate = new Date(job.scheduledDate);
         days.forEach((day, dayIdx) => {
@@ -382,7 +407,7 @@ export function renderScheduleView(container) {
         return `
           <div class="schedule-block" draggable="true"
             data-block-job-id="${b.jobId}"
-            data-timesheet-id="${b.id}"
+            data-schedule-id="${b.id}"
             data-block-type="${b.type}"
             data-start="${b.startHour}"
             data-end="${b.endHour}"
@@ -397,7 +422,7 @@ export function renderScheduleView(container) {
             <div style="pointer-events:none;font-weight:600;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.jobNumber}</div>
             ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
             ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.6;margin-top:2px">${timeLabel}</div>` : ''}
-            <div class="schedule-resize-handle" data-block-job-id="${b.jobId}" data-timesheet-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
+            <div class="schedule-resize-handle" data-block-job-id="${b.jobId}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
           </div>
         `;
       }).join('');
@@ -575,7 +600,7 @@ export function renderScheduleView(container) {
         dragState = {
           type: 'existing',
           blockType: el.dataset.blockType,
-          timesheetId: el.dataset.timesheetId,
+          scheduleId: el.dataset.scheduleId,
           jobId: el.dataset.blockJobId,
           startHour: parseFloat(el.dataset.start),
           endHour: parseFloat(el.dataset.end),
@@ -674,7 +699,7 @@ export function renderScheduleView(container) {
           const hasConflict = blocks.some(b =>
             b.technicianId === targetTechId &&
             b.dayIdx === targetDayIdx &&
-            (dragState.timesheetId ? b.id !== dragState.timesheetId : b.jobId !== job.id) &&
+            (dragState.scheduleId ? b.id !== dragState.scheduleId : b.jobId !== job.id) &&
             Math.max(b.startHour, dropHour) < Math.min(b.endHour, dropEndHour)
           );
 
@@ -694,8 +719,8 @@ export function renderScheduleView(container) {
           const startTimeStr = `${localDateStr}T${pad(startH)}:${pad(startM)}`;
           const finishTimeStr = `${localDateStr}T${pad(endH)}:${pad(endM)}`;
 
-          if (dragState.type === 'existing' && dragState.blockType === 'timesheet') {
-            store.update('timesheets', dragState.timesheetId, {
+          if (dragState.type === 'existing' && dragState.blockType === 'schedule') {
+            store.update('schedule', dragState.scheduleId, {
               technicianId: targetTechId,
               technicianName: tech?.name || '',
               date: localDateStr,
@@ -705,8 +730,8 @@ export function renderScheduleView(container) {
             });
             showToast(`Moved ${job.number} for ${tech?.name} to ${localDateStr}`, 'success');
           } else {
-            // New timesheet for unscheduled or legacy blocks
-            store.create('timesheets', {
+            // New schedule booking for unscheduled or legacy blocks
+            store.create('schedule', {
               jobId: job.id,
               jobNumber: job.number,
               technicianId: targetTechId,
@@ -714,17 +739,17 @@ export function renderScheduleView(container) {
               date: localDateStr,
               startTime: startTimeStr,
               finishTime: finishTimeStr,
-              hours: duration,
-              status: 'Pending'
+              hours: duration
             });
 
-            if (dragState.type === 'unscheduled') {
-              store.update('jobs', job.id, {
-                scheduledDate: localDateStr,
-                startHour: dropHour,
-                status: job.status === 'Pending' ? 'Scheduled' : job.status,
-              });
-            }
+            // Update job's scheduled info
+            store.update('jobs', job.id, {
+              scheduledDate: localDateStr,
+              startHour: dropHour,
+              technicianId: targetTechId,
+              technicianName: tech?.name || '',
+              status: job.status === 'Pending' ? 'Scheduled' : job.status,
+            });
             showToast(`Assigned ${job.number} to ${tech?.name}`, 'success');
           }
         }
@@ -749,7 +774,7 @@ export function renderScheduleView(container) {
 
         resizeState = {
           blockType: handle.dataset.blockType,
-          timesheetId: handle.dataset.timesheetId,
+          scheduleId: handle.dataset.scheduleId,
           jobId: handle.dataset.blockJobId,
           block,
           col,          // store the element, not its rect
@@ -798,19 +823,19 @@ export function renderScheduleView(container) {
           resizeState.block.style.userSelect = '';
 
           if (Math.abs(endHour - initialEndHour) >= 0.25) {
-            if (resizeState.blockType === 'timesheet') {
-              const timesheet = store.getById('timesheets', resizeState.timesheetId);
-              if (timesheet) {
-                const tsDateStr = timesheet.date || timesheet.startTime.split('T')[0];
+            if (resizeState.blockType === 'schedule') {
+              const sched = store.getById('schedule', resizeState.scheduleId);
+              if (sched) {
+                const sDateStr = sched.date || sched.startTime?.split('T')[0] || new Date().toISOString().split('T')[0];
                 const pad = n => n.toString().padStart(2, '0');
                 const startH = Math.floor(startHour);
                 const startM = Math.round((startHour - startH) * 60);
                 const endH = Math.floor(endHour);
                 const endM = Math.round((endHour - endH) * 60);
 
-                store.update('timesheets', resizeState.timesheetId, {
-                  startTime: `${tsDateStr}T${pad(startH)}:${pad(startM)}`,
-                  finishTime: `${tsDateStr}T${pad(endH)}:${pad(endM)}`,
+                store.update('schedule', resizeState.scheduleId, {
+                  startTime: `${sDateStr}T${pad(startH)}:${pad(startM)}`,
+                  finishTime: `${sDateStr}T${pad(endH)}:${pad(endM)}`,
                   hours: duration
                 });
                 showToast(`Time updated to ${formatHour(startHour)} — ${formatHour(endHour)}`, 'success');
@@ -846,7 +871,7 @@ export function renderScheduleView(container) {
     const days = getWeekDays();
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-    const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
     const activities = store.getAll('activities').filter(a => a.assignedToId === currentUser.id);
 
     container.innerHTML = `

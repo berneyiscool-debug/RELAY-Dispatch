@@ -101,7 +101,13 @@ export function showAssetQuickAdd({ customerId = null, site = '', onSave = null 
         </div>
         <div class="form-group">
           <label class="form-label">Initial Meter/Hrs</label>
-          <input type="number" id="qa-initial-meter" class="form-input" value="0" />
+          <div style="display:flex; gap:8px;">
+            <input type="number" id="qa-initial-meter" class="form-input" value="0" style="flex:1" />
+            <select id="qa-meter-unit" class="form-select" style="width: 80px;">
+              <option value="hrs">hrs</option>
+              <option value="kmls">km</option>
+            </select>
+          </div>
         </div>
       </div>
     </form>
@@ -157,6 +163,7 @@ export function showAssetQuickAdd({ customerId = null, site = '', onSave = null 
             status: 'Active',
             serviceIntervalMonths: parseInt(content.querySelector('#qa-service-interval').value) || 6,
             currentMeter: parseInt(content.querySelector('#qa-initial-meter').value) || 0,
+            meterUnit: content.querySelector('#qa-meter-unit').value,
             logs: []
           };
 

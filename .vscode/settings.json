@@ -1,0 +1,14 @@
+{
+  "typescript.tsserver.maxTsServerMemory": 2048,
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.claude/worktrees": true,
+    "**/dist": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.claude/worktrees/**": true,
+    "**/dist/**": true
+  }
+}

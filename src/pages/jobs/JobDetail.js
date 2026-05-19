@@ -9,6 +9,7 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
+import { hasPermission } from '../../utils/permissions.js';
 
 export function renderJobDetail(container, { id }) {
   const job = store.getById('jobs', id);
@@ -19,8 +20,8 @@ export function renderJobDetail(container, { id }) {
 
   updateBreadcrumbDetail(job.number);
 
-  const sb = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary' };
-  const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
+  const sb = { 'Pending': 'badge-warning', 'Scheduled': 'badge-info', 'In Progress': 'badge-primary', 'On Hold': 'badge-neutral', 'Completed': 'badge-success', 'Invoiced': 'badge-primary' };
+  const pb = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger', 'Urgent': 'badge-danger' };
   let activeTab = 'overview';
   let taskExpandedPath = [0];
   let taskViewPath = [];
@@ -58,8 +59,8 @@ export function renderJobDetail(container, { id }) {
         </div>
         <div class="flex gap-sm">
           <!-- Moved invoice creation to Invoices tab -->
-          <button class="btn btn-secondary" id="btn-edit-job"><span class="material-icons-outlined">edit</span> Edit</button>
-          <button class="btn btn-danger btn-icon" id="btn-delete-job"><span class="material-icons-outlined">delete</span></button>
+          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
+          ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job"><span class="material-icons-outlined">delete</span></button>` : ''}
         </div>
       </div>
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
@@ -92,17 +93,17 @@ export function renderJobDetail(container, { id }) {
     if (activeTab === 'overview') {
       let jobProgress = 0;
       if (job.tasks && job.tasks.length > 0) {
-         let totalWeight = 0;
-         let completedWeight = 0;
-         job.tasks.forEach(sp => {
-            const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
-            totalWeight += weight;
-            completedWeight += weight * ((sp.progress || 0) / 100);
-         });
-         jobProgress = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+        let totalWeight = 0;
+        let completedWeight = 0;
+        job.tasks.forEach(sp => {
+          const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
+          totalWeight += weight;
+          completedWeight += weight * ((sp.progress || 0) / 100);
+        });
+        jobProgress = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
       }
 
-      const techNames = job.technicians && job.technicians.length > 0 
+      const techNames = job.technicians && job.technicians.length > 0
         ? job.technicians.map(t => `${escapeHTML(t.name)} (${t.hours}h)`).join(', ')
         : escapeHTML(job.technicianName || 'Unassigned');
 
@@ -146,7 +147,7 @@ export function renderJobDetail(container, { id }) {
 
       tc.querySelector('#btn-add-schedule')?.addEventListener('click', () => {
         const techs = store.getAll('technicians');
-        const existingSchedules = store.getAll('timesheets').filter(t => t.jobId === id);
+        const existingSchedules = store.getAll('schedule').filter(t => t.jobId === id);
 
         // Build the modal content element
         const content = document.createElement('div');
@@ -189,7 +190,7 @@ export function renderJobDetail(container, { id }) {
             html += '<div class="form-group" style="margin:0"><label class="form-label">Finish</label>';
             html += '<input type="datetime-local" class="form-input sched-finish" value="' + e.finish + '"></div>';
             html += '</div>';
-            
+
             html += '<div class="form-group" style="margin:12px 0 0 0"><label class="form-label">Technicians</label>';
             html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="tech-chips">';
             techs.forEach(t => {
@@ -242,7 +243,7 @@ export function renderJobDetail(container, { id }) {
             html += '<div style="margin-bottom:16px">';
             html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Current Schedule</div>';
             existingSchedules.forEach(s => {
-              const dt = new Date(s.startTime || s.date).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+              const dt = new Date(s.startTime || s.date).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
               html += '<div class="sched-summary-row" style="flex-wrap:wrap">';
               html += '<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">schedule</span>';
               html += '<span style="font-weight:500">' + escapeHTML(s.technicianName) + '</span>';
@@ -307,7 +308,7 @@ export function renderJobDetail(container, { id }) {
             const p = n => n.toString().padStart(2, '0');
             const d = new Date();
             d.setDate(d.getDate() + 1);
-            const ds = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+            const ds = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
             entries.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
             renderModal(entries);
           });
@@ -316,7 +317,7 @@ export function renderJobDetail(container, { id }) {
         // Default first entry: today 8am-4pm, pre-select job's assigned tech if any
         const p = n => n.toString().padStart(2, '0');
         const now2 = new Date();
-        const ds = `${now2.getFullYear()}-${p(now2.getMonth()+1)}-${p(now2.getDate())}`;
+        const ds = `${now2.getFullYear()}-${p(now2.getMonth() + 1)}-${p(now2.getDate())}`;
         const defaultTechIds = job.technicianId ? [job.technicianId] : [];
         const entries = [{ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: defaultTechIds, assetIds: [] }];
         renderModal(entries);
@@ -340,96 +341,97 @@ export function renderJobDetail(container, { id }) {
           size: 'modal-70',
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: close => close() },
-            { label: 'Save Schedule', className: 'btn-primary', onClick: close => {
-              const currentEntries = readCurrentEntries();
-              let saved = 0;
-              let errors = [];
+            {
+              label: 'Save Schedule', className: 'btn-primary', onClick: close => {
+                const currentEntries = readCurrentEntries();
+                let saved = 0;
+                let errors = [];
 
-              currentEntries.forEach((e, i) => {
-                if (!e.taskPath) { errors.push(`Entry ${i+1}: please select a task`); return; }
-                if (!e.start || !e.finish) { errors.push(`Entry ${i+1}: missing start or finish`); return; }
-                const startDate = new Date(e.start);
-                const finishDate = new Date(e.finish);
-                if (finishDate <= startDate) { errors.push(`Entry ${i+1}: finish must be after start`); return; }
-                if (e.techIds.length === 0) { errors.push(`Entry ${i+1}: select at least one technician`); return; }
+                currentEntries.forEach((e, i) => {
+                  if (!e.taskPath) { errors.push(`Entry ${i + 1}: please select a task`); return; }
+                  if (!e.start || !e.finish) { errors.push(`Entry ${i + 1}: missing start or finish`); return; }
+                  const startDate = new Date(e.start);
+                  const finishDate = new Date(e.finish);
+                  if (finishDate <= startDate) { errors.push(`Entry ${i + 1}: finish must be after start`); return; }
+                  if (e.techIds.length === 0) { errors.push(`Entry ${i + 1}: select at least one technician`); return; }
 
-                const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-                const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
+                  const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
+                  const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
 
                   e.techIds.forEach(techId => {
-                  const tech = techs.find(t => t.id === techId);
-                  if (!tech) return;
-                  store.create('timesheets', {
-                    jobId: id,
-                    jobNumber: job.number,
-                    taskPath: e.taskPath,
-                    taskName: taskName,
-                    technicianId: techId,
-                    technicianName: tech.name,
-                    date: e.start.split('T')[0],
-                    startTime: e.start,
-                    finishTime: e.finish,
-                    hours,
-                    status: 'Pending'
-                  });
-                  saved++;
-                });
-
-                // Create Asset Usage records for this entry (only once per entry duration)
-                if (e.assetIds && e.assetIds.length > 0) {
-                  e.assetIds.forEach(assetId => {
-                    const asset = store.getById('assets', assetId);
-                    if (!asset) return;
-                    store.create('assetUsage', {
+                    const tech = techs.find(t => t.id === techId);
+                    if (!tech) return;
+                    store.create('schedule', {
                       jobId: id,
-                      assetId: assetId,
-                      assetName: asset.name,
+                      jobNumber: job.number,
                       taskPath: e.taskPath,
                       taskName: taskName,
+                      technicianId: techId,
+                      technicianName: tech.name,
+                      date: e.start.split('T')[0],
                       startTime: e.start,
                       finishTime: e.finish,
-                      hours,
-                      recoveryRate: asset.recoveryRate || 0
+                      hours
                     });
+                    saved++;
+                  });
+
+                  // Create Asset Usage records for this entry (only once per entry duration)
+                  if (e.assetIds && e.assetIds.length > 0) {
+                    e.assetIds.forEach(assetId => {
+                      const asset = store.getById('assets', assetId);
+                      if (!asset) return;
+                      store.create('assetUsage', {
+                        jobId: id,
+                        assetId: assetId,
+                        assetName: asset.name,
+                        taskPath: e.taskPath,
+                        taskName: taskName,
+                        startTime: e.start,
+                        finishTime: e.finish,
+                        hours,
+                        recoveryRate: asset.recoveryRate || 0
+                      });
+                    });
+                  }
+                });
+
+                if (errors.length) {
+                  showToast(errors[0], 'error');
+                  return;
+                }
+
+                // Update job's scheduled date and technicians list from first entry
+                if (currentEntries.length > 0 && currentEntries[0].start) {
+                  const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
+                  const jobTechs = allTechIds.map(tid => {
+                    const t = techs.find(x => x.id === tid);
+                    const totalHours = currentEntries
+                      .filter(e => e.techIds.includes(tid))
+                      .reduce((sum, e) => {
+                        const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
+                        return sum + (isNaN(h) ? 0 : h);
+                      }, 0);
+                    return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
+                  });
+                  store.update('jobs', id, {
+                    scheduledDate: currentEntries[0].start.split('T')[0],
+                    technicians: jobTechs,
+                    technicianName: jobTechs.map(t => t.name).join(', ')
                   });
                 }
-              });
 
-              if (errors.length) {
-                showToast(errors[0], 'error');
-                return;
+                showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
+                close();
+                renderTabContent();
               }
-
-              // Update job's scheduled date and technicians list from first entry
-              if (currentEntries.length > 0 && currentEntries[0].start) {
-                const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
-                const jobTechs = allTechIds.map(tid => {
-                  const t = techs.find(x => x.id === tid);
-                  const totalHours = currentEntries
-                    .filter(e => e.techIds.includes(tid))
-                    .reduce((sum, e) => {
-                      const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
-                      return sum + (isNaN(h) ? 0 : h);
-                    }, 0);
-                  return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
-                });
-                store.update('jobs', id, {
-                  scheduledDate: currentEntries[0].start.split('T')[0],
-                  technicians: jobTechs,
-                  technicianName: jobTechs.map(t => t.name).join(', ')
-                });
-              }
-
-              showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
-              close();
-              renderTabContent();
-            }}
+            }
           ]
         });
       });
 
     } else if (activeTab === 'tasks') {
-      const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
       let canEditTasks = true;
       if (currentUser.userTypeId) {
         const ut = store.getById('userTypes', currentUser.userTypeId);
@@ -444,7 +446,7 @@ export function renderJobDetail(container, { id }) {
       if (!job.tasks) {
         job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
       }
-      
+
       // Ensure existing tasks have subTasks array
       job.tasks.forEach(p => { if (!p.subTasks) p.subTasks = []; });
 
@@ -461,7 +463,7 @@ export function renderJobDetail(container, { id }) {
 
       function calculateTotalHours(node) {
         if (!node.subTasks || node.subTasks.length === 0) {
-           return (parseFloat(node.estimatedHours) || 0) * (parseInt(node.people) || 1);
+          return (parseFloat(node.estimatedHours) || 0) * (parseInt(node.people) || 1);
         }
         return node.subTasks.reduce((sum, sp) => sum + calculateTotalHours(sp), 0);
       }
@@ -474,9 +476,9 @@ export function renderJobDetail(container, { id }) {
           let totalWeight = 0;
           let completedWeight = 0;
           parent.subTasks.forEach(sp => {
-             const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
-             totalWeight += weight;
-             completedWeight += weight * ((sp.progress || 0) / 100);
+            const weight = (parseFloat(sp.estimatedHours) || 1) * (parseInt(sp.people) || 1);
+            totalWeight += weight;
+            completedWeight += weight * ((sp.progress || 0) / 100);
           });
           parent.progress = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
           if (parent.progress === 100) parent.status = 'Completed';
@@ -489,12 +491,12 @@ export function renderJobDetail(container, { id }) {
       // Cleanup invalid paths
       let isValidPath = true;
       let curr = job.tasks;
-      for (let i=0; i<taskExpandedPath.length; i++) {
-         if (!curr || !curr[taskExpandedPath[i]]) { isValidPath = false; break; }
-         curr = curr[taskExpandedPath[i]].subTasks;
+      for (let i = 0; i < taskExpandedPath.length; i++) {
+        if (!curr || !curr[taskExpandedPath[i]]) { isValidPath = false; break; }
+        curr = curr[taskExpandedPath[i]].subTasks;
       }
       if (!isValidPath) {
-         taskExpandedPath = [];
+        taskExpandedPath = [];
       }
 
       tc.innerHTML = `
@@ -511,11 +513,11 @@ export function renderJobDetail(container, { id }) {
             
             <!-- Drill-Down List -->
             ${(() => {
-              const viewParentNode = taskViewPath.length > 0 ? getTaskByPath(job.tasks, taskViewPath) : null;
-              const viewList = viewParentNode ? (viewParentNode.subTasks || []) : job.tasks;
-              const viewTitle = viewParentNode ? escapeHTML(viewParentNode.name) : 'Main Tasks';
-              
-              return `
+          const viewParentNode = taskViewPath.length > 0 ? getTaskByPath(job.tasks, taskViewPath) : null;
+          const viewList = viewParentNode ? (viewParentNode.subTasks || []) : job.tasks;
+          const viewTitle = viewParentNode ? escapeHTML(viewParentNode.name) : 'Main Tasks';
+
+          return `
                 <div style="flex: 0 0 300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg);">
                   <div style="padding:12px; border-bottom:1px solid var(--border-color); font-weight:600; display:flex; justify-content:space-between; align-items:center">
                     <div style="display:flex; align-items:center; gap:8px; overflow:hidden">
@@ -526,35 +528,35 @@ export function renderJobDetail(container, { id }) {
                   </div>
                   <div style="padding:8px; display:flex; flex-direction:column; gap:4px; overflow-y:auto; flex:1">
                     ${viewList.map((p, i) => {
-                      const currentPath = [...taskViewPath, i];
-                      const isSelected = currentPath.join('-') === taskExpandedPath.join('-');
-                      return `
+            const currentPath = [...taskViewPath, i];
+            const isSelected = currentPath.join('-') === taskExpandedPath.join('-');
+            return `
                         <div class="task-list-item" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color)'}">
                           <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
                           ${p.subTasks && p.subTasks.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="margin-left:8px; width:18px; height:18px; cursor:pointer;" />`}
                         </div>
                       `;
-                    }).join('')}
+          }).join('')}
                     ${viewList.length === 0 ? '<div style="color:var(--text-tertiary);font-size:12px;text-align:center;padding:12px">No tasks</div>' : ''}
                   </div>
                 </div>
               `;
-            })()}
+        })()}
 
             <!-- Task Details Form -->
             ${taskExpandedPath.length > 0 ? (() => {
-              const path = taskExpandedPath;
-              const node = getTaskByPath(job.tasks, path);
-              if (!node) return '';
-              const hasSubs = node.subTasks && node.subTasks.length > 0;
-              return `
+          const path = taskExpandedPath;
+          const node = getTaskByPath(job.tasks, path);
+          if (!node) return '';
+          const hasSubs = node.subTasks && node.subTasks.length > 0;
+          return `
                 <div style="flex: 1; min-width:300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg); padding:16px">
                   ${!isInfoPanelEditing ? `
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
                     <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Info Panel: ${escapeHTML(node.name)}</h4>
                     <div style="display:flex;gap:8px">
                       ${canEditTasks && path.length < 3 ? `<button class="btn btn-sm btn-secondary btn-add-child-task" data-path="${path.join('-')}" title="Add Sub-task"><span class="material-icons-outlined" style="font-size:16px">add_task</span> Add Sub-task</button>` : ''}
-                      <button class="btn btn-sm btn-secondary btn-book-time" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time</button>
+                      ${!hasSubs ? `<button class="btn btn-sm btn-secondary btn-book-time" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time</button>` : ''}
                       ${canEditTasks ? `<button class="btn btn-sm btn-primary btn-edit-info" title="Edit"><span class="material-icons-outlined" style="font-size:16px">edit</span> Edit</button>` : ''}
                       ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>` : ''}
                     </div>
@@ -643,128 +645,128 @@ export function renderJobDetail(container, { id }) {
                   `}
                 </div>
               `;
-            })() : ''}
+        })() : ''}
           </div>
         </div>
       `;
 
       tc.querySelector('.btn-view-back')?.addEventListener('click', () => {
-         taskViewPath.pop();
-         renderTabContent();
+        taskViewPath.pop();
+        renderTabContent();
       });
 
       tc.querySelectorAll('.btn-drill-down').forEach(el => {
-         el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            taskViewPath = el.dataset.path.split('-').map(Number);
-            taskExpandedPath = [...taskViewPath];
-            renderTabContent();
-         });
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          taskViewPath = el.dataset.path.split('-').map(Number);
+          taskExpandedPath = [...taskViewPath];
+          renderTabContent();
+        });
       });
 
       tc.querySelectorAll('.task-list-checkbox').forEach(chk => {
-         chk.addEventListener('change', (e) => {
-            const path = e.target.dataset.path.split('-').map(Number);
-            const node = getTaskByPath(job.tasks, path);
-            node.progress = e.target.checked ? 100 : 0;
-            node.status = e.target.checked ? 'Completed' : 'Not Started';
-            updateParentProgress(job.tasks, path);
-            renderTabContent();
-         });
-         chk.addEventListener('click', (e) => e.stopPropagation());
+        chk.addEventListener('change', (e) => {
+          const path = e.target.dataset.path.split('-').map(Number);
+          const node = getTaskByPath(job.tasks, path);
+          node.progress = e.target.checked ? 100 : 0;
+          node.status = e.target.checked ? 'Completed' : 'Not Started';
+          updateParentProgress(job.tasks, path);
+          renderTabContent();
+        });
+        chk.addEventListener('click', (e) => e.stopPropagation());
       });
 
       tc.querySelectorAll('.task-list-item').forEach(el => {
-         el.addEventListener('click', (e) => {
-            if (e.target.closest('.btn-drill-down')) return;
-            const path = e.currentTarget.dataset.path.split('-').map(Number);
-            taskExpandedPath = path;
-            isInfoPanelEditing = false;
-            renderTabContent();
-         });
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('.btn-drill-down')) return;
+          const path = e.currentTarget.dataset.path.split('-').map(Number);
+          taskExpandedPath = path;
+          isInfoPanelEditing = false;
+          renderTabContent();
+        });
       });
 
       tc.querySelector('.btn-edit-info')?.addEventListener('click', () => {
-         isInfoPanelEditing = true;
-         renderTabContent();
+        isInfoPanelEditing = true;
+        renderTabContent();
       });
 
       tc.querySelector('.btn-done-info')?.addEventListener('click', () => {
-         isInfoPanelEditing = false;
-         renderTabContent();
+        isInfoPanelEditing = false;
+        renderTabContent();
       });
 
       tc.querySelector('#btn-add-main-task')?.addEventListener('click', () => {
-         if (!job.tasks) job.tasks = [];
-         job.tasks.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
-         taskExpandedPath = [job.tasks.length - 1];
-         renderTabContent();
+        if (!job.tasks) job.tasks = [];
+        job.tasks.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
+        taskExpandedPath = [job.tasks.length - 1];
+        renderTabContent();
       });
 
       tc.querySelectorAll('.btn-add-child-task').forEach(btn => {
-         btn.addEventListener('click', (e) => {
-            const path = e.currentTarget.dataset.path.split('-').map(Number);
-            const parent = getTaskByPath(job.tasks, path);
-            if (!parent.subTasks) parent.subTasks = [];
-            parent.subTasks.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
-            taskExpandedPath = [...path, parent.subTasks.length - 1];
-            renderTabContent();
-         });
+        btn.addEventListener('click', (e) => {
+          const path = e.currentTarget.dataset.path.split('-').map(Number);
+          const parent = getTaskByPath(job.tasks, path);
+          if (!parent.subTasks) parent.subTasks = [];
+          parent.subTasks.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
+          taskExpandedPath = [...path, parent.subTasks.length - 1];
+          renderTabContent();
+        });
       });
 
       tc.querySelectorAll('.detail-input').forEach(input => {
-         input.addEventListener('change', (e) => {
-            const node = getTaskByPath(job.tasks, taskExpandedPath);
-            const field = e.target.dataset.field;
-            
-            if (field === 'progress-check') {
-               node.progress = e.target.checked ? 100 : 0;
-               node.status = e.target.checked ? 'Completed' : 'Not Started';
-            } else if (field === 'progress') {
-               node.progress = parseInt(e.target.value);
-               if (node.progress === 100) node.status = 'Completed';
-               else if (node.progress === 0) node.status = 'Not Started';
-               else node.status = 'In Progress';
-            } else if (field === 'estimatedHours') {
-               node.estimatedHours = parseFloat(e.target.value) || 0;
-            } else {
-               node[field] = e.target.value;
-            }
+        input.addEventListener('change', (e) => {
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          const field = e.target.dataset.field;
 
-            updateParentProgress(job.tasks, taskExpandedPath);
-            renderTabContent();
-         });
+          if (field === 'progress-check') {
+            node.progress = e.target.checked ? 100 : 0;
+            node.status = e.target.checked ? 'Completed' : 'Not Started';
+          } else if (field === 'progress') {
+            node.progress = parseInt(e.target.value);
+            if (node.progress === 100) node.status = 'Completed';
+            else if (node.progress === 0) node.status = 'Not Started';
+            else node.status = 'In Progress';
+          } else if (field === 'estimatedHours') {
+            node.estimatedHours = parseFloat(e.target.value) || 0;
+          } else {
+            node[field] = e.target.value;
+          }
+
+          updateParentProgress(job.tasks, taskExpandedPath);
+          renderTabContent();
+        });
       });
 
       tc.querySelectorAll('.btn-remove-task').forEach(btn => {
-         btn.addEventListener('click', (e) => {
-            const path = btn.dataset.path.split('-').map(Number);
-            if (confirm('Are you sure you want to delete this task and all its sub-tasks?')) {
-               if (path.length === 1) {
-                  job.tasks.splice(path[0], 1);
-               } else {
-                  const parentPath = path.slice(0, -1);
-                  const parent = getTaskByPath(job.tasks, parentPath);
-                  if (parent && parent.subTasks) {
-                     parent.subTasks.splice(path[path.length-1], 1);
-                  }
-                  updateParentProgress(job.tasks, parentPath);
-               }
-               taskExpandedPath = path.slice(0, -1); // jump up one level
-               isInfoPanelEditing = false;
-               renderTabContent();
+        btn.addEventListener('click', (e) => {
+          const path = btn.dataset.path.split('-').map(Number);
+          if (confirm('Are you sure you want to delete this task and all its sub-tasks?')) {
+            if (path.length === 1) {
+              job.tasks.splice(path[0], 1);
+            } else {
+              const parentPath = path.slice(0, -1);
+              const parent = getTaskByPath(job.tasks, parentPath);
+              if (parent && parent.subTasks) {
+                parent.subTasks.splice(path[path.length - 1], 1);
+              }
+              updateParentProgress(job.tasks, parentPath);
             }
-         });
+            taskExpandedPath = path.slice(0, -1); // jump up one level
+            isInfoPanelEditing = false;
+            renderTabContent();
+          }
+        });
       });
 
       tc.querySelector('#btn-save-tasks')?.addEventListener('click', () => {
-         store.update('jobs', id, { tasks: job.tasks });
-         showToast('Tasks saved', 'success');
+        store.update('jobs', id, { tasks: job.tasks });
+        showToast('Tasks saved', 'success');
       });
 
       tc.querySelector('#btn-save-tasklist-template')?.addEventListener('click', () => {
-         const content = document.createElement('div');
-         content.innerHTML = `
+        const content = document.createElement('div');
+        content.innerHTML = `
            <div class="form-group">
              <label class="form-label">Template Name</label>
              <input type="text" class="form-input" id="tmpl-name" placeholder="e.g. Standard 50pt Maintenance" required />
@@ -779,12 +781,13 @@ export function renderJobDetail(container, { id }) {
            </div>
          `;
 
-         showModal({
-            title: 'Save Tasklist as Template',
-            content,
-            actions: [
-              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-              { label: 'Save Template', className: 'btn-primary', onClick: (close) => {
+        showModal({
+          title: 'Save Tasklist as Template',
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Save Template', className: 'btn-primary', onClick: (close) => {
                 const name = content.querySelector('#tmpl-name').value;
                 const description = content.querySelector('#tmpl-desc').value;
                 const tags = content.querySelector('#tmpl-tags').value.split(',').map(t => t.trim()).filter(Boolean);
@@ -795,35 +798,36 @@ export function renderJobDetail(container, { id }) {
                 }
 
                 function deepCloneTasks(tasks) {
-                   return tasks.map(p => ({
-                      ...p,
-                      id: store.generateId(),
-                      status: 'Not Started',
-                      progress: 0,
-                      subTasks: (p.subTasks || p.subPhases) ? deepCloneTasks(p.subTasks || p.subPhases) : []
-                   }));
+                  return tasks.map(p => ({
+                    ...p,
+                    id: store.generateId(),
+                    status: 'Not Started',
+                    progress: 0,
+                    subTasks: (p.subTasks || p.subPhases) ? deepCloneTasks(p.subTasks || p.subPhases) : []
+                  }));
                 }
                 store.create('taskTemplates', {
-                   name,
-                   description,
-                   tags,
-                   tasks: deepCloneTasks(job.tasks || job.phases || []),
-                   createdAt: new Date().toISOString()
+                  name,
+                  description,
+                  tags,
+                  tasks: deepCloneTasks(job.tasks || job.phases || []),
+                  createdAt: new Date().toISOString()
                 });
                 showToast('Tasklist saved as template', 'success');
                 close();
-              }}
-            ]
-         });
+              }
+            }
+          ]
+        });
       });
 
       tc.querySelector('#btn-import-tasklist')?.addEventListener('click', () => {
-         const templates = store.getAll('taskTemplates');
-         const otherJobs = store.getAll('jobs').filter(j => j.id !== id && ((j.tasks && j.tasks.length > 0) || (j.phases && j.phases.length > 0)));
-         let currentTab = 'templates';
+        const templates = store.getAll('taskTemplates');
+        const otherJobs = store.getAll('jobs').filter(j => j.id !== id && ((j.tasks && j.tasks.length > 0) || (j.phases && j.phases.length > 0)));
+        let currentTab = 'templates';
 
-         const content = document.createElement('div');
-         content.innerHTML = `
+        const content = document.createElement('div');
+        content.innerHTML = `
            <div class="tabs" id="import-tabs" style="margin-bottom:12px">
              <button class="tab active" data-tab="templates">Templates</button>
              <button class="tab" data-tab="jobs">Other Jobs</button>
@@ -835,20 +839,20 @@ export function renderJobDetail(container, { id }) {
            <div id="import-content" style="max-height:400px; overflow-y:auto"></div>
          `;
 
-         function renderImportList(query = '') {
-           const listDiv = content.querySelector('#import-content');
-           const q = query.toLowerCase();
+        function renderImportList(query = '') {
+          const listDiv = content.querySelector('#import-content');
+          const q = query.toLowerCase();
 
-           if (currentTab === 'templates') {
-             const filtered = templates.filter(t => 
-               t.name.toLowerCase().includes(q) || 
-               (t.description || '').toLowerCase().includes(q) ||
-               (t.tags || []).some(tag => tag.toLowerCase().includes(q))
-             );
+          if (currentTab === 'templates') {
+            const filtered = templates.filter(t =>
+              t.name.toLowerCase().includes(q) ||
+              (t.description || '').toLowerCase().includes(q) ||
+              (t.tags || []).some(tag => tag.toLowerCase().includes(q))
+            );
 
-             listDiv.innerHTML = filtered.length ? filtered.map(t => {
-               const tasksList = t.tasks || t.phases || [];
-               return `
+            listDiv.innerHTML = filtered.length ? filtered.map(t => {
+              const tasksList = t.tasks || t.phases || [];
+              return `
                <div class="import-item" data-id="${t.id}" data-type="template" style="padding:12px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; cursor:pointer; transition:all 0.2s">
                  <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:4px">
                    <div style="font-weight:600; font-size:14px">${escapeHTML(t.name)}</div>
@@ -860,140 +864,140 @@ export function renderJobDetail(container, { id }) {
                  </div>
                </div>
              `}).join('') : `<div class="text-secondary text-center" style="padding:24px">No templates matching "${query}"</div>`;
-           } else {
-             const filtered = otherJobs.filter(j => 
-               j.number.toLowerCase().includes(q) || 
-               j.title.toLowerCase().includes(q) ||
-               j.customerName.toLowerCase().includes(q)
-             );
+          } else {
+            const filtered = otherJobs.filter(j =>
+              j.number.toLowerCase().includes(q) ||
+              j.title.toLowerCase().includes(q) ||
+              j.customerName.toLowerCase().includes(q)
+            );
 
-             listDiv.innerHTML = filtered.length ? filtered.map(j => {
-               const tasksList = j.tasks || j.phases || [];
-               return `
+            listDiv.innerHTML = filtered.length ? filtered.map(j => {
+              const tasksList = j.tasks || j.phases || [];
+              return `
                <div class="import-item" data-id="${j.id}" data-type="job" style="padding:12px; border:1px solid var(--border-color); border-radius:6px; margin-bottom:10px; cursor:pointer; transition:all 0.2s">
                  <div style="font-weight:600; font-size:14px; margin-bottom:2px">${escapeHTML(j.number)} - ${escapeHTML(j.title)}</div>
                  <div style="font-size:12px; color:var(--text-secondary)">${escapeHTML(j.customerName)} · ${tasksList.length} tasks</div>
                </div>
              `}).join('') : `<div class="text-secondary text-center" style="padding:24px">No jobs matching "${query}"</div>`;
-           }
-
-            // Direct binding to newly created items to prevent bubbles / type mismatch bugs
-            listDiv.querySelectorAll('.import-item').forEach(item => {
-              item.addEventListener('click', () => {
-                const sourceId = item.dataset.id;
-                const type = item.dataset.type;
-                
-                const freshTemplates = store.getAll('taskTemplates');
-                const freshJobs = store.getAll('jobs');
-                const source = type === 'template' 
-                  ? freshTemplates.find(t => String(t.id) === String(sourceId)) 
-                  : freshJobs.find(j => String(j.id) === String(sourceId));
-                
-                if (source && (source.tasks || source.phases)) {
-                  if (confirm(`Replace current tasklist with "${source.name || source.number}"?`)) {
-                    function deepClone(tasks) {
-                      return tasks.map(p => ({
-                        ...p,
-                        id: store.generateId(),
-                        status: 'Not Started', 
-                        progress: 0,
-                        subTasks: (p.subTasks || p.subPhases) ? deepClone(p.subTasks || p.subPhases) : []
-                      }));
-                    }
-                    job.tasks = deepClone(source.tasks || source.phases);
-                    taskExpandedPath = [0];
-                    taskViewPath = [];
-                    showToast(`Imported ${source.name || source.number}`, 'success');
-                    renderTabContent();
-                    document.querySelector('.modal-overlay')?.remove();
-                  }
-                } else {
-                  showToast('Could not find source data', 'error');
-                }
-              });
-            });
           }
 
-           renderImportList();
+          // Direct binding to newly created items to prevent bubbles / type mismatch bugs
+          listDiv.querySelectorAll('.import-item').forEach(item => {
+            item.addEventListener('click', () => {
+              const sourceId = item.dataset.id;
+              const type = item.dataset.type;
 
-          // Attach tab listeners
-          content.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-              content.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-              tab.classList.add('active');
-              currentTab = tab.dataset.tab;
-              content.querySelector('#import-search').placeholder = currentTab === 'templates' ? 'Search templates...' : 'Search jobs...';
-              renderImportList(content.querySelector('#import-search').value);
+              const freshTemplates = store.getAll('taskTemplates');
+              const freshJobs = store.getAll('jobs');
+              const source = type === 'template'
+                ? freshTemplates.find(t => String(t.id) === String(sourceId))
+                : freshJobs.find(j => String(j.id) === String(sourceId));
+
+              if (source && (source.tasks || source.phases)) {
+                if (confirm(`Replace current tasklist with "${source.name || source.number}"?`)) {
+                  function deepClone(tasks) {
+                    return tasks.map(p => ({
+                      ...p,
+                      id: store.generateId(),
+                      status: 'Not Started',
+                      progress: 0,
+                      subTasks: (p.subTasks || p.subPhases) ? deepClone(p.subTasks || p.subPhases) : []
+                    }));
+                  }
+                  job.tasks = deepClone(source.tasks || source.phases);
+                  taskExpandedPath = [0];
+                  taskViewPath = [];
+                  showToast(`Imported ${source.name || source.number}`, 'success');
+                  renderTabContent();
+                  document.querySelector('.modal-overlay')?.remove();
+                }
+              } else {
+                showToast('Could not find source data', 'error');
+              }
             });
           });
+        }
 
-          content.querySelector('#import-search').addEventListener('input', (e) => {
-            renderImportList(e.target.value);
-          });
+        renderImportList();
 
-                    showModal({
-            title: 'Import Tasklist',
-            content,
-            actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() }]
+        // Attach tab listeners
+        content.querySelectorAll('.tab').forEach(tab => {
+          tab.addEventListener('click', () => {
+            content.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            currentTab = tab.dataset.tab;
+            content.querySelector('#import-search').placeholder = currentTab === 'templates' ? 'Search templates...' : 'Search jobs...';
+            renderImportList(content.querySelector('#import-search').value);
           });
-       });
+        });
+
+        content.querySelector('#import-search').addEventListener('input', (e) => {
+          renderImportList(e.target.value);
+        });
+
+        showModal({
+          title: 'Import Tasklist',
+          content,
+          actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() }]
+        });
+      });
 
       tc.querySelectorAll('.btn-duplicate-task').forEach(btn => {
-         btn.addEventListener('click', (e) => {
-            const path = e.currentTarget.dataset.path.split('-').map(Number);
-            const nodeToCopy = getTaskByPath(job.tasks, path);
-            
-            function cloneNode(node, isRootCopy) {
-               return {
-                  ...node,
-                  id: store.generateId(),
-                  name: node.name + (isRootCopy ? ' (Copy)' : ''),
-                  progress: 0,
-                  status: 'Not Started',
-                  subTasks: node.subTasks ? node.subTasks.map(child => cloneNode(child, false)) : []
-               };
-            }
-            
-            const cloned = cloneNode(nodeToCopy, true);
-            
-            if (path.length === 1) {
-               job.tasks.splice(path[0] + 1, 0, cloned);
-            } else {
-               const parentPath = path.slice(0, -1);
-               const parent = getTaskByPath(job.tasks, parentPath);
-               parent.subTasks.splice(path[path.length - 1] + 1, 0, cloned);
-               updateParentProgress(job.tasks, parentPath);
-            }
-            renderTabContent();
-         });
+        btn.addEventListener('click', (e) => {
+          const path = e.currentTarget.dataset.path.split('-').map(Number);
+          const nodeToCopy = getTaskByPath(job.tasks, path);
+
+          function cloneNode(node, isRootCopy) {
+            return {
+              ...node,
+              id: store.generateId(),
+              name: node.name + (isRootCopy ? ' (Copy)' : ''),
+              progress: 0,
+              status: 'Not Started',
+              subTasks: node.subTasks ? node.subTasks.map(child => cloneNode(child, false)) : []
+            };
+          }
+
+          const cloned = cloneNode(nodeToCopy, true);
+
+          if (path.length === 1) {
+            job.tasks.splice(path[0] + 1, 0, cloned);
+          } else {
+            const parentPath = path.slice(0, -1);
+            const parent = getTaskByPath(job.tasks, parentPath);
+            parent.subTasks.splice(path[path.length - 1] + 1, 0, cloned);
+            updateParentProgress(job.tasks, parentPath);
+          }
+          renderTabContent();
+        });
       });
 
       tc.querySelectorAll('.btn-book-time').forEach(btn => {
-         btn.addEventListener('click', (e) => {
-            const path = e.currentTarget.dataset.path.split('-').map(Number);
-            const node = getTaskByPath(job.tasks, path);
-            const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
-            
-            const allTimesheets = store.getAll('timesheets').filter(t => t.jobId === id);
-            const techs = store.getAll('technicians');
-            
-            const now = new Date();
-            const p = n => n.toString().padStart(2, '0');
-            const dateStr = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())}`;
-            const startStr = `${dateStr}T09:00`;
-            const finishStr = `${dateStr}T10:00`;
+        btn.addEventListener('click', (e) => {
+          const path = e.currentTarget.dataset.path.split('-').map(Number);
+          const node = getTaskByPath(job.tasks, path);
+          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
 
-            const content = document.createElement('div');
-            content.innerHTML = `
+          const allTimesheets = store.getAll('timesheets').filter(t => t.jobId === id);
+          const techs = store.getAll('technicians');
+
+          const now = new Date();
+          const p = n => n.toString().padStart(2, '0');
+          const dateStr = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+          const startStr = `${dateStr}T09:00`;
+          const finishStr = `${dateStr}T10:00`;
+
+          const content = document.createElement('div');
+          content.innerHTML = `
             <div style="margin-bottom:var(--space-lg)">
-              <h5 style="margin-bottom:8px">All Logged Time for this Job (${allTimesheets.reduce((s,t)=>s+(t.hours||0),0).toFixed(2)} hrs)</h5>
+              <h5 style="margin-bottom:8px">All Logged Time for this Job (${allTimesheets.reduce((s, t) => s + (t.hours || 0), 0).toFixed(2)} hrs)</h5>
               <div style="max-height:150px;overflow-y:auto;background:var(--content-bg);border-radius:4px;border:1px solid var(--border-color)">
                 <table class="data-table" style="font-size:13px">
                   <thead><tr><th>Date</th><th>Tech</th><th>Task</th><th>Hours</th></tr></thead>
                   <tbody>
                     ${allTimesheets.length ? allTimesheets.map(t => `
                       <tr>
-                        <td>${t.startTime ? new Date(t.startTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : new Date(t.date).toLocaleDateString()}</td>
+                        <td>${t.startTime ? new Date(t.startTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(t.date).toLocaleDateString()}</td>
                         <td>${escapeHTML(t.technicianName)}</td>
                         <td>${escapeHTML(t.taskName || t.phaseName || '—')}</td>
                         <td style="font-weight:600">${t.hours}</td>
@@ -1021,19 +1025,20 @@ export function renderJobDetail(container, { id }) {
               </select>
             </div>
             `;
-            
-            showModal({
-              title: 'Book Time: ' + escapeHTML(node.name),
-              size: 'modal-70',
-              content: content,
-              actions: [
-                { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-                { label: 'Log Time', className: 'btn-primary', onClick: (close) => {
+
+          showModal({
+            title: 'Book Time: ' + escapeHTML(node.name),
+            size: 'modal-70',
+            content: content,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              {
+                label: 'Log Time', className: 'btn-primary', onClick: (close) => {
                   const startVal = document.getElementById('bt-start').value;
                   const finishVal = document.getElementById('bt-finish').value;
                   const techId = document.getElementById('bt-tech').value;
                   const desc = node.name;
-                  
+
                   if (!startVal || !finishVal || !techId) {
                     showToast('Please fill all required fields', 'error');
                     return;
@@ -1041,15 +1046,15 @@ export function renderJobDetail(container, { id }) {
 
                   const startDate = new Date(startVal);
                   const finishDate = new Date(finishVal);
-                  
+
                   if (finishDate <= startDate) {
                     showToast('Finish time must be after start time', 'error');
                     return;
                   }
-                  
+
                   const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
                   const tech = techs.find(t => t.id === techId);
-                  
+
                   store.create('timesheets', {
                     jobId: id,
                     jobNumber: job.number,
@@ -1066,39 +1071,40 @@ export function renderJobDetail(container, { id }) {
                     hours,
                     status: 'Pending'
                   });
-                  
+
                   showToast('Time booked successfully', 'success');
                   renderTabContent();
                   close();
-                }}
-              ]
-            });
-         });
+                }
+              }
+            ]
+          });
+        });
       });
     } else if (activeTab === 'costs') {
       // Auto-pull materials from quote if empty
       if (!job.materials) {
-         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
-         const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
-         
-         if (acceptedQuote && acceptedQuote.sections) {
-            job.materials = [];
-            acceptedQuote.sections.forEach(sec => {
-               (sec.lineItems || []).forEach(item => {
-                  if (item.type === 'material') {
-                     const sMatch = store.getAll('stock').find(s => s.name === item.description);
-                     job.materials.push({
-                        stockId: sMatch ? sMatch.id : null,
-                        name: item.description || 'Unknown Material',
-                        quantity: item.qty || 1,
-                        unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
-                        fromQuote: true
-                     });
-                  }
-               });
+        const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
+        const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
+
+        if (acceptedQuote && acceptedQuote.sections) {
+          job.materials = [];
+          acceptedQuote.sections.forEach(sec => {
+            (sec.lineItems || []).forEach(item => {
+              if (item.type === 'material') {
+                const sMatch = store.getAll('stock').find(s => s.name === item.description);
+                job.materials.push({
+                  stockId: sMatch ? sMatch.id : null,
+                  name: item.description || 'Unknown Material',
+                  quantity: item.qty || 1,
+                  unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
+                  fromQuote: true
+                });
+              }
             });
-            store.update('jobs', id, { materials: job.materials });
-         }
+          });
+          store.update('jobs', id, { materials: job.materials });
+        }
       }
       if (!job.materials) job.materials = [];
 
@@ -1110,21 +1116,21 @@ export function renderJobDetail(container, { id }) {
       let totalLaborCost = 0;
 
       timesheets.forEach(t => {
-         if (!loggedLabor[t.technicianId]) {
-            const tech = allTechs.find(x => x.id === t.technicianId);
-            loggedLabor[t.technicianId] = {
-               id: t.technicianId,
-               name: t.technicianName || (tech ? tech.name : 'Unknown Tech'),
-               hours: 0,
-               rate: tech ? (tech.payRate || tech.hourlyRate || 45) : 45
-            };
-         }
-         loggedLabor[t.technicianId].hours += (t.hours || 0);
+        if (!loggedLabor[t.technicianId]) {
+          const tech = allTechs.find(x => x.id === t.technicianId);
+          loggedLabor[t.technicianId] = {
+            id: t.technicianId,
+            name: t.technicianName || (tech ? tech.name : 'Unknown Tech'),
+            hours: 0,
+            rate: tech ? (tech.payRate || tech.hourlyRate || 45) : 45
+          };
+        }
+        loggedLabor[t.technicianId].hours += (t.hours || 0);
       });
       const autoTechs = Object.values(loggedLabor);
       autoTechs.forEach(t => {
-         totalLoggedHours += t.hours;
-         totalLaborCost += (t.hours * t.rate);
+        totalLoggedHours += t.hours;
+        totalLaborCost += (t.hours * t.rate);
       });
 
       // ---- NEW: Calculate Asset Recovery Costs ----
@@ -1132,11 +1138,11 @@ export function renderJobDetail(container, { id }) {
       const allAssets = store.getAll('assets');
       let totalAssetCost = 0;
       const usageList = assetUsage.map(au => {
-         const asset = allAssets.find(a => a.id === au.assetId);
-         const rate = au.recoveryRate || (asset ? asset.recoveryRate : 0) || 0;
-         const cost = au.hours * rate;
-         totalAssetCost += cost;
-         return { ...au, rate, cost };
+        const asset = allAssets.find(a => a.id === au.assetId);
+        const rate = au.recoveryRate || (asset ? asset.recoveryRate : 0) || 0;
+        const cost = au.hours * rate;
+        totalAssetCost += cost;
+        return { ...au, rate, cost };
       });
 
       // Determine material cost (Internal)
@@ -1153,16 +1159,16 @@ export function renderJobDetail(container, { id }) {
 
       // Update job properties silently if they changed
       if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost || job.assetCost !== totalAssetCost) {
-          job.laborCost = totalLaborCost;
-          job.estimatedHours = totalLoggedHours;
-          job.materialCost = totalMatCost;
-          job.assetCost = totalAssetCost;
-          store.update('jobs', id, { 
-            laborCost: totalLaborCost, 
-            estimatedHours: totalLoggedHours, 
-            materialCost: totalMatCost,
-            assetCost: totalAssetCost
-          });
+        job.laborCost = totalLaborCost;
+        job.estimatedHours = totalLoggedHours;
+        job.materialCost = totalMatCost;
+        job.assetCost = totalAssetCost;
+        store.update('jobs', id, {
+          laborCost: totalLaborCost,
+          estimatedHours: totalLoggedHours,
+          materialCost: totalMatCost,
+          assetCost: totalAssetCost
+        });
       }
 
       const currentProfile = settings.laborRates.find(r => r.id === job.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
@@ -1170,7 +1176,7 @@ export function renderJobDetail(container, { id }) {
       const minFee = currentProfile ? (currentProfile.minCallOutFee || 0) : 0;
       const finalBillableLabor = Math.max(billableLabor, minFee);
       const billableTotal = finalBillableLabor + totalBillableMat;
-      
+
       // True Profit = Revenue - (Labor Cost + Material Cost + Asset Recovery)
       const totalInternalCost = totalLaborCost + totalMatCost + totalAssetCost;
       const profit = billableTotal - totalInternalCost;
@@ -1363,44 +1369,44 @@ export function renderJobDetail(container, { id }) {
       });
 
       tc.querySelector('#btn-refresh-materials')?.addEventListener('click', () => {
-         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
-         const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
-         
-         if (!acceptedQuote) {
-            showToast('No linked accepted quote found.', 'error');
-            return;
-         }
+        const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
+        const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
 
-         const manualItems = (job.materials || []).filter(m => !m.fromQuote);
-         const newQuoteItems = [];
-         
-         acceptedQuote.sections.forEach(sec => {
-            (sec.lineItems || []).forEach(item => {
-               if (item.type === 'material') {
-                  const sMatch = store.getAll('stock').find(s => s.name === item.description);
-                  newQuoteItems.push({
-                     stockId: sMatch ? sMatch.id : null,
-                     name: item.description || 'Unknown Material',
-                     quantity: item.qty || 1,
-                     unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
-                     fromQuote: true
-                  });
-               }
-            });
-         });
+        if (!acceptedQuote) {
+          showToast('No linked accepted quote found.', 'error');
+          return;
+        }
 
-         job.materials = [...newQuoteItems, ...manualItems];
-         store.update('jobs', id, { materials: job.materials });
-         showToast('Materials refreshed from Quote', 'success');
-         renderTabContent();
+        const manualItems = (job.materials || []).filter(m => !m.fromQuote);
+        const newQuoteItems = [];
+
+        acceptedQuote.sections.forEach(sec => {
+          (sec.lineItems || []).forEach(item => {
+            if (item.type === 'material') {
+              const sMatch = store.getAll('stock').find(s => s.name === item.description);
+              newQuoteItems.push({
+                stockId: sMatch ? sMatch.id : null,
+                name: item.description || 'Unknown Material',
+                quantity: item.qty || 1,
+                unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
+                fromQuote: true
+              });
+            }
+          });
+        });
+
+        job.materials = [...newQuoteItems, ...manualItems];
+        store.update('jobs', id, { materials: job.materials });
+        showToast('Materials refreshed from Quote', 'success');
+        renderTabContent();
       });
 
       function updateMaterialCostLive() {
-         const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
-         const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
-         const m = addedMat + addCost;
-         tc.querySelector('#sum-mat').textContent = '$' + m.toFixed(2);
-         tc.querySelector('#sum-total').textContent = '$' + (totalLaborCost + m).toFixed(2);
+        const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
+        const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
+        const m = addedMat + addCost;
+        tc.querySelector('#sum-mat').textContent = '$' + m.toFixed(2);
+        tc.querySelector('#sum-total').textContent = '$' + (totalLaborCost + m).toFixed(2);
       }
 
       tc.querySelector('#inp-material-cost')?.addEventListener('input', updateMaterialCostLive);
@@ -1422,7 +1428,7 @@ export function renderJobDetail(container, { id }) {
         // Deduct from stock
         store.update('stock', stockId, { quantity: stockItem.quantity - qty });
         cachedStockOptionsHtml = null; // Invalidate cache
-        
+
         // Add to job materials
         job.materials.push({
           stockId: stockItem.id,
@@ -1440,10 +1446,10 @@ export function renderJobDetail(container, { id }) {
         const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
         const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
         const mat = addedMat + addCost;
-        
+
         job.materialCost = mat;
         job.additionalMaterialCost = addCost;
-        
+
         store.update('jobs', id, {
           materials: job.materials,
           materialCost: mat,
@@ -1454,7 +1460,7 @@ export function renderJobDetail(container, { id }) {
       });
     } else if (activeTab === 'quotes') {
       const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
-      
+
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
@@ -1477,7 +1483,7 @@ export function renderJobDetail(container, { id }) {
                   <tr>
                     <td><a href="#/quotes/${q.id}" style="color:var(--color-primary);text-decoration:none;font-weight:500">${escapeHTML(q.number)}</a></td>
                     <td>${escapeHTML(q.title || 'Untitled Quote')}</td>
-                    <td><span class="badge ${q.status==='Accepted'?'badge-success':(q.status==='Declined'?'badge-danger':(q.status==='Sent'?'badge-info':'badge-neutral'))}">${escapeHTML(q.status)}</span></td>
+                    <td><span class="badge ${q.status === 'Accepted' ? 'badge-success' : (q.status === 'Declined' ? 'badge-danger' : (q.status === 'Sent' ? 'badge-info' : 'badge-neutral'))}">${escapeHTML(q.status)}</span></td>
                     <td style="font-weight:600">$${(q.total || 0).toFixed(2)}</td>
                     <td style="text-align:right">
                       <a href="#/quotes/${q.id}" class="btn btn-secondary btn-sm">View</a>
@@ -1491,34 +1497,34 @@ export function renderJobDetail(container, { id }) {
       `;
 
       tc.querySelector('#btn-new-quote')?.addEventListener('click', () => {
-         const newQ = store.create('quotes', {
-            customerId: job.customerId,
-            customerName: job.customerName,
-            title: job.title,
-            jobId: job.id, 
-            status: 'Draft',
-            version: 1,
-            sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
-            subtotal: 0, tax: 0, total: 0,
-            number: 'Q-' + Date.now().toString().slice(-7)
-         });
-         showToast('Draft quote created', 'success');
-         router.navigate('/quotes/' + newQ.id);
+        const newQ = store.create('quotes', {
+          customerId: job.customerId,
+          customerName: job.customerName,
+          title: job.title,
+          jobId: job.id,
+          status: 'Draft',
+          version: 1,
+          sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
+          subtotal: 0, tax: 0, total: 0,
+          number: 'Q-' + Date.now().toString().slice(-7)
+        });
+        showToast('Draft quote created', 'success');
+        router.navigate('/quotes/' + newQ.id);
       });
     } else if (activeTab === 'activity') {
       if (!job.activityLog) job.activityLog = [];
       // Migrate old logs
       job.activityLog = job.activityLog.map(l => {
-         if (l.type === 'note' || l.type === 'attachment') {
-            return {
-               id: l.id,
-               type: 'combined',
-               date: l.date,
-               content: l.type === 'note' ? l.content : '',
-               files: l.type === 'attachment' ? [l.file] : []
-            };
-         }
-         return l;
+        if (l.type === 'note' || l.type === 'attachment') {
+          return {
+            id: l.id,
+            type: 'combined',
+            date: l.date,
+            content: l.type === 'note' ? l.content : '',
+            files: l.type === 'attachment' ? [l.file] : []
+          };
+        }
+        return l;
       });
 
       tc.innerHTML = `
@@ -1559,10 +1565,10 @@ export function renderJobDetail(container, { id }) {
                         <div style="display:flex; flex-wrap:wrap; gap:8px">
                           ${log.files.map(f => `
                             <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
-                               ${f.type && f.type.startsWith('image/') ? 
-                                  `<div style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px"></div>` :
-                                  `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
-                               }
+                               ${f.type && f.type.startsWith('image/') ?
+          `<div style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px"></div>` :
+          `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
+        }
                                <div style="overflow:hidden">
                                  <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${escapeHTML(f.name)}">${escapeHTML(f.name)}</div>
                                  <div class="text-secondary" style="font-size:10px">${(f.size / 1024).toFixed(1)} KB</div>
@@ -1585,49 +1591,49 @@ export function renderJobDetail(container, { id }) {
 
       // Show/Hide expand buttons based on content height
       setTimeout(() => {
-         tc.querySelectorAll('.activity-log-item').forEach(item => {
-            const wrapper = item.querySelector('.activity-content-wrapper');
-            const overlay = item.querySelector('.expand-overlay');
-            if (wrapper && wrapper.scrollHeight > 200) {
-               overlay.style.display = 'flex';
-               item.style.paddingBottom = '32px'; // make room for the overlay
-               overlay.addEventListener('click', () => {
-                  if (item.dataset.expanded === 'false') {
-                     wrapper.style.maxHeight = wrapper.scrollHeight + 'px';
-                     overlay.style.background = 'transparent';
-                     overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Collapse</span>';
-                     item.dataset.expanded = 'true';
-                  } else {
-                     wrapper.style.maxHeight = '200px';
-                     overlay.style.background = 'linear-gradient(transparent, var(--content-bg))';
-                     overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Expand to view</span>';
-                     item.dataset.expanded = 'false';
-                  }
-               });
-            }
-         });
+        tc.querySelectorAll('.activity-log-item').forEach(item => {
+          const wrapper = item.querySelector('.activity-content-wrapper');
+          const overlay = item.querySelector('.expand-overlay');
+          if (wrapper && wrapper.scrollHeight > 200) {
+            overlay.style.display = 'flex';
+            item.style.paddingBottom = '32px'; // make room for the overlay
+            overlay.addEventListener('click', () => {
+              if (item.dataset.expanded === 'false') {
+                wrapper.style.maxHeight = wrapper.scrollHeight + 'px';
+                overlay.style.background = 'transparent';
+                overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Collapse</span>';
+                item.dataset.expanded = 'true';
+              } else {
+                wrapper.style.maxHeight = '200px';
+                overlay.style.background = 'linear-gradient(transparent, var(--content-bg))';
+                overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Expand to view</span>';
+                item.dataset.expanded = 'false';
+              }
+            });
+          }
+        });
       }, 0);
 
       tc.querySelectorAll('.btn-remove-staged').forEach(btn => {
-         btn.addEventListener('click', (e) => {
-            const idx = parseInt(e.currentTarget.dataset.idx);
-            stagedFiles.splice(idx, 1);
-            renderTabContent();
-         });
+        btn.addEventListener('click', (e) => {
+          const idx = parseInt(e.currentTarget.dataset.idx);
+          stagedFiles.splice(idx, 1);
+          renderTabContent();
+        });
       });
 
       tc.querySelector('#btn-add-note')?.addEventListener('click', () => {
         const val = tc.querySelector('#new-note-input').value.trim();
         if (!val && !stagedFiles.length) return;
-        
+
         job.activityLog.unshift({
-           id: Math.random().toString(36).substr(2,9),
-           type: 'combined',
-           content: val,
-           files: [...stagedFiles],
-           date: new Date().toISOString()
+          id: Math.random().toString(36).substr(2, 9),
+          type: 'combined',
+          content: val,
+          files: [...stagedFiles],
+          date: new Date().toISOString()
         });
-        
+
         store.update('jobs', id, { activityLog: job.activityLog });
         stagedFiles = []; // clear staging
         renderTabContent();
@@ -1641,10 +1647,10 @@ export function renderJobDetail(container, { id }) {
           const reader = new FileReader();
           reader.onload = (ev) => {
             stagedFiles.push({
-               name: file.name,
-               size: file.size,
-               type: file.type,
-               data: ev.target.result
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              data: ev.target.result
             });
             processed++;
             if (processed === files.length) {
@@ -1666,7 +1672,7 @@ export function renderJobDetail(container, { id }) {
       const timesheets = store.getAll('timesheets').filter(t => t.jobId === id);
       const totalHours = timesheets.reduce((sum, t) => sum + (t.hours || 0), 0);
       const techs = store.getAll('technicians');
-      
+
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -1678,8 +1684,8 @@ export function renderJobDetail(container, { id }) {
               <thead><tr><th>Date</th><th>Technician</th><th>Description</th><th style="text-align:right">Hours</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
               <tbody>
                 ${timesheets.length ? timesheets.map(t => {
-                  const canEdit = currentUser.role === 'admin' || (t.technicianId === currentUser.id && t.status !== 'Approved');
-                  return `
+        const canEdit = currentUser.role === 'admin' || (t.technicianId === currentUser.id && t.status !== 'Approved');
+        return `
                   <tr>
                     <td>${new Date(t.date).toLocaleDateString()}</td>
                     <td>${escapeHTML(t.technicianName)}</td>
@@ -1694,7 +1700,8 @@ export function renderJobDetail(container, { id }) {
                       ` : ''}
                     </td>
                   </tr>
-                `;}).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No time logged yet</td></tr>'}
+                `;
+      }).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No time logged yet</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1728,31 +1735,33 @@ export function renderJobDetail(container, { id }) {
             content,
             actions: [
               { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-              { label: 'Save Changes', className: 'btn-primary', onClick: (close) => {
-                const date = document.getElementById('edit-ts-date').value;
-                const hours = parseFloat(document.getElementById('edit-ts-hours').value);
-                const description = document.getElementById('edit-ts-desc').value;
+              {
+                label: 'Save Changes', className: 'btn-primary', onClick: (close) => {
+                  const date = document.getElementById('edit-ts-date').value;
+                  const hours = parseFloat(document.getElementById('edit-ts-hours').value);
+                  const description = document.getElementById('edit-ts-desc').value;
 
-                if (!date || isNaN(hours)) {
-                  showToast('Please enter valid date and hours', 'error');
-                  return;
+                  if (!date || isNaN(hours)) {
+                    showToast('Please enter valid date and hours', 'error');
+                    return;
+                  }
+
+                  store.update('timesheets', tsId, { date, hours, description });
+                  showToast('Timesheet updated', 'success');
+                  close();
+                  renderTabContent();
                 }
-
-                store.update('timesheets', tsId, { date, hours, description });
-                showToast('Timesheet updated', 'success');
-                close();
-                renderTabContent();
-              }}
+              }
             ]
           });
         });
       });
 
       tc.querySelector('#btn-log-time-tab')?.addEventListener('click', () => {
-        const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
         const now = new Date();
         const p = n => n.toString().padStart(2, '0');
-        const dateStr = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())}`;
+        const dateStr = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 
         const content = document.createElement('div');
         content.innerHTML = `
@@ -1786,40 +1795,42 @@ export function renderJobDetail(container, { id }) {
           content: content.outerHTML,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Save', className: 'btn-primary', onClick: (close) => {
-              const dOverlay = document.querySelector('.drawer-overlay');
-              const dateVal = dOverlay.querySelector('#lt-date').value;
-              const techId = dOverlay.querySelector('#lt-tech').value;
-              const hoursVal = parseFloat(dOverlay.querySelector('#lt-hours').value);
-              const descVal = dOverlay.querySelector('#lt-desc').value;
+            {
+              label: 'Save', className: 'btn-primary', onClick: (close) => {
+                const dOverlay = document.querySelector('.drawer-overlay');
+                const dateVal = dOverlay.querySelector('#lt-date').value;
+                const techId = dOverlay.querySelector('#lt-tech').value;
+                const hoursVal = parseFloat(dOverlay.querySelector('#lt-hours').value);
+                const descVal = dOverlay.querySelector('#lt-desc').value;
 
-              if (!dateVal || !techId || isNaN(hoursVal)) {
-                showToast('Please fill all required fields', 'error');
-                return;
+                if (!dateVal || !techId || isNaN(hoursVal)) {
+                  showToast('Please fill all required fields', 'error');
+                  return;
+                }
+
+                const tech = techs.find(t => t.id === techId);
+                store.create('timesheets', {
+                  jobId: id,
+                  jobNumber: job.number,
+                  technicianId: techId,
+                  technicianName: tech.name,
+                  date: dateVal,
+                  hours: hoursVal,
+                  description: descVal,
+                  status: 'Pending'
+                });
+
+                showToast('Time logged successfully', 'success');
+                renderTabContent();
+                close();
               }
-
-              const tech = techs.find(t => t.id === techId);
-              store.create('timesheets', {
-                jobId: id,
-                jobNumber: job.number,
-                technicianId: techId,
-                technicianName: tech.name,
-                date: dateVal,
-                hours: hoursVal,
-                description: descVal,
-                status: 'Pending'
-              });
-
-              showToast('Time logged successfully', 'success');
-              renderTabContent();
-              close();
-            }}
+            }
           ]
         });
       });
     } else if (activeTab === 'forms') {
       job.forms = job.forms || [];
-      
+
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -1873,25 +1884,27 @@ export function renderJobDetail(container, { id }) {
           content: content.outerHTML,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Submit', className: 'btn-primary', onClick: (close) => {
-              const dOverlay = document.querySelector('.drawer-overlay');
-              job.forms.push({
-                type: dOverlay.querySelector('#new-form-type').value,
-                notes: dOverlay.querySelector('#new-form-notes').value,
-                date: new Date().toISOString(),
-                completedBy: 'Current User' // Placeholder for logged-in user
-              });
-              store.update('jobs', id, { forms: job.forms });
-              showToast('Form submitted successfully', 'success');
-              renderTabContent();
-              close();
-            }}
+            {
+              label: 'Submit', className: 'btn-primary', onClick: (close) => {
+                const dOverlay = document.querySelector('.drawer-overlay');
+                job.forms.push({
+                  type: dOverlay.querySelector('#new-form-type').value,
+                  notes: dOverlay.querySelector('#new-form-notes').value,
+                  date: new Date().toISOString(),
+                  completedBy: 'Current User' // Placeholder for logged-in user
+                });
+                store.update('jobs', id, { forms: job.forms });
+                showToast('Form submitted successfully', 'success');
+                renderTabContent();
+                close();
+              }
+            }
           ]
         });
       });
     } else if (activeTab === 'pos') {
       const pos = store.getAll('purchaseOrders').filter(p => p.jobId === id);
-      
+
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -1951,42 +1964,44 @@ export function renderJobDetail(container, { id }) {
           content: content.outerHTML, // Pass HTML string or handle element appending
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Create PO', className: 'btn-primary', onClick: (close) => {
-              // Note: showDrawer content is recreated via innerHTML, so we must query the document
-              const dOverlay = document.querySelector('.drawer-overlay');
-              const supplier = dOverlay.querySelector('#po-supplier').value;
-              const partId = dOverlay.querySelector('#po-part').value;
-              const qty = parseInt(dOverlay.querySelector('#po-qty').value) || 1;
-              const date = dOverlay.querySelector('#po-date').value;
+            {
+              label: 'Create PO', className: 'btn-primary', onClick: (close) => {
+                // Note: showDrawer content is recreated via innerHTML, so we must query the document
+                const dOverlay = document.querySelector('.drawer-overlay');
+                const supplier = dOverlay.querySelector('#po-supplier').value;
+                const partId = dOverlay.querySelector('#po-part').value;
+                const qty = parseInt(dOverlay.querySelector('#po-qty').value) || 1;
+                const date = dOverlay.querySelector('#po-date').value;
 
-              if (!supplier || !partId) {
-                showToast('Supplier and Part are required', 'error');
-                return;
+                if (!supplier || !partId) {
+                  showToast('Supplier and Part are required', 'error');
+                  return;
+                }
+
+                const part = stockItems.find(s => s.id === partId);
+
+                store.create('purchaseOrders', {
+                  number: `PO-${Date.now().toString().slice(-5)}`,
+                  jobId: id,
+                  supplierName: supplier,
+                  issueDate: new Date().toISOString(),
+                  expectedDate: date,
+                  status: 'Draft',
+                  items: [{ stockId: partId, name: part.name, quantity: qty, unitCost: part.costPrice || 0, total: (part.costPrice || 0) * qty }],
+                  total: (part.costPrice || 0) * qty
+                });
+
+                showToast('Quick PO Created', 'success');
+                renderTabContent();
+                close();
               }
-
-              const part = stockItems.find(s => s.id === partId);
-              
-              store.create('purchaseOrders', {
-                number: `PO-${Date.now().toString().slice(-5)}`,
-                jobId: id,
-                supplierName: supplier,
-                issueDate: new Date().toISOString(),
-                expectedDate: date,
-                status: 'Draft',
-                items: [{ stockId: partId, name: part.name, quantity: qty, unitCost: part.costPrice || 0, total: (part.costPrice || 0) * qty }],
-                total: (part.costPrice || 0) * qty
-              });
-
-              showToast('Quick PO Created', 'success');
-              renderTabContent();
-              close();
-            }}
+            }
           ]
         });
       });
     } else if (activeTab === 'invoices') {
       const invoices = store.getAll('invoices').filter(i => i.jobId === id);
-      
+
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -2036,7 +2051,7 @@ export function renderJobDetail(container, { id }) {
       function getJobInvoiceData() {
         let sections = [];
         let subtotal = 0;
-        
+
         // 1. Try to pull from Quote Sections first
         if (job.quoteId) {
           const quote = store.getById('quotes', job.quoteId);
@@ -2049,7 +2064,7 @@ export function renderJobDetail(container, { id }) {
             subtotal = quote.subtotal || 0;
           }
         }
-        
+
         // 2. If no quote or no items, use Job Tasks
         if (sections.length === 0) {
           const tasksSource = job.tasks || job.phases || [];
@@ -2066,8 +2081,8 @@ export function renderJobDetail(container, { id }) {
             const lCost = job.laborCost || 0;
             const mCost = job.materialCost || 0;
             if (lCost > 0 || mCost > 0) {
-               sections[0].lineItems.push({ description: 'Estimated Job Labor', type: 'labor', qty: 1, rate: lCost, total: lCost });
-               sections[0].lineItems.push({ description: 'Estimated Job Materials', type: 'material', qty: 1, rate: mCost, total: mCost });
+              sections[0].lineItems.push({ description: 'Estimated Job Labor', type: 'labor', qty: 1, rate: lCost, total: lCost });
+              sections[0].lineItems.push({ description: 'Estimated Job Materials', type: 'material', qty: 1, rate: mCost, total: mCost });
             }
           } else {
             // Absolute fallback
@@ -2085,7 +2100,7 @@ export function renderJobDetail(container, { id }) {
           // Calculate subtotal for fallback cases
           subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
         }
-        
+
         return { sections, subtotal };
       }
 
@@ -2095,7 +2110,7 @@ export function renderJobDetail(container, { id }) {
       });
 
       tc.querySelector('#btn-create-deposit-invoice')?.addEventListener('click', () => {
-        const sections = [{ 
+        const sections = [{
           id: store.generateId(),
           name: 'Deposit',
           lineItems: [{ description: `Deposit for Job ${job.number}`, type: 'other', qty: 1, rate: 0, total: 0 }],
@@ -2117,20 +2132,22 @@ export function renderJobDetail(container, { id }) {
           content,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Create', className: 'btn-primary', onClick: (close) => {
-              const pct = parseFloat(document.getElementById('progress-percent').value) || 0;
-              if (pct <= 0 || pct > 100) { showToast('Enter a valid percentage (1-100)', 'error'); return; }
-              const { subtotal } = getJobInvoiceData();
-              const partialAmount = subtotal * (pct / 100);
-              const sections = [{ 
-                id: store.generateId(),
-                name: `Progress Payment (${pct}%)`,
-                lineItems: [{ description: `Progress Payment (${pct}% of job)`, type: 'other', qty: 1, rate: partialAmount, total: partialAmount }],
-                subtotal: partialAmount
-              }];
-              createDraftInvoice('Progress', sections, partialAmount);
-              close();
-            }}
+            {
+              label: 'Create', className: 'btn-primary', onClick: (close) => {
+                const pct = parseFloat(document.getElementById('progress-percent').value) || 0;
+                if (pct <= 0 || pct > 100) { showToast('Enter a valid percentage (1-100)', 'error'); return; }
+                const { subtotal } = getJobInvoiceData();
+                const partialAmount = subtotal * (pct / 100);
+                const sections = [{
+                  id: store.generateId(),
+                  name: `Progress Payment (${pct}%)`,
+                  lineItems: [{ description: `Progress Payment (${pct}% of job)`, type: 'other', qty: 1, rate: partialAmount, total: partialAmount }],
+                  subtotal: partialAmount
+                }];
+                createDraftInvoice('Progress', sections, partialAmount);
+                close();
+              }
+            }
           ]
         });
       });
@@ -2156,7 +2173,7 @@ export function renderJobDetail(container, { id }) {
         title: 'Delete Job', content,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-          { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('jobs', id); showToast('Job deleted', 'success'); close(); router.navigate('/jobs'); }},
+          { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('jobs', id); showToast('Job deleted', 'success'); close(); router.navigate('/jobs'); } },
         ],
       });
     });
@@ -2165,11 +2182,10 @@ export function renderJobDetail(container, { id }) {
   }
 
   render();
-}
 
-function r(label, value) {
-  return `<div style="display:flex;gap:8px"><span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span><span>${value}</span></div>`;
-}
+  function r(label, value) {
+    return `<div style="display:flex;gap:8px"><span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span><span>${value}</span></div>`;
+  }
   function renderFormsTab(tc) {
     const instances = store.getAll('formInstances').filter(fi => fi.jobId === id);
     const templates = store.getAll('formTemplates');
@@ -2195,10 +2211,10 @@ function r(label, value) {
             </thead>
             <tbody>
               ${instances.map(fi => {
-                const template = templates.find(t => t.id === fi.templateId);
-                const isComplete = fi.status === 'Completed';
-                const submitter = fi.submittedBy ? store.getById('people', fi.submittedBy) : null;
-                return `
+      const template = templates.find(t => t.id === fi.templateId);
+      const isComplete = fi.status === 'Completed';
+      const submitter = fi.submittedBy ? store.getById('people', fi.submittedBy) : null;
+      return `
                   <tr>
                     <td class="font-medium">${escapeHTML(template?.name || 'Unknown Form')}</td>
                     <td><span class="badge ${isComplete ? 'badge-success' : 'badge-warning'}">${fi.status}</span></td>
@@ -2214,7 +2230,7 @@ function r(label, value) {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
               ${!instances.length ? '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-tertiary)">No forms attached to this job. Click "Attach Form" to add one.</td></tr>' : ''}
             </tbody>
           </table>
@@ -2244,15 +2260,15 @@ function r(label, value) {
     const allTemplates = store.getAll('formTemplates');
     const existingInstances = store.getAll('formInstances').filter(fi => fi.jobId === id);
     const existingTemplateIds = existingInstances.map(fi => fi.templateId);
-    
+
     const content = document.createElement('div');
     content.style.minWidth = '450px';
-    
+
     content.innerHTML = `
       <div style="display:flex; flex-direction:column; gap:12px">
         ${allTemplates.map(t => {
-          const alreadyAttached = existingTemplateIds.includes(t.id);
-          return `
+      const alreadyAttached = existingTemplateIds.includes(t.id);
+      return `
             <div class="card attach-template-item ${alreadyAttached ? 'disabled' : ''}" data-id="${t.id}" style="cursor:${alreadyAttached ? 'not-allowed' : 'pointer'}; opacity:${alreadyAttached ? '0.6' : '1'}; border:1px solid var(--border-color); transition:all 0.2s">
               <div class="card-body" style="padding:12px; display:flex; justify-content:space-between; align-items:center">
                 <div>
@@ -2263,7 +2279,7 @@ function r(label, value) {
               </div>
             </div>
           `;
-        }).join('')}
+    }).join('')}
         ${!allTemplates.length ? '<div class="text-center text-tertiary">No templates available.</div>' : ''}
       </div>
     `;
@@ -2317,41 +2333,41 @@ function r(label, value) {
               </div>
               <div style="display:flex; flex-direction:column; gap:16px; padding:0 8px">
                 ${sec.fields.map(f => {
-                  const val = fi.responses[f.id] || '';
-                  let fieldHtml = '';
-                  
-                  if (f.type === 'text') {
-                     fieldHtml = `<input class="form-input" name="${f.id}" value="${escapeHTML(val)}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
-                  } else if (f.type === 'textarea') {
-                     fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>${escapeHTML(val)}</textarea>`;
-                  } else if (f.type === 'checkbox') {
-                     fieldHtml = `
+      const val = fi.responses[f.id] || '';
+      let fieldHtml = '';
+
+      if (f.type === 'text') {
+        fieldHtml = `<input class="form-input" name="${f.id}" value="${escapeHTML(val)}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
+      } else if (f.type === 'textarea') {
+        fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>${escapeHTML(val)}</textarea>`;
+      } else if (f.type === 'checkbox') {
+        fieldHtml = `
                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer">
                          <input type="checkbox" name="${f.id}" ${val ? 'checked' : ''} ${isComplete ? 'disabled' : ''} style="width:18px; height:18px" />
                          <span style="font-size:14px">${f.label}</span>
                        </label>`;
-                  } else if (f.type === 'select') {
-                     fieldHtml = `
+      } else if (f.type === 'select') {
+        fieldHtml = `
                        <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>
                          <option value="">Select option...</option>
                          ${(f.options || []).map(opt => `<option value="${escapeHTML(opt)}" ${val === opt ? 'selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
                        </select>`;
-                  } else if (f.type === 'date') {
-                     fieldHtml = `<input type="date" class="form-input" name="${f.id}" value="${val}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
-                  } else if (f.type === 'signature') {
-                     fieldHtml = `
+      } else if (f.type === 'date') {
+        fieldHtml = `<input type="date" class="form-input" name="${f.id}" value="${val}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
+      } else if (f.type === 'signature') {
+        fieldHtml = `
                        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic">
                          ${val ? `<span style="font-family:'Brush Script MT', cursive; font-size:24px; color:var(--text-primary)">${escapeHTML(val)}</span>` : 'Digitally Signed on submission'}
                        </div>`;
-                  }
+      }
 
-                  return `
+      return `
                     <div class="form-group" style="margin:0">
                       ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(f.label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
                       ${fieldHtml}
                     </div>
                   `;
-                }).join('')}
+    }).join('')}
               </div>
             </div>
           `).join('')}
@@ -2364,48 +2380,51 @@ function r(label, value) {
       content,
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
-        !isComplete ? { label: 'Submit Form', className: 'btn-primary', onClick: c => {
-          const form = content.querySelector('#active-job-form');
-          if (!form.checkValidity()) return form.reportValidity();
-          
-          const formData = new FormData(form);
-          const responses = {};
-          (template.sections || []).forEach(sec => {
-            sec.fields.forEach(f => {
-              if (f.type === 'checkbox') responses[f.id] = formData.has(f.id);
-              else responses[f.id] = formData.get(f.id);
-              
-              if (f.type === 'signature') responses[f.id] = JSON.parse(sessionStorage.getItem('currentUser'))?.name || 'Unknown';
-            });
-          });
+        !isComplete ? {
+          label: 'Submit Form', className: 'btn-primary', onClick: c => {
+            const form = content.querySelector('#active-job-form');
+            if (!form.checkValidity()) return form.reportValidity();
 
-          const currentInstances = store.getAll('formInstances');
-          const idx = currentInstances.findIndex(i => i.id === instanceId);
-          currentInstances[idx] = {
-            ...currentInstances[idx],
-            responses,
-            status: 'Completed',
-            submittedBy: JSON.parse(sessionStorage.getItem('currentUser'))?.id,
-            submittedAt: new Date().toISOString()
-          };
-          
-          store.save('formInstances', currentInstances);
-          showToast('Form submitted successfully', 'success');
-          c();
-          renderFormsTab(container.querySelector('#tab-content'));
-          
-          // Log activity
-          const activity = store.getAll('activity') || [];
-          activity.push({
-            id: Date.now(),
-            jobId: id,
-            type: 'form_submission',
-            text: `Form "${template.name}" submitted.`,
-            user: JSON.parse(sessionStorage.getItem('currentUser'))?.name,
-            timestamp: new Date().toISOString()
-          });
-          store.save('activity', activity);
-        }} : null
+            const formData = new FormData(form);
+            const responses = {};
+            (template.sections || []).forEach(sec => {
+              sec.fields.forEach(f => {
+                if (f.type === 'checkbox') responses[f.id] = formData.has(f.id);
+                else responses[f.id] = formData.get(f.id);
+
+                if (f.type === 'signature') responses[f.id] = JSON.parse(localStorage.getItem('currentUser'))?.name || 'Unknown';
+              });
+            });
+
+            const currentInstances = store.getAll('formInstances');
+            const idx = currentInstances.findIndex(i => i.id === instanceId);
+            currentInstances[idx] = {
+              ...currentInstances[idx],
+              responses,
+              status: 'Completed',
+              submittedBy: JSON.parse(localStorage.getItem('currentUser'))?.id,
+              submittedAt: new Date().toISOString()
+            };
+
+            store.save('formInstances', currentInstances);
+            showToast('Form submitted successfully', 'success');
+            c();
+            renderFormsTab(container.querySelector('#tab-content'));
+
+            // Log activity
+            const activity = store.getAll('activity') || [];
+            activity.push({
+              id: Date.now(),
+              jobId: id,
+              type: 'form_submission',
+              text: `Form "${template.name}" submitted.`,
+              user: JSON.parse(localStorage.getItem('currentUser'))?.name,
+              timestamp: new Date().toISOString()
+            });
+            store.save('activity', activity);
+          }
+        } : null
       ].filter(Boolean)
     });
   }
+}

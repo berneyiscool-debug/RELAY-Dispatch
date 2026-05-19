@@ -1,7 +1,7 @@
 import { store } from '../../data/store.js';
 
 export function renderCustomerPortal(container) {
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const customerId = currentUser.customerId;
 
   // If somehow not a customer, show an error
@@ -89,7 +89,7 @@ export function renderCustomerPortal(container) {
   const logoutBtn = container.querySelector('#portal-logout-btn');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', () => {
-      sessionStorage.removeItem('currentUser');
+      localStorage.removeItem('currentUser');
       // Import router dynamically or rely on the fact it's a module
       import('../../router.js').then(({ router }) => {
         router.navigate('/login');

@@ -1,22 +1,21 @@
-// ============================================
-// SIMPRO CLONE — JOBS LIST PAGE
-// ============================================
-
 import { store } from '../../data/store.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
+import { hasPermission } from '../../utils/permissions.js';
 
 export function renderJobsList(container) {
   const jobs = store.getAll('jobs');
+  const canCreate = hasPermission('Jobs', 'create');
 
   container.innerHTML = `
     <div class="page-header">
       <h1>Jobs</h1>
+      ${canCreate ? `
       <div class="page-header-actions">
         <button class="btn btn-primary" id="btn-new-job"><span class="material-icons-outlined">add</span> New Job</button>
-      </div>
+      </div>` : ''}
     </div>
     <div class="page-toolbar">
       <div class="toolbar-filters">
@@ -134,7 +133,10 @@ export function renderJobsList(container) {
     }
   });
   container.querySelector('#jobs-table-container').appendChild(table);
-  container.querySelector('#btn-new-job').addEventListener('click', () => router.navigate('/jobs/new'));
+  const btnNewJob = container.querySelector('#btn-new-job');
+  if (btnNewJob) {
+    btnNewJob.addEventListener('click', () => router.navigate('/jobs/new'));
+  }
 
   container.querySelectorAll('.toolbar-filter').forEach(btn => {
     btn.addEventListener('click', () => {

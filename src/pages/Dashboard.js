@@ -3,6 +3,26 @@
 // ============================================
 import { store } from '../data/store.js';
 import { calculateTotalBillableMaterials } from '../utils/pricing.js';
+import { hasPermission } from '../utils/permissions.js';
+
+function getHeaderActionsHtml() {
+  const canCreateJob = hasPermission('Jobs', 'create');
+  const canCreateQuote = hasPermission('Quotes', 'create');
+  let html = '';
+  if (canCreateJob) {
+    html += `
+      <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
+        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
+      </button>`;
+  }
+  if (canCreateQuote) {
+    html += `
+      <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
+        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
+      </button>`;
+  }
+  return html;
+}
 
 let isEditMode = false;
 
@@ -12,7 +32,7 @@ const WIDTH_CLASS = { S: 'module-s', M: 'module-m', L: 'module-l', XL: 'module-x
 const HEIGHT_CLASS = { standard: '', tall: 'module-tall', xtall: 'module-xtall' };
 
 function getLayoutKey() {
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   return currentUser ? `dashboardLayout_v2_${currentUser.id}` : 'dashboardLayout_v2';
 }
 
@@ -85,12 +105,7 @@ export function renderDashboard(container) {
           </button>
         </div>
         <div id="dashboard-header-actions" style="display:flex;gap:8px;">
-          <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
-            <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
-          </button>
-          <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
-            <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
-          </button>
+          ${getHeaderActionsHtml()}
         </div>
       </div>
       <div id="dashboard-grid" class="dashboard-grid"></div>
@@ -386,13 +401,7 @@ function showEditHeader(container, grid, layout, data) {
     isEditMode = false;
     if (grid.sortableInstance) grid.sortableInstance.option('disabled', true);
     editBtn.style.display = '';
-    headerActions.innerHTML = `
-      <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
-      </button>
-      <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
-      </button>`;
+    headerActions.innerHTML = getHeaderActionsHtml();
     renderGrid(grid, layout, data);
   });
 
@@ -401,13 +410,7 @@ function showEditHeader(container, grid, layout, data) {
     isEditMode = false;
     if (grid.sortableInstance) grid.sortableInstance.option('disabled', true);
     editBtn.style.display = '';
-    headerActions.innerHTML = `
-      <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
-      </button>
-      <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
-      </button>`;
+    headerActions.innerHTML = getHeaderActionsHtml();
     renderGrid(grid, layout, data);
   });
 

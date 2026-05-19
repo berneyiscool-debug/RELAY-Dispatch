@@ -12,6 +12,7 @@ import { seedData } from './data/seed.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
+import { hasPermission } from './utils/permissions.js';
 
 // Pages
 import { renderDashboard } from './pages/Dashboard.js';
@@ -51,6 +52,7 @@ import { renderAssetForm } from './pages/assets/AssetForm.js';
 import { renderAssetDetail } from './pages/assets/AssetDetail.js';
 
 import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
+import { renderDocumentViewer } from './pages/documents/DocumentViewer.js';
 
 // ---- Initialize ----
 seedData();
@@ -160,6 +162,7 @@ router.register('/purchase-orders/:id', renderPage(renderPurchaseOrderDetail));
 
 // Documents
 router.register('/documents', renderPage(renderDocumentBrowser));
+router.register('/document/view', renderPage(renderDocumentViewer));
 
 // Reports
 router.register('/reports', renderPage(renderReports));
@@ -174,7 +177,7 @@ const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/notificatio
 const customerRoutes = ['/portal'];
 
 router.onNavigate = (path, params) => {
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
 
   if (!currentUser && path !== '/login') {
@@ -218,6 +221,24 @@ router.onNavigate = (path, params) => {
           };
           const moduleName = pathMap[basePath];
           if (moduleName) {
+             // Granular route guard checks
+             let block = false;
+             if (path === '/jobs/new' && !hasPermission('Jobs', 'create')) block = true;
+             if (path.endsWith('/edit') && basePath === '/jobs' && !hasPermission('Jobs', 'edit')) block = true;
+             if (path === '/quotes/new' && !hasPermission('Quotes', 'create')) block = true;
+
+             if (block) {
+                const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/assets', '/documents', '/settings'];
+                const fallback = PRIORITY.find(route => {
+                  const mod = pathMap[route];
+                  if (mod === 'Notifications' || mod === 'Dashboard') return true;
+                  const perm = ut.permissions.find(m => m.module === mod);
+                  return perm && Object.entries(perm).some(([k,v]) => k !== 'module' && v === true);
+                }) || '/';
+                router.navigate(fallback);
+                return false;
+             }
+
              if (moduleName === 'Notifications' || moduleName === 'Dashboard') {
                 // globally accessible, allow
              } else {
@@ -248,7 +269,7 @@ router.onNavigate = (path, params) => {
 
 // Handle logout events globally
 window.addEventListener('fieldforge-logout', () => {
-  sessionStorage.removeItem('currentUser');
+  localStorage.removeItem('currentUser');
   const sidebar = document.querySelector('.sidebar');
   const topbar = document.querySelector('.topbar');
   const breadcrumb = document.getElementById('breadcrumb');
@@ -260,7 +281,7 @@ window.addEventListener('fieldforge-logout', () => {
 
 // ---- Boot ----
 // Before resolving, check if we need to redirect to login
-const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
+const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
 if (!currentUser && window.location.hash !== '#/login') {
   window.location.hash = '#/login';
 }

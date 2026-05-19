@@ -98,7 +98,7 @@ export function updateTopbarAccess(topbarEl) {
   const topbar = topbarEl || document.getElementById('topbar');
   if (!topbar) return;
 
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
   const nameEl = topbar.querySelector('#topbar-name');
   const roleEl = topbar.querySelector('#topbar-role');

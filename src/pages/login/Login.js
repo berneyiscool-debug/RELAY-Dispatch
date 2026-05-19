@@ -98,7 +98,7 @@ export function renderLogin(container) {
       color: t.color
     };
 
-    sessionStorage.setItem('currentUser', JSON.stringify(user));
+    localStorage.setItem('currentUser', JSON.stringify(user));
 
     if (sidebar) sidebar.style.display = '';
     if (topbar) topbar.style.display = '';
@@ -136,7 +136,7 @@ export function renderLogin(container) {
       user.customerId = customers[0].id;
       user.name = customers[0].firstName + ' ' + customers[0].lastName;
     }
-    sessionStorage.setItem('currentUser', JSON.stringify(user));
+    localStorage.setItem('currentUser', JSON.stringify(user));
 
     if (sidebar) sidebar.style.display = '';
     if (topbar) topbar.style.display = '';

@@ -7,6 +7,7 @@ import { showToast } from '../components/Notifications.js';
 import { showModal } from '../components/Modal.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
+import { router } from '../router.js';
 
 // Build a permissions array with all granular keys
 function buildGranularPerms(valueFn) {
@@ -18,8 +19,26 @@ function buildGranularPerms(valueFn) {
 }
 
 export function renderSettings(container) {
+  const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
+  const tabParam = urlParams.get('tab');
+  
   let activeTab = 'company';
-  const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{"role":"admin"}');
+  let templatesSubTab = 'tasklists';
+
+  if (tabParam === 'forms') {
+    activeTab = 'templates_forms';
+    templatesSubTab = 'forms';
+  } else if (tabParam === 'tasks' || tabParam === 'tasklists') {
+    activeTab = 'templates_forms';
+    templatesSubTab = 'tasklists';
+  } else if (tabParam === 'quote_templates' || tabParam === 'quotes') {
+    activeTab = 'templates_forms';
+    templatesSubTab = 'quotes';
+  } else if (tabParam) {
+    activeTab = tabParam;
+  }
+
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
   function render() {
     container.innerHTML = `
@@ -29,9 +48,7 @@ export function renderSettings(container) {
         <button class="tab ${activeTab === 'company' ? 'active' : ''}" data-tab="company">Company</button>
         <button class="tab ${activeTab === 'users' ? 'active' : ''}" data-tab="users">Users & Permissions</button>
         <button class="tab ${activeTab === 'materials' ? 'active' : ''}" data-tab="materials">Materials</button>
-        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Tasklists</button>
-        <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms">Custom Forms</button>
-        <button class="tab ${activeTab === 'quote_templates' ? 'active' : ''}" data-tab="quote_templates">Quote Templates</button>
+        <button class="tab ${activeTab === 'templates_forms' ? 'active' : ''}" data-tab="templates_forms">Templates &amp; Forms</button>
         <button class="tab ${activeTab === 'tax' ? 'active' : ''}" data-tab="tax">Tax &amp; Rates</button>
         <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets</button>
         <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
@@ -54,8 +71,8 @@ export function renderSettings(container) {
   function renderContent() {
     const tc = container.querySelector('#settings-content');
 
-    if (activeTab === 'forms') {
-      renderFormsTab(tc);
+    if (activeTab === 'templates_forms') {
+      renderTemplatesFormsTab(tc);
       return;
     }
 
@@ -453,10 +470,6 @@ export function renderSettings(container) {
       });
     } else if (activeTab === 'materials') {
       renderMaterialsSettings(tc);
-    } else if (activeTab === 'tasks') {
-      renderTasksSettings(tc);
-    } else if (activeTab === 'quote_templates') {
-      renderQuoteTemplatesSettings(tc);
     } else if (activeTab === 'tax') {
       const settings = store.getSettings();
       tc.innerHTML = `
@@ -1872,6 +1885,57 @@ export function renderSettings(container) {
     tc.querySelector('#btn-save-materials').addEventListener('click', save);
   }
 
+  function renderTemplatesFormsTab(tc) {
+    tc.innerHTML = `
+      <div class="card" style="margin-bottom:var(--space-md)">
+        <div class="card-body" style="padding: 8px; background:var(--bg-color); border-radius: 8px; display:flex; gap:8px">
+          <button class="btn btn-sm" id="subtab-tasklists" style="flex:1; display:flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:6px; padding:10px; background:${templatesSubTab === 'tasklists' ? 'var(--color-primary)' : 'transparent'}; color:${templatesSubTab === 'tasklists' ? 'white' : 'var(--text-color)'}; font-weight:600; cursor:pointer; transition:all 0.2s ease;">
+            <span class="material-icons-outlined" style="font-size:18px">playlist_add_check</span> Tasklist Templates
+          </button>
+          <button class="btn btn-sm" id="subtab-forms" style="flex:1; display:flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:6px; padding:10px; background:${templatesSubTab === 'forms' ? 'var(--color-primary)' : 'transparent'}; color:${templatesSubTab === 'forms' ? 'white' : 'var(--text-color)'}; font-weight:600; cursor:pointer; transition:all 0.2s ease;">
+            <span class="material-icons-outlined" style="font-size:18px">assignment</span> Form Templates
+          </button>
+          <button class="btn btn-sm" id="subtab-quotes" style="flex:1; display:flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:6px; padding:10px; background:${templatesSubTab === 'quotes' ? 'var(--color-primary)' : 'transparent'}; color:${templatesSubTab === 'quotes' ? 'white' : 'var(--text-color)'}; font-weight:600; cursor:pointer; transition:all 0.2s ease;">
+            <span class="material-icons-outlined" style="font-size:18px">article</span> Quote Templates
+          </button>
+        </div>
+      </div>
+      <div id="templates-subcontent" style="margin-top:var(--space-md)"></div>
+    `;
+
+    const btnTasklists = tc.querySelector('#subtab-tasklists');
+    const btnForms = tc.querySelector('#subtab-forms');
+    const btnQuotes = tc.querySelector('#subtab-quotes');
+
+    // Style elements for visual elegance
+    if (templatesSubTab === 'tasklists') btnTasklists.style.color = 'white';
+    if (templatesSubTab === 'forms') btnForms.style.color = 'white';
+    if (templatesSubTab === 'quotes') btnQuotes.style.color = 'white';
+
+    const subcontent = tc.querySelector('#templates-subcontent');
+
+    if (templatesSubTab === 'tasklists') {
+      renderTasksSettings(subcontent);
+    } else if (templatesSubTab === 'forms') {
+      renderFormsTab(subcontent);
+    } else if (templatesSubTab === 'quotes') {
+      renderQuoteTemplatesSettings(subcontent);
+    }
+
+    btnTasklists.addEventListener('click', () => {
+      templatesSubTab = 'tasklists';
+      renderTemplatesFormsTab(tc);
+    });
+    btnForms.addEventListener('click', () => {
+      templatesSubTab = 'forms';
+      renderTemplatesFormsTab(tc);
+    });
+    btnQuotes.addEventListener('click', () => {
+      templatesSubTab = 'quotes';
+      renderTemplatesFormsTab(tc);
+    });
+  }
+
   render();
 }
   function renderFormsTab(tc) {
@@ -1934,3 +1998,5 @@ export function renderSettings(container) {
       });
     });
   }
+
+

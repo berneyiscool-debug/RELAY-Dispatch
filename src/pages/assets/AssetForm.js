@@ -104,8 +104,14 @@ export function renderAssetForm(container, params) {
               <input type="number" id="serviceIntervalMonths" class="form-input" value="${asset.serviceIntervalMonths || 6}" min="1" />
             </div>
             <div class="form-group">
-              <label class="form-label">Current Meter / Hours</label>
-              <input type="number" id="currentMeter" class="form-input" value="${asset.currentMeter || 0}" step="1" />
+              <label class="form-label">Current Meter Reading</label>
+              <div style="display:flex; gap:8px;">
+                <input type="number" id="currentMeter" class="form-input" value="${asset.currentMeter || 0}" step="1" style="flex:1" />
+                <select id="meterUnit" class="form-select" style="width: 100px;">
+                  <option value="hrs" ${asset.meterUnit === 'hrs' ? 'selected' : ''}>Hours</option>
+                  <option value="kmls" ${asset.meterUnit === 'kmls' ? 'selected' : ''}>Kmls</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -190,7 +196,8 @@ export function renderAssetForm(container, params) {
       installDate: container.querySelector('#installDate').value,
       recoveryRate: parseFloat(container.querySelector('#recoveryRate')?.value || 0),
       serviceIntervalMonths: parseInt(container.querySelector('#serviceIntervalMonths').value || 6),
-      currentMeter: parseFloat(container.querySelector('#currentMeter').value || 0)
+      currentMeter: parseFloat(container.querySelector('#currentMeter').value || 0),
+      meterUnit: container.querySelector('#meterUnit').value
     };
 
     if (!data.name) {
