@@ -18,7 +18,7 @@ export function showPrintPreview({ type, data }) {
   const toolbar = document.createElement('div');
   toolbar.style.cssText = 'position:sticky;top:0;z-index:2;background:var(--sidebar-bg);color:white;display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-radius:8px 8px 0 0;';
   toolbar.innerHTML = `
-    <span style="font-weight:600;font-size:14px">${type === 'quote' ? 'Quote' : 'Invoice'} Preview — ${data.number}</span>
+    <span style="font-weight:600;font-size:14px">${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'} Preview — ${data.number}</span>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary btn-sm" id="btn-print-pdf" style="background:#10B981;border-color:#10B981">
         <span class="material-icons-outlined" style="font-size:16px">print</span> Print / Save PDF
@@ -51,7 +51,7 @@ export function showPrintPreview({ type, data }) {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${data.number} — ${type === 'quote' ? 'Quote' : 'Invoice'}</title>
+        <title>${data.number} — ${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'}</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <style>${getPrintStyles()}</style>
       </head>
@@ -62,7 +62,7 @@ export function showPrintPreview({ type, data }) {
     `;
 
     // Save to Document System
-    const docName = `${type === 'quote' ? 'Quote' : 'Invoice'} ${data.number}`;
+    const docName = `${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'} ${data.number}`;
     
     // Check if it already exists to avoid duplicates
     const existingDocs = store.getAll('documents');
@@ -72,13 +72,13 @@ export function showPrintPreview({ type, data }) {
       const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlString)}`;
       store.create('documents', {
         name: docName,
-        type: type === 'quote' ? 'Quote PDF' : 'Invoice PDF',
+        type: type === 'quote' ? 'Quote PDF' : type === 'invoice' ? 'Invoice PDF' : 'Form PDF',
         size: htmlString.length,
         url: dataUrl,
-        folder: type === 'quote' ? 'Quotes' : 'Invoices',
+        folder: type === 'quote' ? 'Quotes' : type === 'invoice' ? 'Invoices' : 'Forms',
         uploadedAt: new Date().toISOString(),
-        entityType: type === 'quote' ? 'Quote' : 'Invoice',
-        entityId: data.id,
+        entityType: type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Job',
+        entityId: data.entityId || data.id,
         entityName: data.customerName || 'Unknown Customer'
       });
       
@@ -101,6 +101,10 @@ export function showPrintPreview({ type, data }) {
 }
 
 function generateDocument(type, data) {
+  if (type === 'form') {
+    return generateFormDocument(data);
+  }
+
   const isQuote = type === 'quote';
   const statusColors = {
     'Draft': '#6B7280', 'Finalised': '#1B6DE0', 'Sent': '#3B82F6', 'Accepted': '#10B981', 'Declined': '#EF4444',
@@ -264,6 +268,84 @@ function generateDocument(type, data) {
         </div>
         <div class="pdf-footer-company">${escapeHTML(settings.name || 'FieldForge Demo Company')} — ${escapeHTML(settings.email || 'hello@fieldforge.io')} — ${escapeHTML(settings.phone || '1300 123 456')}</div>
       </div>
+    </div>
+  `;
+}
+
+function generateFormDocument(data) {
+  let formHtml = '';
+  (data.template.sections || []).forEach(sec => {
+    if (sec.isSpacer) return;
+    formHtml += `
+      <div style="margin-bottom:24px; border:1px solid #CBD5E1; border-radius:6px; overflow:hidden">
+        <div style="background:#F8FAFC; padding:10px 16px; border-bottom:1px solid #CBD5E1; font-weight:700; color:#1E293B; font-size:14px; text-transform:uppercase; letter-spacing:0.5px">
+          ${escapeHTML(sec.title)}
+        </div>
+        <div style="padding:16px; display:grid; grid-template-columns: 1fr 1fr; gap:16px">
+    `;
+    sec.fields.forEach(f => {
+      if (f.type === 'spacer') return;
+      const isHalf = f.width === 'half';
+      
+      if (f.type === 'info') {
+        formHtml += `
+          <div style="grid-column: span ${isHalf ? '1' : '2'}; padding:12px; background:#EFF6FF; border-left:4px solid #3B82F6; color:#1E3A8A; font-size:12px; border-radius:4px">
+            <div style="font-weight:600; margin-bottom:4px">Information</div>
+            <div>${escapeHTML(f.label).replace(/\n/g, '<br/>')}</div>
+          </div>
+        `;
+        return;
+      }
+      
+      const val = data.responses[f.id];
+      let valHtml = '';
+      if (f.type === 'signature') {
+        valHtml = val ? `<div style="font-family:'Brush Script MT', cursive; font-size:24px; padding:10px; border:1px solid #E4E9F0; border-radius:4px; text-align:center">${escapeHTML(val)}</div>` : '<div style="padding:10px; border:1px dashed #E4E9F0; color:#8A97A8; font-style:italic; text-align:center">No signature</div>';
+      } else if (f.type === 'checkbox') {
+        valHtml = `<div style="font-weight:600; color:${val ? '#10B981' : '#EF4444'}">${val ? 'YES / CHECKED' : 'NO / UNCHECKED'}</div>`;
+      } else {
+        valHtml = `<div style="padding:8px 12px; border:1px solid #E4E9F0; border-radius:4px; background:#F8FAFC; min-height:34px; font-size:12px">${val ? escapeHTML(val).replace(/\n/g, '<br/>') : '<span style="color:#8A97A8;font-style:italic">No response</span>'}</div>`;
+      }
+
+      formHtml += `
+        <div style="grid-column: span ${isHalf ? '1' : '2'}; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:11px; font-weight:700; color:#5A6B7F; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(f.label)}</div>
+          ${valHtml}
+        </div>
+      `;
+    });
+    formHtml += `
+        </div>
+      </div>
+    `;
+  });
+
+  return `
+    <div class="pdf-page">
+      <div style="margin-bottom:28px; padding-bottom:20px; border-bottom:2px solid #E4E9F0">
+        <div style="font-size:22px; font-weight:800; color:#1A2332">${escapeHTML(data.template.name)}</div>
+        ${data.template.description ? `<div style="font-size:13px; color:#5A6B7F; margin-top:6px; line-height:1.6">${escapeHTML(data.template.description)}</div>` : ''}
+      </div>
+
+      <div class="pdf-info-grid" style="margin-bottom:32px">
+        <div class="pdf-info-col">
+          <div class="pdf-info-label">Job Reference</div>
+          <div class="pdf-info-value-lg">${escapeHTML(data.jobNumber)}</div>
+          <div class="pdf-info-value">Customer: ${escapeHTML(data.customerName)}</div>
+        </div>
+        <div class="pdf-info-col">
+          <div class="pdf-info-row">
+            <span class="pdf-info-label">Submitted By</span>
+            <span class="pdf-info-value">${escapeHTML(data.submittedByName || '—')}</span>
+          </div>
+          <div class="pdf-info-row">
+            <span class="pdf-info-label">Date Submitted</span>
+            <span class="pdf-info-value">${formatDate(data.submittedAt)}</span>
+          </div>
+        </div>
+      </div>
+
+      ${formHtml}
     </div>
   `;
 }

@@ -13,19 +13,36 @@ import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { hasPermission } from '../../utils/permissions.js';
 
-export function renderQuoteDetail(container, { id, customerId }) {
+export function renderQuoteDetail(container, { id, customerId, type }) {
+  const isTemplate = type === 'template';
+  const collection = isTemplate ? 'quoteTemplates' : 'quotes';
   const isNew = id === 'new';
-  let quote = isNew ? { 
-    status: 'Draft', 
-    version: 1,
-    sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }], 
-    subtotal: 0, tax: 0, total: 0, 
-    number: `Q-${Date.now().toString().slice(-7)}`, 
-    customerId: customerId || '' 
-  } : store.getById('quotes', id);
+  
+  let quote;
+  if (isNew) {
+    if (isTemplate) {
+      quote = {
+        name: 'New Quote Template',
+        description: '',
+        sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
+        subtotal: 0, tax: 0, total: 0
+      };
+    } else {
+      quote = { 
+        status: 'Draft', 
+        version: 1,
+        sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }], 
+        subtotal: 0, tax: 0, total: 0, 
+        number: `Q-${Date.now().toString().slice(-7)}`, 
+        customerId: customerId || '' 
+      };
+    }
+  } else {
+    quote = store.getById(collection, id);
+  }
 
   if (!quote) {
-    container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Quote not found</h3></div>';
+    container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>${isTemplate ? 'Template' : 'Quote'} not found</h3></div>`;
     return;
   }
 
@@ -45,15 +62,17 @@ export function renderQuoteDetail(container, { id, customerId }) {
   function render() {
     container.innerHTML = `
       ${renderDetailHeader({
-        title: `${isNew ? 'New Quote' : quote.number} ${quote.version > 1 ? `<span class="badge badge-neutral">v${quote.version}</span>` : ''}`,
+        title: isTemplate ? (isNew ? 'New Quote Template' : escapeHTML(quote.name)) : (`${isNew ? 'New Quote' : quote.number} ${quote.version > 1 ? `<span class="badge badge-neutral">v${quote.version}</span>` : ''}`),
         icon: 'request_quote',
         iconBgColor: 'var(--color-warning-bg)',
         iconTextColor: 'var(--color-warning)',
-        metaHtml: `
+        metaHtml: isTemplate ? '' : `
           ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${quote.customerName}</span>` : ''}
           <span class="badge ${sb[quote.status] || 'badge-neutral'}">${quote.status}</span>
         `,
-        actionsHtml: `
+        actionsHtml: isTemplate ? `
+          ${!isNew ? `<button class="btn btn-secondary" id="btn-delete-template" style="color:var(--color-danger)"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
+        ` : `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
           ${!isNew && quote.status !== 'Archived' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-secondary" id="btn-create-revision"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
           ${!isNew && quote.status === 'Accepted' && hasPermission('Quotes', 'convert') ? `<button class="btn btn-primary" id="btn-convert-job"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
@@ -69,6 +88,31 @@ export function renderQuoteDetail(container, { id, customerId }) {
         `
       })}
 
+      ${isTemplate ? `
+      <!-- Template Builder Form -->
+      <div class="card" style="margin-bottom:var(--space-lg)">
+        <div class="card-header"><h4>Template Details</h4></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group" style="flex:1">
+              <label class="form-label">Template Name *</label>
+              <input class="form-input" id="quote-name" value="${escapeHTML(quote.name || '')}" placeholder="Template Name..." />
+            </div>
+            <div class="form-group" style="flex:2">
+              <label class="form-label">Description</label>
+              <input class="form-input" id="quote-desc" value="${escapeHTML(quote.description || '')}" placeholder="Template Description..." />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Labor Profile</label>
+              <select class="form-select" id="quote-labor-profile">
+                <option value="">-- Custom / Manual Rates --</option>
+                ${settings.laborRates.map(r => `<option value="${r.id}" ${quote.laborProfileId === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      ` : `
       <!-- Quote Builder Form -->
       <div class="card" style="margin-bottom:var(--space-lg)">
         <div class="card-header"><h4>Quote Details</h4></div>
@@ -107,6 +151,7 @@ export function renderQuoteDetail(container, { id, customerId }) {
           </div>
         </div>
       </div>
+      `}
 
       <datalist id="stock-items-list">
         ${stockItems.map(s => `<option value="${s.name}"></option>`).join('')}
@@ -165,14 +210,19 @@ export function renderQuoteDetail(container, { id, customerId }) {
         </div>
       </div>
 
-      ${quote.status !== 'Archived' && (isNew ? hasPermission('Quotes', 'create') : hasPermission('Quotes', 'edit')) ? `
+      ${isTemplate ? `
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-secondary" id="btn-cancel-quote">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-quote"><span class="material-icons-outlined">save</span> Save Template</button>
+      </div>
+      ` : (quote.status !== 'Archived' && (isNew ? hasPermission('Quotes', 'create') : hasPermission('Quotes', 'edit')) ? `
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn btn-secondary" id="btn-cancel-quote">Cancel</button>
         <button class="btn btn-primary" id="btn-save-quote"><span class="material-icons-outlined">save</span> Save Quote</button>
       </div>` : `
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn btn-secondary" id="btn-cancel-quote">Back</button>
-      </div>`}
+      </div>`)}
     `;
 
     bindEvents();
@@ -383,10 +433,12 @@ export function renderQuoteDetail(container, { id, customerId }) {
       });
     });
 
-    container.querySelectorAll('#quote-customer, #quote-title, #quote-status, #quote-valid, #quote-labor-profile').forEach(input => {
+    container.querySelectorAll('#quote-name, #quote-desc, #quote-customer, #quote-title, #quote-status, #quote-valid, #quote-labor-profile').forEach(input => {
       input.addEventListener('change', () => {
         const val = input.value;
-        if (input.id === 'quote-customer') quote.customerId = val;
+        if (input.id === 'quote-name') quote.name = val;
+        else if (input.id === 'quote-desc') quote.description = val;
+        else if (input.id === 'quote-customer') quote.customerId = val;
         else if (input.id === 'quote-title') quote.title = val;
         else if (input.id === 'quote-status') quote.status = val;
         else if (input.id === 'quote-valid') quote.validUntil = val;
@@ -506,28 +558,48 @@ export function renderQuoteDetail(container, { id, customerId }) {
       });
     });
 
-    container.querySelector('#btn-cancel-quote')?.addEventListener('click', () => router.navigate('/quotes'));
+    container.querySelector('#btn-cancel-quote')?.addEventListener('click', () => {
+      if (isTemplate) router.navigate('/settings?tab=quotes');
+      else router.navigate('/quotes');
+    });
 
     container.querySelector('#btn-save-quote')?.addEventListener('click', () => {
-      const custId = container.querySelector('#quote-customer').value;
-      const cust = customers.find(c => c.id === custId);
-      quote.customerId = custId;
-      quote.customerName = cust?.company || '';
-      quote.contactName = cust ? `${cust.firstName} ${cust.lastName}` : '';
-      quote.title = container.querySelector('#quote-title').value;
-      quote.status = container.querySelector('#quote-status').value;
-      quote.validUntil = container.querySelector('#quote-valid').value;
+      if (isTemplate) {
+        quote.name = container.querySelector('#quote-name').value;
+        quote.description = container.querySelector('#quote-desc').value;
+      } else {
+        const custId = container.querySelector('#quote-customer').value;
+        const cust = customers.find(c => c.id === custId);
+        quote.customerId = custId;
+        quote.customerName = cust?.company || '';
+        quote.contactName = cust ? `${cust.firstName} ${cust.lastName}` : '';
+        quote.title = container.querySelector('#quote-title').value;
+        quote.status = container.querySelector('#quote-status').value;
+        quote.validUntil = container.querySelector('#quote-valid').value;
+      }
       
       recalculate();
 
-      if (isNew) {
-        const saved = store.create('quotes', quote);
-        showToast('Quote created', 'success');
-        router.navigate(`/quotes/${saved.id}`);
+      if (isTemplate) {
+        if (isNew) {
+          store.create('quoteTemplates', quote);
+          showToast('Template created', 'success');
+          router.navigate('/settings?tab=quotes');
+        } else {
+          store.update('quoteTemplates', id, quote);
+          showToast('Template saved', 'success');
+          render();
+        }
       } else {
-        store.update('quotes', id, quote);
-        showToast('Quote saved', 'success');
-        render();
+        if (isNew) {
+          const saved = store.create('quotes', quote);
+          showToast('Quote created', 'success');
+          router.navigate(`/quotes/${saved.id}`);
+        } else {
+          store.update('quotes', id, quote);
+          showToast('Quote saved', 'success');
+          render();
+        }
       }
     });
 
@@ -618,6 +690,14 @@ export function renderQuoteDetail(container, { id, customerId }) {
           { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('quotes', id); showToast('Quote deleted', 'success'); close(); router.navigate('/quotes'); }},
         ],
       });
+    });
+
+    container.querySelector('#btn-delete-template')?.addEventListener('click', () => {
+      if (confirm(`Delete template "${escapeHTML(quote.name)}"?`)) {
+        store.delete('quoteTemplates', id);
+        showToast('Template deleted', 'success');
+        router.navigate('/settings?tab=quotes');
+      }
     });
   }
 

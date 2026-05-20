@@ -251,6 +251,12 @@
 .modal-lg {
   max-width: 800px;
 }
+
+.modal-xl {
+  width: 90vw;
+  max-width: 1200px;
+}
+
 .modal-70 {
   width: 70vw;
   max-width: 70vw;

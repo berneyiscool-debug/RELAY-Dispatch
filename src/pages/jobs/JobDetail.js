@@ -6,6 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
+import { showTimesheetEditModal } from '../../utils/timesheetModals.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
@@ -66,13 +67,13 @@ export function renderJobDetail(container, { id }) {
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
         <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
         <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Tasklists</button>
-        <button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs">Costs</button>
-        <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes</button>
+        ${hasPermission('Jobs', 'view_costs') ? `<button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs">Costs</button>` : ''}
+        ${hasPermission('Jobs', 'view_quotes_tab') ? `<button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes</button>` : ''}
         <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms">Forms</button>
-        <button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos">POs</button>
+        ${hasPermission('Jobs', 'view_pos_tab') ? `<button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos">POs</button>` : ''}
         <button class="tab ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity">Activity</button>
-        <button class="tab ${activeTab === 'timesheets' ? 'active' : ''}" data-tab="timesheets">Timesheets</button>
-        <button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices">Invoices</button>
+        ${hasPermission('Jobs', 'view_timesheets_tab') ? `<button class="tab ${activeTab === 'timesheets' ? 'active' : ''}" data-tab="timesheets">Timesheets</button>` : ''}
+        ${hasPermission('Jobs', 'view_invoices_tab') ? `<button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices">Invoices</button>` : ''}
       </div>
       <div class="tab-content" id="tab-content"></div>
     `;
@@ -82,6 +83,19 @@ export function renderJobDetail(container, { id }) {
   }
 
   function renderTabContent() {
+    // Sanitize activeTab based on user permissions
+    if (activeTab === 'costs' && !hasPermission('Jobs', 'view_costs')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'quotes' && !hasPermission('Jobs', 'view_quotes_tab')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'pos' && !hasPermission('Jobs', 'view_pos_tab')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'timesheets' && !hasPermission('Jobs', 'view_timesheets_tab')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'invoices' && !hasPermission('Jobs', 'view_invoices_tab')) {
+      activeTab = 'overview';
+    }
+
     const tc = container.querySelector('#tab-content');
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
 
@@ -1059,6 +1073,7 @@ export function renderJobDetail(container, { id }) {
                     jobId: id,
                     jobNumber: job.number,
                     taskId: node.id,
+                    taskPath: path.join('-'),
                     taskName: node.name,
                     phaseId: node.id,
                     phaseName: node.name,
@@ -1681,27 +1696,36 @@ export function renderJobDetail(container, { id }) {
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
-              <thead><tr><th>Date</th><th>Technician</th><th>Description</th><th style="text-align:right">Hours</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
-              <tbody>
-                ${timesheets.length ? timesheets.map(t => {
-        const canEdit = currentUser.role === 'admin' || (t.technicianId === currentUser.id && t.status !== 'Approved');
+              <thead><tr><th>Date</th><th>Technician</th><th>Task</th><th>Description</th><th style="text-align:right">Hours</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+                      ${timesheets.length ? timesheets.map(t => {
+        const isOwner = String(t.technicianId) === String(currentUser.id);
+        const canEdit = ['admin', 'manager', 'office'].includes(currentUser.role) || (isOwner && t.status !== 'Approved');
+        const canDelete = ['admin', 'manager', 'office'].includes(currentUser.role) || (isOwner && t.status !== 'Approved');
         return `
                   <tr>
                     <td>${new Date(t.date).toLocaleDateString()}</td>
                     <td>${escapeHTML(t.technicianName)}</td>
+                    <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || '—')}</span></td>
                     <td class="text-secondary">${escapeHTML(t.description || '—')}</td>
                     <td style="text-align:right;font-weight:600">${t.hours}</td>
                     <td><span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">${t.status}</span></td>
                     <td style="text-align:right">
-                      ${canEdit ? `
-                        <button class="btn btn-ghost btn-sm btn-icon btn-edit-ts-job" data-id="${t.id}">
-                          <span class="material-icons-outlined" style="font-size:16px">edit</span>
-                        </button>
-                      ` : ''}
+                      <div style="display:flex; justify-content:flex-end; gap:4px;">
+                        ${canEdit ? `
+                          <button class="btn btn-ghost btn-sm btn-icon btn-edit-ts-job" data-id="${t.id}" title="Edit entry">
+                            <span class="material-icons-outlined" style="font-size:16px">edit</span>
+                          </button>
+                        ` : ''}
+                        ${canDelete ? `
+                          <button class="btn btn-ghost btn-sm btn-icon btn-delete-ts-job" data-id="${t.id}" title="Delete entry" style="color:var(--color-danger)">
+                            <span class="material-icons-outlined" style="font-size:16px">delete</span>
+                          </button>
+                        ` : ''}
+                      </div>
                     </td>
                   </tr>
                 `;
-      }).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No time logged yet</td></tr>'}
+      }).join('') : '<tr><td colspan="7" style="text-align:center;padding:20px" class="text-secondary">No time logged yet</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1711,43 +1735,25 @@ export function renderJobDetail(container, { id }) {
       tc.querySelectorAll('.btn-edit-ts-job').forEach(btn => {
         btn.addEventListener('click', () => {
           const tsId = btn.dataset.id;
+          showTimesheetEditModal(tsId, renderTabContent);
+        });
+      });
+
+      tc.querySelectorAll('.btn-delete-ts-job').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tsId = btn.dataset.id;
           const ts = store.getById('timesheets', tsId);
           if (!ts) return;
 
-          const content = document.createElement('div');
-          content.innerHTML = `
-            <div class="form-group">
-              <label class="form-label">Date</label>
-              <input type="date" class="form-input" id="edit-ts-date" value="${ts.date}" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Hours</label>
-              <input type="number" class="form-input" id="edit-ts-hours" value="${ts.hours}" step="0.25" min="0" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Description</label>
-              <textarea class="form-input" id="edit-ts-desc" rows="3">${escapeHTML(ts.description || '')}</textarea>
-            </div>
-          `;
-
           showModal({
-            title: 'Edit Timesheet Entry',
-            content,
+            title: 'Confirm Delete',
+            content: `<p>Are you sure you want to delete this timesheet entry for <strong>${ts.hours} hrs</strong>?</p>`,
             actions: [
               { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
               {
-                label: 'Save Changes', className: 'btn-primary', onClick: (close) => {
-                  const date = document.getElementById('edit-ts-date').value;
-                  const hours = parseFloat(document.getElementById('edit-ts-hours').value);
-                  const description = document.getElementById('edit-ts-desc').value;
-
-                  if (!date || isNaN(hours)) {
-                    showToast('Please enter valid date and hours', 'error');
-                    return;
-                  }
-
-                  store.update('timesheets', tsId, { date, hours, description });
-                  showToast('Timesheet updated', 'success');
+                label: 'Delete', className: 'btn-danger', onClick: (close) => {
+                  store.delete('timesheets', tsId);
+                  showToast('Timesheet entry deleted successfully', 'success');
                   close();
                   renderTabContent();
                 }
@@ -1763,6 +1769,22 @@ export function renderJobDetail(container, { id }) {
         const p = n => n.toString().padStart(2, '0');
         const dateStr = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 
+        function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
+          let result = [];
+          if (!tasks) return result;
+          tasks.forEach((p, i) => {
+            const path = [...currentPath, i].join('-');
+            const namePath = [...currentNamePath, p.name].join(' > ');
+            result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
+            if (p.subTasks) {
+              result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
+            }
+          });
+          return result;
+        }
+        const flatTasks = getFlatTasks(job.tasks || []);
+        const leafTasks = flatTasks.filter(t => t.isLeaf);
+
         const content = document.createElement('div');
         content.innerHTML = `
           <div class="form-row">
@@ -1772,9 +1794,18 @@ export function renderJobDetail(container, { id }) {
             </div>
             <div class="form-group">
               <label class="form-label">Technician *</label>
-              <select class="form-select" id="lt-tech">
+              <select class="form-select" id="lt-tech" ${currentUser.role === 'technician' ? 'disabled' : ''}>
                 <option value="">Select tech...</option>
                 ${techs.map(t => `<option value="${t.id}" ${t.name === currentUser.name ? 'selected' : ''}>${t.name}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1">
+              <label class="form-label">Task *</label>
+              <select class="form-select" id="lt-task" style="width:100%">
+                <option value="">Select task...</option>
+                ${leafTasks.map(t => `<option value="${t.path}">${escapeHTML(t.name)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -1800,18 +1831,24 @@ export function renderJobDetail(container, { id }) {
                 const dOverlay = document.querySelector('.drawer-overlay');
                 const dateVal = dOverlay.querySelector('#lt-date').value;
                 const techId = dOverlay.querySelector('#lt-tech').value;
+                const taskPathVal = dOverlay.querySelector('#lt-task').value;
                 const hoursVal = parseFloat(dOverlay.querySelector('#lt-hours').value);
                 const descVal = dOverlay.querySelector('#lt-desc').value;
 
-                if (!dateVal || !techId || isNaN(hoursVal)) {
-                  showToast('Please fill all required fields', 'error');
+                if (!dateVal || !techId || isNaN(hoursVal) || !taskPathVal) {
+                  showToast('Please fill all required fields, including the task', 'error');
                   return;
                 }
 
                 const tech = techs.find(t => t.id === techId);
+                const selectedTask = leafTasks.find(t => t.path === taskPathVal);
+                const taskNameVal = selectedTask ? selectedTask.name : '';
+
                 store.create('timesheets', {
                   jobId: id,
                   jobNumber: job.number,
+                  taskId: taskPathVal,
+                  taskName: taskNameVal,
                   technicianId: techId,
                   technicianName: tech.name,
                   date: dateVal,
@@ -2222,10 +2259,11 @@ export function renderJobDetail(container, { id }) {
                     <td style="font-size:12px; color:var(--text-tertiary)">${fi.submittedAt ? new Date(fi.submittedAt).toLocaleDateString() : '—'}</td>
                     <td style="text-align:right">
                       <div style="display:flex; gap:4px; justify-content:flex-end">
-                        <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm fill-form" data-id="${fi.id}">
+                        <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm fill-form" data-id="${fi.id}" title="${isComplete ? 'View / Edit' : 'Fill Form'}">
                           <span class="material-icons-outlined" style="font-size:16px">${isComplete ? 'visibility' : 'edit_note'}</span>
                         </button>
-                        ${!isComplete ? `<button class="btn btn-ghost btn-icon btn-sm remove-form-instance" data-id="${fi.id}" style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>` : ''}
+                        ${isComplete ? `<button class="btn btn-secondary btn-icon btn-sm print-form" data-id="${fi.id}" title="Print / PDF"><span class="material-icons-outlined" style="font-size:18px">print</span></button>` : ''}
+                        ${!isComplete ? `<button class="btn btn-ghost btn-icon btn-sm remove-form-instance" data-id="${fi.id}" style="color:var(--color-danger)" title="Remove Form"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>` : ''}
                       </div>
                     </td>
                   </tr>
@@ -2252,6 +2290,28 @@ export function renderJobDetail(container, { id }) {
           store.save('formInstances', all.filter(i => i.id !== fid));
           renderFormsTab(tc);
         }
+      });
+    });
+
+    tc.querySelectorAll('.print-form').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fi = store.getById('formInstances', btn.dataset.id);
+        const template = store.getById('formTemplates', fi.templateId);
+        const submitter = fi.submittedBy ? store.getById('people', fi.submittedBy) : null;
+
+        import('../../components/PrintPreview.js').then(({ showPrintPreview }) => {
+          showPrintPreview({
+            type: 'form',
+            data: {
+              ...fi,
+              template,
+              jobNumber: job.number,
+              customerName: store.getById('people', job.customerId)?.companyName || 'Unknown Customer',
+              submittedByName: submitter ? `${submitter.firstName} ${submitter.lastName}` : 'Unknown Technician',
+              number: `F-${job.number}-${fi.id.slice(3, 7).toUpperCase()}`
+            }
+          });
+        });
       });
     });
   }
@@ -2317,7 +2377,6 @@ export function renderJobDetail(container, { id }) {
     const isComplete = fi.status === 'Completed';
 
     const content = document.createElement('div');
-    content.style.minWidth = '600px';
 
     content.innerHTML = `
       <div style="margin-bottom:24px; border-bottom:1px solid var(--border-color); padding-bottom:16px">
@@ -2325,70 +2384,94 @@ export function renderJobDetail(container, { id }) {
         <div style="font-size:14px; color:var(--text-secondary); margin-top:6px">${escapeHTML(template.description || '')}</div>
       </div>
       <form id="active-job-form">
-        <div style="display:flex; flex-direction:column; gap:32px">
-          ${(template.sections || []).map(sec => `
-            <div class="form-section">
-              <div style="background:var(--bg-color); padding:8px 16px; border-radius:6px; margin-bottom:16px; border-left:4px solid var(--color-primary)">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px">
+          ${(template.sections || []).map(sec => {
+      if (sec.isSpacer) {
+        return `<div style="grid-column: span ${sec.width === 'half' ? '1' : '2'}"></div>`;
+      }
+      return `
+            <div class="form-section" style="grid-column: span ${sec.width === 'half' ? '1' : '2'}; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px; overflow:hidden">
+              <div style="background:var(--content-bg); padding:12px 16px; border-bottom:1px solid var(--border-color); border-left:4px solid var(--color-primary)">
                 <h4 style="margin:0; font-size:15px; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(sec.title)}</h4>
               </div>
-              <div style="display:flex; flex-direction:column; gap:16px; padding:0 8px">
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; padding:16px">
                 ${sec.fields.map(f => {
-      const val = fi.responses[f.id] || '';
-      let fieldHtml = '';
+        if (f.type === 'spacer') {
+          return `<div style="grid-column: span ${f.width === 'half' ? '1' : '2'}"></div>`;
+        }
 
-      if (f.type === 'text') {
-        fieldHtml = `<input class="form-input" name="${f.id}" value="${escapeHTML(val)}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
-      } else if (f.type === 'textarea') {
-        fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>${escapeHTML(val)}</textarea>`;
-      } else if (f.type === 'checkbox') {
-        fieldHtml = `
+        if (f.type === 'info') {
+          return `
+          <div class="form-group" style="margin:0; grid-column: span ${f.width === 'half' ? '1' : '2'}; padding:16px; background:var(--color-primary-light); border-radius:6px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
+            <div style="display:flex; gap:12px">
+              <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0">info</span>
+              <div>${escapeHTML(f.label).replace(/\n/g, '<br/>')}</div>
+            </div>
+          </div>
+        `;
+        }
+
+        const val = fi.responses[f.id] || '';
+        let fieldHtml = '';
+
+        if (f.type === 'text') {
+          fieldHtml = `<input class="form-input" name="${f.id}" value="${escapeHTML(val)}" ${f.required ? 'required' : ''} />`;
+        } else if (f.type === 'textarea') {
+          fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" ${f.required ? 'required' : ''}>${escapeHTML(val)}</textarea>`;
+        } else if (f.type === 'checkbox') {
+          fieldHtml = `
                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer">
-                         <input type="checkbox" name="${f.id}" ${val ? 'checked' : ''} ${isComplete ? 'disabled' : ''} style="width:18px; height:18px" />
+                         <input type="checkbox" name="${f.id}" ${val ? 'checked' : ''} style="width:18px; height:18px" />
                          <span style="font-size:14px">${f.label}</span>
                        </label>`;
-      } else if (f.type === 'select') {
-        fieldHtml = `
-                       <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>
+        } else if (f.type === 'select') {
+          fieldHtml = `
+                       <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''}>
                          <option value="">Select option...</option>
                          ${(f.options || []).map(opt => `<option value="${escapeHTML(opt)}" ${val === opt ? 'selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
                        </select>`;
-      } else if (f.type === 'date') {
-        fieldHtml = `<input type="date" class="form-input" name="${f.id}" value="${val}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
-      } else if (f.type === 'signature') {
-        fieldHtml = `
+        } else if (f.type === 'date') {
+          fieldHtml = `<input type="date" class="form-input" name="${f.id}" value="${val}" ${f.required ? 'required' : ''} />`;
+        } else if (f.type === 'signature') {
+          fieldHtml = `
                        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic">
                          ${val ? `<span style="font-family:'Brush Script MT', cursive; font-size:24px; color:var(--text-primary)">${escapeHTML(val)}</span>` : 'Digitally Signed on submission'}
                        </div>`;
-      }
+        }
 
-      return `
-                    <div class="form-group" style="margin:0">
+        return `
+                    <div class="form-group" style="margin:0; grid-column: span ${f.width === 'half' ? '1' : '2'}">
                       ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(f.label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
                       ${fieldHtml}
                     </div>
                   `;
-    }).join('')}
+      }).join('')}
               </div>
             </div>
-          `).join('')}
+          `;
+    }).join('')}
         </div>
       </form>
     `;
 
     showModal({
-      title: isComplete ? 'View Form Response' : 'Complete Job Form',
+      title: isComplete ? 'Edit Form Response' : 'Complete Job Form',
       content,
+      size: 'modal-xl',
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
-        !isComplete ? {
-          label: 'Submit Form', className: 'btn-primary', onClick: c => {
+        {
+          label: isComplete ? 'Update Form' : 'Submit Form', className: 'btn-primary', onClick: c => {
             const form = content.querySelector('#active-job-form');
             if (!form.checkValidity()) return form.reportValidity();
 
             const formData = new FormData(form);
             const responses = {};
             (template.sections || []).forEach(sec => {
+              if (sec.isSpacer) return;
               sec.fields.forEach(f => {
+                if (f.type === 'spacer' || f.type === 'info') return;
+
                 if (f.type === 'checkbox') responses[f.id] = formData.has(f.id);
                 else responses[f.id] = formData.get(f.id);
 
@@ -2407,7 +2490,7 @@ export function renderJobDetail(container, { id }) {
             };
 
             store.save('formInstances', currentInstances);
-            showToast('Form submitted successfully', 'success');
+            showToast(isComplete ? 'Form updated successfully' : 'Form submitted successfully', 'success');
             c();
             renderFormsTab(container.querySelector('#tab-content'));
 
@@ -2417,14 +2500,14 @@ export function renderJobDetail(container, { id }) {
               id: Date.now(),
               jobId: id,
               type: 'form_submission',
-              text: `Form "${template.name}" submitted.`,
+              text: isComplete ? `Form "${template.name}" was updated.` : `Form "${template.name}" submitted.`,
               user: JSON.parse(localStorage.getItem('currentUser'))?.name,
               timestamp: new Date().toISOString()
             });
             store.save('activity', activity);
           }
-        } : null
-      ].filter(Boolean)
+        }
+      ]
     });
   }
 }

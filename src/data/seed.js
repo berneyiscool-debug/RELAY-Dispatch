@@ -610,6 +610,50 @@ export function seedData() {
          });
          store.save('userTypes', existingTypes);
       }
+
+      // Self-healing migration: Ensure all user types have the latest Jobs tab permissions populated
+      let updatedTypes = false;
+      existingTypes.forEach(ut => {
+        if (!ut.permissions) ut.permissions = [];
+        Object.entries(MODULE_PERMS).forEach(([module, permDefs]) => {
+          let mPerm = ut.permissions.find(p => p.module === module);
+          if (!mPerm) {
+            mPerm = { module };
+            ut.permissions.push(mPerm);
+            updatedTypes = true;
+          }
+          permDefs.forEach(({ key }) => {
+            if (mPerm[key] === undefined) {
+              if (ut.id === 'ut_admin') {
+                mPerm[key] = true;
+              } else if (ut.id === 'ut_manager') {
+                if (module === 'Settings') {
+                  mPerm[key] = ['view', 'edit_company', 'manage_tax'].includes(key);
+                } else {
+                  mPerm[key] = true;
+                }
+              } else if (ut.id === 'ut_office') {
+                if (module === 'Settings') mPerm[key] = false;
+                else if (module === 'Reports') mPerm[key] = key === 'view';
+                else if (['Invoices', 'Purchase Orders'].includes(module) && key === 'delete') mPerm[key] = false;
+                else mPerm[key] = true;
+              } else if (ut.id === 'ut_tech') {
+                if (module === 'Dashboard') mPerm[key] = key === 'view';
+                else if (module === 'Jobs') mPerm[key] = ['view', 'manage_tasks', 'book_time'].includes(key);
+                else if (module === 'Timesheets') mPerm[key] = ['view_own', 'create'].includes(key);
+                else if (module === 'Schedule') mPerm[key] = ['view_own'].includes(key);
+                else mPerm[key] = false;
+              } else {
+                mPerm[key] = false;
+              }
+              updatedTypes = true;
+            }
+          });
+        });
+      });
+      if (updatedTypes) {
+        store.save('userTypes', existingTypes);
+      }
     }
 
     // Check if technicians are missing their types
@@ -653,6 +697,28 @@ export function seedData() {
   store.save('taskTemplates', generateTaskTemplates());
   store.save('formTemplates', templates);
   store.save('formInstances', []);
+
+  // ---- Seed Activities ----
+  const today = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  function dayOffset(offset) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  const seedActivities = [
+    { id: 'act_1', title: 'Follow up on quote approval', type: 'follow-up', date: dayOffset(0), time: '09:00', duration: 15, priority: 'high', status: 'pending', assignedToId: 'tech1', linkedType: 'quote', linkedId: quotes[0]?.id || '', linkedLabel: `Quote ${quotes[0]?.number || ''}`, notes: 'Client requested revised pricing on switchboard section.' },
+    { id: 'act_2', title: 'Site inspection — Docklands', type: 'site-visit', date: dayOffset(0), time: '13:00', duration: 120, priority: 'normal', status: 'pending', assignedToId: 'tech3', linkedType: 'job', linkedId: jobs[0]?.id || '', linkedLabel: `Job ${jobs[0]?.number || ''}`, notes: 'Confirm conduit runs before ceiling close-in.' },
+    { id: 'act_3', title: 'Call supplier re: panel delivery', type: 'call', date: dayOffset(-1), time: '10:30', duration: 10, priority: 'normal', status: 'completed', assignedToId: 'tech2', linkedType: '', linkedId: '', linkedLabel: '', notes: 'Confirmed delivery for Friday.' },
+    { id: 'act_4', title: 'Team safety meeting', type: 'meeting', date: dayOffset(1), time: '07:30', duration: 30, priority: 'normal', status: 'pending', assignedToId: 'tech1', linkedType: '', linkedId: '', linkedLabel: '', notes: 'Monthly toolbox talk — fire extinguisher training.' },
+    { id: 'act_5', title: 'Email updated scope to client', type: 'email', date: dayOffset(0), time: '15:00', duration: 15, priority: 'low', status: 'pending', assignedToId: 'tech6', linkedType: 'customer', linkedId: customers[1]?.id || '', linkedLabel: customers[1]?.company || '', notes: '' },
+    { id: 'act_6', title: 'Chase overdue invoice', type: 'call', date: dayOffset(-2), time: '11:00', duration: 10, priority: 'high', status: 'pending', assignedToId: 'tech6', linkedType: 'invoice', linkedId: invoices[0]?.id || '', linkedLabel: `Invoice ${invoices[0]?.number || ''}`, notes: '60 days overdue. Escalate if no response.' },
+    { id: 'act_7', title: 'Pre-start meeting with builder', type: 'meeting', date: dayOffset(2), time: '08:00', duration: 60, priority: 'normal', status: 'pending', assignedToId: 'tech2', linkedType: 'job', linkedId: jobs[1]?.id || '', linkedLabel: `Job ${jobs[1]?.number || ''}`, notes: 'Coordinate access and power isolation with site foreman.' },
+    { id: 'act_8', title: 'Order fire panel spares', type: 'task', date: dayOffset(1), time: '', duration: 0, priority: 'normal', status: 'pending', assignedToId: 'tech4', linkedType: '', linkedId: '', linkedLabel: '', notes: 'Need 3x zone cards and 1x PSU.' },
+    { id: 'act_9', title: 'Review apprentice logbook', type: 'task', date: dayOffset(3), time: '', duration: 0, priority: 'low', status: 'pending', assignedToId: 'tech1', linkedType: '', linkedId: '', linkedLabel: '', notes: '' },
+    { id: 'act_10', title: 'Warranty follow-up call', type: 'call', date: dayOffset(-3), time: '14:00', duration: 15, priority: 'normal', status: 'completed', assignedToId: 'tech5', linkedType: 'customer', linkedId: customers[2]?.id || '', linkedLabel: customers[2]?.company || '', notes: 'Issue resolved. Replacement sensor installed.' },
+  ];
+  store.save('activities', seedActivities);
 
   store.markSeeded();
 }

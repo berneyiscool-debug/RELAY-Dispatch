@@ -171,6 +171,8 @@ router.register('/reports', renderPage(renderReports));
 router.register('/settings', renderPage(renderSettings));
 router.register('/settings/forms/new', renderPage((c, p) => renderFormBuilder(c, { id: 'new' })));
 router.register('/settings/forms/:id/edit', renderPage((c, p) => renderFormBuilder(c, p)));
+router.register('/settings/quote-templates/new', renderPage((c, p) => renderQuoteDetail(c, { id: 'new', type: 'template' })));
+router.register('/settings/quote-templates/:id/edit', renderPage((c, p) => renderQuoteDetail(c, { id: p.id, type: 'template' })));
 
 // ---- Auth Guard Hook ----
 const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms'];

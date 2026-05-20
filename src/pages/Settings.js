@@ -1642,7 +1642,7 @@ export function renderSettings(container) {
     `;
 
     tc.querySelector('#btn-add-quote-template').addEventListener('click', () => {
-      openEditQuoteTemplateModal();
+      router.navigate('/settings/quote-templates/new');
     });
 
     tc.querySelectorAll('.btn-delete-quote-template').forEach(btn => {
@@ -1656,47 +1656,9 @@ export function renderSettings(container) {
 
     tc.querySelectorAll('.btn-edit-quote-template').forEach(btn => {
       btn.addEventListener('click', () => {
-        openEditQuoteTemplateModal(btn.dataset.id);
+        router.navigate(`/settings/quote-templates/${btn.dataset.id}/edit`);
       });
     });
-
-    function openEditQuoteTemplateModal(editId = null) {
-      const t = editId ? store.getById('quoteTemplates', editId) : { name: '', description: '', sections: [] };
-      const content = document.createElement('div');
-      content.innerHTML = `
-        <div class="form-group">
-          <label class="form-label">Template Name</label>
-          <input type="text" class="form-input" id="edit-qtmpl-name" value="${escapeHTML(t.name)}" required />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Description</label>
-          <textarea class="form-input" id="edit-qtmpl-desc" rows="3">${escapeHTML(t.description || '')}</textarea>
-        </div>
-      `;
-
-      showModal({
-        title: editId ? 'Edit Quote Template' : 'Create Quote Template',
-        content,
-        actions: [
-          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-          { label: 'Save Template', className: 'btn-primary', onClick: (close) => {
-            const name = content.querySelector('#edit-qtmpl-name').value;
-            const description = content.querySelector('#edit-qtmpl-desc').value;
-
-            if (!name) { showToast('Name required', 'error'); return; }
-
-            if (editId) {
-              store.update('quoteTemplates', editId, { name, description });
-            } else {
-              store.create('quoteTemplates', { name, description, sections: [] });
-            }
-            showToast('Quote template saved', 'success');
-            close();
-            renderContent();
-          }}
-        ]
-      });
-    }
   }
 
   function renderMaterialsSettings(tc) {
