@@ -287,7 +287,7 @@ export function showStockQuickAdd({ onSave } = {}) {
  */
 export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = null, onSave = null } = {}) {
   const isNew = !id;
-  const suppliers = store.getAll('contractors').filter(c => c.isSupplier !== false);
+  const suppliers = (store.getAll('suppliers') || []).filter(s => s.active !== false);
   const jobs = store.getAll('jobs').filter(j => j.status !== 'Completed' && j.status !== 'Invoiced');
   const stockItems = store.getAll('stock');
   
@@ -319,7 +319,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
               <label class="form-label">Supplier *</label>
               <select id="qa-po-supplier" class="form-select" ${po.status !== 'Draft' && !isNew ? 'disabled' : ''}>
                 <option value="">Select supplier...</option>
-                ${suppliers.map(s => `<option value="${s.id}" ${po.supplierId === s.id ? 'selected' : ''}>${s.company}</option>`).join('')}
+                ${suppliers.map(s => `<option value="${s.id}" ${po.supplierId === s.id ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -517,7 +517,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
         const poData = {
           number: po.number || `PO-${Date.now().toString().slice(-6)}`,
           supplierId: suppId,
-          supplierName: supplier?.company || 'Unknown',
+          supplierName: supplier?.name || supplier?.company || 'Unknown',
           jobId: selectedJobId || null,
           jobNumber: job?.number || '',
           issueDate: content.querySelector('#qa-po-date').value,
@@ -540,17 +540,78 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
        label: 'Mark as Received',
        className: 'btn-success',
        onClick: (close) => {
-         store.update('purchaseOrders', id, { status: 'Received', receivedDate: new Date().toISOString() });
-         // Optionally update stock here
-         poItems.forEach(item => {
-           if (item.stockId) {
-             const s = store.getById('stock', item.stockId);
-             if (s) store.update('stock', s.id, { quantity: (s.quantity || 0) + (item.qty || item.quantity) });
-           }
+         const technicians = store.getAll('technicians');
+         const assets = store.getAll('assets');
+
+         const modalContent = document.createElement('div');
+         modalContent.innerHTML = `
+           <div class="form-group">
+             <label class="form-label">Receive into Location *</label>
+             <select class="form-select" id="receive-location-select" required>
+               <option value="Main Warehouse">Main Warehouse</option>
+               <optgroup label="Warehouses">
+                 <option value="Warehouse A">Warehouse A</option>
+                 <option value="Warehouse B">Warehouse B</option>
+               </optgroup>
+               <optgroup label="Vehicles">
+                 ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
+               </optgroup>
+               <optgroup label="Assets">
+                 ${assets.map(a => `<option value="${escapeHTML(a.name)}">${escapeHTML(a.name)}</option>`).join('')}
+               </optgroup>
+             </select>
+           </div>
+         `;
+
+         showModal({
+           title: 'Receive Purchase Order',
+           content: modalContent,
+           actions: [
+             { label: 'Cancel', className: 'btn-secondary', onClick: (closeModal) => closeModal() },
+             { label: 'Receive Items', className: 'btn-success', onClick: (closeModal) => {
+               const targetLoc = modalContent.querySelector('#receive-location-select').value;
+               if (!targetLoc) {
+                 showToast('Please select a valid location', 'error');
+                 return;
+               }
+
+               let receiveCount = 0;
+               const allStock = store.getAll('stock');
+
+               poItems.forEach(item => {
+                 const stockId = item.stockId;
+                 if (stockId) {
+                   const s = allStock.find(x => x.id === stockId);
+                   if (s) {
+                     if (!s.locations) s.locations = [];
+                     let locObj = s.locations.find(l => l.location === targetLoc);
+                     const itemQty = parseFloat(item.qty || item.quantity) || 0;
+                     if (locObj) {
+                       locObj.quantity += itemQty;
+                     } else {
+                       s.locations.push({ location: targetLoc, quantity: itemQty });
+                     }
+
+                     s.quantity = s.locations.reduce((sum, l) => sum + l.quantity, 0);
+                     s.location = s.locations[0]?.location || 'Main Warehouse';
+                     s.updatedAt = new Date().toISOString();
+                     receiveCount++;
+                   }
+                 }
+               });
+
+               if (receiveCount > 0) {
+                 store.save('stock', allStock);
+               }
+
+               store.update('purchaseOrders', id, { status: 'Received', receivedDate: new Date().toISOString() });
+               showToast(`Received ${receiveCount} items into ${targetLoc}`, 'success');
+               closeModal();
+               if (onSave) onSave();
+               close();
+             }}
+           ]
          });
-         showToast(`PO ${po.number} marked as Received`, 'success');
-         if (onSave) onSave();
-         close();
        }
      });
   }

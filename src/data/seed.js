@@ -57,7 +57,7 @@ function seedUserTypes() {
         if (mod === 'Settings') return false;
         if (mod === 'Reports') return key === 'view';
         // No delete on financial records
-        if (['Invoices', 'Purchase Orders'].includes(mod) && key === 'delete') return false;
+        if (['Invoices', 'Purchase Orders', 'Suppliers'].includes(mod) && key === 'delete') return false;
         return true;
       }),
     },
@@ -137,6 +137,68 @@ function generateCustomers() {
       ],
     };
   });
+}
+
+export function generateContractors() {
+  return [
+    {
+      id: 'cont_1',
+      businessName: 'EcoVolt Electrical Services',
+      contactName: 'Elena Rostova',
+      email: 'elena@ecovoltelectrical.com.au',
+      phone: '0498 765 432',
+      licenseNumber: 'LIC-EL-88390',
+      active: true,
+      hourlyRate: 95.00,
+      afterHoursRate: 142.50,
+      calloutFee: 85.00,
+      specialties: ['Solar PV Installation', 'Battery Systems', 'Switchboard Upgrades'],
+      notes: 'Preferred subcontractor for large-scale solar rollouts. Highly reliable.',
+      complianceDocs: [
+        { id: 'doc_1_1', type: 'Public Liability Insurance', number: 'PL-992110-A', expiryDate: '2026-10-15', verified: true, notes: 'Cover up to $20M' },
+        { id: 'doc_1_2', type: 'Workers Compensation', number: 'WC-883912', expiryDate: '2026-08-20', verified: true, notes: 'Active cover' },
+        { id: 'doc_1_3', type: 'Electrical Contractor License', number: 'REC-39021', expiryDate: '2027-02-15', verified: true, notes: 'A-Grade Electrical License' }
+      ]
+    },
+    {
+      id: 'cont_2',
+      businessName: 'Apex Plumbing & Drainage',
+      contactName: 'Gary Barlow',
+      email: 'gary@apexplumbing.com.au',
+      phone: '0412 345 678',
+      licenseNumber: 'LIC-PL-99211',
+      active: true,
+      hourlyRate: 90.00,
+      afterHoursRate: 135.00,
+      calloutFee: 90.00,
+      specialties: ['Commercial Plumbing', 'Gas Fitting', 'Drain Blockages'],
+      notes: 'Quick response time. Has own high-pressure jetter and CCTV camera.',
+      complianceDocs: [
+        { id: 'doc_2_1', type: 'Public Liability Insurance', number: 'PL-223401-B', expiryDate: '2026-06-30', verified: true, notes: 'Cover up to $10M' },
+        { id: 'doc_2_2', type: 'Workers Compensation', number: 'WC-449102', expiryDate: '2026-04-12', verified: false, notes: 'Requires updated certificate copy' },
+        { id: 'doc_2_3', type: 'Plumbing Practitioner License', number: 'PPL-1192', expiryDate: '2027-09-01', verified: true, notes: 'Licensed drainer and gasfitter' }
+      ]
+    },
+    {
+      id: 'cont_3',
+      businessName: 'Swift HVAC & Mechanical',
+      contactName: 'Marcus Sterling',
+      email: 'marcus@swifthvac.com.au',
+      phone: '0423 556 789',
+      licenseNumber: 'LIC-HV-44012',
+      active: false,
+      hourlyRate: 105.00,
+      afterHoursRate: 157.50,
+      calloutFee: 120.00,
+      specialties: ['Chiller Maintenance', 'Commercial A/C', 'Duct Work'],
+      notes: 'Currently set to inactive due to expired public liability insurance. Do not dispatch.',
+      complianceDocs: [
+        { id: 'doc_3_1', type: 'Public Liability Insurance', number: 'PL-771109-C', expiryDate: '2026-02-10', verified: false, notes: 'Expired! Contact Marcus for renewal' },
+        { id: 'doc_3_2', type: 'Workers Compensation', number: 'WC-110291', expiryDate: '2026-11-30', verified: true, notes: 'Cover active' },
+        { id: 'doc_3_3', type: 'ARC Refrigerant License', number: 'ARC-8891', expiryDate: '2027-05-18', verified: true, notes: 'Full handle license' }
+      ]
+    }
+  ];
 }
 
 function generateTaskTemplates() {
@@ -422,21 +484,38 @@ function generateStockItems() {
     { name: 'Safety Glasses Clear', cat: 'General', unit: 'pair', price: 6.50 },
   ];
 
-  return items.map((item, i) => ({
-    id: `stock_${i + 1}`,
-    name: item.name,
-    sku: `SKU-${String(1000 + i)}`,
-    category: item.cat,
-    unit: item.unit,
-    unitPrice: item.price,
-    costPrice: item.price * 0.6,
-    quantity: Math.floor(Math.random() * 200) + 5,
-    reorderLevel: Math.floor(Math.random() * 20) + 5,
-    supplier: randomItem(['ElectraTrade', 'PipeLine Supply', 'CoolParts Wholesale', 'SafeGuard Dist.', 'AllTrade Supplies']),
-    location: randomItem(['Warehouse A', 'Warehouse B', 'Van Stock', 'On Order']),
-    createdAt: randomDate(365),
-    updatedAt: randomDate(30),
-  }));
+  return items.map((item, i) => {
+    const possibleLocs = [
+      'Warehouse A', 'Warehouse B', 'Main Warehouse',
+      'Vehicle - Mark Sullivan', 'Vehicle - Jake Patterson', 'Vehicle - Ryan Cooper'
+    ];
+    
+    const numLocs = Math.floor(Math.random() * 2) + 2; // 2 or 3 locations
+    const shuffled = [...possibleLocs].sort(() => 0.5 - Math.random());
+    const itemLocs = shuffled.slice(0, numLocs).map(loc => ({
+      location: loc,
+      quantity: Math.floor(Math.random() * 60) + 5
+    }));
+
+    const totalQty = itemLocs.reduce((sum, l) => sum + l.quantity, 0);
+
+    return {
+      id: `stock_${i + 1}`,
+      name: item.name,
+      sku: `SKU-${String(1000 + i)}`,
+      category: item.cat,
+      unit: item.unit,
+      unitPrice: item.price,
+      costPrice: item.price * 0.6,
+      quantity: totalQty,
+      reorderLevel: Math.floor(Math.random() * 20) + 5,
+      supplier: randomItem(['ElectraTrade', 'PipeLine Supply', 'CoolParts Wholesale', 'SafeGuard Dist.', 'AllTrade Supplies']),
+      location: itemLocs[0].location,
+      locations: itemLocs,
+      createdAt: randomDate(365),
+      updatedAt: randomDate(30),
+    };
+  });
 }
 
 function generateAssets(customers) {
@@ -456,6 +535,87 @@ function generateAssets(customers) {
       { id: `log_${i}_1`, type: 'Service', date: randomDate(90), technicianName: 'Jake Patterson', cost: 250, notes: 'Routine check' }
     ]
   }));
+}
+
+function generateSuppliers() {
+  return [
+    {
+      id: 'sup_1',
+      name: 'ElectraTrade',
+      contactName: 'Robert Vance',
+      email: 'sales@electratrade.com.au',
+      phone: '03 9822 1045',
+      address: '22 Industrial Parkway, South Melbourne, VIC 3205',
+      category: 'Electrical',
+      accountNumber: 'FF-ET-10291',
+      paymentTerms: '30 Days',
+      active: true,
+      notes: 'Primary supplier for electrical switchgear, cable, and general conduit fittings.',
+      attachments: [
+        { id: 'att_sup_1_1', name: 'ElectraTrade_Price_List_2026.pdf', type: 'application/pdf', size: 1245000, uploadedAt: '2026-01-10T08:00:00Z', url: 'data:application/pdf;base64,JVBERi0xLjQKJ...' }
+      ]
+    },
+    {
+      id: 'sup_2',
+      name: 'PipeLine Supply',
+      contactName: 'Douglas Miller',
+      email: 'orders@pipelinesupply.com.au',
+      phone: '03 9544 3300',
+      address: '108 Pipeline Rd, Richmond, VIC 3121',
+      category: 'Plumbing',
+      accountNumber: 'FF-PL-99401',
+      paymentTerms: '14 Days',
+      active: true,
+      notes: 'Main plumbing merchant. Provides rapid morning deliveries to metro sites.',
+      attachments: [
+        { id: 'att_sup_2_1', name: 'PipeLine_Product_Brochure.pdf', type: 'application/pdf', size: 3450000, uploadedAt: '2026-02-15T09:30:00Z', url: 'data:application/pdf;base64,JVBERi0xLjQKJ...' }
+      ]
+    },
+    {
+      id: 'sup_3',
+      name: 'CoolParts Wholesale',
+      contactName: 'Amanda Jenkins',
+      email: 'amanda@coolparts.com.au',
+      phone: '03 9711 5050',
+      address: '45 Cold Storage Lane, Clayton, VIC 3168',
+      category: 'HVAC',
+      accountNumber: 'FF-CP-39021',
+      paymentTerms: '30 Days',
+      active: true,
+      notes: 'HVAC compressors, copper coils, ducting components, and split system units.',
+      attachments: []
+    },
+    {
+      id: 'sup_4',
+      name: 'SafeGuard Dist.',
+      contactName: 'Sarah Conner',
+      email: 'wholesale@safeguard.com.au',
+      phone: '03 8990 1200',
+      address: '90 Security Plaza, Collingwood, VIC 3066',
+      category: 'Fire Safety',
+      accountNumber: 'FF-SG-88301',
+      paymentTerms: 'COD',
+      active: true,
+      notes: 'Preferred supplier for smoke alarms, commercial fire panel zone cards, and extinguishers.',
+      attachments: [
+        { id: 'att_sup_4_1', name: 'SafeGuard_Compliance_Certificate.pdf', type: 'application/pdf', size: 954000, uploadedAt: '2026-03-01T10:15:00Z', url: 'data:application/pdf;base64,JVBERi0xLjQKJ...' }
+      ]
+    },
+    {
+      id: 'sup_5',
+      name: 'AllTrade Supplies',
+      contactName: 'Kevin Higgins',
+      email: 'kevin@alltradesupplies.com.au',
+      phone: '03 9205 6000',
+      address: '15-19 Warehouse Lane, Dandenong, VIC 3175',
+      category: 'General',
+      accountNumber: 'FF-AT-22340',
+      paymentTerms: '30 Days',
+      active: true,
+      notes: 'Consumables, cable ties, silicone, fasteners, and miscellaneous hand tools.',
+      attachments: []
+    }
+  ];
 }
 
 function generateScheduleBlocks(jobs) {
@@ -635,7 +795,7 @@ export function seedData() {
               } else if (ut.id === 'ut_office') {
                 if (module === 'Settings') mPerm[key] = false;
                 else if (module === 'Reports') mPerm[key] = key === 'view';
-                else if (['Invoices', 'Purchase Orders'].includes(module) && key === 'delete') mPerm[key] = false;
+                else if (['Invoices', 'Purchase Orders', 'Suppliers'].includes(module) && key === 'delete') mPerm[key] = false;
                 else mPerm[key] = true;
               } else if (ut.id === 'ut_tech') {
                 if (module === 'Dashboard') mPerm[key] = key === 'view';
@@ -672,6 +832,64 @@ export function seedData() {
     if (!currentTemplates || currentTemplates.length === 0) {
       store.save('taskTemplates', generateTaskTemplates());
     }
+
+    // Ensure contractors exist and have compliance data
+    const currentContractors = store.getAll('contractors');
+    const hasCompliance = currentContractors.some(c => c.complianceDocs && c.complianceDocs.length > 0);
+    if (!currentContractors || currentContractors.length === 0 || !hasCompliance) {
+      store.save('contractors', generateContractors());
+    }
+
+    // Ensure suppliers exist
+    const currentSuppliers = store.getAll('suppliers');
+    if (!currentSuppliers || currentSuppliers.length === 0) {
+      store.save('suppliers', generateSuppliers());
+    }
+
+    // Schema Migration: Migrate flat stock to nested locations format
+    const existingStock = store.getAll('stock');
+    const needsStockMigration = existingStock.some(s => !s.locations || !Array.isArray(s.locations));
+    if (needsStockMigration) {
+      const grouped = {};
+      existingStock.forEach(item => {
+        const key = item.sku || item.name;
+        if (!grouped[key]) {
+          grouped[key] = {
+            ...item,
+            locations: item.locations && Array.isArray(item.locations) ? [...item.locations] : []
+          };
+        }
+        
+        if (!item.locations || !Array.isArray(item.locations)) {
+          const locName = item.location || 'Main Warehouse';
+          const qty = parseInt(item.quantity) || 0;
+          const existingLoc = grouped[key].locations.find(l => l.location === locName);
+          if (existingLoc) {
+            existingLoc.quantity += qty;
+          } else {
+            grouped[key].locations.push({ location: locName, quantity: qty });
+          }
+        } else {
+          item.locations.forEach(l => {
+            const existingLoc = grouped[key].locations.find(x => x.location === l.location);
+            if (existingLoc) {
+              existingLoc.quantity += l.quantity;
+            } else {
+              grouped[key].locations.push({ ...l });
+            }
+          });
+        }
+      });
+      
+      const migratedStock = Object.values(grouped).map(item => {
+        item.quantity = item.locations.reduce((sum, l) => sum + l.quantity, 0);
+        item.location = item.locations[0]?.location || 'Main Warehouse';
+        return item;
+      });
+      
+      store.save('stock', migratedStock);
+    }
+
     return;
   }
 
@@ -697,6 +915,8 @@ export function seedData() {
   store.save('taskTemplates', generateTaskTemplates());
   store.save('formTemplates', templates);
   store.save('formInstances', []);
+  store.save('contractors', generateContractors());
+  store.save('suppliers', generateSuppliers());
 
   // ---- Seed Activities ----
   const today = new Date();

@@ -101,6 +101,12 @@ export const MODULE_PERMS = {
     { key: 'create', label: 'Create Contractors' },
     { key: 'edit', label: 'Edit Contractors' },
   ],
+  'Suppliers': [
+    { key: 'view', label: 'View Suppliers' },
+    { key: 'create', label: 'Create Suppliers' },
+    { key: 'edit', label: 'Edit Suppliers' },
+    { key: 'delete', label: 'Delete Suppliers' },
+  ],
   'Stock': [
     { key: 'view', label: 'View Inventory' },
     { key: 'create', label: 'Create Stock Items' },

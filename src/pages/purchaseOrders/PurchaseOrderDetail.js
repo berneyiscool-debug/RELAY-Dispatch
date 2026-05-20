@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderPurchaseOrderDetail(container, { id, jobId }) {
   const isNew = id === 'new';
@@ -30,14 +31,20 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
     if (job) po.jobNumber = job.number;
   }
 
-  updateBreadcrumbDetail(po.number || 'New PO');
+  updateBreadcrumbDetail(isNew ? 'New PO' : po.number);
 
   const stockItems = store.getAll('stock');
   const jobs = store.getAll('jobs');
   
-  // Unique suppliers from stock items, plus a default fallback
-  const suppliers = [...new Set(stockItems.map(s => s.supplier).filter(Boolean))];
-  if (suppliers.length === 0) suppliers.push('General Supplier');
+  // Fetch active suppliers dynamically from the suppliers database
+  const activeSuppliers = store.getAll('suppliers').filter(s => s.active !== false);
+  const dropdownSuppliers = [...activeSuppliers];
+  if (po.supplierName && !activeSuppliers.some(s => s.name === po.supplierName)) {
+    dropdownSuppliers.push({ name: po.supplierName });
+  }
+  if (dropdownSuppliers.length === 0) {
+    dropdownSuppliers.push({ name: 'General Supplier' });
+  }
 
   function render() {
     container.innerHTML = `
@@ -65,7 +72,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
                   <label class="form-label">Supplier *</label>
                   <select class="form-select" name="supplierName" required ${po.status !== 'Draft' ? 'disabled' : ''}>
                     <option value="">Select supplier...</option>
-                    ${suppliers.map(s => `<option value="${s}" ${po.supplierName === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    ${dropdownSuppliers.map(s => `<option value="${escapeHTML(s.name)}" ${po.supplierName === s.name ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('')}
                   </select>
                 </div>
                 <div class="form-group">
@@ -185,30 +192,76 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
     });
 
     container.querySelector('#btn-receive')?.addEventListener('click', () => {
-      // Receive items into stock
-      let receiveCount = 0;
-      const allStock = store.getAll('stock');
-      const stockMap = new Map(allStock.map(s => [s.id, s]));
+      const technicians = store.getAll('technicians');
+      const assets = store.getAll('assets');
+      
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Receive into Location *</label>
+          <select class="form-select" id="receive-location-select" required>
+            <option value="Main Warehouse">Main Warehouse</option>
+            <optgroup label="Warehouses">
+              <option value="Warehouse A">Warehouse A</option>
+              <option value="Warehouse B">Warehouse B</option>
+            </optgroup>
+            <optgroup label="Vehicles">
+              ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
+            </optgroup>
+            <optgroup label="Assets">
+              ${assets.map(a => `<option value="${escapeHTML(a.name)}">${escapeHTML(a.name)}</option>`).join('')}
+            </optgroup>
+          </select>
+        </div>
+      `;
 
-      po.lineItems.forEach(item => {
-        if (item.stockId) {
-          const s = stockMap.get(item.stockId);
-          if (s) {
-            s.quantity = (s.quantity || 0) + item.quantity;
-            s.updatedAt = new Date().toISOString();
-            receiveCount++;
-          }
-        }
+      showModal({
+        title: 'Receive Purchase Order',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Receive Items', className: 'btn-success', onClick: (close) => {
+            const targetLoc = content.querySelector('#receive-location-select').value;
+            if (!targetLoc) {
+              showToast('Please select a valid location', 'error');
+              return;
+            }
+
+            let receiveCount = 0;
+            const allStock = store.getAll('stock');
+            
+            po.lineItems.forEach(item => {
+              if (item.stockId) {
+                const s = allStock.find(x => x.id === item.stockId);
+                if (s) {
+                  if (!s.locations) s.locations = [];
+                  let locObj = s.locations.find(l => l.location === targetLoc);
+                  if (locObj) {
+                    locObj.quantity += item.quantity;
+                  } else {
+                    s.locations.push({ location: targetLoc, quantity: item.quantity });
+                  }
+                  
+                  s.quantity = s.locations.reduce((sum, l) => sum + l.quantity, 0);
+                  s.location = s.locations[0]?.location || 'Main Warehouse';
+                  s.updatedAt = new Date().toISOString();
+                  receiveCount++;
+                }
+              }
+            });
+
+            if (receiveCount > 0) {
+              store.save('stock', allStock);
+            }
+
+            showToast(`Received ${receiveCount} items into ${targetLoc}`, 'success');
+            po.status = 'Received';
+            store.update('purchaseOrders', po.id, { status: 'Received' });
+            close();
+            render();
+          }}
+        ]
       });
-
-      if (receiveCount > 0) {
-        store.save('stock', allStock);
-      }
-
-      showToast(`Received ${receiveCount} items into stock.`, 'success');
-      po.status = 'Received';
-      store.update('purchaseOrders', po.id, { status: 'Received' });
-      render();
     });
 
     container.querySelector('#btn-add-item')?.addEventListener('click', () => {

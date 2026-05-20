@@ -32,9 +32,20 @@ export function renderJobDetail(container, { id }) {
 
   function getStockOptionsHtml() {
     if (!cachedStockOptionsHtml) {
-      cachedStockOptionsHtml = store.getAll('stock')
-        .map(s => `<option value="${s.id}">${escapeHTML(s.name)} (Qty: ${s.quantity}) - $${s.costPrice || s.unitPrice}</option>`)
-        .join('');
+      const stock = store.getAll('stock');
+      const options = [];
+      stock.forEach(s => {
+        if (s.locations && s.locations.length > 0) {
+          s.locations.forEach(loc => {
+            if (loc.quantity > 0) {
+              options.push(`<option value="${s.id}::${escapeHTML(loc.location)}">${escapeHTML(s.name)} [${escapeHTML(loc.location)}] (Qty: ${loc.quantity}) - $${(s.costPrice || s.unitPrice || 0).toFixed(2)}</option>`);
+            }
+          });
+        } else if (s.quantity > 0) {
+          options.push(`<option value="${s.id}::${escapeHTML(s.location || 'Main Warehouse')}">${escapeHTML(s.name)} [${escapeHTML(s.location || 'Main Warehouse')}] (Qty: ${s.quantity}) - $${(s.costPrice || s.unitPrice || 0).toFixed(2)}</option>`);
+        }
+      });
+      cachedStockOptionsHtml = options.join('');
     }
     return cachedStockOptionsHtml;
   }
@@ -464,6 +475,19 @@ export function renderJobDetail(container, { id }) {
       // Ensure existing tasks have subTasks array
       job.tasks.forEach(p => { if (!p.subTasks) p.subTasks = []; });
 
+      // Migrate legacy contractor assignments to multi-select array
+      const migrateTasks = (tasksList) => {
+        tasksList.forEach(t => {
+          if (t.assignedContractorId && (!t.assignedContractorIds || t.assignedContractorIds.length === 0)) {
+            t.assignedContractorIds = [t.assignedContractorId];
+          }
+          if (t.subTasks) migrateTasks(t.subTasks);
+        });
+      };
+      migrateTasks(job.tasks);
+
+      const activeContractors = store.getAll('contractors').filter(c => c.active);
+
       function getTaskByPath(tasks, path) {
         let curr = tasks[path[0]];
         if (!curr) return null;
@@ -608,6 +632,27 @@ export function renderJobDetail(container, { id }) {
                     </div>
                   </div>
                   <div style="margin-top:16px">
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:6px">Assigned Subcontractors</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px">
+                      ${(() => {
+                        const ids = node.assignedContractorIds || [];
+                        if (ids.length === 0) {
+                          return `<span style="color:var(--text-tertiary); font-style:italic; font-size:13px">Unassigned</span>`;
+                        }
+                        return ids.map(id => {
+                          const contr = store.getById('contractors', id);
+                          const name = contr ? contr.businessName : 'Unknown Subcontractor';
+                          return `
+                            <span class="badge" style="background:var(--color-primary-light); color:var(--color-primary); font-weight:600; display:inline-flex; align-items:center; gap:4px; padding:4px 8px; border-radius:4px; font-size:12px">
+                              <span class="material-icons-outlined" style="font-size:14px">engineering</span>
+                              ${escapeHTML(name)}
+                            </span>
+                          `;
+                        }).join('');
+                      })()}
+                    </div>
+                  </div>
+                  <div style="margin-top:16px">
                     <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Description</div>
                     <div style="font-size:14px; white-space:pre-wrap">${escapeHTML(node.description || 'No description provided.')}</div>
                   </div>
@@ -650,6 +695,22 @@ export function renderJobDetail(container, { id }) {
                     <div style="width:100%;background:var(--border-color);height:36px;border-radius:4px;overflow:hidden;position:relative">
                       <div style="width:${node.progress || 0}%;background:var(--color-primary);height:100%;transition:width 0.3s"></div>
                       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;color:${node.progress > 50 ? '#fff' : '#000'}">${node.progress || 0}%</div>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" style="margin-bottom:8px">Assigned Subcontractors</label>
+                    <div style="border:1px solid var(--border-color); border-radius:6px; max-height:160px; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:6px; background:var(--bg-color)">
+                      ${activeContractors.map(c => {
+                        const isChecked = (node.assignedContractorIds || []).includes(c.id);
+                        return `
+                          <label class="contractor-checkbox-label" style="display:flex; align-items:center; gap:8px; margin:0; padding:4px 6px; border-radius:4px; cursor:pointer; font-size:13px; font-weight:normal; transition:background 0.2s">
+                            <input type="checkbox" class="contractor-assign-checkbox" value="${c.id}" ${isChecked ? 'checked' : ''} ${!canEditTasks ? 'disabled' : ''} style="width:16px; height:16px; margin:0; cursor:pointer" />
+                            <span style="font-weight:500; color:var(--text-primary)">${escapeHTML(c.businessName)}</span>
+                            <span style="color:var(--text-tertiary); font-size:11px">(${escapeHTML(c.contactName)})</span>
+                          </label>
+                        `;
+                      }).join('')}
+                      ${activeContractors.length === 0 ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:12px">No active subcontractors found</div>' : ''}
                     </div>
                   </div>
                   <div class="form-group">
@@ -747,6 +808,31 @@ export function renderJobDetail(container, { id }) {
             node[field] = e.target.value;
           }
 
+          updateParentProgress(job.tasks, taskExpandedPath);
+          renderTabContent();
+        });
+      });
+
+      tc.querySelectorAll('.contractor-assign-checkbox').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (!node.assignedContractorIds) node.assignedContractorIds = [];
+          
+          const selectedIds = Array.from(tc.querySelectorAll('.contractor-assign-checkbox:checked'))
+            .map(el => el.value);
+          
+          node.assignedContractorIds = selectedIds;
+          
+          // Legacy single contractor sync for backward compatibility
+          if (selectedIds.length > 0) {
+            node.assignedContractorId = selectedIds[0];
+            const contr = store.getById('contractors', selectedIds[0]);
+            node.assignedContractorName = contr ? contr.businessName : '';
+          } else {
+            node.assignedContractorId = null;
+            node.assignedContractorName = '';
+          }
+          
           updateParentProgress(job.tasks, taskExpandedPath);
           renderTabContent();
         });
@@ -1429,31 +1515,51 @@ export function renderJobDetail(container, { id }) {
       tc.querySelector('#btn-add-material')?.addEventListener('click', () => {
         const matSel = tc.querySelector('#mat-select');
         const qty = parseInt(tc.querySelector('#mat-qty').value) || 1;
-        const stockId = matSel.value;
-        if (!stockId) return;
+        const val = matSel.value;
+        if (!val) return;
 
+        const [stockId, locationName] = val.split('::');
         const stockItem = store.getById('stock', stockId);
         if (!stockItem) return;
 
-        if (stockItem.quantity < qty) {
-          showToast(`Not enough stock. Available: ${stockItem.quantity}`, 'error');
+        // Find quantity at the specific location
+        let availableQty = 0;
+        let locObj = null;
+        if (stockItem.locations && Array.isArray(stockItem.locations)) {
+          locObj = stockItem.locations.find(l => l.location === locationName);
+          availableQty = locObj ? locObj.quantity : 0;
+        } else {
+          availableQty = stockItem.quantity || 0;
+        }
+
+        if (availableQty < qty) {
+          showToast(`Not enough stock at ${locationName}. Available: ${availableQty}`, 'error');
           return;
         }
 
-        // Deduct from stock
-        store.update('stock', stockId, { quantity: stockItem.quantity - qty });
+        // Deduct from stock at the specific location
+        if (locObj) {
+          locObj.quantity -= qty;
+          stockItem.locations = stockItem.locations.filter(l => l.quantity > 0);
+          stockItem.quantity = stockItem.locations.reduce((sum, l) => sum + l.quantity, 0);
+          stockItem.location = stockItem.locations[0]?.location || 'Main Warehouse';
+        } else {
+          stockItem.quantity -= qty;
+        }
+        
+        store.update('stock', stockId, stockItem);
         cachedStockOptionsHtml = null; // Invalidate cache
 
         // Add to job materials
         job.materials.push({
           stockId: stockItem.id,
-          name: stockItem.name,
+          name: `${stockItem.name} (${locationName})`,
           quantity: qty,
           unitCost: stockItem.costPrice || stockItem.unitPrice || 0,
           fromQuote: false
         });
 
-        showToast(`Added ${qty}x ${stockItem.name}`, 'success');
+        showToast(`Added ${qty}x ${stockItem.name} from ${locationName}`, 'success');
         renderTabContent();
       });
 
@@ -1968,14 +2074,18 @@ export function renderJobDetail(container, { id }) {
       `;
 
       tc.querySelector('#btn-raise-po')?.addEventListener('click', () => {
-        const suppliers = store.getAll('suppliers'); // Assuming a suppliers collection exists or use basic array
+        const suppliers = store.getAll('suppliers') || [];
+        const activeSuppliers = suppliers.filter(s => s.active !== false);
         const stockItems = store.getAll('stock');
 
         const content = document.createElement('div');
         content.innerHTML = `
           <div class="form-group">
             <label class="form-label">Supplier *</label>
-            <input type="text" class="form-input" id="po-supplier" placeholder="e.g. Reece Plumbing" />
+            <select class="form-select" id="po-supplier">
+              <option value="">Select supplier...</option>
+              ${activeSuppliers.map(s => `<option value="${escapeHTML(s.name)}">${escapeHTML(s.name)}</option>`).join('')}
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label">Part Required *</label>

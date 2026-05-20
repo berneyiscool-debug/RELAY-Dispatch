@@ -19,6 +19,7 @@ const navItems = [
   { section: 'RESOURCES' },
   { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
   { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
+  { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/suppliers' },
   { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
   { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
   { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' },

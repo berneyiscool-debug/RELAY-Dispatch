@@ -47,6 +47,10 @@ import { renderContractorsList } from './pages/contractors/ContractorsList.js';
 import { renderContractorForm } from './pages/contractors/ContractorForm.js';
 import { renderContractorDetail } from './pages/contractors/ContractorDetail.js';
 
+import { renderSuppliersList } from './pages/suppliers/SuppliersList.js';
+import { renderSupplierForm } from './pages/suppliers/SupplierForm.js';
+import { renderSupplierDetail } from './pages/suppliers/SupplierDetail.js';
+
 import { renderAssetList } from './pages/assets/AssetList.js';
 import { renderAssetForm } from './pages/assets/AssetForm.js';
 import { renderAssetDetail } from './pages/assets/AssetDetail.js';
@@ -113,6 +117,12 @@ router.register('/contractors/new', renderPage((c, p) => renderContractorForm(c,
 router.register('/contractors/:id', renderPage(renderContractorDetail));
 router.register('/contractors/:id/edit', renderPage((c, p) => renderContractorForm(c, p)));
 
+// Suppliers
+router.register('/suppliers', renderPage(renderSuppliersList));
+router.register('/suppliers/new', renderPage((c, p) => renderSupplierForm(c, { id: 'new' })));
+router.register('/suppliers/:id', renderPage(renderSupplierDetail));
+router.register('/suppliers/:id/edit', renderPage((c, p) => renderSupplierForm(c, p)));
+
 // Leads
 router.register('/leads', renderPage(renderLeadsList));
 router.register('/leads/new', renderPage((c, p) => renderLeadForm(c, { id: 'new' })));
@@ -175,7 +185,7 @@ router.register('/settings/quote-templates/new', renderPage((c, p) => renderQuot
 router.register('/settings/quote-templates/:id/edit', renderPage((c, p) => renderQuoteDetail(c, { id: p.id, type: 'template' })));
 
 // ---- Auth Guard Hook ----
-const protectedRoutes = ['/', '/people', '/contractors', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms'];
+const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms'];
 const customerRoutes = ['/portal'];
 
 router.onNavigate = (path, params) => {
@@ -214,6 +224,7 @@ router.onNavigate = (path, params) => {
              '/assets': 'Assets',
              '/schedule': 'Schedule',
              '/contractors': 'Contractors',
+             '/suppliers': 'Suppliers',
              '/stock': 'Stock',
              '/purchase-orders': 'Purchase Orders',
              '/invoices': 'Invoices',
@@ -228,9 +239,11 @@ router.onNavigate = (path, params) => {
              if (path === '/jobs/new' && !hasPermission('Jobs', 'create')) block = true;
              if (path.endsWith('/edit') && basePath === '/jobs' && !hasPermission('Jobs', 'edit')) block = true;
              if (path === '/quotes/new' && !hasPermission('Quotes', 'create')) block = true;
+             if (path === '/suppliers/new' && !hasPermission('Suppliers', 'create')) block = true;
+             if (path.endsWith('/edit') && basePath === '/suppliers' && !hasPermission('Suppliers', 'edit')) block = true;
 
              if (block) {
-                const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/assets', '/documents', '/settings'];
+                const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/suppliers', '/assets', '/documents', '/settings'];
                 const fallback = PRIORITY.find(route => {
                   const mod = pathMap[route];
                   if (mod === 'Notifications' || mod === 'Dashboard') return true;
@@ -247,7 +260,7 @@ router.onNavigate = (path, params) => {
                const p = ut.permissions.find(m => m.module === moduleName);
                if (!p || (Object.entries(p || {}).every(([k,v]) => k === 'module' || !v))) {
                   // Not permitted — find first page they CAN access
-                  const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/assets', '/documents', '/settings'];
+                  const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/suppliers', '/assets', '/documents', '/settings'];
                   const fallback = PRIORITY.find(route => {
                     const mod = pathMap[route];
                     if (mod === 'Notifications' || mod === 'Dashboard') return true;

@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — STOCK LIST PAGE
+// FIELDFORGE — STOCK LIST PAGE
 // ============================================
 
 import { store } from '../../data/store.js';
@@ -45,10 +45,10 @@ export function renderStockList(container) {
     <div id="stock-table-container"></div>
   `;
 
-  // Populate Location Filter with grouping
+  // Populate Location Filter with grouping from nested locations
   const locSelect = container.querySelector('#location-filter');
-  const locations = [...new Set(stock.map(s => s.location || 'Unassigned'))].sort();
-  const warehouses = locations.filter(l => l.toLowerCase().includes('warehouse') || l === 'Main');
+  const locations = [...new Set(stock.flatMap(s => (s.locations || []).map(l => l.location || 'Unassigned')))].sort();
+  const warehouses = locations.filter(l => l.toLowerCase().includes('warehouse') || l === 'Main' || l === 'Main Warehouse');
   const vehicles = locations.filter(l => l.toLowerCase().includes('vehicle') || l.toLowerCase().includes('van') || l.toLowerCase().includes('truck') || l.toLowerCase().includes('van stock'));
   const otherLocs = locations.filter(l => !warehouses.includes(l) && !vehicles.includes(l));
 
@@ -90,12 +90,12 @@ export function renderStockList(container) {
     const q = filterState.search.toLowerCase();
     const filtered = stock.filter(s => {
       const matchCat = filterState.category === 'all' || s.category === filterState.category;
-      const matchLoc = filterState.location === 'all' || s.location === filterState.location;
+      const matchLoc = filterState.location === 'all' || (s.locations || []).some(l => l.location === filterState.location);
       const matchSearch = !q || 
         s.name.toLowerCase().includes(q) || 
         s.sku.toLowerCase().includes(q) || 
         s.category.toLowerCase().includes(q) || 
-        (s.location && s.location.toLowerCase().includes(q));
+        (s.locations || []).some(l => l.location.toLowerCase().includes(q));
       return matchCat && matchLoc && matchSearch;
     });
     table.updateData(filtered);
@@ -105,18 +105,29 @@ export function renderStockList(container) {
     { key: 'name', label: 'Item Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
     { key: 'sku', label: 'SKU', render: (r) => `<span class="text-secondary" style="font-family:monospace">${escapeHTML(r.sku)}</span>`, width: '90px' },
     { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category)}</span>`, width: '110px' },
-    { key: 'quantity', label: 'Qty', render: (r) => {
-      const low = r.quantity <= r.reorderLevel;
-      return `<span style="font-weight:600;color:${low ? 'var(--color-danger)' : 'var(--text-primary)'}">${r.quantity}</span>${low ? ' <span class="badge badge-danger" style="margin-left:4px">LOW</span>' : ''}`;
-    }, getValue: (r) => r.quantity, width: '100px' },
+    { key: 'quantity', label: 'Total Qty', render: (r) => {
+      const totalQty = (r.locations || []).reduce((sum, l) => sum + l.quantity, 0);
+      const low = totalQty <= r.reorderLevel;
+      return `<span style="font-weight:600;color:${low ? 'var(--color-danger)' : 'var(--text-primary)'}">${totalQty}</span>${low ? ' <span class="badge badge-danger" style="margin-left:4px">LOW</span>' : ''}`;
+    }, getValue: (r) => (r.locations || []).reduce((sum, l) => sum + l.quantity, 0), width: '100px' },
     { key: 'unitPrice', label: 'Unit Price', render: (r) => `$${r.unitPrice.toFixed(2)}`, getValue: (r) => r.unitPrice, width: '100px' },
-    { key: 'location', label: 'Location', render: (r) => {
-      const isVehicle = r.location?.toLowerCase().includes('vehicle') || r.location?.toLowerCase().includes('van');
-      return `<div style="display:flex; align-items:center; gap:4px">
-        <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary)">${isVehicle ? 'local_shipping' : 'warehouse'}</span>
-        <span class="text-secondary">${escapeHTML(r.location)}</span>
+    { key: 'locations', label: 'Locations Breakdown', render: (r) => {
+      if (!r.locations || r.locations.length === 0) {
+        return `<span class="text-tertiary" style="font-size: 12px;">No Stock</span>`;
+      }
+      return `<div style="display:flex; flex-direction:column; gap:4px">
+        ${r.locations.map(loc => {
+          const isVehicle = loc.location.toLowerCase().includes('vehicle') || loc.location.toLowerCase().includes('van') || loc.location.toLowerCase().includes('truck');
+          return `
+            <div style="display:flex; align-items:center; gap:6px; font-size:12px">
+              <span class="material-icons-outlined" style="font-size:14px; color:var(--text-tertiary)">${isVehicle ? 'local_shipping' : 'warehouse'}</span>
+              <span class="text-secondary" style="font-weight:500">${escapeHTML(loc.location)}:</span>
+              <span style="font-weight:600; color:var(--text-primary)">${loc.quantity}</span>
+            </div>
+          `;
+        }).join('')}
       </div>`;
-    }, width: '160px' },
+    }, width: '240px' },
     { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplier)}</span>` },
   ];
 
@@ -254,6 +265,7 @@ export function renderStockList(container) {
     applyFilters();
   });
 
+  // Create Stock Item Drawer
   container.querySelector('#btn-new-stock').addEventListener('click', () => {
     const technicians = store.getAll('technicians');
     const content = document.createElement('div');
@@ -281,9 +293,15 @@ export function renderStockList(container) {
           </select>
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Cost Price ($) *</label>
-        <input type="number" class="form-input" id="new-stock-cost" step="0.01" />
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Cost Price ($) *</label>
+          <input type="number" class="form-input" id="new-stock-cost" step="0.01" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Initial Stock Quantity *</label>
+          <input type="number" class="form-input" id="new-stock-qty" min="0" value="0" />
+        </div>
       </div>
     `;
 
@@ -298,6 +316,7 @@ export function renderStockList(container) {
           const category = dOverlay.querySelector('#new-stock-category').value.trim() || 'Uncategorized';
           const location = dOverlay.querySelector('#new-stock-location').value;
           const costPrice = parseFloat(dOverlay.querySelector('#new-stock-cost').value);
+          const initialQty = parseInt(dOverlay.querySelector('#new-stock-qty').value) || 0;
 
           if (!name || isNaN(costPrice)) {
             showToast('Please fill all required fields correctly', 'error');
@@ -308,10 +327,11 @@ export function renderStockList(container) {
             name,
             sku: 'SKU-' + Date.now().toString().slice(-6),
             category,
-            quantity: 0,
+            quantity: initialQty,
             unitPrice: costPrice * 1.5, // default 50% markup
             costPrice,
             location,
+            locations: [{ location, quantity: initialQty }],
             supplier: 'Unknown'
           });
 
@@ -323,37 +343,60 @@ export function renderStockList(container) {
     });
   });
 
+  // Overhauled Transfer Drawer with Premium Dynamic Fields
   container.querySelector('#btn-transfer-stock')?.addEventListener('click', () => {
     const stockItems = store.getAll('stock');
     const technicians = store.getAll('technicians');
+    
     if (stockItems.length === 0) {
       showToast('No stock items available to transfer', 'error');
       return;
     }
+
     const content = document.createElement('div');
     content.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:20px">
         <div class="form-group">
           <label class="form-label">Item to Transfer *</label>
           <select class="form-select" id="transfer-item">
             <option value="">Select item...</option>
-            ${stockItems.map(s => `<option value="${escapeHTML(s.id)}">${escapeHTML(s.name)} (Qty: ${s.quantity}) - ${escapeHTML(s.location)}</option>`).join('')}
+            ${stockItems.map(s => `<option value="${escapeHTML(s.id)}">${escapeHTML(s.name)} (${escapeHTML(s.sku)})</option>`).join('')}
           </select>
         </div>
+        
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">To Location *</label>
-            <select class="form-select" id="transfer-to">
-              <option value="">Select location...</option>
-              <option value="Main Warehouse">Main Warehouse</option>
-              ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
+            <label class="form-label">Source Location *</label>
+            <select class="form-select" id="transfer-from" disabled>
+              <option value="">Select an item first...</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Quantity *</label>
-            <input type="number" class="form-input" id="transfer-qty" min="1" value="1" />
+            <label class="form-label">Destination Location *</label>
+            <select class="form-select" id="transfer-to">
+              <option value="">Select destination...</option>
+              <option value="Main Warehouse">Main Warehouse</option>
+              <optgroup label="Warehouses">
+                <option value="Warehouse A">Warehouse A</option>
+                <option value="Warehouse B">Warehouse B</option>
+              </optgroup>
+              <optgroup label="Vehicles">
+                ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
+              </optgroup>
+            </select>
           </div>
         </div>
-      `;
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Quantity to Transfer *</label>
+            <input type="number" class="form-input" id="transfer-qty" min="1" value="1" disabled />
+            <small class="text-tertiary" id="transfer-available-info" style="display:none; margin-top:4px"></small>
+          </div>
+        </div>
+      </div>
+    `;
+
     showDrawer({
       title: 'Transfer Stock',
       content: content.outerHTML,
@@ -362,43 +405,118 @@ export function renderStockList(container) {
         { label: 'Transfer', className: 'btn-primary', onClick: (close) => {
           const dOverlay = document.querySelector('.drawer-overlay');
           const itemId = dOverlay.querySelector('#transfer-item').value;
+          const fromLoc = dOverlay.querySelector('#transfer-from').value;
           const toLoc = dOverlay.querySelector('#transfer-to').value;
           const qty = parseInt(dOverlay.querySelector('#transfer-qty').value) || 0;
 
-          if (!itemId || !toLoc || qty <= 0) {
+          if (!itemId || !fromLoc || !toLoc || qty <= 0) {
             showToast('Please fill all fields correctly', 'error');
             return;
           }
 
-          const sourceItem = store.getById('stock', itemId);
-          if (sourceItem.quantity < qty) {
-            showToast('Insufficient quantity available', 'error');
-            return;
-          }
-
-          if (sourceItem.location === toLoc) {
+          if (fromLoc === toLoc) {
             showToast('Cannot transfer to the same location', 'error');
             return;
           }
 
-          // Deduct from source
-          store.update('stock', sourceItem.id, { quantity: sourceItem.quantity - qty });
+          const item = store.getById('stock', itemId);
+          if (!item) return;
 
-          // Check if target item exists at location with same SKU
-          const targetItem = stockItems.find(s => s.sku === sourceItem.sku && s.location === toLoc);
-          if (targetItem) {
-            store.update('stock', targetItem.id, { quantity: targetItem.quantity + qty });
-          } else {
-            // Create new stock item at new location
-            const newItem = { ...sourceItem, id: undefined, quantity: qty, location: toLoc };
-            store.create('stock', newItem);
+          const sourceLoc = (item.locations || []).find(l => l.location === fromLoc);
+          if (!sourceLoc || sourceLoc.quantity < qty) {
+            showToast('Insufficient quantity at source location', 'error');
+            return;
           }
 
-          showToast('Stock transferred successfully', 'success');
-          renderStockList(container); // Re-render list
+          // Deduct from source
+          sourceLoc.quantity -= qty;
+
+          // Add to target
+          if (!item.locations) item.locations = [];
+          let targetLoc = item.locations.find(l => l.location === toLoc);
+          if (targetLoc) {
+            targetLoc.quantity += qty;
+          } else {
+            item.locations.push({ location: toLoc, quantity: qty });
+          }
+
+          // Clean up 0 quantity locations
+          item.locations = item.locations.filter(l => l.quantity > 0);
+
+          // Update aggregated sum and fallback location
+          item.quantity = item.locations.reduce((sum, l) => sum + l.quantity, 0);
+          item.location = item.locations[0]?.location || 'Main Warehouse';
+
+          store.update('stock', item.id, item);
+
+          showToast(`Successfully transferred ${qty}x ${item.name} to ${toLoc}`, 'success');
+          renderStockList(container);
           close();
         }}
       ]
     });
+
+    // Handle dynamic selection changes in Drawer
+    // Wait for drawer rendering to bind events on the active element overlay
+    setTimeout(() => {
+      const dOverlay = document.querySelector('.drawer-overlay');
+      if (!dOverlay) return;
+
+      const itemSelect = dOverlay.querySelector('#transfer-item');
+      const fromSelect = dOverlay.querySelector('#transfer-from');
+      const qtyInput = dOverlay.querySelector('#transfer-qty');
+      const avInfo = dOverlay.querySelector('#transfer-available-info');
+
+      itemSelect.addEventListener('change', () => {
+        const itemId = itemSelect.value;
+        if (!itemId) {
+          fromSelect.innerHTML = '<option value="">Select an item first...</option>';
+          fromSelect.disabled = true;
+          qtyInput.disabled = true;
+          avInfo.style.display = 'none';
+          return;
+        }
+
+        const item = stockItems.find(s => s.id === itemId);
+        if (!item || !item.locations || item.locations.length === 0) {
+          fromSelect.innerHTML = '<option value="">No locations available</option>';
+          fromSelect.disabled = true;
+          qtyInput.disabled = true;
+          avInfo.style.display = 'none';
+          return;
+        }
+
+        // Populate source locations with positive quantities
+        const validLocs = item.locations.filter(l => l.quantity > 0);
+        if (validLocs.length === 0) {
+          fromSelect.innerHTML = '<option value="">Out of stock everywhere</option>';
+          fromSelect.disabled = true;
+          qtyInput.disabled = true;
+          avInfo.style.display = 'none';
+          return;
+        }
+
+        fromSelect.innerHTML = validLocs.map(l => `
+          <option value="${escapeHTML(l.location)}" data-max="${l.quantity}">${escapeHTML(l.location)} (Available: ${l.quantity})</option>
+        `).join('');
+        fromSelect.disabled = false;
+        qtyInput.disabled = false;
+
+        // Set max and info for initial selection
+        updateQtyLimits();
+      });
+
+      fromSelect.addEventListener('change', updateQtyLimits);
+
+      function updateQtyLimits() {
+        const opt = fromSelect.options[fromSelect.selectedIndex];
+        if (!opt) return;
+        const maxVal = parseInt(opt.dataset.max) || 0;
+        qtyInput.max = maxVal;
+        qtyInput.value = Math.min(qtyInput.value || 1, maxVal);
+        avInfo.textContent = `Max available: ${maxVal}`;
+        avInfo.style.display = 'block';
+      }
+    }, 100);
   });
 }
