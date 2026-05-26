@@ -8,6 +8,7 @@ import { showModal } from '../components/Modal.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
+import { seedMinimalData } from '../data/seed.js';
 
 // Build a permissions array with all granular keys
 function buildGranularPerms(valueFn) {
@@ -853,6 +854,23 @@ export function renderSettings(container) {
               <button class="btn btn-danger" id="btn-clear-data">
                 <span class="material-icons-outlined">delete_forever</span> Clear All Data
               </button>
+              ${currentUser.role === 'admin' ? `
+                <hr style="margin:var(--space-md) 0; border:none; border-top:1px dashed var(--border-color);" />
+                <div style="background:var(--color-danger-bg); padding:var(--space-md); border-radius:var(--border-radius); border:1px solid rgba(220, 38, 38, 0.15)">
+                  <h5 style="color:var(--color-danger); margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:600;">
+                    <span class="material-icons-outlined">admin_panel_settings</span> Administrator Actions
+                  </h5>
+                  <p style="font-size:var(--font-size-sm); color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
+                    Configure clean setups or seed a single test sample to explore the blank app layout.
+                  </p>
+                  <button class="btn btn-secondary" id="btn-seed-minimal" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid rgba(0,0,0,0.12)">
+                    <span class="material-icons-outlined">science</span> Seed One Example Version
+                  </button>
+                  <button class="btn btn-danger" id="btn-restore-new" style="width:100%; justify-content:center;">
+                    <span class="material-icons-outlined">cleaning_services</span> Restore to New (Blank State)
+                  </button>
+                </div>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -868,6 +886,115 @@ export function renderSettings(container) {
         store.clearAll();
         showToast('All data cleared. Reloading...', 'warning');
         setTimeout(() => window.location.reload(), 1000);
+      });
+
+      tc.querySelector('#btn-seed-minimal')?.addEventListener('click', () => {
+        const content = document.createElement('div');
+        content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+        content.innerHTML = `
+          <p style="margin-bottom:12px">You are about to seed a minimal example dataset.</p>
+          <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-info); font-weight:500; display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined">info</span>
+            <span>This will clear current database records and load <strong>exactly one example</strong> of each business entity (1 customer, 1 lead, 1 quote, 1 job, 1 invoice, etc.) for testing.</span>
+          </div>
+          <p style="font-size:12px; color:var(--text-secondary)">This is highly recommended for quick feature walkthroughs.</p>
+        `;
+
+        showModal({
+          title: "Seed One Example Version",
+          content: content,
+          actions: [
+            {
+              label: "Cancel",
+              className: "btn-secondary",
+              onClick: (close) => close()
+            },
+            {
+              label: "Seed Example",
+              className: "btn-primary",
+              onClick: (close) => {
+                close();
+                seedMinimalData();
+                showToast('Single-item example seeded. Reloading...', 'success');
+                setTimeout(() => window.location.reload(), 1200);
+              }
+            }
+          ]
+        });
+      });
+
+      tc.querySelector('#btn-restore-new')?.addEventListener('click', () => {
+        const content1 = document.createElement('div');
+        content1.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+        content1.innerHTML = `
+          <p style="margin-bottom:12px">You are about to restore the application to a blank state.</p>
+          <div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-warning); font-weight:500; display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined">warning</span>
+            <span><strong>What gets wiped:</strong> Customers, Jobs, Tasks, Quotes, Invoices, Purchase Orders, Suppliers, Contractors, Assets, and Schedule Blocks.</span>
+          </div>
+          <p style="font-size:12px; color:var(--text-secondary)">Only default User Types and Technician login credentials will be retained so you can log back in.</p>
+        `;
+
+        showModal({
+          title: "Restore to New (Blank State)",
+          content: content1,
+          actions: [
+            {
+              label: "Cancel",
+              className: "btn-secondary",
+              onClick: (close1) => close1()
+            },
+            {
+              label: "Continue Wiping",
+              className: "btn-danger",
+              onClick: (close1) => {
+                close1();
+                
+                const content2 = document.createElement('div');
+                content2.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+                content2.innerHTML = `
+                  <p style="margin-bottom:12px; font-weight:600; color:var(--color-danger)">THIS ACTION IS IRREVERSIBLE AND CANNOT BE UNDONE!</p>
+                  <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
+                    <span class="material-icons-outlined">error_outline</span>
+                    <span>Confirming will permanently delete all local storage records and start completely fresh from scratch for your real company.</span>
+                  </div>
+                  <p style="font-size:12px; color:var(--text-secondary)">Are you absolutely 100% sure you want to proceed?</p>
+                `;
+
+                showModal({
+                  title: "⚠️ Permanent Database Wipe",
+                  content: content2,
+                  actions: [
+                    {
+                      label: "Abort Wiping",
+                      className: "btn-secondary",
+                      onClick: (close2) => close2()
+                    },
+                    {
+                      label: "Yes, Wipe Everything!",
+                      className: "btn-danger",
+                      onClick: (close2) => {
+                        close2();
+                        
+                        store.clearAll();
+                        localStorage.setItem('simpro__prevent_seeding', 'true');
+                        localStorage.setItem('simpro__seeded', 'true');
+                        localStorage.removeItem('currentUser');
+                        
+                        showToast('App restored to fresh state. Reloading...', 'success');
+                        
+                        setTimeout(() => {
+                          window.location.hash = '#/login';
+                          window.location.reload();
+                        }, 1200);
+                      }
+                    }
+                  ]
+                });
+              }
+            }
+          ]
+        });
       });
     }
   }

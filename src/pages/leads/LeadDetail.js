@@ -86,12 +86,10 @@ export function renderLeadDetail(container, { id }) {
             </div>
           `;
         }).join('')}
-      </div>
-
-      <div class="grid-3" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:24px; align-items:stretch">
+      </div>      <div class="grid-3" style="align-items:stretch">
         
         <!-- Column 1: Lead Information & Contact -->
-        <div style="display:flex; flex-direction:column; gap:24px">
+        <div style="grid-column: span 1; display:flex; flex-direction:column; gap:24px">
           <div class="card" style="margin:0; height:100%">
             <div class="card-header"><h4>Lead Qualification</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
@@ -106,7 +104,7 @@ export function renderLeadDetail(container, { id }) {
         </div>
 
         <!-- Column 2: Technical Scope & Financials -->
-        <div style="display:flex; flex-direction:column; gap:24px">
+        <div style="grid-column: span 1; display:flex; flex-direction:column; gap:24px">
           <div class="card" style="margin:0; height:100%">
             <div class="card-header"><h4>Financial Scope & Contact</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
@@ -121,7 +119,7 @@ export function renderLeadDetail(container, { id }) {
         </div>
 
         <!-- Column 3: Sales Forecasting Gauge -->
-        <div style="display:flex; flex-direction:column; gap:24px">
+        <div style="grid-column: span 1; display:flex; flex-direction:column; gap:24px">
           <div class="card" style="margin:0; height:100%; border: 1px solid var(--border-color)">
             <div class="card-header"><h4>Conversion Forecast</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; text-align:center">
@@ -130,7 +128,7 @@ export function renderLeadDetail(container, { id }) {
                 <svg width="100" height="100" viewBox="0 0 100 100" style="transform: rotate(-90deg)">
                   <circle cx="50" cy="50" r="40" stroke="var(--border-color)" stroke-width="8" fill="transparent" />
                   <circle cx="50" cy="50" r="40" stroke="${prob >= 80 ? 'var(--color-success)' : prob >= 50 ? 'var(--color-primary)' : 'var(--color-warning)'}" stroke-width="8" fill="transparent" 
-                          stroke-dasharray="251.2" stroke-dashoffset="${251.2 - (251.2 * prob) / 100}" stroke-linecap="round" />
+                           stroke-dasharray="251.2" stroke-dashoffset="${251.2 - (251.2 * prob) / 100}" stroke-linecap="round" />
                 </svg>
                 <div style="position:absolute; font-size:20px; font-weight:800; color:var(--text-primary)">${prob}%</div>
               </div>

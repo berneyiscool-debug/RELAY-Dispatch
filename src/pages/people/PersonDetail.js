@@ -108,8 +108,8 @@ export function renderPersonDetail(container, { id }) {
       tabContent.innerHTML = `
         <div class="card">
           <div class="card-body">
-            <div class="grid-2">
-              <div>
+            <div class="grid-3">
+              <div style="grid-column: span 2">
                 <h4 style="margin-bottom:var(--space-base)">Contact Information</h4>
                 <div style="display:flex;flex-direction:column;gap:12px">
                   ${detailRow('Company', person.company)}
@@ -120,7 +120,7 @@ export function renderPersonDetail(container, { id }) {
                   ${detailRow('Status', person.status)}
                 </div>
               </div>
-              <div>
+              <div style="grid-column: span 1">
                 <h4 style="margin-bottom:var(--space-base)">Address</h4>
                 <div style="display:flex;flex-direction:column;gap:12px">
                   ${detailRow('Address', person.address || 'Not set')}

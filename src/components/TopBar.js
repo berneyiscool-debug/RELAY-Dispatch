@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../data/store.js';
+import { router } from '../router.js';
 
 export function createTopBar() {
   const topbar = document.createElement('header');
@@ -137,21 +138,32 @@ function toggleNotificationsDropdown(btn) {
     return;
   }
 
-  const notifs = store.getAll('notifications').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const notifs = store.getAll('notifications').sort((a, b) => {
+    const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+    const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+    return dateB - dateA;
+  });
   
   dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'notifications-dropdown';
-  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:4px;width:300px;max-height:400px;overflow-y:auto;z-index:1000;box-shadow:var(--shadow-lg);border-radius:var(--radius-md);background:var(--content-bg);border:1px solid var(--border-color);';
+  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;z-index:var(--z-dropdown);box-shadow:var(--shadow-lg);border-radius:var(--border-radius-md);background:rgba(255,255,255,0.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.08);padding:0;';
+
+  if (document.documentElement.getAttribute('data-theme') === 'dark') {
+    dropdown.style.background = 'rgba(13, 17, 30, 0.92)';
+    dropdown.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+  }
 
   const header = document.createElement('div');
-  header.style.cssText = 'padding:12px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center';
-  header.innerHTML = '<h4 style="margin:0">Notifications</h4>';
+  header.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center';
+  header.innerHTML = '<h4 style="margin:0;font-size:var(--font-size-md);font-weight:var(--font-weight-semibold);color:var(--text-primary);">Notifications</h4>';
   
   const markAllBtn = document.createElement('button');
   markAllBtn.className = 'btn btn-ghost btn-sm';
+  markAllBtn.style.cssText = 'font-size:11px;padding:4px 8px;';
   markAllBtn.textContent = 'Mark all as read';
-  markAllBtn.onclick = () => {
+  markAllBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     const allNotifs = store.getAll('notifications');
     let changed = false;
     allNotifs.forEach(n => {
@@ -165,34 +177,56 @@ function toggleNotificationsDropdown(btn) {
       store.save('notifications', allNotifs);
     }
     dropdown.remove();
-  };
+  });
   header.appendChild(markAllBtn);
   dropdown.appendChild(header);
 
   if (notifs.length === 0) {
-    dropdown.innerHTML += '<div style="padding:20px;text-align:center;color:var(--text-tertiary)">No notifications</div>';
+    const emptyState = document.createElement('div');
+    emptyState.style.cssText = 'padding:32px 16px;text-align:center;color:var(--text-tertiary);font-size:var(--font-size-sm);display:flex;flex-direction:column;align-items:center;gap:8px;';
+    emptyState.innerHTML = `
+      <span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary);opacity:0.6;">notifications_off</span>
+      <span>No notifications</span>
+    `;
+    dropdown.appendChild(emptyState);
   } else {
+    const listContainer = document.createElement('div');
+    listContainer.className = 'notifications-list';
+    
     notifs.forEach(n => {
       const item = document.createElement('div');
       item.className = 'dropdown-item';
-      item.style.cssText = `padding:12px;border-bottom:1px solid var(--border-color);cursor:pointer;white-space:normal;background:${n.read ? 'transparent' : 'var(--color-info-bg)'};align-items:flex-start;`;
+      item.style.cssText = `padding:12px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;white-space:normal;background:${n.read ? 'transparent' : 'var(--color-info-bg)'};display:flex;align-items:flex-start;transition:background 0.2s;`;
+      
+      item.onmouseenter = () => {
+        item.style.background = n.read ? 'var(--content-bg)' : 'rgba(37, 99, 235, 0.12)';
+      };
+      item.onmouseleave = () => {
+        item.style.background = n.read ? 'transparent' : 'var(--color-info-bg)';
+      };
+
+      const dotHtml = n.read ? '' : '<span style="width:6px;height:6px;border-radius:50%;background:var(--color-info);margin-top:5px;margin-right:8px;flex-shrink:0;"></span>';
+      
       item.innerHTML = `
+        ${dotHtml}
         <div style="flex:1">
-          <div style="font-weight:600;margin-bottom:4px">${n.title}</div>
-          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;">${n.message}</div>
-          <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${new Date(n.createdAt).toLocaleString()}</div>
+          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title}</div>
+          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${new Date(n.createdAt).toLocaleString()}</div>
         </div>
       `;
-      item.addEventListener('click', () => {
+      
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
         store.update('notifications', n.id, { read: true });
         if (n.link) {
-          const { router } = window.__fieldForge || {};
-          if (router) router.navigate(n.link);
+          router.navigate(n.link);
         }
         dropdown.remove();
       });
-      dropdown.appendChild(item);
+      listContainer.appendChild(item);
     });
+    dropdown.appendChild(listContainer);
   }
 
   btn.parentNode.style.position = 'relative';
@@ -204,7 +238,10 @@ function toggleNotificationsDropdown(btn) {
       document.removeEventListener('click', closeDropdown);
     }
   };
-  document.addEventListener('click', closeDropdown);
+  
+  setTimeout(() => {
+    document.addEventListener('click', closeDropdown);
+  }, 0);
 }
 
 function showSearchResults(query) {
@@ -260,8 +297,7 @@ function showSearchResults(query) {
       <span class="badge badge-neutral" style="font-size:10px">${r.type}</span>
     `;
     item.addEventListener('click', () => {
-      const { router } = window.__fieldForge || {};
-      if (router) router.navigate(r.path);
+      router.navigate(r.path);
       hideSearchResults();
       document.querySelector('#global-search').value = '';
     });

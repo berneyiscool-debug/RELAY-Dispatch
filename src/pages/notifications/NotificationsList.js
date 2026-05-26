@@ -318,9 +318,81 @@ export function renderNotificationsList(container) {
   }
 
   function openNotificationDetails(n) {
+    // Resolve linked entities for full context
+    const linkedQuote = n.quoteId ? store.getById('quotes', n.quoteId) : null;
+    const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
+    const linkedPlan = n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId) : null;
+
+    // Build linked references section
+    let referencesHtml = '';
+    if (linkedQuote || linkedAsset || linkedPlan || n.targetServiceDate || n.convertedTo || n.jobId) {
+      referencesHtml = `
+        <div style="padding:14px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Linked References</div>
+          ${linkedQuote ? `
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Linked Quote</div>
+                <div style="font-size:14px;font-weight:600;color:var(--color-primary);cursor:pointer" class="drawer-link-quote" data-id="${linkedQuote.id}">${escapeHTML(linkedQuote.number)} — ${escapeHTML(linkedQuote.title || linkedQuote.customerName || 'Untitled')}</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">Total: $${(linkedQuote.total || linkedQuote.subtotal || 0).toLocaleString('en-AU', { minimumFractionDigits: 2 })} · Status: ${escapeHTML(linkedQuote.status || '—')}</div>
+              </div>
+              <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">request_quote</span>
+            </div>
+          ` : ''}
+          ${linkedAsset ? `
+            <div style="display:flex;justify-content:space-between;align-items:center;${linkedQuote ? 'border-top:1px solid var(--border-color);padding-top:12px' : ''}">
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Asset</div>
+                <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${escapeHTML(linkedAsset.name)}</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${escapeHTML(linkedAsset.category || '')}${linkedAsset.site ? ` · Site: ${escapeHTML(linkedAsset.site)}` : ''}${linkedAsset.serialNumber ? ` · S/N: ${escapeHTML(linkedAsset.serialNumber)}` : ''}</div>
+              </div>
+              <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">precision_manufacturing</span>
+            </div>
+          ` : ''}
+          ${linkedPlan ? `
+            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-color);padding-top:12px">
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Maintenance Plan</div>
+                <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${escapeHTML(linkedPlan.name)}</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">Frequency: ${escapeHTML(linkedPlan.frequency || '—')} · Trigger: ${escapeHTML(linkedPlan.triggerType || '—')}</div>
+              </div>
+              <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">event_repeat</span>
+            </div>
+          ` : ''}
+          ${n.targetServiceDate ? `
+            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-color);padding-top:12px">
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Target Service Date</div>
+                <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${new Date(n.targetServiceDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+              </div>
+              <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">calendar_month</span>
+            </div>
+          ` : ''}
+          ${n.jobId ? `
+            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-color);padding-top:12px">
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Related Job</div>
+                <div style="font-size:14px;font-weight:600;color:var(--color-primary);cursor:pointer" class="drawer-link-job" data-id="${n.jobId}">${escapeHTML(n.jobId)}</div>
+              </div>
+              <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">build</span>
+            </div>
+          ` : ''}
+          ${n.convertedTo ? `
+            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-color);padding-top:12px">
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Converted To</div>
+                <div style="font-size:14px;font-weight:700;color:var(--color-success)">${escapeHTML(n.convertedTo)}</div>
+              </div>
+              <span class="material-icons-outlined" style="font-size:18px;color:var(--color-success)">check_circle</span>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
     showDrawer({
       title: `Notification Details`,
-      width: 450,
+      width: 480,
       content: `
         <div style="display:flex;flex-direction:column;gap:16px;">
           <div>
@@ -349,12 +421,7 @@ export function renderNotificationsList(container) {
               <div>${n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—'}</div>
             </div>
           </div>
-          ${n.jobId ? `
-            <div>
-              <label class="form-label">Related Job ID</label>
-              <div><a href="#/jobs/${n.jobId}">${escapeHTML(n.jobId)}</a></div>
-            </div>
-          ` : ''}
+          ${referencesHtml}
         </div>
       `,
       actions: n.status !== 'Converted' ? [
@@ -364,7 +431,17 @@ export function renderNotificationsList(container) {
         { label: 'Convert to Job', className: 'btn-primary', onClick: close => { close(); convertToJob(n.id); } }
       ] : [
         { label: 'Close', className: 'btn-secondary', onClick: close => close() }
-      ]
+      ],
+      onMount: (drawerEl) => {
+        drawerEl.querySelector('.drawer-link-quote')?.addEventListener('click', () => {
+          drawerEl.querySelector('.drawer-close-btn')?.click();
+          router.navigate(`/quotes/${linkedQuote.id}`);
+        });
+        drawerEl.querySelector('.drawer-link-job')?.addEventListener('click', () => {
+          drawerEl.querySelector('.drawer-close-btn')?.click();
+          router.navigate(`/jobs/${n.jobId}`);
+        });
+      }
     });
   }
 
@@ -394,8 +471,7 @@ export function renderNotificationsList(container) {
     const n = store.getById('notifications', id);
     if (!n) return;
     
-    // Create Job directly
-    const job = store.create('jobs', {
+    let jobData = {
       number: `J-${Date.now().toString().slice(-6)}`,
       title: n.title,
       description: n.description,
@@ -403,7 +479,83 @@ export function renderNotificationsList(container) {
       status: 'Pending',
       notes: `Generated from Notification: ${n.title}\n\n${n.description}`,
       createdAt: new Date().toISOString()
-    });
+    };
+
+    if (n.maintenancePlanId) {
+      const asset = store.getById('assets', n.assetId);
+      const quote = store.getById('quotes', n.quoteId);
+      if (asset && quote) {
+        const customer = store.getById('customers', asset.customerId);
+        
+        let laborCost = 0;
+        let materialCost = 0;
+        const items = [];
+
+        if (quote.sections) {
+          quote.sections.forEach(sec => {
+            if (sec.lineItems) items.push(...sec.lineItems);
+          });
+        } else if (quote.lineItems) {
+          items.push(...quote.lineItems);
+        }
+
+        const jobMaterials = [];
+        items.forEach(item => {
+          if (item.type === 'material') {
+            const sMatch = store.getAll('stock').find(s => s.name === item.description);
+            jobMaterials.push({
+              stockId: sMatch ? sMatch.id : null,
+              name: item.description || 'Unknown Material',
+              quantity: item.qty || 1,
+              unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
+              fromQuote: true
+            });
+            materialCost += item.total || 0;
+          } else if (item.type === 'labor') {
+            laborCost += item.total || 0;
+          }
+        });
+
+        const jobTasks = quote.sections ? quote.sections.map(sec => ({
+          id: store.generateId(),
+          name: sec.name,
+          status: 'Not Started',
+          progress: 0,
+          startDate: new Date().toISOString(),
+          technicians: []
+        })) : [
+          {
+            id: 'p1',
+            name: 'Routine Maintenance',
+            status: 'Not Started',
+            progress: 0,
+            startDate: new Date().toISOString(),
+            technicians: []
+          }
+        ];
+
+        jobData = {
+          ...jobData,
+          customerId: asset.customerId || quote.customerId || '',
+          customerName: customer ? customer.company : (quote.customerName || 'Internal'),
+          contactName: customer ? `${customer.firstName} ${customer.lastName}` : (quote.contactName || 'Unassigned'),
+          siteAddress: asset.site || 'Main Office',
+          assetId: asset.id,
+          quoteId: quote.id,
+          quoteNumber: quote.number,
+          tasks: jobTasks,
+          phases: jobTasks,
+          materials: jobMaterials,
+          laborCost,
+          materialCost,
+          estimatedLaborCost: laborCost,
+          estimatedMaterialCost: materialCost
+        };
+      }
+    }
+
+    // Create Job directly
+    const job = store.create('jobs', jobData);
 
     // Update Notification status
     store.update('notifications', id, { status: 'Converted', convertedTo: `Job ${job.number}` });

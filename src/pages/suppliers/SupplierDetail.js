@@ -116,8 +116,8 @@ export function renderSupplierDetail(container, params) {
       tabContent.innerHTML = `
         <div class="card">
           <div class="card-body">
-            <div class="grid-2">
-              <div>
+            <div class="grid-3">
+              <div style="grid-column: span 2">
                 <h4 style="margin-bottom:var(--space-base)">Supplier & Financial Details</h4>
                 <div style="display:flex;flex-direction:column;gap:12px">
                   ${detailRow('Supplier Name', supplier.name)}
@@ -130,7 +130,7 @@ export function renderSupplierDetail(container, params) {
                   ${detailRow('System Status', supplier.active ? 'Active (Available for stock & POs)' : 'Inactive')}
                 </div>
               </div>
-              <div>
+              <div style="grid-column: span 1">
                 <h4 style="margin-bottom:var(--space-base)">Internal Operations Notes</h4>
                 <div style="background:var(--card-bg-secondary, #f8fafc); border: 1px solid var(--border-color); padding: 16px; border-radius: 6px; font-size:var(--font-size-sm); color:var(--text-secondary); line-height: 1.6; white-space: pre-wrap;">${escapeHTML(supplier.notes || 'No notes recorded for this supplier.')}</div>
               </div>

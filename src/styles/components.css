@@ -103,10 +103,10 @@
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(12px); /* Level 1 Glass (12px blur) */
   -webkit-backdrop-filter: blur(12px);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s, border-color 0.22s;
+  transition: box-shadow 0.22s, border-color 0.22s;
 }
 .card:hover {
-  transform: translateY(-3px); /* Elegant 3D lift */
+  /* lift animation removed */
   box-shadow: var(--card-shadow-hover);
   border-color: rgba(99, 102, 241, 0.25); /* Subtle Indigo aura highlight */
 }

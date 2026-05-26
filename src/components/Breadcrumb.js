@@ -1,6 +1,4 @@
-// ============================================
-// SIMPRO CLONE — BREADCRUMB COMPONENT
-// ============================================
+import { router } from '../router.js';
 
 const routeLabels = {
   '/': 'Dashboard',
@@ -52,8 +50,7 @@ export function createBreadcrumb(path) {
   // Click handlers
   container.querySelectorAll('.breadcrumb-item[data-path]').forEach(item => {
     item.addEventListener('click', () => {
-      const { router } = window.__fieldForge || {};
-      if (router) router.navigate(item.dataset.path);
+      router.navigate(item.dataset.path);
     });
   });
 }

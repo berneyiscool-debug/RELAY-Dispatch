@@ -62,8 +62,8 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
         `
       })}
 
-      <div class="grid-2">
-        <div class="card">
+      <div class="grid-3" style="align-items: start;">
+        <div class="card" style="grid-column: span 1">
           <div class="card-header"><h4>PO Information</h4></div>
           <div class="card-body">
             <form id="po-form">

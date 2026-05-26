@@ -1,4 +1,4 @@
-export function showDrawer({ title, content, actions = [], width = 400 }) {
+export function showDrawer({ title, content, actions = [], width = 400, onMount }) {
   const existing = document.querySelector('.drawer-overlay');
   if (existing) existing.remove();
 
@@ -13,7 +13,7 @@ export function showDrawer({ title, content, actions = [], width = 400 }) {
   header.className = 'drawer-header';
   header.innerHTML = `
     <h3>${title}</h3>
-    <button class="drawer-close"><span class="material-icons-outlined">close</span></button>
+    <button class="drawer-close drawer-close-btn"><span class="material-icons-outlined">close</span></button>
   `;
 
   const body = document.createElement('div');
@@ -53,4 +53,9 @@ export function showDrawer({ title, content, actions = [], width = 400 }) {
   overlay.addEventListener('mousedown', (e) => {
     if (e.target === overlay) closeDrawer();
   });
+
+  // Call onMount callback if provided, passing the drawer element for event binding
+  if (typeof onMount === 'function') {
+    onMount(drawer);
+  }
 }

@@ -28,6 +28,7 @@ export function renderJobDetail(container, { id }) {
   let taskExpandedPath = [0];
   let taskViewPath = [];
   let isInfoPanelEditing = false;
+  let isRecordingValues = false;
   let cachedStockOptionsHtml = null;
   let stagedFiles = [];
 
@@ -317,8 +318,8 @@ export function renderJobDetail(container, { id }) {
           </div>
 
           <!-- Original Grid details -->
-          <div class="grid-2">
-            <div class="card">
+          <div class="grid-3" style="align-items: start;">
+            <div class="card" style="grid-column: span 1">
               <div class="card-header"><h4>Job Information</h4></div>
               <div class="card-body">
                 <div style="display:flex;flex-direction:column;gap:12px">
@@ -333,7 +334,7 @@ export function renderJobDetail(container, { id }) {
                 </div>
               </div>
             </div>
-            <div class="card">
+            <div class="card" style="grid-column: span 2">
               <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
                 <h4 style="margin:0">Schedule & Assignment</h4>
                 <button class="btn btn-ghost btn-sm" id="btn-add-schedule" style="font-size:12px;padding:4px 8px">
@@ -768,7 +769,29 @@ export function renderJobDetail(container, { id }) {
             return `
                         <div class="task-list-item ${p.progress === 100 ? 'completed' : ''}" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:transparent; color:var(--text-primary)'}">
                           <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
-                          ${p.subTasks && p.subTasks.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="margin-left:8px; width:18px; height:18px; cursor:pointer;" />`}
+                          <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+                            ${(() => {
+                              if (!p.valueFields || p.valueFields.length === 0) return '';
+                              const filled = p.valueFields.filter(f => f.value !== undefined && f.value !== '').length;
+                              const total = p.valueFields.length;
+                              const allDone = filled === total;
+                              const hasOutOfRange = p.valueFields.some(f => {
+                                if (!f.value || f.value === '') return false;
+                                const ft = f.fieldType || 'text';
+                                if (ft === 'number') {
+                                  const v = parseFloat(f.value);
+                                  return (f.min !== undefined && f.min !== '' && v < parseFloat(f.min)) || (f.max !== undefined && f.max !== '' && v > parseFloat(f.max));
+                                }
+                                if (ft === 'dropdown' && f.expectedValue) {
+                                  return f.value !== f.expectedValue;
+                                }
+                                return false;
+                              });
+                              if (hasOutOfRange) return `<span title="Values: ${filled}/${total} — OUT OF RANGE" style="display:inline-flex;align-items:center;font-size:16px;color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:16px">error</span></span>`;
+                              return `<span title="Values: ${filled}/${total} recorded" style="display:inline-flex;align-items:center;font-size:16px;color:${allDone ? 'var(--color-success)' : 'var(--color-warning)'}"><span class="material-icons-outlined" style="font-size:16px">${allDone ? 'fact_check' : 'assignment'}</span></span>`;
+                            })()}
+                            ${p.subTasks && p.subTasks.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />`}
+                          </div>
                         </div>
                       `;
           }).join('')}
@@ -850,9 +873,88 @@ export function renderJobDetail(container, { id }) {
                     </div>
                   </div>
                   <div style="margin-top:16px">
-                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Description</div>
-                    <div style="font-size:14px; white-space:pre-wrap">${escapeHTML(node.description || 'No description provided.')}</div>
-                  </div>
+                     <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Description</div>
+                     <div style="font-size:14px; white-space:pre-wrap">${escapeHTML(node.description || 'No description provided.')}</div>
+                   </div>
+                   ${!hasSubs && node.valueFields && node.valueFields.length > 0 ? `
+                   <div style="margin-top:20px; border-top:1px solid var(--border-color); padding-top:16px">
+                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+                       <div style="display:flex; align-items:center; gap:6px">
+                         <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">assignment</span>
+                         <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Records</span>
+                         <span class="badge ${node.valueFields.filter(f => f.value !== undefined && f.value !== '').length === node.valueFields.length ? 'badge-success' : 'badge-warning'}" style="font-size:10px; padding:2px 6px">${node.valueFields.filter(f => f.value !== undefined && f.value !== '').length}/${node.valueFields.length}</span>
+                       </div>
+                       <button class="btn btn-sm ${isRecordingValues ? 'btn-secondary' : 'btn-primary'} btn-toggle-recording" data-path="${path.join('-')}">
+                         <span class="material-icons-outlined" style="font-size:14px">${isRecordingValues ? 'close' : 'edit_note'}</span>
+                         ${isRecordingValues ? 'Close' : 'Enter Values'}
+                       </button>
+                     </div>
+                     ${isRecordingValues ? `
+                     <div style="display:flex; flex-direction:column; gap:10px" id="value-recording-panel">
+                       ${node.valueFields.map((vf, vi) => {
+                         const ft = vf.fieldType || 'text';
+                         const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
+                         const isNumOutOfRange = hasRange && vf.value !== undefined && vf.value !== '' && (
+                           (vf.min !== undefined && vf.min !== '' && parseFloat(vf.value) < parseFloat(vf.min)) ||
+                           (vf.max !== undefined && vf.max !== '' && parseFloat(vf.value) > parseFloat(vf.max))
+                         );
+                         const isDropdownMismatch = ft === 'dropdown' && vf.expectedValue && vf.value && vf.value !== '' && vf.value !== vf.expectedValue;
+                         const isOutOfRange = isNumOutOfRange || isDropdownMismatch;
+                         const rangeHint = hasRange ? `Expected: ${vf.min !== undefined && vf.min !== '' ? vf.min : '—'} to ${vf.max !== undefined && vf.max !== '' ? vf.max : '—'}${vf.unit ? ' ' + escapeHTML(vf.unit) : ''}` : '';
+                         const dropdownHint = isDropdownMismatch ? `Expected: ${escapeHTML(vf.expectedValue)}` : '';
+                         let inputHtml = '';
+                         if (ft === 'dropdown' && vf.options && vf.options.length > 0) {
+                           inputHtml = `<select class="form-input vf-value-input" data-vf-idx="${vi}" style="height:34px; font-size:14px; font-weight:500; ${isDropdownMismatch ? 'border-color:var(--color-danger); background:rgba(220,53,69,0.06)' : ''}">
+                             <option value=""${!vf.value ? ' selected' : ''}>— Select —</option>
+                             ${vf.options.map(opt => `<option value="${escapeHTML(opt)}"${vf.value === opt ? ' selected' : ''}>${escapeHTML(opt)}${opt === vf.expectedValue ? ' ✓' : ''}</option>`).join('')}
+                           </select>`;
+                         } else if (ft === 'number') {
+                           inputHtml = `<input type="number" class="form-input vf-value-input" data-vf-idx="${vi}" value="${escapeHTML(vf.value || '')}" placeholder="Enter value..." ${vf.min !== undefined && vf.min !== '' ? `min="${vf.min}"` : ''} ${vf.max !== undefined && vf.max !== '' ? `max="${vf.max}"` : ''} style="height:34px; font-size:14px; font-weight:500; ${isNumOutOfRange ? 'border-color:var(--color-danger); background:rgba(220,53,69,0.06)' : ''}" />`;
+                         } else {
+                           inputHtml = `<input type="text" class="form-input vf-value-input" data-vf-idx="${vi}" value="${escapeHTML(vf.value || '')}" placeholder="Enter value..." style="height:34px; font-size:14px; font-weight:500" />`;
+                         }
+                         const hintText = rangeHint || dropdownHint;
+                         return `
+                         <div style="display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--bg-color); border:1px solid ${isOutOfRange ? 'var(--color-danger)' : 'var(--border-color)'}; border-radius:6px; transition:border-color 0.2s" data-vf-idx="${vi}">
+                           <div style="flex:1; min-width:0">
+                             <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:4px">${escapeHTML(vf.label)}${vf.unit ? ` <span style="font-weight:400; text-transform:none">(${escapeHTML(vf.unit)})</span>` : ''}</div>
+                             ${inputHtml}
+                             ${hintText ? `<div style="font-size:10px; color:${isOutOfRange ? 'var(--color-danger)' : 'var(--text-tertiary)'}; margin-top:3px">${isOutOfRange ? '<span class="material-icons-outlined" style="font-size:12px; vertical-align:middle">warning</span> ' + (isDropdownMismatch ? 'Not the expected value — ' : 'Out of range — ') : ''}${hintText}</div>` : ''}
+                           </div>
+                           ${isOutOfRange ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-danger); flex-shrink:0">error</span>` : (vf.value ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-success); flex-shrink:0">check_circle</span>` : `<span class="material-icons-outlined" style="font-size:20px; color:var(--border-color); flex-shrink:0">radio_button_unchecked</span>`)}
+                         </div>`;
+                       }).join('')}
+                       <button class="btn btn-sm btn-primary btn-save-values" data-path="${path.join('-')}" style="align-self:flex-end; margin-top:4px">
+                         <span class="material-icons-outlined" style="font-size:14px">save</span> Save Values
+                       </button>
+                     </div>
+                     ` : `
+                     <div style="display:flex; flex-direction:column; gap:6px">
+                       ${node.valueFields.map(vf => {
+                         const ft = vf.fieldType || 'text';
+                         const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
+                         const isNumOutOfRange = hasRange && vf.value !== undefined && vf.value !== '' && (
+                           (vf.min !== undefined && vf.min !== '' && parseFloat(vf.value) < parseFloat(vf.min)) ||
+                           (vf.max !== undefined && vf.max !== '' && parseFloat(vf.value) > parseFloat(vf.max))
+                         );
+                         const isDropdownMismatch = ft === 'dropdown' && vf.expectedValue && vf.value && vf.value !== '' && vf.value !== vf.expectedValue;
+                         const isOutOfRange = isNumOutOfRange || isDropdownMismatch;
+                         const warningTitle = isNumOutOfRange ? `Outside expected range (${vf.min || '—'} – ${vf.max || '—'})` : (isDropdownMismatch ? `Expected: ${vf.expectedValue}` : '');
+                         return `
+                         <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:${isOutOfRange ? 'rgba(220,53,69,0.06)' : 'var(--bg-color)'}; border-radius:4px; font-size:13px; ${isOutOfRange ? 'border:1px solid var(--color-danger)' : ''}">
+                           <span style="color:var(--text-secondary)">${escapeHTML(vf.label)}${vf.unit ? ` (${escapeHTML(vf.unit)})` : ''}</span>
+                           <div style="display:flex;align-items:center;gap:6px">
+                             ${vf.value ? `
+                               <span style="font-weight:600; color:${isOutOfRange ? 'var(--color-danger)' : 'var(--text-primary)'}">${escapeHTML(vf.value)}${vf.recordedBy ? ` <span style="font-weight:400; color:var(--text-tertiary); font-size:11px">— ${escapeHTML(vf.recordedBy)}</span>` : ''}</span>
+                               ${isOutOfRange ? `<span class="material-icons-outlined" style="font-size:16px;color:var(--color-danger)" title="${escapeHTML(warningTitle)}">warning</span>` : ''}
+                             ` : `<span style="color:var(--text-tertiary); font-style:italic">Not recorded</span>`}
+                           </div>
+                         </div>`;
+                       }).join('')}
+                     </div>
+                     `}
+                   </div>
+                   ` : ''}
                   ` : `
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
                     <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Edit Info Panel</h4>
@@ -911,9 +1013,71 @@ export function renderJobDetail(container, { id }) {
                     </div>
                   </div>
                   <div class="form-group">
-                    <label class="form-label">Description</label>
-                    <textarea class="form-input detail-input" data-field="description" rows="3" ${!canEditTasks ? 'disabled' : ''}>${escapeHTML(node.description || '')}</textarea>
-                  </div>
+                     <label class="form-label">Description</label>
+                     <textarea class="form-input detail-input" data-field="description" rows="3" ${!canEditTasks ? 'disabled' : ''}>${escapeHTML(node.description || '')}</textarea>
+                   </div>
+                   ${!hasSubs ? `
+                   <div style="margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px">
+                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+                       <div style="display:flex; align-items:center; gap:6px">
+                         <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">assignment</span>
+                         <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Fields</span>
+                       </div>
+                       ${canEditTasks ? `<button class="btn btn-sm btn-secondary btn-add-value-field" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>` : ''}
+                     </div>
+                     <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:10px">Define the values a technician needs to record for this task (e.g. pressure readings, temperatures).</div>
+                     <div style="display:flex; flex-direction:column; gap:8px" id="value-fields-config">
+                       ${(node.valueFields || []).map((vf, vi) => {
+                         const ft = vf.fieldType || 'text';
+                         return `
+                         <div style="padding:10px 12px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px" data-vf-idx="${vi}">
+                           <div style="display:flex; align-items:center; gap:8px; margin-bottom:${ft !== 'text' ? '8px' : '0'}">
+                             <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:grab">drag_indicator</span>
+                             <input type="text" class="form-input vf-label-input" data-vf-idx="${vi}" value="${escapeHTML(vf.label)}" placeholder="Field label (e.g. Oil Pressure)" style="flex:2; height:32px; font-size:13px" />
+                             <select class="form-input vf-type-select" data-vf-idx="${vi}" style="flex:0 0 110px; height:32px; font-size:12px">
+                               <option value="text"${ft === 'text' ? ' selected' : ''}>Text</option>
+                               <option value="number"${ft === 'number' ? ' selected' : ''}>Number</option>
+                               <option value="dropdown"${ft === 'dropdown' ? ' selected' : ''}>Dropdown</option>
+                             </select>
+                             ${canEditTasks ? `<button class="btn btn-ghost btn-sm btn-icon btn-remove-value-field" data-vf-idx="${vi}" style="color:var(--color-danger); min-width:28px; min-height:28px; padding:0"><span class="material-icons-outlined" style="font-size:16px">close</span></button>` : ''}
+                           </div>
+                           ${ft === 'number' ? `
+                           <div style="display:flex; align-items:center; gap:8px; margin-left:28px">
+                             <input type="text" class="form-input vf-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                             <div style="display:flex; align-items:center; gap:4px; flex:2">
+                               <span style="font-size:11px; color:var(--text-tertiary); white-space:nowrap">Range:</span>
+                               <input type="number" class="form-input vf-min-input" data-vf-idx="${vi}" value="${vf.min !== undefined ? vf.min : ''}" placeholder="Min" style="flex:1; height:30px; font-size:12px" />
+                               <span style="color:var(--text-tertiary)">–</span>
+                               <input type="number" class="form-input vf-max-input" data-vf-idx="${vi}" value="${vf.max !== undefined ? vf.max : ''}" placeholder="Max" style="flex:1; height:30px; font-size:12px" />
+                             </div>
+                           </div>
+                           ` : ''}
+                           ${ft === 'text' ? `
+                           <div style="display:flex; align-items:center; gap:8px; margin-left:28px; margin-top:4px">
+                             <input type="text" class="form-input vf-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (optional, e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                           </div>
+                           ` : ''}
+                           ${ft === 'dropdown' ? `
+                           <div style="margin-left:28px; display:flex; flex-direction:column; gap:6px">
+                             <div>
+                               <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Options (one per line)</div>
+                               <textarea class="form-input vf-options-input" data-vf-idx="${vi}" rows="3" placeholder="Low\nAs Expected\nHigh" style="font-size:12px; line-height:1.5">${escapeHTML((vf.options || []).join('\n'))}</textarea>
+                             </div>
+                             <div>
+                               <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Expected / Ideal Value <span style="font-weight:400">(flags others as out of range)</span></div>
+                               <select class="form-input vf-expected-select" data-vf-idx="${vi}" style="height:30px; font-size:12px">
+                                 <option value=""${!vf.expectedValue ? ' selected' : ''}>— No expected value —</option>
+                                 ${(vf.options || []).map(opt => `<option value="${escapeHTML(opt)}"${vf.expectedValue === opt ? ' selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
+                               </select>
+                             </div>
+                           </div>
+                           ` : ''}
+                         </div>`;
+                       }).join('')}
+                       ${(!node.valueFields || node.valueFields.length === 0) ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:16px; border:1px dashed var(--border-color); border-radius:6px">No value fields defined. Click "Add Field" to create one.</div>' : ''}
+                     </div>
+                   </div>
+                   ` : ''}
                   `}
                 </div>
               `;
@@ -954,6 +1118,7 @@ export function renderJobDetail(container, { id }) {
           const path = e.currentTarget.dataset.path.split('-').map(Number);
           taskExpandedPath = path;
           isInfoPanelEditing = false;
+          isRecordingValues = false;
           renderTabContent();
         });
       });
@@ -1056,6 +1221,116 @@ export function renderJobDetail(container, { id }) {
         });
       });
 
+      // --- Value Records: Enter Values toggle ---
+      tc.querySelector('.btn-toggle-recording')?.addEventListener('click', () => {
+        isRecordingValues = !isRecordingValues;
+        renderTabContent();
+      });
+
+      // --- Value Records: Save values from recording panel ---
+      tc.querySelector('.btn-save-values')?.addEventListener('click', () => {
+        const node = getTaskByPath(job.tasks, taskExpandedPath);
+        if (!node || !node.valueFields) return;
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        tc.querySelectorAll('.vf-value-input').forEach(inp => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const val = inp.value.trim();
+          if (node.valueFields[idx]) {
+            node.valueFields[idx].value = val;
+            if (val) {
+              node.valueFields[idx].recordedBy = currentUser.name || 'Unknown';
+              node.valueFields[idx].recordedAt = new Date().toISOString();
+            }
+          }
+        });
+        store.update('jobs', id, { tasks: job.tasks });
+        showToast('Values saved', 'success');
+        isRecordingValues = false;
+        renderTabContent();
+      });
+
+      // --- Value Fields Config: Add field ---
+      tc.querySelector('.btn-add-value-field')?.addEventListener('click', () => {
+        const node = getTaskByPath(job.tasks, taskExpandedPath);
+        if (!node) return;
+        if (!node.valueFields) node.valueFields = [];
+        node.valueFields.push({ id: store.generateId(), label: '', unit: '', value: '', fieldType: 'text' });
+        renderTabContent();
+      });
+
+      // --- Value Fields Config: Remove field ---
+      tc.querySelectorAll('.btn-remove-value-field').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (!node || !node.valueFields) return;
+          node.valueFields.splice(idx, 1);
+          renderTabContent();
+        });
+      });
+
+      // --- Value Fields Config: Live update label/unit/type/range/options ---
+      tc.querySelectorAll('.vf-label-input').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+            node.valueFields[idx].label = inp.value.trim();
+          }
+        });
+      });
+      tc.querySelectorAll('.vf-unit-input').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+            node.valueFields[idx].unit = inp.value.trim();
+          }
+        });
+      });
+      tc.querySelectorAll('.vf-type-select').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const idx = parseInt(sel.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+            node.valueFields[idx].fieldType = sel.value;
+            // Clear type-specific fields when switching
+            if (sel.value !== 'number') { node.valueFields[idx].min = undefined; node.valueFields[idx].max = undefined; }
+            if (sel.value !== 'dropdown') { node.valueFields[idx].options = undefined; }
+            if (sel.value === 'dropdown') { node.valueFields[idx].unit = ''; }
+            node.valueFields[idx].value = ''; // reset recorded value on type change
+          }
+          renderTabContent();
+        });
+      });
+      tc.querySelectorAll('.vf-min-input').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+            node.valueFields[idx].min = inp.value !== '' ? parseFloat(inp.value) : undefined;
+          }
+        });
+      });
+      tc.querySelectorAll('.vf-max-input').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+            node.valueFields[idx].max = inp.value !== '' ? parseFloat(inp.value) : undefined;
+          }
+        });
+      });
+      tc.querySelectorAll('.vf-options-input').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+            node.valueFields[idx].options = inp.value.split('\n').map(o => o.trim()).filter(Boolean);
+          }
+        });
+      });
+
       tc.querySelector('#btn-save-tasks')?.addEventListener('click', () => {
         store.update('jobs', id, { tasks: job.tasks });
         showToast('Tasks saved', 'success');
@@ -1100,6 +1375,7 @@ export function renderJobDetail(container, { id }) {
                     id: store.generateId(),
                     status: 'Not Started',
                     progress: 0,
+                    valueFields: p.valueFields ? p.valueFields.map(vf => ({ ...vf, value: '', recordedBy: null, recordedAt: null })) : undefined,
                     subTasks: (p.subTasks || p.subPhases) ? deepCloneTasks(p.subTasks || p.subPhases) : []
                   }));
                 }
@@ -1198,6 +1474,7 @@ export function renderJobDetail(container, { id }) {
                       id: store.generateId(),
                       status: 'Not Started',
                       progress: 0,
+                      valueFields: p.valueFields ? p.valueFields.map(vf => ({ ...vf, value: '', recordedBy: null, recordedAt: null })) : undefined,
                       subTasks: (p.subTasks || p.subPhases) ? deepClone(p.subTasks || p.subPhases) : []
                     }));
                   }
@@ -1996,7 +2273,7 @@ export function renderJobDetail(container, { id }) {
           subtotal: 0, tax: 0, total: 0,
           number: 'Q-' + Date.now().toString().slice(-7)
         });
-        showToast('Draft quote created', 'success');
+        showToast('Draft quote created', 'success', { link: `/quotes/${newQ.id}` });
         router.navigate('/quotes/' + newQ.id);
       });
     } else if (activeTab === 'activity') {

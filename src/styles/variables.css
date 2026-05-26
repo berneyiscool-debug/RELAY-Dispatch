@@ -100,7 +100,7 @@
 
   /* ---- Z-Index ---- */
   --z-sidebar: 100;
-  --z-topbar: 90;
+  --z-topbar: 110;
   --z-dropdown: 200;
   --z-modal: 300;
   --z-toast: 400;

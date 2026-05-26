@@ -1,4 +1,5 @@
 import { store } from '../../data/store.js';
+import { router } from '../../router.js';
 
 export function renderCustomerPortal(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -90,10 +91,7 @@ export function renderCustomerPortal(container) {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', () => {
       localStorage.removeItem('currentUser');
-      // Import router dynamically or rely on the fact it's a module
-      import('../../router.js').then(({ router }) => {
-        router.navigate('/login');
-      });
+      router.navigate('/login');
     });
   }
 

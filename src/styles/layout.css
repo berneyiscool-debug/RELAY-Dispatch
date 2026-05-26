@@ -402,6 +402,7 @@
 
 /* ---- Top Bar ---- */
 .topbar {
+  position: relative;
   height: var(--topbar-height);
   min-height: var(--topbar-height);
   background: var(--topbar-bg);

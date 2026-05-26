@@ -660,7 +660,53 @@ function generateScheduleBlocks(jobs) {
 }
 
 export function seedData() {
+  if (localStorage.getItem('simpro__prevent_seeding') === 'true') {
+    // Ensure default userTypes and technicians exist so they can still log in and use the blank state
+    const existingTypes = store.getAll('userTypes');
+    if (!existingTypes || existingTypes.length === 0) {
+      seedUserTypes();
+    }
+    const existingTechs = store.getAll('technicians');
+    if (!existingTechs || existingTechs.length === 0) {
+      store.save('technicians', technicians);
+    }
+    return;
+  }
+
   if (store.isSeeded()) {
+    // Self-healing migration for Maintenance Plans
+    const existingPlans = store.getAll('maintenancePlans');
+    if (!existingPlans || existingPlans.length === 0) {
+      const samplePlans = [
+        {
+          id: 'maint_1',
+          name: 'Routine Carrier Chiller Servicing',
+          assetId: 'asset_4', // Carrier Chiller Unit
+          quoteId: 'quote_1',
+          triggerType: 'Calendar',
+          frequency: 'Quarterly',
+          meterInterval: null,
+          lastTriggeredMeter: 0,
+          nextServiceDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 3 days from now
+          lastNotificationDate: null,
+          status: 'Active'
+        },
+        {
+          id: 'maint_2',
+          name: 'Toyota Hilux 10k Service Plan',
+          assetId: 'asset_1', // Toyota Hilux 2022
+          quoteId: 'quote_2',
+          triggerType: 'Meter',
+          frequency: null,
+          meterInterval: 10000,
+          lastTriggeredMeter: 34000,
+          lastNotificationDate: null,
+          status: 'Active'
+        }
+      ];
+      store.save('maintenancePlans', samplePlans);
+    }
+
     // Schema Migration: Convert "phases" -> "tasks" and "subPhases" -> "subTasks" for backward compatibility
     const existingJobs = store.getAll('jobs');
     let migratedJobs = false;
@@ -1007,6 +1053,33 @@ export function seedData() {
   store.save('invoices', invoices);
   store.save('stock', stockItems);
   store.save('assets', assets);
+  store.save('maintenancePlans', [
+    {
+      id: 'maint_1',
+      name: 'Routine Carrier Chiller Servicing',
+      assetId: 'asset_4', // Carrier Chiller Unit
+      quoteId: 'quote_1',
+      triggerType: 'Calendar',
+      frequency: 'Quarterly',
+      meterInterval: null,
+      lastTriggeredMeter: 0,
+      nextServiceDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      lastNotificationDate: null,
+      status: 'Active'
+    },
+    {
+      id: 'maint_2',
+      name: 'Toyota Hilux 10k Service Plan',
+      assetId: 'asset_1', // Toyota Hilux 2022
+      quoteId: 'quote_2',
+      triggerType: 'Meter',
+      frequency: null,
+      meterInterval: 10000,
+      lastTriggeredMeter: 34000,
+      lastNotificationDate: null,
+      status: 'Active'
+    }
+  ]);
   store.save('schedule', scheduleBlocks);
   store.save('technicians', technicians);
   store.save('taskTemplates', generateTaskTemplates());
@@ -1037,6 +1110,288 @@ export function seedData() {
   ];
   store.save('activities', seedActivities);
 
+  store.markSeeded();
+}
+
+export function seedMinimalData() {
+  store.clearAll();
+  
+  // Seed default user types and technicians
+  seedUserTypes();
+  store.save('technicians', technicians);
+
+  // 1. Customer
+  const customer = {
+    id: 'cust_1',
+    company: 'Acme Corp',
+    firstName: 'James',
+    lastName: 'Henderson',
+    email: 'james@acme.com',
+    phone: '0412345678',
+    address: '145 King St, Southbank, VIC 3000',
+    status: 'Active',
+    type: 'Company',
+    notes: 'Primary test account.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    sites: [{ name: 'Main Office', address: '145 King St, Southbank, VIC 3000' }],
+    contacts: [{ name: 'James Henderson', role: 'Primary', email: 'james@acme.com', phone: '0412345678' }]
+  };
+  store.save('customers', [customer]);
+
+  // 2. Lead
+  const lead = {
+    id: 'lead_1',
+    title: 'Commercial Switchboard Upgrade',
+    customerId: 'cust_1',
+    customerName: 'Acme Corp',
+    contactName: 'James Henderson',
+    status: 'New',
+    source: 'Website',
+    value: 4500,
+    description: 'Standard industrial switchboard upgrade for main office.',
+    priority: 'High',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  store.save('leads', [lead]);
+
+  // 3. Quote
+  const quote = {
+    id: 'quote_1',
+    number: 'Q-2026001',
+    customerId: 'cust_1',
+    customerName: 'Acme Corp',
+    contactName: 'James Henderson',
+    title: 'Electrical Upgrade Quote',
+    status: 'Sent',
+    lineItems: [
+      { description: 'Electrical Labor', type: 'labor', qty: 8, rate: 85, total: 680 },
+      { description: 'RCD Safety Switch Kit', type: 'material', qty: 2, rate: 45, total: 90 }
+    ],
+    subtotal: 770,
+    tax: 77,
+    total: 847,
+    validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    notes: 'Standard quotes terms.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  store.save('quotes', [quote]);
+
+  // 4. Job
+  const job = {
+    id: 'job_1',
+    number: 'J-100001',
+    customerId: 'cust_1',
+    customerName: 'Acme Corp',
+    contactName: 'James Henderson',
+    siteAddress: '145 King St, Southbank, VIC 3000',
+    title: 'Main Switchboard Upgrade',
+    type: 'Electrical',
+    status: 'Scheduled',
+    priority: 'High',
+    technicianId: 'tech1',
+    technicianName: 'Mark Sullivan',
+    contractorId: null,
+    quoteId: 'quote_1',
+    scheduledDate: new Date().toISOString().split('T')[0],
+    estimatedHours: 8,
+    laborCost: 680,
+    materialCost: 90,
+    tasks: [
+      { 
+        id: 'p1', 
+        name: 'Site Preparation', 
+        status: 'Completed', 
+        progress: 100, 
+        estimatedHours: 2, 
+        people: 1,
+        subTasks: [
+          { id: 'sp1', name: 'Safety Audit', status: 'Completed', progress: 100, estimatedHours: 1, people: 1 },
+          { id: 'sp2', name: 'Site Setup', status: 'Completed', progress: 100, estimatedHours: 1, people: 1 }
+        ]
+      },
+      { 
+        id: 'p2', 
+        name: 'Installation Phase', 
+        status: 'In Progress', 
+        progress: 50, 
+        estimatedHours: 6, 
+        people: 2,
+        subTasks: [
+          { id: 'sp3', name: 'Main Installation', status: 'In Progress', progress: 50, estimatedHours: 4, people: 2 },
+          { id: 'sp4', name: 'Final Commissioning', status: 'Not Started', progress: 0, estimatedHours: 2, people: 2 }
+        ]
+      }
+    ],
+    notes: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  store.save('jobs', [job]);
+
+  // 5. Invoice
+  const invoice = {
+    id: 'inv_1',
+    number: 'INV-50001',
+    jobId: 'job_1',
+    jobNumber: 'J-100001',
+    customerId: 'cust_1',
+    customerName: 'Acme Corp',
+    contactName: 'James Henderson',
+    status: 'Sent',
+    lineItems: [
+      { description: 'Main Switchboard Upgrade - Labor', amount: 680 },
+      { description: 'Main Switchboard Upgrade - Materials', amount: 90 }
+    ],
+    subtotal: 770,
+    tax: 77,
+    total: 847,
+    invoiceType: 'Standard',
+    issueDate: new Date().toISOString(),
+    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    paidDate: null,
+    notes: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  store.save('invoices', [invoice]);
+
+  // 6. Stock
+  const stock = {
+    id: 'stock_1',
+    name: 'LED Downlight 10W',
+    sku: 'SKU-1001',
+    category: 'Electrical',
+    unit: 'each',
+    unitPrice: 18.50,
+    costPrice: 11.00,
+    quantity: 45,
+    reorderLevel: 10,
+    supplier: 'ElectraTrade',
+    location: 'Main Warehouse',
+    locations: [{ location: 'Main Warehouse', quantity: 45 }],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  store.save('stock', [stock]);
+
+  // 7. Asset
+  const asset = {
+    id: 'asset_1',
+    name: 'Toyota Hilux 2022',
+    type: 'Vehicle',
+    serial: 'REG-123-FF',
+    ownerType: 'Business',
+    recoveryRate: 25.00,
+    serviceIntervalMonths: 6,
+    currentMeter: 45000,
+    status: 'Active',
+    logs: [
+      { id: 'log_1_1', type: 'Service', date: new Date().toISOString(), technicianName: 'Jake Patterson', cost: 250, notes: 'Routine check' }
+    ]
+  };
+  store.save('assets', [asset]);
+
+  // 8. Maintenance Plan
+  const plan = {
+    id: 'maint_1',
+    name: 'Toyota Hilux 10k Service Plan',
+    assetId: 'asset_1',
+    triggerType: 'Meter',
+    frequency: null,
+    meterInterval: 10000,
+    lastTriggeredMeter: 40000,
+    lastNotificationDate: null,
+    status: 'Active'
+  };
+  store.save('maintenancePlans', [plan]);
+
+  // 9. Schedule
+  const schedule = {
+    id: 'sched_1',
+    jobId: 'job_1',
+    jobNumber: 'J-100001',
+    title: 'Main Switchboard Upgrade',
+    technicianId: 'tech1',
+    technicianName: 'Mark Sullivan',
+    color: '#3B82F6',
+    dayOffset: 0,
+    startHour: 8,
+    endHour: 16,
+    customerName: 'Acme Corp',
+    siteAddress: '145 King St, Southbank, VIC 3000'
+  };
+  store.save('schedule', [schedule]);
+
+  // 10. Form templates
+  store.seedFormTemplates();
+
+  // 11. Form instances
+  store.save('formInstances', []);
+
+  // 12. Contractors
+  const contractor = {
+    id: 'cont_1',
+    businessName: 'EcoVolt Electrical Services',
+    contactName: 'Elena Rostova',
+    email: 'elena@ecovoltelectrical.com.au',
+    phone: '0498 765 432',
+    licenseNumber: 'LIC-EL-88390',
+    active: true,
+    hourlyRate: 95,
+    afterHoursRate: 142.5,
+    calloutFee: 85,
+    specialties: ['Solar PV Installation', 'Switchboard Upgrades'],
+    notes: 'Preferred subcontractor.',
+    portalToken: 'c_pt_ecovolt',
+    complianceDocs: [
+      { id: 'doc_1', type: 'Public Liability Insurance', number: 'PL-992110-A', expiryDate: '2026-10-15', verified: true, notes: 'Cover up to $20M' }
+    ]
+  };
+  store.save('contractors', [contractor]);
+
+  // 13. Suppliers
+  const supplier = {
+    id: 'sup_1',
+    name: 'ElectraTrade',
+    contactName: 'Robert Vance',
+    email: 'sales@electratrade.com.au',
+    phone: '03 9822 1045',
+    address: '22 Industrial Parkway, South Melbourne, VIC 3205',
+    category: 'Electrical',
+    accountNumber: 'FF-ET-10291',
+    paymentTerms: '30 Days',
+    active: true,
+    notes: 'Primary supplier.',
+    attachments: []
+  };
+  store.save('suppliers', [supplier]);
+
+  // 14. Activity
+  const activity = {
+    id: 'act_1',
+    title: 'Site inspection — Southbank',
+    type: 'site-visit',
+    date: new Date().toISOString().split('T')[0],
+    time: '13:00',
+    duration: 120,
+    priority: 'normal',
+    status: 'pending',
+    assignedToId: 'tech1',
+    linkedType: 'job',
+    linkedId: 'job_1',
+    linkedLabel: 'Job J-100001',
+    notes: 'Verify panel wiring integrity.'
+  };
+  store.save('activities', [activity]);
+
+  // Seed task templates
+  store.save('taskTemplates', generateTaskTemplates());
+
+  // Remove prevent seeding so full demo data can be restored later if wanted
+  localStorage.removeItem('simpro__prevent_seeding');
   store.markSeeded();
 }
 

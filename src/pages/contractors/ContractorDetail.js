@@ -149,8 +149,8 @@ export function renderContractorDetail(container, params) {
       tabContent.innerHTML = `
         <div class="card">
           <div class="card-body">
-            <div class="grid-2">
-              <div>
+            <div class="grid-3">
+              <div style="grid-column: span 2">
                 <h4 style="margin-bottom:var(--space-base)">Business & Contact Details</h4>
                 <div style="display:flex;flex-direction:column;gap:12px">
                   ${detailRow('Business Name', contractor.businessName)}
@@ -161,7 +161,7 @@ export function renderContractorDetail(container, params) {
                   ${detailRow('System Status', contractor.active ? 'Active (Ready for dispatch)' : 'Inactive (Do not dispatch)')}
                 </div>
               </div>
-              <div>
+              <div style="grid-column: span 1">
                 <h4 style="margin-bottom:var(--space-base)">Specialties & Trade Skills</h4>
                 <div style="margin-bottom:var(--space-lg); display: flex; flex-wrap: wrap; gap: 6px;">
                   ${specialties.map(s => `<span class="badge" style="background:var(--color-primary-light); color:var(--color-primary); font-weight:600;">${escapeHTML(s)}</span>`).join('')}
@@ -376,8 +376,8 @@ export function renderContractorDetail(container, params) {
       const cFee = contractor.calloutFee || 0.00;
 
       tabContent.innerHTML = `
-        <div class="grid-2">
-          <div class="card">
+        <div class="grid-3" style="align-items: start;">
+          <div class="card" style="grid-column: span 1">
             <div class="card-header">
               <h4 style="margin:0">Contractor Pay Rates</h4>
             </div>
@@ -406,7 +406,7 @@ export function renderContractorDetail(container, params) {
             </div>
           </div>
 
-          <div class="card">
+          <div class="card" style="grid-column: span 2">
             <div class="card-header">
               <h4 style="margin:0">Interactive Labor Cost Estimator</h4>
             </div>

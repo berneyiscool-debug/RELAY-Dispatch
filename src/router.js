@@ -18,7 +18,21 @@ export class Router {
 
   navigate(path) {
     if (typeof window !== 'undefined') {
-      window.location.hash = path;
+      let cleanTarget = path.startsWith('#') ? path.slice(1) : path;
+      if (!cleanTarget.startsWith('/')) {
+        cleanTarget = '/' + cleanTarget;
+      }
+      
+      let cleanCurrent = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+      if (!cleanCurrent.startsWith('/')) {
+        cleanCurrent = '/' + cleanCurrent;
+      }
+      
+      if (cleanCurrent === cleanTarget) {
+        this.resolve(cleanTarget);
+      } else {
+        window.location.hash = '#' + cleanTarget;
+      }
     }
   }
 

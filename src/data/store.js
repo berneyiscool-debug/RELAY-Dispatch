@@ -48,8 +48,40 @@ class DataStore {
     const items = this.getAll(collection);
     const index = items.findIndex(item => item.id === id);
     if (index === -1) return null;
+    
+    const previous = items[index];
     items[index] = { ...items[index], ...updates, updatedAt: new Date().toISOString() };
     this.save(collection, items);
+
+    // Post-save trigger: Asset Maintenance Logs Sync
+    if (collection === 'jobs' && updates.status === 'Completed' && previous.status !== 'Completed') {
+      const job = items[index];
+      if (job.assetId) {
+        const assets = this.getAll('assets');
+        const assetIndex = assets.findIndex(a => a.id === job.assetId);
+        if (assetIndex !== -1) {
+          const asset = assets[assetIndex];
+          const logs = asset.logs || [];
+          
+          // Double check we haven't already posted a log for this specific job.number
+          const logText = `Completed Maintenance Job #${job.number} - ${job.title}`;
+          const hasLog = logs.some(l => l.notes === logText);
+          if (!hasLog) {
+            logs.push({
+              id: 'log_' + Date.now() + Math.random().toString(36).substr(2, 5),
+              type: 'Service',
+              date: new Date().toISOString().split('T')[0],
+              meter: asset.currentMeter || 0,
+              cost: (job.laborCost || 0) + (job.materialCost || 0),
+              notes: logText
+            });
+            asset.logs = logs;
+            this.save('assets', assets);
+          }
+        }
+      }
+    }
+
     return items[index];
   }
 

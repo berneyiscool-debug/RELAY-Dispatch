@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../data/store.js';
+import { router } from '../router.js';
 
 let container = null;
 
@@ -19,6 +20,22 @@ function ensureContainer() {
 export function showToast(message, type = 'info', options = {}) {
   const duration = typeof options === 'number' ? options : (options.duration || 3500);
   const link = typeof options === 'object' ? options.link : null;
+  const skipBell = typeof options === 'object' ? options.skipBell : false;
+
+  // Integrate clickable toasts into the notification bell automatically
+  if (link && !skipBell) {
+    let title = 'Notification';
+    if (type === 'success') title = 'Success';
+    if (type === 'error') title = 'Error';
+    if (type === 'warning') title = 'Warning';
+    
+    store.create('notifications', {
+      title,
+      message,
+      link,
+      read: false
+    });
+  }
 
   const c = ensureContainer();
   const toast = document.createElement('div');
@@ -40,10 +57,8 @@ export function showToast(message, type = 'info', options = {}) {
   if (link) {
     toast.addEventListener('click', (e) => {
       if (!e.target.closest('.toast-close')) {
-        import('../router.js').then(({ router }) => {
-          router.navigate(link);
-          toast.remove();
-        });
+        router.navigate(link);
+        toast.remove();
       }
     });
   }
@@ -68,5 +83,5 @@ export function addSystemNotification(title, message, link) {
   store.create('notifications', {
     title, message, link, read: false
   });
-  showToast(`${title}: ${message}`, 'info', { link });
+  showToast(`${title}: ${message}`, 'info', { link, skipBell: true });
 }

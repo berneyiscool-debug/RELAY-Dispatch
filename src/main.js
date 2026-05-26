@@ -9,6 +9,7 @@ import './styles/layout.css';
 import { router } from './router.js';
 import { store } from './data/store.js';
 import { seedData } from './data/seed.js';
+import { checkMaintenancePlans } from './utils/maintenanceEngine.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
@@ -61,6 +62,7 @@ import { renderDocumentViewer } from './pages/documents/DocumentViewer.js';
 
 // ---- Initialize ----
 seedData();
+checkMaintenancePlans();
 
 // Expose app globals for cross-component access
 window.__fieldForge = { router, store };

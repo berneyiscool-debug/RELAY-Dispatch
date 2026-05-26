@@ -71,8 +71,8 @@ export function renderStockDetail(container, { id }) {
       </div>
     </div>
 
-    <div class="grid-2">
-      <div style="display:flex; flex-direction:column; gap:20px">
+    <div class="grid-3" style="align-items: start;">
+      <div style="grid-column: span 2; display:flex; flex-direction:column; gap:20px">
         <div class="card">
           <div class="card-header"><h4>Location Stock Breakdown</h4></div>
           <div class="card-body" style="padding-top:0">
@@ -94,7 +94,7 @@ export function renderStockDetail(container, { id }) {
         </div>
       </div>
 
-      <div class="card" style="height: fit-content;">
+      <div class="card" style="grid-column: span 1; height: fit-content;">
         <div class="card-header"><h4>Pricing & Value</h4></div>
         <div class="card-body">
           <div style="display:flex;flex-direction:column;gap:12px">

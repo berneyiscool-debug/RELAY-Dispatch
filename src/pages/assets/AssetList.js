@@ -20,6 +20,34 @@ export function renderAssetList(container) {
     assets = store.getAll('assets');
   }
 
+  let activeFilter = 'all';
+  let searchTerm = '';
+
+  function updateFilteredData() {
+    let result = [...assets];
+
+    // Apply filter
+    if (activeFilter === 'My Business') {
+      result = result.filter(a => a.ownerType === 'Business');
+    } else if (activeFilter === 'Customer Owned') {
+      result = result.filter(a => a.ownerType === 'Customer');
+    } else if (activeFilter === 'In Maintenance') {
+      result = result.filter(a => a.status === 'In Maintenance');
+    }
+
+    // Apply search
+    if (searchTerm) {
+      result = result.filter(a => 
+        a.name.toLowerCase().includes(searchTerm) || 
+        (a.serial || a.identifier || a.licensePlate || '').toLowerCase().includes(searchTerm) || 
+        (a.type || '').toLowerCase().includes(searchTerm)
+      );
+    }
+
+    filteredData = result;
+    table.updateData(filteredData);
+  }
+
   container.innerHTML = `
     <div class="page-header">
       <h1>Assets Manager</h1>
@@ -29,6 +57,12 @@ export function renderAssetList(container) {
     </div>
     
     <div class="page-toolbar">
+      <div class="toolbar-filters">
+        <button class="toolbar-filter active" data-filter="all">All (${assets.length})</button>
+        <button class="toolbar-filter" data-filter="My Business">My Business (${assets.filter(a => a.ownerType === 'Business').length})</button>
+        <button class="toolbar-filter" data-filter="Customer Owned">Customer Owned (${assets.filter(a => a.ownerType === 'Customer').length})</button>
+        <button class="toolbar-filter" data-filter="In Maintenance">In Maintenance (${assets.filter(a => a.status === 'In Maintenance').length})</button>
+      </div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search assets..." id="asset-search" />
@@ -169,14 +203,18 @@ export function renderAssetList(container) {
     });
   });
 
+  container.querySelectorAll('.toolbar-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.filter;
+      updateFilteredData();
+    });
+  });
+
   container.querySelector('#asset-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = assets.filter(a => 
-      a.name.toLowerCase().includes(q) || 
-      (a.serial || a.identifier || a.licensePlate || '').toLowerCase().includes(q) || 
-      (a.type || '').toLowerCase().includes(q)
-    );
-    table.updateData(filteredData);
+    searchTerm = e.target.value.toLowerCase();
+    updateFilteredData();
   });
 
   container.addEventListener('click', (e) => {
