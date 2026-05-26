@@ -4,6 +4,7 @@ import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { createDataTable } from '../../components/DataTable.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 
 export function renderNotificationsList(container) {
   const allNotifications = store.getAll('notifications') || [];
@@ -114,7 +115,75 @@ export function renderNotificationsList(container) {
       if (n) openNotificationDetails(n);
     },
     emptyMessage: 'No notifications found',
-    emptyIcon: 'campaign'
+    emptyIcon: 'campaign',
+    selectable: true,
+    onSelectionChange: (selectedIds) => {
+      createBulkActionBar({
+        container,
+        selectedIds,
+        onClear: () => table.clearSelection(),
+        actions: [
+          {
+            label: 'Change Status',
+            icon: 'sync_alt',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `
+                  <div class="form-group">
+                    <label class="form-label">New Status</label>
+                    <select class="form-select" id="bulk-status">
+                      <option value="Pending">Pending</option>
+                      <option value="Converted">Converted</option>
+                    </select>
+                  </div>
+                `;
+                showModal({
+                  title: `Update ${ids.length} Notification${ids.length > 1 ? 's' : ''}`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Apply', className: 'btn-primary', onClick: c => {
+                      const newStatus = content.querySelector('#bulk-status').value;
+                      ids.forEach(id => store.update('notifications', id, { status: newStatus }));
+                      table.clearSelection();
+                      renderNotificationsList(container);
+                      showToast(`Updated ${ids.length} notification${ids.length > 1 ? 's' : ''} to ${newStatus}`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Delete Selected',
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `<p>Are you sure you want to delete ${ids.length} notification${ids.length > 1 ? 's' : ''}? This cannot be undone.</p>`;
+                showModal({
+                  title: 'Confirm Bulk Delete',
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Delete', className: 'btn-danger', onClick: c => {
+                      ids.forEach(id => store.delete('notifications', id));
+                      table.clearSelection();
+                      renderNotificationsList(container);
+                      showToast(`Deleted ${ids.length} notification${ids.length > 1 ? 's' : ''}`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          }
+        ]
+      });
+    }
   });
 
   container.querySelector('#notifications-table-container').appendChild(table);

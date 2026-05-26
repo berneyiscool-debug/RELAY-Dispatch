@@ -73,6 +73,22 @@ export function renderInvoiceDetail(container, { id }) {
         `
       })}
 
+      <!-- Linked Quote alert header if present -->
+      ${invoice.originalQuoteNumber ? `
+        <div class="card" style="margin-bottom:var(--space-lg); border-left: 4px solid var(--color-primary); background: var(--color-primary-light); padding: 16px var(--space-lg); display:flex; justify-content:space-between; align-items:center; box-shadow:var(--shadow-sm); border-radius:8px">
+          <div style="display:flex; align-items:center; gap:10px">
+            <span class="material-icons-outlined" style="color:var(--color-primary); font-size:24px">request_quote</span>
+            <div>
+              <div style="font-weight:700; color:var(--color-primary-dark); font-size:14px">Linked Quote: <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:800; color:inherit">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
+              <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Original Quote Subtotal: <strong>$${(invoice.originalSubtotal || 0).toFixed(2)}</strong></div>
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-unlink-quote" style="color:var(--color-danger); border-color:rgba(239,68,68,0.2); background:rgba(239,68,68,0.02)">
+            <span class="material-icons-outlined" style="font-size:16px; vertical-align:middle; margin-right:4px">link_off</span> Unlink Quote
+          </button>
+        </div>
+      ` : ''}
+
       <!-- Invoice Form -->
       <div class="card" style="margin-bottom:var(--space-lg)">
         <div class="card-header"><h4>Invoice Details</h4></div>
@@ -127,9 +143,14 @@ export function renderInvoiceDetail(container, { id }) {
         ${(invoice.sections || []).map((sec, sIdx) => renderSection(sec, sIdx)).join('')}
       </div>
 
-      <button class="btn btn-secondary" id="btn-add-section" style="margin-bottom:var(--space-lg)">
-        <span class="material-icons-outlined" style="font-size:16px">add</span> Add New Phase/Section
-      </button>
+      <div style="display:flex; gap:12px; margin-bottom:var(--space-lg)">
+        <button class="btn btn-secondary" id="btn-add-section">
+          <span class="material-icons-outlined" style="font-size:16px">add</span> Add New Phase/Section
+        </button>
+        <button class="btn btn-secondary" id="btn-add-variation" style="border-color:var(--color-warning); color:var(--color-warning-dark); background:rgba(245,158,11,0.02)">
+          <span class="material-icons-outlined" style="font-size:16px">history_edu</span> Add Variation Phase
+        </button>
+      </div>
 
       <!-- Totals & Margin Analysis -->
       <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:flex-start">
@@ -151,20 +172,36 @@ export function renderInvoiceDetail(container, { id }) {
         </div>
 
         <!-- Invoice Totals -->
-        <div class="card" style="width:360px">
-          <div class="card-body">
-            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-md)">
-              <span class="text-secondary">Subtotal</span>
+        <div class="card" style="width:380px">
+          <div class="card-body" style="display:flex; flex-direction:column; gap:8px">
+            <div style="display:flex;justify-content:space-between;font-size:var(--font-size-md)">
+              <span class="text-secondary">Original Quoted Amount</span>
+              <span>$${((invoice.originalSubtotal || 0)).toFixed(2)}</span>
+            </div>
+            ${(invoice.approvedVariationsSum || 0) > 0 ? `
+              <div style="display:flex;justify-content:space-between;font-size:var(--font-size-md); color:var(--color-success); font-weight:600">
+                <span>Approved Variations</span>
+                <span>+$${(invoice.approvedVariationsSum || 0).toFixed(2)}</span>
+              </div>
+            ` : ''}
+            <div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px dashed var(--border-color);font-size:var(--font-size-md);font-weight:700; color:var(--text-primary)">
+              <span>Invoice Subtotal</span>
               <span id="inv-subtotal">$${(invoice.subtotal || 0).toFixed(2)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-md)">
+            <div style="display:flex;justify-content:space-between;font-size:var(--font-size-md)">
               <span class="text-secondary">GST (10%)</span>
               <span id="inv-tax">$${(invoice.tax || 0).toFixed(2)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:var(--font-size-lg);font-weight:700;border-top:2px solid var(--border-color);margin-top:4px">
-              <span>Total</span>
+              <span>Total Payable</span>
               <span id="inv-total">$${(invoice.total || 0).toFixed(2)}</span>
             </div>
+            ${(invoice.pendingVariationsSum || 0) > 0 ? `
+              <div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);border-radius:4px;font-size:12px;color:var(--color-warning-dark);margin-top:4px">
+                <span style="font-weight:700">Pending Variations (Excluded)</span>
+                <span style="font-weight:800">$${(invoice.pendingVariationsSum || 0).toFixed(2)}</span>
+              </div>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -179,12 +216,31 @@ export function renderInvoiceDetail(container, { id }) {
   }
 
   function renderSection(section, sIdx) {
+    const isVar = section.isVariation === true;
+    const borderStyle = isVar ? 'border: 2px dashed var(--color-warning); background: rgba(245,158,11,0.01)' : '';
+    const headerBg = isVar ? 'background: rgba(245,158,11,0.04)' : '';
+    const badgeHtml = isVar 
+      ? (section.customerApproved 
+         ? '<span class="badge badge-success" style="margin-right:8px"><span class="material-icons-outlined" style="font-size:12px;vertical-align:middle;margin-right:2px">check_circle</span> Approved Variation</span>' 
+         : '<span class="badge badge-warning" style="margin-right:8px; border-color:var(--color-warning); color:var(--color-warning-dark)"><span class="material-icons-outlined" style="font-size:12px;vertical-align:middle;margin-right:2px">schedule</span> Awaiting Customer Approval</span>')
+      : '';
+    const approvalToggle = isVar 
+      ? `<label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer; margin-right:16px; background:#fff; border:1px solid var(--border-color); padding:4px 8px; border-radius:4px; margin-bottom:0">
+           <input type="checkbox" class="variation-approved-checkbox" data-sidx="${sIdx}" ${section.customerApproved ? 'checked' : ''} style="width:16px; height:16px; margin:0" /> Customer Agreed
+         </label>`
+      : '';
+
     return `
-      <div class="card" style="margin-bottom:var(--space-lg)" data-section-index="${sIdx}">
-        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <input class="form-input section-name-input" value="${section.name || ''}" placeholder="Phase/Section Name" style="font-size:1.1rem; font-weight:600; background:transparent; border:none; border-bottom:1px solid var(--border-color); width:300px" />
-          <div>
-            <span class="badge badge-neutral" style="margin-right:12px">Phase Subtotal: $${(section.subtotal || 0).toFixed(2)}</span>
+      <div class="card" style="margin-bottom:var(--space-lg); ${borderStyle}" data-section-index="${sIdx}">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; ${headerBg}">
+          <div style="display:flex; align-items:center; gap:12px; flex:1">
+            ${isVar ? '<span class="material-icons-outlined" style="color:var(--color-warning); font-size:20px">history_edu</span>' : ''}
+            <input class="form-input section-name-input" value="${section.name || ''}" placeholder="${isVar ? 'e.g. Variation - Additional Cabling' : 'Phase/Section Name'}" style="font-size:1.1rem; font-weight:600; background:transparent; border:none; border-bottom:1px solid var(--border-color); width:300px" />
+            ${badgeHtml}
+          </div>
+          <div style="display:flex; align-items:center; gap:8px">
+            ${approvalToggle}
+            <span class="badge badge-neutral" style="margin-right:12px">Subtotal: $${(section.subtotal || 0).toFixed(2)}</span>
             <button class="btn btn-sm btn-primary btn-add-line" data-sidx="${sIdx}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Item</button>
             <button class="btn btn-sm btn-ghost btn-remove-section" data-sidx="${sIdx}"><span class="material-icons-outlined" style="font-size:16px; color:var(--color-danger)">delete</span></button>
           </div>
@@ -228,36 +284,63 @@ export function renderInvoiceDetail(container, { id }) {
   }
 
   function recalculate() {
-    invoice.subtotal = 0;
+    let originalSectionsSum = 0;
+    let approvedVariationsSum = 0;
+    let pendingVariationsSum = 0;
     invoice.totalInternalCost = 0;
-    let totalLaborAmount = 0;
     
     const settings = store.getSettings();
-    const profile = settings.laborRates.find(r => r.id === invoice.laborProfileId);
 
     (invoice.sections || []).forEach(sec => {
       sec.subtotal = 0;
       (sec.lineItems || []).forEach(item => {
         item.total = (item.qty || 0) * (item.rate || 0);
-        if (item.type === 'labor') totalLaborAmount += item.total;
         
         // Calculate internal cost
         if (!item.internalCost) {
            if (item.type === 'labor') item.internalCost = 45;
            else item.internalCost = item.rate * 0.7;
         }
-        invoice.totalInternalCost += (item.qty || 0) * (item.internalCost || 0);
         
         sec.subtotal += item.total;
       });
-      invoice.subtotal += sec.subtotal;
+
+      if (sec.isVariation === true) {
+        if (sec.customerApproved === true) {
+          approvedVariationsSum += sec.subtotal;
+          // Approved variation internal costs count towards invoice margin
+          (sec.lineItems || []).forEach(item => {
+            invoice.totalInternalCost += (item.qty || 0) * (item.internalCost || 0);
+          });
+        } else {
+          pendingVariationsSum += sec.subtotal;
+        }
+      } else {
+        originalSectionsSum += sec.subtotal;
+        // Standard phase internal costs count towards invoice margin
+        (sec.lineItems || []).forEach(item => {
+          invoice.totalInternalCost += (item.qty || 0) * (item.internalCost || 0);
+        });
+      }
     });
 
-    if (invoice.invoiceType === 'CreditNote') invoice.subtotal = -Math.abs(invoice.subtotal);
-    else invoice.subtotal = Math.abs(invoice.subtotal);
+    // If originalSubtotal is not set yet (e.g. legacy invoice or new draft), let's set it to originalSectionsSum
+    if (invoice.originalSubtotal === undefined || invoice.originalSubtotal === 0) {
+      invoice.originalSubtotal = originalSectionsSum;
+    }
+
+    let calculatedSubtotal = originalSectionsSum + approvedVariationsSum;
+    if (invoice.invoiceType === 'CreditNote') {
+      invoice.subtotal = -Math.abs(calculatedSubtotal);
+    } else {
+      invoice.subtotal = Math.abs(calculatedSubtotal);
+    }
 
     invoice.tax = invoice.subtotal * 0.1;
     invoice.total = invoice.subtotal + invoice.tax;
+    
+    invoice.approvedVariationsSum = approvedVariationsSum;
+    invoice.pendingVariationsSum = pendingVariationsSum;
 
     render();
   }
@@ -297,9 +380,29 @@ export function renderInvoiceDetail(container, { id }) {
       invoice.sections.push({ 
         id: store.generateId(), 
         name: 'New Phase', 
+        isVariation: false,
         lineItems: [] 
       });
       recalculate();
+    });
+
+    container.querySelector('#btn-add-variation')?.addEventListener('click', () => {
+      invoice.sections.push({ 
+        id: store.generateId(), 
+        name: 'Variation Phase', 
+        isVariation: true,
+        customerApproved: false,
+        lineItems: [] 
+      });
+      recalculate();
+    });
+
+    container.querySelector('#btn-unlink-quote')?.addEventListener('click', () => {
+      invoice.originalQuoteId = '';
+      invoice.originalQuoteNumber = '';
+      invoice.originalSubtotal = 0;
+      recalculate();
+      showToast('Invoice unlinked from quote', 'info');
     });
 
     container.querySelectorAll('.section-name-input').forEach((input, sIdx) => {
@@ -323,6 +426,14 @@ export function renderInvoiceDetail(container, { id }) {
           invoice.sections.splice(sIdx, 1);
           recalculate();
         }
+      });
+    });
+
+    container.querySelectorAll('.variation-approved-checkbox').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const sIdx = parseInt(cb.dataset.sidx);
+        invoice.sections[sIdx].customerApproved = cb.checked;
+        recalculate();
       });
     });
 
@@ -370,6 +481,79 @@ export function renderInvoiceDetail(container, { id }) {
       });
     });
 
+    container.querySelector('#btn-import-template')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const custId = container.querySelector('#inv-customer').value;
+      if (!custId) {
+        showToast('Please select a customer first', 'error');
+        return;
+      }
+
+      const quotes = store.getAll('quotes').filter(q => q.customerId === custId);
+      if (!quotes.length) {
+        showToast('No quotes found for this customer', 'error');
+        return;
+      }
+
+      const content = document.createElement('div');
+      content.style.minWidth = '400px';
+      content.innerHTML = `
+        <div style="font-size:14px; color:var(--text-secondary); margin-bottom:12px">
+          Select a quote to import items as the original invoice content:
+        </div>
+        <div style="display:flex; flex-direction:column; gap:10px">
+          ${quotes.map(q => `
+            <div class="card import-quote-item" data-id="${q.id}" style="cursor:pointer; border:1px solid var(--border-color); transition:all 0.2s">
+              <div class="card-body" style="padding:12px; display:flex; justify-content:space-between; align-items:center">
+                <div>
+                  <div style="font-weight:600; font-size:14px">${escapeHTML(q.number)} — ${escapeHTML(q.title || 'Untitled')}</div>
+                  <div style="font-size:12px; color:var(--text-tertiary)">Subtotal: $${(q.subtotal || 0).toFixed(2)} | Date: ${new Date(q.createdAt).toLocaleDateString()}</div>
+                </div>
+                <span class="badge ${q.status === 'Accepted' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(q.status)}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      showModal({
+        title: 'Import from Quote',
+        content,
+        actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: c => c() }]
+      });
+
+      content.querySelectorAll('.import-quote-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const qId = el.dataset.id;
+          const quote = quotes.find(q => q.id === qId);
+          if (quote) {
+            invoice.originalQuoteId = quote.id;
+            invoice.originalQuoteNumber = quote.number;
+            invoice.originalSubtotal = quote.subtotal;
+            
+            if (quote.sections && quote.sections.length > 0) {
+              invoice.sections = JSON.parse(JSON.stringify(quote.sections)).map(s => ({
+                ...s,
+                isVariation: false,
+                customerApproved: undefined
+              }));
+            } else if (quote.lineItems) {
+              invoice.sections = [{
+                id: store.generateId(),
+                name: 'Main Phase',
+                isVariation: false,
+                lineItems: JSON.parse(JSON.stringify(quote.lineItems))
+              }];
+            }
+            
+            recalculate();
+            showToast(`Imported ${quote.number} successfully!`, 'success');
+            document.querySelector('.modal-overlay')?.remove();
+          }
+        });
+      });
+    });
+
     container.querySelector('#btn-save-inv')?.addEventListener('click', () => {
       const custId = container.querySelector('#inv-customer').value;
       const cust = customers.find(c => c.id === custId);
@@ -380,7 +564,33 @@ export function renderInvoiceDetail(container, { id }) {
       invoice.dueDate = container.querySelector('#inv-due').value;
       invoice.invoiceType = container.querySelector('#inv-type').value;
       
-      recalculate();
+      // Compute final values before saving
+      let originalSectionsSum = 0;
+      let approvedVariationsSum = 0;
+      let pendingVariationsSum = 0;
+      
+      (invoice.sections || []).forEach(sec => {
+        let secSum = (sec.lineItems || []).reduce((sum, item) => sum + (item.qty || 0) * (item.rate || 0), 0);
+        sec.subtotal = secSum;
+        if (sec.isVariation === true) {
+          if (sec.customerApproved === true) approvedVariationsSum += secSum;
+          else pendingVariationsSum += secSum;
+        } else {
+          originalSectionsSum += secSum;
+        }
+      });
+      
+      if (invoice.originalSubtotal === undefined || invoice.originalSubtotal === 0) {
+        invoice.originalSubtotal = originalSectionsSum;
+      }
+      
+      let calcSubtotal = originalSectionsSum + approvedVariationsSum;
+      invoice.subtotal = invoice.invoiceType === 'CreditNote' ? -Math.abs(calcSubtotal) : Math.abs(calcSubtotal);
+      invoice.tax = invoice.subtotal * 0.1;
+      invoice.total = invoice.subtotal + invoice.tax;
+      
+      invoice.approvedVariationsSum = approvedVariationsSum;
+      invoice.pendingVariationsSum = pendingVariationsSum;
 
       if (isNew) {
         const saved = store.create('invoices', invoice);
@@ -402,6 +612,7 @@ export function renderInvoiceDetail(container, { id }) {
 
     container.querySelector('#btn-mark-paid')?.addEventListener('click', () => {
       const content = document.createElement('div');
+      content.style.minWidth = '300px';
       content.innerHTML = `
         <div class="form-group">
           <label class="form-label">Date Paid</label>
@@ -456,3 +667,4 @@ export function renderInvoiceDetail(container, { id }) {
 
   render();
 }
+

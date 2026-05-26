@@ -17,9 +17,20 @@ export function showPrintPreview({ type, data }) {
   // Toolbar
   const toolbar = document.createElement('div');
   toolbar.style.cssText = 'position:sticky;top:0;z-index:2;background:var(--sidebar-bg);color:white;display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-radius:8px 8px 0 0;';
+  
+  const exportButtonsHtml = type === 'form' ? `
+    <button class="btn btn-secondary btn-sm" id="btn-export-csv" style="background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.2)">
+      <span class="material-icons-outlined" style="font-size:16px; margin-right:4px">table_view</span> CSV
+    </button>
+    <button class="btn btn-secondary btn-sm" id="btn-export-json" style="background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.2)">
+      <span class="material-icons-outlined" style="font-size:16px; margin-right:4px">code</span> JSON
+    </button>
+  ` : '';
+
   toolbar.innerHTML = `
     <span style="font-weight:600;font-size:14px">${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'} Preview — ${data.number}</span>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center">
+      ${exportButtonsHtml}
       <button class="btn btn-primary btn-sm" id="btn-print-pdf" style="background:#10B981;border-color:#10B981">
         <span class="material-icons-outlined" style="font-size:16px">print</span> Print / Save PDF
       </button>
@@ -44,6 +55,16 @@ export function showPrintPreview({ type, data }) {
   const close = () => overlay.remove();
   toolbar.querySelector('#btn-close-preview').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  // Bind Export Actions if applicable
+  if (type === 'form') {
+    toolbar.querySelector('#btn-export-csv').addEventListener('click', () => {
+      exportFormAsCSV(data);
+    });
+    toolbar.querySelector('#btn-export-json').addEventListener('click', () => {
+      exportFormAsJSON(data);
+    });
+  }
 
   // Print
   toolbar.querySelector('#btn-print-pdf').addEventListener('click', () => {
@@ -125,9 +146,16 @@ function generateDocument(type, data) {
   let tableContent = '';
   if (sections.length > 0) {
     sections.forEach(sec => {
+      // Exclude unapproved variations on invoices
+      if (type === 'invoice' && sec.isVariation === true && sec.customerApproved !== true) return;
+
+      const varBadge = (type === 'invoice' && sec.isVariation === true) 
+        ? ' <span style="background:#F59E0B; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:8px; vertical-align:middle; text-transform:uppercase">Variation</span>' 
+        : '';
+
       tableContent += `
         <tr class="pdf-section-header">
-          <td colspan="5" style="background:#F1F5F9; font-weight:700; color:#1E293B; border-bottom:2px solid #CBD5E1">${escapeHTML(sec.name || 'Phase')}</td>
+          <td colspan="5" style="background:#F1F5F9; font-weight:700; color:#1E293B; border-bottom:2px solid #CBD5E1">${escapeHTML(sec.name || 'Phase')}${varBadge}</td>
         </tr>
       `;
       sec.lineItems.forEach(item => {
@@ -209,6 +237,12 @@ function generateDocument(type, data) {
               <span class="pdf-info-value">${data.jobNumber}</span>
             </div>
           ` : ''}
+          ${!isQuote && data.originalQuoteNumber ? `
+            <div class="pdf-info-row">
+              <span class="pdf-info-label">Linked Quote</span>
+              <span class="pdf-info-value">${data.originalQuoteNumber}</span>
+            </div>
+          ` : ''}
           ${isQuote && data.title ? `
             <div class="pdf-info-row">
               <span class="pdf-info-label">Description</span>
@@ -235,20 +269,47 @@ function generateDocument(type, data) {
       </table>
 
       <!-- Totals -->
-      <div class="pdf-totals">
-        <div class="pdf-total-row">
-          <span>Subtotal</span>
-          <span>$${(data.subtotal || 0).toFixed(2)}</span>
+      ${type === 'invoice' ? `
+        <div class="pdf-totals">
+          <div class="pdf-total-row">
+            <span>Original Quoted Amount</span>
+            <span>$${(data.originalSubtotal !== undefined ? data.originalSubtotal : ((data.subtotal || 0) - (data.approvedVariationsSum || 0))).toFixed(2)}</span>
+          </div>
+          ${(data.approvedVariationsSum || 0) > 0 ? `
+            <div class="pdf-total-row" style="color:#10B981; font-weight:600">
+              <span>Approved Variations</span>
+              <span>+$${(data.approvedVariationsSum || 0).toFixed(2)}</span>
+            </div>
+          ` : ''}
+          <div class="pdf-total-row" style="border-top:1px dashed #CBD5E1; padding-top:8px; font-weight:600">
+            <span>Invoice Subtotal</span>
+            <span>$${(data.subtotal || 0).toFixed(2)}</span>
+          </div>
+          <div class="pdf-total-row">
+            <span>GST (10%)</span>
+            <span>$${(data.tax || 0).toFixed(2)}</span>
+          </div>
+          <div class="pdf-total-row pdf-grand-total">
+            <span>Total Payable (AUD)</span>
+            <span>$${(data.total || 0).toFixed(2)}</span>
+          </div>
         </div>
-        <div class="pdf-total-row">
-          <span>GST (10%)</span>
-          <span>$${(data.tax || 0).toFixed(2)}</span>
+      ` : `
+        <div class="pdf-totals">
+          <div class="pdf-total-row">
+            <span>Subtotal</span>
+            <span>$${(data.subtotal || 0).toFixed(2)}</span>
+          </div>
+          <div class="pdf-total-row">
+            <span>GST (10%)</span>
+            <span>$${(data.tax || 0).toFixed(2)}</span>
+          </div>
+          <div class="pdf-total-row pdf-grand-total">
+            <span>Total (AUD)</span>
+            <span>$${(data.total || 0).toFixed(2)}</span>
+          </div>
         </div>
-        <div class="pdf-total-row pdf-grand-total">
-          <span>Total (AUD)</span>
-          <span>$${(data.total || 0).toFixed(2)}</span>
-        </div>
-      </div>
+      `}
 
 
       ${data.notes ? `
@@ -275,22 +336,33 @@ function generateDocument(type, data) {
 function generateFormDocument(data) {
   let formHtml = '';
   (data.template.sections || []).forEach(sec => {
-    if (sec.isSpacer) return;
+    const secCols = sec.columns || (sec.width === 'half' ? 1 : 2);
+    if (sec.isSpacer) {
+      const secHeight = sec.height ? (String(sec.height).endsWith('px') ? sec.height : sec.height + 'px') : '50px';
+      formHtml += `<div style="width:100%; height:${secHeight}" class="print-spacer"></div>`;
+      return;
+    }
     formHtml += `
-      <div style="margin-bottom:24px; border:1px solid #CBD5E1; border-radius:6px; overflow:hidden">
+      <div style="margin-bottom:24px; border:1px solid #CBD5E1; border-radius:6px; overflow:hidden; page-break-inside:avoid">
         <div style="background:#F8FAFC; padding:10px 16px; border-bottom:1px solid #CBD5E1; font-weight:700; color:#1E293B; font-size:14px; text-transform:uppercase; letter-spacing:0.5px">
           ${escapeHTML(sec.title)}
         </div>
-        <div style="padding:16px; display:grid; grid-template-columns: 1fr 1fr; gap:16px">
+        <div style="padding:16px; display:grid; grid-template-columns: repeat(${secCols}, 1fr); gap:16px">
     `;
     sec.fields.forEach(f => {
-      if (f.type === 'spacer') return;
-      const isHalf = f.width === 'half';
+      const fSpan = Math.min(f.colSpan || (f.width === 'half' ? 1 : secCols), secCols);
+      if (f.type === 'spacer' || f.type === 'blank') {
+        const fHeight = f.height ? (String(f.height).endsWith('px') ? f.height : f.height + 'px') : '50px';
+        formHtml += `<div style="grid-column: span ${fSpan}; height:${f.type === 'blank' ? 'auto' : fHeight}" class="print-spacer"></div>`;
+        return;
+      }
       
       if (f.type === 'info') {
         formHtml += `
-          <div style="grid-column: span ${isHalf ? '1' : '2'}; padding:12px; background:#EFF6FF; border-left:4px solid #3B82F6; color:#1E3A8A; font-size:12px; border-radius:4px">
-            <div style="font-weight:600; margin-bottom:4px">Information</div>
+          <div style="grid-column: span ${fSpan}; padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-left:4px solid #64748b; color:#334155; font-size:13px; border-radius:4px; line-height:1.6; page-break-inside:avoid">
+            <div style="font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px; color:#475569">
+              <span class="material-icons-outlined" style="font-size:16px">info</span> Instruction / Info
+            </div>
             <div>${escapeHTML(f.label).replace(/\n/g, '<br/>')}</div>
           </div>
         `;
@@ -308,7 +380,7 @@ function generateFormDocument(data) {
       }
 
       formHtml += `
-        <div style="grid-column: span ${isHalf ? '1' : '2'}; display:flex; flex-direction:column; gap:6px">
+        <div style="grid-column: span ${fSpan}; display:flex; flex-direction:column; gap:6px">
           <div style="font-size:11px; font-weight:700; color:#5A6B7F; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(f.label)}</div>
           ${valHtml}
         </div>
@@ -411,4 +483,64 @@ function getPrintStyles() {
       .pdf-page { padding: 20px 24px; }
     }
   `;
+}
+
+export function downloadFile(content, fileName, contentType) {
+  const a = document.createElement("a");
+  const file = new Blob([content], { type: contentType });
+  a.href = URL.createObjectURL(file);
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export function exportFormAsCSV(data) {
+  const rows = [
+    ["Compliance Form Report"],
+    ["Form Name", data.template.name],
+    ["Job Reference", data.jobNumber],
+    ["Customer", data.customerName],
+    ["Submitted By", data.submittedByName || "—"],
+    ["Date Submitted", data.submittedAt ? new Date(data.submittedAt).toLocaleDateString() : "—"],
+    [],
+    ["Section", "Field Name", "Field Type", "Response / Value"]
+  ];
+
+  (data.template.sections || []).forEach(sec => {
+    if (sec.isSpacer) return;
+    sec.fields.forEach(f => {
+      if (f.type === 'spacer' || f.type === 'info' || f.type === 'blank') return;
+      const responseVal = data.responses[f.id] ?? '';
+      const formattedVal = f.type === 'checkbox' ? (responseVal ? 'Yes' : 'No') : responseVal;
+      rows.push([sec.title, f.label, f.type, formattedVal]);
+    });
+  });
+
+  const csvContent = rows
+    .map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  
+  const fileName = `Form_${data.jobNumber}_${data.template.name.replace(/\s+/g, '_')}.csv`;
+  downloadFile(csvContent, fileName, "text/csv;charset=utf-8;");
+}
+
+export function exportFormAsJSON(data) {
+  const jsonContent = JSON.stringify({
+    formInstanceId: data.id,
+    jobId: data.jobId,
+    jobNumber: data.jobNumber,
+    customerName: data.customerName,
+    submittedBy: data.submittedByName,
+    submittedAt: data.submittedAt,
+    formTemplate: {
+      id: data.template.id,
+      name: data.template.name,
+      description: data.template.description,
+      sections: data.template.sections
+    },
+    responses: data.responses
+  }, null, 2);
+
+  const fileName = `Form_${data.jobNumber}_${data.template.name.replace(/\s+/g, '_')}.json`;
+  downloadFile(jsonContent, fileName, "application/json;charset=utf-8;");
 }

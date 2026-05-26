@@ -1,33 +1,60 @@
 // ============================================
-// FIELDFORGE — SIDEBAR COMPONENT
+// FIELDFORGE — SIDEBAR COMPONENT (CATEGORIZED)
 // ============================================
 
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 
+// Structured navigation items with collapsible categories
 const navItems = [
-  { section: 'MAIN' },
+  // Top Level / Uncollapsed Items
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
   { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
-  { section: 'WORKFLOW' },
-  { id: 'people', icon: 'people', label: 'Customers', path: '/people' },
-  { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
-  { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
-  { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
-  { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
-  { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
-  { section: 'RESOURCES' },
-  { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
-  { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
-  { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/suppliers' },
-  { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
-  { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
-  { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' },
-  { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
-  { section: 'ANALYTICS' },
-  { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports' },
-  { section: 'SYSTEM' },
-  { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' },
+  
+  // Collapsible Category Groups
+  {
+    category: 'Workflow',
+    id: 'cat-workflow',
+    icon: 'account_tree',
+    items: [
+      { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
+      { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
+      { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
+      { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
+      { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' }
+    ]
+  },
+  {
+    category: 'People',
+    id: 'cat-people',
+    icon: 'groups',
+    items: [
+      { id: 'people', icon: 'people', label: 'Customers', path: '/people' },
+      { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
+      { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/suppliers' }
+    ]
+  },
+  {
+    category: 'Resources',
+    id: 'cat-resources',
+    icon: 'widgets',
+    items: [
+      { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
+      { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
+      { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
+      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' }
+    ]
+  },
+  {
+    category: 'Admin',
+    id: 'cat-admin',
+    icon: 'admin_panel_settings',
+    items: [
+      { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
+      { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports' },
+      { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' }
+    ]
+  }
 ];
 
 export function createSidebar() {
@@ -60,12 +87,54 @@ export function createSidebar() {
     <nav class="sidebar-nav" id="sidebar-nav">
   `;
 
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  // Fetch collapsed states from localStorage
+  let collapsedCats = {};
+  try {
+    collapsedCats = JSON.parse(localStorage.getItem('simpro_sidebar_collapsed_categories') || '{}');
+  } catch (e) {}
 
+  const currentPath = window.location.hash.slice(1) || '/';
+  const basePath = currentPath === '/' ? '/' : '/' + currentPath.split('/').filter(Boolean)[0];
+
+  // Render items loop
   navItems.forEach(item => {
-    if (item.section) {
-      html += `<div class="sidebar-section-label" data-section="${item.section}">${item.section}</div>`;
+    if (item.category) {
+      // Auto expand categories that contain the active page
+      const hasActiveChild = item.items.some(child => child.path === basePath);
+      let isCollapsed = collapsedCats[item.id] === true;
+      if (hasActiveChild) {
+        isCollapsed = false; // Override saved collapsed state to keep active paths visible
+      }
+
+      html += `
+        <div class="sidebar-category-container" data-category-id="${item.id}">
+          <button class="sidebar-category-header" data-category-id="${item.id}" id="cat-header-${item.id}">
+            <span class="category-chevron">
+              <span class="material-icons-outlined">${isCollapsed ? 'keyboard_arrow_right' : 'expand_more'}</span>
+            </span>
+            <span class="category-icon">
+              <span class="material-icons-outlined">${item.icon}</span>
+            </span>
+            <span class="category-label">${item.category}</span>
+          </button>
+          <div class="sidebar-category-items ${isCollapsed ? 'collapsed' : ''}" id="cat-items-${item.id}">
+      `;
+
+      item.items.forEach(child => {
+        html += `
+          <button class="sidebar-nav-item sub-item" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}">
+            <span class="nav-icon"><span class="material-icons-outlined">${child.icon}</span></span>
+            <span class="nav-label">${child.label}</span>
+          </button>
+        `;
+      });
+
+      html += `
+          </div>
+        </div>
+      `;
     } else {
+      // Top Level Item
       html += `
         <button class="sidebar-nav-item" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}">
           <span class="nav-icon"><span class="material-icons-outlined">${item.icon}</span></span>
@@ -95,6 +164,31 @@ export function createSidebar() {
 
   // Event listeners
   sidebar.addEventListener('click', (e) => {
+    // 1. Collapsible category header click (only active when expanded)
+    const catHeader = e.target.closest('.sidebar-category-header');
+    if (catHeader) {
+      if (!sidebar.classList.contains('expanded')) return; // Ignore clicks if sidebar is collapsed (hover triggers flyout)
+      
+      const catId = catHeader.dataset.categoryId;
+      const itemsContainer = sidebar.querySelector(`#cat-items-${catId}`);
+      const chevronSpan = catHeader.querySelector('.category-chevron .material-icons-outlined');
+
+      if (itemsContainer && chevronSpan) {
+        itemsContainer.classList.toggle('collapsed');
+        const isCollapsed = itemsContainer.classList.contains('collapsed');
+        chevronSpan.textContent = isCollapsed ? 'keyboard_arrow_right' : 'expand_more';
+
+        // Persist collapsed state
+        try {
+          const collapsed = JSON.parse(localStorage.getItem('simpro_sidebar_collapsed_categories') || '{}');
+          collapsed[catId] = isCollapsed;
+          localStorage.setItem('simpro_sidebar_collapsed_categories', JSON.stringify(collapsed));
+        } catch (err) {}
+      }
+      return;
+    }
+
+    // 2. Navigation item click
     const navItem = e.target.closest('.sidebar-nav-item');
     if (navItem && navItem.id !== 'btn-logout') {
       const path = navItem.dataset.path;
@@ -144,6 +238,97 @@ export function createSidebar() {
       window.dispatchEvent(new CustomEvent('fieldforge-logout'));
     });
   }
+
+  // --- MINIMIZED SIDEBAR HOVER PORTAL FLYOUT MANAGER ---
+  sidebar.querySelectorAll('.sidebar-category-container').forEach(container => {
+    let flyout = null;
+    let keepOpenTimeout = null;
+
+    function removeFlyout() {
+      if (flyout) {
+        flyout.remove();
+        flyout = null;
+      }
+    }
+
+    container.addEventListener('mouseenter', () => {
+      // Only show portal flyouts if the sidebar is collapsed (non-expanded)
+      if (sidebar.classList.contains('expanded')) return;
+      
+      if (keepOpenTimeout) {
+        clearTimeout(keepOpenTimeout);
+        keepOpenTimeout = null;
+      }
+
+      if (flyout) return;
+
+      const catId = container.dataset.categoryId;
+      const catHeader = container.querySelector('.sidebar-category-header');
+      const itemsContainer = container.querySelector('.sidebar-category-items');
+      if (!catHeader || !itemsContainer) return;
+
+      // Extract currently visible items (incorporates permission checks!)
+      const visibleItems = Array.from(itemsContainer.querySelectorAll('.sidebar-nav-item'))
+        .filter(el => el.style.display !== 'none');
+
+      if (visibleItems.length === 0) return;
+
+      // Create floating viewport portal container
+      flyout = document.createElement('div');
+      flyout.className = 'sidebar-collapsed-flyout';
+      flyout.id = `flyout-${catId}`;
+      
+      let subItemsHtml = '';
+      visibleItems.forEach(item => {
+        const isActive = item.classList.contains('active');
+        subItemsHtml += `
+          <button class="sidebar-nav-item sub-item ${isActive ? 'active' : ''}" data-path="${item.dataset.path}" data-id="${item.dataset.id}">
+            <span class="nav-icon">${item.querySelector('.nav-icon').innerHTML}</span>
+            <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">${item.querySelector('.nav-label').textContent}</span>
+          </button>
+        `;
+      });
+      flyout.innerHTML = subItemsHtml;
+
+      document.body.appendChild(flyout);
+
+      // Position popover floating directly next to category group icon
+      const rect = catHeader.getBoundingClientRect();
+      flyout.style.position = 'fixed';
+      flyout.style.left = `${rect.right + 2}px`;
+      flyout.style.top = `${rect.top}px`;
+      flyout.style.zIndex = '99999';
+
+      // Set up navigation click intercepts
+      flyout.addEventListener('click', (e) => {
+        const navItem = e.target.closest('.sidebar-nav-item');
+        if (navItem) {
+          const path = navItem.dataset.path;
+          if (path) {
+            router.navigate(path);
+            removeFlyout();
+          }
+        }
+      });
+
+      // Keep flyout alive when cursor enters popover area
+      flyout.addEventListener('mouseenter', () => {
+        if (keepOpenTimeout) {
+          clearTimeout(keepOpenTimeout);
+          keepOpenTimeout = null;
+        }
+      });
+
+      flyout.addEventListener('mouseleave', () => {
+        keepOpenTimeout = setTimeout(removeFlyout, 120);
+      });
+    });
+
+    container.addEventListener('mouseleave', () => {
+      if (sidebar.classList.contains('expanded')) return;
+      keepOpenTimeout = setTimeout(removeFlyout, 120);
+    });
+  });
 
   // Listen for settings changes (e.g. logo update)
   window.addEventListener('simpro-settings-updated', () => {
@@ -220,18 +405,16 @@ export function updateSidebarAccess(sidebarElement) {
       }
     });
 
-    // Hide empty section labels
-    sidebar.querySelectorAll('.sidebar-section-label').forEach(sec => {
-       let hasVisibleItems = false;
-       let next = sec.nextElementSibling;
-       while(next && next.classList.contains('sidebar-nav-item')) {
-          if (next.style.display !== 'none') {
-             hasVisibleItems = true;
-             break;
-          }
-          next = next.nextElementSibling;
-       }
-       sec.style.display = hasVisibleItems ? '' : 'none';
+    // Hide empty category containers
+    sidebar.querySelectorAll('.sidebar-category-container').forEach(container => {
+      const subItems = container.querySelectorAll('.sidebar-nav-item');
+      let hasVisibleItems = false;
+      subItems.forEach(item => {
+        if (item.style.display !== 'none') {
+          hasVisibleItems = true;
+        }
+      });
+      container.style.display = hasVisibleItems ? '' : 'none';
     });
 
     // Update arrows
@@ -246,7 +429,7 @@ export function updateSidebarAccess(sidebarElement) {
   }
 }
 
-function toggleSidebar(sidebar) {
+export function toggleSidebar(sidebar) {
   sidebar.classList.toggle('expanded');
   const isExpanded = sidebar.classList.contains('expanded');
   localStorage.setItem('simpro_sidebar_expanded', isExpanded);

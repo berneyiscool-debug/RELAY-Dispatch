@@ -16,10 +16,17 @@ function ensureContainer() {
   return container;
 }
 
-export function showToast(message, type = 'info', duration = 3500) {
+export function showToast(message, type = 'info', options = {}) {
+  const duration = typeof options === 'number' ? options : (options.duration || 3500);
+  const link = typeof options === 'object' ? options.link : null;
+
   const c = ensureContainer();
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
+  if (link) {
+    toast.style.cursor = 'pointer';
+    toast.title = 'Click to view';
+  }
 
   const icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
   toast.innerHTML = `
@@ -30,7 +37,21 @@ export function showToast(message, type = 'info', duration = 3500) {
     </button>
   `;
 
-  toast.querySelector('.toast-close').addEventListener('click', () => toast.remove());
+  if (link) {
+    toast.addEventListener('click', (e) => {
+      if (!e.target.closest('.toast-close')) {
+        import('../router.js').then(({ router }) => {
+          router.navigate(link);
+          toast.remove();
+        });
+      }
+    });
+  }
+
+  toast.querySelector('.toast-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toast.remove();
+  });
   c.appendChild(toast);
 
   setTimeout(() => {
@@ -47,5 +68,5 @@ export function addSystemNotification(title, message, link) {
   store.create('notifications', {
     title, message, link, read: false
   });
-  showToast(`${title}: ${message}`, 'info');
+  showToast(`${title}: ${message}`, 'info', { link });
 }

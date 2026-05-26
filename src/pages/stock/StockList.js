@@ -10,7 +10,7 @@ import { showModal } from '../../components/Modal.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
-
+import { parseCSV } from '../../utils/csvParser.js';
 export function renderStockList(container) {
   const stock = store.getAll('stock');
 
@@ -19,6 +19,7 @@ export function renderStockList(container) {
       <h1>Stock / Inventory</h1>
       <div class="page-header-actions">
         <button class="btn btn-secondary" id="btn-transfer-stock"><span class="material-icons-outlined">swap_horiz</span> Transfer</button>
+        <button class="btn btn-secondary" id="btn-import-stock"><span class="material-icons-outlined">file_upload</span> Import</button>
         <button class="btn btn-primary" id="btn-new-stock"><span class="material-icons-outlined">add</span> New Item</button>
       </div>
     </div>
@@ -455,6 +456,153 @@ export function renderStockList(container) {
         }}
       ]
     });
+    // Import Stock CSV wizard
+    container.querySelector('#btn-import-stock')?.addEventListener('click', () => showImportModal(container));
+
+    function showImportModal(parentContainer) {
+      // Step 1: File upload modal
+      const uploadContent = document.createElement('div');
+      uploadContent.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Select CSV File *</label>
+          <input type="file" accept=".csv,text/csv" id="csv-file-input" class="form-input" />
+        </div>
+      `;
+      showModal({
+        title: 'Import Stock from CSV',
+        content: uploadContent,
+        actions: [
+          {
+            label: 'Cancel',
+            className: 'btn-secondary',
+            onClick: c => c()
+          },
+          {
+            label: 'Next',
+            className: 'btn-primary',
+            onClick: c => {
+              const fileInput = document.getElementById('csv-file-input');
+              if (!fileInput.files.length) {
+                showToast('Please select a CSV file', 'error');
+                return;
+              }
+              const file = fileInput.files[0];
+              const reader = new FileReader();
+              reader.onload = e => {
+                const text = e.target.result;
+                const rows = parseCSV(text);
+                if (rows.length === 0) {
+                  showToast('CSV file appears empty', 'error');
+                  return;
+                }
+                const headers = Object.keys(rows[0]);
+                const requiredFields = [
+                  { key: 'name', label: 'Item Name' },
+                  { key: 'sku', label: 'SKU' },
+                  { key: 'category', label: 'Category' },
+                  { key: 'unitPrice', label: 'Unit Price' },
+                  { key: 'quantity', label: 'Qty' },
+                  { key: 'location', label: 'Location' },
+                  { key: 'supplier', label: 'Supplier' }
+                ];
+                const mapContent = document.createElement('div');
+                mapContent.innerHTML = requiredFields.map(f => `
+                  <div class="form-group">
+                    <label class="form-label">${f.label}</label>
+                    <select class="form-select" id="map-${f.key}">
+                      <option value="">-- ignore --</option>
+                      ${headers.map(h => `<option value="${h}">${h}</option>`).join('')}
+                    </select>
+                  </div>
+                `).join('');
+                // Mapping modal
+                showModal({
+                  title: 'Map CSV Columns',
+                  content: mapContent,
+                  actions: [
+                    {
+                      label: 'Back',
+                      className: 'btn-secondary',
+                      onClick: c2 => c2()
+                    },
+                    {
+                      label: 'Import',
+                      className: 'btn-primary',
+                      onClick: c2 => {
+                        const mapping = {};
+                        requiredFields.forEach(f => {
+                          const sel = document.getElementById('map-' + f.key);
+                          if (sel && sel.value) mapping[f.key] = sel.value;
+                        });
+                        // Preview first 5 rows
+                        const previewRows = rows.slice(0, 5).map(r => {
+                          const obj = {};
+                          Object.entries(mapping).forEach(([field, col]) => {
+                            obj[field] = r[col];
+                          });
+                          return obj;
+                        });
+                        const previewContent = document.createElement('div');
+                        previewContent.innerHTML = '<pre>' + JSON.stringify(previewRows, null, 2) + '</pre>';
+                        showModal({
+                          title: 'Preview Import (first 5 rows)',
+                          content: previewContent,
+                          actions: [
+                            {
+                              label: 'Back',
+                              className: 'btn-secondary',
+                              onClick: c3 => c3()
+                            },
+                            {
+                              label: 'Execute',
+                              className: 'btn-primary',
+                              onClick: c3 => {
+                                rows.forEach(r => {
+                                  const newItem = {};
+                                  // Name
+                                  newItem.name = (r[mapping.name] || '').trim() || 'Untitled';
+                                  // SKU
+                                  newItem.sku = (r[mapping.sku] || '').trim() || ('SKU-' + Date.now().toString().slice(-6));
+                                  // Category
+                                  newItem.category = (r[mapping.category] || '').trim() || 'Uncategorized';
+                                  // Unit Price
+                                  const price = parseFloat(r[mapping.unitPrice]);
+                                  newItem.unitPrice = isNaN(price) ? 0 : price;
+                                  // Quantity
+                                  const qty = parseInt(r[mapping.quantity]);
+                                  const quantity = isNaN(qty) ? 0 : qty;
+                                  // Location
+                                  const loc = (r[mapping.location] || '').trim() || 'Main Warehouse';
+                                  newItem.locations = [{ location: loc, quantity }];
+                                  newItem.quantity = quantity;
+                                  newItem.location = loc;
+                                  // Supplier
+                                  newItem.supplier = (r[mapping.supplier] || '').trim() || 'Unknown';
+                                  // Optional costPrice fallback (assume 2/3 of unitPrice)
+                                  newItem.costPrice = newItem.unitPrice / 1.5;
+                                  store.create('stock', newItem);
+                                });
+                                showToast(`Imported ${rows.length} stock items`, 'success');
+                                renderStockList(parentContainer);
+                                c3();
+                              }
+                            }
+                          ]
+                        });
+                        c2();
+                      }
+                    }
+                  ]
+                });
+                c();
+              };
+              reader.readAsText(file);
+            }
+          }
+        ]
+      });
+    }
+
 
     // Handle dynamic selection changes in Drawer
     // Wait for drawer rendering to bind events on the active element overlay

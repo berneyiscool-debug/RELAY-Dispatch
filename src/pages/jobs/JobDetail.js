@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
+import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { showTimesheetEditModal } from '../../utils/timesheetModals.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
@@ -132,41 +133,226 @@ export function renderJobDetail(container, { id }) {
         ? job.technicians.map(t => `${escapeHTML(t.name)} (${t.hours}h)`).join(', ')
         : escapeHTML(job.technicianName || 'Unassigned');
 
+      // Calculate actual expenses dynamically for the deviation tracker
+      const timesheets = store.getAll('timesheets').filter(t => t.jobId === id);
+      const allTechs = store.getAll('technicians');
+      const loggedLabor = {};
+      let totalLoggedHours = 0;
+      let totalLaborCost = 0;
+
+      timesheets.forEach(t => {
+        if (!loggedLabor[t.technicianId]) {
+          const tech = allTechs.find(x => x.id === t.technicianId);
+          loggedLabor[t.technicianId] = {
+            hours: 0,
+            rate: tech ? (tech.payRate || tech.hourlyRate || 45) : 45
+          };
+        }
+        loggedLabor[t.technicianId].hours += (t.hours || 0);
+      });
+      Object.values(loggedLabor).forEach(t => {
+        totalLoggedHours += t.hours;
+        totalLaborCost += (t.hours * t.rate);
+      });
+
+      const assetUsage = store.getAll('assetUsage').filter(au => au.jobId === id);
+      const allAssets = store.getAll('assets');
+      let totalAssetCost = 0;
+      assetUsage.forEach(au => {
+        const asset = allAssets.find(a => a.id === au.assetId);
+        const rate = au.recoveryRate || (asset ? asset.recoveryRate : 0) || 0;
+        totalAssetCost += (au.hours * rate);
+      });
+
+      const matCost = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
+      const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
+      const totalMatCost = matCost + additionalMatCost;
+
+      const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id || q.number === job.quoteNumber);
+      const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+
+      let estLabor = 0;
+      let estMaterial = 0;
+      if (acceptedQuote) {
+        const items = [];
+        if (acceptedQuote.sections && Array.isArray(acceptedQuote.sections)) {
+          acceptedQuote.sections.forEach(sec => {
+            if (sec.lineItems && Array.isArray(sec.lineItems)) {
+              items.push(...sec.lineItems);
+            }
+          });
+        }
+        if (acceptedQuote.lineItems && Array.isArray(acceptedQuote.lineItems)) {
+          items.push(...acceptedQuote.lineItems);
+        }
+        
+        items.forEach(item => {
+          const itemAmt = parseFloat(item.total) || ((parseFloat(item.qty) || 0) * (parseFloat(item.rate) || 0));
+          if (item.type === 'labor') {
+            estLabor += itemAmt;
+          } else if (item.type === 'material') {
+            estMaterial += itemAmt;
+          }
+        });
+      }
+      if (estLabor === 0 && estMaterial === 0) {
+        estLabor = parseFloat(job.estimatedLaborCost || job.laborCost || 0);
+        estMaterial = parseFloat(job.estimatedMaterialCost || job.materialCost || 0);
+      }
+
+      const estTotal = estLabor + estMaterial;
+      const actLabor = totalLaborCost;
+      const actMaterial = totalMatCost;
+      const actAsset = totalAssetCost;
+      const actTotal = actLabor + actMaterial + actAsset;
+      const varianceLabor = actLabor - estLabor;
+      const varianceMaterial = actMaterial - estMaterial;
+      const varianceTotal = actTotal - estTotal;
+
       tc.innerHTML = `
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-header"><h4>Job Information</h4></div>
-            <div class="card-body">
-              <div style="display:flex;flex-direction:column;gap:12px">
-                ${r('Job Number', escapeHTML(job.number))}
-                ${r('Title', escapeHTML(job.title))}
-                ${r('Type', escapeHTML(job.type))}
-                ${r('Status', escapeHTML(job.status))}
-                ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
-                ${r('Priority', escapeHTML(job.priority))}
-                ${r('Customer', escapeHTML(job.customerName))}
-                ${r('Contact', escapeHTML(job.contactName || '—'))}
+        <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+          
+          <!-- Budget Deviation Tracker Card -->
+          <div class="card" style="border: 1.5px solid ${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success)'}">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; background:${varianceTotal > 0 ? 'rgba(239,68,68,0.02)' : 'rgba(16,185,129,0.02)'}; padding: 12px 16px">
+              <h4 style="margin:0; color:${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success-dark)'}; display:flex; align-items:center; gap:8px">
+                <span class="material-icons-outlined" style="font-size:20px">analytics</span>
+                Budget Deviation & Expenses Tracker
+              </h4>
+              <span class="badge ${varianceTotal > 0 ? 'badge-danger' : 'badge-success'}" style="font-weight:700">
+                ${varianceTotal > 0 ? 'Over Budget' : 'Under Budget'}
+              </span>
+            </div>
+            <div class="card-body" style="padding: 16px">
+              ${varianceTotal > 0 ? `
+                <div style="display:flex; align-items:center; gap:12px; background:rgba(239,68,68,0.08); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; margin-bottom:16px; color:#c53030">
+                  <span class="material-icons-outlined" style="font-size:20px">warning</span>
+                  <div style="font-size:13px">
+                    <strong>Budget Overrun Detected</strong>
+                    <div style="font-size:12px; margin-top:2px; opacity:0.9">Actual expenses have exceeded the quoted estimation by <strong>$${varianceTotal.toFixed(2)}</strong>. Customer approval may be required for additional variations.</div>
+                  </div>
+                </div>
+              ` : `
+                <div style="display:flex; align-items:center; gap:12px; background:rgba(16,185,129,0.08); border-left:4px solid var(--color-success); padding:12px; border-radius:4px; margin-bottom:16px; color:#2f855a">
+                  <span class="material-icons-outlined" style="font-size:20px">check_circle</span>
+                  <div style="font-size:13px">
+                    <strong>Expenses Within Quoted Budget</strong>
+                    <div style="font-size:12px; margin-top:2px; opacity:0.9">Current expenses are within the original quoted estimation. Remaining budget margin: <strong>$${Math.abs(varianceTotal).toFixed(2)}</strong>.</div>
+                  </div>
+                </div>
+              `}
+
+              <!-- Visual Progress Comparison Bar -->
+              <div style="margin-bottom:18px">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; font-weight:600; color:var(--text-secondary)">
+                  <span>Quoted Estimate ($${estTotal.toFixed(2)})</span>
+                  <span>Actual Expenses ($${actTotal.toFixed(2)})</span>
+                </div>
+                <div style="width:100%; background:var(--border-color); height:12px; border-radius:6px; overflow:hidden; position:relative; display:flex">
+                  ${(() => {
+                    const percent = estTotal > 0 ? Math.min(100, Math.round((actTotal / estTotal) * 100)) : 100;
+                    const isOver = actTotal > estTotal;
+                    const barColor = isOver ? 'var(--color-danger)' : 'var(--color-success)';
+                    return `
+                      <div style="width:${percent}%; background:${barColor}; height:100%; transition:width 0.4s ease; border-radius:6px"></div>
+                      ${isOver ? `<div style="flex:1; background:rgba(239,68,68,0.25); height:100%"></div>` : ''}
+                    `;
+                  })()}
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:var(--text-tertiary)">
+                  <span>0%</span>
+                  <span>Budget Utilization: ${estTotal > 0 ? Math.round((actTotal / estTotal) * 100) : 0}%</span>
+                  <span>${estTotal > 0 && actTotal > estTotal ? `${Math.round((actTotal / estTotal) * 100)}% (Overspent)` : '100%'}</span>
+                </div>
+              </div>
+
+              <!-- Itemized Variance Table -->
+              <table class="data-table" style="font-size:13px; margin:0">
+                <thead>
+                  <tr>
+                    <th>Expense Category</th>
+                    <th style="text-align:right">Quoted Estimate</th>
+                    <th style="text-align:right">Actual Spent</th>
+                    <th style="text-align:right">Variance / Deviation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="font-weight:600">Labor Pay</td>
+                    <td style="text-align:right; color:var(--text-secondary)">$${estLabor.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600">$${actLabor.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600; color:${varianceLabor > 0 ? 'var(--color-danger)' : varianceLabor < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                      ${varianceLabor > 0 ? `+$${varianceLabor.toFixed(2)}` : varianceLabor < 0 ? `-$${Math.abs(varianceLabor).toFixed(2)}` : '$0.00'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600">Material Costs</td>
+                    <td style="text-align:right; color:var(--text-secondary)">$${estMaterial.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600">$${actMaterial.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600; color:${varianceMaterial > 0 ? 'var(--color-danger)' : varianceMaterial < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                      ${varianceMaterial > 0 ? `+$${varianceMaterial.toFixed(2)}` : varianceMaterial < 0 ? `-$${Math.abs(varianceMaterial).toFixed(2)}` : '$0.00'}
+                    </td>
+                  </tr>
+                  ${actAsset > 0 ? `
+                    <tr>
+                      <td style="font-weight:600">Asset Recovery (Van/Tools)</td>
+                      <td style="text-align:right; color:var(--text-secondary)">$0.00</td>
+                      <td style="text-align:right; font-weight:600">$${actAsset.toFixed(2)}</td>
+                      <td style="text-align:right; font-weight:600; color:var(--color-danger)">+$${actAsset.toFixed(2)}</td>
+                    </tr>
+                  ` : ''}
+                </tbody>
+                <tfoot>
+                  <tr style="border-top: 2px solid var(--border-color); font-weight:700">
+                    <td>Total Job Expenses</td>
+                    <td style="text-align:right">$${estTotal.toFixed(2)}</td>
+                    <td style="text-align:right; color:var(--color-primary)">$${actTotal.toFixed(2)}</td>
+                    <td style="text-align:right; color:${varianceTotal > 0 ? 'var(--color-danger)' : varianceTotal < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                      ${varianceTotal > 0 ? `+$${varianceTotal.toFixed(2)}` : varianceTotal < 0 ? `-$${Math.abs(varianceTotal).toFixed(2)}` : '$0.00'}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- Original Grid details -->
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header"><h4>Job Information</h4></div>
+              <div class="card-body">
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  ${r('Job Number', escapeHTML(job.number))}
+                  ${r('Title', escapeHTML(job.title))}
+                  ${r('Type', escapeHTML(job.type))}
+                  ${r('Status', escapeHTML(job.status))}
+                  ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
+                  ${r('Priority', escapeHTML(job.priority))}
+                  ${r('Customer', escapeHTML(job.customerName))}
+                  ${r('Contact', escapeHTML(job.contactName || '—'))}
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+                <h4 style="margin:0">Schedule & Assignment</h4>
+                <button class="btn btn-ghost btn-sm" id="btn-add-schedule" style="font-size:12px;padding:4px 8px">
+                  <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">calendar_month</span> Add to Schedule
+                </button>
+              </div>
+              <div class="card-body">
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  ${r('Technicians', techNames)}
+                  ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
+                  ${r('Est. Hours', job.estimatedHours || '—')}
+                  ${r('Site Address', escapeHTML(job.siteAddress || '—'))}
+                  ${r('Quote Ref', job.quoteId ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : '—')}
+                  ${r('Created', new Date(job.createdAt).toLocaleDateString())}
+                </div>
               </div>
             </div>
           </div>
-          <div class="card">
-            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-              <h4 style="margin:0">Schedule & Assignment</h4>
-              <button class="btn btn-ghost btn-sm" id="btn-add-schedule" style="font-size:12px;padding:4px 8px">
-                <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">calendar_month</span> Add to Schedule
-              </button>
-            </div>
-            <div class="card-body">
-              <div style="display:flex;flex-direction:column;gap:12px">
-                ${r('Technicians', techNames)}
-                ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
-                ${r('Est. Hours', job.estimatedHours || '—')}
-                ${r('Site Address', escapeHTML(job.siteAddress || '—'))}
-                ${r('Quote Ref', job.quoteId ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : '—')}
-                ${r('Created', new Date(job.createdAt).toLocaleDateString())}
-              </div>
-            </div>
-          </div>
+
         </div>
       `;
 
@@ -444,6 +630,17 @@ export function renderJobDetail(container, { id }) {
                     technicians: jobTechs,
                     technicianName: jobTechs.map(t => t.name).join(', ')
                   });
+
+                  // Trigger system notifications for each scheduled technician
+                  import('../../components/Notifications.js').then(({ addSystemNotification }) => {
+                    jobTechs.forEach(t => {
+                      addSystemNotification(
+                        'New Schedule Assignment',
+                        `You have been scheduled for Job ${job.number} (${job.title}) starting ${currentEntries[0].start.replace('T', ' ')} (${t.hours} hrs total).`,
+                        `/jobs/${id}`
+                      );
+                    });
+                  });
                 }
 
                 showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
@@ -569,7 +766,7 @@ export function renderJobDetail(container, { id }) {
             const currentPath = [...taskViewPath, i];
             const isSelected = currentPath.join('-') === taskExpandedPath.join('-');
             return `
-                        <div class="task-list-item" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color)'}">
+                        <div class="task-list-item ${p.progress === 100 ? 'completed' : ''}" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:transparent; color:var(--text-primary)'}">
                           <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
                           ${p.subTasks && p.subTasks.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="margin-left:8px; width:18px; height:18px; cursor:pointer;" />`}
                         </div>
@@ -628,7 +825,7 @@ export function renderJobDetail(container, { id }) {
                     <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Progress</div>
                     <div style="width:100%;background:var(--border-color);height:24px;border-radius:4px;overflow:hidden;position:relative">
                       <div style="width:${node.progress || 0}%;background:var(--color-primary);height:100%;transition:width 0.3s"></div>
-                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:${node.progress > 50 ? '#fff' : '#000'}">${node.progress || 0}%</div>
+                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:${node.progress > 50 ? '#fff' : 'var(--text-primary)'}">${node.progress || 0}%</div>
                     </div>
                   </div>
                   <div style="margin-top:16px">
@@ -694,7 +891,7 @@ export function renderJobDetail(container, { id }) {
                     <label class="form-label">Progress</label>
                     <div style="width:100%;background:var(--border-color);height:36px;border-radius:4px;overflow:hidden;position:relative">
                       <div style="width:${node.progress || 0}%;background:var(--color-primary);height:100%;transition:width 0.3s"></div>
-                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;color:${node.progress > 50 ? '#fff' : '#000'}">${node.progress || 0}%</div>
+                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;color:${node.progress > 50 ? '#fff' : 'var(--text-primary)'}">${node.progress || 0}%</div>
                     </div>
                   </div>
                   <div class="form-group">
@@ -1188,10 +1385,22 @@ export function renderJobDetail(container, { id }) {
         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
         const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
 
-        if (acceptedQuote && acceptedQuote.sections) {
-          job.materials = [];
-          acceptedQuote.sections.forEach(sec => {
-            (sec.lineItems || []).forEach(item => {
+        if (acceptedQuote) {
+          const items = [];
+          if (acceptedQuote.sections && Array.isArray(acceptedQuote.sections)) {
+            acceptedQuote.sections.forEach(sec => {
+              if (sec.lineItems && Array.isArray(sec.lineItems)) {
+                items.push(...sec.lineItems);
+              }
+            });
+          }
+          if (acceptedQuote.lineItems && Array.isArray(acceptedQuote.lineItems)) {
+            items.push(...acceptedQuote.lineItems);
+          }
+
+          if (items.length > 0) {
+            job.materials = [];
+            items.forEach(item => {
               if (item.type === 'material') {
                 const sMatch = store.getAll('stock').find(s => s.name === item.description);
                 job.materials.push({
@@ -1203,8 +1412,8 @@ export function renderJobDetail(container, { id }) {
                 });
               }
             });
-          });
-          store.update('jobs', id, { materials: job.materials });
+            store.update('jobs', id, { materials: job.materials });
+          }
         }
       }
       if (!job.materials) job.materials = [];
@@ -1283,8 +1492,155 @@ export function renderJobDetail(container, { id }) {
       const profit = billableTotal - totalInternalCost;
       const margin = billableTotal > 0 ? (profit / billableTotal) * 100 : 0;
 
+      const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id || q.number === job.quoteNumber);
+      const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+
+      let estLabor = 0;
+      let estMaterial = 0;
+      if (acceptedQuote) {
+        const items = [];
+        if (acceptedQuote.sections && Array.isArray(acceptedQuote.sections)) {
+          acceptedQuote.sections.forEach(sec => {
+            if (sec.lineItems && Array.isArray(sec.lineItems)) {
+              items.push(...sec.lineItems);
+            }
+          });
+        }
+        if (acceptedQuote.lineItems && Array.isArray(acceptedQuote.lineItems)) {
+          items.push(...acceptedQuote.lineItems);
+        }
+        
+        items.forEach(item => {
+          const itemAmt = parseFloat(item.total) || ((parseFloat(item.qty) || 0) * (parseFloat(item.rate) || 0));
+          if (item.type === 'labor') {
+            estLabor += itemAmt;
+          } else if (item.type === 'material') {
+            estMaterial += itemAmt;
+          }
+        });
+      }
+      if (estLabor === 0 && estMaterial === 0) {
+        estLabor = parseFloat(job.estimatedLaborCost || job.laborCost || 0);
+        estMaterial = parseFloat(job.estimatedMaterialCost || job.materialCost || 0);
+      }
+
+      const estTotal = estLabor + estMaterial;
+      const actLabor = totalLaborCost;
+      const actMaterial = totalMatCost;
+      const actAsset = totalAssetCost;
+      const actTotal = actLabor + actMaterial + actAsset;
+      const varianceLabor = actLabor - estLabor;
+      const varianceMaterial = actMaterial - estMaterial;
+      const varianceTotal = actTotal - estTotal;
+
       tc.innerHTML = `
-        <div class="grid-2">
+        <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+          
+          <!-- Budget Deviation Tracker Card -->
+          <div class="card" style="border: 1.5px solid ${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success)'}">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; background:${varianceTotal > 0 ? 'rgba(239,68,68,0.02)' : 'rgba(16,185,129,0.02)'}; padding: 12px 16px">
+              <h4 style="margin:0; color:${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success-dark)'}; display:flex; align-items:center; gap:8px">
+                <span class="material-icons-outlined" style="font-size:20px">analytics</span>
+                Budget Deviation & Costs Tracker
+              </h4>
+              <span class="badge ${varianceTotal > 0 ? 'badge-danger' : 'badge-success'}" style="font-weight:700">
+                ${varianceTotal > 0 ? 'Over Budget' : 'Under Budget'}
+              </span>
+            </div>
+            <div class="card-body" style="padding: 16px">
+              ${varianceTotal > 0 ? `
+                <div style="display:flex; align-items:center; gap:12px; background:rgba(239,68,68,0.08); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; margin-bottom:16px; color:#c53030">
+                  <span class="material-icons-outlined" style="font-size:20px">warning</span>
+                  <div style="font-size:13px">
+                    <strong>Budget Overrun Detected</strong>
+                    <div style="font-size:12px; margin-top:2px; opacity:0.9">Actual expenses have exceeded the quoted estimation by <strong>$${varianceTotal.toFixed(2)}</strong>. Customer approval may be required for additional variations.</div>
+                  </div>
+                </div>
+              ` : `
+                <div style="display:flex; align-items:center; gap:12px; background:rgba(16,185,129,0.08); border-left:4px solid var(--color-success); padding:12px; border-radius:4px; margin-bottom:16px; color:#2f855a">
+                  <span class="material-icons-outlined" style="font-size:20px">check_circle</span>
+                  <div style="font-size:13px">
+                    <strong>Expenses Within Quoted Budget</strong>
+                    <div style="font-size:12px; margin-top:2px; opacity:0.9">Current expenses are within the original quoted estimation. Remaining budget margin: <strong>$${Math.abs(varianceTotal).toFixed(2)}</strong>.</div>
+                  </div>
+                </div>
+              `}
+
+              <!-- Visual Progress Comparison Bar -->
+              <div style="margin-bottom:18px">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; font-weight:600; color:var(--text-secondary)">
+                  <span>Quoted Estimate ($${estTotal.toFixed(2)})</span>
+                  <span>Actual Expenses ($${actTotal.toFixed(2)})</span>
+                </div>
+                <div style="width:100%; background:var(--border-color); height:12px; border-radius:6px; overflow:hidden; position:relative; display:flex">
+                  ${(() => {
+                    const percent = estTotal > 0 ? Math.min(100, Math.round((actTotal / estTotal) * 100)) : 100;
+                    const isOver = actTotal > estTotal;
+                    const barColor = isOver ? 'var(--color-danger)' : 'var(--color-success)';
+                    return `
+                      <div style="width:${percent}%; background:${barColor}; height:100%; transition:width 0.4s ease; border-radius:6px"></div>
+                      ${isOver ? `<div style="flex:1; background:rgba(239,68,68,0.25); height:100%"></div>` : ''}
+                    `;
+                  })()}
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:var(--text-tertiary)">
+                  <span>0%</span>
+                  <span>Budget Utilization: ${estTotal > 0 ? Math.round((actTotal / estTotal) * 100) : 0}%</span>
+                  <span>${estTotal > 0 && actTotal > estTotal ? `${Math.round((actTotal / estTotal) * 100)}% (Overspent)` : '100%'}</span>
+                </div>
+              </div>
+
+              <!-- Itemized Variance Table -->
+              <table class="data-table" style="font-size:13px; margin:0">
+                <thead>
+                  <tr>
+                    <th>Expense Category</th>
+                    <th style="text-align:right">Quoted Estimate</th>
+                    <th style="text-align:right">Actual Spent</th>
+                    <th style="text-align:right">Variance / Deviation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="font-weight:600">Labor Pay</td>
+                    <td style="text-align:right; color:var(--text-secondary)">$${estLabor.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600">$${actLabor.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600; color:${varianceLabor > 0 ? 'var(--color-danger)' : varianceLabor < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                      ${varianceLabor > 0 ? `+$${varianceLabor.toFixed(2)}` : varianceLabor < 0 ? `-$${Math.abs(varianceLabor).toFixed(2)}` : '$0.00'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600">Material Costs</td>
+                    <td style="text-align:right; color:var(--text-secondary)">$${estMaterial.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600">$${actMaterial.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600; color:${varianceMaterial > 0 ? 'var(--color-danger)' : varianceMaterial < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                      ${varianceMaterial > 0 ? `+$${varianceMaterial.toFixed(2)}` : varianceMaterial < 0 ? `-$${Math.abs(varianceMaterial).toFixed(2)}` : '$0.00'}
+                    </td>
+                  </tr>
+                  ${actAsset > 0 ? `
+                    <tr>
+                      <td style="font-weight:600">Asset Recovery (Van/Tools)</td>
+                      <td style="text-align:right; color:var(--text-secondary)">$0.00</td>
+                      <td style="text-align:right; font-weight:600">$${actAsset.toFixed(2)}</td>
+                      <td style="text-align:right; font-weight:600; color:var(--color-danger)">+$${actAsset.toFixed(2)}</td>
+                    </tr>
+                  ` : ''}
+                </tbody>
+                <tfoot>
+                  <tr style="border-top: 2px solid var(--border-color); font-weight:700">
+                    <td>Total Job Expenses</td>
+                    <td style="text-align:right">$${estTotal.toFixed(2)}</td>
+                    <td style="text-align:right; color:var(--color-primary)">$${actTotal.toFixed(2)}</td>
+                    <td style="text-align:right; color:${varianceTotal > 0 ? 'var(--color-danger)' : varianceTotal < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
+                      ${varianceTotal > 0 ? `+$${varianceTotal.toFixed(2)}` : varianceTotal < 0 ? `-$${Math.abs(varianceTotal).toFixed(2)}` : '$0.00'}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+          
+          <div class="grid-2">
           <div class="card">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
               <h4 style="margin:0">Technicians & Internal Cost</h4>
@@ -1452,6 +1808,7 @@ export function renderJobDetail(container, { id }) {
             </div>
           </div>
         </div>
+      </div>
       `;
 
       tc.querySelector('#inp-labor-profile')?.addEventListener('change', (e) => {
@@ -1481,19 +1838,29 @@ export function renderJobDetail(container, { id }) {
         const manualItems = (job.materials || []).filter(m => !m.fromQuote);
         const newQuoteItems = [];
 
-        acceptedQuote.sections.forEach(sec => {
-          (sec.lineItems || []).forEach(item => {
-            if (item.type === 'material') {
-              const sMatch = store.getAll('stock').find(s => s.name === item.description);
-              newQuoteItems.push({
-                stockId: sMatch ? sMatch.id : null,
-                name: item.description || 'Unknown Material',
-                quantity: item.qty || 1,
-                unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
-                fromQuote: true
-              });
+        const items = [];
+        if (acceptedQuote.sections && Array.isArray(acceptedQuote.sections)) {
+          acceptedQuote.sections.forEach(sec => {
+            if (sec.lineItems && Array.isArray(sec.lineItems)) {
+              items.push(...sec.lineItems);
             }
           });
+        }
+        if (acceptedQuote.lineItems && Array.isArray(acceptedQuote.lineItems)) {
+          items.push(...acceptedQuote.lineItems);
+        }
+
+        items.forEach(item => {
+          if (item.type === 'material') {
+            const sMatch = store.getAll('stock').find(s => s.name === item.description);
+            newQuoteItems.push({
+              stockId: sMatch ? sMatch.id : null,
+              name: item.description || 'Unknown Material',
+              quantity: item.qty || 1,
+              unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
+              fromQuote: true
+            });
+          }
         });
 
         job.materials = [...newQuoteItems, ...manualItems];
@@ -1676,8 +2043,12 @@ export function renderJobDetail(container, { id }) {
                     <span class="material-icons-outlined" style="font-size:18px">${(log.files && log.files.length) ? 'attachment' : 'chat_bubble_outline'}</span>
                   </div>
                   <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative;" class="activity-log-item" data-expanded="false">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-                      <span class="text-secondary" style="font-size:var(--font-size-xs)">${new Date(log.date).toLocaleString()}</span>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center;">
+                      <div style="display:flex;gap:6px;align-items:center;">
+                        <span style="font-size:var(--font-size-sm);font-weight:600;color:var(--text-primary)">${escapeHTML(log.author || 'System')}</span>
+                        <span class="text-tertiary" style="font-size:10px">•</span>
+                        <span class="text-secondary" style="font-size:var(--font-size-xs)">${new Date(log.date).toLocaleString()}</span>
+                      </div>
                       <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px;z-index:2"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
                     </div>
                     <div class="activity-content-wrapper" style="max-height: 200px; overflow: hidden; position: relative; transition: max-height 0.3s ease;">
@@ -1747,12 +2118,14 @@ export function renderJobDetail(container, { id }) {
         const val = tc.querySelector('#new-note-input').value.trim();
         if (!val && !stagedFiles.length) return;
 
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
         job.activityLog.unshift({
           id: Math.random().toString(36).substr(2, 9),
           type: 'combined',
           content: val,
           files: [...stagedFiles],
-          date: new Date().toISOString()
+          date: new Date().toISOString(),
+          author: currentUser.name || 'Unknown User'
         });
 
         store.update('jobs', id, { activityLog: job.activityLog });
@@ -1793,6 +2166,7 @@ export function renderJobDetail(container, { id }) {
       const timesheets = store.getAll('timesheets').filter(t => t.jobId === id);
       const totalHours = timesheets.reduce((sum, t) => sum + (t.hours || 0), 0);
       const techs = store.getAll('technicians');
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
 
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
@@ -1803,6 +2177,7 @@ export function renderJobDetail(container, { id }) {
           <div class="card-body" style="padding:0">
             <table class="data-table">
               <thead><tr><th>Date</th><th>Technician</th><th>Task</th><th>Description</th><th style="text-align:right">Hours</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+              <tbody>
                       ${timesheets.length ? timesheets.map(t => {
         const isOwner = String(t.technicianId) === String(currentUser.id);
         const canEdit = ['admin', 'manager', 'office'].includes(currentUser.role) || (isOwner && t.status !== 'Approved');
@@ -2127,7 +2502,7 @@ export function renderJobDetail(container, { id }) {
 
                 const part = stockItems.find(s => s.id === partId);
 
-                store.create('purchaseOrders', {
+                const po = store.create('purchaseOrders', {
                   number: `PO-${Date.now().toString().slice(-5)}`,
                   jobId: id,
                   supplierName: supplier,
@@ -2138,7 +2513,7 @@ export function renderJobDetail(container, { id }) {
                   total: (part.costPrice || 0) * qty
                 });
 
-                showToast('Quick PO Created', 'success');
+                showToast('Quick PO Created', 'success', { link: `/purchase-orders/${po.id}` });
                 renderTabContent();
                 close();
               }
@@ -2180,6 +2555,16 @@ export function renderJobDetail(container, { id }) {
       `;
 
       function createDraftInvoice(type, sections, subtotal) {
+        let originalQuoteNumber = '';
+        let originalQuoteId = '';
+        if (job.quoteId) {
+          const quote = store.getById('quotes', job.quoteId);
+          if (quote) {
+            originalQuoteNumber = quote.number;
+            originalQuoteId = quote.id;
+          }
+        }
+
         const inv = store.create('invoices', {
           number: `INV-${Date.now().toString().slice(-6)}`,
           invoiceType: type,
@@ -2187,6 +2572,9 @@ export function renderJobDetail(container, { id }) {
           customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
           status: 'Draft',
           sections: sections,
+          originalQuoteId,
+          originalQuoteNumber,
+          originalSubtotal: subtotal,
           subtotal: subtotal, tax: subtotal * 0.1, total: subtotal * 1.1,
           issueDate: new Date().toISOString(), dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
         });
@@ -2313,6 +2701,8 @@ export function renderJobDetail(container, { id }) {
 
     container.querySelector('#btn-edit-job')?.addEventListener('click', () => router.navigate(`/jobs/${id}/edit`));
 
+    // Field Technician Log Board submit handler was removed as techs can log travel/labor to a subtask named Travel under timesheets
+
     container.querySelector('#btn-delete-job')?.addEventListener('click', () => {
       const content = document.createElement('div');
       content.innerHTML = `<p>Delete job <strong>${escapeHTML(job.number)}</strong>?</p>`;
@@ -2372,7 +2762,14 @@ export function renderJobDetail(container, { id }) {
                         <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm fill-form" data-id="${fi.id}" title="${isComplete ? 'View / Edit' : 'Fill Form'}">
                           <span class="material-icons-outlined" style="font-size:16px">${isComplete ? 'visibility' : 'edit_note'}</span>
                         </button>
-                        ${isComplete ? `<button class="btn btn-secondary btn-icon btn-sm print-form" data-id="${fi.id}" title="Print / PDF"><span class="material-icons-outlined" style="font-size:18px">print</span></button>` : ''}
+                        ${isComplete ? `
+                          <button class="btn btn-secondary btn-icon btn-sm export-form" data-id="${fi.id}" title="Export Options">
+                            <span class="material-icons-outlined" style="font-size:18px">download</span>
+                          </button>
+                          <button class="btn btn-secondary btn-icon btn-sm print-form" data-id="${fi.id}" title="Print / PDF">
+                            <span class="material-icons-outlined" style="font-size:18px">print</span>
+                          </button>
+                        ` : ''}
                         ${!isComplete ? `<button class="btn btn-ghost btn-icon btn-sm remove-form-instance" data-id="${fi.id}" style="color:var(--color-danger)" title="Remove Form"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>` : ''}
                       </div>
                     </td>
@@ -2400,6 +2797,75 @@ export function renderJobDetail(container, { id }) {
           store.save('formInstances', all.filter(i => i.id !== fid));
           renderFormsTab(tc);
         }
+      });
+    });
+
+    tc.querySelectorAll('.export-form').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fi = store.getById('formInstances', btn.dataset.id);
+        const template = store.getById('formTemplates', fi.templateId);
+        const submitter = fi.submittedBy ? store.getById('people', fi.submittedBy) : null;
+        
+        const exportData = {
+          ...fi,
+          template,
+          jobNumber: job.number,
+          customerName: store.getById('people', job.customerId)?.companyName || 'Unknown Customer',
+          submittedByName: submitter ? `${submitter.firstName} ${submitter.lastName}` : 'Unknown Technician',
+          number: `F-${job.number}-${fi.id.slice(3, 7).toUpperCase()}`
+        };
+
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = 'padding: 12px 0; display:flex; flex-direction:column; gap:16px';
+        modalContent.innerHTML = `
+          <div style="font-size:14px; color:var(--text-secondary); margin-bottom:8px">
+            Select the format to export <strong>${escapeHTML(template.name)}</strong>:
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr; gap:12px">
+            <button class="btn btn-secondary" id="export-modal-pdf" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">
+              <span class="material-icons-outlined" style="color:#EF4444">picture_as_pdf</span>
+              <span>Export as Print-Optimized PDF</span>
+            </button>
+            <button class="btn btn-secondary" id="export-modal-csv" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">
+              <span class="material-icons-outlined" style="color:#10B981">table_view</span>
+              <span>Export as Spreadsheet CSV</span>
+            </button>
+            <button class="btn btn-secondary" id="export-modal-json" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">
+              <span class="material-icons-outlined" style="color:#1B6DE0">code</span>
+              <span>Export as Developer JSON</span>
+            </button>
+          </div>
+        `;
+
+        showModal({
+          title: 'Export Compliance Form',
+          content: modalContent,
+          actions: [{ label: 'Cancel', className: 'btn-secondary', onClick: c => c() }]
+        });
+
+        modalContent.querySelector('#export-modal-pdf').addEventListener('click', () => {
+          document.querySelector('.modal-overlay')?.remove();
+          import('../../components/PrintPreview.js').then(({ showPrintPreview }) => {
+            showPrintPreview({
+              type: 'form',
+              data: exportData
+            });
+          });
+        });
+
+        modalContent.querySelector('#export-modal-csv').addEventListener('click', () => {
+          document.querySelector('.modal-overlay')?.remove();
+          import('../../components/PrintPreview.js').then(({ exportFormAsCSV }) => {
+            exportFormAsCSV(exportData);
+          });
+        });
+
+        modalContent.querySelector('#export-modal-json').addEventListener('click', () => {
+          document.querySelector('.modal-overlay')?.remove();
+          import('../../components/PrintPreview.js').then(({ exportFormAsJSON }) => {
+            exportFormAsJSON(exportData);
+          });
+        });
       });
     });
 
@@ -2494,27 +2960,31 @@ export function renderJobDetail(container, { id }) {
         <div style="font-size:14px; color:var(--text-secondary); margin-top:6px">${escapeHTML(template.description || '')}</div>
       </div>
       <form id="active-job-form">
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px">
+        <div style="display:flex; flex-direction:column; gap:24px">
           ${(template.sections || []).map(sec => {
+      const secCols = sec.columns || (sec.width === 'half' ? 1 : 2);
       if (sec.isSpacer) {
-        return `<div style="grid-column: span ${sec.width === 'half' ? '1' : '2'}"></div>`;
+        const secHeight = sec.height ? (String(sec.height).endsWith('px') ? sec.height : sec.height + 'px') : '50px';
+        return `<div style="width:100%; height: ${secHeight}"></div>`;
       }
       return `
-            <div class="form-section" style="grid-column: span ${sec.width === 'half' ? '1' : '2'}; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px; overflow:hidden">
+            <div class="form-section" style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px; overflow:hidden">
               <div style="background:var(--content-bg); padding:12px 16px; border-bottom:1px solid var(--border-color); border-left:4px solid var(--color-primary)">
                 <h4 style="margin:0; font-size:15px; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(sec.title)}</h4>
               </div>
-              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; padding:16px">
+              <div style="display:grid; grid-template-columns: repeat(${secCols}, 1fr); gap:16px; padding:16px">
                 ${sec.fields.map(f => {
-        if (f.type === 'spacer') {
-          return `<div style="grid-column: span ${f.width === 'half' ? '1' : '2'}"></div>`;
+        const fSpan = Math.min(f.colSpan || (f.width === 'half' ? 1 : secCols), secCols);
+        if (f.type === 'spacer' || f.type === 'blank') {
+          const fHeight = f.height ? (String(f.height).endsWith('px') ? f.height : f.height + 'px') : '50px';
+          return `<div style="grid-column: span ${fSpan}; height: ${f.type === 'blank' ? 'auto' : fHeight}"></div>`;
         }
 
         if (f.type === 'info') {
           return `
-          <div class="form-group" style="margin:0; grid-column: span ${f.width === 'half' ? '1' : '2'}; padding:16px; background:var(--color-primary-light); border-radius:6px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
-            <div style="display:flex; gap:12px">
-              <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0">info</span>
+          <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:rgba(27, 109, 224, 0.05); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
+            <div style="display:flex; gap:12px; align-items:flex-start">
+              <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px; margin-top:2px">info</span>
               <div>${escapeHTML(f.label).replace(/\n/g, '<br/>')}</div>
             </div>
           </div>
@@ -2525,23 +2995,23 @@ export function renderJobDetail(container, { id }) {
         let fieldHtml = '';
 
         if (f.type === 'text') {
-          fieldHtml = `<input class="form-input" name="${f.id}" value="${escapeHTML(val)}" ${f.required ? 'required' : ''} />`;
+          fieldHtml = `<input class="form-input" name="${f.id}" value="${escapeHTML(val)}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
         } else if (f.type === 'textarea') {
-          fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" ${f.required ? 'required' : ''}>${escapeHTML(val)}</textarea>`;
+          fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>${escapeHTML(val)}</textarea>`;
         } else if (f.type === 'checkbox') {
           fieldHtml = `
-                       <label style="display:flex; align-items:center; gap:10px; cursor:pointer">
-                         <input type="checkbox" name="${f.id}" ${val ? 'checked' : ''} style="width:18px; height:18px" />
-                         <span style="font-size:14px">${f.label}</span>
+                       <label style="display:flex; align-items:center; gap:10px; cursor:${isComplete ? 'default' : 'pointer'}; opacity:${isComplete ? '0.7' : '1'}">
+                         <input type="checkbox" name="${f.id}" ${val ? 'checked' : ''} style="width:18px; height:18px" ${isComplete ? 'disabled' : ''} />
+                         <span style="font-size:14px">${escapeHTML(f.label)}</span>
                        </label>`;
         } else if (f.type === 'select') {
           fieldHtml = `
-                       <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''}>
+                       <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''}>
                          <option value="">Select option...</option>
                          ${(f.options || []).map(opt => `<option value="${escapeHTML(opt)}" ${val === opt ? 'selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
                        </select>`;
         } else if (f.type === 'date') {
-          fieldHtml = `<input type="date" class="form-input" name="${f.id}" value="${val}" ${f.required ? 'required' : ''} />`;
+          fieldHtml = `<input type="date" class="form-input" name="${f.id}" value="${val}" ${f.required ? 'required' : ''} ${isComplete ? 'disabled' : ''} />`;
         } else if (f.type === 'signature') {
           fieldHtml = `
                        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic">
@@ -2550,7 +3020,7 @@ export function renderJobDetail(container, { id }) {
         }
 
         return `
-                    <div class="form-group" style="margin:0; grid-column: span ${f.width === 'half' ? '1' : '2'}">
+                    <div class="form-group" style="margin:0; grid-column: span ${fSpan}">
                       ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(f.label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
                       ${fieldHtml}
                     </div>
@@ -2564,60 +3034,102 @@ export function renderJobDetail(container, { id }) {
       </form>
     `;
 
+    const saveResponses = (complete) => {
+      const form = content.querySelector('#active-job-form');
+      const responses = {};
+
+      (template.sections || []).forEach(sec => {
+        if (sec.isSpacer) return;
+        sec.fields.forEach(f => {
+          if (f.type === 'spacer' || f.type === 'info' || f.type === 'blank') return;
+
+          if (f.type === 'checkbox') {
+            const el = form.querySelector(`input[name="${f.id}"]`);
+            responses[f.id] = el ? el.checked : false;
+          } else {
+            const el = form.querySelector(`[name="${f.id}"]`);
+            responses[f.id] = el ? el.value : '';
+          }
+
+          if (complete && f.type === 'signature') {
+            responses[f.id] = JSON.parse(localStorage.getItem('currentUser'))?.name || 'Unknown';
+          }
+        });
+      });
+
+      const currentInstances = store.getAll('formInstances');
+      const idx = currentInstances.findIndex(i => i.id === instanceId);
+      currentInstances[idx] = {
+        ...currentInstances[idx],
+        responses,
+        status: complete ? 'Completed' : 'Pending',
+        submittedBy: complete ? JSON.parse(localStorage.getItem('currentUser'))?.id : currentInstances[idx].submittedBy,
+        submittedAt: complete ? new Date().toISOString() : currentInstances[idx].submittedAt
+      };
+
+      store.save('formInstances', currentInstances);
+      showToast(complete ? 'Form submitted successfully' : 'Draft saved successfully', 'success');
+      renderFormsTab(container.querySelector('#tab-content'));
+
+      // Log activity
+      const activity = store.getAll('activity') || [];
+      activity.push({
+        id: Date.now(),
+        jobId: id,
+        type: complete ? 'form_submission' : 'form_draft_saved',
+        text: complete ? `Form "${template.name}" submitted.` : `Form "${template.name}" draft was saved.`,
+        user: JSON.parse(localStorage.getItem('currentUser'))?.name,
+        timestamp: new Date().toISOString()
+      });
+      store.save('activity', activity);
+    };
+
+    const actions = [];
+    actions.push({ label: 'Cancel', className: 'btn-secondary', onClick: c => c() });
+
+    if (!isComplete) {
+      actions.push({
+        label: 'Save Draft',
+        className: 'btn-secondary',
+        onClick: (close) => {
+          saveResponses(false);
+          close();
+        }
+      });
+      actions.push({
+        label: 'Complete & Sign',
+        className: 'btn-primary',
+        onClick: (close) => {
+          const form = content.querySelector('#active-job-form');
+          if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+          }
+          saveResponses(true);
+          close();
+        }
+      });
+    } else {
+      actions.push({
+        label: 'Update Form',
+        className: 'btn-primary',
+        onClick: (close) => {
+          const form = content.querySelector('#active-job-form');
+          if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+          }
+          saveResponses(true);
+          close();
+        }
+      });
+    }
+
     showModal({
       title: isComplete ? 'Edit Form Response' : 'Complete Job Form',
       content,
       size: 'modal-xl',
-      actions: [
-        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
-        {
-          label: isComplete ? 'Update Form' : 'Submit Form', className: 'btn-primary', onClick: c => {
-            const form = content.querySelector('#active-job-form');
-            if (!form.checkValidity()) return form.reportValidity();
-
-            const formData = new FormData(form);
-            const responses = {};
-            (template.sections || []).forEach(sec => {
-              if (sec.isSpacer) return;
-              sec.fields.forEach(f => {
-                if (f.type === 'spacer' || f.type === 'info') return;
-
-                if (f.type === 'checkbox') responses[f.id] = formData.has(f.id);
-                else responses[f.id] = formData.get(f.id);
-
-                if (f.type === 'signature') responses[f.id] = JSON.parse(localStorage.getItem('currentUser'))?.name || 'Unknown';
-              });
-            });
-
-            const currentInstances = store.getAll('formInstances');
-            const idx = currentInstances.findIndex(i => i.id === instanceId);
-            currentInstances[idx] = {
-              ...currentInstances[idx],
-              responses,
-              status: 'Completed',
-              submittedBy: JSON.parse(localStorage.getItem('currentUser'))?.id,
-              submittedAt: new Date().toISOString()
-            };
-
-            store.save('formInstances', currentInstances);
-            showToast(isComplete ? 'Form updated successfully' : 'Form submitted successfully', 'success');
-            c();
-            renderFormsTab(container.querySelector('#tab-content'));
-
-            // Log activity
-            const activity = store.getAll('activity') || [];
-            activity.push({
-              id: Date.now(),
-              jobId: id,
-              type: 'form_submission',
-              text: isComplete ? `Form "${template.name}" was updated.` : `Form "${template.name}" submitted.`,
-              user: JSON.parse(localStorage.getItem('currentUser'))?.name,
-              timestamp: new Date().toISOString()
-            });
-            store.save('activity', activity);
-          }
-        }
-      ]
+      actions
     });
   }
 }

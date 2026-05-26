@@ -1,6 +1,7 @@
 // ============================================
 // FIELDFORGE — DATA STORE (localStorage)
 // ============================================
+import { prebuiltForms } from './prebuiltForms.js';
 
 // Legacy prefix kept to prevent data loss during rebranding
 const STORE_PREFIX = 'simpro_';
@@ -129,6 +130,14 @@ class DataStore {
       .filter(key => key.startsWith(STORE_PREFIX))
       .forEach(key => localStorage.removeItem(key));
   }
+
+  seedFormTemplates() {
+    const existing = this.getAll('formTemplates');
+    if (existing.length === 0) {
+      this.save('formTemplates', prebuiltForms);
+    }
+  }
 }
 
 export const store = new DataStore();
+store.seedFormTemplates();

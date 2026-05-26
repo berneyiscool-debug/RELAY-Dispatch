@@ -27,28 +27,28 @@ function getHeaderActionsHtml() {
 let isEditMode = false;
 
 // Width class → grid-column span
-const WIDTH_CLASS = { S: 'module-s', M: 'module-m', L: 'module-l', XL: 'module-xl' };
+const WIDTH_CLASS = { S: 'module-s', M: 'module-m', L: 'module-l', XL: 'module-l' };
 // Height class → grid-row span
 const HEIGHT_CLASS = { standard: '', tall: 'module-tall', xtall: 'module-xtall' };
 
 function getLayoutKey() {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  return currentUser ? `dashboardLayout_v2_${currentUser.id}` : 'dashboardLayout_v2';
+  return currentUser ? `dashboardLayout_v3_${currentUser.id}` : 'dashboardLayout_v3'; /* Shifting storage key to reload fresh layout */
 }
 
 // Each module declares its default width + height, and which options are sensible
 const MODULES = {
-  'kpi-cards':            { title: 'KPI Cards',                   defaultW: 'XL', defaultH: 'standard', widths: ['M','L','XL'],      heights: ['standard'],               kpiStrip: true,  render: renderKpiCards },
-  'job-status-chart':     { title: 'Job Status Chart',            defaultW: 'M',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: renderJobStatusChart },
-  'tech-map':             { title: 'Technician Map',              defaultW: 'M',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: renderTechMap },
-  'recent-activity':      { title: 'Recent Activity',             defaultW: 'M',  defaultH: 'tall',     widths: ['M','L','XL'],      heights: ['tall','xtall'],           render: renderRecentActivity },
-  'recent-leads':         { title: 'Recent Leads',                defaultW: 'M',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderRecentLeads },
+  'kpi-cards':            { title: 'KPI Cards',                   defaultW: 'L',  defaultH: 'standard', widths: ['M','L'],           heights: ['standard'],               kpiStrip: true,  render: renderKpiCards },
+  'job-status-chart':     { title: 'Job Status Chart',            defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: renderJobStatusChart },
+  'tech-map':             { title: 'Technician Map',              defaultW: 'S',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderTechMap },
+  'recent-activity':      { title: 'Recent Activity',             defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: renderRecentActivity },
+  'recent-leads':         { title: 'Recent Leads',                defaultW: 'S',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderRecentLeads },
   'today-schedule':       { title: "Today's Schedule",            defaultW: 'M',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderTodaySchedule },
   'pinned-job':           { title: 'Pinned Job Progress',         defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        configurable: true,  render: renderPinnedJob },
   'unassigned-jobs':      { title: 'Unassigned Jobs Queue',       defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('assignment_late', 'No unassigned jobs') },
   'uninvoiced-completed': { title: 'Uninvoiced Completed Jobs',   defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('receipt_long', 'All jobs invoiced') },
   'low-stock':            { title: 'Low Stock Alerts',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard','tall'],        render: () => renderPlaceholder('inventory', 'Inventory looks good') },
-  'profitability-chart':  { title: 'Projected Profitability',     defaultW: 'L',  defaultH: 'tall',     widths: ['L','XL'],          heights: ['tall','xtall'],           render: renderProfitabilityChart },
+  'profitability-chart':  { title: 'Projected Profitability',     defaultW: 'L',  defaultH: 'tall',     widths: ['L'],               heights: ['tall','xtall'],           render: renderProfitabilityChart },
   'staff-availability':   { title: 'Staff Availability',          defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('people', 'All staff active') },
   'timesheet-exceptions': { title: 'Timesheet Exceptions',        defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('schedule', 'No timesheet alerts') },
   'asset-status':         { title: 'Asset Status',                defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('precision_manufacturing', 'All assets operational') },
@@ -57,18 +57,18 @@ const MODULES = {
   'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     widths: ['S','M'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('checklist', 'No tasks added') },
   'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('approval', 'No pending approvals') },
   'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: () => renderPlaceholder('star', 'NPS Score: 8.5/10') },
-  'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('account_balance', '+ $15,240 this week') },
+  'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('account_balance', '+ $15,240 this week') },
   'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: () => renderPlaceholder('wb_sunny', 'Sunny, 24°C') },
 };
 
 const DEFAULT_LAYOUT = [
-  { id: 'kpi-cards',        w: 'XL', h: 'standard' },
-  { id: 'job-status-chart', w: 'M',  h: 'tall' },
-  { id: 'today-schedule',   w: 'M',  h: 'tall' },
-  { id: 'recent-activity',  w: 'M',  h: 'tall' },
-  { id: 'tech-map',         w: 'M',  h: 'tall' },
-  { id: 'recent-leads',     w: 'M',  h: 'tall' },
-  { id: 'cash-flow',        w: 'M',  h: 'standard' },
+  { id: 'kpi-cards',        w: 'L', h: 'standard' }, /* Level 3 max width (100%) */
+  { id: 'job-status-chart', w: 'M', h: 'tall' },
+  { id: 'cash-flow',        w: 'S', h: 'tall' },
+  { id: 'today-schedule',   w: 'M', h: 'tall' },
+  { id: 'recent-leads',     w: 'S', h: 'tall' },
+  { id: 'recent-activity',  w: 'M', h: 'tall' },
+  { id: 'tech-map',         w: 'S', h: 'tall' },
 ];
 
 function renderPlaceholder(icon, msg) {

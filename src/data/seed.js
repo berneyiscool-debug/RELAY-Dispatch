@@ -154,6 +154,7 @@ export function generateContractors() {
       calloutFee: 85.00,
       specialties: ['Solar PV Installation', 'Battery Systems', 'Switchboard Upgrades'],
       notes: 'Preferred subcontractor for large-scale solar rollouts. Highly reliable.',
+      portalToken: 'c_pt_ecovolt',
       complianceDocs: [
         { id: 'doc_1_1', type: 'Public Liability Insurance', number: 'PL-992110-A', expiryDate: '2026-10-15', verified: true, notes: 'Cover up to $20M' },
         { id: 'doc_1_2', type: 'Workers Compensation', number: 'WC-883912', expiryDate: '2026-08-20', verified: true, notes: 'Active cover' },
@@ -173,6 +174,7 @@ export function generateContractors() {
       calloutFee: 90.00,
       specialties: ['Commercial Plumbing', 'Gas Fitting', 'Drain Blockages'],
       notes: 'Quick response time. Has own high-pressure jetter and CCTV camera.',
+      portalToken: 'c_pt_apex',
       complianceDocs: [
         { id: 'doc_2_1', type: 'Public Liability Insurance', number: 'PL-223401-B', expiryDate: '2026-06-30', verified: true, notes: 'Cover up to $10M' },
         { id: 'doc_2_2', type: 'Workers Compensation', number: 'WC-449102', expiryDate: '2026-04-12', verified: false, notes: 'Requires updated certificate copy' },
@@ -192,6 +194,7 @@ export function generateContractors() {
       calloutFee: 120.00,
       specialties: ['Chiller Maintenance', 'Commercial A/C', 'Duct Work'],
       notes: 'Currently set to inactive due to expired public liability insurance. Do not dispatch.',
+      portalToken: 'c_pt_swift',
       complianceDocs: [
         { id: 'doc_3_1', type: 'Public Liability Insurance', number: 'PL-771109-C', expiryDate: '2026-02-10', verified: false, notes: 'Expired! Contact Marcus for renewal' },
         { id: 'doc_3_2', type: 'Workers Compensation', number: 'WC-110291', expiryDate: '2026-11-30', verified: true, notes: 'Cover active' },
@@ -212,16 +215,18 @@ function generateTaskTemplates() {
       tasks: [
         {
           id: 'p1', name: 'Main Board Inspection', status: 'Not Started', progress: 0,
+          description: 'Visually inspect main board, terminal blocks, enclosure, and general wiring integrity.',
           subTasks: [
-            { id: 'sp1', name: 'RCD Testing', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0 },
-            { id: 'sp2', name: 'Terminal Tightness', estimatedHours: 0.5, people: 1, status: 'Not Started', progress: 0 }
+            { id: 'sp1', name: 'RCD Testing', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0, description: 'Perform trip time and trip current test on safety switches.' },
+            { id: 'sp2', name: 'Terminal Tightness', estimatedHours: 0.5, people: 1, status: 'Not Started', progress: 0, description: 'Verify all terminal screws are properly torqued to specifications.' }
           ]
         },
         {
           id: 'p2', name: 'Circuit Testing', status: 'Not Started', progress: 0,
+          description: 'Test subcircuits for safety, load rating compliance, and continuous grounding.',
           subTasks: [
-            { id: 'sp3', name: 'Insulation Resistance', estimatedHours: 2, people: 1, status: 'Not Started', progress: 0 },
-            { id: 'sp4', name: 'Earth Loop Impedance', estimatedHours: 1.5, people: 1, status: 'Not Started', progress: 0 }
+            { id: 'sp3', name: 'Insulation Resistance', estimatedHours: 2, people: 1, status: 'Not Started', progress: 0, description: 'Measure insulation resistance between active, neutral, and earth conductors.' },
+            { id: 'sp4', name: 'Earth Loop Impedance', estimatedHours: 1.5, people: 1, status: 'Not Started', progress: 0, description: 'Measure the impedance of the earth fault loop to verify breaker trip time.' }
           ]
         }
       ]
@@ -235,16 +240,18 @@ function generateTaskTemplates() {
       tasks: [
         {
           id: 'p3', name: 'Physical Inspection', status: 'Not Started', progress: 0,
+          description: 'Assess physical condition of panels, mounting frames, and external conduits.',
           subTasks: [
-            { id: 'sp5', name: 'Module Cleaning', estimatedHours: 3, people: 2, status: 'Not Started', progress: 0 },
-            { id: 'sp6', name: 'Mounting Hardware Check', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0 }
+            { id: 'sp5', name: 'Module Cleaning', estimatedHours: 3, people: 2, status: 'Not Started', progress: 0, description: 'Clean modules with de-ionized water to remove dirt, debris, or bird droppings.' },
+            { id: 'sp6', name: 'Mounting Hardware Check', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0, description: 'Ensure all mounting brackets, rails, and bolts are securely fastened.' }
           ]
         },
         {
           id: 'p4', name: 'Electrical Performance', status: 'Not Started', progress: 0,
+          description: 'Measure solar production efficiency, inverter outputs, and string voltage stability.',
           subTasks: [
-            { id: 'sp7', name: 'Inverter Diagnostics', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0 },
-            { id: 'sp8', name: 'String Voltage Testing', estimatedHours: 2, people: 1, status: 'Not Started', progress: 0 }
+            { id: 'sp7', name: 'Inverter Diagnostics', estimatedHours: 1, people: 1, status: 'Not Started', progress: 0, description: 'Read fault log history, check operational status, and inspect ventilation/heatsinks.' },
+            { id: 'sp8', name: 'String Voltage Testing', estimatedHours: 2, people: 1, status: 'Not Started', progress: 0, description: 'Measure open circuit voltage and short circuit current on each solar string.' }
           ]
         }
       ]
@@ -310,7 +317,9 @@ function generateJobs(customers, quotes) {
   return Array.from({ length: 20 }, (_, i) => {
     const cust = randomItem(customers);
     const tech = randomItem(technicians);
-    const status = randomItem(statuses);
+    const status = (i === 0) ? 'Scheduled' : (i === 1) ? 'In Progress' : (i === 2) ? 'Pending' : randomItem(statuses);
+    const contractorId = (i === 0 || i === 1) ? 'cont_1' : (i === 2) ? 'cont_2' : null;
+    
     return {
       id: `job_${i + 1}`,
       number: `J-${String(100000 + i + 1)}`,
@@ -324,6 +333,7 @@ function generateJobs(customers, quotes) {
       priority: randomItem(priorities),
       technicianId: tech.id,
       technicianName: tech.name,
+      contractorId,
       quoteId: i < quotes.length ? quotes[i]?.id : null,
       scheduledDate: randomDate(-7, 21),
       estimatedHours: Math.ceil(Math.random() * 8),
@@ -337,9 +347,10 @@ function generateJobs(customers, quotes) {
           progress: status === 'Pending' ? 0 : 100,
           estimatedHours: 4,
           people: 1,
+          assignedContractorIds: (i === 2) ? ['cont_1'] : [],
           subTasks: [
-            { id: 'sp1', name: 'Safety Audit', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 1, people: 1 },
-            { id: 'sp2', name: 'Site Setup', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 3, people: 1 }
+            { id: 'sp1', name: 'Safety Audit', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 1, people: 1, assignedContractorIds: (i === 2) ? ['cont_1'] : [] },
+            { id: 'sp2', name: 'Site Setup', status: status === 'Pending' ? 'Not Started' : 'Completed', progress: status === 'Pending' ? 0 : 100, estimatedHours: 3, people: 1, assignedContractorIds: (i === 2) ? ['cont_1'] : [] }
           ]
         },
         { 
@@ -349,9 +360,10 @@ function generateJobs(customers, quotes) {
           progress: (status === 'Completed' || status === 'Invoiced') ? 100 : (status === 'In Progress' ? 50 : 0),
           estimatedHours: 12,
           people: 2,
+          assignedContractorIds: (i === 2) ? ['cont_2'] : [],
           subTasks: [
-            { id: 'sp3', name: 'Main Installation', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : (status === 'In Progress' ? 'In Progress' : 'Not Started'), progress: (status === 'Completed' || status === 'Invoiced') ? 100 : (status === 'In Progress' ? 100 : 0), estimatedHours: 8, people: 2 },
-            { id: 'sp4', name: 'Final Commissioning', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : 'Not Started', progress: (status === 'Completed' || status === 'Invoiced') ? 100 : 0, estimatedHours: 4, people: 2 }
+            { id: 'sp3', name: 'Main Installation', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : (status === 'In Progress' ? 'In Progress' : 'Not Started'), progress: (status === 'Completed' || status === 'Invoiced') ? 100 : (status === 'In Progress' ? 100 : 0), estimatedHours: 8, people: 2, assignedContractorIds: (i === 2) ? ['cont_2'] : [] },
+            { id: 'sp4', name: 'Final Commissioning', status: (status === 'Completed' || status === 'Invoiced') ? 'Completed' : 'Not Started', progress: (status === 'Completed' || status === 'Invoiced') ? 100 : 0, estimatedHours: 4, people: 2, assignedContractorIds: (i === 2) ? ['cont_2'] : [] }
           ]
         }
       ],
@@ -888,6 +900,91 @@ export function seedData() {
       });
       
       store.save('stock', migratedStock);
+    }
+
+    // Self-healing migration: Ensure all existing jobs and task templates have task descriptions populated
+    const jobsForPortal = store.getAll('jobs');
+    let jobsUpdated = false;
+    
+    const defaultTaskDescriptions = {
+      'Site Preparation': 'Establish site perimeter, prepare tools, and ensure safety barriers are erected.',
+      'Safety Audit': 'Perform JSA/SWMS audit, verify PPE, and sign off the site hazard checklist.',
+      'Site Setup': 'Lay down drop sheets, set up safety signage, and deploy service vehicles.',
+      'Project Execution': 'Execute primary wiring, mount physical hardware components, and run routing paths.',
+      'Installation Phase': 'Execute primary wiring, mount physical hardware components, and run routing paths.',
+      'Main Installation': 'Fit electrical panels, run armored cabling, connect central distribution points.',
+      'Final Commissioning': 'Perform insulation resistance checks, load tests, and sign off safety compliance reports.',
+      'Installation': 'Fit electrical panels, run armored cabling, connect central distribution points.',
+      'Cleanup & Handover': 'Perform insulation resistance checks, load tests, and sign off safety compliance reports.'
+    };
+
+    function ensureDescription(node) {
+      let updated = false;
+      if (!node.description) {
+        node.description = defaultTaskDescriptions[node.name] || `Standard operational procedures, verification checks, and safety guidelines for "${node.name}".`;
+        updated = true;
+      }
+      if (node.subTasks) {
+        node.subTasks.forEach(st => {
+          if (ensureDescription(st)) updated = true;
+        });
+      }
+      return updated;
+    }
+
+    // Self-healing migration: Ensure at least some jobs are assigned to the subcontractors for portal display
+    const hasAssignedContractor = jobsForPortal.some(j => j.contractorId === 'cont_1' || j.contractorId === 'cont_2');
+    if (!hasAssignedContractor && jobsForPortal.length >= 3) {
+      jobsForPortal[0].contractorId = 'cont_1';
+      jobsForPortal[0].status = 'Scheduled';
+      jobsForPortal[1].contractorId = 'cont_1';
+      jobsForPortal[1].status = 'In Progress';
+      jobsForPortal[2].contractorId = 'cont_2';
+      jobsForPortal[2].status = 'Pending';
+      
+      // Assign granular task in Job 3 to cont_1
+      if (jobsForPortal[2].tasks && jobsForPortal[2].tasks[0]) {
+        jobsForPortal[2].tasks[0].assignedContractorIds = ['cont_1'];
+        if (jobsForPortal[2].tasks[0].subTasks) {
+          jobsForPortal[2].tasks[0].subTasks.forEach(st => {
+            st.assignedContractorIds = ['cont_1'];
+          });
+        }
+      }
+      jobsUpdated = true;
+    }
+
+    const jobsForPortalUpdated = jobsForPortal.map(job => {
+      let jobUpdated = false;
+      if (job.tasks) {
+        job.tasks.forEach(t => {
+          if (ensureDescription(t)) jobUpdated = true;
+        });
+      }
+      if (jobUpdated) jobsUpdated = true;
+      return job;
+    });
+
+    if (jobsUpdated) {
+      store.save('jobs', jobsForPortalUpdated);
+    }
+
+    // Also migrate task templates!
+    const templatesForPortal = store.getAll('taskTemplates');
+    let templatesUpdated = false;
+    const templatesForPortalUpdated = templatesForPortal.map(tmpl => {
+      let tmplUpdated = false;
+      if (tmpl.tasks) {
+        tmpl.tasks.forEach(t => {
+          if (ensureDescription(t)) tmplUpdated = true;
+        });
+      }
+      if (tmplUpdated) templatesUpdated = true;
+      return tmpl;
+    });
+
+    if (templatesUpdated) {
+      store.save('taskTemplates', templatesForPortalUpdated);
     }
 
     return;

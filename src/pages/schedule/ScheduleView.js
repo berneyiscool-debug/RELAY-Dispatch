@@ -28,6 +28,8 @@ export function renderScheduleView(container) {
   let contextMenu = null;
   let savedScrollTop = 0;
   let savedScrollLeft = 0;
+  let isSidebarCollapsed = false;
+  let isActionMenuOpen = false;
 
   // 15-min precision: 1 hour = 32px, so 1 quarter = 8px
   const PX_PER_HOUR = 32;
@@ -82,6 +84,42 @@ export function renderScheduleView(container) {
 
     // 1. Process schedule allocations for scheduled blocks
     schedules.forEach(s => {
+      if (s.type === 'leave' || s.type === 'blockout' || s.type === 'meeting') {
+        const sDate = s.date ? new Date(s.date + 'T12:00:00') : (s.startTime ? new Date(s.startTime) : null);
+        if (!sDate) return;
+
+        days.forEach((day, dayIdx) => {
+          if (sDate.toDateString() === day.toDateString()) {
+            let startHour = 8;
+            let endHour = 10;
+            if (s.startTime && s.finishTime) {
+              const startD = new Date(s.startTime);
+              const finishD = new Date(s.finishTime);
+              startHour = startD.getHours() + (startD.getMinutes() / 60);
+              endHour = finishD.getHours() + (finishD.getMinutes() / 60);
+            } else if (s.startHour !== undefined && s.endHour !== undefined) {
+              startHour = s.startHour;
+              endHour = s.endHour;
+            }
+            blocks.push({
+              id: s.id,
+              type: s.type,
+              jobId: null,
+              jobNumber: s.type === 'leave' ? 'LEAVE' : (s.type === 'blockout' ? 'BLOCKOUT' : 'MEETING'),
+              customerName: s.notes || (s.type === 'leave' ? 'On Leave' : (s.type === 'blockout' ? 'Calendar Block' : 'Scheduled Meeting')),
+              title: s.notes || '',
+              technicianId: s.technicianId,
+              dayIdx,
+              startHour,
+              endHour,
+              status: 'Draft',
+              priority: 'Normal',
+            });
+          }
+        });
+        return;
+      }
+
       const job = jobs.find(j => j.id === s.jobId);
       if (!job || job.status === 'Completed' || job.status === 'Invoiced') return;
 
@@ -208,6 +246,8 @@ export function renderScheduleView(container) {
 
     const blocks = getScheduleBlocks();
     const visibleTechs = technicians.filter(t => visibleTechIds.has(t.id));
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const menuBg = isDark ? '#1e293b' : '#ffffff';
 
     container.innerHTML = `
       <div class="page-header">
@@ -341,42 +381,105 @@ export function renderScheduleView(container) {
 
           <!-- Right Sidebar (For Non-Technicians) -->
           ${!isTechnician ? `
-          <div style="width:280px; border-left:1px solid var(--border-color); display:flex; flex-direction:column; background:var(--card-bg); overflow-y:auto; flex-shrink:0;">
-            
-            <!-- Visible Technicians Module -->
-            <div style="padding:16px; border-bottom:1px solid var(--border-color);">
-              <h4 style="font-size:var(--font-size-sm); margin-bottom:12px; display:flex; align-items:center; gap:6px;">
-                <span class="material-icons-outlined" style="font-size:16px;">people</span> Visible Technicians
-              </h4>
-              <div style="display:flex; flex-direction:column; gap:10px;">
-                ${technicians.map(t => `
-                  <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer;">
-                    <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
-                    <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
-                    <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
-                  </label>
-                `).join('')}
-              </div>
-            </div>
-
-            <!-- Unscheduled Jobs Module -->
-            <div style="padding:16px;">
-              <h4 style="font-size:var(--font-size-sm); margin-bottom:12px; display:flex; align-items:center; gap:6px;">
-                <span class="material-icons-outlined" style="font-size:16px;">pending_actions</span> Unscheduled Jobs
-              </h4>
-              <div id="unscheduled-drawer" style="display:flex; flex-direction:column; gap:8px;">
-                ${getUnscheduledJobs().map(j => `
-                  <div class="unscheduled-job" draggable="true" data-job-id="${j.id}" data-job-number="${j.number}" data-customer="${j.customerName}" data-title="${j.title}" data-hours="${j.estimatedHours || 2}" data-priority="${j.priority}" style="padding:10px; background:var(--content-bg); border:1px solid var(--border-color); border-radius:4px; cursor:grab; transition:all 0.2s;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                      <span class="font-medium" style="font-size:var(--font-size-sm)">${j.number}</span>
-                      <span class="badge ${j.priority === 'High' || j.priority === 'Urgent' ? 'badge-danger' : 'badge-neutral'}" style="font-size:9px">${j.priority}</span>
+            ${isSidebarCollapsed ? `
+              <!-- Collapsed Sidebar -->
+              <div style="width:48px; border-left:1px solid var(--border-color); display:flex; flex-direction:column; align-items:center; background:var(--card-bg); padding:16px 0; flex-shrink:0;">
+                <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-sidebar" title="Expand Sidebar" style="color:var(--text-secondary); width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+                  <span class="material-icons-outlined" style="font-size:20px">chevron_left</span>
+                </button>
+                
+                <!-- Action Button Trigger (Plus Icon) -->
+                <div style="margin-top:12px; position:relative; display:flex; flex-direction:column; align-items:center;">
+                  <button class="btn btn-primary btn-icon btn-sm" id="btn-action-menu-trigger" title="Add to Schedule" style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
+                    <span class="material-icons-outlined" style="font-size:20px">add</span>
+                  </button>
+                  ${isActionMenuOpen ? `
+                    <!-- Action Dropdown Menu -->
+                    <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:0; right:42px; width:220px; z-index:100; display:flex; flex-direction:column; overflow:hidden;">
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="job" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px">assignment</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Job Schedule</span>
+                      </button>
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="leave" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:#EF4444; font-size:18px">flight_takeoff</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Leave / Time Off</span>
+                      </button>
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="blockout" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:#6B7280; font-size:18px">block</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Calendar Blockout</span>
+                      </button>
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="meeting" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:#3B82F6; font-size:18px">groups</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Team Meeting</span>
+                      </button>
                     </div>
-                    <div class="text-secondary" style="font-size:var(--font-size-xs); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${j.customerName}</div>
+                  ` : ''}
+                </div>
+
+                <div style="margin-top:20px; color:var(--text-tertiary); display:flex; flex-direction:column; align-items:center; gap:16px">
+                  <span class="material-icons-outlined" title="Visible Technicians" style="font-size:20px">people</span>
+                  <div style="display:flex; flex-direction:column; gap:6px; align-items:center">
+                    ${technicians.filter(t => visibleTechIds.has(t.id)).map(t => `
+                      <div style="width:6px; height:6px; border-radius:50%; background:${t.color}" title="${t.name}"></div>
+                    `).join('')}
                   </div>
-                `).join('') || '<span class="text-secondary" style="font-size:var(--font-size-sm);">All jobs are scheduled</span>'}
+                </div>
               </div>
-            </div>
-          </div>
+            ` : `
+              <!-- Expanded Sidebar -->
+              <div style="width:280px; border-left:1px solid var(--border-color); display:flex; flex-direction:column; background:var(--card-bg); overflow-y:auto; flex-shrink:0;">
+                
+                <!-- Action Button Trigger -->
+                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:12px; position:relative;">
+                  <button class="btn btn-primary" id="btn-action-menu-trigger" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <span class="material-icons-outlined">add</span>
+                    <span>Add to Schedule</span>
+                  </button>
+                  ${isActionMenuOpen ? `
+                    <!-- Action Dropdown Menu -->
+                    <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:56px; left:16px; right:16px; z-index:100; display:flex; flex-direction:column; overflow:hidden;">
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="job" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px">assignment</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Job Schedule</span>
+                      </button>
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="leave" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:#EF4444; font-size:18px">flight_takeoff</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Leave / Time Off</span>
+                      </button>
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="blockout" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:#6B7280; font-size:18px">block</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Calendar Blockout</span>
+                      </button>
+                      <button class="sidebar-nav-item sub-item action-menu-opt" data-action="meeting" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
+                        <span class="nav-icon"><span class="material-icons-outlined" style="color:#3B82F6; font-size:18px">groups</span></span>
+                        <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Team Meeting</span>
+                      </button>
+                    </div>
+                  ` : ''}
+                </div>
+
+                <!-- Visible Technicians Module -->
+                <div style="padding:16px; border-bottom:1px solid var(--border-color);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <h4 style="font-size:var(--font-size-sm); margin:0; display:flex; align-items:center; gap:6px;">
+                      <span class="material-icons-outlined" style="font-size:16px;">people</span> Visible Technicians
+                    </h4>
+                    <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-sidebar" title="Collapse Sidebar" style="color:var(--text-secondary); width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
+                      <span class="material-icons-outlined" style="font-size:18px">chevron_right</span>
+                    </button>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:10px;">
+                    ${technicians.map(t => `
+                      <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer;">
+                        <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
+                        <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
+                        <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            `}
           ` : ''}
 
         </div>
@@ -394,6 +497,339 @@ export function renderScheduleView(container) {
     return jobs.filter(j => (!j.scheduledDate || !j.technicianId) && j.status !== 'Completed' && j.status !== 'Invoiced');
   }
 
+  function handleAddJobSchedule() {
+    const unscheduledJobs = getUnscheduledJobs();
+    const technicians = store.getAll('technicians');
+
+    if (unscheduledJobs.length === 0) {
+      showToast('No unscheduled jobs available.', 'info');
+      return;
+    }
+
+    showDrawer({
+      title: 'Schedule Unscheduled Job',
+      content: `
+        <form id="drawer-add-job-form" style="display:flex; flex-direction:column; gap:16px;">
+          <div class="form-group">
+            <label class="form-label">Select Job <span style="color:var(--color-danger)">*</span></label>
+            <select class="form-select" name="jobId" required>
+              ${unscheduledJobs.map(j => `<option value="${j.id}">${j.number} — ${escapeHTML(j.customerName)} (${escapeHTML(j.title)})</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Technician <span style="color:var(--color-danger)">*</span></label>
+            <select class="form-select" name="technicianId" required>
+              ${technicians.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
+            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="form-group">
+              <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
+              <input type="time" class="form-input" name="startTime" value="08:00" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
+              <input type="number" class="form-input" name="duration" min="0.5" step="0.5" value="2" required />
+            </div>
+          </div>
+        </form>
+      `,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        {
+          label: 'Schedule Job',
+          className: 'btn-primary',
+          onClick: c => {
+            const form = document.getElementById('drawer-add-job-form');
+            if (!form.checkValidity()) return form.reportValidity();
+
+            const fd = new FormData(form);
+            const jobId = fd.get('jobId');
+            const techId = fd.get('technicianId');
+            const dateStr = fd.get('date');
+            const timeStr = fd.get('startTime');
+            const duration = parseFloat(fd.get('duration'));
+
+            const job = store.getById('jobs', jobId);
+            const tech = store.getById('technicians', techId);
+
+            const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
+            const endHour = startHour + duration;
+
+            const startTimeISO = `${dateStr}T${timeStr}`;
+            const endHourH = Math.floor(endHour);
+            const endHourM = Math.round((endHour - endHourH) * 60);
+            const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
+
+            store.create('schedule', {
+              jobId: job.id,
+              jobNumber: job.number,
+              technicianId: techId,
+              technicianName: tech?.name || '',
+              date: dateStr,
+              startTime: startTimeISO,
+              finishTime: finishTimeISO,
+              hours: duration
+            });
+
+            store.update('jobs', job.id, {
+              scheduledDate: dateStr,
+              startHour: startHour,
+              technicianId: techId
+            });
+
+            showToast(`Scheduled Job ${job.number} to ${tech?.name}`, 'success');
+            c();
+            render();
+          }
+        }
+      ]
+    });
+  }
+
+  function handleAddLeave() {
+    const technicians = store.getAll('technicians');
+
+    showDrawer({
+      title: 'Book Technician Leave',
+      content: `
+        <form id="drawer-add-leave-form" style="display:flex; flex-direction:column; gap:16px;">
+          <div class="form-group">
+            <label class="form-label">Technician <span style="color:var(--color-danger)">*</span></label>
+            <select class="form-select" name="technicianId" required>
+              ${technicians.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
+            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="form-group">
+              <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
+              <input type="time" class="form-input" name="startTime" value="08:00" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
+              <input type="number" class="form-input" name="duration" min="0.5" step="0.5" value="8" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Leave Type / Notes <span style="color:var(--color-danger)">*</span></label>
+            <select class="form-select" name="notes" required>
+              <option value="Annual Leave">Annual Leave</option>
+              <option value="Sick Leave">Sick Leave</option>
+              <option value="Personal Leave">Personal Leave</option>
+              <option value="Public Holiday">Public Holiday</option>
+            </select>
+          </div>
+        </form>
+      `,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        {
+          label: 'Book Leave',
+          className: 'btn-primary',
+          onClick: c => {
+            const form = document.getElementById('drawer-add-leave-form');
+            if (!form.checkValidity()) return form.reportValidity();
+
+            const fd = new FormData(form);
+            const techId = fd.get('technicianId');
+            const dateStr = fd.get('date');
+            const timeStr = fd.get('startTime');
+            const duration = parseFloat(fd.get('duration'));
+            const notes = fd.get('notes');
+
+            const tech = store.getById('technicians', techId);
+            const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
+            const endHour = startHour + duration;
+
+            const startTimeISO = `${dateStr}T${timeStr}`;
+            const endHourH = Math.floor(endHour);
+            const endHourM = Math.round((endHour - endHourH) * 60);
+            const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
+
+            store.create('schedule', {
+              type: 'leave',
+              technicianId: techId,
+              technicianName: tech?.name || '',
+              date: dateStr,
+              startTime: startTimeISO,
+              finishTime: finishTimeISO,
+              hours: duration,
+              notes: notes
+            });
+
+            showToast(`Leave booked for ${tech?.name}`, 'success');
+            c();
+            render();
+          }
+        }
+      ]
+    });
+  }
+
+  function handleAddBlockout() {
+    const technicians = store.getAll('technicians');
+
+    showDrawer({
+      title: 'Book Calendar Blockout',
+      content: `
+        <form id="drawer-add-blockout-form" style="display:flex; flex-direction:column; gap:16px;">
+          <div class="form-group">
+            <label class="form-label">Technician <span style="color:var(--color-danger)">*</span></label>
+            <select class="form-select" name="technicianId" required>
+              ${technicians.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
+            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="form-group">
+              <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
+              <input type="time" class="form-input" name="startTime" value="12:00" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
+              <input type="number" class="form-input" name="duration" min="0.5" step="0.5" value="1" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Blockout Reason / Notes <span style="color:var(--color-danger)">*</span></label>
+            <input type="text" class="form-input" name="notes" placeholder="e.g. Vehicle Maintenance, Doctor, Training" required />
+          </div>
+        </form>
+      `,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        {
+          label: 'Create Blockout',
+          className: 'btn-primary',
+          onClick: c => {
+            const form = document.getElementById('drawer-add-blockout-form');
+            if (!form.checkValidity()) return form.reportValidity();
+
+            const fd = new FormData(form);
+            const techId = fd.get('technicianId');
+            const dateStr = fd.get('date');
+            const timeStr = fd.get('startTime');
+            const duration = parseFloat(fd.get('duration'));
+            const notes = fd.get('notes');
+
+            const tech = store.getById('technicians', techId);
+            const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
+            const endHour = startHour + duration;
+
+            const startTimeISO = `${dateStr}T${timeStr}`;
+            const endHourH = Math.floor(endHour);
+            const endHourM = Math.round((endHour - endHourH) * 60);
+            const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
+
+            store.create('schedule', {
+              type: 'blockout',
+              technicianId: techId,
+              technicianName: tech?.name || '',
+              date: dateStr,
+              startTime: startTimeISO,
+              finishTime: finishTimeISO,
+              hours: duration,
+              notes: notes
+            });
+
+            showToast(`Blockout scheduled for ${tech?.name}`, 'success');
+            c();
+            render();
+          }
+        }
+      ]
+    });
+  }
+
+  function handleAddMeeting() {
+    const technicians = store.getAll('technicians');
+
+    showDrawer({
+      title: 'Book Team Meeting',
+      content: `
+        <form id="drawer-add-meeting-form" style="display:flex; flex-direction:column; gap:16px;">
+          <div class="form-group">
+            <label class="form-label">Technician <span style="color:var(--color-danger)">*</span></label>
+            <select class="form-select" name="technicianId" required>
+              ${technicians.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
+            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="form-group">
+              <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
+              <input type="time" class="form-input" name="startTime" value="09:00" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
+              <input type="number" class="form-input" name="duration" min="0.5" step="0.5" value="1" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Meeting Subject <span style="color:var(--color-danger)">*</span></label>
+            <input type="text" class="form-input" name="notes" placeholder="e.g. Weekly Toolbox Talk, Safety Sync" required />
+          </div>
+        </form>
+      `,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        {
+          label: 'Schedule Meeting',
+          className: 'btn-primary',
+          onClick: c => {
+            const form = document.getElementById('drawer-add-meeting-form');
+            if (!form.checkValidity()) return form.reportValidity();
+
+            const fd = new FormData(form);
+            const techId = fd.get('technicianId');
+            const dateStr = fd.get('date');
+            const timeStr = fd.get('startTime');
+            const duration = parseFloat(fd.get('duration'));
+            const notes = fd.get('notes');
+
+            const tech = store.getById('technicians', techId);
+            const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
+            const endHour = startHour + duration;
+
+            const startTimeISO = `${dateStr}T${timeStr}`;
+            const endHourH = Math.floor(endHour);
+            const endHourM = Math.round((endHour - endHourH) * 60);
+            const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
+
+            store.create('schedule', {
+              type: 'meeting',
+              technicianId: techId,
+              technicianName: tech?.name || '',
+              date: dateStr,
+              startTime: startTimeISO,
+              finishTime: finishTimeISO,
+              hours: duration,
+              notes: notes
+            });
+
+            showToast(`Meeting scheduled for ${tech?.name}`, 'success');
+            c();
+            render();
+          }
+        }
+      ]
+    });
+  }
+
 
 
   function renderBlocks(techBlocks, dayIdx, color) {
@@ -403,11 +839,29 @@ export function renderScheduleView(container) {
       .map(b => {
         const top = b.startHour * PX_PER_HOUR;
         const height = Math.max((b.endHour - b.startHour) * PX_PER_HOUR - 2, PX_PER_QUARTER);
-        const borderColor = priorityBorders[b.priority] || color;
+        let borderColor = priorityBorders[b.priority] || color;
+        let background = `${color}12`;
+        let textColor = color;
+
+        // Custom styling overrides for leave, blockout, meeting
+        if (b.type === 'leave') {
+          borderColor = '#EF4444'; // Red for leave
+          background = 'rgba(239, 68, 68, 0.1)';
+          textColor = '#EF4444';
+        } else if (b.type === 'blockout') {
+          borderColor = '#6B7280'; // Gray for blockout
+          background = 'rgba(107, 114, 128, 0.1)';
+          textColor = '#4B5563';
+        } else if (b.type === 'meeting') {
+          borderColor = '#3B82F6'; // Blue for meetings
+          background = 'rgba(59, 130, 246, 0.1)';
+          textColor = '#2563EB';
+        }
+
         const timeLabel = `${formatHour(b.startHour)} — ${formatHour(b.endHour)}`;
         return `
           <div class="schedule-block" draggable="true"
-            data-block-job-id="${b.jobId}"
+            data-block-job-id="${b.jobId || ''}"
             data-schedule-id="${b.id}"
             data-block-type="${b.type}"
             data-start="${b.startHour}"
@@ -415,15 +869,15 @@ export function renderScheduleView(container) {
             style="
               top:${top}px;
               height:${height}px;
-              background:${color}12;
+              background:${background};
               border-color:${borderColor};
-              color:${color};
+              color:${textColor};
               pointer-events:auto;
             ">
-            <div style="pointer-events:none;font-weight:600;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.jobNumber}</div>
-            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
-            ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.6;margin-top:2px">${timeLabel}</div>` : ''}
-            <div class="schedule-resize-handle" data-block-job-id="${b.jobId}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
+            <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.jobNumber}</div>
+            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.9;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
+            ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.7;margin-top:2px">${timeLabel}</div>` : ''}
+            <div class="schedule-resize-handle" data-block-job-id="${b.jobId || ''}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
           </div>
         `;
       }).join('');
@@ -457,7 +911,30 @@ export function renderScheduleView(container) {
       });
     });
 
+    container.querySelector('#btn-toggle-sidebar')?.addEventListener('click', () => {
+      isSidebarCollapsed = !isSidebarCollapsed;
+      render();
+    });
 
+    container.querySelector('#btn-action-menu-trigger')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isActionMenuOpen = !isActionMenuOpen;
+      render();
+    });
+
+    container.querySelectorAll('.action-menu-opt').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        isActionMenuOpen = false;
+        render();
+
+        if (action === 'job') handleAddJobSchedule();
+        else if (action === 'leave') handleAddLeave();
+        else if (action === 'blockout') handleAddBlockout();
+        else if (action === 'meeting') handleAddMeeting();
+      });
+    });
 
     // Click existing blocks to navigate to job or show drawer
     container.querySelectorAll('.schedule-block').forEach(block => {
@@ -466,46 +943,101 @@ export function renderScheduleView(container) {
         if (block.dataset.resized === 'true') { block.dataset.resized = 'false'; return; }
 
         const jobId = block.dataset.blockJobId;
-        const job = store.getById('jobs', jobId);
-        if (!job) return;
+        const blockType = block.dataset.blockType;
+        const scheduleId = block.dataset.scheduleId;
+        
+        if (blockType === 'schedule' || blockType === 'legacy') {
+          const job = store.getById('jobs', jobId);
+          if (!job) return;
 
-        showDrawer({
-          title: `Job Quick View: ${job.number}`,
-          content: `
-            <div style="display:flex;flex-direction:column;gap:16px;">
-              <div>
-                <label class="form-label">Title</label>
-                <div class="font-medium" style="font-size:16px">${job.title || 'Untitled'}</div>
+          showDrawer({
+            title: `Job Quick View: ${job.number}`,
+            content: `
+              <div style="display:flex;flex-direction:column;gap:16px;">
+                <div>
+                  <label class="form-label">Title</label>
+                  <div class="font-medium" style="font-size:16px">${job.title || 'Untitled'}</div>
+                </div>
+                <div>
+                  <label class="form-label">Customer</label>
+                  <div>${job.customerName || 'N/A'}</div>
+                </div>
+                <div>
+                  <label class="form-label">Site Address</label>
+                  <div>${job.siteAddress || 'No address provided'}</div>
+                </div>
+                <div>
+                  <label class="form-label">Priority</label>
+                  <div><span class="badge ${job.priority === 'Urgent' || job.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${job.priority || 'Normal'}</span></div>
+                </div>
+                <div>
+                  <label class="form-label">Notes</label>
+                  <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${job.notes || 'No notes available'}</div>
+                </div>
               </div>
-              <div>
-                <label class="form-label">Customer</label>
-                <div>${job.customerName || 'N/A'}</div>
+            `,
+            actions: [
+              { label: 'Close', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Open Full Job', className: 'btn-primary', onClick: (close) => { close(); router.navigate(`/jobs/${jobId}`); } }
+            ],
+            width: 450
+          });
+        } else {
+          // Leave, blockout, meeting quick view
+          const s = store.getById('schedule', scheduleId);
+          if (!s) return;
+          const label = blockType === 'leave' ? 'Leave Details' : (blockType === 'blockout' ? 'Blockout Details' : 'Meeting Details');
+          const tech = store.getById('technicians', s.technicianId);
+          showDrawer({
+            title: label,
+            content: `
+              <div style="display:flex;flex-direction:column;gap:16px;">
+                <div>
+                  <label class="form-label">Type</label>
+                  <div class="font-medium" style="font-size:16px; text-transform:uppercase">${blockType}</div>
+                </div>
+                <div>
+                  <label class="form-label">Technician</label>
+                  <div>${escapeHTML(tech?.name || s.technicianName || 'Unknown')}</div>
+                </div>
+                <div>
+                  <label class="form-label">Date</label>
+                  <div>${s.date || 'N/A'}</div>
+                </div>
+                <div>
+                  <label class="form-label">Duration</label>
+                  <div>${s.hours || 0} Hours</div>
+                </div>
+                <div>
+                  <label class="form-label">Notes / Description</label>
+                  <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${escapeHTML(s.notes || 'No details entered')}</div>
+                </div>
               </div>
-              <div>
-                <label class="form-label">Site Address</label>
-                <div>${job.siteAddress || 'No address provided'}</div>
-              </div>
-              <div>
-                <label class="form-label">Priority</label>
-                <div><span class="badge ${job.priority === 'Urgent' || job.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${job.priority || 'Normal'}</span></div>
-              </div>
-              <div>
-                <label class="form-label">Notes</label>
-                <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${job.notes || 'No notes available'}</div>
-              </div>
-            </div>
-          `,
-          actions: [
-            { label: 'Close', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Open Full Job', className: 'btn-primary', onClick: (close) => { close(); router.navigate(`/jobs/${jobId}`); } }
-          ],
-          width: 450
-        });
+            `,
+            actions: [
+              { label: 'Close', className: 'btn-secondary', onClick: (close) => close() },
+              {
+                label: 'Remove Allocation',
+                className: 'btn-danger',
+                onClick: (close) => {
+                  close();
+                  store.delete('schedule', scheduleId);
+                  showToast('Allocation removed successfully', 'success');
+                  render();
+                }
+              }
+            ],
+            width: 450
+          });
+        }
       });
       block.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         closeContextMenu();
-        const jobId = block.dataset.blockJobId;
+        const scheduleId = block.dataset.scheduleId;
+        const blockType = block.dataset.blockType;
+        const isJobBlock = blockType === 'schedule' || blockType === 'legacy';
+
         contextMenu = document.createElement('div');
         contextMenu.className = 'dropdown-menu';
         contextMenu.style.position = 'fixed';
@@ -519,26 +1051,46 @@ export function renderScheduleView(container) {
         contextMenu.style.padding = '4px 0';
         contextMenu.style.minWidth = '140px';
 
-        contextMenu.innerHTML = `
-          <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
-          <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
-        `;
-        document.body.appendChild(contextMenu);
+        if (isJobBlock) {
+          contextMenu.innerHTML = `
+            <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
+            <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
+          `;
+          document.body.appendChild(contextMenu);
 
-        contextMenu.querySelector('#ctx-view').addEventListener('click', () => {
-          closeContextMenu();
-          router.navigate(`/jobs/${jobId}`);
-        });
+          contextMenu.querySelector('#ctx-view').addEventListener('click', () => {
+            closeContextMenu();
+            const jobId = block.dataset.blockJobId;
+            router.navigate(`/jobs/${jobId}`);
+          });
 
-        contextMenu.querySelector('#ctx-unschedule').addEventListener('click', () => {
-          closeContextMenu();
-          const job = jobs.find(j => j.id === jobId);
-          if (job) {
-            store.update('jobs', jobId, { scheduledDate: null });
+          contextMenu.querySelector('#ctx-unschedule').addEventListener('click', () => {
+            closeContextMenu();
+            const jobId = block.dataset.blockJobId;
+            const allSchedules = store.getAll('schedule');
+            const matching = allSchedules.find(s => s.id === scheduleId);
+            if (matching) {
+              store.delete('schedule', scheduleId);
+            }
+            if (jobId) {
+              store.update('jobs', jobId, { scheduledDate: null, technicianId: null });
+            }
             showToast('Job unscheduled', 'success');
             render();
-          }
-        });
+          });
+        } else {
+          contextMenu.innerHTML = `
+            <button class="dropdown-item text-danger" id="ctx-delete-allocation"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">delete</span> Delete Allocation</button>
+          `;
+          document.body.appendChild(contextMenu);
+
+          contextMenu.querySelector('#ctx-delete-allocation').addEventListener('click', () => {
+            closeContextMenu();
+            store.delete('schedule', scheduleId);
+            showToast('Allocation removed successfully', 'success');
+            render();
+          });
+        }
       });
     });
   }

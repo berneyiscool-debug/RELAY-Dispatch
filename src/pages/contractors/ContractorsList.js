@@ -21,6 +21,13 @@ export function renderContractorsList(container) {
     </div>
     
     <div class="page-toolbar">
+      <div class="toolbar-filters">
+        <button class="toolbar-filter active" data-filter="all">All (${contractors.length})</button>
+        <button class="toolbar-filter" data-filter="active">Active</button>
+        <button class="toolbar-filter" data-filter="inactive">Inactive</button>
+        <button class="toolbar-filter" data-filter="compliant">Compliant</button>
+        <button class="toolbar-filter" data-filter="non-compliant">Non-Compliant</button>
+      </div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search contractors by name, email or specialty..." id="contractors-search" />
@@ -117,15 +124,49 @@ export function renderContractorsList(container) {
   
   container.querySelector('#btn-new-contractor').addEventListener('click', () => router.navigate('/contractors/new'));
 
-  container.querySelector('#contractors-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = contractors.filter(c => 
-      c.businessName.toLowerCase().includes(q) || 
-      c.contactName.toLowerCase().includes(q) || 
-      (c.email || '').toLowerCase().includes(q) ||
-      (c.specialties || []).some(s => s.toLowerCase().includes(q))
-    );
+  let activeFilter = 'all';
+  let searchTerm = '';
+
+  function updateFilteredData() {
+    let result = [...contractors];
+
+    // Apply filter status
+    if (activeFilter === 'active') {
+      result = result.filter(c => c.active === true);
+    } else if (activeFilter === 'inactive') {
+      result = result.filter(c => c.active === false);
+    } else if (activeFilter === 'compliant') {
+      result = result.filter(c => getContractorCompliance(c).status === 'compliant');
+    } else if (activeFilter === 'non-compliant') {
+      result = result.filter(c => getContractorCompliance(c).status === 'non-compliant' || getContractorCompliance(c).status === 'warning');
+    }
+
+    // Apply search term
+    if (searchTerm) {
+      result = result.filter(c => 
+        c.businessName.toLowerCase().includes(searchTerm) || 
+        c.contactName.toLowerCase().includes(searchTerm) || 
+        (c.email || '').toLowerCase().includes(searchTerm) ||
+        (c.specialties || []).some(s => s.toLowerCase().includes(searchTerm))
+      );
+    }
+
+    filteredData = result;
     table.updateData(filteredData);
+  }
+
+  container.querySelectorAll('.toolbar-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.filter;
+      updateFilteredData();
+    });
+  });
+
+  container.querySelector('#contractors-search').addEventListener('input', (e) => {
+    searchTerm = e.target.value.toLowerCase();
+    updateFilteredData();
   });
 
   // Action button clicks inside the table should navigate to edit instead of triggering row click

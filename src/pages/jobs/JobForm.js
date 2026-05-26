@@ -946,7 +946,7 @@ export function renderJobForm(container, { id }) {
       }
     }
 
-    showToast(`Job ${isEdit ? 'updated' : 'created'} successfully`, 'success');
+    showToast(`Job ${isEdit ? 'updated' : 'created'} successfully`, 'success', { link: `/jobs/${jobId}` });
     router.navigate(`/jobs/${jobId}`);
   });
 }

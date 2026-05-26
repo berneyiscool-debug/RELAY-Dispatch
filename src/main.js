@@ -43,6 +43,7 @@ import { renderFormBuilder } from './pages/forms/FormBuilder.js';
 
 import { renderLogin } from './pages/login/Login.js';
 import { renderCustomerPortal } from './pages/portal/Portal.js';
+import { renderContractorPortal } from './pages/portal/ContractorPortal.js';
 import { renderContractorsList } from './pages/contractors/ContractorsList.js';
 import { renderContractorForm } from './pages/contractors/ContractorForm.js';
 import { renderContractorDetail } from './pages/contractors/ContractorDetail.js';
@@ -101,6 +102,9 @@ router.register('/login', renderPage(renderLogin));
 
 // Customer Portal
 router.register('/portal', renderPage(renderCustomerPortal));
+
+// Subcontractor Portal
+router.register('/contractor-portal/:token', renderPage(renderContractorPortal));
 
 // Dashboard
 router.register('/', renderPage(renderDashboard));
@@ -192,7 +196,26 @@ router.onNavigate = (path, params) => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
 
-  if (!currentUser && path !== '/login') {
+  const isContractorPortal = path.startsWith('/contractor-portal');
+
+  // Toggle app shell elements (sidebar, topbar, breadcrumb) based on whether it is the contractor portal
+  const sidebarEl = document.querySelector('.sidebar');
+  const topbarEl = document.querySelector('.topbar');
+  const breadcrumbEl = document.getElementById('breadcrumb');
+
+  if (isContractorPortal) {
+    if (sidebarEl) sidebarEl.style.display = 'none';
+    if (topbarEl) topbarEl.style.display = 'none';
+    if (breadcrumbEl) breadcrumbEl.style.display = 'none';
+  } else {
+    if (currentUser) {
+      if (sidebarEl) sidebarEl.style.display = '';
+      if (topbarEl) topbarEl.style.display = '';
+      if (breadcrumbEl) breadcrumbEl.style.display = '';
+    }
+  }
+
+  if (!currentUser && path !== '/login' && !isContractorPortal) {
     // Redirect to login if not authenticated
     router.navigate('/login');
     return false; // Prevent further navigation handling if we had a way, but since we call it directly we just navigate
@@ -297,7 +320,7 @@ window.addEventListener('fieldforge-logout', () => {
 // ---- Boot ----
 // Before resolving, check if we need to redirect to login
 const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-if (!currentUser && window.location.hash !== '#/login') {
+if (!currentUser && window.location.hash !== '#/login' && !window.location.hash.startsWith('#/contractor-portal')) {
   window.location.hash = '#/login';
 }
 

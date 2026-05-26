@@ -167,15 +167,15 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         <span class="material-icons-outlined" style="font-size:16px">add</span> Add New Phase/Section
       </button>` : ''}
 
-      <!-- Totals & Estimation -->
-      <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:flex-start">
+      <!-- Totals & Estimation & Client Agreement -->
+      <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:stretch; flex-wrap:wrap">
         <!-- Internal Estimation (Only for internal use) -->
-        ${quote.status !== 'Archived' ? `
-        <div class="card" style="width:300px; border:1px dashed var(--border-color); background:var(--bg-color)">
+        ${quote.status !== 'Archived' && !isTemplate ? `
+        <div class="card" style="width:280px; margin:0; border:1px dashed var(--border-color); background:var(--bg-color); display:flex; flex-direction:column">
           <div class="card-header" style="padding:10px 16px; border-bottom:1px dashed var(--border-color)">
             <h5 style="margin:0; font-size:13px; color:var(--text-secondary)">Internal Estimation</h5>
           </div>
-          <div class="card-body" style="padding:12px 16px">
+          <div class="card-body" style="padding:12px 16px; flex:1; display:flex; flex-direction:column; justify-content:center">
             <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
               <span class="text-secondary">Est. Cost</span>
               <span>$${(quote.totalInternalCost || 0).toFixed(2)}</span>
@@ -191,8 +191,52 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         </div>
         ` : ''}
 
+        <!-- Client Agreement & Signature Panel -->
+        ${!isTemplate ? `
+        <div class="card" style="width:340px; margin:0; display:flex; flex-direction:column; border:1px solid ${quote.status === 'Accepted' ? 'var(--color-success)' : quote.status === 'Declined' ? 'var(--color-danger)' : 'var(--border-color)'}">
+          <div class="card-header" style="padding:10px 16px; background:${quote.status === 'Accepted' ? 'rgba(16,185,129,0.05)' : quote.status === 'Declined' ? 'rgba(239,68,68,0.05)' : 'rgba(0,0,0,0.02)'}">
+            <h5 style="margin:0; font-size:13px; color:${quote.status === 'Accepted' ? 'var(--color-success-dark)' : quote.status === 'Declined' ? 'var(--color-danger)' : 'var(--text-secondary)'}">Client Agreement</h5>
+          </div>
+          <div class="card-body" style="padding:12px 16px; flex:1; display:flex; flex-direction:column; justify-content:center; gap:8px">
+            ${quote.status === 'Accepted' ? `
+              <div style="display:flex; align-items:center; gap:8px; color:var(--color-success); font-weight:700; font-size:14px">
+                <span class="material-icons-outlined">check_circle</span>
+                <span>Accepted & Signed</span>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary)">
+                <div><strong>Signed By:</strong> ${escapeHTML(quote.signedByName || 'Client')}</div>
+                <div style="margin-top:2px"><strong>Signed At:</strong> ${quote.signedAt ? new Date(quote.signedAt).toLocaleString() : '—'}</div>
+              </div>
+              <div style="border:1px solid var(--border-color); background:var(--bg-color); height:60px; border-radius:4px; display:flex; align-items:center; justify-content:center; margin-top:4px">
+                <span style="font-family:'Brush Script MT', cursive; font-size:26px; color:#1B6DE0; font-style:italic; font-weight:500">${escapeHTML(quote.signatureData || 'Client Signature')}</span>
+              </div>
+            ` : quote.status === 'Declined' ? `
+              <div style="display:flex; align-items:center; gap:8px; color:var(--color-danger); font-weight:700; font-size:14px">
+                <span class="material-icons-outlined">cancel</span>
+                <span>Quote Declined by Client</span>
+              </div>
+              <div style="font-size:12px; color:var(--text-tertiary)">
+                This proposal has been rejected by the customer. Create a revision to draft adjustments.
+              </div>
+            ` : `
+              <div style="font-size:13px; color:var(--text-secondary); line-height:1.4">
+                This proposal is awaiting client review. You can simulate direct digital signature and job conversion below.
+              </div>
+              <div style="display:flex; gap:8px; margin-top:6px">
+                <button class="btn btn-sm btn-success" id="btn-sign-approve-modal" style="flex:2; padding:6px 8px; font-size:12px">
+                  <span class="material-icons-outlined" style="font-size:14px; vertical-align:middle; margin-right:2px">check_circle</span> Sign & Approve
+                </button>
+                <button class="btn btn-sm btn-secondary" id="btn-decline-quote" style="flex:1; padding:6px 8px; font-size:12px; color:var(--color-danger); border-color:rgba(239,68,68,0.2)">
+                  Decline
+                </button>
+              </div>
+            `}
+          </div>
+        </div>
+        ` : ''}
+
         <!-- Client Totals -->
-        <div class="card" style="width:360px">
+        <div class="card" style="width:340px; margin:0">
           <div class="card-body">
             <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-md)">
               <span class="text-secondary">Subtotal</span>
@@ -310,6 +354,74 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     quote.total = quote.subtotal + quote.tax;
 
     render();
+  }
+
+  function convertQuoteToJob() {
+    const techs = store.getAll('technicians') || [];
+    const tech = techs[Math.floor(Math.random() * techs.length)];
+    
+    // Calculate costs from all sections
+    let laborCost = 0;
+    let materialCost = 0;
+    (quote.sections || []).forEach(sec => {
+      (sec.lineItems || []).forEach(i => {
+        if (i.type === 'labor') laborCost += i.total;
+        if (i.type === 'material') materialCost += i.total;
+      });
+    });
+
+    // Map quote sections directly to job tasks
+    const jobTasks = quote.sections.map(sec => ({
+      id: store.generateId(),
+      name: sec.name,
+      status: 'Not Started',
+      progress: 0,
+      startDate: new Date().toISOString(),
+      technicians: [] // To be assigned later
+    }));
+
+    const newJob = store.create('jobs', {
+      number: `J-${Date.now().toString().slice(-6)}`,
+      customerId: quote.customerId,
+      customerName: quote.customerName,
+      contactName: quote.contactName,
+      title: quote.title,
+      type: 'Project',
+      status: 'Pending',
+      priority: 'Medium',
+      technicianId: tech?.id,
+      technicianName: tech?.name,
+      quoteId: id,
+      tasks: jobTasks,
+      phases: jobTasks,
+      laborCost: laborCost,
+      materialCost: materialCost,
+      estimatedLaborCost: laborCost,
+      estimatedMaterialCost: materialCost,
+    });
+
+    // Add activity log for live job conversion
+    const activity = store.getAll('activity') || [];
+    activity.push({
+      id: Date.now() + 1,
+      jobId: newJob.id,
+      type: 'job_converted_from_quote',
+      text: `Live job ${newJob.number} created from accepted Quote ${quote.number}.`,
+      user: 'System Automation',
+      timestamp: new Date().toISOString()
+    });
+    store.save('activity', activity);
+
+    import('../../components/Notifications.js').then(({ addSystemNotification }) => {
+      addSystemNotification(
+        'New Job Assigned',
+        `You have been assigned to Live Job ${newJob.number} (${newJob.title}).`,
+        `/jobs/${newJob.id}`
+      );
+    });
+
+    showToast(`Converted successfully! Live Job ${newJob.number} is now active.`, 'success');
+    router.navigate(`/jobs/${newJob.id}`);
   }
 
   function bindEvents() {
@@ -552,7 +664,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     container.querySelectorAll('.btn-remove-line').forEach(btn => {
       btn.addEventListener('click', () => {
         const sIdx = parseInt(btn.dataset.sidx);
-        const idx = parseInt(tr.dataset.index);
+        const idx = parseInt(btn.dataset.index);
         quote.sections[sIdx].lineItems.splice(idx, 1);
         recalculate();
       });
@@ -604,12 +716,6 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     });
 
     container.querySelector('#btn-convert-job')?.addEventListener('click', () => {
-      const techs = store.getAll('technicians');
-      const tech = techs[Math.floor(Math.random() * techs.length)];
-      
-      // Calculate costs from all sections
-      let laborCost = 0;
-      let materialCost = 0;
       (quote.sections || []).forEach(sec => {
         (sec.lineItems || []).forEach(i => {
           if (i.type === 'labor') laborCost += i.total;
@@ -643,7 +749,17 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         phases: jobTasks,
         laborCost: laborCost,
         materialCost: materialCost,
+        estimatedLaborCost: laborCost,
+        estimatedMaterialCost: materialCost,
       });
+      import('../../components/Notifications.js').then(({ addSystemNotification }) => {
+        addSystemNotification(
+          'New Job Assigned',
+          `You have been assigned to Live Job ${newJob.number} (${newJob.title}).`,
+          `/jobs/${newJob.id}`
+        );
+      });
+
       showToast('Quote converted to project', 'success');
       router.navigate(`/jobs/${newJob.id}`);
     });
@@ -678,6 +794,77 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           }
         }, 15000);
       });
+    });
+
+    container.querySelector('#btn-sign-approve-modal')?.addEventListener('click', () => {
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:16px">
+          <div class="form-group">
+            <label class="form-label">Client Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-input" id="sig-name" placeholder="Type your full name..." required />
+          </div>
+          <div style="border:1px solid var(--border-color); background:var(--bg-color); height:100px; border-radius:6px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden">
+            <div style="position:absolute; top:8px; left:12px; font-size:10px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Handwritten Signature Preview</div>
+            <span id="sig-preview" style="font-family:'Brush Script MT', cursive; font-size:36px; color:#1B6DE0; font-style:italic; font-weight:500; transition:all 0.15s">Client Signature</span>
+          </div>
+          <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; line-height:1.4; cursor:pointer; margin:0">
+            <input type="checkbox" id="sig-consent" style="width:16px; height:16px; margin-top:2px; cursor:pointer" />
+            <span style="color:var(--text-secondary)">I hereby accept this estimation and authorize the project to go live under the standard service terms.</span>
+          </label>
+        </div>
+      `;
+
+      showModal({
+        title: 'Sign & Approve Quote',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Sign & Authorize Project', className: 'btn-success', onClick: (close) => {
+            const name = content.querySelector('#sig-name').value.trim();
+            const consent = content.querySelector('#sig-consent').checked;
+
+            if (!name) {
+              showToast('Please type your name to sign.', 'error');
+              return;
+            }
+            if (!consent) {
+              showToast('Please check the consent box to authorize.', 'error');
+              return;
+            }
+
+            quote.status = 'Accepted';
+            quote.signedByName = name;
+            quote.signedAt = new Date().toISOString();
+            quote.signatureData = name;
+            store.update('quotes', id, {
+              status: 'Accepted',
+              signedByName: name,
+              signedAt: quote.signedAt,
+              signatureData: name
+            });
+
+            showToast('Quote signed and accepted!', 'success');
+            close();
+            convertQuoteToJob();
+          }}
+        ]
+      });
+
+      const input = content.querySelector('#sig-name');
+      const preview = content.querySelector('#sig-preview');
+      input.addEventListener('input', () => {
+        preview.textContent = input.value.trim() || 'Client Signature';
+      });
+    });
+
+    container.querySelector('#btn-decline-quote')?.addEventListener('click', () => {
+      if (confirm('Are you sure you want to decline this quote?')) {
+        quote.status = 'Declined';
+        store.update('quotes', id, { status: 'Declined' });
+        showToast('Quote marked as declined', 'info');
+        render();
+      }
     });
 
     container.querySelector('#btn-delete-quote')?.addEventListener('click', () => {

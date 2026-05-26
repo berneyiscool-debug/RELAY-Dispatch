@@ -24,6 +24,11 @@ export function renderSuppliersList(container) {
     </div>
     
     <div class="page-toolbar">
+      <div class="toolbar-filters">
+        <button class="toolbar-filter active" data-filter="all">All (${suppliers.length})</button>
+        <button class="toolbar-filter" data-filter="active">Active</button>
+        <button class="toolbar-filter" data-filter="inactive">Inactive</button>
+      </div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search suppliers by name, contact, category, or email..." id="suppliers-search" />
@@ -132,15 +137,45 @@ export function renderSuppliersList(container) {
     container.querySelector('#btn-new-supplier').addEventListener('click', () => router.navigate('/suppliers/new'));
   }
 
-  container.querySelector('#suppliers-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = suppliers.filter(s => 
-      s.name.toLowerCase().includes(q) || 
-      (s.contactName || '').toLowerCase().includes(q) || 
-      (s.category || '').toLowerCase().includes(q) ||
-      (s.email || '').toLowerCase().includes(q)
-    );
+  let activeFilter = 'all';
+  let searchTerm = '';
+
+  function updateFilteredData() {
+    let result = [...suppliers];
+
+    // Apply filter status
+    if (activeFilter === 'active') {
+      result = result.filter(s => s.active === true);
+    } else if (activeFilter === 'inactive') {
+      result = result.filter(s => s.active === false);
+    }
+
+    // Apply search term
+    if (searchTerm) {
+      result = result.filter(s => 
+        s.name.toLowerCase().includes(searchTerm) || 
+        (s.contactName || '').toLowerCase().includes(searchTerm) || 
+        (s.category || '').toLowerCase().includes(searchTerm) ||
+        (s.email || '').toLowerCase().includes(searchTerm)
+      );
+    }
+
+    filteredData = result;
     table.updateData(filteredData);
+  }
+
+  container.querySelectorAll('.toolbar-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.filter;
+      updateFilteredData();
+    });
+  });
+
+  container.querySelector('#suppliers-search').addEventListener('input', (e) => {
+    searchTerm = e.target.value.toLowerCase();
+    updateFilteredData();
   });
 
   if (canEdit) {

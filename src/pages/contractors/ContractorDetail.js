@@ -15,6 +15,13 @@ export function renderContractorDetail(container, params) {
     return;
   }
 
+  // Self-healing check for contractor portal magic link token
+  if (!contractor.portalToken) {
+    const generatedToken = 'c_pt_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36).substr(-4);
+    store.update('contractors', contractor.id, { portalToken: generatedToken });
+    contractor.portalToken = generatedToken;
+  }
+
   updateBreadcrumbDetail(contractor.businessName);
 
   const jobs = store.getAll('jobs').filter(j => j.contractorId === params.id);
@@ -90,7 +97,6 @@ export function renderContractorDetail(container, params) {
         <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Overview & Details</button>
         <button class="tab ${activeTab === 'compliance' ? 'active' : ''}" data-tab="compliance">Compliance Registry (${(contractor.complianceDocs || []).length})</button>
         <button class="tab ${activeTab === 'rates' ? 'active' : ''}" data-tab="rates">Financials & Rates</button>
-        <button class="tab ${activeTab === 'jobs' ? 'active' : ''}" data-tab="jobs">Job Allocations (${jobs.length})</button>
         <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Task Allocations (${taskAllocations.length})</button>
       </div>
 
@@ -168,7 +174,40 @@ export function renderContractorDetail(container, params) {
             </div>
           </div>
         </div>
+
+        <div class="card" style="margin-top: var(--space-lg); border: 1px solid var(--color-primary-light); background: linear-gradient(135deg, white, rgba(27,109,224,0.015));">
+          <div class="card-header" style="border-bottom: 1px solid var(--border-color); display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined text-primary" style="font-size:20px;">vpn_key</span>
+            <h4 style="margin:0; font-size:14px; font-weight:600;">Subcontractor Access Portal</h4>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary" style="font-size: var(--font-size-sm); margin:0 0 12px 0; line-height:1.5;">
+              Share this secure magic link with the subcontractor. They will be able to view their assigned tasks, slide progress updates, leave site comments, and upload compliance documents without needing a password.
+            </p>
+            <div style="display:flex; gap: var(--space-sm); align-items:center;">
+              <input type="text" readonly id="magic-link-url" class="form-input" style="flex:1; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" value="${window.location.origin}${window.location.pathname}#/contractor-portal/${contractor.portalToken}" />
+              <button class="btn btn-primary btn-sm" id="btn-copy-magic-link" style="display:flex; align-items:center; gap:6px; height: 32px;">
+                <span class="material-icons-outlined" style="font-size:16px">content_copy</span> Copy Magic Link
+              </button>
+            </div>
+          </div>
+        </div>
       `;
+
+      // Copy magic link clipboard click handler
+      const copyBtn = tabContent.querySelector('#btn-copy-magic-link');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          const urlInput = tabContent.querySelector('#magic-link-url');
+          if (urlInput) {
+            navigator.clipboard.writeText(urlInput.value).then(() => {
+              showToast('Magic link copied to clipboard!', 'success');
+            }).catch(() => {
+              showToast('Failed to copy link', 'error');
+            });
+          }
+        });
+      }
     } else if (activeTab === 'compliance') {
       const docs = contractor.complianceDocs || [];
       tabContent.innerHTML = `
@@ -196,7 +235,16 @@ export function renderContractorDetail(container, params) {
                   const stat = getDocStatus(doc);
                   return `
                     <tr>
-                      <td class="font-medium">${escapeHTML(doc.type)}</td>
+                      <td class="font-medium">
+                        <div>${escapeHTML(doc.type)}</div>
+                        ${doc.fileData ? `
+                          <div style="margin-top:4px;">
+                            <a href="${doc.fileData}" download="${doc.fileName}" target="_blank" class="text-primary" style="font-size:11px; font-weight:600; display:inline-flex; align-items:center; gap:4px; text-decoration:none;">
+                              <span class="material-icons-outlined" style="font-size:14px">attachment</span> ${escapeHTML(doc.fileName)}
+                            </a>
+                          </div>
+                        ` : ''}
+                      </td>
                       <td style="font-family:monospace" class="text-secondary">${escapeHTML(doc.number || '—')}</td>
                       <td>${doc.expiryDate ? new Date(doc.expiryDate).toLocaleDateString('en-AU') : '—'}</td>
                       <td><span class="badge ${stat.colorClass}">${escapeHTML(stat.label)}</span></td>
@@ -420,56 +468,6 @@ export function renderContractorDetail(container, params) {
         calcRateType.addEventListener('change', updateCalculation);
         calcCallout.addEventListener('change', updateCalculation);
       }
-    } else if (activeTab === 'jobs') {
-      tabContent.innerHTML = `
-        <div class="card">
-          <div class="card-header">
-            <h4 style="margin:0">Job Allocations & Dispatch Log</h4>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Job #</th>
-                  <th>Title</th>
-                  <th>Scheduled Date</th>
-                  <th>Est. Hours</th>
-                  <th>Job Status</th>
-                  <th>Est. Subcontractor Bill</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${jobs.map(job => {
-                  const hourly = contractor.hourlyRate || 0.00;
-                  const flatCall = contractor.calloutFee || 0.00;
-                  const estimatedCost = (job.estimatedHours || 0) * hourly + flatCall;
-
-                  const statusClasses = {
-                    'Completed': 'badge-success',
-                    'Invoiced': 'badge-success',
-                    'In Progress': 'badge-primary',
-                    'Scheduled': 'badge-info',
-                    'Pending': 'badge-warning',
-                    'On Hold': 'badge-neutral'
-                  };
-
-                  return `
-                    <tr style="cursor:pointer" onclick="window.location.hash='#/jobs/${job.id}'" title="Click to view Job Details">
-                      <td class="font-medium cell-link">${escapeHTML(job.number)}</td>
-                      <td>${escapeHTML(job.title)}</td>
-                      <td>${job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString('en-AU') : '—'}</td>
-                      <td>${job.estimatedHours || '—'} hrs</td>
-                      <td><span class="badge ${statusClasses[job.status] || 'badge-neutral'}">${escapeHTML(job.status)}</span></td>
-                      <td class="font-medium" style="color:var(--color-primary)">$${estimatedCost.toFixed(2)}</td>
-                    </tr>
-                  `;
-                }).join('')}
-                ${jobs.length === 0 ? '<tr><td colspan="6" style="text-align:center;padding:32px" class="text-secondary">No work orders currently dispatched to this subcontractor.</td></tr>' : ''}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
     } else if (activeTab === 'tasks') {
       tabContent.innerHTML = `
         <div class="card">

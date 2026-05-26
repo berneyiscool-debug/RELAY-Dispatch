@@ -1,6 +1,13 @@
+globalThis.localStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+  clear: () => {}
+};
+
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { formatDate } from './PrintPreview.js';
+const { formatDate } = await import('./PrintPreview.js');
 
 describe('formatDate', () => {
   test('formats a valid date string correctly', () => {

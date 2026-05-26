@@ -1,83 +1,84 @@
 /* ============================================
-   SIMPRO CLONE — DESIGN TOKENS
+   FIELDFORGE — NORDIC GLASSMORPHIC SYSTEM
    ============================================ */
 
 :root {
-  /* ---- Primary Brand Colors ---- */
-  --color-primary: #1B6DE0;
-  --color-primary-hover: #1559B8;
-  --color-primary-light: #E8F1FC;
-  --color-primary-dark: #0F4A9A;
+  /* ---- Colors (Nordic Slate & Blue Palette) ---- */
+  --color-primary: #315671; /* Nordic Blue Accent */
+  --color-primary-hover: #254a65;
+  --color-primary-light: #cae6ff; /* Soft Primary Container backing */
+  --color-primary-dark: #001e30;
 
-  /* ---- Sidebar ---- */
-  --sidebar-bg: #1E2A3A;
-  --sidebar-bg-dark: #162231;
-  --sidebar-text: #8FA4BC;
-  --sidebar-text-hover: #FFFFFF;
-  --sidebar-active-bg: rgba(27, 109, 224, 0.15);
-  --sidebar-active-text: #5BA0F5;
+  /* ---- Sidebar (Level 1 Glass Sidebar) ---- */
+  --sidebar-bg: rgba(255, 255, 255, 0.4); /* 40% white glass */
+  --sidebar-bg-dark: rgba(255, 255, 255, 0.25);
+  --sidebar-text: #595f66; /* Secondary slate-gray */
+  --sidebar-text-hover: #191c1e; /* On-surface charcoal */
+  --sidebar-active-bg: rgba(49, 86, 113, 0.08); /* 8% Nordic Blue tint */
+  --sidebar-active-text: #315671;
   --sidebar-width-collapsed: 51px;
   --sidebar-width-expanded: 192px;
-  --sidebar-transition: 0.2s ease;
+  --sidebar-transition: 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ---- Top Bar ---- */
-  --topbar-bg: #FFFFFF;
+  --topbar-bg: rgba(255, 255, 255, 0.5);
   --topbar-height: 45px;
-  --topbar-border: #E4E9F0;
-  --topbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --topbar-border: rgba(255, 255, 255, 0.2);
+  --topbar-shadow: 0 8px 32px rgba(72, 83, 103, 0.04);
 
-  /* ---- Content Area ---- */
-  --content-bg: #F3F5F9;
-  --card-bg: #FFFFFF;
-  --card-border: #E4E9F0;
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  --card-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+  /* ---- Content Area (Arctic White & Level 1 Glass) ---- */
+  --content-bg: #f7f9fb; /* Neutral Arctic White base canvas */
+  --bg-color: #f1f5f9; /* Slate-100 shade */
+  --card-bg: rgba(255, 255, 255, 0.4); /* Level 1 Glass: 40% white fill */
+  --card-border: rgba(255, 255, 255, 0.2); /* 1px solid border at 20% white opacity */
+  --card-shadow: 0 8px 32px rgba(72, 83, 103, 0.08); /* Ambient soft 8% Slate shadow with 32px blur */
+  --card-shadow-hover: 0 12px 40px rgba(72, 83, 103, 0.12), 0 0 0 1px rgba(49, 86, 113, 0.15);
 
-  /* ---- Text ---- */
-  --text-primary: #1A2332;
-  --text-secondary: #5A6B7F;
-  --text-tertiary: #8A97A8;
-  --text-inverse: #FFFFFF;
+  /* ---- Text (High Contrast Charcoal & Slate) ---- */
+  --text-primary: #191c1e; /* On-surface charcoal */
+  --text-secondary: #42474d; /* Secondary slate gray */
+  --text-tertiary: #72787e; /* Muted zinc outline */
+  --text-inverse: #ffffff;
 
-  /* ---- Status Colors ---- */
-  --color-success: #10B981;
-  --color-success-bg: #ECFDF5;
-  --color-warning: #F59E0B;
-  --color-warning-bg: #FFFBEB;
-  --color-danger: #EF4444;
-  --color-danger-bg: #FEF2F2;
-  --color-info: #3B82F6;
-  --color-info-bg: #EFF6FF;
+  /* ---- Status Colors (Soft low-saturation glass pill tags) ---- */
+  --color-success: #059669; /* Sage Green */
+  --color-success-bg: rgba(5, 150, 105, 0.08);
+  --color-warning: #D97706; /* Warm Amber */
+  --color-warning-bg: rgba(217, 119, 6, 0.08);
+  --color-danger: #DC2626; /* Crimson */
+  --color-danger-bg: rgba(220, 38, 38, 0.08);
+  --color-info: #2563EB; /* Cobalt Highlight */
+  --color-info-bg: rgba(37, 99, 235, 0.08);
 
-  /* ---- Borders ---- */
-  --border-color: #E4E9F0;
-  --border-color-dark: #CBD5E1;
-  --border-radius-sm: 4px;
-  --border-radius: 6px;
-  --border-radius-md: 8px;
-  --border-radius-lg: 12px;
+  /* ---- Borders & Shapes (Significant rounded language) ---- */
+  --border-color: rgba(0, 0, 0, 0.06);
+  --border-color-dark: rgba(0, 0, 0, 0.12);
+  --border-radius-sm: 0.25rem; /* 4px (small components) */
+  --border-radius: 0.5rem; /* 8px (inputs and buttons) */
+  --border-radius-md: 1rem; /* 16px (dashboard cards / sidebar container) */
+  --border-radius-lg: 1.5rem; /* 24px (large content blocks / mobile detail cards) */
 
-  /* ---- Spacing ---- */
-  --space-xs: 3px;
-  --space-sm: 6px;
-  --space-md: 10px;
-  --space-base: 13px;
-  --space-lg: 16px;
-  --space-xl: 19px;
-  --space-2xl: 26px;
-  --space-3xl: 32px;
-  --space-4xl: 38px;
+  /* ---- Spacing (Base 8px Rhythm) ---- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-base: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 40px;
+  --space-4xl: 48px;
 
-  /* ---- Typography ---- */
+  /* ---- Typography (Inter legibility system) ---- */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-size-xs: 9px;
-  --font-size-sm: 10px;
-  --font-size-base: 11px;
-  --font-size-md: 11px;
-  --font-size-lg: 13px;
-  --font-size-xl: 14px;
-  --font-size-2xl: 18px;
-  --font-size-3xl: 22px;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 13px;
+  --font-size-lg: 14px;
+  --font-size-xl: 16px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
   --font-weight-light: 300;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
@@ -86,16 +87,16 @@
   --line-height: 1.5;
 
   /* ---- Shadows ---- */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.03);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.06), 0 4px 6px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.08), 0 10px 10px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 4px rgba(72, 83, 103, 0.02);
+  --shadow: 0 8px 32px rgba(72, 83, 103, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-md: 0 8px 32px rgba(72, 83, 103, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-lg: 0 12px 40px rgba(72, 83, 103, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --shadow-xl: 0 20px 50px rgba(72, 83, 103, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 
   /* ---- Transitions ---- */
-  --transition-fast: 0.15s ease;
-  --transition: 0.2s ease;
-  --transition-slow: 0.3s ease;
+  --transition-fast: 0.12s ease;
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.35s ease;
 
   /* ---- Z-Index ---- */
   --z-sidebar: 100;
