@@ -211,7 +211,7 @@ function toggleNotificationsDropdown(btn) {
         ${dotHtml}
         <div style="flex:1">
           <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title}</div>
-          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message}</div>
+          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message || n.description || ''}</div>
           <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${new Date(n.createdAt).toLocaleString()}</div>
         </div>
       `;

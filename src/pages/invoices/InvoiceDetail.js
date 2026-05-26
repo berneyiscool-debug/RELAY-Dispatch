@@ -556,6 +556,10 @@ export function renderInvoiceDetail(container, { id }) {
 
     container.querySelector('#btn-save-inv')?.addEventListener('click', () => {
       const custId = container.querySelector('#inv-customer').value;
+      if (!custId) {
+        showToast('Please select a customer before saving.', 'error');
+        return;
+      }
       const cust = customers.find(c => c.id === custId);
       invoice.customerId = custId;
       invoice.customerName = cust?.company || '';

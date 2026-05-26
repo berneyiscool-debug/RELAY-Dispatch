@@ -844,9 +844,24 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
               signatureData: name
             });
 
-            showToast('Quote signed and accepted!', 'success');
+            // Create a notification for the accepted quote so a user can convert it to a job later
+            const notificationTitle = `Quote ${quote.number} Accepted`;
+            const notificationDesc = `Client ${name} has signed and accepted Quote ${quote.number} ("${quote.title || 'Untitled'}"). Ready for conversion to job.`;
+            
+            store.create('notifications', {
+              title: notificationTitle,
+              description: notificationDesc,
+              type: 'Quote Accepted',
+              priority: 'High',
+              status: 'Pending',
+              quoteId: id,
+              createdAt: new Date().toISOString(),
+              createdBy: name
+            });
+
+            showToast('Quote signed and accepted! Notification created.', 'success');
             close();
-            convertQuoteToJob();
+            render();
           }}
         ]
       });

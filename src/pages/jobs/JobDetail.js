@@ -32,6 +32,91 @@ export function renderJobDetail(container, { id }) {
   let cachedStockOptionsHtml = null;
   let stagedFiles = [];
 
+  function createDraftInvoice(type, sections, subtotal) {
+    let originalQuoteNumber = '';
+    let originalQuoteId = '';
+    if (job.quoteId) {
+      const quote = store.getById('quotes', job.quoteId);
+      if (quote) {
+        originalQuoteNumber = quote.number;
+        originalQuoteId = quote.id;
+      }
+    }
+
+    const inv = store.create('invoices', {
+      number: `INV-${Date.now().toString().slice(-6)}`,
+      invoiceType: type,
+      jobId: id, jobNumber: job.number,
+      customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
+      status: 'Draft',
+      sections: sections,
+      originalQuoteId,
+      originalQuoteNumber,
+      originalSubtotal: subtotal,
+      subtotal: subtotal, tax: subtotal * 0.1, total: subtotal * 1.1,
+      issueDate: new Date().toISOString(), dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+    });
+    store.update('jobs', id, { status: 'Invoiced' });
+    showToast(`${type} Invoice created`, 'success');
+    router.navigate(`/invoices/${inv.id}`);
+  }
+
+  function getJobInvoiceData() {
+    let sections = [];
+    let subtotal = 0;
+
+    // 1. Try to pull from Quote Sections first
+    if (job.quoteId) {
+      const quote = store.getById('quotes', job.quoteId);
+      if (quote && quote.sections && quote.sections.length > 0) {
+        sections = JSON.parse(JSON.stringify(quote.sections));
+        subtotal = quote.subtotal || 0;
+      } else if (quote && quote.lineItems) {
+        // Legacy quote fallback
+        sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(quote.lineItems)) }];
+        subtotal = quote.subtotal || 0;
+      }
+    }
+
+    // 2. If no quote or no items, use Job Tasks
+    if (sections.length === 0) {
+      const tasksSource = job.tasks || job.phases || [];
+      if (tasksSource.length > 0) {
+        sections = tasksSource.map(p => ({
+          id: store.generateId(),
+          name: p.name,
+          lineItems: [
+            { description: `${p.name} - Labor & Materials`, type: 'other', qty: 1, rate: 0, total: 0 }
+          ],
+          subtotal: 0
+        }));
+        // Add a catch-all for existing costs if no quote
+        const lCost = job.laborCost || 0;
+        const mCost = job.materialCost || 0;
+        if (lCost > 0 || mCost > 0) {
+          sections[0].lineItems.push({ description: 'Estimated Job Labor', type: 'labor', qty: 1, rate: lCost, total: lCost });
+          sections[0].lineItems.push({ description: 'Estimated Job Materials', type: 'material', qty: 1, rate: mCost, total: mCost });
+        }
+      } else {
+        // Absolute fallback
+        const lCost = job.laborCost || 0;
+        const mCost = job.materialCost || 0;
+        sections = [{
+          id: store.generateId(),
+          name: 'General Items',
+          lineItems: [
+            { description: `${job.title} - Labor`, type: 'labor', qty: 1, rate: lCost, total: lCost },
+            { description: `${job.title} - Materials`, type: 'material', qty: 1, rate: mCost, total: mCost },
+          ]
+        }];
+      }
+      // Calculate subtotal for fallback cases
+      subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
+    }
+
+    return { sections, subtotal };
+  }
+
   function getStockOptionsHtml() {
     if (!cachedStockOptionsHtml) {
       const stock = store.getAll('stock');
@@ -54,6 +139,8 @@ export function renderJobDetail(container, { id }) {
 
   function render() {
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
+    const invoicesList = store.getAll('invoices').filter(i => i.jobId === job.id);
+    const hasInvoice = invoicesList.length > 0;
 
     container.innerHTML = `
       <div class="detail-header">
@@ -72,7 +159,11 @@ export function renderJobDetail(container, { id }) {
           </div>
         </div>
         <div class="flex gap-sm">
-          <!-- Moved invoice creation to Invoices tab -->
+          ${job.status === 'Completed' && !hasInvoice ? `
+            <button class="btn btn-success" id="btn-header-generate-invoice" style="background-color:#10B981; border-color:#10B981; color:white; display:flex; align-items:center; gap:4px;">
+              <span class="material-icons-outlined" style="font-size:18px;">receipt_long</span> Generate Invoice
+            </button>
+          ` : ''}
           ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
           ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job"><span class="material-icons-outlined">delete</span></button>` : ''}
         </div>
@@ -890,7 +981,7 @@ export function renderJobDetail(container, { id }) {
                        </button>
                      </div>
                      ${isRecordingValues ? `
-                     <div style="display:flex; flex-direction:column; gap:10px" id="value-recording-panel">
+                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px" id="value-recording-panel">
                        ${node.valueFields.map((vf, vi) => {
                          const ft = vf.fieldType || 'text';
                          const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
@@ -924,12 +1015,14 @@ export function renderJobDetail(container, { id }) {
                            ${isOutOfRange ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-danger); flex-shrink:0">error</span>` : (vf.value ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-success); flex-shrink:0">check_circle</span>` : `<span class="material-icons-outlined" style="font-size:20px; color:var(--border-color); flex-shrink:0">radio_button_unchecked</span>`)}
                          </div>`;
                        }).join('')}
-                       <button class="btn btn-sm btn-primary btn-save-values" data-path="${path.join('-')}" style="align-self:flex-end; margin-top:4px">
-                         <span class="material-icons-outlined" style="font-size:14px">save</span> Save Values
-                       </button>
+                       <div style="grid-column: span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:4px">
+                         <button class="btn btn-sm btn-primary btn-save-values" data-path="${path.join('-')}">
+                           <span class="material-icons-outlined" style="font-size:14px">save</span> Save Values
+                         </button>
+                       </div>
                      </div>
                      ` : `
-                     <div style="display:flex; flex-direction:column; gap:6px">
+                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:6px">
                        ${node.valueFields.map(vf => {
                          const ft = vf.fieldType || 'text';
                          const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
@@ -1107,6 +1200,7 @@ export function renderJobDetail(container, { id }) {
           node.progress = e.target.checked ? 100 : 0;
           node.status = e.target.checked ? 'Completed' : 'Not Started';
           updateParentProgress(job.tasks, path);
+          store.update('jobs', id, { tasks: job.tasks });
           renderTabContent();
         });
         chk.addEventListener('click', (e) => e.stopPropagation());
@@ -1137,6 +1231,7 @@ export function renderJobDetail(container, { id }) {
         if (!job.tasks) job.tasks = [];
         job.tasks.push({ id: store.generateId(), name: 'New Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
         taskExpandedPath = [job.tasks.length - 1];
+        store.update('jobs', id, { tasks: job.tasks });
         renderTabContent();
       });
 
@@ -1147,6 +1242,7 @@ export function renderJobDetail(container, { id }) {
           if (!parent.subTasks) parent.subTasks = [];
           parent.subTasks.push({ id: store.generateId(), name: 'New Sub-task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] });
           taskExpandedPath = [...path, parent.subTasks.length - 1];
+          store.update('jobs', id, { tasks: job.tasks });
           renderTabContent();
         });
       });
@@ -1160,7 +1256,7 @@ export function renderJobDetail(container, { id }) {
             node.progress = e.target.checked ? 100 : 0;
             node.status = e.target.checked ? 'Completed' : 'Not Started';
           } else if (field === 'progress') {
-            node.progress = parseInt(e.target.value);
+            node.progress = parseInt(e.target.value) || 0;
             if (node.progress === 100) node.status = 'Completed';
             else if (node.progress === 0) node.status = 'Not Started';
             else node.status = 'In Progress';
@@ -1171,6 +1267,7 @@ export function renderJobDetail(container, { id }) {
           }
 
           updateParentProgress(job.tasks, taskExpandedPath);
+          store.update('jobs', id, { tasks: job.tasks });
           renderTabContent();
         });
       });
@@ -1196,6 +1293,7 @@ export function renderJobDetail(container, { id }) {
           }
           
           updateParentProgress(job.tasks, taskExpandedPath);
+          store.update('jobs', id, { tasks: job.tasks });
           renderTabContent();
         });
       });
@@ -1216,6 +1314,7 @@ export function renderJobDetail(container, { id }) {
             }
             taskExpandedPath = path.slice(0, -1); // jump up one level
             isInfoPanelEditing = false;
+            store.update('jobs', id, { tasks: job.tasks });
             renderTabContent();
           }
         });
@@ -1327,6 +1426,17 @@ export function renderJobDetail(container, { id }) {
           const node = getTaskByPath(job.tasks, taskExpandedPath);
           if (node && node.valueFields && node.valueFields[idx]) {
             node.valueFields[idx].options = inp.value.split('\n').map(o => o.trim()).filter(Boolean);
+            renderTabContent(); // Redraw so the Expected Value dropdown gets the new options list
+          }
+        });
+      });
+
+      tc.querySelectorAll('.vf-expected-select').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(job.tasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+            node.valueFields[idx].expectedValue = inp.value || undefined;
           }
         });
       });
@@ -2831,90 +2941,7 @@ export function renderJobDetail(container, { id }) {
         </div>
       `;
 
-      function createDraftInvoice(type, sections, subtotal) {
-        let originalQuoteNumber = '';
-        let originalQuoteId = '';
-        if (job.quoteId) {
-          const quote = store.getById('quotes', job.quoteId);
-          if (quote) {
-            originalQuoteNumber = quote.number;
-            originalQuoteId = quote.id;
-          }
-        }
 
-        const inv = store.create('invoices', {
-          number: `INV-${Date.now().toString().slice(-6)}`,
-          invoiceType: type,
-          jobId: id, jobNumber: job.number,
-          customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
-          status: 'Draft',
-          sections: sections,
-          originalQuoteId,
-          originalQuoteNumber,
-          originalSubtotal: subtotal,
-          subtotal: subtotal, tax: subtotal * 0.1, total: subtotal * 1.1,
-          issueDate: new Date().toISOString(), dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-        });
-        store.update('jobs', id, { status: 'Invoiced' });
-        showToast(`${type} Invoice created`, 'success');
-        router.navigate(`/invoices/${inv.id}`);
-      }
-
-      function getJobInvoiceData() {
-        let sections = [];
-        let subtotal = 0;
-
-        // 1. Try to pull from Quote Sections first
-        if (job.quoteId) {
-          const quote = store.getById('quotes', job.quoteId);
-          if (quote && quote.sections && quote.sections.length > 0) {
-            sections = JSON.parse(JSON.stringify(quote.sections));
-            subtotal = quote.subtotal || 0;
-          } else if (quote && quote.lineItems) {
-            // Legacy quote fallback
-            sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(quote.lineItems)) }];
-            subtotal = quote.subtotal || 0;
-          }
-        }
-
-        // 2. If no quote or no items, use Job Tasks
-        if (sections.length === 0) {
-          const tasksSource = job.tasks || job.phases || [];
-          if (tasksSource.length > 0) {
-            sections = tasksSource.map(p => ({
-              id: store.generateId(),
-              name: p.name,
-              lineItems: [
-                { description: `${p.name} - Labor & Materials`, type: 'other', qty: 1, rate: 0, total: 0 }
-              ],
-              subtotal: 0
-            }));
-            // Add a catch-all for existing costs if no quote
-            const lCost = job.laborCost || 0;
-            const mCost = job.materialCost || 0;
-            if (lCost > 0 || mCost > 0) {
-              sections[0].lineItems.push({ description: 'Estimated Job Labor', type: 'labor', qty: 1, rate: lCost, total: lCost });
-              sections[0].lineItems.push({ description: 'Estimated Job Materials', type: 'material', qty: 1, rate: mCost, total: mCost });
-            }
-          } else {
-            // Absolute fallback
-            const lCost = job.laborCost || 0;
-            const mCost = job.materialCost || 0;
-            sections = [{
-              id: store.generateId(),
-              name: 'General Items',
-              lineItems: [
-                { description: `${job.title} - Labor`, type: 'labor', qty: 1, rate: lCost, total: lCost },
-                { description: `${job.title} - Materials`, type: 'material', qty: 1, rate: mCost, total: mCost },
-              ]
-            }];
-          }
-          // Calculate subtotal for fallback cases
-          subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
-        }
-
-        return { sections, subtotal };
-      }
 
       tc.querySelector('#btn-create-standard-invoice')?.addEventListener('click', () => {
         const { sections, subtotal } = getJobInvoiceData();
@@ -2977,6 +3004,11 @@ export function renderJobDetail(container, { id }) {
     });
 
     container.querySelector('#btn-edit-job')?.addEventListener('click', () => router.navigate(`/jobs/${id}/edit`));
+
+    container.querySelector('#btn-header-generate-invoice')?.addEventListener('click', () => {
+      const { sections, subtotal } = getJobInvoiceData();
+      createDraftInvoice('Standard', sections, subtotal);
+    });
 
     // Field Technician Log Board submit handler was removed as techs can log travel/labor to a subtask named Travel under timesheets
 

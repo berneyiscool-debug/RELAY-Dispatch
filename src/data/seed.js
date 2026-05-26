@@ -676,7 +676,7 @@ export function seedData() {
   if (store.isSeeded()) {
     // Self-healing migration for Maintenance Plans
     const existingPlans = store.getAll('maintenancePlans');
-    if (!existingPlans || existingPlans.length === 0) {
+    if (!existingPlans || existingPlans.length < 5) {
       const samplePlans = [
         {
           id: 'maint_1',
@@ -689,7 +689,8 @@ export function seedData() {
           lastTriggeredMeter: 0,
           nextServiceDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 3 days from now
           lastNotificationDate: null,
-          status: 'Active'
+          status: 'Active',
+          priority: 'Standard'
         },
         {
           id: 'maint_2',
@@ -701,7 +702,50 @@ export function seedData() {
           meterInterval: 10000,
           lastTriggeredMeter: 34000,
           lastNotificationDate: null,
-          status: 'Active'
+          status: 'Active',
+          priority: 'Standard'
+        },
+        {
+          id: 'maint_3_1',
+          name: 'Daikin 1-Month Service Plan',
+          assetId: 'asset_5', // Daikin Split System
+          quoteId: 'quote_3',
+          triggerType: 'Calendar',
+          frequency: 'Monthly',
+          meterInterval: null,
+          lastTriggeredMeter: 0,
+          nextServiceDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // tomorrow
+          lastNotificationDate: null,
+          status: 'Active',
+          priority: 'Minor'
+        },
+        {
+          id: 'maint_3_2',
+          name: 'Daikin 3-Month Service Plan',
+          assetId: 'asset_5', // Daikin Split System
+          quoteId: 'quote_4',
+          triggerType: 'Calendar',
+          frequency: 'Quarterly',
+          meterInterval: null,
+          lastTriggeredMeter: 0,
+          nextServiceDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // tomorrow
+          lastNotificationDate: null,
+          status: 'Active',
+          priority: 'Standard'
+        },
+        {
+          id: 'maint_3_3',
+          name: 'Daikin 6-Month Service Plan',
+          assetId: 'asset_5', // Daikin Split System
+          quoteId: 'quote_5',
+          triggerType: 'Calendar',
+          frequency: 'Semi-Annually',
+          meterInterval: null,
+          lastTriggeredMeter: 0,
+          nextServiceDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // tomorrow
+          lastNotificationDate: null,
+          status: 'Active',
+          priority: 'Major'
         }
       ];
       store.save('maintenancePlans', samplePlans);
@@ -1065,7 +1109,8 @@ export function seedData() {
       lastTriggeredMeter: 0,
       nextServiceDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       lastNotificationDate: null,
-      status: 'Active'
+      status: 'Active',
+      priority: 'Standard'
     },
     {
       id: 'maint_2',
@@ -1077,7 +1122,50 @@ export function seedData() {
       meterInterval: 10000,
       lastTriggeredMeter: 34000,
       lastNotificationDate: null,
-      status: 'Active'
+      status: 'Active',
+      priority: 'Standard'
+    },
+    {
+      id: 'maint_3_1',
+      name: 'Daikin 1-Month Service Plan',
+      assetId: 'asset_5', // Daikin Split System
+      quoteId: 'quote_3',
+      triggerType: 'Calendar',
+      frequency: 'Monthly',
+      meterInterval: null,
+      lastTriggeredMeter: 0,
+      nextServiceDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // tomorrow
+      lastNotificationDate: null,
+      status: 'Active',
+      priority: 'Minor'
+    },
+    {
+      id: 'maint_3_2',
+      name: 'Daikin 3-Month Service Plan',
+      assetId: 'asset_5', // Daikin Split System
+      quoteId: 'quote_4',
+      triggerType: 'Calendar',
+      frequency: 'Quarterly',
+      meterInterval: null,
+      lastTriggeredMeter: 0,
+      nextServiceDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // tomorrow
+      lastNotificationDate: null,
+      status: 'Active',
+      priority: 'Standard'
+    },
+    {
+      id: 'maint_3_3',
+      name: 'Daikin 6-Month Service Plan',
+      assetId: 'asset_5', // Daikin Split System
+      quoteId: 'quote_5',
+      triggerType: 'Calendar',
+      frequency: 'Semi-Annually',
+      meterInterval: null,
+      lastTriggeredMeter: 0,
+      nextServiceDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // tomorrow
+      lastNotificationDate: null,
+      status: 'Active',
+      priority: 'Major'
     }
   ]);
   store.save('schedule', scheduleBlocks);
@@ -1304,7 +1392,8 @@ export function seedMinimalData() {
     meterInterval: 10000,
     lastTriggeredMeter: 40000,
     lastNotificationDate: null,
-    status: 'Active'
+    status: 'Active',
+    priority: 'Standard'
   };
   store.save('maintenancePlans', [plan]);
 

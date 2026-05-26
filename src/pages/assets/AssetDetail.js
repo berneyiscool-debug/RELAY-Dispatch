@@ -105,12 +105,25 @@ export function renderAssetDetail(container, params) {
         </div>
         <div class="card">
           <div class="card-body">
-            <div class="text-tertiary" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">
-              ${currentAsset.ownerType === 'Business' ? 'Total Maintenance Spend' : 'Current Meter Reading'}
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <div class="text-tertiary" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">
+                  ${currentAsset.ownerType === 'Business' ? 'Total Maintenance Spend' : 'Current Meter Reading'}
+                </div>
+                <div style="font-weight:600; font-size:16px">
+                  ${currentAsset.ownerType === 'Business' ? `$${totalMaintCost.toLocaleString()}` : `${currentAsset.currentMeter || 0} ${currentAsset.meterUnit || 'hrs'}`}
+                </div>
+              </div>
+              <button class="btn btn-xs btn-secondary" id="btn-update-meter" style="padding: 2px 8px; font-size:11px; display:flex; align-items:center; gap:4px; margin-top:2px;">
+                <span class="material-icons-outlined" style="font-size:14px">speed</span> Update Meter
+              </button>
             </div>
-            <div style="font-weight:600; font-size:16px">
-              ${currentAsset.ownerType === 'Business' ? `$${totalMaintCost.toLocaleString()}` : `${currentAsset.currentMeter || 0} ${currentAsset.meterUnit || 'hrs'}`}
-            </div>
+            ${currentAsset.ownerType === 'Business' ? `
+              <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-color); display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-secondary)">
+                <span>Current Meter:</span>
+                <span class="font-medium">${currentAsset.currentMeter || 0} ${currentAsset.meterUnit || 'hrs'}</span>
+              </div>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -362,6 +375,9 @@ export function renderAssetDetail(container, params) {
         });
       });
     });
+    container.querySelector('#btn-update-meter')?.addEventListener('click', () => {
+      openUpdateMeterModal();
+    });
   }
 
   function openLogModal() {
@@ -435,8 +451,43 @@ export function renderAssetDetail(container, params) {
     });
   }
 
+  function openUpdateMeterModal() {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="form-group" style="margin-top:8px">
+        <label class="form-label">New Meter Reading (${escapeHTML(asset.meterUnit || 'hrs')}) *</label>
+        <input type="number" id="new-meter-val" class="form-input" value="${asset.currentMeter || 0}" step="any" required />
+      </div>
+    `;
+
+    import('../../components/Modal.js').then(({ showModal }) => {
+      showModal({
+        title: 'Update Meter Reading',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+          { label: 'Update Meter', className: 'btn-primary', onClick: c => {
+            const meter = parseFloat(content.querySelector('#new-meter-val').value);
+            if (isNaN(meter)) return showToast('Please enter a valid meter reading', 'error');
+
+            store.update('assets', asset.id, { currentMeter: meter });
+            showToast('Meter reading updated successfully', 'success');
+
+            // Trigger maintenance checks immediately
+            import('../../utils/maintenanceEngine.js').then(({ checkMaintenancePlans }) => {
+              checkMaintenancePlans();
+              c();
+              render();
+            });
+          }}
+        ]
+      });
+    });
+  }
+
   function openPlanDrawer(existingPlan = null) {
-    const quotes = store.getAll('quotes');
+    const quotes = store.getAll('quotes') || [];
+    const taskTemplates = store.getAll('taskTemplates') || [];
     const title = existingPlan ? 'Edit Maintenance Plan' : 'Configure Maintenance Plan';
 
     const content = document.createElement('div');
@@ -486,11 +537,38 @@ export function renderAssetDetail(container, params) {
         </div>
 
         <div class="form-group">
+          <label class="form-label">Priority Level *</label>
+          <select class="form-select" id="plan-priority">
+            <option value="Minor" ${existingPlan?.priority === 'Minor' ? 'selected' : ''}>Minor</option>
+            <option value="Standard" ${!existingPlan || existingPlan?.priority === 'Standard' ? 'selected' : ''}>Standard</option>
+            <option value="Major" ${existingPlan?.priority === 'Major' ? 'selected' : ''}>Major</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Blueprint Quote (Item Packs & Labor) *</label>
           <select class="form-select" id="plan-quote-id">
             <option value="">Select quote blueprint...</option>
             ${quotes.map(q => `<option value="${q.id}" ${existingPlan?.quoteId === q.id ? 'selected' : ''}>${escapeHTML(q.number)} - ${escapeHTML(q.title)}</option>`).join('')}
           </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Link Task List Template</label>
+          <select class="form-select" id="plan-task-template-id">
+            <option value="">None (create standard job task)</option>
+            ${taskTemplates.map(t => `<option value="${t.id}" ${existingPlan?.taskTemplateId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+          </select>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin:14px 0 8px 0; padding-left:2px;">
+          <input type="checkbox" id="plan-collision-merging" ${existingPlan?.collisionMerging === true ? 'checked' : ''} style="width:18px; height:18px; margin:0; cursor:pointer; accent-color:var(--primary);" />
+          <label for="plan-collision-merging" style="margin:0; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-primary); line-height:1.2;">Enable Collision Merging (auto-merge with other due plans)</label>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin:0 0 14px 0; padding-left:2px;">
+          <input type="checkbox" id="plan-merge-tasks" ${existingPlan?.mergeTasks === true ? 'checked' : ''} style="width:18px; height:18px; margin:0; cursor:pointer; accent-color:var(--primary);" />
+          <label for="plan-merge-tasks" style="margin:0; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-primary); line-height:1.2;">Merge Task Lists on Collision</label>
         </div>
 
         <div class="form-group">
@@ -528,6 +606,10 @@ export function renderAssetDetail(container, params) {
           const meterInterval = parseFloat(content.querySelector('#plan-meter-interval').value);
           const lastTriggeredMeter = parseFloat(content.querySelector('#plan-last-meter').value);
           const quoteId = content.querySelector('#plan-quote-id').value;
+          const priority = content.querySelector('#plan-priority').value;
+          const collisionMerging = content.querySelector('#plan-collision-merging').checked;
+          const mergeTasks = content.querySelector('#plan-merge-tasks').checked;
+          const taskTemplateId = content.querySelector('#plan-task-template-id').value || null;
           const status = content.querySelector('#plan-status').value;
 
           if (!name) return showToast('Plan Name is required', 'error');
@@ -539,6 +621,10 @@ export function renderAssetDetail(container, params) {
             quoteId,
             triggerType,
             status,
+            priority,
+            collisionMerging,
+            mergeTasks,
+            taskTemplateId,
             frequency: triggerType === 'Calendar' ? frequency : null,
             nextServiceDate: triggerType === 'Calendar' ? nextServiceDate : null,
             meterInterval: triggerType === 'Meter' ? meterInterval : null,

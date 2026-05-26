@@ -53,7 +53,7 @@ class DataStore {
     items[index] = { ...items[index], ...updates, updatedAt: new Date().toISOString() };
     this.save(collection, items);
 
-    // Post-save trigger: Asset Maintenance Logs Sync
+    // Post-save trigger: Asset Maintenance Logs Sync & Timer Synchronization
     if (collection === 'jobs' && updates.status === 'Completed' && previous.status !== 'Completed') {
       const job = items[index];
       if (job.assetId) {
@@ -73,10 +73,50 @@ class DataStore {
               date: new Date().toISOString().split('T')[0],
               meter: asset.currentMeter || 0,
               cost: (job.laborCost || 0) + (job.materialCost || 0),
-              notes: logText
+              notes: logText,
+              technicianName: job.technicianName || 'Unassigned',
+              jobNumber: job.number
             });
             asset.logs = logs;
             this.save('assets', assets);
+          }
+
+          // Advanced Scheduling Synchronization: Align all involved plan timers/milestones in sync
+          const planIds = [job.maintenancePlanId, ...(job.mergedPlanIds || [])].filter(Boolean);
+          if (planIds.length > 0) {
+            const plans = this.getAll('maintenancePlans') || [];
+            let plansUpdated = false;
+
+            planIds.forEach(pid => {
+              const planIndex = plans.findIndex(p => p.id === pid);
+              if (planIndex !== -1) {
+                const plan = plans[planIndex];
+                
+                if (plan.triggerType === 'Calendar') {
+                  const compDate = new Date();
+                  if (plan.frequency === 'Weekly') {
+                    compDate.setDate(compDate.getDate() + 7);
+                  } else if (plan.frequency === 'Monthly') {
+                    compDate.setMonth(compDate.getMonth() + 1);
+                  } else if (plan.frequency === 'Quarterly') {
+                    compDate.setMonth(compDate.getMonth() + 3);
+                  } else if (plan.frequency === 'Semi-Annually') {
+                    compDate.setMonth(compDate.getMonth() + 6);
+                  } else if (plan.frequency === 'Annually') {
+                    compDate.setFullYear(compDate.getFullYear() + 1);
+                  }
+                  plan.nextServiceDate = compDate.toISOString().split('T')[0];
+                  plansUpdated = true;
+                } else if (plan.triggerType === 'Meter') {
+                  plan.lastTriggeredMeter = parseFloat(asset.currentMeter || 0);
+                  plansUpdated = true;
+                }
+              }
+            });
+
+            if (plansUpdated) {
+              this.save('maintenancePlans', plans);
+            }
           }
         }
       }

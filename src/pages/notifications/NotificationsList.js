@@ -70,7 +70,7 @@ export function renderNotificationsList(container) {
       label: 'Title / Job Name', 
       render: (n) => `
         <div style="font-weight:500">${escapeHTML(n.title)}</div>
-        <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description)}</div>
+        <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description || n.message || '')}</div>
       `
     },
     { 
@@ -471,9 +471,70 @@ export function renderNotificationsList(container) {
     const n = store.getById('notifications', id);
     if (!n) return;
     
+    function compileJobTasks(mainTemplateId, mergedTemplateIds = []) {
+      const allTasks = [];
+      const templateIds = [mainTemplateId, ...mergedTemplateIds].filter(Boolean);
+      
+      templateIds.forEach(tid => {
+        const template = store.getById('taskTemplates', tid);
+        if (template && template.tasks) {
+          const clonedTasks = JSON.parse(JSON.stringify(template.tasks));
+          clonedTasks.forEach(task => {
+            task.id = store.generateId();
+            task.status = 'Not Started';
+            task.progress = 0;
+            task.startDate = new Date().toISOString();
+            task.technicians = [];
+            if (task.subTasks) {
+              task.subTasks.forEach(st => {
+                st.id = store.generateId();
+                st.status = 'Not Started';
+                st.progress = 0;
+                st.startDate = new Date().toISOString();
+                st.technicians = [];
+              });
+            }
+          });
+          allTasks.push(...clonedTasks);
+        }
+      });
+      return allTasks;
+    }
+
+    function cleanTitle(title) {
+      let t = title || '';
+      t = t.replace(/^(Usage\s+)?Maintenance\s+Due:\s*/i, '');
+      t = t.replace(/\s+-\s+/g, ' — ');
+      
+      const parts = t.split(' — ');
+      if (parts.length >= 2) {
+        const assetName = parts[0].trim();
+        let planName = parts[1].trim();
+        
+        const assetWords = assetName.toLowerCase().split(/\s+/);
+        const planWords = planName.split(/\s+/);
+        let matchCount = 0;
+        for (let i = 0; i < Math.min(assetWords.length, planWords.length); i++) {
+          if (assetWords[i] === planWords[i].toLowerCase()) {
+            matchCount++;
+          } else {
+            break;
+          }
+        }
+        if (matchCount > 0) {
+          planName = planWords.slice(matchCount).join(' ');
+        }
+        planName = planName.replace(/\s+(Plan|Service Plan)$/i, '');
+        t = `${assetName} — ${planName}`;
+      }
+      return t;
+    }
+
+    const cleanedTitle = cleanTitle(n.title);
+
     let jobData = {
       number: `J-${Date.now().toString().slice(-6)}`,
-      title: n.title,
+      title: cleanedTitle,
       description: n.description,
       priority: n.priority,
       status: 'Pending',
@@ -481,11 +542,40 @@ export function renderNotificationsList(container) {
       createdAt: new Date().toISOString()
     };
 
-    if (n.maintenancePlanId) {
-      const asset = store.getById('assets', n.assetId);
+    if (n.mergedMaterialsList && n.mergedMaterialsList.length > 0) {
+      const asset = n.assetId ? store.getById('assets', n.assetId) : null;
+      const customer = asset ? store.getById('customers', asset.customerId) : null;
+      
+      const jobMaterials = n.mergedMaterialsList.map(item => ({
+        stockId: item.stockId || null,
+        name: item.name,
+        quantity: item.quantity,
+        unitCost: item.unitCost || 0,
+        fromQuote: true
+      }));
+
+      jobData = {
+        ...jobData,
+        customerId: asset ? (asset.customerId || '') : '',
+        customerName: customer ? customer.company : 'Internal',
+        contactName: customer ? `${customer.firstName} ${customer.lastName}` : 'Unassigned',
+        siteAddress: asset ? (asset.site || 'Main Office') : 'Main Office',
+        assetId: asset ? asset.id : undefined,
+        quoteId: n.quoteId || undefined,
+        quoteNumber: n.quoteId ? (store.getById('quotes', n.quoteId)?.number || '') : '',
+        materials: jobMaterials,
+        laborCost: parseFloat(n.totalLaborCost || 0),
+        materialCost: parseFloat(n.totalMaterialCost || 0),
+        estimatedLaborCost: parseFloat(n.totalLaborCost || 0),
+        estimatedMaterialCost: parseFloat(n.totalMaterialCost || 0),
+        maintenancePlanId: n.maintenancePlanId || undefined,
+        mergedPlanIds: n.mergedPlanIds || []
+      };
+    } else if (n.quoteId) {
+      const asset = n.assetId ? store.getById('assets', n.assetId) : null;
       const quote = store.getById('quotes', n.quoteId);
-      if (asset && quote) {
-        const customer = store.getById('customers', asset.customerId);
+      if (quote) {
+        const customer = quote.customerId ? store.getById('customers', quote.customerId) : (asset ? store.getById('customers', asset.customerId) : null);
         
         let laborCost = 0;
         let materialCost = 0;
@@ -516,42 +606,47 @@ export function renderNotificationsList(container) {
           }
         });
 
-        const jobTasks = quote.sections ? quote.sections.map(sec => ({
-          id: store.generateId(),
-          name: sec.name,
-          status: 'Not Started',
-          progress: 0,
-          startDate: new Date().toISOString(),
-          technicians: []
-        })) : [
-          {
-            id: 'p1',
-            name: 'Routine Maintenance',
-            status: 'Not Started',
-            progress: 0,
-            startDate: new Date().toISOString(),
-            technicians: []
-          }
-        ];
-
         jobData = {
           ...jobData,
-          customerId: asset.customerId || quote.customerId || '',
+          customerId: quote.customerId || (asset ? asset.customerId : ''),
           customerName: customer ? customer.company : (quote.customerName || 'Internal'),
           contactName: customer ? `${customer.firstName} ${customer.lastName}` : (quote.contactName || 'Unassigned'),
-          siteAddress: asset.site || 'Main Office',
-          assetId: asset.id,
+          siteAddress: asset ? (asset.site || 'Main Office') : 'Main Office',
+          assetId: asset ? asset.id : undefined,
           quoteId: quote.id,
           quoteNumber: quote.number,
-          tasks: jobTasks,
-          phases: jobTasks,
           materials: jobMaterials,
           laborCost,
           materialCost,
           estimatedLaborCost: laborCost,
-          estimatedMaterialCost: materialCost
+          estimatedMaterialCost: materialCost,
+          maintenancePlanId: n.maintenancePlanId || undefined,
+          mergedPlanIds: n.mergedPlanIds || []
         };
       }
+    } else if (n.maintenancePlanId) {
+      const asset = store.getById('assets', n.assetId);
+      if (asset) {
+        const customer = store.getById('customers', asset.customerId);
+        jobData = {
+          ...jobData,
+          customerId: asset.customerId || '',
+          customerName: customer ? customer.company : 'Internal',
+          contactName: customer ? `${customer.firstName} ${customer.lastName}` : 'Unassigned',
+          siteAddress: asset.site || 'Main Office',
+          assetId: asset.id,
+          maintenancePlanId: n.maintenancePlanId,
+          mergedPlanIds: []
+        };
+      }
+    }
+
+    let tasks = [];
+    if (n.taskTemplateId || (n.mergedTaskTemplateIds && n.mergedTaskTemplateIds.length > 0)) {
+      tasks = compileJobTasks(n.taskTemplateId, n.mergedTaskTemplateIds || []);
+    }
+    if (tasks.length > 0) {
+      jobData.tasks = tasks;
     }
 
     // Create Job directly

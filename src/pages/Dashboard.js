@@ -45,20 +45,20 @@ const MODULES = {
   'recent-leads':         { title: 'Recent Leads',                defaultW: 'S',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderRecentLeads },
   'today-schedule':       { title: "Today's Schedule",            defaultW: 'M',  defaultH: 'tall',     widths: ['S','M','L'],       heights: ['tall','xtall'],           render: renderTodaySchedule },
   'pinned-job':           { title: 'Pinned Job Progress',         defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        configurable: true,  render: renderPinnedJob },
-  'unassigned-jobs':      { title: 'Unassigned Jobs Queue',       defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('assignment_late', 'No unassigned jobs') },
-  'uninvoiced-completed': { title: 'Uninvoiced Completed Jobs',   defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('receipt_long', 'All jobs invoiced') },
-  'low-stock':            { title: 'Low Stock Alerts',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard','tall'],        render: () => renderPlaceholder('inventory', 'Inventory looks good') },
+  'unassigned-jobs':      { title: 'Unassigned Jobs Queue',       defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: renderUnassignedJobs },
+  'uninvoiced-completed': { title: 'Uninvoiced Completed Jobs',   defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: renderUninvoicedCompleted },
+  'low-stock':            { title: 'Low Stock Alerts',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard','tall'],        render: renderLowStock },
   'profitability-chart':  { title: 'Projected Profitability',     defaultW: 'L',  defaultH: 'tall',     widths: ['L'],               heights: ['tall','xtall'],           render: renderProfitabilityChart },
-  'staff-availability':   { title: 'Staff Availability',          defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('people', 'All staff active') },
-  'timesheet-exceptions': { title: 'Timesheet Exceptions',        defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('schedule', 'No timesheet alerts') },
-  'asset-status':         { title: 'Asset Status',                defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('precision_manufacturing', 'All assets operational') },
-  'overdue-maintenance':  { title: 'Overdue Maintenance',         defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('build', 'No overdue maintenance') },
-  'top-customers':        { title: 'Top Customers',               defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('emoji_events', 'Mock Top Customers') },
-  'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     widths: ['S','M'],           heights: ['tall','xtall'],           render: () => renderPlaceholder('checklist', 'No tasks added') },
-  'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('approval', 'No pending approvals') },
-  'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: () => renderPlaceholder('star', 'NPS Score: 8.5/10') },
-  'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: () => renderPlaceholder('account_balance', '+ $15,240 this week') },
-  'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: () => renderPlaceholder('wb_sunny', 'Sunny, 24°C') },
+  'staff-availability':   { title: 'Staff Availability',          defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: renderStaffAvailability },
+  'timesheet-exceptions': { title: 'Timesheet Exceptions',        defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: renderTimesheetExceptions },
+  'asset-status':         { title: 'Asset Status',                defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: renderAssetStatus },
+  'overdue-maintenance':  { title: 'Overdue Maintenance',         defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: renderOverdueMaintenance },
+  'top-customers':        { title: 'Top Customers',               defaultW: 'M',  defaultH: 'tall',     widths: ['M','L'],           heights: ['tall','xtall'],           render: renderTopCustomers },
+  'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     widths: ['S','M'],           heights: ['tall','xtall'],           render: renderDailyTodo },
+  'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: renderPendingApprovals },
+  'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: renderCustomerNPS },
+  'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', widths: ['S','M','L'],       heights: ['standard','tall'],        render: renderCashFlow },
+  'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', widths: ['S','M'],           heights: ['standard'],               render: renderWeatherForecast },
 };
 
 const DEFAULT_LAYOUT = [
@@ -79,6 +79,10 @@ function renderPlaceholder(icon, msg) {
 }
 
 export function renderDashboard(container) {
+  // Setup reactive reload trigger in fieldForge global
+  if (!window.__fieldForge) window.__fieldForge = {};
+  window.__fieldForge.reloadDashboard = () => renderDashboard(container);
+
   let layout = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
   try { const s = localStorage.getItem(getLayoutKey()); if (s) layout = JSON.parse(s); } catch(e) {}
 
@@ -242,6 +246,255 @@ function wireWidgetControls(grid, layout, data) {
           });
         });
       }
+    });
+  });
+
+  // 1. Unassigned Jobs dispatching
+  grid.querySelectorAll('.select-assign-tech').forEach(select => {
+    select.addEventListener('change', e => {
+      const jobId = e.target.dataset.jobId;
+      const techId = e.target.value;
+      if (!techId) return;
+      const techs = store.getAll('technicians');
+      const tech = techs.find(t => t.id === techId);
+      if (!tech) return;
+
+      store.update('jobs', jobId, { technicianId: tech.id, technicianName: tech.name, status: 'Scheduled' });
+
+      // Add schedule block
+      const schedule = store.getAll('schedule') || [];
+      const job = store.getById('jobs', jobId);
+      schedule.push({
+        id: `sched_` + Date.now(),
+        jobId: job.id,
+        jobNumber: job.number,
+        title: job.title,
+        technicianId: tech.id,
+        technicianName: tech.name,
+        color: tech.color || '#3B82F6',
+        dayOffset: 0,
+        startHour: 9,
+        endHour: 13,
+        customerName: job.customerName,
+        siteAddress: job.siteAddress || ''
+      });
+      store.save('schedule', schedule);
+
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast(`Job assigned to ${tech.name}`, 'success');
+      });
+      window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  // 2. Uninvoiced completed invoicing
+  grid.querySelectorAll('.btn-quick-invoice').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const jobId = e.target.dataset.jobId;
+      const job = store.getById('jobs', jobId);
+      if (!job) return;
+
+      const settings = store.getSettings();
+      const matCost = calculateTotalBillableMaterials(job.materials || [], settings);
+      const profile = settings.laborRates.find(r => r.id === job.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
+      const labHours = (job.estimatedHours || 0);
+      const billableLab = Math.max(labHours * (profile?.rate || 85), profile?.minCallOutFee || 0);
+      const subtotal = matCost + billableLab;
+      const tax = subtotal * 0.1;
+
+      const inv = store.create('invoices', {
+        jobNumber: job.number,
+        jobId: job.id,
+        customerId: job.customerId,
+        customerName: job.customerName,
+        contactName: job.contactName || '',
+        status: 'Draft',
+        lineItems: [
+          { description: `${job.title} - Labor`, amount: billableLab },
+          { description: `${job.title} - Materials`, amount: matCost },
+        ],
+        subtotal,
+        tax,
+        total: subtotal + tax,
+        invoiceType: 'Standard',
+        issueDate: new Date().toISOString(),
+        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        paidDate: null,
+        notes: ''
+      });
+
+      store.update('jobs', job.id, { status: 'Invoiced' });
+
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast(`Standard Invoice Created for #${job.number}`, 'success');
+      });
+      window.location.hash = `/invoices/${inv.id}`;
+    });
+  });
+
+  // 3. Low stock PO reordering
+  grid.querySelectorAll('.btn-quick-reorder').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const stockId = e.currentTarget.dataset.stockId;
+      const item = store.getById('stock', stockId);
+      if (!item) return;
+
+      const orderQty = item.reorderLevel * 2 || 20;
+      const totalCost = item.costPrice * orderQty;
+
+      const po = store.create('purchaseOrders', {
+        number: 'PO-' + Date.now().toString().substr(-6),
+        supplierName: item.supplier || 'General Supplier',
+        supplierId: 'sup_1',
+        issueDate: new Date().toISOString(),
+        status: 'Draft',
+        total: totalCost,
+        lineItems: [
+          { name: item.name, sku: item.sku, qty: orderQty, rate: item.costPrice, total: totalCost }
+        ]
+      });
+
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast(`PO ${po.number} drafted successfully!`, 'success');
+      });
+      window.location.hash = `/purchase-orders`;
+    });
+  });
+
+  // 5. Timesheet exception quick approvals
+  grid.querySelectorAll('.btn-quick-ts-approve').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const tsId = e.currentTarget.dataset.tsId;
+      store.update('timesheets', tsId, { status: 'Approved' });
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast('Timesheet entry approved', 'success');
+      });
+      window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  grid.querySelectorAll('.btn-quick-ts-reject').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const tsId = e.currentTarget.dataset.tsId;
+      store.update('timesheets', tsId, { status: 'Rejected' });
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast('Timesheet entry rejected', 'error');
+      });
+      window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  // 7. Maintenance quick dispatching
+  grid.querySelectorAll('.btn-maint-dispatch').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const planId = e.currentTarget.dataset.planId;
+      const plan = store.getById('maintenancePlans', planId);
+      if (!plan) return;
+
+      const assets = store.getAll('assets') || [];
+      const asset = assets.find(a => a.id === plan.assetId);
+
+      const job = store.create('jobs', {
+        number: 'J-' + Date.now().toString().substr(-6),
+        customerId: asset?.customerId || 'cust_1',
+        customerName: 'Internal Asset Maintenance',
+        siteAddress: asset?.site || 'Main Workshop',
+        title: plan.name,
+        type: 'General Maintenance',
+        status: 'Scheduled',
+        priority: 'High',
+        technicianId: 'tech1',
+        technicianName: 'Mark Sullivan',
+        scheduledDate: new Date().toISOString().split('T')[0],
+        estimatedHours: 4,
+        laborCost: 200,
+        materialCost: 0,
+        tasks: [
+          { id: 'p1', name: 'Maintenance Run', status: 'In Progress', progress: 50 }
+        ]
+      });
+
+      // Update next service date +3 months
+      const nextDate = new Date();
+      nextDate.setMonth(nextDate.getMonth() + 3);
+      store.update('maintenancePlans', plan.id, { nextServiceDate: nextDate.toISOString().split('T')[0] });
+
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast(`Maintenance Job ${job.number} Dispatched!`, 'success');
+      });
+      window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  // 9. Daily To-Do Checklist checklist persistency
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const userKey = currentUser ? `todo_${currentUser.id}` : 'todo_default';
+
+  grid.querySelectorAll('.todo-item-check').forEach(chk => {
+    chk.addEventListener('change', e => {
+      let todos = [];
+      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
+      const idx = e.target.dataset.idx;
+      if (todos[idx]) {
+        todos[idx].completed = e.target.checked;
+        localStorage.setItem(userKey, JSON.stringify(todos));
+      }
+      window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  grid.querySelectorAll('.btn-remove-todo').forEach(btn => {
+    btn.addEventListener('click', e => {
+      let todos = [];
+      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
+      const idx = e.currentTarget.dataset.idx;
+      todos.splice(idx, 1);
+      localStorage.setItem(userKey, JSON.stringify(todos));
+      window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  const todoInput = grid.querySelector('#todo-input-field');
+  const todoAddBtn = grid.querySelector('#btn-add-todo');
+  
+  if (todoAddBtn && todoInput) {
+    const handleAdd = () => {
+      const text = todoInput.value.trim();
+      if (!text) return;
+      let todos = [];
+      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
+      todos.push({ text, completed: false });
+      localStorage.setItem(userKey, JSON.stringify(todos));
+      todoInput.value = '';
+      window.__fieldForge.reloadDashboard?.();
+    };
+
+    todoAddBtn.addEventListener('click', handleAdd);
+    todoInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') handleAdd();
+    });
+  }
+
+  // 10. Quote approvals
+  grid.querySelectorAll('.btn-quote-approve').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const qId = e.currentTarget.dataset.quoteId;
+      store.update('quotes', qId, { status: 'Accepted' });
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast('Quote status marked as Accepted', 'success');
+      });
+      window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  grid.querySelectorAll('.btn-quote-decline').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const qId = e.currentTarget.dataset.quoteId;
+      store.update('quotes', qId, { status: 'Declined' });
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast('Quote status marked as Declined', 'error');
+      });
+      window.__fieldForge.reloadDashboard?.();
     });
   });
 }
@@ -505,7 +758,6 @@ function renderTechMap(data, item) {
   </div>`;
 }
 
-
 function renderRecentActivity(data, item) {
   const acts = [];
   data.jobs.slice(0,4).forEach(j => acts.push({ icon:'build', color:'var(--color-primary)', text:`Job <strong>${j.number}</strong> — ${j.title}`, sub: j.customerName, time: j.updatedAt }));
@@ -701,6 +953,364 @@ function renderProfitabilityChart(data, item) {
 
       <div style="font-size:11px; color:var(--text-tertiary); text-align:center; padding-top:8px; border-top:1px solid var(--border-color);">
         Based on ${jobs.length} active jobs using tiered material markups.
+      </div>
+    </div>
+  `;
+}
+
+// ── Supercharged Named Renderers ──
+
+function renderUnassignedJobs(data, item) {
+  const unassigned = data.jobs.filter(j => !j.technicianId || j.status === 'Pending');
+  if (!unassigned.length) return renderPlaceholder('assignment_late', 'No unassigned jobs');
+
+  const techs = store.getAll('technicians');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+      ${unassigned.map(j => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+              <span class="badge ${j.priority === 'Urgent' ? 'badge-danger' : j.priority === 'High' ? 'badge-warning' : 'badge-neutral'}">${j.priority}</span>
+              <a href="#/jobs/${j.id}" style="font-weight:600; font-size:12px; color:var(--color-primary); text-decoration:none;">#${j.number}</a>
+            </div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${j.title}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">${j.customerName}</div>
+          </div>
+          <div style="flex-shrink:0;">
+            <select class="form-select select-assign-tech" data-job-id="${j.id}" style="font-size:11px; padding:4px 8px; width:120px; height:28px; margin:0;">
+              <option value="">Assign Tech...</option>
+              ${techs.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderUninvoicedCompleted(data, item) {
+  const completed = data.jobs.filter(j => j.status === 'Completed');
+  if (!completed.length) return renderPlaceholder('receipt_long', 'All jobs invoiced');
+
+  const settings = store.getSettings();
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+      ${completed.map(j => {
+        const matCost = (j.materials || []).reduce((s, m) => s + (m.quantity * (m.unitCost || 0)), 0);
+        const labCost = (j.laborCost || 0);
+        const totalCost = matCost + labCost;
+
+        return `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+            <div style="flex:1; min-width:0;">
+              <div style="font-weight:600; font-size:12px; margin-bottom:2px;">
+                <a href="#/jobs/${j.id}" style="color:var(--color-primary); text-decoration:none;">#${j.number}</a>
+                <span style="color:var(--color-success); font-weight:700; margin-left:6px;">$${totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${j.title}</div>
+              <div style="font-size:11px; color:var(--text-tertiary);">${j.customerName}</div>
+            </div>
+            <div style="flex-shrink:0;">
+              <button class="btn btn-primary btn-sm btn-quick-invoice" data-job-id="${j.id}" style="padding:4px 10px; font-size:12px; height:28px;">Invoice</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderLowStock(data, item) {
+  const stock = store.getAll('stock') || [];
+  const low = stock.filter(s => s.quantity <= s.reorderLevel);
+  if (!low.length) return renderPlaceholder('inventory', 'Inventory looks good');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+      ${low.map(s => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:12px; margin-bottom:2px; display:flex; align-items:center; gap:6px;">
+              <span class="text-secondary">${s.sku}</span>
+              <span class="badge badge-danger" style="font-size:10px; padding:1px 6px;">${s.quantity} left</span>
+            </div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${s.name}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">Reorder trigger: ${s.reorderLevel}</div>
+          </div>
+          <div style="flex-shrink:0;">
+            <button class="btn btn-secondary btn-sm btn-quick-reorder" data-stock-id="${s.id}" style="padding:4px 10px; font-size:12px; height:28px;">Reorder</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderStaffAvailability(data, item) {
+  const techs = store.getAll('technicians') || [];
+  const activeJobs = data.jobs.filter(j => j.status === 'In Progress');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+      ${techs.map(t => {
+        const isWorking = activeJobs.find(j => j.technicianId === t.id);
+        const statusText = isWorking ? `On Job #${isWorking.number}` : 'Available';
+        const statusColor = isWorking ? 'var(--color-info)' : 'var(--color-success)';
+        const dotBg = isWorking ? 'var(--color-info)' : 'var(--color-success)';
+
+        return `
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+            <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+              <div style="width:24px; height:24px; border-radius:50%; background:${t.color || 'var(--color-primary)'}; color:white; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:bold; flex-shrink:0;">
+                ${t.name[0]}
+              </div>
+              <div style="min-width:0;">
+                <div style="font-weight:600; font-size:13px; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${t.name}</div>
+                <div style="font-size:11px; color:var(--text-tertiary);">${t.role || 'Field Staff'}</div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+              <span style="width:8px; height:8px; border-radius:50%; background:${dotBg}; display:inline-block;"></span>
+              <span style="font-size:12px; font-weight:600; color:${statusColor};">${statusText}</span>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderTimesheetExceptions(data, item) {
+  const timesheets = store.getAll('timesheets') || [];
+  const pending = timesheets.filter(t => t.status === 'Pending');
+  if (!pending.length) return renderPlaceholder('schedule', 'No timesheet alerts');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:8px; padding:4px 0;">
+      ${pending.map(t => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:12px; margin-bottom:2px; color:var(--text-primary);">
+              ${t.technicianName}
+              <span style="color:var(--color-primary); font-weight:700; margin-left:6px;">${t.hours} hrs</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-secondary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">Job ${t.jobNumber || ''} : ${t.description || '—'}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">${new Date(t.date).toLocaleDateString()}</div>
+          </div>
+          <div style="display:flex; gap:4px; flex-shrink:0;">
+            <button class="btn btn-ghost btn-icon btn-sm btn-quick-ts-approve" data-ts-id="${t.id}" title="Approve" style="color:var(--color-success); border:1px solid var(--border-color); background:white;">
+              <span class="material-icons-outlined" style="font-size:16px;">check</span>
+            </button>
+            <button class="btn btn-ghost btn-icon btn-sm btn-quick-ts-reject" data-ts-id="${t.id}" title="Reject" style="color:var(--color-danger); border:1px solid var(--border-color); background:white;">
+              <span class="material-icons-outlined" style="font-size:16px;">close</span>
+            </button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderAssetStatus(data, item) {
+  const assets = store.getAll('assets') || [];
+  if (!assets.length) return renderPlaceholder('precision_manufacturing', 'No assets registered');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+      ${assets.map(a => `
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+          <div style="min-width:0; flex:1;">
+            <div style="font-weight:600; font-size:13px; color:var(--text-primary);">${a.name}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">${a.type} · ${a.serial || '—'}</div>
+          </div>
+          <span class="badge ${a.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${a.status}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderOverdueMaintenance(data, item) {
+  const plans = store.getAll('maintenancePlans') || [];
+  const activePlans = plans.filter(p => p.status === 'Active');
+  const today = new Date().toISOString().split('T')[0];
+  const overdue = activePlans.filter(p => p.nextServiceDate && p.nextServiceDate <= today);
+
+  if (!overdue.length) return renderPlaceholder('build', 'No overdue maintenance');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+      ${overdue.map(p => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:12px; margin-bottom:2px; color:var(--color-danger);">
+              Overdue Date: ${p.nextServiceDate}
+            </div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${p.name}</div>
+          </div>
+          <button class="btn btn-primary btn-sm btn-maint-dispatch" data-plan-id="${p.id}" style="padding:4px 10px; font-size:12px; height:28px;">Dispatch</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderTopCustomers(data, item) {
+  const invoices = data.invoices || [];
+  const paid = invoices.filter(i => i.status === 'Paid');
+  const spentMap = {};
+  paid.forEach(i => {
+    spentMap[i.customerName] = (spentMap[i.customerName] || 0) + (i.total || 0);
+  });
+
+  const sorted = Object.entries(spentMap).sort((a,b) => b[1] - a[1]).slice(0, 4);
+  if (!sorted.length) return renderPlaceholder('emoji_events', 'No paid transactions yet');
+
+  const maxSpend = sorted[0][1] || 1;
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:12px; padding:4px 0;">
+      ${sorted.map(([name, spend]) => {
+        const percent = Math.round((spend / maxSpend) * 100);
+        return `
+          <div>
+            <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+              <span style="font-weight:600; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:200px;">${name}</span>
+              <span style="font-weight:700; color:var(--color-primary);">$${spend.toLocaleString('en-AU')}</span>
+            </div>
+            <div style="height:8px; background:var(--bg-color); border-radius:4px; overflow:hidden;">
+              <div style="width:${percent}%; height:100%; background:linear-gradient(90deg, var(--color-primary), #60a5fa); border-radius:4px;"></div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderDailyTodo(data, item) {
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const userKey = currentUser ? `todo_${currentUser.id}` : 'todo_default';
+  let todos = [];
+  try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(e) {}
+
+  if (!todos.length) {
+    todos = [
+      { text: 'Check timesheet submissions', completed: false },
+      { text: 'Verify stock levels for split systems', completed: false }
+    ];
+    localStorage.setItem(userKey, JSON.stringify(todos));
+  }
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; height:100%;">
+      <div style="display:flex; gap:6px; margin-bottom:4px;">
+        <input type="text" id="todo-input-field" placeholder="Add custom task..." class="form-input" style="flex:1; height:30px; font-size:12px; padding:0 8px; margin:0;" />
+        <button class="btn btn-primary btn-sm" id="btn-add-todo" style="padding:0 12px; height:30px; font-size:12px;">Add</button>
+      </div>
+      <div id="todo-list-inner" style="display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto; padding-right:4px;">
+        ${todos.map((t, idx) => `
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:${t.completed ? 'var(--text-tertiary)' : 'var(--text-primary)'}; text-decoration:${t.completed ? 'line-through' : 'none'}; flex:1; min-width:0; margin:0;">
+              <input type="checkbox" class="todo-item-check" data-idx="${idx}" ${t.completed ? 'checked' : ''} style="cursor:pointer; width:14px; height:14px; margin:0;" />
+              <span class="truncate">${t.text}</span>
+            </label>
+            <button class="btn btn-ghost btn-sm btn-icon btn-remove-todo" data-idx="${idx}" style="color:var(--color-danger); padding:0; width:22px; height:22px;" title="Delete">
+              <span class="material-icons-outlined" style="font-size:16px;">delete</span>
+            </button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderPendingApprovals(data, item) {
+  const quotes = store.getAll('quotes') || [];
+  const pending = quotes.filter(q => q.status === 'Sent');
+  if (!pending.length) return renderPlaceholder('approval', 'No pending quotes waiting');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
+      ${pending.map(q => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:12px; margin-bottom:2px;">
+              <a href="#/quotes/${q.id}" style="color:var(--color-primary); text-decoration:none;">#${q.number}</a>
+              <span style="color:var(--color-primary); font-weight:700; margin-left:6px;">$${(q.total || 0).toLocaleString('en-AU')}</span>
+            </div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${q.title}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">${q.customerName}</div>
+          </div>
+          <div style="display:flex; gap:4px; flex-shrink:0;">
+            <button class="btn btn-ghost btn-icon btn-sm btn-quote-approve" data-quote-id="${q.id}" title="Approve" style="color:var(--color-success); border:1px solid var(--border-color); background:white;">
+              <span class="material-icons-outlined" style="font-size:16px;">check</span>
+            </button>
+            <button class="btn btn-ghost btn-icon btn-sm btn-quote-decline" data-quote-id="${q.id}" title="Decline" style="color:var(--color-danger); border:1px solid var(--border-color); background:white;">
+              <span class="material-icons-outlined" style="font-size:16px;">close</span>
+            </button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderCustomerNPS(data, item) {
+  return `
+    <div style="display:flex; align-items:center; justify-content:center; gap:20px; height:100%; padding:8px;">
+      <div style="position:relative; width:80px; height:80px; display:flex; align-items:center; justify-content:center;">
+        <svg viewBox="0 0 36 36" style="width:100%; height:100%; transform: rotate(-90deg);">
+          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--bg-color)" stroke-width="3" />
+          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--color-success)" stroke-width="3.5" stroke-dasharray="88, 100" />
+        </svg>
+        <div style="position:absolute; font-size:18px; font-weight:800; color:var(--text-primary);">8.8</div>
+      </div>
+      <div style="font-size:12px; color:var(--text-secondary); line-height:1.4;">
+        <div style="font-weight:700; color:var(--color-success); font-size:13px;">Excellent Score</div>
+        <div>Promoters: <strong style="color:var(--text-primary)">82%</strong></div>
+        <div>Detractors: <strong style="color:var(--text-primary)">6%</strong></div>
+        <div style="color:var(--text-tertiary); font-size:10px; margin-top:2px;">Last 30 days review loop</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCashFlow(data, item) {
+  const invoices = data.invoices || [];
+  const paidTotal = invoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + (i.total || 0), 0);
+  const sentTotal = invoices.filter(i => i.status === 'Sent' || i.status === 'Overdue').reduce((sum, i) => sum + (i.total || 0), 0);
+
+  return `
+    <div style="display:flex; flex-direction:column; justify-content:center; height:100%; padding:4px;">
+      <div style="background:linear-gradient(135deg, var(--color-primary), #487291); padding:16px; border-radius:10px; color:white; box-shadow:0 4px 15px rgba(49, 86, 113, 0.2); margin-bottom:10px;">
+        <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.5px; opacity:0.8; margin-bottom:2px;">Total Paid Cash Flow</div>
+        <div style="font-size:22px; font-weight:800;">$${paidTotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:0 4px;">
+        <span style="color:var(--text-secondary);">Receivables Outstanding</span>
+        <strong style="color:var(--color-warning);">$${sentTotal.toLocaleString('en-AU')}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderWeatherForecast(data, item) {
+  return `
+    <div style="display:flex; align-items:center; gap:16px; height:100%; padding:4px;">
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;">
+        <span class="material-icons-outlined" style="font-size:40px; color:#f59e0b;">wb_sunny</span>
+        <span style="font-size:14px; font-weight:700; color:var(--text-primary); margin-top:2px;">24°C</span>
+      </div>
+      <div style="flex:1; font-size:12px; color:var(--text-secondary); line-height:1.4;">
+        <div style="font-weight:700; color:var(--color-primary); font-size:13px; margin-bottom:2px;">Sunny & Clear</div>
+        <div>Wind: 12 km/h · Precip: 5%</div>
+        <div style="margin-top:4px; font-style:italic; color:var(--color-success); font-weight:500;">
+          ☀️ Perfect weather for all outdoor asset servicing and safety checkups!
+        </div>
       </div>
     </div>
   `;

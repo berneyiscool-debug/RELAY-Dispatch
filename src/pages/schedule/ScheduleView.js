@@ -28,8 +28,13 @@ export function renderScheduleView(container) {
   let contextMenu = null;
   let savedScrollTop = 0;
   let savedScrollLeft = 0;
+  let savedSearchResultsScrollTop = 0;
   let isSidebarCollapsed = false;
   let isActionMenuOpen = false;
+  let isTechsPanelCollapsed = false;
+  let isJobsPanelCollapsed = false;
+  let jobSearchQuery = '';
+  let expandedJobTasklistIds = new Set();
 
   // 15-min precision: 1 hour = 32px, so 1 quarter = 8px
   const PX_PER_HOUR = 32;
@@ -48,11 +53,15 @@ export function renderScheduleView(container) {
   function saveScroll() {
     const el = document.getElementById('calendar-scroll');
     if (el) { savedScrollTop = el.scrollTop; savedScrollLeft = el.scrollLeft; }
+    const searchEl = document.getElementById('job-search-results');
+    if (searchEl) { savedSearchResultsScrollTop = searchEl.scrollTop; }
   }
 
   function restoreScroll() {
     const el = document.getElementById('calendar-scroll');
     if (el) { el.scrollTop = savedScrollTop; el.scrollLeft = savedScrollLeft; }
+    const searchEl = document.getElementById('job-search-results');
+    if (searchEl) { searchEl.scrollTop = savedSearchResultsScrollTop; }
   }
 
   function closeContextMenu() {
@@ -155,20 +164,21 @@ export function renderScheduleView(container) {
             endHour = s.endHour;
           }
 
-          blocks.push({
-            id: s.id,
-            type: 'schedule',
-            jobId: job.id,
-            jobNumber: job.number,
-            customerName: job.customerName,
-            title: job.title,
-            technicianId: s.technicianId,
-            dayIdx,
-            startHour,
-            endHour,
-            status: job.status,
-            priority: job.priority,
-          });
+           blocks.push({
+             id: s.id,
+             type: 'schedule',
+             jobId: job.id,
+             jobNumber: job.number,
+             customerName: s.taskName ? `${job.customerName} (${s.taskName})` : job.customerName,
+             title: job.title,
+             technicianId: s.technicianId,
+             dayIdx,
+             startHour,
+             endHour,
+             status: job.status,
+             priority: job.priority,
+             taskName: s.taskName || null,
+           });
         }
       });
     });
@@ -427,17 +437,20 @@ export function renderScheduleView(container) {
               </div>
             ` : `
               <!-- Expanded Sidebar -->
-              <div style="width:280px; border-left:1px solid var(--border-color); display:flex; flex-direction:column; background:var(--card-bg); overflow-y:auto; flex-shrink:0;">
+              <div style="width:280px; border-left:1px solid var(--border-color); display:flex; flex-direction:column; background:var(--card-bg); overflow:hidden; height:100%; flex-shrink:0;">
                 
                 <!-- Action Button Trigger -->
-                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:12px; position:relative;">
-                  <button class="btn btn-primary" id="btn-action-menu-trigger" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px;">
-                    <span class="material-icons-outlined">add</span>
+                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; gap:12px; position:relative;">
+                  <button class="btn btn-primary btn-sm" id="btn-action-menu-trigger" style="width:140px; display:flex; align-items:center; justify-content:center; gap:6px; font-size:12px; padding:6px 12px;">
+                    <span class="material-icons-outlined" style="font-size:16px">add</span>
                     <span>Add to Schedule</span>
+                  </button>
+                  <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-sidebar" title="Collapse Sidebar" style="color:var(--text-secondary); width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0;">
+                    <span class="material-icons-outlined" style="font-size:20px">chevron_right</span>
                   </button>
                   ${isActionMenuOpen ? `
                     <!-- Action Dropdown Menu -->
-                    <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:56px; left:16px; right:16px; z-index:100; display:flex; flex-direction:column; overflow:hidden;">
+                    <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:56px; left:16px; width:220px; z-index:100; display:flex; flex-direction:column; overflow:hidden;">
                       <button class="sidebar-nav-item sub-item action-menu-opt" data-action="job" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
                         <span class="nav-icon"><span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px">assignment</span></span>
                         <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Job Schedule</span>
@@ -459,24 +472,162 @@ export function renderScheduleView(container) {
                 </div>
 
                 <!-- Visible Technicians Module -->
-                <div style="padding:16px; border-bottom:1px solid var(--border-color);">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:10px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
                     <h4 style="font-size:var(--font-size-sm); margin:0; display:flex; align-items:center; gap:6px;">
                       <span class="material-icons-outlined" style="font-size:16px;">people</span> Visible Technicians
                     </h4>
-                    <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-sidebar" title="Collapse Sidebar" style="color:var(--text-secondary); width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
-                      <span class="material-icons-outlined" style="font-size:18px">chevron_right</span>
+                    <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-techs" title="${isTechsPanelCollapsed ? 'Expand' : 'Collapse'}" style="color:var(--text-secondary); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
+                      <span class="material-icons-outlined" style="font-size:18px">${isTechsPanelCollapsed ? 'chevron_right' : 'expand_more'}</span>
                     </button>
                   </div>
-                  <div style="display:flex; flex-direction:column; gap:10px;">
-                    ${technicians.map(t => `
-                      <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer;">
-                        <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
-                        <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
-                        <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
-                      </label>
-                    `).join('')}
+                  ${!isTechsPanelCollapsed ? `
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                      ${technicians.map(t => `
+                        <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer;">
+                          <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
+                          <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
+                          <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
+                        </label>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+
+                <!-- Job & Task Search Module -->
+                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:12px; ${isJobsPanelCollapsed ? 'flex:0 0 auto;' : 'flex:1; min-height:0; overflow:hidden;'}">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="font-size:var(--font-size-sm); margin:0; display:flex; align-items:center; gap:6px;">
+                      <span class="material-icons-outlined" style="font-size:16px;">search</span> Job & Task Search
+                    </h4>
+                    <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-jobs-panel" title="${isJobsPanelCollapsed ? 'Expand' : 'Collapse'}" style="color:var(--text-secondary); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
+                      <span class="material-icons-outlined" style="font-size:18px">${isJobsPanelCollapsed ? 'chevron_right' : 'expand_more'}</span>
+                    </button>
                   </div>
+                  ${!isJobsPanelCollapsed ? `
+                    <div class="topbar-search" style="max-width:100%; position:relative; flex-shrink:0; flex:none !important;">
+                      <span class="material-icons-outlined search-icon" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); font-size:16px; color:var(--text-tertiary);">search</span>
+                      <input type="text" id="job-search-input" value="${jobSearchQuery}" placeholder="Search jobs or tasks..." style="width:100%; padding:6px 8px 6px 28px; border:1px solid var(--border-color); border-radius:var(--border-radius); font-size:var(--font-size-sm); background:var(--content-bg); color:var(--text-primary); outline:none; transition:all var(--transition-fast);">
+                    </div>
+                    
+                    <div id="job-search-results" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding-right:4px; margin-top:4px;">
+                      ${(() => {
+                        const allJobs = store.getAll('jobs');
+                        const query = jobSearchQuery.trim().toLowerCase();
+                        const matchingJobs = allJobs.filter(j => {
+                          if (j.status === 'Completed' || j.status === 'Invoiced') return false;
+                          if (!query) return true; // Show all active when query is empty
+                          
+                          const matchesJob = j.number.toLowerCase().includes(query) ||
+                                             (j.customerName && j.customerName.toLowerCase().includes(query)) ||
+                                             (j.title && j.title.toLowerCase().includes(query));
+                          
+                          const matchesTask = j.tasks && j.tasks.some(t => 
+                            t.name.toLowerCase().includes(query) ||
+                            (t.subTasks && t.subTasks.some(st => st.name.toLowerCase().includes(query)))
+                          );
+                          
+                          return matchesJob || matchesTask;
+                        });
+
+                        if (matchingJobs.length === 0) {
+                          return `
+                            <div style="font-size:11px; color:var(--text-tertiary); text-align:center; padding:16px;">
+                              No matching active jobs found.
+                            </div>
+                          `;
+                        }
+
+                        return matchingJobs.map(j => {
+                          const isTasklistExpanded = expandedJobTasklistIds.has(j.id);
+                          return `
+                            <div class="unscheduled-job" draggable="true" 
+                              data-job-id="${j.id}" 
+                              data-job-number="${j.number}" 
+                              data-customer="${escapeHTML(j.customerName || '')}" 
+                              data-title="${escapeHTML(j.title || '')}" 
+                              data-hours="${j.estimatedHours || 2}" 
+                              style="width:100%; display:flex; flex-direction:column; gap:2px; padding:8px 10px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius); cursor:grab; pointer-events:auto; transition: all var(--transition-fast);"
+                            >
+                              <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; gap:4px;">
+                                <div style="display:flex; flex-direction:column; text-align:left; pointer-events:none; min-width:0; flex:1;">
+                                  <div style="font-weight:700; font-size:11.5px; color:var(--text-primary); display:flex; align-items:center; gap:5px; margin-bottom:1px;">
+                                    <span style="color:var(--color-primary); flex-shrink:0;">${j.number}</span>
+                                    <span style="color:var(--text-tertiary); font-weight:normal;">•</span>
+                                    <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${escapeHTML(j.customerName || '')}</span>
+                                  </div>
+                                  <div style="font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHTML(j.title || '')}">${escapeHTML(j.title || '')}</div>
+                                </div>
+                                ${j.tasks && j.tasks.length > 0 ? `
+                                  <button class="btn btn-ghost btn-icon btn-sm btn-toggle-job-tasks" data-job-id="${j.id}" title="${isTasklistExpanded ? 'Hide Tasks' : 'Show Tasks'}" style="color:var(--text-secondary); width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0; pointer-events:auto; border:none; background:none; cursor:pointer; flex-shrink:0;">
+                                    <span class="material-icons-outlined" style="font-size:14px">${isTasklistExpanded ? 'expand_more' : 'chevron_right'}</span>
+                                  </button>
+                                ` : ''}
+                              </div>
+                              
+                              <!-- Tasks Section -->
+                              ${j.tasks && j.tasks.length > 0 && isTasklistExpanded ? `
+                                <div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--border-color); display:flex; flex-direction:column; gap:4px;">
+                                  <div style="font-size:9px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; text-align:left; pointer-events:none; margin-bottom:2px;">Tasks (Drag tasks or sub-tasks to assign)</div>
+                                  ${j.tasks.map(t => {
+                                    const tHours = t.estimatedHours || 2;
+                                    const hasSubtasks = t.subTasks && t.subTasks.length > 0;
+                                    return `
+                                      <div style="display:flex; flex-direction:column; gap:3px;">
+                                        <div class="unscheduled-job-task" draggable="true" 
+                                          data-job-id="${j.id}" 
+                                          data-job-number="${j.number}" 
+                                          data-customer="${escapeHTML(j.customerName || '')}" 
+                                          data-title="${escapeHTML(t.name)}" 
+                                          data-hours="${tHours}" 
+                                          data-task-id="${t.id}" 
+                                          data-task-name="${escapeHTML(t.name)}" 
+                                          style="display:flex; align-items:center; justify-content:space-between; padding:4px 6px; background:var(--content-bg); border:1px solid var(--border-color); border-radius:4px; cursor:grab; font-size:10px; font-weight:500; color:var(--text-primary); transition: background var(--transition-fast);"
+                                        >
+                                          <div style="display:flex; align-items:center; pointer-events:none; flex:1; min-width:0;">
+                                            <span class="material-icons-outlined" style="font-size:12px; color:var(--color-primary); margin-right:4px; flex-shrink:0;">assignment</span>
+                                            <span style="text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(t.name)}</span>
+                                          </div>
+                                          <span style="font-size:9px; color:var(--text-tertiary); margin-left:6px; font-weight:600; flex-shrink:0; pointer-events:none;">${tHours}h</span>
+                                        </div>
+                                        ${hasSubtasks ? `
+                                          <div style="display:flex; flex-direction:column; gap:3px; margin-left:8px; border-left:1px dashed var(--border-color); padding-left:6px; margin-top:2px; margin-bottom:4px;">
+                                            ${t.subTasks.map(st => {
+                                              const stHours = st.estimatedHours || 1;
+                                              return `
+                                                <div class="unscheduled-job-subtask" draggable="true" 
+                                                  data-job-id="${j.id}" 
+                                                  data-job-number="${j.number}" 
+                                                  data-customer="${escapeHTML(j.customerName || '')}" 
+                                                  data-title="${escapeHTML(t.name)} - ${escapeHTML(st.name)}" 
+                                                  data-hours="${stHours}" 
+                                                  data-task-id="${t.id}" 
+                                                  data-task-name="${escapeHTML(t.name)} - ${escapeHTML(st.name)}" 
+                                                  data-subtask-id="${st.id}" 
+                                                  data-subtask-name="${escapeHTML(st.name)}" 
+                                                  style="display:flex; align-items:center; justify-content:space-between; padding:3px 6px; background:rgba(0,0,0,0.015); border:1px solid rgba(0,0,0,0.04); border-radius:3px; cursor:grab; font-size:9px; font-weight:400; color:var(--text-secondary); transition: background var(--transition-fast);"
+                                                >
+                                                  <div style="display:flex; align-items:center; pointer-events:none; flex:1; min-width:0;">
+                                                    <span class="material-icons-outlined" style="font-size:10px; color:var(--text-tertiary); margin-right:3px; flex-shrink:0;">subdirectory_arrow_right</span>
+                                                    <span style="text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(st.name)}</span>
+                                                  </div>
+                                                  <span style="font-size:8px; color:var(--text-tertiary); margin-left:4px; font-weight:500; flex-shrink:0; pointer-events:none;">${stHours}h</span>
+                                                </div>
+                                              `;
+                                            }).join('')}
+                                          </div>
+                                        ` : ''}
+                                      </div>
+                                    `;
+                                  }).join('')}
+                                </div>
+                              ` : ''}
+                            </div>
+                          `;
+                        }).join('');
+                      })()}
+                    </div>
+                  ` : ''}
                 </div>
               </div>
             `}
@@ -555,6 +706,10 @@ export function renderScheduleView(container) {
             const duration = parseFloat(fd.get('duration'));
 
             const job = store.getById('jobs', jobId);
+            if (!job) {
+              showToast('Selected job not found or has been deleted.', 'error');
+              return;
+            }
             const tech = store.getById('technicians', techId);
 
             const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
@@ -916,6 +1071,28 @@ export function renderScheduleView(container) {
       render();
     });
 
+    container.querySelector('#btn-toggle-techs')?.addEventListener('click', () => {
+      isTechsPanelCollapsed = !isTechsPanelCollapsed;
+      render();
+    });
+
+    container.querySelector('#btn-toggle-jobs-panel')?.addEventListener('click', () => {
+      isJobsPanelCollapsed = !isJobsPanelCollapsed;
+      render();
+    });
+
+    const searchInput = container.querySelector('#job-search-input');
+    if (searchInput) {
+      searchInput.focus();
+      const len = searchInput.value.length;
+      searchInput.setSelectionRange(len, len);
+      
+      searchInput.addEventListener('input', (e) => {
+        jobSearchQuery = e.target.value;
+        render();
+      });
+    }
+
     container.querySelector('#btn-action-menu-trigger')?.addEventListener('click', (e) => {
       e.stopPropagation();
       isActionMenuOpen = !isActionMenuOpen;
@@ -1093,6 +1270,19 @@ export function renderScheduleView(container) {
         }
       });
     });
+
+    container.querySelectorAll('.btn-toggle-job-tasks').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jobId = btn.dataset.jobId;
+        if (expandedJobTasklistIds.has(jobId)) {
+          expandedJobTasklistIds.delete(jobId);
+        } else {
+          expandedJobTasklistIds.add(jobId);
+        }
+        render();
+      });
+    });
   }
 
   function bindDragAndDrop(days) {
@@ -1125,6 +1315,7 @@ export function renderScheduleView(container) {
     // Draggable: unscheduled jobs
     container.querySelectorAll('.unscheduled-job').forEach(el => {
       el.addEventListener('dragstart', (e) => {
+        if (e.target.closest('.unscheduled-job-task') || e.target.closest('.unscheduled-job-subtask')) return; // Ignore if dragging nested task or subtask
         const rect = el.getBoundingClientRect();
         dragState = {
           type: 'unscheduled',
@@ -1132,13 +1323,69 @@ export function renderScheduleView(container) {
           jobNumber: el.dataset.jobNumber,
           customerName: el.dataset.customer,
           title: el.dataset.title,
-          hours: parseInt(el.dataset.hours) || 2,
+          hours: parseFloat(el.dataset.hours) || 2,
           offsetY: e.clientY - rect.top,
         };
         e.dataTransfer.effectAllowed = 'move';
         el.style.opacity = '0.5';
       });
       el.addEventListener('dragend', () => {
+        el.style.opacity = '1';
+        dragState = null;
+        document.querySelectorAll('.schedule-drag-preview').forEach(p => p.remove());
+      });
+    });
+
+    // Draggable: unscheduled tasks
+    container.querySelectorAll('.unscheduled-job-task').forEach(el => {
+      el.addEventListener('dragstart', (e) => {
+        e.stopPropagation(); // Avoid parent card drag
+        const rect = el.getBoundingClientRect();
+        dragState = {
+          type: 'unscheduled',
+          jobId: el.dataset.jobId,
+          jobNumber: el.dataset.jobNumber,
+          customerName: el.dataset.customer,
+          title: el.dataset.title,
+          hours: parseFloat(el.dataset.hours) || 2,
+          taskId: el.dataset.taskId,
+          taskName: el.dataset.taskName,
+          offsetY: e.clientY - rect.top,
+        };
+        e.dataTransfer.effectAllowed = 'move';
+        el.style.opacity = '0.5';
+      });
+      el.addEventListener('dragend', (e) => {
+        e.stopPropagation();
+        el.style.opacity = '1';
+        dragState = null;
+        document.querySelectorAll('.schedule-drag-preview').forEach(p => p.remove());
+      });
+    });
+
+    // Draggable: unscheduled subtasks
+    container.querySelectorAll('.unscheduled-job-subtask').forEach(el => {
+      el.addEventListener('dragstart', (e) => {
+        e.stopPropagation(); // Avoid parent card/task drag
+        const rect = el.getBoundingClientRect();
+        dragState = {
+          type: 'unscheduled',
+          jobId: el.dataset.jobId,
+          jobNumber: el.dataset.jobNumber,
+          customerName: el.dataset.customer,
+          title: el.dataset.title,
+          hours: parseFloat(el.dataset.hours) || 1,
+          taskId: el.dataset.taskId,
+          taskName: el.dataset.taskName,
+          subTaskId: el.dataset.subTaskId,
+          subTaskName: el.dataset.subTaskName,
+          offsetY: e.clientY - rect.top,
+        };
+        e.dataTransfer.effectAllowed = 'move';
+        el.style.opacity = '0.5';
+      });
+      el.addEventListener('dragend', (e) => {
+        e.stopPropagation();
         el.style.opacity = '1';
         dragState = null;
         document.querySelectorAll('.schedule-drag-preview').forEach(p => p.remove());
@@ -1292,7 +1539,9 @@ export function renderScheduleView(container) {
               date: localDateStr,
               startTime: startTimeStr,
               finishTime: finishTimeStr,
-              hours: duration
+              hours: duration,
+              taskId: dragState.taskId || null,
+              taskName: dragState.taskName || null
             });
 
             // Update job's scheduled info

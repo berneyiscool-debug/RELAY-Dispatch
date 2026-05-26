@@ -261,11 +261,8 @@ router.onNavigate = (path, params) => {
           if (moduleName) {
              // Granular route guard checks
              let block = false;
-             if (path === '/jobs/new' && !hasPermission('Jobs', 'create')) block = true;
-             if (path.endsWith('/edit') && basePath === '/jobs' && !hasPermission('Jobs', 'edit')) block = true;
-             if (path === '/quotes/new' && !hasPermission('Quotes', 'create')) block = true;
-             if (path === '/suppliers/new' && !hasPermission('Suppliers', 'create')) block = true;
-             if (path.endsWith('/edit') && basePath === '/suppliers' && !hasPermission('Suppliers', 'edit')) block = true;
+             if (path.endsWith('/new') && !hasPermission(moduleName, 'create')) block = true;
+             if (path.endsWith('/edit') && !hasPermission(moduleName, 'edit')) block = true;
 
              if (block) {
                 const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/suppliers', '/assets', '/documents', '/settings'];
