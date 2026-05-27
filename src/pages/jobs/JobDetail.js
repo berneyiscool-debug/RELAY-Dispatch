@@ -721,7 +721,7 @@ export function renderJobDetail(container, { id }) {
           const viewTitle = viewParentNode ? escapeHTML(viewParentNode.name) : 'Main Tasks';
 
           return `
-                <div style="flex: 0 0 300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg);">
+                <div style="flex: 0 0 300px; width: 300px; min-width: 300px; max-width: 300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg);">
                   <div style="padding:12px; border-bottom:1px solid var(--border-color); font-weight:600; display:flex; justify-content:space-between; align-items:center">
                     <div style="display:flex; align-items:center; gap:8px; overflow:hidden">
                       ${taskViewPath.length > 0 ? `<button class="btn btn-ghost btn-sm btn-icon btn-view-back" title="Back"><span class="material-icons-outlined" style="font-size:18px">arrow_back</span></button>` : ''}
