@@ -73,10 +73,10 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         actionsHtml: isTemplate ? `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-delete-template" style="color:var(--color-danger)"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
         ` : `
-          ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
-          ${!isNew && quote.status !== 'Archived' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-secondary" id="btn-create-revision"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
-          ${!isNew && quote.status === 'Accepted' && hasPermission('Quotes', 'convert') ? `<button class="btn btn-primary" id="btn-convert-job"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
-          ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
+          ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and view a print-ready PDF proposal" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
+          ${!isNew && quote.status !== 'Archived' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-secondary" id="btn-create-revision" data-tooltip="Archive version & draft revisions in a new clone" data-tooltip-pos="left"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
+          ${!isNew && quote.status === 'Accepted' && hasPermission('Quotes', 'convert') ? `<button class="btn btn-primary" id="btn-convert-job" data-tooltip="Accept proposal and spawn an active Project Job" data-tooltip-pos="left"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
+          ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote" data-tooltip="Email professional proposal to primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
              <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:100;min-width:160px">
@@ -163,7 +163,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       </div>
       
       ${quote.status !== 'Archived' ? `
-      <button class="btn btn-secondary" id="btn-add-section" style="margin-bottom:var(--space-lg)">
+      <button class="btn btn-secondary" id="btn-add-section" data-tooltip="Add a new project phase or billing group to separate items" data-tooltip-pos="right" style="margin-bottom:var(--space-lg)">
         <span class="material-icons-outlined" style="font-size:16px">add</span> Add New Phase/Section
       </button>` : ''}
 
@@ -223,10 +223,10 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
                 This proposal is awaiting client review. You can simulate direct digital signature and job conversion below.
               </div>
               <div style="display:flex; gap:8px; margin-top:6px">
-                <button class="btn btn-sm btn-success" id="btn-sign-approve-modal" style="flex:2; padding:6px 8px; font-size:12px">
+                <button class="btn btn-sm btn-success" id="btn-sign-approve-modal" data-tooltip="Simulate the customer digitally signing and accepting this proposal" data-tooltip-pos="top" style="flex:2; padding:6px 8px; font-size:12px">
                   <span class="material-icons-outlined" style="font-size:14px; vertical-align:middle; margin-right:2px">check_circle</span> Sign & Approve
                 </button>
-                <button class="btn btn-sm btn-secondary" id="btn-decline-quote" style="flex:1; padding:6px 8px; font-size:12px; color:var(--color-danger); border-color:rgba(239,68,68,0.2)">
+                <button class="btn btn-sm btn-secondary" id="btn-decline-quote" data-tooltip="Record that the customer has declined this proposal" data-tooltip-pos="top" style="flex:1; padding:6px 8px; font-size:12px; color:var(--color-danger); border-color:rgba(239,68,68,0.2)">
                   Decline
                 </button>
               </div>

@@ -707,12 +707,12 @@ function renderKpiCards(data, item) {
   const overdue       = data.invoices.filter(i => i.status === 'Overdue').length;
   const revenue       = data.invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
   return [
-    { label: 'Total Revenue',    value: '$' + revenue.toLocaleString('en-AU'), icon: 'payments',       color: 'blue',   sub: '+12.5% vs last month', pos: true },
-    { label: 'Active Jobs',      value: activeJobs,                             icon: 'build',           color: 'green',  sub: `${data.jobs.length} total`, pos: true },
-    { label: 'Pending Quotes',   value: pendingQuotes,                          icon: 'request_quote',   color: 'orange', sub: `${data.quotes.length} total`, pos: null },
-    { label: 'Overdue Invoices', value: overdue,                                icon: 'warning',         color: 'red',    sub: overdue > 0 ? 'Requires attention' : 'All on track', pos: overdue === 0 },
+    { label: 'Total Revenue',    value: '$' + revenue.toLocaleString('en-AU'), icon: 'payments',       color: 'blue',   sub: '+12.5% vs last month', pos: true, tooltip: 'Total payments received from all successfully settled invoices.' },
+    { label: 'Active Jobs',      value: activeJobs,                             icon: 'build',           color: 'green',  sub: `${data.jobs.length} total`, pos: true, tooltip: 'Total volume of active projects and service tasks currently Scheduled or In Progress.' },
+    { label: 'Pending Quotes',   value: pendingQuotes,                          icon: 'request_quote',   color: 'orange', sub: `${data.quotes.length} total`, pos: null, tooltip: 'Draft proposals or sent estimates currently awaiting customer response.' },
+    { label: 'Overdue Invoices', value: overdue,                                icon: 'warning',         color: 'red',    sub: overdue > 0 ? 'Requires attention' : 'All on track', pos: overdue === 0, tooltip: 'Invoices past their designated payment terms that remain unpaid.' },
   ].map(k => `
-    <div class="stat-card" style="margin:0;">
+    <div class="stat-card" style="margin:0;" data-tooltip="${k.tooltip}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
         <div class="stat-label">${k.label}</div>
         <div class="stat-icon ${k.color}"><span class="material-icons-outlined">${k.icon}</span></div>

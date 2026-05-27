@@ -87,9 +87,9 @@ export function renderStockList(container, params) {
     if (activeTab === 'items') {
       // 1. Actions Header for Items
       actionsContainer.innerHTML = `
-        <button class="btn btn-secondary" id="btn-transfer-stock"><span class="material-icons-outlined">swap_horiz</span> Transfer</button>
-        <button class="btn btn-secondary" id="btn-import-stock"><span class="material-icons-outlined">file_upload</span> Import</button>
-        <button class="btn btn-primary" id="btn-new-stock"><span class="material-icons-outlined">add</span> New Item</button>
+        <button class="btn btn-secondary" id="btn-transfer-stock" data-tooltip="Move stock quantities between warehouse locations or technician vehicles" data-tooltip-pos="left"><span class="material-icons-outlined">swap_horiz</span> Transfer</button>
+        <button class="btn btn-secondary" id="btn-import-stock" data-tooltip="Upload a supplier CSV parts list files directly to catalog inventory" data-tooltip-pos="left"><span class="material-icons-outlined">file_upload</span> Import</button>
+        <button class="btn btn-primary" id="btn-new-stock" data-tooltip="Manually add a single new catalog item" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Item</button>
       `;
 
       // 2. Toolbar for Items
@@ -136,7 +136,7 @@ export function renderStockList(container, params) {
     } else {
       // 1. Actions Header for Kits
       actionsContainer.innerHTML = `
-        <button class="btn btn-primary" id="btn-new-kit"><span class="material-icons-outlined">add</span> New Kit Bundle</button>
+        <button class="btn btn-primary" id="btn-new-kit" data-tooltip="Bundle multiple parts and labor items into a single pre-packaged kit for quick quoting" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Kit Bundle</button>
       `;
 
       // 2. Toolbar for Kits with carousel

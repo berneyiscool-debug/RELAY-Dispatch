@@ -1073,6 +1073,24 @@ tr.selected-row td {
   color: var(--text-tertiary);
 }
 
+/* Notion-style subtask plus icon on hover */
+.task-list-item .btn-add-child-task.hover-only {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.task-list-item:hover .btn-add-child-task.hover-only {
+  opacity: 0.55;
+  pointer-events: auto;
+}
+
+.task-list-item:hover .btn-add-child-task.hover-only:hover {
+  opacity: 1;
+  background: var(--border-color);
+  color: var(--color-primary) !important;
+}
+
 /* Dark Mode support */
 [data-theme="dark"] .task-list-checkbox {
   background: rgba(255, 255, 255, 0.03);
@@ -1243,5 +1261,101 @@ tr.selected-row td {
   background: var(--color-primary) !important;
   box-shadow: 0 0 8px var(--color-primary-light);
 }
+
+/* ============================================================
+   FIELDFORGE — PREMIUM GLASSMORPHIC CSS TOOLTIPS
+   ============================================================ */
+
+/* Tooltip Host container */
+[data-tooltip] {
+  position: relative;
+  cursor: pointer;
+}
+
+/* Tooltip Bubble element */
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px) scale(0.95);
+  background: rgba(25, 28, 30, 0.9) !important; /* Premium Dark Glass */
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  padding: 6px 12px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
+  white-space: nowrap !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+  pointer-events: none !important;
+  opacity: 0;
+  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  z-index: 9999 !important;
+}
+
+/* Tooltip Little Arrow pointer */
+[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  border-width: 6px 6px 0;
+  border-style: solid;
+  border-color: rgba(25, 28, 30, 0.9) transparent transparent !important;
+  pointer-events: none !important;
+  opacity: 0;
+  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  z-index: 9999 !important;
+}
+
+/* Trigger Hover states */
+[data-tooltip]:hover::after,
+[data-tooltip]:hover::before {
+  opacity: 1 !important;
+  transform: translateX(-50%) translateY(0) scale(1) !important;
+}
+
+/* Right-aligned Tooltips */
+[data-tooltip-pos="right"]::after {
+  bottom: 50% !important;
+  left: calc(100% + 8px) !important;
+  transform: translateY(50%) translateX(-4px) scale(0.95) !important;
+}
+[data-tooltip-pos="right"]::before {
+  bottom: 50% !important;
+  left: calc(100% + 2px) !important;
+  transform: translateY(50%) translateX(-4px) !important;
+  border-width: 6px 6px 6px 0 !important;
+  border-color: transparent rgba(25, 28, 30, 0.9) transparent transparent !important;
+}
+[data-tooltip-pos="right"]:hover::after,
+[data-tooltip-pos="right"]:hover::before {
+  transform: translateY(50%) translateX(0) scale(1) !important;
+}
+
+/* Left-aligned Tooltips */
+[data-tooltip-pos="left"]::after {
+  bottom: 50% !important;
+  right: calc(100% + 8px) !important;
+  left: auto !important;
+  transform: translateY(50%) translateX(4px) scale(0.95) !important;
+}
+[data-tooltip-pos="left"]::before {
+  bottom: 50% !important;
+  right: calc(100% + 2px) !important;
+  left: auto !important;
+  transform: translateY(50%) translateX(4px) !important;
+  border-width: 6px 0 6px 6px !important;
+  border-color: transparent transparent transparent rgba(25, 28, 30, 0.9) !important;
+}
+[data-tooltip-pos="left"]:hover::after,
+[data-tooltip-pos="left"]:hover::before {
+  transform: translateY(50%) translateX(0) scale(1) !important;
+}
+
 
 

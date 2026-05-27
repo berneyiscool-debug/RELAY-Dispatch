@@ -15,8 +15,8 @@ export function renderInvoicesList(container) {
     <div class="page-header">
       <h1>Invoices</h1>
       <div class="page-header-actions">
-        <button class="btn btn-outline" id="btn-export-accounting" style="display:none;"><span class="material-icons-outlined">download</span> Export to Accounting</button>
-        <button class="btn btn-primary" id="btn-new-invoice"><span class="material-icons-outlined">add</span> New Invoice</button>
+        <button class="btn btn-outline" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none;"><span class="material-icons-outlined">download</span> Export to Accounting</button>
+        <button class="btn btn-primary" id="btn-new-invoice" data-tooltip="Create a new draft invoice to bill a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Invoice</button>
       </div>
     </div>
     <div class="page-toolbar">

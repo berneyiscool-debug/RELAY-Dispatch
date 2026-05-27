@@ -622,7 +622,7 @@ export function renderSettings(container) {
               <h4 style="margin:0">Labour Rate Profiles</h4>
               <p class="text-secondary" style="font-size:var(--font-size-sm);margin:4px 0 0">Define charge-out rates for different job types or time periods. These appear as selectable options when adding labour to a quote or job.</p>
             </div>
-            <button class="btn btn-primary btn-sm" id="add-rate-btn">
+            <button class="btn btn-primary btn-sm" id="add-rate-btn" data-tooltip="Create a new custom charge-out rate profile">
               <span class="material-icons-outlined" style="font-size:16px">add</span> Add Profile
             </button>
           </div>
@@ -652,7 +652,7 @@ export function renderSettings(container) {
                   <div style="padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
                     <!-- Charge-out Rate -->
                     <div class="form-group" style="margin:0">
-                      <label class="form-label">Charge-out Rate ($/hr)</label>
+                      <label class="form-label" data-tooltip="Base hourly charge billed to the client for this labor type" data-tooltip-pos="right">Charge-out Rate ($/hr)</label>
                       <div style="display:flex;align-items:center;gap:6px">
                         <span style="color:var(--text-secondary)">$</span>
                         <input class="form-input rate-val" type="number" value="${rate.rate.toFixed(2)}" min="0" step="0.50" style="width:120px" />
@@ -663,7 +663,7 @@ export function renderSettings(container) {
                     <input type="hidden" class="rate-multiplier" value="${rate.overtimeMultiplier || 1}" />
                     <!-- Minimum Call-out Fee -->
                     <div class="form-group" style="margin:0">
-                      <label class="form-label">Min Call-out Fee ($)</label>
+                      <label class="form-label" data-tooltip="Minimum flat fee billed if calculated hours compute below this value" data-tooltip-pos="left">Min Call-out Fee ($)</label>
                       <div style="display:flex;align-items:center;gap:6px">
                         <span style="color:var(--text-secondary)">$</span>
                         <input class="form-input rate-min-fee" type="number" value="${(rate.minCallOutFee || 0).toFixed(2)}" min="0" step="1.00" style="width:120px" />
@@ -759,7 +759,7 @@ export function renderSettings(container) {
           </div>
           <div style="padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
             <div class="form-group" style="margin:0">
-              <label class="form-label">Charge-out Rate ($/hr)</label>
+              <label class="form-label" data-tooltip="Base hourly charge billed to the client for this labor type" data-tooltip-pos="right">Charge-out Rate ($/hr)</label>
               <div style="display:flex;align-items:center;gap:6px">
                 <span style="color:var(--text-secondary)">$</span>
                 <input class="form-input rate-val" type="number" value="0.00" min="0" step="0.50" style="width:120px" />
@@ -768,7 +768,7 @@ export function renderSettings(container) {
             <!-- Overtime Multiplier (hidden) -->
             <input type="hidden" class="rate-multiplier" value="1.0" />
             <div class="form-group" style="margin:0">
-              <label class="form-label">Min Call-out Fee ($)</label>
+              <label class="form-label" data-tooltip="Minimum flat fee billed if calculated hours compute below this value" data-tooltip-pos="left">Min Call-out Fee ($)</label>
               <input class="form-input rate-min-fee" type="number" value="0.00" min="0" step="1.00" style="width:120px" />
             </div>
             <!-- Description (hidden) & Active Hours Timeline -->

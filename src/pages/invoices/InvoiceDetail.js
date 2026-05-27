@@ -59,10 +59,10 @@ export function renderInvoiceDetail(container, { id }) {
           <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${invoice.status}</span>
         `,
         actionsHtml: `
-          ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
-          ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice"><span class="material-icons-outlined">send</span> Send</button>` : ''}
-          ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
-          ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
+          ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
+          ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice" data-tooltip="Email this invoice PDF directly to the primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send</button>` : ''}
+          ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder" data-tooltip="Send an automated friendly payment reminder email to the client" data-tooltip-pos="left"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
+          ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid" data-tooltip="Record a bank transfer, cheque, cash, or card payment against this invoice" data-tooltip-pos="left"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
              <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:100;min-width:160px">
@@ -83,7 +83,7 @@ export function renderInvoiceDetail(container, { id }) {
               <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Original Quote Subtotal: <strong>$${(invoice.originalSubtotal || 0).toFixed(2)}</strong></div>
             </div>
           </div>
-          <button class="btn btn-secondary btn-sm" id="btn-unlink-quote" style="color:var(--color-danger); border-color:rgba(239,68,68,0.2); background:rgba(239,68,68,0.02)">
+          <button class="btn btn-secondary btn-sm" id="btn-unlink-quote" data-tooltip="Sever link to original quote, unlocking edit controls for all lines" data-tooltip-pos="left" style="color:var(--color-danger); border-color:rgba(239,68,68,0.2); background:rgba(239,68,68,0.02)">
             <span class="material-icons-outlined" style="font-size:16px; vertical-align:middle; margin-right:4px">link_off</span> Unlink Quote
           </button>
         </div>
@@ -144,10 +144,10 @@ export function renderInvoiceDetail(container, { id }) {
       </div>
 
       <div style="display:flex; gap:12px; margin-bottom:var(--space-lg)">
-        <button class="btn btn-secondary" id="btn-add-section">
+        <button class="btn btn-secondary" id="btn-add-section" data-tooltip="Add a new billing phase to group invoice line items" data-tooltip-pos="top">
           <span class="material-icons-outlined" style="font-size:16px">add</span> Add New Phase/Section
         </button>
-        <button class="btn btn-secondary" id="btn-add-variation" style="border-color:var(--color-warning); color:var(--color-warning-dark); background:rgba(245,158,11,0.02)">
+        <button class="btn btn-secondary" id="btn-add-variation" data-tooltip="Create a special variation phase for extra out-of-scope work requiring customer sign-off" data-tooltip-pos="top" style="border-color:var(--color-warning); color:var(--color-warning-dark); background:rgba(245,158,11,0.02)">
           <span class="material-icons-outlined" style="font-size:16px">history_edu</span> Add Variation Phase
         </button>
       </div>
@@ -225,7 +225,7 @@ export function renderInvoiceDetail(container, { id }) {
          : '<span class="badge badge-warning" style="margin-right:8px; border-color:var(--color-warning); color:var(--color-warning-dark)"><span class="material-icons-outlined" style="font-size:12px;vertical-align:middle;margin-right:2px">schedule</span> Awaiting Customer Approval</span>')
       : '';
     const approvalToggle = isVar 
-      ? `<label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer; margin-right:16px; background:#fff; border:1px solid var(--border-color); padding:4px 8px; border-radius:4px; margin-bottom:0">
+      ? `<label class="form-label" data-tooltip="Confirm if the customer has formally accepted this variation work" data-tooltip-pos="top" style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer; margin-right:16px; background:#fff; border:1px solid var(--border-color); padding:4px 8px; border-radius:4px; margin-bottom:0; font-family:inherit;">
            <input type="checkbox" class="variation-approved-checkbox" data-sidx="${sIdx}" ${section.customerApproved ? 'checked' : ''} style="width:16px; height:16px; margin:0" /> Customer Agreed
          </label>`
       : '';

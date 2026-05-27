@@ -14,7 +14,7 @@ export function renderQuotesList(container) {
       <h1>Quotes</h1>
       ${canCreate ? `
       <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-quote"><span class="material-icons-outlined">add</span> New Quote</button>
+        <button class="btn btn-primary" id="btn-new-quote" data-tooltip="Draft a new pricing proposal or project estimation for a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Quote</button>
       </div>` : ''}
     </div>
     <div class="page-toolbar">

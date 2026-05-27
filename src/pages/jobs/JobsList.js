@@ -15,7 +15,7 @@ export function renderJobsList(container) {
       <h1>Jobs</h1>
       ${canCreate ? `
       <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-job"><span class="material-icons-outlined">add</span> New Job</button>
+        <button class="btn btn-primary" id="btn-new-job" data-tooltip="Create a new project or service job record" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Job</button>
       </div>` : ''}
     </div>
     <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center;">

@@ -19,7 +19,7 @@ export function renderSuppliersList(container) {
     <div class="page-header">
       <h1>Suppliers</h1>
       <div class="page-header-actions">
-        ${canCreate ? `<button class="btn btn-primary" id="btn-new-supplier"><span class="material-icons-outlined">add</span> Add Supplier</button>` : ''}
+        ${canCreate ? `<button class="btn btn-primary" id="btn-new-supplier" data-tooltip="Register a new material or service vendor" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Supplier</button>` : ''}
       </div>
     </div>
     
@@ -55,7 +55,7 @@ export function renderSuppliersList(container) {
       key: 'actions', 
       label: '', 
       width: '80px', 
-      render: (r) => `<button class="btn btn-ghost btn-sm supplier-edit-btn" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` 
+      render: (r) => `<button class="btn btn-ghost btn-sm supplier-edit-btn" data-id="${r.id}" data-tooltip="Edit supplier details" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` 
     });
   }
 

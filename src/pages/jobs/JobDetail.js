@@ -216,24 +216,24 @@ export function renderJobDetail(container, { id }) {
         </div>
         <div class="flex gap-sm">
           ${job.status === 'Completed' && !hasInvoice ? `
-            <button class="btn btn-success" id="btn-header-generate-invoice" style="background-color:#10B981; border-color:#10B981; color:white; display:flex; align-items:center; gap:4px;">
+            <button class="btn btn-success" id="btn-header-generate-invoice" data-tooltip="⚡ Dynamic Billing: splits timesheets into active rate timelines automatically" data-tooltip-pos="left" style="background-color:#10B981; border-color:#10B981; color:white; display:flex; align-items:center; gap:4px;">
               <span class="material-icons-outlined" style="font-size:18px;">receipt_long</span> Generate Invoice
             </button>
           ` : ''}
-          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
-          ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job"><span class="material-icons-outlined">delete</span></button>` : ''}
+          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
+          ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job" data-tooltip="Permanently delete this job" data-tooltip-pos="left"><span class="material-icons-outlined">delete</span></button>` : ''}
         </div>
       </div>
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
-        <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
-        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Tasklists</button>
-        ${hasPermission('Jobs', 'view_costs') ? `<button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs">Costs</button>` : ''}
-        ${hasPermission('Jobs', 'view_quotes_tab') ? `<button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes</button>` : ''}
-        <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms">Forms</button>
-        ${hasPermission('Jobs', 'view_pos_tab') ? `<button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos">POs</button>` : ''}
-        <button class="tab ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity">Activity</button>
-        ${hasPermission('Jobs', 'view_timesheets_tab') ? `<button class="tab ${activeTab === 'timesheets' ? 'active' : ''}" data-tab="timesheets">Timesheets</button>` : ''}
-        ${hasPermission('Jobs', 'view_invoices_tab') ? `<button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices">Invoices</button>` : ''}
+        <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview" data-tooltip="General details, technician assignments, site address, and custom fields">Overview</button>
+        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks" data-tooltip="View, track, and complete hierarchical task lists for this job">Tasklists</button>
+        ${hasPermission('Jobs', 'view_costs') ? `<button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs" data-tooltip="Track catalog parts, external supplier costs, and calculate profit margins">Costs</button>` : ''}
+        ${hasPermission('Jobs', 'view_quotes_tab') ? `<button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes" data-tooltip="Draft proposals, revisions, and status records linked to this job">Quotes</button>` : ''}
+        <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms" data-tooltip="Complete JSA, safety audits, and customer sign-off compliance documents">Forms</button>
+        ${hasPermission('Jobs', 'view_pos_tab') ? `<button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos" data-tooltip="Issue purchase orders to external suppliers for job materials">POs</button>` : ''}
+        <button class="tab ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity" data-tooltip="Audit trail logs tracking status updates and user modifications">Activity</button>
+        ${hasPermission('Jobs', 'view_timesheets_tab') ? `<button class="tab ${activeTab === 'timesheets' ? 'active' : ''}" data-tab="timesheets" data-tooltip="Technician hours logged on-site vs calculated travel/work segments">Timesheets</button>` : ''}
+        ${hasPermission('Jobs', 'view_invoices_tab') ? `<button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices" data-tooltip="Progress, standard, deposit, or variation client invoices linked to this job">Invoices</button>` : ''}
       </div>
       <div class="tab-content" id="tab-content"></div>
     `;
@@ -735,7 +735,14 @@ export function renderJobDetail(container, { id }) {
             const isSelected = currentPath.join('-') === taskExpandedPath.join('-');
             return `
                         <div class="task-list-item ${p.progress === 100 ? 'completed' : ''}" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:transparent; color:var(--text-primary)'}">
-                          <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
+                          <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0; overflow:hidden">
+                            <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
+                            ${canEditTasks && currentPath.length < 3 ? `
+                              <button class="btn btn-ghost btn-icon btn-sm btn-add-child-task hover-only" data-path="${currentPath.join('-')}" style="padding:0; min-width:20px; min-height:20px; height:20px; width:20px; color:var(--text-secondary); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0" title="Add Sub-task">
+                                <span class="material-icons-outlined" style="font-size:16px">add</span>
+                              </button>
+                            ` : ''}
+                          </div>
                           <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
                             ${(() => {
                               if (!p.valueFields || p.valueFields.length === 0) return '';
@@ -759,10 +766,7 @@ export function renderJobDetail(container, { id }) {
                             })()}
                             ${p.subTasks && p.subTasks.length > 0 
                               ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` 
-                              : `
-                                ${canEditTasks && currentPath.length < 3 ? `<button class="btn btn-ghost btn-icon btn-sm btn-add-child-task" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit" title="Add Sub-task"><span class="material-icons-outlined" style="font-size:18px">add</span></button>` : ''}
-                                <input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />
-                              `
+                              : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />`
                             }
                           </div>
                         </div>

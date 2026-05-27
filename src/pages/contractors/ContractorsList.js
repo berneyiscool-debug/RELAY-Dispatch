@@ -16,7 +16,7 @@ export function renderContractorsList(container) {
     <div class="page-header">
       <h1>Contractors</h1>
       <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-contractor"><span class="material-icons-outlined">add</span> Add Contractor</button>
+        <button class="btn btn-primary" id="btn-new-contractor" data-tooltip="Onboard a new subcontractor technician" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Contractor</button>
       </div>
     </div>
     
@@ -49,12 +49,12 @@ export function renderContractorsList(container) {
       label: 'Compliance', 
       render: (r) => {
         const comp = getContractorCompliance(r);
-        const titleText = comp.reason ? comp.reason : comp.label;
-        return `<span class="badge ${comp.badgeClass}" title="${escapeHTML(titleText)}" style="cursor:help">${escapeHTML(comp.label)}</span>`;
+        const tooltipText = comp.reason ? comp.reason : comp.label;
+        return `<span class="badge ${comp.badgeClass}" data-tooltip="${escapeHTML(tooltipText)}" style="cursor:help">${escapeHTML(comp.label)}</span>`;
       }
     },
     { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>` },
-    { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm contractor-edit-btn" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
+    { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm contractor-edit-btn" data-id="${r.id}" data-tooltip="Edit contractor profile" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
   ];
 
   const table = createDataTable({ 

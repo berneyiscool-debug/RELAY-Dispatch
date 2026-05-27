@@ -94,17 +94,17 @@ export function renderTimesheetsList(container) {
         <h1>Timesheets & Approval</h1>
         <div class="page-header-actions">
           ${hasPermission('Timesheets', 'export') ? `
-            <button class="btn btn-secondary" id="btn-export-approved" style="margin-right:8px">
+            <button class="btn btn-secondary" id="btn-export-approved" data-tooltip="Export approved timesheets in date range to a payroll-ready CSV spreadsheet" data-tooltip-pos="left" style="margin-right:8px">
               <span class="material-icons-outlined">download</span> Export Approved
             </button>
           ` : ''}
           ${['admin', 'manager', 'office'].includes(currentUser.role) ? `
-            <button class="btn btn-secondary" id="btn-log-time" style="margin-right:8px">
+            <button class="btn btn-secondary" id="btn-log-time" data-tooltip="Manually enter a timesheet record for another employee" data-tooltip-pos="left" style="margin-right:8px">
               <span class="material-icons-outlined">add</span> Log Time on Behalf
             </button>
           ` : ''}
           ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
-            <button class="btn btn-primary" id="btn-approve-all-pending" ${!visibleTimesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
+            <button class="btn btn-primary" id="btn-approve-all-pending" data-tooltip="Instantly approve all pending timesheets in the active filtered view" data-tooltip-pos="left" ${!visibleTimesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
               <span class="material-icons-outlined">done_all</span> Approve All Pending
             </button>
           ` : ''}
@@ -229,20 +229,20 @@ export function renderTimesheetsList(container) {
                     <td style="text-align:right">
                       <div style="display:flex; justify-content:flex-end; gap:4px;">
                         ${canEdit ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-edit-timesheet" data-id="${t.id}" title="Edit entry">
+                          <button class="btn btn-ghost btn-sm btn-icon btn-edit-timesheet" data-id="${t.id}" data-tooltip="Edit timesheet entry" data-tooltip-pos="left">
                             <span class="material-icons-outlined" style="font-size:18px">edit</span>
                           </button>
                         ` : ''}
                         ${canDelete ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-delete-timesheet" data-id="${t.id}" title="Delete entry" style="color:var(--color-danger)">
+                          <button class="btn btn-ghost btn-sm btn-icon btn-delete-timesheet" data-id="${t.id}" data-tooltip="Delete timesheet entry" data-tooltip-pos="left" style="color:var(--color-danger)">
                             <span class="material-icons-outlined" style="font-size:18px">delete</span>
                           </button>
                         ` : ''}
                         ${['admin', 'manager'].includes(currentUser.role) && t.status === 'Pending' ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-approve-single" data-id="${t.id}" title="Approve entry" style="color:var(--color-success)">
+                          <button class="btn btn-ghost btn-sm btn-icon btn-approve-single" data-id="${t.id}" data-tooltip="Approve timesheet entry" data-tooltip-pos="left" style="color:var(--color-success)">
                             <span class="material-icons-outlined" style="font-size:18px">check</span>
                           </button>
-                          <button class="btn btn-ghost btn-sm btn-icon btn-reject-single" data-id="${t.id}" title="Reject entry" style="color:var(--color-danger)">
+                          <button class="btn btn-ghost btn-sm btn-icon btn-reject-single" data-id="${t.id}" data-tooltip="Reject timesheet entry" data-tooltip-pos="left" style="color:var(--color-danger)">
                             <span class="material-icons-outlined" style="font-size:18px">close</span>
                           </button>
                         ` : ''}
