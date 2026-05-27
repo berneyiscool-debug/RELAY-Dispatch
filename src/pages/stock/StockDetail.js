@@ -99,22 +99,21 @@ export function renderStockDetail(container, { id }) {
           if (linkedKits.length === 0) return '';
           return `
             <div class="card">
-              <div class="card-header" style="display:flex; align-items:center; gap:8px">
-                <span class="material-icons-outlined" style="color:var(--color-primary)">widgets</span>
-                <h4 style="margin:0">Appears in Kits</h4>
-              </div>
-              <div class="card-body" style="padding-top:0">
-                <div style="display:flex; flex-direction:column; gap:8px">
-                  ${linkedKits.map(k => `
-                    <div class="kit-link-row" data-kit-id="${k.id}" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border:1px solid var(--border-color); border-radius:6px; cursor:pointer; transition:all 0.15s ease">
-                      <div>
-                        <span style="font-weight:600; color:var(--color-primary)">${escapeHTML(k.name)}</span>
-                        <span class="badge badge-neutral" style="font-size:10px; margin-left:8px">${escapeHTML(k.category)}</span>
+              <div class="card-header"><h4>Appears in Kits</h4></div>
+              <div class="card-body" style="padding:0">
+                ${linkedKits.map((k, idx) => {
+                  const isLast = idx === linkedKits.length - 1;
+                  return `
+                    <div class="kit-link-row" data-kit-id="${k.id}" style="display:flex; justify-content:space-between; align-items:center; padding:14px var(--space-lg); ${isLast ? '' : 'border-bottom:1px solid var(--border-color);'} cursor:pointer; transition:background var(--transition-fast)">
+                      <div style="display:flex; align-items:center; gap:12px">
+                        <span class="material-icons-outlined kit-icon" style="font-size:20px; color:var(--text-tertiary); transition:color var(--transition-fast)">widgets</span>
+                        <span class="kit-name font-medium" style="font-weight:600; color:var(--color-primary); transition:text-decoration var(--transition-fast)">${escapeHTML(k.name)}</span>
+                        <span class="badge badge-neutral" style="font-size:10px">${escapeHTML(k.category || 'General')}</span>
                       </div>
-                      <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary)">chevron_right</span>
+                      <span class="material-icons-outlined chevron-icon" style="font-size:18px; color:var(--text-tertiary); transition:transform var(--transition-fast), color var(--transition-fast)">chevron_right</span>
                     </div>
-                  `).join('')}
-                </div>
+                  `;
+                }).join('')}
               </div>
             </div>
           `;
@@ -150,8 +149,34 @@ export function renderStockDetail(container, { id }) {
   });
 
   container.querySelectorAll('.kit-link-row').forEach(row => {
-    row.addEventListener('mouseenter', () => { row.style.borderColor = 'var(--color-primary)'; row.style.background = 'var(--color-primary-light, rgba(49,86,113,0.04))'; });
-    row.addEventListener('mouseleave', () => { row.style.borderColor = 'var(--border-color)'; row.style.background = ''; });
+    const kitName = row.querySelector('.kit-name');
+    const chevronIcon = row.querySelector('.chevron-icon');
+    const kitIcon = row.querySelector('.kit-icon');
+    
+    row.addEventListener('mouseenter', () => {
+      row.style.background = 'var(--color-primary-light, rgba(49,86,113,0.04))';
+      if (kitName) kitName.style.textDecoration = 'underline';
+      if (chevronIcon) {
+        chevronIcon.style.color = 'var(--color-primary)';
+        chevronIcon.style.transform = 'translateX(4px)';
+      }
+      if (kitIcon) {
+        kitIcon.style.color = 'var(--color-primary)';
+      }
+    });
+    
+    row.addEventListener('mouseleave', () => {
+      row.style.background = '';
+      if (kitName) kitName.style.textDecoration = 'none';
+      if (chevronIcon) {
+        chevronIcon.style.color = 'var(--text-tertiary)';
+        chevronIcon.style.transform = 'none';
+      }
+      if (kitIcon) {
+        kitIcon.style.color = 'var(--text-tertiary)';
+      }
+    });
+    
     row.addEventListener('click', () => {
       router.navigate(`/kits/${row.dataset.kitId}`);
     });

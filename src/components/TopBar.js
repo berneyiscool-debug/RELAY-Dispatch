@@ -210,7 +210,7 @@ function toggleNotificationsDropdown(btn) {
       item.innerHTML = `
         ${dotHtml}
         <div style="flex:1">
-          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title}</div>
+          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title || n.type || 'Notification'}</div>
           <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message || n.description || ''}</div>
           <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${new Date(n.createdAt).toLocaleString()}</div>
         </div>
@@ -219,8 +219,20 @@ function toggleNotificationsDropdown(btn) {
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         store.update('notifications', n.id, { read: true });
-        if (n.link) {
-          router.navigate(n.link);
+        
+        let targetLink = n.link;
+        if (!targetLink) {
+          if (n.jobId) {
+            targetLink = `/jobs/${n.jobId}`;
+          } else if (n.assetId) {
+            targetLink = `/assets/${n.assetId}`;
+          } else if (n.type === 'Low Stock' || (n.description && n.description.toLowerCase().includes('low stock'))) {
+            targetLink = '/stock';
+          }
+        }
+
+        if (targetLink) {
+          router.navigate(targetLink);
         }
         dropdown.remove();
       });

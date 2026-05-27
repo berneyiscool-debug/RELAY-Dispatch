@@ -107,6 +107,18 @@ export function createToolbarFilters({ container, originalData, filterType, onFi
       // High Cost smart tag
       const hiCostCount = originalData.filter(s => (s.unitPrice || 0) > 100).length;
       if (hiCostCount > 0) tags.push({ key: 'smart:highcost', label: `High Cost (> $100) (${hiCostCount})` });
+    } else if (filterType === 'kits') {
+      const categories = [...new Set(originalData.map(k => k.category).filter(Boolean))].sort();
+      categories.forEach(cat => {
+        const count = originalData.filter(k => k.category === cat).length;
+        if (count > 0) tags.push({ key: `cat:${cat}`, label: `${cat} (${count})` });
+      });
+
+      const hiMarginCount = originalData.filter(k => {
+        const margin = k.totalPrice > 0 ? ((k.totalPrice - k.totalCost) / k.totalPrice * 100) : 0;
+        return margin >= 30;
+      }).length;
+      if (hiMarginCount > 0) tags.push({ key: 'smart:himargin', label: `High Margin (≥ 30%) (${hiMarginCount})` });
     }
 
     return tags;
@@ -154,6 +166,14 @@ export function createToolbarFilters({ container, originalData, filterType, onFi
           if (filterKey === 'smart:lowstock') return totalQty <= (item.reorderLevel || 0) && totalQty > 0;
           if (filterKey === 'smart:outofstock') return totalQty === 0;
           if (filterKey === 'smart:highcost') return (item.unitPrice || 0) > 100;
+        }
+
+        if (filterType === 'kits') {
+          if (type === 'cat') return item.category === value;
+          if (filterKey === 'smart:himargin') {
+            const margin = item.totalPrice > 0 ? ((item.totalPrice - item.totalCost) / item.totalPrice * 100) : 0;
+            return margin >= 30;
+          }
         }
 
         return true;

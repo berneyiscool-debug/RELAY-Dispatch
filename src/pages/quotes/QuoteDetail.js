@@ -623,14 +623,21 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           showKitPicker({
             context: 'quote',
             onSelect: (kit) => {
+              const originalTotalPrice = (kit.items || []).reduce((sum, ki) => sum + (ki.qty || 1) * (ki.unitPrice || 0), 0);
+              const overriddenTotalPrice = kit.totalPrice || 0;
+              const scaleFactor = (originalTotalPrice > 0 && kit.marginOverrideEnabled && kit.marginOverride !== undefined && kit.marginOverride !== null) 
+                ? (overriddenTotalPrice / originalTotalPrice) 
+                : 1;
+
               (kit.items || []).forEach(ki => {
+                const appliedRate = (ki.unitPrice || 0) * scaleFactor;
                 quote.sections[sIdx].lineItems.push({
                   description: ki.name,
                   type: ki.type,
                   qty: ki.qty || 1,
-                  rate: ki.unitPrice || 0,
+                  rate: appliedRate,
                   internalCost: ki.costPrice || 0,
-                  total: (ki.qty || 1) * (ki.unitPrice || 0)
+                  total: (ki.qty || 1) * appliedRate
                 });
               });
               recalculate();

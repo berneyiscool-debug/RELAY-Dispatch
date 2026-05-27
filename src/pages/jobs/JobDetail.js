@@ -12,6 +12,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 
 export function renderJobDetail(container, { id }) {
   const job = store.getById('jobs', id);
@@ -78,39 +79,94 @@ export function renderJobDetail(container, { id }) {
       }
     }
 
-    // 2. If no quote or no items, use Job Tasks
+    // 2. If no quote or no items, use Job Tasks / Timesheets / Materials
     if (sections.length === 0) {
-      const tasksSource = job.tasks || job.phases || [];
-      if (tasksSource.length > 0) {
-        sections = tasksSource.map(p => ({
-          id: store.generateId(),
-          name: p.name,
-          lineItems: [
-            { description: `${p.name} - Labor & Materials`, type: 'other', qty: 1, rate: 0, total: 0 }
-          ],
-          subtotal: 0
-        }));
-        // Add a catch-all for existing costs if no quote
+      const settings = store.getSettings();
+      const timesheets = store.getAll('timesheets').filter(t => t.jobId === job.id);
+      
+      const lineItems = [];
+
+      // Determine material cost (Billable)
+      const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
+      const billableMatTotal = calculateTotalBillableMaterials(job.materials || [], settings);
+      const billableAdditional = calculateBillableMaterialPrice(additionalMatCost, settings);
+      const totalBillableMat = billableMatTotal + (additionalMatCost > 0 ? billableAdditional - additionalMatCost : 0) + additionalMatCost;
+
+      // Handle labor from timesheets if they exist
+      if (timesheets.length > 0) {
+        const dynamicLabor = calculateDynamicLabor(timesheets, settings);
+        
+        dynamicLabor.forEach(alloc => {
+          lineItems.push({
+            id: store.generateId(),
+            description: `${alloc.technicianName} - ${alloc.rateProfileName} (${alloc.hours.toFixed(2)} hrs)`,
+            type: 'labor',
+            qty: alloc.hours,
+            rate: alloc.rate,
+            total: alloc.total
+          });
+        });
+      } else {
+        // Fallback to estimated labor
         const lCost = job.laborCost || 0;
-        const mCost = job.materialCost || 0;
-        if (lCost > 0 || mCost > 0) {
-          sections[0].lineItems.push({ description: 'Estimated Job Labor', type: 'labor', qty: 1, rate: lCost, total: lCost });
-          sections[0].lineItems.push({ description: 'Estimated Job Materials', type: 'material', qty: 1, rate: mCost, total: mCost });
+        if (lCost > 0) {
+          lineItems.push({
+            id: store.generateId(),
+            description: 'Estimated Job Labor',
+            type: 'labor',
+            qty: 1,
+            rate: lCost,
+            total: lCost
+          });
+        }
+      }
+
+      // Handle materials: if job has detailed materials, list them or fallback to total
+      if (job.materials && job.materials.length > 0) {
+        job.materials.forEach(m => {
+          const unitPrice = calculateBillableMaterialPrice(m.unitCost || 0, settings);
+          lineItems.push({
+            id: store.generateId(),
+            description: m.name,
+            type: 'material',
+            qty: m.quantity || 1,
+            rate: unitPrice,
+            total: (m.quantity || 1) * unitPrice
+          });
+        });
+        if (additionalMatCost > 0) {
+          lineItems.push({
+            id: store.generateId(),
+            description: 'Additional Materials & Markup',
+            type: 'material',
+            qty: 1,
+            rate: billableAdditional,
+            total: billableAdditional
+          });
         }
       } else {
-        // Absolute fallback
-        const lCost = job.laborCost || 0;
-        const mCost = job.materialCost || 0;
-        sections = [{
-          id: store.generateId(),
-          name: 'General Items',
-          lineItems: [
-            { description: `${job.title} - Labor`, type: 'labor', qty: 1, rate: lCost, total: lCost },
-            { description: `${job.title} - Materials`, type: 'material', qty: 1, rate: mCost, total: mCost },
-          ]
-        }];
+        // Fallback to estimated billable materials
+        const mCost = totalBillableMat || job.materialCost || 0;
+        if (mCost > 0) {
+          lineItems.push({
+            id: store.generateId(),
+            description: 'Job Materials',
+            type: 'material',
+            qty: 1,
+            rate: mCost,
+            total: mCost
+          });
+        }
       }
-      // Calculate subtotal for fallback cases
+
+      // Assemble into sections
+      sections = [{
+        id: store.generateId(),
+        name: 'Job Items',
+        lineItems: lineItems
+      }];
+
+      // Calculate subtotal
       subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
     }
 
@@ -1926,31 +1982,6 @@ export function renderJobDetail(container, { id }) {
             </div>
           </div>
           
-          <div class="card">
-            <div class="card-header"><h4>Billing & Labor Profiles</h4></div>
-            <div class="card-body">
-              <div class="form-group">
-                <label class="form-label">Labour Rate Profile (Billable)</label>
-                <select class="form-select" id="inp-labor-profile">
-                  ${settings.laborRates.map(r => `<option value="${r.id}" ${currentProfile.id === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
-                </select>
-                <div style="margin-top:12px; padding:12px; background:var(--bg-color); border-radius:6px; border:1px solid var(--border-color); font-size:13px">
-                  <div style="display:flex; justify-content:space-between; margin-bottom:4px">
-                    <span class="text-secondary">Charge-out Rate:</span>
-                    <span class="font-medium">$${currentProfile.rate.toFixed(2)}/hr</span>
-                  </div>
-                  <div style="display:flex; justify-content:space-between; margin-bottom:4px">
-                    <span class="text-secondary">Min Call-out Fee:</span>
-                    <span class="font-medium">$${(currentProfile.minCallOutFee || 0).toFixed(2)}</span>
-                  </div>
-                  <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border-color); margin-top:8px; padding-top:8px">
-                    <span class="text-secondary">Billable Labor:</span>
-                    <span class="font-medium" style="color:var(--color-primary)">$${finalBillableLabor.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
           
           <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
             <div class="card">

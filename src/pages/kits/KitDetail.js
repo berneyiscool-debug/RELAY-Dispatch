@@ -23,10 +23,15 @@ export function renderKitDetail(container, { id }) {
       items: [],
       totalCost: 0,
       totalPrice: 0,
-      itemCount: 0
+      itemCount: 0,
+      marginOverrideEnabled: false,
+      marginOverride: null
     };
   } else {
     kit = store.getById('kits', id);
+    if (kit && kit.marginOverride !== undefined && kit.marginOverride !== null && kit.marginOverrideEnabled === undefined) {
+      kit.marginOverrideEnabled = true;
+    }
   }
 
   if (!kit) {
@@ -44,6 +49,7 @@ export function renderKitDetail(container, { id }) {
   const categories = ['Service Kits', 'Vehicle Loadouts', 'Installation Kits', 'Commissioning Kits', 'General', 'Electrical', 'Plumbing', 'HVAC'];
 
   function render() {
+    recalculate();
     const margin = kit.totalPrice > 0 ? ((kit.totalPrice - kit.totalCost) / kit.totalPrice * 100) : 0;
     const marginDollar = kit.totalPrice - kit.totalCost;
     const marginColor = margin >= 30 ? 'var(--color-success)' : margin >= 15 ? 'var(--color-warning)' : 'var(--color-danger)';
@@ -88,9 +94,10 @@ export function renderKitDetail(container, { id }) {
                 <label class="form-label">Description</label>
                 <textarea class="form-input" id="kit-description" rows="3" placeholder="Describe when to use this kit...">${escapeHTML(kit.description || '')}</textarea>
               </div>
-              <div class="form-group" style="display:flex; align-items:center; gap:8px; margin-top:12px">
-                <input type="checkbox" id="kit-active" ${kit.active ? 'checked' : ''} style="width:16px; height:16px" />
-                <label for="kit-active" style="margin:0; font-weight:500; cursor:pointer">Active (Available for use in Quotes/POs)</label>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:16px">
+                <input type="checkbox" id="kit-active" ${kit.active ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer" />
+                <label for="kit-active" style="margin:0; font-weight:600; font-size:13.5px; cursor:pointer; color:var(--text-primary)">Active Kit</label>
+                <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:help" title="Makes this kit bundle active and available to select/use in Quotes and Purchase Orders.">help_outline</span>
               </div>
             </div>
           </div>
@@ -204,6 +211,20 @@ export function renderKitDetail(container, { id }) {
               <span style="color:var(--text-secondary)">Margin (%)</span>
               <span style="font-weight:700; font-size:20px; color:${marginColor}">${margin.toFixed(1)}%</span>
             </div>
+            <div style="border-top:1px solid var(--border-color); padding-top:12px; margin-top:4px">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px">
+                <input type="checkbox" id="kit-margin-override-enable" ${kit.marginOverrideEnabled ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer" />
+                <label for="kit-margin-override-enable" style="margin:0; font-size:13px; font-weight:600; cursor:pointer">Override Margin</label>
+                <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:help" title="Lock the kit profit margin manually. When imported to quotes, stock item sell rates scale proportionally to match this exact target margin.">help_outline</span>
+              </div>
+              <div id="override-input-wrapper" style="display:${kit.marginOverrideEnabled ? 'block' : 'none'}">
+                <label class="form-label" style="font-size:12px; margin-bottom:4px; display:block">Margin Override (%)</label>
+                <input type="number" class="form-input" id="kit-margin-override" value="${kit.marginOverride !== undefined && kit.marginOverride !== null ? kit.marginOverride : ''}" placeholder="Combined rate (auto)" min="0" max="99.9" step="0.1" style="padding:6px 10px; font-size:13px; width:100%" />
+                <small class="text-tertiary" style="font-size:11px; display:block; margin-top:6px; line-height:1.3">
+                  Locks the kit's sell price to achieve this exact margin.
+                </small>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -225,7 +246,18 @@ export function renderKitDetail(container, { id }) {
       price += (parseFloat(item.qty) || 0) * (parseFloat(item.unitPrice) || 0);
     });
     kit.totalCost = cost;
-    kit.totalPrice = price;
+    
+    const overrideEnabled = kit.marginOverrideEnabled;
+    const overrideVal = parseFloat(kit.marginOverride);
+    if (overrideEnabled && !isNaN(overrideVal)) {
+      if (overrideVal >= 100) {
+        kit.totalPrice = cost;
+      } else {
+        kit.totalPrice = cost / (1 - overrideVal / 100);
+      }
+    } else {
+      kit.totalPrice = price;
+    }
     kit.itemCount = (kit.items || []).length;
   }
 
@@ -295,6 +327,12 @@ export function renderKitDetail(container, { id }) {
       kit.category = container.querySelector('#kit-category').value;
       kit.description = container.querySelector('#kit-description').value;
       kit.active = container.querySelector('#kit-active').checked;
+      
+      const marginOverrideInput = container.querySelector('#kit-margin-override');
+      kit.marginOverride = marginOverrideInput && marginOverrideInput.value.trim() !== '' ? parseFloat(marginOverrideInput.value) : null;
+      
+      const marginOverrideEnableInput = container.querySelector('#kit-margin-override-enable');
+      kit.marginOverrideEnabled = marginOverrideEnableInput ? marginOverrideEnableInput.checked : false;
 
       recalculate();
 
@@ -315,6 +353,22 @@ export function renderKitDetail(container, { id }) {
       if (!isNew) {
         updateBreadcrumbDetail(kit.name);
       }
+    });
+
+    container.querySelector('#kit-margin-override-enable')?.addEventListener('change', (e) => {
+      kit.marginOverrideEnabled = e.target.checked;
+      recalculate();
+      render();
+    });
+
+    container.querySelector('#kit-margin-override')?.addEventListener('input', (e) => {
+      const val = e.target.value;
+      kit.marginOverride = val.trim() !== '' ? parseFloat(val) : null;
+    });
+
+    container.querySelector('#kit-margin-override')?.addEventListener('change', () => {
+      recalculate();
+      render();
     });
 
     container.querySelector('#kit-category')?.addEventListener('change', (e) => {

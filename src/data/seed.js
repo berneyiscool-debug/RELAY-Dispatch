@@ -1078,10 +1078,10 @@ const leads = [
 
 // Pre-populated Notifications
 const notifications = [
-  { id: 'notif_1', type: 'Maintenance', description: 'Maintenance Due — Cummins 150kVA Water Treatment Plant Quarterly Service', priority: 'High',   status: 'Pending', createdAt: relativeDate(-1), assetId: 'asset_11' },
-  { id: 'notif_2', type: 'Maintenance', description: 'Maintenance Due — Kubota 15kVA Canopus Station 3 Monthly Service',          priority: 'Standard', status: 'Pending', createdAt: relativeDate(0),  assetId: 'asset_16' },
-  { id: 'notif_3', type: 'Low Stock',   description: 'Low Stock Alert — Generator Service Kit Cummins 150kVA (1 left)',           priority: 'High',   status: 'Pending', createdAt: relativeDate(-2) },
-  { id: 'notif_4', type: 'Job Update',  description: 'Job Update — J-008 Cobar Mine Completed by Jake Morrow (Awaiting Invoice)',  priority: 'High',   status: 'Pending', createdAt: relativeDate(0),  jobId: 'job_008' }
+  { id: 'notif_1', type: 'Maintenance', title: 'Maintenance Due — Cummins 150kVA', description: 'Maintenance Due — Cummins 150kVA Water Treatment Plant Quarterly Service', priority: 'High',   status: 'Pending', createdAt: relativeDate(-1), assetId: 'asset_11' },
+  { id: 'notif_2', type: 'Maintenance', title: 'Maintenance Due — Kubota 15kVA',   description: 'Maintenance Due — Kubota 15kVA Canopus Station 3 Monthly Service',          priority: 'Standard', status: 'Pending', createdAt: relativeDate(0),  assetId: 'asset_16' },
+  { id: 'notif_3', type: 'Low Stock',   title: 'Low Stock Alert — Service Kit',   description: 'Low Stock Alert — Generator Service Kit Cummins 150kVA (1 left)',           priority: 'High',   status: 'Pending', createdAt: relativeDate(-2) },
+  { id: 'notif_4', type: 'Job Update',  title: 'Job Completed — J-008',           description: 'Job Update — J-008 Cobar Mine Completed by Jake Morrow (Awaiting Invoice)',  priority: 'High',   status: 'Pending', createdAt: relativeDate(0),  jobId: 'job_008' }
 ];
 
 // Contractors List
@@ -1150,9 +1150,9 @@ export function seedData() {
     },
     materialCategories: ['Consumables', 'Filters', 'Mechanical', 'Electrical', 'Service Kits', 'Testing'],
     laborRates: [
-      { id: 'rate_1', name: 'Standard Rate',    rate: 145.00, description: 'Normal business hours Mon–Fri', overtimeMultiplier: 1.0,  minCallOutFee: 0, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], isDefault: true  },
-      { id: 'rate_2', name: 'After Hours Rate', rate: 217.50, description: 'Evenings and early mornings',      overtimeMultiplier: 1.5,  minCallOutFee: 50, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], isDefault: false },
-      { id: 'rate_3', name: 'Emergency Rate',   rate: 290.00, description: 'Urgent call-outs any day',        overtimeMultiplier: 2.0,  minCallOutFee: 120, applicableDays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'], isDefault: false }
+      { id: 'rate_1', name: 'Standard Rate',    rate: 145.00, description: 'Normal business hours Mon–Fri', overtimeMultiplier: 1.0,  minCallOutFee: 0, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33], isDefault: true  },
+      { id: 'rate_2', name: 'After Hours Rate', rate: 217.50, description: 'Evenings and early mornings',      overtimeMultiplier: 1.5,  minCallOutFee: 50, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,34,35,36,37,38,39,40,41,42,43,44,45,46,47], isDefault: false },
+      { id: 'rate_3', name: 'Emergency Rate',   rate: 290.00, description: 'Urgent call-outs any day',        overtimeMultiplier: 2.0,  minCallOutFee: 120, applicableDays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false }
     ]
   };
   store.saveSettings(settings);

@@ -139,17 +139,10 @@ export function renderStockList(container, params) {
         <button class="btn btn-primary" id="btn-new-kit"><span class="material-icons-outlined">add</span> New Kit Bundle</button>
       `;
 
-      // 2. Toolbar for Kits
-      const kits = store.getAll('kits').filter(k => k.active !== false);
-      const allCategories = ['All', ...new Set(kits.map(k => k.category).filter(Boolean))];
-
+      // 2. Toolbar for Kits with carousel
       toolbarContainer.innerHTML = `
-        <div style="display:flex; gap:12px; align-items:center; flex:1; max-width:75%; flex-wrap:wrap">
-          <div style="display:flex; gap:6px; flex-wrap:wrap">
-            ${allCategories.map(c => `
-              <button class="kit-cat-btn btn btn-sm ${c === activeKitCategory ? 'btn-primary' : 'btn-secondary'}" data-cat="${escapeHTML(c)}" style="padding:6px 12px; border-radius:16px; font-size:12px">${escapeHTML(c)}</button>
-            `).join('')}
-          </div>
+        <div style="display:flex; gap:15px; align-items:center; flex:1; max-width:75%">
+          <div id="kits-filters-carousel-container" style="flex:0 0 50%; max-width:50%; overflow:hidden"></div>
         </div>
         <div class="toolbar-search">
           <span class="material-icons-outlined">search</span>
@@ -373,18 +366,8 @@ export function renderStockList(container, params) {
   // --- KIT VIEW FUNCTIONS ---
 
   function renderKitsTable(tableContainer) {
-    let kits = store.getAll('kits') || [];
-
-    // Category filter
-    if (activeKitCategory !== 'All') {
-      kits = kits.filter(k => k.category === activeKitCategory);
-    }
-
-    // Text search
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      kits = kits.filter(k => k.name.toLowerCase().includes(q) || (k.description || '').toLowerCase().includes(q));
-    }
+    const kits = store.getAll('kits') || [];
+    let tagFilteredKits = [...kits];
 
     const columns = [
       { key: 'name', label: 'Kit Name', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>${r.description ? `<div style="font-size:12px; color:var(--text-tertiary); margin-top:2px">${escapeHTML(r.description)}</div>` : ''}` },
@@ -409,11 +392,95 @@ export function renderStockList(container, params) {
       onRowClick: (id) => router.navigate(`/kits/${id}`),
       emptyMessage: 'No kits configured',
       emptyIcon: 'widgets',
-      selectable: false
+      selectable: true,
+      onSelectionChange: (selectedIds) => {
+        createBulkActionBar({
+          container,
+          selectedIds,
+          onClear: () => table.clearSelection(),
+          actions: [
+            {
+              label: 'Change Category',
+              icon: 'category',
+              onClick: (ids) => {
+                const categories = ['Service Kits', 'Vehicle Loadouts', 'Installation Kits', 'Commissioning Kits', 'General', 'Electrical', 'Plumbing', 'HVAC'];
+                const content = document.createElement('div');
+                content.innerHTML = `
+                  <div class="form-group">
+                    <label class="form-label">Select Category</label>
+                    <select class="form-select" id="bulk-kit-category">
+                      ${categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}
+                    </select>
+                  </div>
+                `;
+                showModal({
+                  title: `Update ${ids.length} Kits`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Apply', className: 'btn-primary', onClick: c => {
+                      const newCat = content.querySelector('#bulk-kit-category').value;
+                      ids.forEach(id => store.update('kits', id, { category: newCat }));
+                      table.clearSelection();
+                      renderActiveTabContent();
+                      showToast(`Updated ${ids.length} kits to category: ${newCat}`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              }
+            },
+            {
+              label: 'Delete Selected',
+              icon: 'delete',
+              className: 'btn-danger',
+              onClick: (ids) => {
+                showModal({
+                  title: 'Confirm Bulk Delete',
+                  content: `<p>Are you sure you want to delete ${ids.length} kits? This action cannot be undone.</p>`,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Delete', className: 'btn-danger', onClick: c => {
+                      ids.forEach(id => store.delete('kits', id));
+                      table.clearSelection();
+                      renderActiveTabContent();
+                      showToast(`Deleted ${ids.length} kits`, 'success');
+                      c();
+                    }}
+                  ]
+                });
+              }
+            }
+          ]
+        });
+      }
     });
 
     tableContainer.innerHTML = '';
     tableContainer.appendChild(table);
+
+    function applyKitFilters() {
+      const q = searchTerm.toLowerCase();
+      const filtered = tagFilteredKits.filter(k => {
+        const matchSearch = !q ||
+          k.name.toLowerCase().includes(q) ||
+          (k.description || '').toLowerCase().includes(q);
+        return matchSearch;
+      });
+      table.updateData(filtered);
+    }
+
+    createToolbarFilters({
+      container: container.querySelector('#kits-filters-carousel-container'),
+      originalData: kits,
+      filterType: 'kits',
+      onFilterChange: (filtered) => {
+        tagFilteredKits = filtered;
+        applyKitFilters();
+      }
+    });
+
+    applyKitFilters();
   }
 
   function bindKitActions() {
@@ -421,20 +488,6 @@ export function renderStockList(container, params) {
     container.querySelector('#kit-search')?.addEventListener('input', (e) => {
       searchTerm = e.target.value;
       renderKitsTable(container.querySelector('#stock-table-container'));
-    });
-
-    // Category button clicks
-    container.querySelectorAll('.kit-cat-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeKitCategory = btn.dataset.cat;
-        container.querySelectorAll('.kit-cat-btn').forEach(b => {
-          b.classList.remove('btn-primary');
-          b.classList.add('btn-secondary');
-        });
-        btn.classList.remove('btn-secondary');
-        btn.classList.add('btn-primary');
-        renderKitsTable(container.querySelector('#stock-table-container'));
-      });
     });
 
     // New Kit button

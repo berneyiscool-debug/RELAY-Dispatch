@@ -19,6 +19,112 @@ function buildGranularPerms(valueFn) {
   });
 }
 
+// Helper to render visual timeline
+function renderTimelineHtml(activeHours = []) {
+  const hours = ['12am', '4am', '8am', '12pm', '4pm', '8pm', '12am'];
+  
+  // Format tooltip time range
+  const formatTimeRange = (i) => {
+    const pad = (num) => String(num).padStart(2, '0');
+    const sh = Math.floor(i / 2);
+    const sm = (i % 2) * 30;
+    const eh = Math.floor((i + 1) / 2);
+    const em = ((i + 1) % 2) * 30;
+    return `${pad(sh)}:${pad(sm)} – ${pad(eh)}:${pad(em)}`;
+  };
+
+  let blocksHtml = '';
+  for (let i = 0; i < 48; i++) {
+    const isActive = activeHours.includes(i);
+    blocksHtml += `
+      <div class="timeline-block ${isActive ? 'active' : ''}" 
+           data-slot="${i}" 
+           title="${formatTimeRange(i)}"
+      ></div>
+    `;
+  }
+
+  return `
+    <div class="form-group timeline-container" style="margin:0; grid-column:1/-1; user-select:none; position:relative;">
+      <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-weight:600; display:flex; align-items:center; gap:6px;">
+          <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary)">schedule</span>
+          Active Hours Timeline
+        </span>
+        <span class="text-tertiary" style="font-size:11px; font-weight:normal;">Click & drag to highlight active hours</span>
+      </label>
+      
+      <!-- Hour labels -->
+      <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:10px; color:var(--text-tertiary); font-weight:600; padding:0 2px;">
+        ${hours.map(h => `<span>${h}</span>`).join('')}
+      </div>
+      
+      <!-- Grid -->
+      <div class="timeline-grid" style="
+        display:grid; 
+        grid-template-columns:repeat(48, 1fr); 
+        gap:3px; 
+        background: rgba(0, 0, 0, 0.2); 
+        padding:6px; 
+        border-radius:8px; 
+        border:1px solid var(--border-color);
+        touch-action:none;
+      ">
+        ${blocksHtml}
+      </div>
+    </div>
+  `;
+}
+
+// Setup drag drawing / erasing
+function setupTimelineDragSelection(container) {
+  let isDrawing = false;
+  let drawMode = true; // true = draw, false = erase
+
+  const onStart = (block) => {
+    isDrawing = true;
+    drawMode = !block.classList.contains('active');
+    toggleBlock(block, drawMode);
+  };
+
+  const onMove = (block) => {
+    if (isDrawing) {
+      toggleBlock(block, drawMode);
+    }
+  };
+
+  const toggleBlock = (block, active) => {
+    if (active) {
+      block.classList.add('active');
+    } else {
+      block.classList.remove('active');
+    }
+  };
+
+  // Attach mouse listeners
+  container.addEventListener('mousedown', (e) => {
+    const block = e.target.closest('.timeline-block');
+    if (block) {
+      e.preventDefault();
+      onStart(block);
+    }
+  });
+
+  // Use delegated mouseover which bubbles correctly
+  container.addEventListener('mouseover', (e) => {
+    const block = e.target.closest('.timeline-block');
+    if (block) {
+      onMove(block);
+    }
+  });
+
+  const stopDrawing = () => {
+    isDrawing = false;
+  };
+
+  window.addEventListener('mouseup', stopDrawing);
+}
+
 export function renderSettings(container) {
   const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
   const tabParam = urlParams.get('tab');
@@ -521,7 +627,7 @@ export function renderSettings(container) {
             </button>
           </div>
           <div class="card-body">
-            <div id="labor-rates-container" style="display:flex;flex-direction:column;gap:16px;">
+            <div id="labor-rates-container" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap:16px;">
               ${settings.laborRates.map((rate) => {
                 const allDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'];
                 const dayLabels = { Mon:'Mon', Tue:'Tue', Wed:'Wed', Thu:'Thu', Fri:'Fri', Sat:'Sat', Sun:'Sun', PH:'P.H.' };
@@ -553,14 +659,8 @@ export function renderSettings(container) {
                         <span class="text-secondary">/hr</span>
                       </div>
                     </div>
-                    <!-- Overtime Multiplier -->
-                    <div class="form-group" style="margin:0">
-                      <label class="form-label">Overtime Multiplier</label>
-                      <div style="display:flex;align-items:center;gap:6px">
-                        <input class="form-input rate-multiplier" type="number" value="${(rate.overtimeMultiplier || 1).toFixed(1)}" min="1" max="5" step="0.5" style="width:100px" />
-                        <span class="text-secondary">× base pay</span>
-                      </div>
-                    </div>
+                    <!-- Overtime Multiplier (hidden) -->
+                    <input type="hidden" class="rate-multiplier" value="${rate.overtimeMultiplier || 1}" />
                     <!-- Minimum Call-out Fee -->
                     <div class="form-group" style="margin:0">
                       <label class="form-label">Min Call-out Fee ($)</label>
@@ -569,11 +669,10 @@ export function renderSettings(container) {
                         <input class="form-input rate-min-fee" type="number" value="${(rate.minCallOutFee || 0).toFixed(2)}" min="0" step="1.00" style="width:120px" />
                       </div>
                     </div>
-                    <!-- Description -->
-                    <div class="form-group" style="margin:0;grid-column:1/-1">
-                      <label class="form-label">Description</label>
-                      <input class="form-input rate-desc" value="${rate.description || ''}" placeholder="When is this rate used?" />
-                    </div>
+                    <!-- Description (hidden) & Active Hours Timeline -->
+                    <input type="hidden" class="rate-desc" value="${rate.description || ''}" />
+                    ${renderTimelineHtml(rate.activeHours || [])}
+
                     <!-- Applicable Days -->
                     <div class="form-group" style="margin:0;grid-column:1/-1">
                       <label class="form-label">Applicable Days</label>
@@ -619,6 +718,9 @@ export function renderSettings(container) {
         </div>
       `;
 
+      // Set up interactive timeline drag-selection
+      setupTimelineDragSelection(tc);
+
       // ---- Day pill toggle ----
       tc.addEventListener('click', (e) => {
         const pill = e.target.closest('.rate-day-pill');
@@ -663,18 +765,16 @@ export function renderSettings(container) {
                 <input class="form-input rate-val" type="number" value="0.00" min="0" step="0.50" style="width:120px" />
               </div>
             </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Overtime Multiplier</label>
-              <input class="form-input rate-multiplier" type="number" value="1.0" min="1" max="5" step="0.5" style="width:100px" />
-            </div>
+            <!-- Overtime Multiplier (hidden) -->
+            <input type="hidden" class="rate-multiplier" value="1.0" />
             <div class="form-group" style="margin:0">
               <label class="form-label">Min Call-out Fee ($)</label>
               <input class="form-input rate-min-fee" type="number" value="0.00" min="0" step="1.00" style="width:120px" />
             </div>
-            <div class="form-group" style="margin:0;grid-column:1/-1">
-              <label class="form-label">Description</label>
-              <input class="form-input rate-desc" value="" />
-            </div>
+            <!-- Description (hidden) & Active Hours Timeline -->
+            <input type="hidden" class="rate-desc" value="" />
+            ${renderTimelineHtml(Array.from({length: 18}, (_, i) => i + 16))}
+
             <div class="form-group" style="margin:0;grid-column:1/-1">
               <label class="form-label">Applicable Days</label>
               <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
@@ -762,8 +862,9 @@ export function renderSettings(container) {
           const minFee = parseFloat(card.querySelector('.rate-min-fee').value) || 0;
           const isDefault = card.querySelector('.btn-set-default') === null;
           const applicableDays = Array.from(card.querySelectorAll('.rate-day:checked')).map(chk => chk.dataset.day);
+          const activeHours = Array.from(card.querySelectorAll('.timeline-block.active')).map(block => parseInt(block.dataset.slot));
           
-          return { id, name, rate, description: desc, overtimeMultiplier: multiplier, minCallOutFee: minFee, applicableDays, isDefault };
+          return { id, name, rate, description: desc, overtimeMultiplier: multiplier, minCallOutFee: minFee, applicableDays, activeHours, isDefault };
         });
       }
 
