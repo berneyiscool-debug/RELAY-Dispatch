@@ -55,7 +55,6 @@ export function renderPersonDetail(container, { id }) {
         <button class="tab ${activeTab === 'contacts' ? 'active' : ''}" data-tab="contacts">Contacts (${(person.contacts || []).length})</button>
         <button class="tab ${activeTab === 'sites' ? 'active' : ''}" data-tab="sites">Sites (${(person.sites || []).length})</button>
         <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets (${store.getAll('assets').filter(a => a.ownerType === 'Customer' && a.customerId === id).length})</button>
-        <button class="tab ${activeTab === 'communications' ? 'active' : ''}" data-tab="communications">Communications (${(person.communications || []).length})</button>
         <button class="tab ${activeTab === 'jobs' ? 'active' : ''}" data-tab="jobs">Jobs (${jobs.length})</button>
         <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes (${quotes.length})</button>
         <button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices">Invoices (${invoices.length})</button>
@@ -342,87 +341,6 @@ export function renderPersonDetail(container, { id }) {
           showToast('Asset disabled/deleted', 'success');
           renderTabContent();
           render();
-        });
-      });
-
-    } else if (activeTab === 'communications') {
-      const comms = person.communications || [];
-      const sortedComms = [...comms].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-      tabContent.innerHTML = `
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header">
-            <h4>Communication History</h4>
-            <button class="btn btn-primary btn-sm" id="btn-toggle-comm"><span class="material-icons-outlined" style="font-size:16px">add</span> Log Activity</button>
-          </div>
-          <div class="card-body">
-            ${sortedComms.length === 0 ? '<div style="text-align:center;padding:20px" class="text-secondary">No communications logged</div>' : `
-              <div style="display:flex;flex-direction:column;gap:16px">
-                ${sortedComms.map((c, i) => `
-                  <div style="display:flex;gap:12px;border-bottom:1px solid var(--border-color);padding-bottom:12px">
-                    <div style="background:var(--color-${c.type === 'Email' ? 'info' : c.type === 'Call' ? 'success' : 'neutral'}-bg);color:var(--color-${c.type === 'Email' ? 'info' : c.type === 'Call' ? 'success' : 'neutral'});padding:8px;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                      <span class="material-icons-outlined" style="font-size:20px">${c.type === 'Email' ? 'mail' : c.type === 'Call' ? 'phone' : 'sticky_note_2'}</span>
-                    </div>
-                    <div style="flex:1">
-                      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-                        <strong style="font-size:var(--font-size-md)">${c.type}</strong>
-                        <span style="font-size:var(--font-size-sm);color:var(--text-tertiary)">${new Date(c.date).toLocaleDateString()}</span>
-                      </div>
-                      <div style="color:var(--text-secondary);white-space:pre-wrap;font-size:var(--font-size-sm)">${c.content}</div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            `}
-          </div>
-        </div>
-      `;
-
-      tabContent.querySelector('#btn-toggle-comm').addEventListener('click', () => {
-        const content = document.createElement('div');
-        content.innerHTML = `
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Type</label>
-              <select id="new-comm-type" class="form-select">
-                <option value="Note">Note</option>
-                <option value="Call">Call</option>
-                <option value="Email">Email</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Date</label>
-              <input type="date" id="new-comm-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Details / Content</label>
-            <textarea id="new-comm-content" class="form-input" rows="3" placeholder="Enter notes here..."></textarea>
-          </div>
-        `;
-        showDrawer({
-          title: 'Log Activity',
-          content: content.outerHTML,
-          actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Save', className: 'btn-primary', onClick: (close) => {
-              const dOverlay = document.querySelector('.drawer-overlay');
-              const contentVal = dOverlay.querySelector('#new-comm-content').value.trim();
-              if (!contentVal) return showToast('Details are required', 'error');
-              if (!person.communications) person.communications = [];
-              person.communications.push({
-                id: Date.now().toString(),
-                type: dOverlay.querySelector('#new-comm-type').value,
-                date: dOverlay.querySelector('#new-comm-date').value,
-                content: contentVal
-              });
-              store.update('customers', id, { communications: person.communications });
-              showToast('Activity logged', 'success');
-              renderTabContent();
-              render(); // update tab count
-              close();
-            }}
-          ]
         });
       });
 

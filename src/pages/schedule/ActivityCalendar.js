@@ -29,6 +29,11 @@ function getLinkedRoute(linkedType, linkedId) {
 }
 
 export function renderActivityCalendar(container, { getWeekDays, viewMode, currentDate, calendarType, isTechnician, onNav, onToday, onViewMode, onCalType }) {
+  container.style.height = '100%';
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.overflow = 'hidden';
+
   const days = getWeekDays();
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -136,7 +141,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
         </div>
       </div>
 
-      <div style="display:flex;gap:16px;height:calc(100vh - 160px);overflow:hidden">
+      <div style="display:flex;gap:16px;flex:1;min-height:0;overflow:hidden">
         <!-- Main Content -->
         <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
           <div style="padding:14px 18px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center">
@@ -169,7 +174,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
         </div>
 
         <!-- Sidebar -->
-        <div class="card" style="width:280px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto">
+        <div class="card" style="width:280px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto;height:100%;min-height:0">
           <!-- Stats -->
           <div style="padding:16px;border-bottom:1px solid var(--border-color)">
             <h4 style="font-size:var(--font-size-sm);margin:0 0 12px 0;display:flex;align-items:center;gap:6px">

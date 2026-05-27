@@ -14,6 +14,7 @@ import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
 import { hasPermission } from './utils/permissions.js';
+import { initSearchableSelects } from './utils/searchableSelect.js';
 
 // Pages
 import { renderDashboard } from './pages/Dashboard.js';
@@ -63,6 +64,7 @@ import { renderDocumentViewer } from './pages/documents/DocumentViewer.js';
 // ---- Initialize ----
 seedData();
 checkMaintenancePlans();
+initSearchableSelects();
 
 // Expose app globals for cross-component access
 window.__fieldForge = { router, store };
@@ -95,6 +97,7 @@ function renderPage(handler) {
   return (params) => {
     mainContent.innerHTML = '';
     mainContent.scrollTop = 0;
+    mainContent.removeAttribute('style');
     handler(mainContent, params);
   };
 }

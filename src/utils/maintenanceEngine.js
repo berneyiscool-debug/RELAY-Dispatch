@@ -9,7 +9,24 @@ export function checkMaintenancePlans() {
 
   let storeUpdated = false;
 
-  const PRIORITY_RANKS = { 'Minor': 1, 'Standard': 2, 'Major': 3 };
+  function getPriorityScore(p) {
+    if (typeof p === 'number') return p;
+    if (!p) return 5;
+    const score = parseInt(p);
+    if (!isNaN(score)) return score;
+    if (p === 'Minor') return 2;
+    if (p === 'Standard') return 5;
+    if (p === 'Major') return 8;
+    return 5;
+  }
+
+  function mapNumericToTextPriority(p) {
+    const num = getPriorityScore(p);
+    if (num <= 3) return 'Low';
+    if (num <= 7) return 'Normal';
+    if (num <= 9) return 'High';
+    return 'Urgent';
+  }
 
   // Group active plans by assetId
   const activePlansByAsset = {};
@@ -146,7 +163,7 @@ export function checkMaintenancePlans() {
         message: standaloneDesc,
         status: 'Pending',
         type: 'Recurring Job Due',
-        priority: plan.priority || 'Normal',
+        priority: mapNumericToTextPriority(plan.priority),
         createdAt: new Date().toISOString(),
         createdBy: 'System Engine',
         maintenancePlanId: plan.id,
@@ -243,7 +260,7 @@ export function checkMaintenancePlans() {
           message: standaloneDesc,
           status: 'Pending',
           type: 'Recurring Job Due',
-          priority: plan.priority || 'Normal',
+          priority: mapNumericToTextPriority(plan.priority),
           createdAt: new Date().toISOString(),
           createdBy: 'System Engine',
           maintenancePlanId: plan.id,
@@ -286,7 +303,7 @@ export function checkMaintenancePlans() {
         storeUpdated = true;
       } else {
         // Group collision resolution for multiple mergable plans
-        finalMergableDuePlans.sort((a, b) => (PRIORITY_RANKS[b.priority] || 2) - (PRIORITY_RANKS[a.priority] || 2));
+        finalMergableDuePlans.sort((a, b) => getPriorityScore(b.priority) - getPriorityScore(a.priority));
 
         const triggeredPlan = finalMergableDuePlans[0];
         const suppressedPlans = finalMergableDuePlans.slice(1);
@@ -357,7 +374,7 @@ export function checkMaintenancePlans() {
           message: mergedDescription,
           status: 'Pending',
           type: 'Recurring Job Due',
-          priority: triggeredPlan.priority || 'Normal',
+          priority: mapNumericToTextPriority(triggeredPlan.priority),
           createdAt: new Date().toISOString(),
           createdBy: 'System Engine',
           maintenancePlanId: triggeredPlan.id,

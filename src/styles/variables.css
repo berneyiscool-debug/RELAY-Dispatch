@@ -8,6 +8,7 @@
   --color-primary-hover: #254a65;
   --color-primary-light: #cae6ff; /* Soft Primary Container backing */
   --color-primary-dark: #001e30;
+  --body-bg: linear-gradient(135deg, #f7f9fb 0%, #eceef0 100%) no-repeat fixed;
 
   /* ---- Sidebar (Level 1 Glass Sidebar) ---- */
   --sidebar-bg: rgba(255, 255, 255, 0.4); /* 40% white glass */
@@ -105,3 +106,11 @@
   --z-modal: 300;
   --z-toast: 400;
 }
+
+[data-theme="dark"] {
+  --body-bg: linear-gradient(135deg, #09090b 0%, #151518 100%) no-repeat fixed;
+  --color-primary-dark: #FAFAFA; /* Soft ice-white headings */
+  --color-primary-light: rgba(49, 86, 113, 0.18); /* Elegant semi-transparent Nordic blue tint */
+  --color-primary-hover: #4d7a9b;
+}
+

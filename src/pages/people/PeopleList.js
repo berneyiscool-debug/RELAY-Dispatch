@@ -8,6 +8,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { createToolbarFilters } from '../../components/ToolbarFilters.js';
 
 export function renderPeopleList(container) {
   const customers = store.getAll('customers');
@@ -24,12 +25,8 @@ export function renderPeopleList(container) {
         </button>
       </div>
     </div>
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter active" data-filter="all">All (${customers.length})</button>
-        <button class="toolbar-filter" data-filter="Active">Active (${customers.filter(c => c.status === 'Active').length})</button>
-        <button class="toolbar-filter" data-filter="Inactive">Inactive (${customers.filter(c => c.status === 'Inactive').length})</button>
-      </div>
+    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center;">
+      <div id="people-filters-carousel-container" style="flex: 0 0 50%; max-width: 50%; overflow:hidden"></div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search customers..." id="people-search" />
@@ -162,29 +159,33 @@ export function renderPeopleList(container) {
     showToast('Customer data exported successfully', 'success');
   });
 
-  // Filters
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const filter = btn.dataset.filter;
-      filteredData = filter === 'all' ? [...customers] : customers.filter(c => c.status === filter);
-      table.updateData(filteredData);
-    });
-  });
+  let tagFilteredData = [...customers];
+  let searchQuery = '';
 
-  // Search
-  container.querySelector('#people-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = customers.filter(c =>
+  function applyFilters() {
+    const q = searchQuery.toLowerCase();
+    const filtered = tagFilteredData.filter(c =>
+      !q ||
       c.company.toLowerCase().includes(q) ||
       `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) ||
       c.email.toLowerCase().includes(q)
     );
-    const activeFilter = container.querySelector('.toolbar-filter.active')?.dataset.filter;
-    if (activeFilter && activeFilter !== 'all') {
-      filteredData = filteredData.filter(c => c.status === activeFilter);
+    table.updateData(filtered);
+  }
+
+  createToolbarFilters({
+    container: container.querySelector('#people-filters-carousel-container'),
+    originalData: customers,
+    filterType: 'people',
+    onFilterChange: (filtered) => {
+      tagFilteredData = filtered;
+      applyFilters();
     }
-    table.updateData(filteredData);
+  });
+
+  // Search
+  container.querySelector('#people-search').addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    applyFilters();
   });
 }

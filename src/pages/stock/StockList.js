@@ -11,6 +11,7 @@ import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { parseCSV } from '../../utils/csvParser.js';
+import { createToolbarFilters } from '../../components/ToolbarFilters.js';
 export function renderStockList(container) {
   const stock = store.getAll('stock');
 
@@ -23,14 +24,9 @@ export function renderStockList(container) {
         <button class="btn btn-primary" id="btn-new-stock"><span class="material-icons-outlined">add</span> New Item</button>
       </div>
     </div>
-    <div class="page-toolbar">
-      <div class="toolbar-left" style="display:flex; gap:15px; align-items:center; flex-wrap:wrap">
-        <div class="toolbar-filters">
-          <button class="toolbar-filter active" data-filter="all">All (${stock.length})</button>
-          ${[...new Set(stock.map(s => s.category))].map(cat =>
-            `<button class="toolbar-filter" data-filter="${cat}">${cat}</button>`
-          ).join('')}
-        </div>
+    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; gap:15px; align-items:center; flex: 1; max-width: 75%;">
+        <div id="stock-filters-carousel-container" style="flex: 0 0 50%; max-width: 50%; overflow:hidden"></div>
         <div class="toolbar-selectors" style="display:flex; gap:10px; align-items:center;">
            <span class="text-tertiary" style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Location:</span>
            <select class="form-select select-sm" id="location-filter" style="width: 180px; height: 32px; font-size: 13px;">
@@ -81,23 +77,22 @@ export function renderStockList(container) {
     locSelect.appendChild(group);
   }
 
+  let tagFilteredData = [...stock];
   let filterState = {
-    category: 'all',
     location: 'all',
     search: ''
   };
 
   function applyFilters() {
     const q = filterState.search.toLowerCase();
-    const filtered = stock.filter(s => {
-      const matchCat = filterState.category === 'all' || s.category === filterState.category;
+    const filtered = tagFilteredData.filter(s => {
       const matchLoc = filterState.location === 'all' || (s.locations || []).some(l => l.location === filterState.location);
       const matchSearch = !q || 
         s.name.toLowerCase().includes(q) || 
         s.sku.toLowerCase().includes(q) || 
         s.category.toLowerCase().includes(q) || 
         (s.locations || []).some(l => l.location.toLowerCase().includes(q));
-      return matchCat && matchLoc && matchSearch;
+      return matchLoc && matchSearch;
     });
     table.updateData(filtered);
   }
@@ -246,14 +241,14 @@ export function renderStockList(container) {
   });
   container.querySelector('#stock-table-container').appendChild(table);
 
-  // Event Listeners
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      filterState.category = btn.dataset.filter;
+  createToolbarFilters({
+    container: container.querySelector('#stock-filters-carousel-container'),
+    originalData: stock,
+    filterType: 'stock',
+    onFilterChange: (filtered) => {
+      tagFilteredData = filtered;
       applyFilters();
-    });
+    }
   });
 
   container.querySelector('#location-filter').addEventListener('change', (e) => {

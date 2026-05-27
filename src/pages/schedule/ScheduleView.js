@@ -10,6 +10,11 @@ import { showDrawer } from '../../components/Drawer.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
 
 export function renderScheduleView(container) {
+  container.style.height = '100%';
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.overflow = 'hidden';
+
   const technicians = store.getAll('technicians');
   // jobs read fresh each render — do NOT cache here
 
@@ -31,8 +36,9 @@ export function renderScheduleView(container) {
   let savedSearchResultsScrollTop = 0;
   let isSidebarCollapsed = false;
   let isActionMenuOpen = false;
-  let isTechsPanelCollapsed = false;
-  let isJobsPanelCollapsed = false;
+  let isTechsPanelCollapsed = true;
+  let isJobsPanelCollapsed = true;
+  let isSearchActive = false;
   let jobSearchQuery = '';
   let expandedJobTasklistIds = new Set();
 
@@ -72,6 +78,19 @@ export function renderScheduleView(container) {
   }
 
   document.addEventListener('click', closeContextMenu);
+
+  function handleDocumentClick(e) {
+    const searchInput = document.getElementById('job-search-input');
+    const searchSection = document.getElementById('job-search-section-wrapper');
+    if (isSearchActive && searchInput && searchSection) {
+      if (!searchInput.contains(e.target) && !searchSection.contains(e.target)) {
+        isSearchActive = false;
+        isJobsPanelCollapsed = true;
+        render();
+      }
+    }
+  }
+  document.addEventListener('click', handleDocumentClick);
 
   function getWeekDays() {
     const start = new Date(currentDate);
@@ -286,8 +305,8 @@ export function renderScheduleView(container) {
       </div>
 
       <!-- Calendar Grid + Right Sidebar -->
-      <div class="card" style="overflow:hidden">
-        <div style="display:flex;height:calc(100vh - 160px);overflow:hidden">
+      <div class="card" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;flex:1;min-height:0;overflow:hidden">
           
           <!-- Calendar -->
           <div style="flex:1;overflow:auto" id="calendar-scroll">
@@ -439,18 +458,27 @@ export function renderScheduleView(container) {
               <!-- Expanded Sidebar -->
               <div style="width:280px; border-left:1px solid var(--border-color); display:flex; flex-direction:column; background:var(--card-bg); overflow:hidden; height:100%; flex-shrink:0;">
                 
-                <!-- Action Button Trigger -->
-                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; gap:12px; position:relative;">
-                  <button class="btn btn-primary btn-sm" id="btn-action-menu-trigger" style="width:140px; display:flex; align-items:center; justify-content:center; gap:6px; font-size:12px; padding:6px 12px;">
-                    <span class="material-icons-outlined" style="font-size:16px">add</span>
-                    <span>Add to Schedule</span>
+                <!-- Action Button Trigger + Search + Collapse Sidebar -->
+                <div style="padding:12px 16px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:8px; position:relative;">
+                  <!-- Circular plus action button -->
+                  <button class="btn btn-primary btn-icon btn-sm" id="btn-action-menu-trigger" title="Add to Schedule" style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0;">
+                    <span class="material-icons-outlined" style="font-size:20px">add</span>
                   </button>
+                  
+                  <!-- Inline search input -->
+                  <div class="topbar-search" style="flex: 1; max-width: 100%; position: relative; height: 32px; display: flex; align-items: center; min-width: 0;">
+                    <span class="material-icons-outlined search-icon" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); font-size:16px; color:var(--text-tertiary);">search</span>
+                    <input type="text" id="job-search-input" value="${jobSearchQuery}" placeholder="Search jobs/tasks..." style="width:100%; padding:6px 8px 6px 26px; border:1px solid var(--border-color); border-radius:var(--border-radius); font-size:var(--font-size-sm); background:var(--content-bg); color:var(--text-primary); outline:none; transition:all var(--transition-fast);">
+                  </div>
+
+                  <!-- Collapse sidebar button -->
                   <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-sidebar" title="Collapse Sidebar" style="color:var(--text-secondary); width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0;">
                     <span class="material-icons-outlined" style="font-size:20px">chevron_right</span>
                   </button>
+
                   ${isActionMenuOpen ? `
                     <!-- Action Dropdown Menu -->
-                    <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:56px; left:16px; width:220px; z-index:100; display:flex; flex-direction:column; overflow:hidden;">
+                    <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:48px; left:16px; width:220px; z-index:100; display:flex; flex-direction:column; overflow:hidden;">
                       <button class="sidebar-nav-item sub-item action-menu-opt" data-action="job" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
                         <span class="nav-icon"><span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px">assignment</span></span>
                         <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Job Schedule</span>
@@ -470,46 +498,17 @@ export function renderScheduleView(container) {
                     </div>
                   ` : ''}
                 </div>
-
-                <!-- Visible Technicians Module -->
-                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:10px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h4 style="font-size:var(--font-size-sm); margin:0; display:flex; align-items:center; gap:6px;">
-                      <span class="material-icons-outlined" style="font-size:16px;">people</span> Visible Technicians
-                    </h4>
-                    <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-techs" title="${isTechsPanelCollapsed ? 'Expand' : 'Collapse'}" style="color:var(--text-secondary); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
-                      <span class="material-icons-outlined" style="font-size:18px">${isTechsPanelCollapsed ? 'chevron_right' : 'expand_more'}</span>
-                    </button>
-                  </div>
-                  ${!isTechsPanelCollapsed ? `
-                    <div style="display:flex; flex-direction:column; gap:10px;">
-                      ${technicians.map(t => `
-                        <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer;">
-                          <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
-                          <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
-                          <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
-                        </label>
-                      `).join('')}
-                    </div>
-                  ` : ''}
-                </div>
-
                 <!-- Job & Task Search Module -->
-                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:12px; ${isJobsPanelCollapsed ? 'flex:0 0 auto;' : 'flex:1; min-height:0; overflow:hidden;'}">
+                <div id="job-search-section-wrapper" style="padding:16px; border-bottom:1px solid var(--border-color); display:${isSearchActive ? 'flex' : 'none'}; flex-direction:column; gap:12px; ${isJobsPanelCollapsed ? 'flex:0 0 auto;' : 'flex:1; min-height:0; overflow:hidden;'}">
                   <div style="display:flex; justify-content:space-between; align-items:center;">
                     <h4 style="font-size:var(--font-size-sm); margin:0; display:flex; align-items:center; gap:6px;">
                       <span class="material-icons-outlined" style="font-size:16px;">search</span> Job & Task Search
                     </h4>
                     <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-jobs-panel" title="${isJobsPanelCollapsed ? 'Expand' : 'Collapse'}" style="color:var(--text-secondary); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
-                      <span class="material-icons-outlined" style="font-size:18px">${isJobsPanelCollapsed ? 'chevron_right' : 'expand_more'}</span>
+                      <span class="material-icons-outlined" style="font-size:18px">${isJobsPanelCollapsed ? 'expand_more' : 'expand_less'}</span>
                     </button>
                   </div>
                   ${!isJobsPanelCollapsed ? `
-                    <div class="topbar-search" style="max-width:100%; position:relative; flex-shrink:0; flex:none !important;">
-                      <span class="material-icons-outlined search-icon" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); font-size:16px; color:var(--text-tertiary);">search</span>
-                      <input type="text" id="job-search-input" value="${jobSearchQuery}" placeholder="Search jobs or tasks..." style="width:100%; padding:6px 8px 6px 28px; border:1px solid var(--border-color); border-radius:var(--border-radius); font-size:var(--font-size-sm); background:var(--content-bg); color:var(--text-primary); outline:none; transition:all var(--transition-fast);">
-                    </div>
-                    
                     <div id="job-search-results" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding-right:4px; margin-top:4px;">
                       ${(() => {
                         const allJobs = store.getAll('jobs');
@@ -560,7 +559,7 @@ export function renderScheduleView(container) {
                                 </div>
                                 ${j.tasks && j.tasks.length > 0 ? `
                                   <button class="btn btn-ghost btn-icon btn-sm btn-toggle-job-tasks" data-job-id="${j.id}" title="${isTasklistExpanded ? 'Hide Tasks' : 'Show Tasks'}" style="color:var(--text-secondary); width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0; pointer-events:auto; border:none; background:none; cursor:pointer; flex-shrink:0;">
-                                    <span class="material-icons-outlined" style="font-size:14px">${isTasklistExpanded ? 'expand_more' : 'chevron_right'}</span>
+                                    <span class="material-icons-outlined" style="font-size:14px">${isTasklistExpanded ? 'expand_less' : 'expand_more'}</span>
                                   </button>
                                 ` : ''}
                               </div>
@@ -626,6 +625,29 @@ export function renderScheduleView(container) {
                           `;
                         }).join('');
                       })()}
+                    </div>
+                  ` : ''}
+                </div>
+
+                <!-- Visible Technicians Module -->
+                <div style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:10px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="font-size:var(--font-size-sm); margin:0; display:flex; align-items:center; gap:6px;">
+                      <span class="material-icons-outlined" style="font-size:16px;">people</span> Visible Technicians
+                    </h4>
+                    <button class="btn btn-ghost btn-icon btn-sm" id="btn-toggle-techs" title="${isTechsPanelCollapsed ? 'Expand' : 'Collapse'}" style="color:var(--text-secondary); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0">
+                      <span class="material-icons-outlined" style="font-size:18px">${isTechsPanelCollapsed ? 'expand_more' : 'expand_less'}</span>
+                    </button>
+                  </div>
+                  ${!isTechsPanelCollapsed ? `
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                      ${technicians.map(t => `
+                        <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer;">
+                          <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
+                          <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
+                          <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
+                        </label>
+                      `).join('')}
                     </div>
                   ` : ''}
                 </div>
@@ -1073,20 +1095,47 @@ export function renderScheduleView(container) {
 
     container.querySelector('#btn-toggle-techs')?.addEventListener('click', () => {
       isTechsPanelCollapsed = !isTechsPanelCollapsed;
+      if (!isTechsPanelCollapsed) {
+        isJobsPanelCollapsed = true;
+      }
       render();
     });
 
     container.querySelector('#btn-toggle-jobs-panel')?.addEventListener('click', () => {
       isJobsPanelCollapsed = !isJobsPanelCollapsed;
+      if (!isJobsPanelCollapsed) {
+        isTechsPanelCollapsed = true;
+      }
       render();
     });
 
     const searchInput = container.querySelector('#job-search-input');
     if (searchInput) {
-      searchInput.focus();
-      const len = searchInput.value.length;
-      searchInput.setSelectionRange(len, len);
+      if (isSearchActive) {
+        searchInput.focus();
+        const len = searchInput.value.length;
+        searchInput.setSelectionRange(len, len);
+      }
       
+      searchInput.addEventListener('focus', () => {
+        if (!isSearchActive) {
+          isSearchActive = true;
+          isJobsPanelCollapsed = false;
+          isTechsPanelCollapsed = true;
+          render();
+        }
+      });
+
+      searchInput.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!isSearchActive) {
+          isSearchActive = true;
+          isJobsPanelCollapsed = false;
+          isTechsPanelCollapsed = true;
+          render();
+        }
+      });
+
       searchInput.addEventListener('input', (e) => {
         jobSearchQuery = e.target.value;
         render();

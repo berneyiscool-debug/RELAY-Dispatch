@@ -21,7 +21,7 @@ body {
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   color: var(--text-primary);
-  background: linear-gradient(135deg, #f7f9fb 0%, #eceef0 100%) no-repeat fixed; /* Arctic White to Pale blue-gray linear canvas */
+  background: var(--body-bg);
   line-height: var(--line-height);
   overflow: hidden;
   position: relative;

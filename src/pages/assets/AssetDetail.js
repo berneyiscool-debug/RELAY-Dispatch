@@ -537,11 +537,22 @@ export function renderAssetDetail(container, params) {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Priority Level *</label>
+          <label class="form-label">Priority Level (1-10, 10 is Highest) *</label>
           <select class="form-select" id="plan-priority">
-            <option value="Minor" ${existingPlan?.priority === 'Minor' ? 'selected' : ''}>Minor</option>
-            <option value="Standard" ${!existingPlan || existingPlan?.priority === 'Standard' ? 'selected' : ''}>Standard</option>
-            <option value="Major" ${existingPlan?.priority === 'Major' ? 'selected' : ''}>Major</option>
+            ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => {
+              const label = val === 1 ? '1 (Lowest)' : (val === 10 ? '10 (Highest)' : val.toString());
+              let isSelected = false;
+              if (existingPlan) {
+                let planPriorityVal = existingPlan.priority;
+                if (planPriorityVal === 'Minor') planPriorityVal = 2;
+                else if (planPriorityVal === 'Standard') planPriorityVal = 5;
+                else if (planPriorityVal === 'Major') planPriorityVal = 8;
+                isSelected = parseInt(planPriorityVal || 5) === val;
+              } else {
+                isSelected = val === 5;
+              }
+              return `<option value="${val}" ${isSelected ? 'selected' : ''}>${label}</option>`;
+            }).join('')}
           </select>
         </div>
 
@@ -566,9 +577,12 @@ export function renderAssetDetail(container, params) {
           <label for="plan-collision-merging" style="margin:0; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-primary); line-height:1.2;">Enable Collision Merging (auto-merge with other due plans)</label>
         </div>
 
-        <div style="display:flex; align-items:center; gap:10px; margin:0 0 14px 0; padding-left:2px;">
+        <div style="display:flex; align-items:center; gap:10px; margin:0 0 4px 0; padding-left:2px;">
           <input type="checkbox" id="plan-merge-tasks" ${existingPlan?.mergeTasks === true ? 'checked' : ''} style="width:18px; height:18px; margin:0; cursor:pointer; accent-color:var(--primary);" />
           <label for="plan-merge-tasks" style="margin:0; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-primary); line-height:1.2;">Merge Task Lists on Collision</label>
+        </div>
+        <div style="margin:0 0 16px 30px; font-size:11px; color:var(--text-tertiary); line-height:1.4;">
+          If left unchecked, only the task list of the highest priority plan will be adopted when a collision occurs.
         </div>
 
         <div class="form-group">
@@ -606,7 +620,7 @@ export function renderAssetDetail(container, params) {
           const meterInterval = parseFloat(content.querySelector('#plan-meter-interval').value);
           const lastTriggeredMeter = parseFloat(content.querySelector('#plan-last-meter').value);
           const quoteId = content.querySelector('#plan-quote-id').value;
-          const priority = content.querySelector('#plan-priority').value;
+          const priority = parseInt(content.querySelector('#plan-priority').value || 5);
           const collisionMerging = content.querySelector('#plan-collision-merging').checked;
           const mergeTasks = content.querySelector('#plan-merge-tasks').checked;
           const taskTemplateId = content.querySelector('#plan-task-template-id').value || null;

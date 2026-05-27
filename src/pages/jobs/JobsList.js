@@ -4,6 +4,7 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { createToolbarFilters } from '../../components/ToolbarFilters.js';
 
 export function renderJobsList(container) {
   const jobs = store.getAll('jobs');
@@ -17,15 +18,8 @@ export function renderJobsList(container) {
         <button class="btn btn-primary" id="btn-new-job"><span class="material-icons-outlined">add</span> New Job</button>
       </div>` : ''}
     </div>
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter active" data-filter="all">All (${jobs.length})</button>
-        <button class="toolbar-filter" data-filter="Pending">Pending</button>
-        <button class="toolbar-filter" data-filter="Scheduled">Scheduled</button>
-        <button class="toolbar-filter" data-filter="In Progress">In Progress</button>
-        <button class="toolbar-filter" data-filter="Completed">Completed</button>
-        <button class="toolbar-filter" data-filter="unscheduled">Unscheduled</button>
-      </div>
+    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center;">
+      <div id="jobs-filters-carousel-container" style="flex: 0 0 50%; max-width: 50%; overflow:hidden"></div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search jobs..." id="jobs-search" />
@@ -138,21 +132,33 @@ export function renderJobsList(container) {
     btnNewJob.addEventListener('click', () => router.navigate('/jobs/new'));
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const f = btn.dataset.filter;
-      if (f === 'all') filteredData = [...jobs];
-      else if (f === 'unscheduled') filteredData = jobs.filter(j => !j.scheduledDate);
-      else filteredData = jobs.filter(j => j.status === f);
-      table.updateData(filteredData);
-    });
+  let tagFilteredData = [...jobs];
+  let searchQuery = '';
+
+  function applyFilters() {
+    const q = searchQuery.toLowerCase();
+    const filtered = tagFilteredData.filter(j => 
+      !q || 
+      j.number.toLowerCase().includes(q) || 
+      j.title.toLowerCase().includes(q) || 
+      j.customerName.toLowerCase().includes(q) || 
+      (j.technicianName || '').toLowerCase().includes(q)
+    );
+    table.updateData(filtered);
+  }
+
+  createToolbarFilters({
+    container: container.querySelector('#jobs-filters-carousel-container'),
+    originalData: jobs,
+    filterType: 'jobs',
+    onFilterChange: (filtered) => {
+      tagFilteredData = filtered;
+      applyFilters();
+    }
   });
 
   container.querySelector('#jobs-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = jobs.filter(j => j.number.toLowerCase().includes(q) || j.title.toLowerCase().includes(q) || j.customerName.toLowerCase().includes(q) || (j.technicianName||'').toLowerCase().includes(q));
-    table.updateData(filteredData);
+    searchQuery = e.target.value;
+    applyFilters();
   });
 }

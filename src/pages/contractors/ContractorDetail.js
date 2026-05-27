@@ -28,40 +28,34 @@ export function renderContractorDetail(container, params) {
 
   // Scan and compile task allocations where this contractor is assigned
   const allJobs = store.getAll('jobs');
-  const taskAllocations = [];
+  const jobAllocations = [];
 
-  function findTaskAllocations(tasks, job, path = []) {
-    if (!tasks) return;
-    tasks.forEach((task, idx) => {
-      const currentPath = [...path, idx];
-      const assignedIds = task.assignedContractorIds || [];
-      if (assignedIds.includes(params.id) || task.assignedContractorId === params.id) {
-        taskAllocations.push({
-          jobId: job.id,
-          jobNumber: job.number,
-          jobTitle: job.title,
-          jobStatus: job.status,
-          taskId: task.id,
-          taskName: task.name,
-          taskStatus: task.status || 'Not Started',
-          taskProgress: task.progress || 0,
-          taskEstimatedHours: task.estimatedHours || 0,
-          taskStartDate: task.startDate,
-          path: currentPath,
-          isList: task.subTasks && task.subTasks.length > 0
-        });
-      }
-      if (task.subTasks && task.subTasks.length > 0) {
-        findTaskAllocations(task.subTasks, job, currentPath);
-      }
-    });
+  function isContractorAssignedToTask(task, contractorId) {
+    const assigned = task.assignedContractorIds || [];
+    if (assigned.includes(contractorId) || task.assignedContractorId === contractorId) {
+      return true;
+    }
+    if (task.subTasks && task.subTasks.length > 0) {
+      return task.subTasks.some(sub => isContractorAssignedToTask(sub, contractorId));
+    }
+    return false;
   }
 
   allJobs.forEach(job => {
-    if (job.tasks) {
-      findTaskAllocations(job.tasks, job);
+    if (!job.tasks) return;
+    const parentTasks = job.tasks.filter(task => isContractorAssignedToTask(task, params.id));
+    if (parentTasks.length > 0) {
+      jobAllocations.push({
+        jobId: job.id,
+        jobNumber: job.number,
+        jobTitle: job.title,
+        jobStatus: job.status,
+        parentTasks
+      });
     }
   });
+
+  const totalParentTasks = jobAllocations.reduce((sum, j) => sum + j.parentTasks.length, 0);
 
   let activeTab = 'details';
 
@@ -97,7 +91,7 @@ export function renderContractorDetail(container, params) {
         <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Overview & Details</button>
         <button class="tab ${activeTab === 'compliance' ? 'active' : ''}" data-tab="compliance">Compliance Registry (${(contractor.complianceDocs || []).length})</button>
         <button class="tab ${activeTab === 'rates' ? 'active' : ''}" data-tab="rates">Financials & Rates</button>
-        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Task Allocations (${taskAllocations.length})</button>
+        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Task Allocations (${totalParentTasks})</button>
       </div>
 
       <div class="tab-content" id="tab-content" style="margin-top: var(--space-base);"></div>
@@ -469,62 +463,191 @@ export function renderContractorDetail(container, params) {
         calcCallout.addEventListener('change', updateCalculation);
       }
     } else if (activeTab === 'tasks') {
-      tabContent.innerHTML = `
-        <div class="card">
-          <div class="card-header">
-            <h4 style="margin:0">Task Allocations & Subcontractor Deliverables</h4>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Job #</th>
-                  <th>Job Title</th>
-                  <th>Task / Tasklist Name</th>
-                  <th>Type</th>
-                  <th>Start Date</th>
-                  <th>Est. Hours</th>
-                  <th>Status & Progress</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${taskAllocations.map(alloc => {
-                  const statusClasses = {
-                    'Completed': 'badge-success',
-                    'In Progress': 'badge-primary',
-                    'Not Started': 'badge-neutral'
-                  };
+      const statusClasses = {
+        'Completed': 'badge-success',
+        'In Progress': 'badge-primary',
+        'Not Started': 'badge-neutral'
+      };
 
-                  return `
-                    <tr style="cursor:pointer" onclick="window.location.hash='#/jobs/${alloc.jobId}'" title="Click to view Job Tasklist">
-                      <td class="font-medium cell-link">${escapeHTML(alloc.jobNumber)}</td>
-                      <td>${escapeHTML(alloc.jobTitle)}</td>
-                      <td class="font-semibold">${escapeHTML(alloc.taskName)}</td>
-                      <td>
-                        <span class="badge" style="${alloc.isList ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color); border:1px solid var(--border-color); color:var(--text-secondary)'}">
-                          ${alloc.isList ? 'Tasklist' : 'Task'}
-                        </span>
-                      </td>
-                      <td>${alloc.taskStartDate ? new Date(alloc.taskStartDate).toLocaleDateString('en-AU') : '—'}</td>
-                      <td>${alloc.taskEstimatedHours || '—'} hrs</td>
-                      <td>
-                        <div style="display:flex; align-items:center; gap:8px">
-                          <span class="badge ${statusClasses[alloc.taskStatus] || 'badge-neutral'}" style="margin:0">${escapeHTML(alloc.taskStatus)}</span>
-                          <div style="width:60px; background:var(--border-color); height:12px; border-radius:6px; overflow:hidden; position:relative; display:inline-block" title="${alloc.taskProgress}% completed">
-                            <div style="width:${alloc.taskProgress}%; background:var(--color-primary); height:100%"></div>
-                          </div>
-                          <span style="font-size:11px; font-weight:600; color:var(--text-secondary)">${alloc.taskProgress}%</span>
-                        </div>
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-                ${taskAllocations.length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:32px" class="text-secondary">No task-level allocations dispatched to this subcontractor.</td></tr>' : ''}
-              </tbody>
-            </table>
+      tabContent.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <div class="page-toolbar" style="position:static; margin-top:0; margin-left:0; margin-right:0">
+            <div class="toolbar-filters">
+              <button class="toolbar-filter active" data-status="all">All (${totalParentTasks})</button>
+              <button class="toolbar-filter" data-status="Not Started">Not Started</button>
+              <button class="toolbar-filter" data-status="In Progress">In Progress</button>
+              <button class="toolbar-filter" data-status="Completed">Completed</button>
+            </div>
+            <div class="toolbar-search">
+              <span class="material-icons-outlined">search</span>
+              <input type="text" placeholder="Search tasks..." id="tasks-search" style="font-size:13px" />
+            </div>
           </div>
+          <div id="tasks-allocations-list" style="display:flex; flex-direction:column; gap:20px"></div>
         </div>
       `;
+
+      const searchInput = tabContent.querySelector('#tasks-search');
+      const listContainer = tabContent.querySelector('#tasks-allocations-list');
+      let activeStatusFilter = 'all';
+
+      function updateTaskList() {
+        const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+        
+        let filteredAllocations = jobAllocations.map(jobAlloc => {
+          const filteredParents = jobAlloc.parentTasks.filter(task => {
+            // Apply status filter
+            if (activeStatusFilter !== 'all' && task.status !== activeStatusFilter) {
+              return false;
+            }
+            // Apply query search
+            const matchesParent = task.name.toLowerCase().includes(query);
+            const matchesJob = jobAlloc.jobTitle.toLowerCase().includes(query) || jobAlloc.jobNumber.toLowerCase().includes(query);
+            const matchesSubtasks = (task.subTasks || []).some(sub => sub.name.toLowerCase().includes(query));
+            return matchesParent || matchesJob || matchesSubtasks;
+          });
+
+          if (filteredParents.length > 0) {
+            return {
+              ...jobAlloc,
+              parentTasks: filteredParents
+            };
+          }
+          return null;
+        }).filter(Boolean);
+
+        if (filteredAllocations.length === 0) {
+          listContainer.innerHTML = `
+            <div class="card">
+              <div class="card-body" style="text-align:center; padding:32px">
+                <span class="material-icons-outlined text-secondary" style="font-size:36px; margin-bottom:8px">search_off</span>
+                <p class="text-secondary" style="margin:0">${query || activeStatusFilter !== 'all' ? 'No tasks matching your search/filter criteria' : 'No task-level allocations dispatched to this subcontractor.'}</p>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        listContainer.innerHTML = `
+          <div class="card">
+            <div class="card-body" style="padding:0">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 40px;"></th>
+                    <th style="width: 200px;">Job Details</th>
+                    <th>Task / Tasklist Name</th>
+                    <th>Type</th>
+                    <th>Start Date</th>
+                    <th>Est. Hours</th>
+                    <th>Status & Progress</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${filteredAllocations.map(jobAlloc => 
+                    jobAllocAllocationsHtml(jobAlloc.parentTasks, jobAlloc.jobId, jobAlloc.jobNumber, jobAlloc.jobTitle)
+                  ).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        listContainer.querySelectorAll('.parent-task-row').forEach(row => {
+          row.addEventListener('click', (e) => {
+            if (e.target.closest('a') || e.target.closest('button')) return;
+            
+            const taskId = row.dataset.taskId;
+            const jobId = row.dataset.jobId;
+            const subRow = listContainer.querySelector(`#subtasks-${jobId}-${taskId}`);
+            if (subRow) {
+              const isVisible = subRow.style.display !== 'none';
+              subRow.style.display = isVisible ? 'none' : 'table-row';
+              
+              const icon = row.querySelector('.toggle-subtasks-icon');
+              if (icon) {
+                icon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(90deg)';
+              }
+            } else {
+              router.navigate(`/jobs/${jobId}`);
+            }
+          });
+        });
+      }
+
+      function jobAllocAllocationsHtml(parentTasks, jobId, jobNumber, jobTitle) {
+        return parentTasks.map(task => {
+          const hasSubtasks = task.subTasks && task.subTasks.length > 0;
+          return `
+            <tr style="cursor:pointer" class="parent-task-row" data-task-id="${task.id}" data-job-id="${jobId}">
+              <td style="text-align:center">
+                ${hasSubtasks ? `<span class="material-icons-outlined toggle-subtasks-icon" style="font-size:18px; color:var(--text-tertiary); transition:transform 0.2s">chevron_right</span>` : ''}
+              </td>
+              <td>
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span class="text-primary font-semibold" style="cursor:pointer; text-decoration:underline" onclick="window.location.hash='#/jobs/${jobId}'">${escapeHTML(jobNumber)}</span>
+                  <span style="font-size:11px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px" title="${escapeHTML(jobTitle)}">${escapeHTML(jobTitle)}</span>
+                </div>
+              </td>
+              <td class="font-semibold">${escapeHTML(task.name)}</td>
+              <td>
+                <span class="badge" style="${hasSubtasks ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color); border:1px solid var(--border-color); color:var(--text-secondary)'}">
+                  ${hasSubtasks ? 'Tasklist' : 'Task'}
+                </span>
+              </td>
+              <td>${task.startDate ? new Date(task.startDate).toLocaleDateString('en-AU') : '—'}</td>
+              <td>${task.estimatedHours || '—'} hrs</td>
+              <td>
+                <div style="display:flex; align-items:center; gap:8px">
+                  <span class="badge ${statusClasses[task.status] || 'badge-neutral'}" style="margin:0">${escapeHTML(task.status)}</span>
+                  <div style="width:60px; background:var(--border-color); height:12px; border-radius:6px; overflow:hidden; position:relative; display:inline-block" title="${task.progress}% completed">
+                    <div style="width:${task.progress}%; background:var(--color-primary); height:100%"></div>
+                  </div>
+                  <span style="font-size:11px; font-weight:600; color:var(--text-secondary)">${task.progress}%</span>
+                </div>
+              </td>
+            </tr>
+            ${hasSubtasks ? `
+              <tr class="subtasks-row" id="subtasks-${jobId}-${task.id}" style="display:none; background:rgba(0,0,0,0.005)">
+                <td></td>
+                <td colspan="6" style="padding: 10px 20px;">
+                  <div style="border-left:2px solid var(--border-color); padding-left:16px; display:flex; flex-direction:column; gap:8px">
+                    <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">Subtasks Breakdown</div>
+                    ${task.subTasks.map(sub => `
+                      <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:6px 0; border-bottom:1px dashed var(--border-color)">
+                        <div style="display:flex; align-items:center; gap:6px">
+                          <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary)">subdirectory_arrow_right</span>
+                          <span style="font-weight:600">${escapeHTML(sub.name)}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:16px">
+                          <span style="color:var(--text-tertiary); font-size:12px">${sub.estimatedHours || '—'} hrs</span>
+                          <span class="badge ${statusClasses[sub.status] || 'badge-neutral'}" style="margin:0">${escapeHTML(sub.status || 'Not Started')}</span>
+                          <span style="font-weight:600; font-size:12px; color:var(--text-secondary)">${sub.progress || 0}%</span>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                </td>
+              </tr>
+            ` : ''}
+          `;
+        }).join('');
+      }
+
+      updateTaskList();
+
+      tabContent.querySelectorAll('.toolbar-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+          tabContent.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeStatusFilter = btn.dataset.status;
+          updateTaskList();
+        });
+      });
+
+      if (searchInput) {
+        searchInput.addEventListener('input', updateTaskList);
+      }
     }
   }
 
