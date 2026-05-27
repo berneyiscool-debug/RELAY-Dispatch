@@ -348,6 +348,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
             ${po.status === 'Draft' || isNew ? `
             <div style="display:flex; gap:8px">
                <button class="btn btn-secondary btn-sm" id="btn-browse-stock"><span class="material-icons-outlined" style="font-size:16px">inventory_2</span> Browse Stock</button>
+               <button class="btn btn-secondary btn-sm" id="btn-add-kit"><span class="material-icons-outlined" style="font-size:16px; vertical-align:middle">widgets</span> Add Kit</button>
                <button class="btn btn-secondary btn-sm" id="btn-add-stock-new"><span class="material-icons-outlined" style="font-size:16px">add</span> Add New Stock</button>
             </div>
             ` : `<span class="badge ${po.status === 'Issued' ? 'badge-primary' : 'badge-success'}">${po.status}</span>`}
@@ -403,6 +404,28 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
           poItems.push({ description: newItem.name, qty: 1, cost: newItem.costPrice || 0, stockId: newItem.id });
           renderDrawerUI();
         }
+      });
+    });
+
+    content.querySelector('#btn-add-kit')?.addEventListener('click', () => {
+      import('../components/KitPicker.js').then(({ showKitPicker }) => {
+        showKitPicker({
+          context: 'po',
+          onSelect: (kit) => {
+            (kit.items || []).forEach(ki => {
+              if (ki.type !== 'labor') {
+                poItems.push({
+                  description: ki.name,
+                  qty: ki.qty || 1,
+                  cost: ki.costPrice || 0,
+                  stockId: ki.stockId
+                });
+              }
+            });
+            renderDrawerUI();
+            showToast(`Added kit items from ${kit.name}`, 'success');
+          }
+        });
       });
     });
 

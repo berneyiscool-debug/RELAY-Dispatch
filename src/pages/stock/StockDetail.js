@@ -92,6 +92,33 @@ export function renderStockDetail(container, { id }) {
             </div>
           </div>
         </div>
+
+        ${(() => {
+          const kits = store.getAll('kits') || [];
+          const linkedKits = kits.filter(k => (k.items || []).some(ki => ki.stockId === id));
+          if (linkedKits.length === 0) return '';
+          return `
+            <div class="card">
+              <div class="card-header" style="display:flex; align-items:center; gap:8px">
+                <span class="material-icons-outlined" style="color:var(--color-primary)">widgets</span>
+                <h4 style="margin:0">Appears in Kits</h4>
+              </div>
+              <div class="card-body" style="padding-top:0">
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  ${linkedKits.map(k => `
+                    <div class="kit-link-row" data-kit-id="${k.id}" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border:1px solid var(--border-color); border-radius:6px; cursor:pointer; transition:all 0.15s ease">
+                      <div>
+                        <span style="font-weight:600; color:var(--color-primary)">${escapeHTML(k.name)}</span>
+                        <span class="badge badge-neutral" style="font-size:10px; margin-left:8px">${escapeHTML(k.category)}</span>
+                      </div>
+                      <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary)">chevron_right</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+          `;
+        })()}
       </div>
 
       <div class="card" style="grid-column: span 1; height: fit-content;">
@@ -119,6 +146,14 @@ export function renderStockDetail(container, { id }) {
         { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
         { label: 'Delete', className: 'btn-danger', onClick: (close) => { store.delete('stock', id); showToast('Item deleted', 'success'); close(); router.navigate('/stock'); }},
       ],
+    });
+  });
+
+  container.querySelectorAll('.kit-link-row').forEach(row => {
+    row.addEventListener('mouseenter', () => { row.style.borderColor = 'var(--color-primary)'; row.style.background = 'var(--color-primary-light, rgba(49,86,113,0.04))'; });
+    row.addEventListener('mouseleave', () => { row.style.borderColor = 'var(--border-color)'; row.style.background = ''; });
+    row.addEventListener('click', () => {
+      router.navigate(`/kits/${row.dataset.kitId}`);
     });
   });
 }

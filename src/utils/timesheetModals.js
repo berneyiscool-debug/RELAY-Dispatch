@@ -237,31 +237,6 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
         if (ev.target.classList.contains('tree-node-toggle')) return;
 
         const pathStr = row.dataset.path;
-        
-        // Verify if it is a parent task
-        const pathArr = pathStr.split('-').map(Number);
-        function checkHasSubTasks(tasks, pathArr) {
-          let curr = tasks[pathArr[0]];
-          for (let i = 1; i < pathArr.length; i++) {
-            if (!curr || !curr.subTasks) return false;
-            curr = curr.subTasks[pathArr[i]];
-          }
-          return curr && curr.subTasks && curr.subTasks.length > 0;
-        }
-        
-        const hasChildren = checkHasSubTasks(job.tasks || [], pathArr);
-        if (hasChildren) {
-          // Parent clicked! Toggle subtasks collapse/expand instead of selecting.
-          const childDiv = taskDropdown.querySelector('#children-' + pathStr);
-          const toggle = taskDropdown.querySelector('.tree-node-toggle[data-path="' + pathStr + '"]');
-          if (childDiv) {
-            const isHidden = childDiv.style.display === 'none';
-            childDiv.style.display = isHidden ? 'block' : 'none';
-            if (toggle) toggle.classList.toggle('expanded', isHidden);
-          }
-          return;
-        }
-
         const fullName = pathBreadcrumbs[pathStr] || row.dataset.name;
 
         taskHidden.value = pathStr;

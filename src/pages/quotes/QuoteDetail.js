@@ -282,6 +282,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
             <span class="badge badge-neutral" style="margin-right:12px">Phase Subtotal: $${(section.subtotal || 0).toFixed(2)}</span>
             ${!isArchived ? `
             <button class="btn btn-sm btn-primary btn-add-line" data-sidx="${sIdx}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Item</button>
+            <button class="btn btn-sm btn-secondary btn-add-kit" data-sidx="${sIdx}" style="margin-left: 4px"><span class="material-icons-outlined" style="font-size:14px; vertical-align: middle">widgets</span> Add Kit</button>
             <button class="btn btn-sm btn-ghost btn-remove-section" data-sidx="${sIdx}"><span class="material-icons-outlined" style="font-size:16px; color:var(--color-danger)">delete</span></button>
             ` : ''}
           </div>
@@ -612,6 +613,30 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         const sIdx = parseInt(btn.dataset.sidx);
         quote.sections[sIdx].lineItems.push({ description: '', type: 'labor', qty: 1, rate: 0, total: 0 });
         render();
+      });
+    });
+
+    container.querySelectorAll('.btn-add-kit').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const sIdx = parseInt(btn.dataset.sidx);
+        import('../../components/KitPicker.js').then(({ showKitPicker }) => {
+          showKitPicker({
+            context: 'quote',
+            onSelect: (kit) => {
+              (kit.items || []).forEach(ki => {
+                quote.sections[sIdx].lineItems.push({
+                  description: ki.name,
+                  type: ki.type,
+                  qty: ki.qty || 1,
+                  rate: ki.unitPrice || 0,
+                  internalCost: ki.costPrice || 0,
+                  total: (ki.qty || 1) * (ki.unitPrice || 0)
+                });
+              });
+              recalculate();
+            }
+          });
+        });
       });
     });
 

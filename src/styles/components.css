@@ -227,7 +227,7 @@
 }
 .form-group {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .form-error {
   font-size: var(--font-size-xs);
@@ -1106,10 +1106,22 @@ tr.selected-row td {
   transition: transform 0.2s ease;
 }
 .searchable-select-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
   max-height: 250px;
   overflow-y: auto;
   width: 100%;
   box-sizing: border-box;
+  z-index: var(--z-dropdown);
+}
+.searchable-select-container.searchable-select-open .searchable-select-dropdown {
+  display: block !important;
+}
+.searchable-select-container.searchable-select-open .searchable-select-arrow {
+  transform: translateY(-50%) rotate(180deg);
 }
 .searchable-select-option {
   padding: 8px 12px;
@@ -1118,8 +1130,9 @@ tr.selected-row td {
   cursor: pointer;
   transition: background var(--transition-fast);
 }
-.searchable-select-option:hover {
-  background: rgba(49, 86, 113, 0.06);
+.searchable-select-option:hover,
+.searchable-select-option.active-highlight {
+  background: rgba(49, 86, 113, 0.08);
 }
 .searchable-select-option.selected {
   background: var(--color-primary-light);
@@ -1141,8 +1154,9 @@ tr.selected-row td {
   pointer-events: none !important;
   z-index: -1 !important;
 }
-[data-theme="dark"] .searchable-select-option:hover {
-  background: rgba(139, 92, 246, 0.08);
+[data-theme="dark"] .searchable-select-option:hover,
+[data-theme="dark"] .searchable-select-option.active-highlight {
+  background: rgba(139, 92, 246, 0.12);
 }
 
 /* ---- Filters Carousel styles ---- */

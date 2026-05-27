@@ -42,6 +42,7 @@ import { renderPurchaseOrderDetail } from './pages/purchaseOrders/PurchaseOrderD
 import { renderReports } from './pages/reports/Reports.js';
 import { renderSettings } from './pages/Settings.js';
 import { renderFormBuilder } from './pages/forms/FormBuilder.js';
+import { renderKitDetail } from './pages/kits/KitDetail.js';
 
 import { renderLogin } from './pages/login/Login.js';
 import { renderCustomerPortal } from './pages/portal/Portal.js';
@@ -179,6 +180,11 @@ router.register('/invoices/:id', renderPage(renderInvoiceDetail));
 router.register('/purchase-orders', renderPage(renderPurchaseOrdersList));
 router.register('/purchase-orders/:id', renderPage(renderPurchaseOrderDetail));
 
+// Kits
+router.register('/kits', renderPage((c, p) => renderStockList(c, { tab: 'kits' })));
+router.register('/kits/new', renderPage((c, p) => renderKitDetail(c, { id: 'new' })));
+router.register('/kits/:id', renderPage(renderKitDetail));
+
 // Documents
 router.register('/documents', renderPage(renderDocumentBrowser));
 router.register('/document/view', renderPage(renderDocumentViewer));
@@ -194,7 +200,7 @@ router.register('/settings/quote-templates/new', renderPage((c, p) => renderQuot
 router.register('/settings/quote-templates/:id/edit', renderPage((c, p) => renderQuoteDetail(c, { id: p.id, type: 'template' })));
 
 // ---- Auth Guard Hook ----
-const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms'];
+const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits'];
 const customerRoutes = ['/portal'];
 
 router.onNavigate = (path, params) => {

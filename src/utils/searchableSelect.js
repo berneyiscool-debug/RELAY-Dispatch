@@ -57,7 +57,6 @@ export function enhanceSelect(select) {
   select.classList.add('searchable-select-original');
 
   let activeIndex = -1;
-  let isOpen = false;
 
   // Refresh current display text
   function refreshDisplay() {
@@ -69,6 +68,7 @@ export function enhanceSelect(select) {
   // Populate options inside dynamic dropdown
   function rebuildDropdown(filterQuery = '') {
     dropdown.innerHTML = '';
+    activeIndex = -1; // Reset active keyboard highlight index
     
     // If the filterQuery matches the currently selected option text, treat it as empty
     // so we show the full list when they focus/click it without typing anything new!
@@ -95,12 +95,10 @@ export function enhanceSelect(select) {
       item.textContent = text;
       item.dataset.index = idx;
 
-      item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        select.selectedIndex = idx;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        closeDropdown();
-        refreshDisplay();
+      // Use mousedown to select instantly before input blur hides dropdown
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // Keep input focused
+        selectOption(idx);
       });
 
       dropdown.appendChild(item);
@@ -115,35 +113,52 @@ export function enhanceSelect(select) {
     }
   }
 
-  function openDropdown() {
-    if (isOpen || select.disabled) return;
-    // Close other dropdowns first
-    document.querySelectorAll('.searchable-select-dropdown').forEach(d => d.style.display = 'none');
-    
-    isOpen = true;
-    dropdown.style.display = 'block';
-    rebuildDropdown('');
+  function selectOption(idx) {
+    select.selectedIndex = idx;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    closeDropdown();
+    refreshDisplay();
+  }
 
+  function openDropdown() {
+    if (container.classList.contains('searchable-select-open') || select.disabled) return;
+    
+    // Close other dropdowns first
+    document.querySelectorAll('.searchable-select-container.searchable-select-open').forEach(c => {
+      c.classList.remove('searchable-select-open');
+    });
+
+    container.classList.add('searchable-select-open');
+    rebuildDropdown('');
+    
     // If text field matches the selected option, select it all so typing overwrites it easily
     input.select();
   }
 
   function closeDropdown() {
-    if (!isOpen) return;
-    isOpen = false;
-    // Slight delay so option clicks go through before closing
-    setTimeout(() => {
-      dropdown.style.display = 'none';
-      refreshDisplay();
-    }, 150);
+    if (!container.classList.contains('searchable-select-open')) return;
+    container.classList.remove('searchable-select-open');
+    refreshDisplay();
+  }
+
+  function updateActiveItem(items) {
+    items.forEach((item, idx) => {
+      if (idx === activeIndex) {
+        item.classList.add('active-highlight');
+        item.scrollIntoView({ block: 'nearest' });
+      } else {
+        item.classList.remove('active-highlight');
+      }
+    });
   }
 
   // Event bindings
   input.addEventListener('focus', openDropdown);
   input.addEventListener('click', openDropdown);
+
   arrow.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (isOpen) {
+    // Let event bubble up to document so other dropdowns are closed via clickOutsideHandler
+    if (container.classList.contains('searchable-select-open')) {
       closeDropdown();
     } else {
       openDropdown();
@@ -152,8 +167,43 @@ export function enhanceSelect(select) {
   });
 
   input.addEventListener('input', () => {
-    if (!isOpen) openDropdown();
+    if (!container.classList.contains('searchable-select-open')) {
+      openDropdown();
+    }
     rebuildDropdown(input.value);
+  });
+
+  // Keyboard navigation
+  input.addEventListener('keydown', (e) => {
+    if (!container.classList.contains('searchable-select-open')) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+        e.preventDefault();
+        openDropdown();
+      }
+      return;
+    }
+
+    const items = Array.from(dropdown.querySelectorAll('.searchable-select-option'));
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = (activeIndex + 1) % items.length;
+      updateActiveItem(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = (activeIndex - 1 + items.length) % items.length;
+      updateActiveItem(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const targetIndex = activeIndex >= 0 && activeIndex < items.length ? activeIndex : 0;
+      const realIndex = parseInt(items[targetIndex].dataset.index, 10);
+      selectOption(realIndex);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeDropdown();
+      input.blur();
+    }
   });
 
   // Close dropdown on clicking outside
@@ -169,7 +219,9 @@ export function enhanceSelect(select) {
     mutations.forEach((m) => {
       if (m.type === 'childList') {
         refreshDisplay();
-        if (isOpen) rebuildDropdown(input.value);
+        if (container.classList.contains('searchable-select-open')) {
+          rebuildDropdown(input.value);
+        }
       } else if (m.type === 'attributes' && m.attributeName === 'disabled') {
         input.disabled = select.disabled;
       }
