@@ -736,7 +736,7 @@ export function renderJobDetail(container, { id }) {
             return `
                         <div class="task-list-item ${p.progress === 100 ? 'completed' : ''}" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:transparent; color:var(--text-primary)'}">
                           <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0; overflow:hidden">
-                            <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
+                            <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:calc(100% - 28px);" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
                             ${canEditTasks && currentPath.length < 3 ? `
                               <button class="btn btn-ghost btn-icon btn-sm btn-add-child-task hover-only" data-path="${currentPath.join('-')}" style="padding:0; min-width:20px; min-height:20px; height:20px; width:20px; color:var(--text-secondary); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0" title="Add Sub-task">
                                 <span class="material-icons-outlined" style="font-size:16px">add</span>
