@@ -757,7 +757,13 @@ export function renderJobDetail(container, { id }) {
                               if (hasOutOfRange) return `<span title="Values: ${filled}/${total} — OUT OF RANGE" style="display:inline-flex;align-items:center;font-size:16px;color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:16px">error</span></span>`;
                               return `<span title="Values: ${filled}/${total} recorded" style="display:inline-flex;align-items:center;font-size:16px;color:${allDone ? 'var(--color-success)' : 'var(--color-warning)'}"><span class="material-icons-outlined" style="font-size:16px">${allDone ? 'fact_check' : 'assignment'}</span></span>`;
                             })()}
-                            ${p.subTasks && p.subTasks.length > 0 ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />`}
+                            ${p.subTasks && p.subTasks.length > 0 
+                              ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` 
+                              : `
+                                ${canEditTasks && currentPath.length < 3 ? `<button class="btn btn-ghost btn-icon btn-sm btn-add-child-task" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit" title="Add Sub-task"><span class="material-icons-outlined" style="font-size:18px">add</span></button>` : ''}
+                                <input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />
+                              `
+                            }
                           </div>
                         </div>
                       `;
@@ -780,7 +786,6 @@ export function renderJobDetail(container, { id }) {
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
                     <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Info Panel: ${escapeHTML(node.name)}</h4>
                     <div style="display:flex;gap:8px">
-                      ${canEditTasks && path.length < 3 ? `<button class="btn btn-sm btn-secondary btn-add-child-task" data-path="${path.join('-')}" title="Add Sub-task"><span class="material-icons-outlined" style="font-size:16px">add_task</span> Add Sub-task</button>` : ''}
                       <button class="btn btn-sm btn-secondary btn-book-time" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time</button>
                       ${canEditTasks ? `<button class="btn btn-sm btn-primary btn-edit-info" title="Edit"><span class="material-icons-outlined" style="font-size:16px">edit</span> Edit</button>` : ''}
                       ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>` : ''}

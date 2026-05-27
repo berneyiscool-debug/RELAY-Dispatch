@@ -1,4 +1,4 @@
-import{s as u,a as b,e as i}from"./index-C-6VIxr3.js";function $({onSelect:y,context:x="quote"}){const n=u.getAll("kits").filter(t=>t.active!==!1),f=["All",...new Set(n.map(t=>t.category).filter(Boolean))],o=document.createElement("div");let r="All",s="";function d(){var v;let t=n;if(r!=="All"&&(t=t.filter(e=>e.category===r)),s){const e=s.toLowerCase();t=t.filter(a=>a.name.toLowerCase().includes(e)||(a.description||"").toLowerCase().includes(e))}o.innerHTML=`
+import{s as u,a as b,e as i}from"./index-CZgF4efV.js";function $({onSelect:y,context:x="quote"}){const n=u.getAll("kits").filter(t=>t.active!==!1),f=["All",...new Set(n.map(t=>t.category).filter(Boolean))],o=document.createElement("div");let r="All",s="";function d(){var v;let t=n;if(r!=="All"&&(t=t.filter(e=>e.category===r)),s){const e=s.toLowerCase();t=t.filter(a=>a.name.toLowerCase().includes(e)||(a.description||"").toLowerCase().includes(e))}o.innerHTML=`
       <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center">
         <div class="toolbar-search" style="flex:1; min-width:200px">
           <span class="material-icons-outlined">search</span>
