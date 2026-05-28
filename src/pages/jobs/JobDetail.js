@@ -32,6 +32,7 @@ export function renderJobDetail(container, { id }) {
   let isRecordingValues = false;
   let cachedStockOptionsHtml = null;
   let stagedFiles = [];
+  let activeActivitySubTab = 'staff';
 
   function createDraftInvoice(type, sections, subtotal) {
     let originalQuoteNumber = '';
@@ -2248,6 +2249,8 @@ export function renderJobDetail(container, { id }) {
       });
     } else if (activeTab === 'activity') {
       if (!job.activityLog) job.activityLog = [];
+      if (!job.customerActivityLog) job.customerActivityLog = [];
+      
       // Migrate old logs
       job.activityLog = job.activityLog.map(l => {
         if (l.type === 'note' || l.type === 'attachment') {
@@ -2262,105 +2265,164 @@ export function renderJobDetail(container, { id }) {
         return l;
       });
 
+      let feedHtml = '';
+      if (activeActivitySubTab === 'staff') {
+        feedHtml = `
+          <div style="display:flex;gap:8px;margin-bottom:var(--space-base)">
+            <input type="text" class="form-input" id="new-note-input" placeholder="Type an internal note..." style="flex:1" />
+            <label class="btn btn-secondary" for="upload-attachment" style="cursor:pointer">
+              <span class="material-icons-outlined" style="font-size:16px">attach_file</span> Attach
+              <input type="file" id="upload-attachment" style="display:none" multiple accept="image/*,.pdf,.doc,.docx" />
+            </label>
+            <button class="btn btn-primary" id="btn-add-note">Post Note</button>
+          </div>
+          
+          <div id="staged-files-container" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: ${stagedFiles.length ? '16px' : '0'}">
+            ${stagedFiles.map((f, i) => `
+              <div style="display:flex;align-items:center;background:var(--content-bg);padding:4px 8px;border-radius:4px;font-size:12px;border:1px solid var(--border-color)">
+                 <span class="truncate" style="max-width:100px">${escapeHTML(f.name)}</span>
+                 <span class="material-icons-outlined text-danger btn-remove-staged" data-idx="${i}" style="font-size:14px;cursor:pointer;margin-left:8px">close</span>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="activity-feed" style="display:flex;flex-direction:column;gap:16px;margin-top:24px">
+            ${job.activityLog.length ? job.activityLog.map((log, i) => `
+              <div style="display:flex;gap:12px">
+                <div style="width:36px;height:36px;border-radius:50%;background:var(--content-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-secondary)">
+                  <span class="material-icons-outlined" style="font-size:18px">${(log.files && log.files.length) ? 'attachment' : 'chat_bubble_outline'}</span>
+                </div>
+                <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative;" class="activity-log-item" data-expanded="false">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center;">
+                    <div style="display:flex;gap:6px;align-items:center;">
+                      <span style="font-size:var(--font-size-sm);font-weight:600;color:var(--text-primary)">${escapeHTML(log.author || 'System')}</span>
+                      <span class="text-tertiary" style="font-size:10px">•</span>
+                      <span class="text-secondary" style="font-size:var(--font-size-xs)">${new Date(log.date).toLocaleString()}</span>
+                    </div>
+                    <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px;z-index:2"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+                  </div>
+                  <div class="activity-content-wrapper" style="max-height: 200px; overflow: hidden; position: relative; transition: max-height 0.3s ease;">
+                    ${log.content ? `<div style="font-size:var(--font-size-sm);white-space:pre-wrap;margin-bottom:8px">${escapeHTML(log.content)}</div>` : ''}
+                    ${log.files && log.files.length ? `
+                      <div style="display:flex; flex-wrap:wrap; gap:8px">
+                        ${log.files.map(f => `
+                          <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
+                             ${f.type && f.type.startsWith('image/') ?
+        `<div style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px"></div>` :
+        `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
+      }
+                             <div style="overflow:hidden">
+                               <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${escapeHTML(f.name)}">${escapeHTML(f.name)}</div>
+                               <div class="text-secondary" style="font-size:10px">${(f.size / 1024).toFixed(1)} KB</div>
+                             </div>
+                           </div>
+                        `).join('')}
+                      </div>
+                    ` : ''}
+                  </div>
+                  <div class="expand-overlay" style="display:none; position:absolute;bottom:0;left:0;right:0;height:40px;background:linear-gradient(transparent, var(--content-bg));align-items:flex-end;justify-content:center;padding-bottom:4px;cursor:pointer;border-bottom-left-radius:var(--border-radius);border-bottom-right-radius:var(--border-radius)">
+                     <span class="text-primary font-medium" style="font-size:12px">Expand to view</span>
+                  </div>
+                </div>
+              </div>
+            `).join('') : '<div class="text-secondary text-center" style="padding:24px">No internal staff notes yet.</div>'}
+          </div>
+        `;
+      } else {
+        feedHtml = `
+          <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:12px 16px; border-radius:8px; font-size:12.5px; color:#1e40af; margin-bottom:16px; display:flex; align-items:center; gap:8px">
+            <span class="material-icons-outlined" style="font-size:20px">info</span>
+            <span><strong>Customer Portal Communications:</strong> Any messages posted in this tab are instantly visible to the customer when they view their secure Portal link.</span>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-bottom:var(--space-base)">
+            <input type="text" class="form-input" id="new-customer-message-input" placeholder="Type a message to the customer..." style="flex:1" />
+            <button class="btn btn-success" id="btn-add-customer-message" style="display:flex; align-items:center; gap:6px">
+              <span class="material-icons-outlined" style="font-size:16px">send</span> Send to Customer
+            </button>
+          </div>
+
+          <div class="activity-feed" style="display:flex;flex-direction:column;gap:16px;margin-top:24px">
+            ${job.customerActivityLog.length ? job.customerActivityLog.map((log, i) => `
+              <div style="display:flex;gap:12px">
+                <div style="width:36px;height:36px;border-radius:50%;background:${log.isCustomer ? '#e0f2fe' : '#ecfdf5'};display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${log.isCustomer ? '#0284c7' : '#059669'}">
+                  <span class="material-icons-outlined" style="font-size:18px">${log.isCustomer ? 'person' : 'support_agent'}</span>
+                </div>
+                <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative;" class="activity-log-item" data-expanded="false">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center;">
+                    <div style="display:flex;gap:6px;align-items:center;">
+                      <span style="font-size:var(--font-size-sm);font-weight:600;color:${log.isCustomer ? 'var(--color-primary)' : 'var(--color-success)'}">${escapeHTML(log.author || (log.isCustomer ? 'Customer' : 'Staff'))}</span>
+                      <span class="badge ${log.isCustomer ? 'badge-primary' : 'badge-success'}" style="font-size:9px;padding:1px 5px;border-radius:6px">${log.isCustomer ? 'Customer' : 'Office Staff'}</span>
+                      <span class="text-tertiary" style="font-size:10px">•</span>
+                      <span class="text-secondary" style="font-size:var(--font-size-xs)">${new Date(log.date).toLocaleString()}</span>
+                    </div>
+                    <button class="btn btn-icon btn-sm btn-ghost btn-delete-customer-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px;z-index:2"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+                  </div>
+                  <div style="font-size:var(--font-size-sm);white-space:pre-wrap;color:var(--text-primary);line-height:1.4">${escapeHTML(log.content)}</div>
+                </div>
+              </div>
+            `).join('') : '<div class="text-secondary text-center" style="padding:24px">No customer portal messages yet. Send a message to get started!</div>'}
+          </div>
+        `;
+      }
+
       tc.innerHTML = `
         <div class="card" style="max-width:800px;margin-bottom:var(--space-lg)">
+          <div class="card-header" style="border-bottom:1px solid var(--border-color);padding:0">
+            <div style="display:flex;gap:4px;padding:8px 16px 0 16px">
+              <button class="tab-btn ${activeActivitySubTab === 'staff' ? 'active' : ''}" id="activity-subtab-staff" style="padding:10px 16px;border:none;background:none;border-bottom:2px solid ${activeActivitySubTab === 'staff' ? 'var(--color-primary)' : 'transparent'};color:${activeActivitySubTab === 'staff' ? 'var(--color-primary)' : 'var(--text-secondary)'};font-weight:${activeActivitySubTab === 'staff' ? '600' : '500'};cursor:pointer;font-size:13.5px">
+                Staff Activity & History
+              </button>
+              <button class="tab-btn ${activeActivitySubTab === 'customer' ? 'active' : ''}" id="activity-subtab-customer" style="padding:10px 16px;border:none;background:none;border-bottom:2px solid ${activeActivitySubTab === 'customer' ? 'var(--color-primary)' : 'transparent'};color:${activeActivitySubTab === 'customer' ? 'var(--color-primary)' : 'var(--text-secondary)'};font-weight:${activeActivitySubTab === 'customer' ? '600' : '500'};cursor:pointer;font-size:13.5px;display:flex;align-items:center;gap:6px">
+                <span class="material-icons-outlined" style="font-size:16px">chat</span> Customer Communications
+                ${job.customerActivityLog?.length ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px">${job.customerActivityLog.length}</span>` : ''}
+              </button>
+            </div>
+          </div>
           <div class="card-body">
-            <div style="display:flex;gap:8px;margin-bottom:var(--space-base)">
-              <input type="text" class="form-input" id="new-note-input" placeholder="Type a new note..." style="flex:1" />
-              <label class="btn btn-secondary" for="upload-attachment" style="cursor:pointer">
-                <span class="material-icons-outlined" style="font-size:16px">attach_file</span> Attach
-                <input type="file" id="upload-attachment" style="display:none" multiple accept="image/*,.pdf,.doc,.docx" />
-              </label>
-              <button class="btn btn-primary" id="btn-add-note">Post</button>
-            </div>
-            
-            <div id="staged-files-container" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: ${stagedFiles.length ? '16px' : '0'}">
-              ${stagedFiles.map((f, i) => `
-                <div style="display:flex;align-items:center;background:var(--content-bg);padding:4px 8px;border-radius:4px;font-size:12px;border:1px solid var(--border-color)">
-                   <span class="truncate" style="max-width:100px">${escapeHTML(f.name)}</span>
-                   <span class="material-icons-outlined text-danger btn-remove-staged" data-idx="${i}" style="font-size:14px;cursor:pointer;margin-left:8px">close</span>
-                </div>
-              `).join('')}
-            </div>
-            
-            <div class="activity-feed" style="display:flex;flex-direction:column;gap:16px;margin-top:24px">
-              ${job.activityLog.length ? job.activityLog.map((log, i) => `
-                <div style="display:flex;gap:12px">
-                  <div style="width:36px;height:36px;border-radius:50%;background:var(--content-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-secondary)">
-                    <span class="material-icons-outlined" style="font-size:18px">${(log.files && log.files.length) ? 'attachment' : 'chat_bubble_outline'}</span>
-                  </div>
-                  <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative;" class="activity-log-item" data-expanded="false">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center;">
-                      <div style="display:flex;gap:6px;align-items:center;">
-                        <span style="font-size:var(--font-size-sm);font-weight:600;color:var(--text-primary)">${escapeHTML(log.author || 'System')}</span>
-                        <span class="text-tertiary" style="font-size:10px">•</span>
-                        <span class="text-secondary" style="font-size:var(--font-size-xs)">${new Date(log.date).toLocaleString()}</span>
-                      </div>
-                      <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px;z-index:2"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
-                    </div>
-                    <div class="activity-content-wrapper" style="max-height: 200px; overflow: hidden; position: relative; transition: max-height 0.3s ease;">
-                      ${log.content ? `<div style="font-size:var(--font-size-sm);white-space:pre-wrap;margin-bottom:8px">${escapeHTML(log.content)}</div>` : ''}
-                      ${log.files && log.files.length ? `
-                        <div style="display:flex; flex-wrap:wrap; gap:8px">
-                          ${log.files.map(f => `
-                            <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
-                               ${f.type && f.type.startsWith('image/') ?
-          `<div style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px"></div>` :
-          `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
-        }
-                               <div style="overflow:hidden">
-                                 <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${escapeHTML(f.name)}">${escapeHTML(f.name)}</div>
-                                 <div class="text-secondary" style="font-size:10px">${(f.size / 1024).toFixed(1)} KB</div>
-                               </div>
-                             </div>
-                          `).join('')}
-                        </div>
-                      ` : ''}
-                    </div>
-                    <div class="expand-overlay" style="display:none; position:absolute;bottom:0;left:0;right:0;height:40px;background:linear-gradient(transparent, var(--content-bg));align-items:flex-end;justify-content:center;padding-bottom:4px;cursor:pointer;border-bottom-left-radius:var(--border-radius);border-bottom-right-radius:var(--border-radius)">
-                       <span class="text-primary font-medium" style="font-size:12px">Expand to view</span>
-                    </div>
-                  </div>
-                </div>
-              `).join('') : '<div class="text-secondary text-center" style="padding:24px">No activity yet.</div>'}
-            </div>
+            ${feedHtml}
           </div>
         </div>
       `;
 
-      // Show/Hide expand buttons based on content height
-      setTimeout(() => {
-        tc.querySelectorAll('.activity-log-item').forEach(item => {
-          const wrapper = item.querySelector('.activity-content-wrapper');
-          const overlay = item.querySelector('.expand-overlay');
-          if (wrapper && wrapper.scrollHeight > 200) {
-            overlay.style.display = 'flex';
-            item.style.paddingBottom = '32px'; // make room for the overlay
-            overlay.addEventListener('click', () => {
-              if (item.dataset.expanded === 'false') {
-                wrapper.style.maxHeight = wrapper.scrollHeight + 'px';
-                overlay.style.background = 'transparent';
-                overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Collapse</span>';
-                item.dataset.expanded = 'true';
-              } else {
-                wrapper.style.maxHeight = '200px';
-                overlay.style.background = 'linear-gradient(transparent, var(--content-bg))';
-                overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Expand to view</span>';
-                item.dataset.expanded = 'false';
-              }
-            });
-          }
-        });
-      }, 0);
+      // Show/Hide expand buttons based on staff log content height
+      if (activeActivitySubTab === 'staff') {
+        setTimeout(() => {
+          tc.querySelectorAll('.activity-log-item').forEach(item => {
+            const wrapper = item.querySelector('.activity-content-wrapper');
+            const overlay = item.querySelector('.expand-overlay');
+            if (wrapper && wrapper.scrollHeight > 200) {
+              overlay.style.display = 'flex';
+              item.style.paddingBottom = '32px'; // make room for the overlay
+              overlay.addEventListener('click', () => {
+                if (item.dataset.expanded === 'false') {
+                  wrapper.style.maxHeight = wrapper.scrollHeight + 'px';
+                  overlay.style.background = 'transparent';
+                  overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Collapse</span>';
+                  item.dataset.expanded = 'true';
+                } else {
+                  wrapper.style.maxHeight = '200px';
+                  overlay.style.background = 'linear-gradient(transparent, var(--content-bg))';
+                  overlay.innerHTML = '<span class="text-primary font-medium" style="font-size:12px">Expand to view</span>';
+                  item.dataset.expanded = 'false';
+                }
+              });
+            }
+          });
+        }, 0);
+      }
 
-      tc.querySelectorAll('.btn-remove-staged').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const idx = parseInt(e.currentTarget.dataset.idx);
-          stagedFiles.splice(idx, 1);
-          renderTabContent();
-        });
+      // Bind Subtab events
+      tc.querySelector('#activity-subtab-staff')?.addEventListener('click', () => {
+        activeActivitySubTab = 'staff';
+        renderTabContent();
+      });
+      tc.querySelector('#activity-subtab-customer')?.addEventListener('click', () => {
+        activeActivitySubTab = 'customer';
+        renderTabContent();
       });
 
+      // Staff Tab Posting
       tc.querySelector('#btn-add-note')?.addEventListener('click', () => {
         const val = tc.querySelector('#new-note-input').value.trim();
         if (!val && !stagedFiles.length) return;
@@ -2378,6 +2440,33 @@ export function renderJobDetail(container, { id }) {
         store.update('jobs', id, { activityLog: job.activityLog });
         stagedFiles = []; // clear staging
         renderTabContent();
+      });
+
+      // Customer Tab Posting
+      tc.querySelector('#btn-add-customer-message')?.addEventListener('click', () => {
+        const val = tc.querySelector('#new-customer-message-input').value.trim();
+        if (!val) return;
+
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        job.customerActivityLog.unshift({
+          id: Math.random().toString(36).substr(2, 9),
+          content: val,
+          isCustomer: false,
+          author: currentUser.name || 'Office Staff',
+          date: new Date().toISOString()
+        });
+
+        store.update('jobs', id, { customerActivityLog: job.customerActivityLog });
+        renderTabContent();
+      });
+
+      // Staff Note removal
+      tc.querySelectorAll('.btn-remove-staged').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = parseInt(e.currentTarget.dataset.idx);
+          stagedFiles.splice(idx, 1);
+          renderTabContent();
+        });
       });
 
       tc.querySelector('#upload-attachment')?.addEventListener('change', (e) => {
@@ -2406,6 +2495,15 @@ export function renderJobDetail(container, { id }) {
         btn.addEventListener('click', () => {
           job.activityLog = job.activityLog.filter(l => l.id !== btn.dataset.id);
           store.update('jobs', id, { activityLog: job.activityLog });
+          renderTabContent();
+        });
+      });
+
+      // Customer communication delete button
+      tc.querySelectorAll('.btn-delete-customer-activity').forEach(btn => {
+        btn.addEventListener('click', () => {
+          job.customerActivityLog = job.customerActivityLog.filter(l => l.id !== btn.dataset.id);
+          store.update('jobs', id, { customerActivityLog: job.customerActivityLog });
           renderTabContent();
         });
       });

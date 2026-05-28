@@ -158,6 +158,7 @@ export function renderSettings(container) {
         <button class="tab ${activeTab === 'templates_forms' ? 'active' : ''}" data-tab="templates_forms">Templates &amp; Forms</button>
         <button class="tab ${activeTab === 'tax' ? 'active' : ''}" data-tab="tax">Tax &amp; Rates</button>
         <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets</button>
+        <button class="tab ${activeTab === 'portal' ? 'active' : ''}" data-tab="portal">Customer Portal</button>
         <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
       </div>
       <div id="settings-content" style="padding-top:var(--space-lg)"></div>
@@ -940,6 +941,54 @@ export function renderSettings(container) {
           store.update('assets', id, { recoveryRate: rate });
         });
         showToast('Asset recovery rates updated across the system', 'success');
+      });
+
+    } else if (activeTab === 'portal') {
+      const s = store.getSettings();
+      const portalEnabled = s.enableCustomerPortal !== false;
+      const portalWelcome = s.customerPortalWelcome || 'Welcome to your secure customer dashboard. Here you can track your service dispatches, check maintenance, approve quotes, and manage your invoices.';
+      const portalPayment = s.customerPortalPayment || 'Please pay via Bank Transfer to BSB: 123-456 Account: 7890 1234. Please quote your Invoice Number as reference.';
+
+      tc.innerHTML = `
+        <div class="card" style="max-width:800px">
+          <div class="card-header"><h4>Customer Portal Settings</h4></div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:20px;">
+            <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
+              <input type="checkbox" id="portal-enable" class="form-checkbox" style="width:20px; height:20px; cursor:pointer;" ${portalEnabled ? 'checked' : ''} />
+              <div style="cursor:pointer;" onclick="document.getElementById('portal-enable').click()">
+                <strong style="display:block; font-size:14px; color:var(--text-primary);">Enable Customer Portal Link Access</strong>
+                <span style="font-size:12px; color:var(--text-secondary);">When disabled, any attempt to visit a customer portal link will show an access restricted notice.</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Custom Portal Welcome Message</label>
+              <textarea class="form-textarea" id="portal-welcome" rows="3" placeholder="Enter a custom message displayed to customers on their dashboard...">${escapeHTML(portalWelcome)}</textarea>
+              <p class="text-tertiary" style="font-size:11px; margin-top:4px;">This message will appear prominently at the top of the customer's portal dashboard.</p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Invoice Payment Instructions</label>
+              <textarea class="form-textarea" id="portal-payment" rows="3" placeholder="BSB, Account Number, and payment instructions...">${escapeHTML(portalPayment)}</textarea>
+              <p class="text-tertiary" style="font-size:11px; margin-top:4px;">These bank details and instructions will be shown to customers when reviewing outstanding invoices in their portal.</p>
+            </div>
+          </div>
+          <div class="card-footer" style="display:flex; justify-content:flex-end">
+            <button class="btn btn-primary" id="btn-save-portal-settings">
+              <span class="material-icons-outlined">save</span> Save Portal Settings
+            </button>
+          </div>
+        </div>
+      `;
+
+      tc.querySelector('#btn-save-portal-settings').addEventListener('click', () => {
+        const settings = store.getSettings();
+        settings.enableCustomerPortal = tc.querySelector('#portal-enable').checked;
+        settings.customerPortalWelcome = tc.querySelector('#portal-welcome').value.trim();
+        settings.customerPortalPayment = tc.querySelector('#portal-payment').value.trim();
+
+        store.saveSettings(settings);
+        showToast('Customer portal settings saved successfully', 'success');
       });
 
     } else if (activeTab === 'system') {

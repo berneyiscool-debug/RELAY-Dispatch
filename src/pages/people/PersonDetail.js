@@ -19,6 +19,13 @@ export function renderPersonDetail(container, { id }) {
     return;
   }
 
+  // Self-healing customer portalToken generator
+  if (!person.portalToken) {
+    const generatedToken = 'c_pt_' + Math.random().toString(36).substr(2, 9);
+    store.update('customers', person.id, { portalToken: generatedToken });
+    person.portalToken = generatedToken;
+  }
+
   updateBreadcrumbDetail(person.company);
 
   const jobs = store.getAll('jobs').filter(j => j.customerId === id);
@@ -135,7 +142,75 @@ export function renderPersonDetail(container, { id }) {
             </div>
           </div>
         </div>
+
+        <div class="card" style="margin-top:20px;">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0; display:flex; align-items:center; gap:8px;">
+              <span class="material-icons-outlined text-primary" style="vertical-align:middle;">vpn_key</span>
+              Customer Portal Access
+            </h4>
+            <span style="font-size:12px; color:var(--text-secondary);">
+              Last Accessed: ${person.portalLastAccessed ? new Date(person.portalLastAccessed).toLocaleString('en-AU') : 'Never'}
+            </span>
+          </div>
+          <div class="card-body">
+            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px; line-height:1.5;">
+              Provide this secure token-based magic link to the customer. They can use it to view their open jobs, approve quotes, review invoices, check asset maintenance schedules, and submit callout requests directly from their own portal dashboard — no username or password required.
+            </p>
+            <div style="display:flex; gap:12px; align-items:center;">
+              <input type="text" readonly id="customer-portal-url" class="form-input" 
+                     style="flex:1; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" 
+                     value="${window.location.origin}${window.location.pathname}#/portal/customer?token=${person.portalToken}" />
+              
+              <button class="btn btn-secondary" id="btn-copy-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <span class="material-icons-outlined" style="font-size:16px;">content_copy</span> Copy Link
+              </button>
+              
+              <button class="btn btn-secondary" id="btn-send-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <span class="material-icons-outlined" style="font-size:16px;">send</span> Send Link
+              </button>
+            </div>
+          </div>
+        </div>
       `;
+
+      // Bind portal access events
+      const copyBtn = tabContent.querySelector('#btn-copy-portal-link');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          const urlInput = tabContent.querySelector('#customer-portal-url');
+          if (urlInput) {
+            urlInput.select();
+            urlInput.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(urlInput.value);
+            showToast('Portal link copied to clipboard', 'success');
+          }
+        });
+      }
+
+      const sendBtn = tabContent.querySelector('#btn-send-portal-link');
+      if (sendBtn) {
+        sendBtn.addEventListener('click', () => {
+          const content = document.createElement('div');
+          content.innerHTML = `<p>Simulated dispatching secure portal link via email to <strong>${escapeHTML(person.email)}</strong>.</p>`;
+          showModal({
+            title: 'Send Portal Link',
+            content,
+            actions: [
+              { label: 'Dismiss', className: 'btn-primary', onClick: (close) => close() }
+            ]
+          });
+          
+          store.create('notifications', {
+            title: 'Portal Link Dispatched',
+            message: `Portal access link sent to ${person.company} (${person.email})`,
+            link: `/people/${person.id}`,
+            read: true,
+            createdAt: new Date().toISOString(),
+            status: 'Converted'
+          });
+        });
+      }
     } else if (activeTab === 'contacts') {
       const contacts = person.contacts || [];
       tabContent.innerHTML = `

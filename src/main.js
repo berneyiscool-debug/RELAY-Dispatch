@@ -107,7 +107,7 @@ function renderPage(handler) {
 router.register('/login', renderPage(renderLogin));
 
 // Customer Portal
-router.register('/portal', renderPage(renderCustomerPortal));
+router.register('/portal/customer', renderPage(renderCustomerPortal));
 
 // Subcontractor Portal
 router.register('/contractor-portal/:token', renderPage(renderContractorPortal));
@@ -208,13 +208,15 @@ router.onNavigate = (path, params) => {
   const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
 
   const isContractorPortal = path.startsWith('/contractor-portal');
+  const isCustomerPortal = path.startsWith('/portal/customer');
+  const isPortal = isContractorPortal || isCustomerPortal;
 
-  // Toggle app shell elements (sidebar, topbar, breadcrumb) based on whether it is the contractor portal
+  // Toggle app shell elements (sidebar, topbar, breadcrumb) based on whether it is a portal
   const sidebarEl = document.querySelector('.sidebar');
   const topbarEl = document.querySelector('.topbar');
   const breadcrumbEl = document.getElementById('breadcrumb');
 
-  if (isContractorPortal) {
+  if (isPortal) {
     if (sidebarEl) sidebarEl.style.display = 'none';
     if (topbarEl) topbarEl.style.display = 'none';
     if (breadcrumbEl) breadcrumbEl.style.display = 'none';
@@ -226,21 +228,23 @@ router.onNavigate = (path, params) => {
     }
   }
 
-  if (!currentUser && path !== '/login' && !isContractorPortal) {
+  if (!currentUser && path !== '/login' && !isPortal) {
     // Redirect to login if not authenticated
     router.navigate('/login');
-    return false; // Prevent further navigation handling if we had a way, but since we call it directly we just navigate
+    return false; // Prevent further navigation handling
   }
 
   if (currentUser) {
     if (currentUser.role === 'customer' && protectedRoutes.includes(basePath)) {
        // Customer trying to access staff pages -> force to portal
-       router.navigate('/portal');
+       if (currentUser.portalToken) {
+         router.navigate(`/portal/customer?token=${currentUser.portalToken}`);
+       } else {
+         router.navigate('/login');
+       }
        return false;
-    } else if (currentUser.role !== 'customer' && basePath === '/portal') {
-       // Staff trying to access customer portal directly (could allow this, but let's send to dashboard)
-       router.navigate('/');
-       return false;
+    } else if (currentUser.role !== 'customer' && basePath === '/portal/customer') {
+       // Staff trying to access customer portal directly (allow, but handle gracefully in rendering)
     }
 
     // Check page permissions
@@ -328,7 +332,8 @@ window.addEventListener('fieldforge-logout', () => {
 // ---- Boot ----
 // Before resolving, check if we need to redirect to login
 const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-if (!currentUser && window.location.hash !== '#/login' && !window.location.hash.startsWith('#/contractor-portal')) {
+const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
+if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
   window.location.hash = '#/login';
 }
 

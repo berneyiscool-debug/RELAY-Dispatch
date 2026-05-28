@@ -68,10 +68,23 @@ export function renderNotificationsList(container) {
     { 
       key: 'title', 
       label: 'Title / Job Name', 
-      render: (n) => `
-        <div style="font-weight:500">${escapeHTML(n.title)}</div>
-        <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description || n.message || '')}</div>
-      `
+      render: (n) => {
+        const isPortal = n.source === 'customer_portal' || 
+                        (n.message && n.message.toLowerCase().includes('via portal')) ||
+                        (n.description && n.description.toLowerCase().includes('via portal')) ||
+                        (n.title && n.title.toLowerCase().includes('via portal'));
+        
+        const portalIcon = isPortal 
+          ? `<span class="material-icons-outlined" style="font-size:18px;color:var(--color-primary);margin-right:6px;vertical-align:middle;" title="Submitted via Customer Portal">open_in_browser</span>` 
+          : '';
+        
+        return `
+          <div style="font-weight:500;display:flex;align-items:center;">
+            ${portalIcon}<span>${escapeHTML(n.title)}</span>
+          </div>
+          <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description || n.message || '')}</div>
+        `;
+      }
     },
     { 
       key: 'priority', 
