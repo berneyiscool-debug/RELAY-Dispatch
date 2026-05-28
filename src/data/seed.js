@@ -1125,7 +1125,10 @@ const suppliers = [
 ];
 
 // Seeding main execution
-export function seedData() {
+export function seedData(force = false) {
+  if (!force && store.isSeeded()) {
+    return;
+  }
   store.clearAll();
 
   // Save Settings
@@ -1268,7 +1271,7 @@ export function seedData() {
 }
 
 export function seedMinimalData() {
-  seedData();
+  seedData(true);
 }
 
 export { technicians };

@@ -1,8 +1,13 @@
 import { store } from '../../data/store.js';
 import { escapeHTML } from '../../utils/security.js';
 import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js';
+import { showToast } from '../../components/Notifications.js';
 
 export function renderContractorPortal(container, params) {
+  // Ensure the stored theme is applied on portal load
+  const storedTheme = localStorage.getItem('simpro_theme') || 'light';
+  document.documentElement.setAttribute('data-theme', storedTheme);
+
   const token = params.token;
   const contractors = store.getAll('contractors');
   const contractor = contractors.find(c => c.portalToken === token);
@@ -20,6 +25,151 @@ export function renderContractorPortal(container, params) {
         </a>
       </div>
     `;
+    return;
+  }
+
+  const settings = store.getSettings();
+
+  // --- Magic Link PIN/Passcode Security Layer ---
+  // If passcode is not configured, show First-Time Setup
+  if (!contractor.portalPasscode) {
+    container.innerHTML = `
+      <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
+        <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
+          <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+        </button>
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--card-shadow); text-align:center; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+          <div style="width:56px; height:56px; border-radius:50%; background:var(--color-success-bg); display:flex; align-items:center; justify-content:center; color:var(--color-success); margin:0 auto 20px auto;">
+            <span class="material-icons-outlined" style="font-size:28px;">gpp_good</span>
+          </div>
+          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:700; color:var(--text-primary);">Secure Subcontractor Portal</h2>
+          <p style="margin:0 0 24px 0; font-size:13px; color:var(--text-secondary); line-height:1.5;">
+            Welcome, <strong>${escapeHTML(contractor.contactName)}</strong>! To protect your assigned job sheets, timeline uploads, and compliance credentials, please set a 4-to-6 digit security PIN for this portal link.
+          </p>
+          
+          <form id="portal-setup-form" style="display:flex; flex-direction:column; gap:16px; text-align:left;">
+            <div class="form-group">
+              <label class="form-label" style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; display:block;">Enter 4-to-6 Digit PIN</label>
+              <input type="password" maxlength="6" id="portal-pin-1" class="form-input" placeholder="••••" required 
+                     style="text-align:center; font-size:20px; letter-spacing:8px; padding:10px; width:100%; box-sizing:border-box; background: var(--body-bg); border:1px solid var(--border-color); color: var(--text-primary);" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; display:block;">Confirm Your PIN</label>
+              <input type="password" maxlength="6" id="portal-pin-2" class="form-input" placeholder="••••" required 
+                     style="text-align:center; font-size:20px; letter-spacing:8px; padding:10px; width:100%; box-sizing:border-box; background: var(--body-bg); border:1px solid var(--border-color); color: var(--text-primary);" />
+            </div>
+            
+            <button type="submit" class="btn btn-primary" style="width:100%; padding:12px; font-weight:600; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:8px;">
+              <span class="material-icons-outlined" style="font-size:18px;">lock_open</span> Set PIN & Enter Portal
+            </button>
+          </form>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#portal-setup-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const p1 = container.querySelector('#portal-pin-1').value.trim();
+      const p2 = container.querySelector('#portal-pin-2').value.trim();
+
+      if (p1.length < 4 || p1.length > 6 || !/^\d+$/.test(p1)) {
+        showToast('PIN must be between 4 and 6 digits (numbers only)', 'error');
+        return;
+      }
+      if (p1 !== p2) {
+        showToast('PIN entries do not match', 'error');
+        return;
+      }
+
+      // Save PIN
+      const contrs = store.getAll('contractors');
+      const idx = contrs.findIndex(c => c.id === contractor.id);
+      if (idx !== -1) {
+        contrs[idx].portalPasscode = p1;
+        store.save('contractors', contrs);
+        contractor.portalPasscode = p1; // update in-memory
+      }
+
+      // Set authenticated
+      sessionStorage.setItem('portal_contractor_auth_' + contractor.id, 'true');
+      showToast('PIN set successfully. Portal secured!', 'success');
+      
+      // Reload portal layout
+      renderContractorPortal(container, params);
+    });
+
+    container.querySelector('#btn-contractor-theme')?.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('simpro_theme', next);
+      renderContractorPortal(container, params);
+    });
+
+    return;
+  }
+
+  // If passcode is set, check sessionStorage session
+  const sessionKey = 'portal_contractor_auth_' + contractor.id;
+  const isUnlocked = sessionStorage.getItem(sessionKey) === 'true';
+
+  if (!isUnlocked) {
+    container.innerHTML = `
+      <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
+        <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
+          <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+        </button>
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--card-shadow); text-align:center; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+          <div style="width:56px; height:56px; border-radius:50%; background:var(--color-danger-bg); display:flex; align-items:center; justify-content:center; color:var(--color-danger); margin:0 auto 20px auto;">
+            <span class="material-icons-outlined" style="font-size:28px;">lock</span>
+          </div>
+          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:700; color:var(--text-primary);">Portal Locked</h2>
+          <p style="margin:0 0 24px 0; font-size:13px; color:var(--text-secondary); line-height:1.5;">
+            This Magic Link is protected. Please enter the PIN configured for <strong>${escapeHTML(contractor.businessName)}</strong> to unlock your jobsheet.
+          </p>
+          
+          <form id="portal-lock-form" style="display:flex; flex-direction:column; gap:16px; text-align:left;">
+            <div class="form-group">
+              <label class="form-label" style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; display:block;">Enter Your Portal PIN</label>
+              <input type="password" maxlength="6" id="portal-pin" class="form-input" placeholder="••••" required autofocus
+                     style="text-align:center; font-size:24px; letter-spacing:10px; padding:12px; width:100%; box-sizing:border-box; background: var(--body-bg); border:1px solid var(--border-color); color: var(--text-primary);" />
+            </div>
+            
+            <button type="submit" class="btn btn-primary" style="width:100%; padding:12px; font-weight:600; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:8px;">
+              <span class="material-icons-outlined" style="font-size:18px;">vpn_key</span> Unlock Portal
+            </button>
+          </form>
+          
+          <p style="font-size:11.5px; color:var(--text-tertiary); margin-top:24px; line-height:1.4;">
+            Forgot your PIN? Please contact our operations office at <strong>${escapeHTML(settings.phone || '(02) 6882 4400')}</strong> to request a reset.
+          </p>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#portal-lock-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const enteredPin = container.querySelector('#portal-pin').value.trim();
+
+      if (enteredPin === contractor.portalPasscode) {
+        sessionStorage.setItem(sessionKey, 'true');
+        showToast('Portal unlocked successfully', 'success');
+        renderContractorPortal(container, params);
+      } else {
+        showToast('Incorrect PIN. Please try again.', 'error');
+        container.querySelector('#portal-pin').value = '';
+        container.querySelector('#portal-pin').focus();
+      }
+    });
+
+    container.querySelector('#btn-contractor-theme')?.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('simpro_theme', next);
+      renderContractorPortal(container, params);
+    });
+
     return;
   }
 
@@ -208,7 +358,7 @@ export function renderContractorPortal(container, params) {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: linear-gradient(135deg, #1e293b, #0f172a);
+          background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
           color: #ffffff;
           padding: 24px 32px;
           border-radius: 12px;
@@ -216,6 +366,11 @@ export function renderContractorPortal(container, params) {
           margin-bottom: 24px;
           position: relative;
           overflow: hidden;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        [data-theme="dark"] .portal-header {
+          background: linear-gradient(135deg, rgba(49, 86, 113, 0.3) 0%, rgba(9, 9, 11, 0.6) 100%) !important;
+          border: 1px solid var(--border-color);
         }
         
         .portal-header::before {
@@ -285,6 +440,23 @@ export function renderContractorPortal(container, params) {
           display: flex;
           align-items: center;
           justify-content: center;
+        }
+
+        .kpi-icon.info {
+          background: rgba(37, 99, 235, 0.08);
+          color: var(--color-info);
+        }
+        .kpi-icon.warning {
+          background: rgba(217, 119, 6, 0.08);
+          color: var(--color-warning);
+        }
+        .kpi-icon.success {
+          background: rgba(5, 150, 105, 0.08);
+          color: var(--color-success);
+        }
+        .kpi-icon.danger {
+          background: rgba(220, 38, 38, 0.08);
+          color: var(--color-danger);
         }
 
         .kpi-value {
@@ -433,13 +605,16 @@ export function renderContractorPortal(container, params) {
         }
 
         .job-card-header:hover {
-          background: #fafafa;
+          background: rgba(0, 0, 0, 0.02);
+        }
+        [data-theme="dark"] .job-card-header:hover {
+          background: rgba(255, 255, 255, 0.02) !important;
         }
 
         .job-card-body {
           border-top: 1px solid var(--border-color);
           padding: 20px;
-          background: #fdfdfd;
+          background: rgba(0, 0, 0, 0.01);
         }
 
         .timeline {
@@ -514,15 +689,20 @@ export function renderContractorPortal(container, params) {
             <h1>${escapeHTML(contractor.businessName)}</h1>
             <p>FieldForge dispatch & subcontractor portal | Contact: ${escapeHTML(contractor.contactName)}</p>
           </div>
-          <div style="font-size: 11px; padding: 6px 12px; background: rgba(255,255,255,0.08); border-radius: 6px; border: 1px solid rgba(255,255,255,0.12)">
-            System Agency ID: <strong style="font-family:monospace; color:#38bdf8">${contractor.id}</strong>
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #ffffff;">
+              <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+            </button>
+            <div style="font-size: 11px; padding: 6px 12px; background: rgba(255,255,255,0.08); border-radius: 6px; border: 1px solid rgba(255,255,255,0.12)">
+              System Agency ID: <strong style="font-family:monospace; color:#38bdf8">${contractor.id}</strong>
+            </div>
           </div>
         </div>
 
         <!-- KPI Grid -->
         <div class="kpi-grid">
           <div class="kpi-card">
-            <div class="kpi-icon" style="background:#eff6ff; color:#3b82f6;">
+            <div class="kpi-icon info">
               <span class="material-icons-outlined">business_center</span>
             </div>
             <div>
@@ -532,7 +712,7 @@ export function renderContractorPortal(container, params) {
           </div>
 
           <div class="kpi-card">
-            <div class="kpi-icon" style="background:#fffbeb; color:#f59e0b;">
+            <div class="kpi-icon warning">
               <span class="material-icons-outlined">pending_actions</span>
             </div>
             <div>
@@ -542,7 +722,7 @@ export function renderContractorPortal(container, params) {
           </div>
 
           <div class="kpi-card">
-            <div class="kpi-icon" style="background:#ecfdf5; color:#10b981;">
+            <div class="kpi-icon success">
               <span class="material-icons-outlined">task_alt</span>
             </div>
             <div>
@@ -552,9 +732,7 @@ export function renderContractorPortal(container, params) {
           </div>
 
           <div class="kpi-card">
-            <div class="kpi-icon" style="${
-              compliance.status === 'compliant' ? 'background:#ecfdf5; color:#10b981;' : 'background:#fef2f2; color:#ef4444;'
-            }">
+            <div class="kpi-icon ${compliance.status === 'compliant' ? 'success' : 'danger'}">
               <span class="material-icons-outlined">${compliance.status === 'compliant' ? 'verified' : 'gpp_maybe'}</span>
             </div>
             <div>
@@ -634,10 +812,10 @@ export function renderContractorPortal(container, params) {
           ${filteredList.map(item => {
             const isExpanded = item.job.id === expandedJobId;
             const priorityColors = {
-              'Urgent': 'background: #fef2f2; color: #ef4444; border: 1px solid #fee2e2;',
-              'High': 'background: #fffbeb; color: #d97706; border: 1px solid #fef3c7;',
-              'Medium': 'background: #eff6ff; color: #2563eb; border: 1px solid #dbeafe;',
-              'Low': 'background: #f8fafc; color: #64748b; border: 1px solid #f1f5f9;'
+              'Urgent': 'background: rgba(220, 38, 38, 0.08); color: var(--color-danger); border: 1px solid rgba(220, 38, 38, 0.15);',
+              'High': 'background: rgba(217, 119, 6, 0.08); color: var(--color-warning); border: 1px solid rgba(217, 119, 6, 0.15);',
+              'Medium': 'background: rgba(37, 99, 235, 0.08); color: var(--color-info); border: 1px solid rgba(37, 99, 235, 0.15);',
+              'Low': 'background: var(--bg-color); color: var(--text-secondary); border: 1px solid var(--border-color);'
             };
             const jobStatusBadges = {
               'Pending': 'badge-neutral',
@@ -1011,6 +1189,17 @@ export function renderContractorPortal(container, params) {
       const tabBtn = e.target.closest('.tab-btn');
       if (tabBtn) {
         activeTab = tabBtn.dataset.tab;
+        render();
+        return;
+      }
+
+      // Theme toggle
+      const themeBtn = e.target.closest('#btn-contractor-theme');
+      if (themeBtn) {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('simpro_theme', next);
         render();
         return;
       }

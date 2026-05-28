@@ -172,7 +172,14 @@ export function renderContractorDetail(container, params) {
         <div class="card" style="margin-top: var(--space-lg); border: 1px solid var(--color-primary-light); background: linear-gradient(135deg, white, rgba(27,109,224,0.015));">
           <div class="card-header" style="border-bottom: 1px solid var(--border-color); display:flex; align-items:center; gap:8px;">
             <span class="material-icons-outlined text-primary" style="font-size:20px;">vpn_key</span>
-            <h4 style="margin:0; font-size:14px; font-weight:600;">Subcontractor Access Portal</h4>
+            <h4 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px;">
+              Subcontractor Access Portal
+              <span style="padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; 
+                           background: ${contractor.portalPasscode ? '#ecfdf5' : '#f1f5f9'}; 
+                           color: ${contractor.portalPasscode ? '#10b981' : '#475569'}; border: 1px solid ${contractor.portalPasscode ? '#a7f3d0' : '#e2e8f0'};">
+                ${contractor.portalPasscode ? 'PIN Secured' : 'PIN Not Configured'}
+              </span>
+            </h4>
           </div>
           <div class="card-body">
             <p class="text-secondary" style="font-size: var(--font-size-sm); margin:0 0 12px 0; line-height:1.5;">
@@ -180,9 +187,14 @@ export function renderContractorDetail(container, params) {
             </p>
             <div style="display:flex; gap: var(--space-sm); align-items:center;">
               <input type="text" readonly id="magic-link-url" class="form-input" style="flex:1; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" value="${window.location.origin}${window.location.pathname}#/contractor-portal/${contractor.portalToken}" />
-              <button class="btn btn-primary btn-sm" id="btn-copy-magic-link" style="display:flex; align-items:center; gap:6px; height: 32px;">
+              <button class="btn btn-primary btn-sm" id="btn-copy-magic-link" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px">content_copy</span> Copy Magic Link
               </button>
+              ${contractor.portalPasscode ? `
+                <button class="btn btn-secondary btn-sm text-danger" id="btn-reset-contractor-pin" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap; border-color:#fee2e2;">
+                  <span class="material-icons-outlined" style="font-size:16px">lock_reset</span> Reset PIN
+                </button>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -200,6 +212,36 @@ export function renderContractorDetail(container, params) {
               showToast('Failed to copy link', 'error');
             });
           }
+        });
+      }
+
+      const resetPinBtn = tabContent.querySelector('#btn-reset-contractor-pin');
+      if (resetPinBtn) {
+        resetPinBtn.addEventListener('click', () => {
+          import('../../components/Modal.js').then(({ showModal }) => {
+            const content = document.createElement('div');
+            content.innerHTML = `<p>Are you sure you want to reset the security PIN for <strong>${escapeHTML(contractor.businessName)}</strong>? This will allow the subcontractor to configure a brand new PIN on their next visit.</p>`;
+            
+            showModal({
+              title: 'Reset Subcontractor Portal PIN',
+              content,
+              actions: [
+                { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+                { label: 'Reset PIN', className: 'btn-danger', onClick: (close) => {
+                  const contrs = store.getAll('contractors');
+                  const idx = contrs.findIndex(c => c.id === contractor.id);
+                  if (idx !== -1) {
+                    contrs[idx].portalPasscode = null;
+                    store.save('contractors', contrs);
+                    contractor.portalPasscode = null;
+                  }
+                  showToast('Security PIN has been reset successfully', 'success');
+                  close();
+                  renderContractorDetail(container, contractor.id);
+                }}
+              ]
+            });
+          });
         });
       }
     } else if (activeTab === 'compliance') {

@@ -148,9 +148,13 @@ export function renderPersonDetail(container, { id }) {
             <h4 style="margin:0; display:flex; align-items:center; gap:8px;">
               <span class="material-icons-outlined text-primary" style="vertical-align:middle;">vpn_key</span>
               Customer Portal Access
-            </h4>
-            <span style="font-size:12px; color:var(--text-secondary);">
+            </h4>             <span style="font-size:12px; color:var(--text-secondary); display:inline-flex; align-items:center; gap:8px;">
               Last Accessed: ${person.portalLastAccessed ? new Date(person.portalLastAccessed).toLocaleString('en-AU') : 'Never'}
+              <span style="padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; 
+                           background: ${person.portalPasscode ? '#ecfdf5' : '#f1f5f9'}; 
+                           color: ${person.portalPasscode ? '#10b981' : '#475569'}; border: 1px solid ${person.portalPasscode ? '#a7f3d0' : '#e2e8f0'};">
+                ${person.portalPasscode ? 'PIN Secured' : 'PIN Not Configured'}
+              </span>
             </span>
           </div>
           <div class="card-body">
@@ -169,6 +173,12 @@ export function renderPersonDetail(container, { id }) {
               <button class="btn btn-secondary" id="btn-send-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px;">send</span> Send Link
               </button>
+
+              ${person.portalPasscode ? `
+                <button class="btn btn-secondary text-danger" id="btn-reset-portal-pin" style="display:flex; align-items:center; gap:6px; white-space:nowrap; border-color:#fee2e2;">
+                  <span class="material-icons-outlined" style="font-size:16px;">lock_reset</span> Reset PIN
+                </button>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -208,6 +218,36 @@ export function renderPersonDetail(container, { id }) {
             read: true,
             createdAt: new Date().toISOString(),
             status: 'Converted'
+          });
+        });
+      }
+
+      const resetPinBtn = tabContent.querySelector('#btn-reset-portal-pin');
+      if (resetPinBtn) {
+        resetPinBtn.addEventListener('click', () => {
+          import('../../components/Modal.js').then(({ showModal }) => {
+            const content = document.createElement('div');
+            content.innerHTML = `<p>Are you sure you want to reset the security PIN for <strong>${escapeHTML(person.company)}</strong>? This will allow the customer to configure a brand new PIN on their next visit.</p>`;
+            
+            showModal({
+              title: 'Reset Customer Portal PIN',
+              content,
+              actions: [
+                { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+                { label: 'Reset PIN', className: 'btn-danger', onClick: (close) => {
+                  const custs = store.getAll('customers');
+                  const idx = custs.findIndex(c => c.id === person.id);
+                  if (idx !== -1) {
+                    custs[idx].portalPasscode = null;
+                    store.save('customers', custs);
+                    person.portalPasscode = null;
+                  }
+                  showToast('Security PIN has been reset successfully', 'success');
+                  close();
+                  renderPersonDetail(container, person.id);
+                }}
+              ]
+            });
           });
         });
       }

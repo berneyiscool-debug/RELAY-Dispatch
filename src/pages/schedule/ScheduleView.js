@@ -1692,21 +1692,30 @@ export function renderScheduleView(container) {
                 showToast(`Time updated to ${formatHour(startHour)} — ${formatHour(endHour)}`, 'success');
               }
             } else {
-              // Legacy update
+              // Convert legacy block into proper schedule allocation on resize
               const job = store.getAll('jobs').find(j => j.id === jobId);
               if (job) {
-                let updatedTechs = job.technicians || [];
-                if (updatedTechs.length > 0) {
-                  updatedTechs = updatedTechs.map(t => ({ ...t, hours: duration }));
-                }
-                store.update('jobs', jobId, {
-                  startHour,
-                  estimatedHours: parseFloat(duration.toFixed(4)),
-                  technicians: updatedTechs.length > 0 ? updatedTechs : job.technicians,
+                const sDateStr = job.scheduledDate || new Date().toISOString().split('T')[0];
+                const pad = n => n.toString().padStart(2, '0');
+                const startH = Math.floor(startHour);
+                const startM = Math.round((startHour - startH) * 60);
+                const endH = Math.floor(endHour);
+                const endM = Math.round((endHour - endH) * 60);
+
+                store.create('schedule', {
+                  jobId: job.id,
+                  jobNumber: job.number,
+                  technicianId: job.technicianId || technicians[0]?.id || '',
+                  technicianName: job.technicianName || '',
+                  date: sDateStr,
+                  startTime: `${sDateStr}T${pad(startH)}:${pad(startM)}`,
+                  finishTime: `${sDateStr}T${pad(endH)}:${pad(endM)}`,
+                  hours: duration
                 });
-                showToast(`Job time updated`, 'success');
+                showToast(`Converted block to independent schedule allocation`, 'success');
               }
             }
+            render(); // sync calendar DOM elements with updated database values
           }
 
           resizeState = null;
