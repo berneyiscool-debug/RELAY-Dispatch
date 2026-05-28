@@ -1187,22 +1187,46 @@ export function renderJobDetail(container, { id }) {
       tc.querySelectorAll('.btn-remove-task').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const path = btn.dataset.path.split('-').map(Number);
-          if (confirm('Are you sure you want to delete this task and all its sub-tasks?')) {
-            if (path.length === 1) {
-              job.tasks.splice(path[0], 1);
-            } else {
-              const parentPath = path.slice(0, -1);
-              const parent = getTaskByPath(job.tasks, parentPath);
-              if (parent && parent.subTasks) {
-                parent.subTasks.splice(path[path.length - 1], 1);
+          const node = getTaskByPath(job.tasks, path);
+          if (!node) return;
+
+          showModal({
+            title: 'Confirm Delete Task',
+            content: `
+              <div style="text-align:center; padding:16px 0">
+                <span class="material-icons-outlined" style="font-size:48px; color:var(--color-danger); margin-bottom:12px">warning_amber</span>
+                <p style="font-size:15px; font-weight:600; color:var(--text-primary); margin:0 0 8px 0">Delete Task & Sub-tasks?</p>
+                <p class="text-secondary" style="font-size:13px; margin:0 0 16px 0; line-height:1.5">
+                  Are you sure you want to delete the task <strong>${escapeHTML(node.name)}</strong> and all of its sub-tasks? This action cannot be undone.
+                </p>
+              </div>
+            `,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              {
+                label: 'Delete Task',
+                className: 'btn-danger',
+                onClick: (close) => {
+                  if (path.length === 1) {
+                    job.tasks.splice(path[0], 1);
+                  } else {
+                    const parentPath = path.slice(0, -1);
+                    const parent = getTaskByPath(job.tasks, parentPath);
+                    if (parent && parent.subTasks) {
+                      parent.subTasks.splice(path[path.length - 1], 1);
+                    }
+                    updateParentProgress(job.tasks, parentPath);
+                  }
+                  taskExpandedPath = path.slice(0, -1); // jump up one level
+                  isInfoPanelEditing = false;
+                  store.update('jobs', id, { tasks: job.tasks });
+                  renderTabContent();
+                  close();
+                  showToast('Task deleted successfully', 'success');
+                }
               }
-              updateParentProgress(job.tasks, parentPath);
-            }
-            taskExpandedPath = path.slice(0, -1); // jump up one level
-            isInfoPanelEditing = false;
-            store.update('jobs', id, { tasks: job.tasks });
-            renderTabContent();
-          }
+            ]
+          });
         });
       });
 
