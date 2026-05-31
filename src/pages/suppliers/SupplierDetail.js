@@ -343,7 +343,7 @@ export function renderSupplierDetail(container, params) {
                 ${purchaseOrders.map(po => {
                   const total = (po.items || []).reduce((sum, item) => sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unitCost) || 0), 0);
                   const statusColors = {
-                    'Draft': 'badge-neutral',
+                    'Draft': 'badge-draft',
                     'Pending Approval': 'badge-warning',
                     'Approved / Sent': 'badge-primary',
                     'Received': 'badge-success',

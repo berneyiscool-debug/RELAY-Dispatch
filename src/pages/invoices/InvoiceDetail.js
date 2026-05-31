@@ -32,8 +32,33 @@ export function renderInvoiceDetail(container, { id }) {
 
   // Data migration for old invoices
   if (invoice.lineItems && !invoice.sections) {
-    invoice.sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: [...invoice.lineItems] }];
+    invoice.sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(invoice.lineItems)) }];
     delete invoice.lineItems;
+  }
+  
+  if (invoice.sections) {
+    invoice.sections.forEach(sec => {
+      if (sec.items && !sec.lineItems) {
+        sec.lineItems = JSON.parse(JSON.stringify(sec.items));
+        delete sec.items;
+      }
+      if (sec.lineItems) {
+        sec.lineItems.forEach(item => {
+          if (item.amount !== undefined && item.rate === undefined) {
+            item.rate = item.amount;
+          }
+          if (item.rate !== undefined && item.amount === undefined) {
+            item.amount = item.rate;
+          }
+          if (item.qty === undefined) {
+            item.qty = item.quantity !== undefined ? item.quantity : 1;
+          }
+          if (item.total === undefined) {
+            item.total = item.qty * (item.rate || 0);
+          }
+        });
+      }
+    });
   }
 
   if (!isNew) updateBreadcrumbDetail(invoice.number);
@@ -41,7 +66,7 @@ export function renderInvoiceDetail(container, { id }) {
   const customers = store.getAll('customers');
   const stockItems = store.getAll('stock');
   const settings = store.getSettings();
-  const sb = { 'Draft':'badge-neutral','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-neutral' };
+  const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
   function render() {
     container.innerHTML = `
@@ -294,12 +319,18 @@ export function renderInvoiceDetail(container, { id }) {
     (invoice.sections || []).forEach(sec => {
       sec.subtotal = 0;
       (sec.lineItems || []).forEach(item => {
-        item.total = (item.qty || 0) * (item.rate || 0);
+        const qty = item.qty !== undefined ? item.qty : (item.quantity !== undefined ? item.quantity : 1);
+        const rate = item.rate !== undefined ? item.rate : (item.amount !== undefined ? item.amount : 0);
+
+        item.qty = qty;
+        item.rate = rate;
+        item.amount = rate;
+        item.total = qty * rate;
         
         // Calculate internal cost
-        if (!item.internalCost) {
+        if (item.internalCost === undefined) {
            if (item.type === 'labor') item.internalCost = 45;
-           else item.internalCost = item.rate * 0.7;
+           else item.internalCost = rate * 0.7;
         }
         
         sec.subtotal += item.total;
@@ -448,7 +479,15 @@ export function renderInvoiceDetail(container, { id }) {
         if (field === 'qty' || field === 'rate') val = parseFloat(val) || 0;
         invoice.sections[sIdx].lineItems[idx][field] = val;
 
-        if (field === 'description') {
+        if (field === 'type' && val === 'labor') {
+          const rateObj = settings.laborRates.find(r => r.id === invoice.laborProfileId) || settings.laborRates.find(r => r.isDefault) || settings.laborRates[0];
+          if (rateObj) {
+            invoice.sections[sIdx].lineItems[idx].description = rateObj.name;
+            invoice.sections[sIdx].lineItems[idx].rate = rateObj.rate;
+            invoice.sections[sIdx].lineItems[idx].amount = rateObj.rate;
+            invoice.sections[sIdx].lineItems[idx].internalCost = 45;
+          }
+        } else if (field === 'description') {
           const match = stockItems.find(s => s.name === val);
           if (match) {
             const isLabor = (match.category || '').toLowerCase().includes('labor');
@@ -465,6 +504,7 @@ export function renderInvoiceDetail(container, { id }) {
             }
             invoice.sections[sIdx].lineItems[idx].type = isLabor ? 'labor' : 'material';
             invoice.sections[sIdx].lineItems[idx].rate = appliedRate;
+            invoice.sections[sIdx].lineItems[idx].amount = appliedRate;
             invoice.sections[sIdx].lineItems[idx].internalCost = internalCost;
           }
         }

@@ -96,4 +96,33 @@ describe('Router', () => {
 
     assert.deepStrictEqual(capturedParams, { id: '123', tab: 'details', active: 'true' });
   });
+
+  test('onNavigate guard blocking route', () => {
+    const router = new Router();
+    let handlerCalled = false;
+    router.register('/people', () => { handlerCalled = true; });
+
+    router.onNavigate = (path) => {
+      if (path === '/people') return false;
+      return true;
+    };
+
+    router.resolve('/people');
+    assert.strictEqual(handlerCalled, false, 'Handler should not be called when guard returns false');
+    assert.strictEqual(router.currentRoute, null, 'currentRoute should remain null if navigation is blocked');
+  });
+
+  test('onNavigate guard allowing route', () => {
+    const router = new Router();
+    let handlerCalled = false;
+    router.register('/people', () => { handlerCalled = true; });
+
+    router.onNavigate = (path) => {
+      return true;
+    };
+
+    router.resolve('/people');
+    assert.strictEqual(handlerCalled, true, 'Handler should be called when guard returns true');
+    assert.strictEqual(router.currentRoute, '/people', 'currentRoute should be updated when navigation is allowed');
+  });
 });

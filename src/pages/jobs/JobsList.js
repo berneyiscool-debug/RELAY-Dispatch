@@ -6,13 +6,16 @@ import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { createToolbarFilters } from '../../components/ToolbarFilters.js';
 
-export function renderJobsList(container) {
-  const jobs = store.getAll('jobs');
+export function renderJobsList(container, params) {
+  const customerId = params?.customerId;
+  const customer = customerId ? store.getById('customers', customerId) : null;
+  const allJobs = store.getAll('jobs');
+  const jobs = customerId ? allJobs.filter(j => j.customerId === customerId) : allJobs;
   const canCreate = hasPermission('Jobs', 'create');
 
   container.innerHTML = `
     <div class="page-header">
-      <h1>Jobs</h1>
+      <h1>${customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs'}</h1>
       ${canCreate ? `
       <div class="page-header-actions">
         <button class="btn btn-primary" id="btn-new-job" data-tooltip="Create a new project or service job record" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Job</button>
@@ -39,9 +42,10 @@ export function renderJobsList(container) {
     { key: 'technicians', label: 'Assignee', render: (r) => {
         if (r.contractorId) {
           const contractor = store.getById('contractors', r.contractorId);
-          return `<span class="text-secondary truncate" style="max-width:150px;display:inline-block"><span class="material-icons-outlined" style="font-size:12px;vertical-align:middle;">engineering</span> ${contractor ? escapeHTML(contractor.businessName) : 'Unknown Contractor'}</span>`;
+          return `<span class="text-primary font-medium truncate" style="max-width:150px;display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">business</span> ${contractor ? escapeHTML(contractor.businessName) : 'Unknown Contractor'}</span>`;
         }
-        return `<span class="text-secondary truncate" style="max-width:150px;display:inline-block">${r.technicians && r.technicians.length > 0 ? r.technicians.map(t => escapeHTML(t.name)).join(', ') : escapeHTML(r.technicianName || '—')}</span>`;
+        const names = r.technicians && r.technicians.length > 0 ? r.technicians.map(t => escapeHTML(t.name)).join(', ') : escapeHTML(r.technicianName || '—');
+        return `<span class="text-secondary truncate" style="max-width:150px;display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary)">person</span> ${names}</span>`;
       }
     },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '110px' },

@@ -198,25 +198,31 @@ export function renderSettings(container) {
                 <div style="display:flex; flex-direction:column; gap:16px">
                   <div class="form-group">
                     <label class="form-label">Company Name</label>
-                    <input class="form-input" value="${s.name || 'FieldForge Demo Company'}" id="company-name" />
+                    <input class="form-input" value="${s.name || 'Apex Power Services'}" id="company-name" />
                   </div>
                   <div class="form-row">
                     <div class="form-group">
                       <label class="form-label">ABN</label>
-                      <input class="form-input" id="company-abn" value="${s.abn || '12 345 678 901'}" />
+                      <input class="form-input" id="company-abn" value="${s.abn || '51 234 567 890'}" />
                     </div>
                     <div class="form-group">
                       <label class="form-label">Phone</label>
-                      <input class="form-input" id="company-phone" value="${s.phone || '1300 123 456'}" />
+                      <input class="form-input" id="company-phone" value="${s.phone || '(02) 6882 4400'}" />
+                    </div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label">Company Domain</label>
+                      <input class="form-input" value="${s.domain || 'apexpowerservices.com.au'}" id="company-domain" placeholder="e.g. yourcompany.com.au" />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Company Email</label>
+                      <input class="form-input" value="${s.email || 'admin@apexpowerservices.com.au'}" id="company-email" placeholder="e.g. admin@yourcompany.com.au" />
                     </div>
                   </div>
                   <div class="form-group">
-                    <label class="form-label">Company Domain</label>
-                    <input class="form-input" value="${s.email || 'fieldforge.io'}" id="company-domain" placeholder="e.g. yourcompany.com.au" />
-                  </div>
-                  <div class="form-group">
                     <label class="form-label">Address</label>
-                    <textarea class="form-textarea" id="company-address" rows="2">${s.address || '123 Business St, Melbourne VIC 3000'}</textarea>
+                    <textarea class="form-textarea" id="company-address" rows="2">${s.address || '14 Yarrandale Rd, Dubbo NSW 2830'}</textarea>
                   </div>
                 </div>
 
@@ -288,7 +294,8 @@ export function renderSettings(container) {
           settings.name = tc.querySelector('#company-name').value;
           settings.abn = tc.querySelector('#company-abn').value;
           settings.phone = tc.querySelector('#company-phone').value;
-          settings.email = tc.querySelector('#company-domain').value;
+          settings.domain = tc.querySelector('#company-domain').value;
+          settings.email = tc.querySelector('#company-email').value;
           settings.address = tc.querySelector('#company-address').value;
           settings.logo = pendingLogo;
           

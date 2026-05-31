@@ -86,6 +86,24 @@ export function renderDashboard(container) {
   let layout = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
   try { const s = localStorage.getItem(getLayoutKey()); if (s) layout = JSON.parse(s); } catch(e) {}
 
+  // Conditionally filter layout based on user permissions
+  const canViewQuotes = hasPermission('Quotes', 'view');
+  const canViewInvoices = hasPermission('Invoices', 'view');
+  const isTechUser = !canViewQuotes && !canViewInvoices;
+
+  layout = layout.filter(item => {
+    if (item.id === 'cash-flow' && !canViewInvoices) return false;
+    if (item.id === 'uninvoiced-completed' && !canViewInvoices) return false;
+    if (item.id === 'pending-approvals' && !canViewQuotes) return false;
+    if (item.id === 'profitability-chart' && !canViewInvoices) return false;
+    
+    if (isTechUser) {
+      const allowedWidgets = ['kpi-cards', 'today-schedule', 'recent-activity', 'tech-map', 'daily-todo', 'weather-forecast', 'pinned-job'];
+      if (!allowedWidgets.includes(item.id)) return false;
+    }
+    return true;
+  });
+
   // Ensure every item has a unique instanceId for precise tracking
   layout.forEach(item => {
     if (!item.instanceId) item.instanceId = 'inst_' + Math.random().toString(36).substr(2, 9);
@@ -157,7 +175,10 @@ function renderGrid(grid, layout, data) {
         ` : ''}
       </div>`;
 
-    const headerBg = isEditMode ? 'background:rgba(27,109,224,0.04);' : '';
+    const kpiCardsCount = item.id === 'kpi-cards' 
+      ? ( (hasPermission('Quotes', 'view') ? 1 : 0) + (hasPermission('Invoices', 'view') ? 2 : 0) + (hasPermission('Jobs', 'view') ? 1 : 0) )
+      : 0;
+    const bodyStyle = item.id === 'kpi-cards' ? `style="display:grid; grid-template-columns: repeat(${kpiCardsCount}, 1fr);"` : '';
 
     grid.insertAdjacentHTML('beforeend', `
       <div class="${classes}" data-instance-id="${item.instanceId}" data-id="${item.id}" style="position:relative;">
@@ -166,7 +187,7 @@ function renderGrid(grid, layout, data) {
             <span style="font-weight:600;font-size:14px;">${mod.title}</span>
             ${widgetControls}
           </div>
-          <div class="card-body">${mod.render(data, item)}</div>
+          <div class="card-body" ${bodyStyle}>${mod.render(data, item)}</div>
         </div>
         ${resizeHandles}
       </div>`);
@@ -706,12 +727,29 @@ function renderKpiCards(data, item) {
   const pendingQuotes = data.quotes.filter(q => q.status === 'Sent' || q.status === 'Draft').length;
   const overdue       = data.invoices.filter(i => i.status === 'Overdue').length;
   const revenue       = data.invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
-  return [
-    { label: 'Total Revenue',    value: '$' + revenue.toLocaleString('en-AU'), icon: 'payments',       color: 'blue',   sub: '+12.5% vs last month', pos: true, tooltip: 'Total payments received from all successfully settled invoices.' },
-    { label: 'Active Jobs',      value: activeJobs,                             icon: 'build',           color: 'green',  sub: `${data.jobs.length} total`, pos: true, tooltip: 'Total volume of active projects and service tasks currently Scheduled or In Progress.' },
-    { label: 'Pending Quotes',   value: pendingQuotes,                          icon: 'request_quote',   color: 'orange', sub: `${data.quotes.length} total`, pos: null, tooltip: 'Draft proposals or sent estimates currently awaiting customer response.' },
-    { label: 'Overdue Invoices', value: overdue,                                icon: 'warning',         color: 'red',    sub: overdue > 0 ? 'Requires attention' : 'All on track', pos: overdue === 0, tooltip: 'Invoices past their designated payment terms that remain unpaid.' },
-  ].map(k => `
+
+  const canViewQuotes = hasPermission('Quotes', 'view');
+  const canViewInvoices = hasPermission('Invoices', 'view');
+
+  const cards = [];
+
+  if (canViewInvoices) {
+    cards.push({ label: 'Total Revenue', value: '$' + revenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), icon: 'payments', color: 'blue', sub: '+12.5% vs last month', pos: true, tooltip: 'Total payments received from all successfully settled invoices.' });
+  }
+
+  if (hasPermission('Jobs', 'view')) {
+    cards.push({ label: 'Active Jobs', value: activeJobs, icon: 'build', color: 'green', sub: `${data.jobs.length} total`, pos: true, tooltip: 'Total volume of active projects and service tasks currently Scheduled or In Progress.' });
+  }
+
+  if (canViewQuotes) {
+    cards.push({ label: 'Pending Quotes', value: pendingQuotes, icon: 'request_quote', color: 'orange', sub: `${data.quotes.length} total`, pos: null, tooltip: 'Draft proposals or sent estimates currently awaiting customer response.' });
+  }
+
+  if (canViewInvoices) {
+    cards.push({ label: 'Overdue Invoices', value: overdue, icon: 'warning', color: 'red', sub: overdue > 0 ? 'Requires attention' : 'All on track', pos: overdue === 0, tooltip: 'Invoices past their designated payment terms that remain unpaid.' });
+  }
+
+  return cards.map(k => `
     <div class="stat-card" style="margin:0;" data-tooltip="${k.tooltip}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
         <div class="stat-label">${k.label}</div>
@@ -930,7 +968,7 @@ function renderProfitabilityChart(data, item) {
         <div>
           <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px;">
             <span style="color:var(--text-secondary);">Projected Profit</span>
-            <span style="font-weight:600; color:var(--color-success);">+$${profit.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+            <span style="font-weight:600; color:var(--color-success);">+$${profit.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div style="height:12px; background:var(--bg-color); border-radius:6px; overflow:hidden; border:1px solid var(--border-color);">
             <div style="width:${Math.min(margin, 100)}%; height:100%; background:linear-gradient(90deg, var(--color-primary), var(--color-success));"></div>
@@ -941,12 +979,12 @@ function renderProfitabilityChart(data, item) {
           <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
             <div style="width:10px; height:10px; border-radius:2px; background:var(--color-primary);"></div>
             <span style="color:var(--text-secondary); flex:1;">Internal Costs (Labor + Mat)</span>
-            <span style="font-weight:500;">$${totalInternalCost.toLocaleString()}</span>
+            <span style="font-weight:500;">$${totalInternalCost.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
             <div style="width:10px; height:10px; border-radius:2px; background:var(--color-success);"></div>
             <span style="color:var(--text-secondary); flex:1;">Tiered Markup (Proj. Profit)</span>
-            <span style="font-weight:500;">$${profit.toLocaleString()}</span>
+            <span style="font-weight:500;">$${profit.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         </div>
       </div>
@@ -1008,7 +1046,7 @@ function renderUninvoicedCompleted(data, item) {
             <div style="flex:1; min-width:0;">
               <div style="font-weight:600; font-size:12px; margin-bottom:2px;">
                 <a href="#/jobs/${j.id}" style="color:var(--color-primary); text-decoration:none;">#${j.number}</a>
-                <span style="color:var(--color-success); font-weight:700; margin-left:6px;">$${totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+                <span style="color:var(--color-success); font-weight:700; margin-left:6px;">$${totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${j.title}</div>
               <div style="font-size:11px; color:var(--text-tertiary);">${j.customerName}</div>
@@ -1179,7 +1217,7 @@ function renderTopCustomers(data, item) {
           <div>
             <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
               <span style="font-weight:600; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:200px;">${name}</span>
-              <span style="font-weight:700; color:var(--color-primary);">$${spend.toLocaleString('en-AU')}</span>
+              <span style="font-weight:700; color:var(--color-primary);">$${spend.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div style="height:8px; background:var(--bg-color); border-radius:4px; overflow:hidden;">
               <div style="width:${percent}%; height:100%; background:linear-gradient(90deg, var(--color-primary), #60a5fa); border-radius:4px;"></div>
@@ -1240,7 +1278,7 @@ function renderPendingApprovals(data, item) {
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:12px; margin-bottom:2px;">
               <a href="#/quotes/${q.id}" style="color:var(--color-primary); text-decoration:none;">#${q.number}</a>
-              <span style="color:var(--color-primary); font-weight:700; margin-left:6px;">$${(q.total || 0).toLocaleString('en-AU')}</span>
+              <span style="color:var(--color-primary); font-weight:700; margin-left:6px;">$${(q.total || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${q.title}</div>
             <div style="font-size:11px; color:var(--text-tertiary);">${q.customerName}</div>
@@ -1288,11 +1326,11 @@ function renderCashFlow(data, item) {
     <div style="display:flex; flex-direction:column; justify-content:center; height:100%; padding:4px;">
       <div style="background:linear-gradient(135deg, var(--color-primary), #487291); padding:16px; border-radius:10px; color:white; box-shadow:0 4px 15px rgba(49, 86, 113, 0.2); margin-bottom:10px;">
         <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.5px; opacity:0.8; margin-bottom:2px;">Total Paid Cash Flow</div>
-        <div style="font-size:22px; font-weight:800;">$${paidTotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+        <div style="font-size:22px; font-weight:800;">$${paidTotal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:0 4px;">
         <span style="color:var(--text-secondary);">Receivables Outstanding</span>
-        <strong style="color:var(--color-warning);">$${sentTotal.toLocaleString('en-AU')}</strong>
+        <strong style="color:var(--color-warning);">$${sentTotal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
       </div>
     </div>
   `;

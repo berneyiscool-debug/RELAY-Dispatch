@@ -10,6 +10,11 @@ const routeLabels = {
   '/stock': 'Stock',
   '/invoices': 'Invoices',
   '/settings': 'Settings',
+  '/timesheets': 'Timesheets',
+  '/contractors': 'Contractors',
+  '/suppliers': 'Suppliers',
+  '/assets': 'Assets',
+  '/notifications': 'Notifications',
 };
 
 export function createBreadcrumb(path) {

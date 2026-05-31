@@ -36,6 +36,32 @@ class DataStore {
 
   create(collection, item) {
     const items = this.getAll(collection);
+    
+    if (collection === 'notifications') {
+      const isDuplicate = items.some(existing => {
+        if (existing.message === item.message && existing.link === item.link && existing.title === item.title) {
+          return true;
+        }
+        if (item.jobId && existing.jobId === item.jobId && existing.type === item.type) {
+          const d1 = existing.dueDate || (existing.createdAt ? new Date(existing.createdAt).toDateString() : '');
+          const d2 = item.dueDate || (item.createdAt ? new Date(item.createdAt).toDateString() : new Date().toDateString());
+          if (d1 === d2) return true;
+        }
+        return false;
+      });
+      if (isDuplicate) {
+        return items.find(existing => {
+          if (existing.message === item.message && existing.link === item.link && existing.title === item.title) return true;
+          if (item.jobId && existing.jobId === item.jobId && existing.type === item.type) {
+            const d1 = existing.dueDate || (existing.createdAt ? new Date(existing.createdAt).toDateString() : '');
+            const d2 = item.dueDate || (item.createdAt ? new Date(item.createdAt).toDateString() : new Date().toDateString());
+            if (d1 === d2) return true;
+          }
+          return false;
+        }) || item;
+      }
+    }
+
     item.id = item.id || this.generateId();
     item.createdAt = item.createdAt || new Date().toISOString();
     item.updatedAt = new Date().toISOString();
@@ -137,6 +163,12 @@ class DataStore {
 
   getSettings() {
     const defaultSettings = {
+      name: 'Apex Power Services',
+      abn: '51 234 567 890',
+      phone: '(02) 6882 4400',
+      domain: 'apexpowerservices.com.au',
+      email: 'admin@apexpowerservices.com.au',
+      address: '14 Yarrandale Rd, Dubbo NSW 2830',
       markupPercent: 20, // Legacy support
       materialMarkup: {
         defaultPercent: 30,

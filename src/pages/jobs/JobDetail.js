@@ -305,9 +305,11 @@ export function renderJobDetail(container, { id }) {
             <div class="card" style="grid-column: span 2">
               <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
                 <h4 style="margin:0">Schedule & Assignment</h4>
+                ${hasPermission('Schedule', 'edit') ? `
                 <button class="btn btn-ghost btn-sm" id="btn-add-schedule" style="font-size:12px;padding:4px 8px">
                   <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">calendar_month</span> Add to Schedule
                 </button>
+                ` : ''}
               </div>
               <div class="card-body">
                 <div style="display:flex;flex-direction:column;gap:12px">
@@ -315,7 +317,7 @@ export function renderJobDetail(container, { id }) {
                   ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
                   ${r('Est. Hours', job.estimatedHours || '—')}
                   ${r('Site Address', escapeHTML(job.siteAddress || '—'))}
-                  ${r('Quote Ref', job.quoteId ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : '—')}
+                  ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
                   ${r('Created', new Date(job.createdAt).toLocaleDateString())}
                 </div>
               </div>

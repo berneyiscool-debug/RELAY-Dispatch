@@ -273,7 +273,7 @@ function barChart(data, colorMap = {}, defaultColor = '#1B6DE0') {
 
 function progressBar(label, value, max, color) {
   const pct = max > 0 ? (value / max * 100) : 0;
-  const formatted = typeof value === 'number' ? `$${value.toLocaleString('en-AU', { minimumFractionDigits: 0 })}` : value;
+  const formatted = typeof value === 'number' ? `$${value.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value;
   return `
     <div style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -290,8 +290,8 @@ function progressBar(label, value, max, color) {
 function renderOverviewReport(d) {
   return `
     <div class="grid-4" style="margin-bottom:var(--space-lg)">
-      ${kpi('Total Revenue', `$${d.totalRevenue.toLocaleString('en-AU',{minimumFractionDigits:0})}`, 'account_balance', 'green')}
-      ${kpi('Outstanding', `$${d.totalOutstanding.toLocaleString('en-AU',{minimumFractionDigits:0})}`, 'pending', 'orange')}
+      ${kpi('Total Revenue', `$${d.totalRevenue.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'account_balance', 'green')}
+      ${kpi('Outstanding', `$${d.totalOutstanding.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}`, 'pending', 'orange')}
       ${kpi('Quote Win Rate', `${d.quoteWinRate.toFixed(0)}%`, 'emoji_events', 'blue')}
       ${kpi('Lead Conversion', `${d.leadConvRate.toFixed(0)}%`, 'trending_up', 'green')}
     </div>
@@ -413,8 +413,8 @@ function renderJobCostingReport(d) {
 
   return `
     <div class="grid-3" style="margin-bottom:var(--space-lg)">
-      ${kpi('Internal Labor Cost', '$' + totalActualLabor.toLocaleString(), 'engineering', 'orange')}
-      ${kpi('Billable Labor Rev.', '$' + totalBillableLabor.toLocaleString(), 'payments', 'green')}
+      ${kpi('Internal Labor Cost', '$' + totalActualLabor.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 'engineering', 'orange')}
+      ${kpi('Billable Labor Rev.', '$' + totalBillableLabor.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 'payments', 'green')}
       ${kpi('Labor Profitability', (avgMargin.toFixed(1)) + '% Margin', 'trending_up', avgMargin >= 40 ? 'green' : 'orange')}
     </div>
     <div class="card">
@@ -476,7 +476,7 @@ function renderTechniciansReport(d) {
                 <td class="text-secondary">${t.role}</td>
                 <td style="text-align:center">${t.totalJobs}</td>
                 <td style="text-align:center"><span class="badge badge-success">${t.completed}</span></td>
-                <td style="text-align:right;font-weight:600">$${t.revenue.toLocaleString()}</td>
+                <td style="text-align:right;font-weight:600">$${t.revenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -509,13 +509,13 @@ function renderCustomersReport(d) {
               <tr>
                 <td class="text-secondary">${i + 1}</td>
                 <td class="font-medium">${name}</td>
-                <td style="text-align:right;font-weight:600">$${rev.toLocaleString()}</td>
+                <td style="text-align:right;font-weight:600">$${rev.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td>
                   <div style="display:flex;align-items:center;gap:8px">
                     <div style="flex:1;height:6px;background:var(--border-color);border-radius:3px;overflow:hidden">
                       <div style="height:100%;width:${d.totalRevenue > 0 ? (rev/d.totalRevenue*100) : 0}%;background:var(--color-primary);border-radius:3px"></div>
                     </div>
-                    <span class="text-secondary" style="font-size:var(--font-size-xs)">${d.totalRevenue > 0 ? (rev/d.totalRevenue*100).toFixed(0) : 0}%</span>
+                    <span class="text-secondary" style="font-size:var(--font-size-xs)">${d.totalRevenue > 0 ? (rev/d.totalRevenue*100).toFixed(2) : '0.00'}%</span>
                   </div>
                 </td>
               </tr>

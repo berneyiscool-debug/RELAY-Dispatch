@@ -338,7 +338,7 @@ export function renderContractorPortal(container, params) {
     });
 
     const settings = store.getSettings();
-    const crmCompanyName = settings.name || 'FieldForge CRM';
+    const crmCompanyName = settings.name || 'Relay — Dispatch';
     
     // Check if a staff account is logged in locally
     const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -687,7 +687,7 @@ export function renderContractorPortal(container, params) {
         <div class="portal-header">
           <div>
             <h1>${escapeHTML(contractor.businessName)}</h1>
-            <p>FieldForge dispatch & subcontractor portal | Contact: ${escapeHTML(contractor.contactName)}</p>
+            <p>Relay — Dispatch dispatch & subcontractor portal | Contact: ${escapeHTML(contractor.contactName)}</p>
           </div>
           <div style="display: flex; align-items: center; gap: 16px;">
             <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #ffffff;">
@@ -805,7 +805,7 @@ export function renderContractorPortal(container, params) {
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:48px; text-align:center; color:var(--text-tertiary);">
           <span class="material-icons-outlined" style="font-size:48px; margin-bottom:12px;">work_off</span>
           <h3>No assigned jobs found matching filters</h3>
-          <p style="margin-top:4px; font-size:12px;">Ensure tasks are allocated to ${escapeHTML(contractor.businessName)} in the FieldForge CRM.</p>
+          <p style="margin-top:4px; font-size:12px;">Ensure tasks are allocated to ${escapeHTML(contractor.businessName)} in the Relay — Dispatch CRM.</p>
         </div>
       ` : `
         <div style="display:flex; flex-direction:column;">
@@ -1506,7 +1506,7 @@ export function renderContractorPortal(container, params) {
     }
 
     const settings = store.getSettings();
-    const crmCompanyName = settings.name || 'FieldForge Demo Company';
+    const crmCompanyName = settings.name || 'Relay — Dispatch';
 
     // 1. Fetch or create a Customer matching the CRM Owner Company Name
     const customersList = store.getAll('customers');
@@ -1518,8 +1518,8 @@ export function renderContractorPortal(container, params) {
         company: crmCompanyName,
         firstName: 'Operations',
         lastName: 'Staff',
-        email: settings.email ? 'dispatch@' + settings.email : 'dispatch@fieldforge.io',
-        phone: settings.phone || '1300 123 456',
+        email: settings.domain ? 'dispatch@' + settings.domain : (settings.email ? 'dispatch@' + settings.email.split('@').pop() : 'dispatch@apexpowerservices.com.au'),
+        phone: settings.phone || '(02) 6882 4400',
         address: settings.address || '123 Business St, Melbourne VIC 3000',
         status: 'Active',
         type: 'Company',

@@ -43,7 +43,7 @@ export function renderPurchaseOrdersList(container) {
     { key: 'date', label: 'Issue Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', width: '120px' },
     { key: 'total', label: 'Total', render: (r) => `$${(r.total || 0).toFixed(2)}`, width: '100px' },
     { key: 'status', label: 'Status', render: (r) => {
-      const b = { 'Draft':'badge-neutral', 'Issued':'badge-primary', 'Received':'badge-success', 'Cancelled':'badge-danger' };
+      const b = { 'Draft':'badge-draft', 'Issued':'badge-primary', 'Received':'badge-success', 'Cancelled':'badge-danger' };
       return `<span class="badge ${b[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`;
     }, width: '110px' }
   ];

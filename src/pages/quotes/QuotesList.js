@@ -5,13 +5,16 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
 
-export function renderQuotesList(container) {
-  const quotes = store.getAll('quotes');
+export function renderQuotesList(container, params) {
+  const customerId = params?.customerId;
+  const customer = customerId ? store.getById('customers', customerId) : null;
+  const allQuotes = store.getAll('quotes');
+  const quotes = customerId ? allQuotes.filter(q => q.customerId === customerId) : allQuotes;
   const canCreate = hasPermission('Quotes', 'create');
 
   container.innerHTML = `
     <div class="page-header">
-      <h1>Quotes</h1>
+      <h1>${customer ? `Quotes — ${escapeHTML(customer.company)}` : 'Quotes'}</h1>
       ${canCreate ? `
       <div class="page-header-actions">
         <button class="btn btn-primary" id="btn-new-quote" data-tooltip="Draft a new pricing proposal or project estimation for a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Quote</button>
@@ -35,7 +38,7 @@ export function renderQuotesList(container) {
   `;
 
   let filteredData = [...quotes];
-  const sb = { 'Draft': 'badge-neutral', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger' };
+  const sb = { 'Draft': 'badge-draft', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger' };
 
   const columns = [
     { key: 'number', label: 'Quote #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '110px' },

@@ -98,9 +98,9 @@ export function renderTimesheetsList(container) {
               <span class="material-icons-outlined">download</span> Export Approved
             </button>
           ` : ''}
-          ${['admin', 'manager', 'office'].includes(currentUser.role) ? `
-            <button class="btn btn-secondary" id="btn-log-time" data-tooltip="Manually enter a timesheet record for another employee" data-tooltip-pos="left" style="margin-right:8px">
-              <span class="material-icons-outlined">add</span> Log Time on Behalf
+          ${hasPermission('Timesheets', 'create') ? `
+            <button class="btn ${['admin', 'manager', 'office'].includes(currentUser.role) ? 'btn-secondary' : 'btn-primary'}" id="btn-log-time" data-tooltip="${['admin', 'manager', 'office'].includes(currentUser.role) ? 'Manually enter a timesheet record for another employee' : 'Log a new timesheet entry'}" data-tooltip-pos="left" style="margin-right:8px">
+              <span class="material-icons-outlined">add</span> ${['admin', 'manager', 'office'].includes(currentUser.role) ? 'Log Time on Behalf' : 'Log Time'}
             </button>
           ` : ''}
           ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
@@ -533,6 +533,7 @@ export function renderTimesheetsList(container) {
   }
 
   function openLogTimeModal() {
+    const isTech = currentUser.role === 'technician' || currentUser.userTypeId === 'ut_tech';
     const pathBreadcrumbs = {};
     const idToPath = {};
     function populateBreadcrumbs(tasks, currentPath = [], currentNamePath = []) {
@@ -646,9 +647,9 @@ export function renderTimesheetsList(container) {
       <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
         <div class="form-group" style="margin:0">
           <label class="form-label">Technician *</label>
-          <select class="form-select" id="lt-tech" style="width:100%">
+          <select class="form-select" id="lt-tech" style="width:100%" ${isTech ? 'disabled' : ''}>
             <option value="">Select technician...</option>
-            ${technicians.map(t => `<option value="${t.id}" ${filterTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+            ${technicians.map(t => `<option value="${t.id}" ${(isTech ? String(currentUser.id) === String(t.id) : filterTechId === t.id) ? 'selected' : ''}>${t.name}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="margin:0">
@@ -763,7 +764,7 @@ export function renderTimesheetsList(container) {
     });
 
     showModal({
-      title: 'Log Time on Behalf of Staff',
+      title: isTech ? 'Log Time' : 'Log Time on Behalf of Staff',
       content,
       size: 'modal-70',
       actions: [
@@ -771,7 +772,7 @@ export function renderTimesheetsList(container) {
         { label: 'Log Time', className: 'btn-primary', onClick: (close) => {
           const startVal = document.getElementById('lt-start').value;
           const finishVal = document.getElementById('lt-finish').value;
-          const techId = document.getElementById('lt-tech').value;
+          const techId = isTech ? currentUser.id : document.getElementById('lt-tech').value;
           const jobId = document.getElementById('lt-job').value;
           const taskPathVal = document.getElementById('lt-task').value;
           const taskNameVal = document.getElementById('lt-task-name').value;
@@ -809,7 +810,7 @@ export function renderTimesheetsList(container) {
             status: 'Pending'
           });
 
-          showToast('Time logged successfully on behalf of staff', 'success');
+          showToast(isTech ? 'Time logged successfully' : 'Time logged successfully on behalf of staff', 'success');
           close();
           render();
         }}

@@ -53,7 +53,7 @@ export function renderLeadsList(container) {
           </div>
           <div>
             <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Open Pipeline</div>
-            <div style="font-size:22px; font-weight:800; color:var(--text-primary); margin-top:4px">$${totalOpenValue.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
+            <div style="font-size:22px; font-weight:800; color:var(--text-primary); margin-top:4px">$${totalOpenValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">${openLeads.length} active opportunities</div>
           </div>
         </div>
@@ -66,7 +66,7 @@ export function renderLeadsList(container) {
           </div>
           <div>
             <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Weighted Sales Forecast</div>
-            <div style="font-size:22px; font-weight:800; color:var(--color-success-dark); margin-top:4px">$${weightedForecast.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
+            <div style="font-size:22px; font-weight:800; color:var(--color-success-dark); margin-top:4px">$${weightedForecast.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">Adjusted by probability</div>
           </div>
         </div>
@@ -106,8 +106,8 @@ export function renderLeadsList(container) {
   let filteredData = [...leads];
 
   const statusBadges = {
-    'New': 'badge-info', 'Contacted': 'badge-primary', 'Qualified': 'badge-warning',
-    'Proposal': 'badge-warning', 'Negotiation': 'badge-primary', 'Won': 'badge-success', 'Lost': 'badge-danger',
+    'New': 'badge-info', 'Contacted': 'badge-neutral', 'Qualified': 'badge-warning',
+    'Proposal': 'badge-primary', 'Negotiation': 'badge-purple', 'Won': 'badge-success', 'Lost': 'badge-danger',
   };
   const priorityBadges = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger' };
 
@@ -125,7 +125,7 @@ export function renderLeadsList(container) {
         return `<span style="font-weight:700; color:${color}">${prob}%</span>`;
       }, getValue: (r) => likelihoods[r.status] || 0, width: '100px' },
     { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${priorityBadges[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>` },
-    { key: 'value', label: 'Value', render: (r) => `<span class="font-medium">$${(r.value || 0).toLocaleString()}</span>`, getValue: (r) => r.value },
+    { key: 'value', label: 'Value', render: (r) => `<span class="font-medium">$${(r.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`, getValue: (r) => r.value },
     { key: 'createdAt', label: 'Created', render: (r) => `<span class="text-secondary">${new Date(r.createdAt).toLocaleDateString()}</span>`, getValue: (r) => new Date(r.createdAt).getTime() },
   ];
 

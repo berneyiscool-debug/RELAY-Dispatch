@@ -20,8 +20,8 @@ export function renderLeadDetail(container, { id }) {
   updateBreadcrumbDetail(lead.title);
 
   const statusBadges = { 
-    'New': 'badge-info', 'Contacted': 'badge-primary', 'Qualified': 'badge-warning', 
-    'Proposal': 'badge-warning', 'Negotiation': 'badge-primary', 'Won': 'badge-success', 'Lost': 'badge-danger' 
+    'New': 'badge-info', 'Contacted': 'badge-neutral', 'Qualified': 'badge-warning', 
+    'Proposal': 'badge-primary', 'Negotiation': 'badge-purple', 'Won': 'badge-success', 'Lost': 'badge-danger' 
   };
 
   const likelihoods = {
@@ -111,9 +111,9 @@ export function renderLeadDetail(container, { id }) {
               ${row('Direct Phone', lead.phone ? `<a href="tel:${lead.phone}" style="color:var(--color-primary); font-weight:600; text-decoration:underline">${escapeHTML(lead.phone)}</a>` : '—')}
               ${row('Direct Email', lead.email ? `<a href="mailto:${lead.email}" style="color:var(--color-primary); font-weight:600; text-decoration:underline">${escapeHTML(lead.email)}</a>` : '—')}
               <hr style="border:none; border-top:1px dashed var(--border-color); margin:4px 0" />
-              ${row('Client Budget', lead.budget ? `<strong style="color:var(--text-primary)">$${(lead.budget || 0).toLocaleString()}</strong>` : '—')}
-              ${row('Estimated Value', `<strong style="color:var(--color-primary-dark)">$${(lead.value || 0).toLocaleString()}</strong>`)}
-              ${lead.budget && lead.value ? row('Budget Variance', `<span style="font-weight:700; color:${(lead.budget - lead.value) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">$${(lead.budget - lead.value).toLocaleString()} (${(lead.budget - lead.value) >= 0 ? 'Under' : 'Over'} Budget)</span>`) : ''}
+              ${row('Client Budget', lead.budget ? `<strong style="color:var(--text-primary)">$${(lead.budget || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>` : '—')}
+              ${row('Estimated Value', `<strong style="color:var(--color-primary-dark)">$${(lead.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>`)}
+              ${lead.budget && lead.value ? row('Budget Variance', `<span style="font-weight:700; color:${(lead.budget - lead.value) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">$${(lead.budget - lead.value).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${(lead.budget - lead.value) >= 0 ? 'Under' : 'Over'} Budget)</span>`) : ''}
             </div>
           </div>
         </div>
@@ -134,7 +134,7 @@ export function renderLeadDetail(container, { id }) {
               </div>
               <div>
                 <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Weighted Value Forecast</div>
-                <div style="font-size:24px; font-weight:800; color:${prob >= 80 ? 'var(--color-success)' : 'var(--text-primary)'}; margin-top:4px">$${weightedValue.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
+                <div style="font-size:24px; font-weight:800; color:${prob >= 80 ? 'var(--color-success)' : 'var(--text-primary)'}; margin-top:4px">$${weightedValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">Likelihood multiplier applied</div>
               </div>
             </div>

@@ -867,14 +867,19 @@
 .dashboard-grid .card.kpi-strip .card-body {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-md);
+  gap: var(--space-sm);
   align-items: stretch;
   overflow: visible;
-  padding: var(--space-md);
+  padding: var(--space-xs) var(--space-md);
 }
 .dashboard-grid .card.kpi-strip .stat-card {
   margin: 0;
   height: auto;
+  padding: var(--space-xs) var(--space-md);
+  gap: 2px;
+}
+.dashboard-grid .card.kpi-strip .card-header {
+  padding: 8px var(--space-lg);
 }
 
 /* Edit mode overlay on each module */

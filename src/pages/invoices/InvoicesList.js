@@ -26,6 +26,7 @@ export function renderInvoicesList(container) {
         <button class="toolbar-filter" data-filter="Sent">Sent</button>
         <button class="toolbar-filter" data-filter="Paid">Paid</button>
         <button class="toolbar-filter" data-filter="Overdue">Overdue</button>
+        <button class="toolbar-filter" data-filter="Void">Void</button>
       </div>
       <div class="toolbar-search">
         <span class="material-icons-outlined">search</span>
@@ -36,7 +37,7 @@ export function renderInvoicesList(container) {
   `;
 
   let filteredData = [...invoices];
-  const sb = { 'Draft':'badge-neutral','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-neutral' };
+  const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
   const columns = [
     { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '110px' },

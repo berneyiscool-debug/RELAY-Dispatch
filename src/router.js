@@ -52,12 +52,17 @@ export class Router {
     const { handler, params } = this.matchRoute(hash);
 
     if (handler) {
-      this.currentRoute = hash;
       const allParams = { ...params, ...queryParams };
       if (this.onNavigate) {
         const allowed = this.onNavigate(hash, allParams);
-        if (allowed === false) return; // Guard blocked the navigation
+        if (allowed === false) {
+          if (typeof window !== 'undefined') {
+            window.location.hash = '#' + (this.currentRoute || '/');
+          }
+          return; // Guard blocked the navigation
+        }
       }
+      this.currentRoute = hash;
       handler(allParams);
     }
   }

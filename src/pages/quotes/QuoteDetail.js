@@ -47,9 +47,34 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
   }
 
   // Data migration for old quotes
+  if (quote.phases && !quote.sections) {
+    quote.sections = JSON.parse(JSON.stringify(quote.phases));
+    delete quote.phases;
+  }
   if (quote.lineItems && !quote.sections) {
-    quote.sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: [...quote.lineItems] }];
+    quote.sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(quote.lineItems)) }];
     delete quote.lineItems;
+  }
+  if (quote.sections) {
+    quote.sections.forEach(sec => {
+      if (sec.items && !sec.lineItems) {
+        sec.lineItems = JSON.parse(JSON.stringify(sec.items));
+        delete sec.items;
+      }
+      if (sec.lineItems) {
+        sec.lineItems.forEach(item => {
+          if (item.quantity !== undefined && item.qty === undefined) {
+            item.qty = item.quantity;
+          }
+          if (item.unitPrice !== undefined && item.rate === undefined) {
+            item.rate = item.unitPrice;
+          }
+          if (item.rate !== undefined && item.unitPrice === undefined) {
+            item.unitPrice = item.rate;
+          }
+        });
+      }
+    });
   }
 
   if (!isNew) updateBreadcrumbDetail(quote.number + (quote.version > 1 ? ` v${quote.version}` : ''));
@@ -57,7 +82,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
   const customers = store.getAll('customers');
   const stockItems = store.getAll('stock');
   const settings = store.getSettings();
-  const sb = { 'Draft': 'badge-neutral', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger', 'Archived': 'badge-neutral' };
+  const sb = { 'Draft': 'badge-draft', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger', 'Archived': 'badge-neutral' };
 
   function render() {
     container.innerHTML = `
@@ -332,19 +357,36 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     const settings = store.getSettings();
     const profile = settings.laborRates.find(r => r.id === quote.laborProfileId);
 
+    // Support legacy phases representation during calculation
+    if (quote.phases && !quote.sections) {
+      quote.sections = quote.phases;
+    }
+
     (quote.sections || []).forEach(sec => {
       sec.subtotal = 0;
+
+      if (sec.items && !sec.lineItems) {
+        sec.lineItems = sec.items;
+      }
+
       (sec.lineItems || []).forEach(item => {
-        item.total = (item.qty || 0) * (item.rate || 0);
+        const qty = item.qty !== undefined ? item.qty : (item.quantity !== undefined ? item.quantity : 1);
+        const rate = item.unitPrice !== undefined ? item.unitPrice : (item.rate || 0);
+
+        item.qty = qty;
+        item.rate = rate;
+        item.unitPrice = rate;
+
+        item.total = qty * rate;
         if (item.type === 'labor') totalLaborAmount += item.total;
         
         // Calculate internal cost
-        if (!item.internalCost) {
+        if (item.internalCost === undefined) {
            // Fallback defaults if no cost stored
            if (item.type === 'labor') item.internalCost = 45; // Default internal labor cost
-           else item.internalCost = item.rate * 0.7; // Fallback 30% margin for materials
+           else item.internalCost = rate * 0.7; // Fallback 30% margin for materials
         }
-        quote.totalInternalCost += (item.qty || 0) * (item.internalCost || 0);
+        quote.totalInternalCost += qty * (item.internalCost || 0);
         
         sec.subtotal += item.total;
       });
@@ -669,7 +711,15 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         quote.sections[sIdx].lineItems[idx][field] = val;
 
         // Auto-fill logic
-        if (field === 'description') {
+        if (field === 'type' && val === 'labor') {
+          const rateObj = settings.laborRates.find(r => r.id === quote.laborProfileId) || settings.laborRates.find(r => r.isDefault) || settings.laborRates[0];
+          if (rateObj) {
+            quote.sections[sIdx].lineItems[idx].description = rateObj.name;
+            quote.sections[sIdx].lineItems[idx].rate = rateObj.rate;
+            quote.sections[sIdx].lineItems[idx].unitPrice = rateObj.rate;
+            quote.sections[sIdx].lineItems[idx].internalCost = 45;
+          }
+        } else if (field === 'description') {
           const match = stockItems.find(s => s.name === val);
           if (match) {
             const isLabor = (match.category || '').toLowerCase().includes('labor');
@@ -686,6 +736,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
             }
             quote.sections[sIdx].lineItems[idx].type = isLabor ? 'labor' : 'material';
             quote.sections[sIdx].lineItems[idx].rate = appliedRate;
+            quote.sections[sIdx].lineItems[idx].unitPrice = appliedRate;
             quote.sections[sIdx].lineItems[idx].internalCost = internalCost;
           }
         }

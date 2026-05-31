@@ -70,11 +70,11 @@ export function createSidebar() {
   const logoHtml = settings.logo 
     ? `<div style="display:flex; align-items:center; justify-content:center; width:100%; gap:10px">
          <img src="${settings.logo}" class="custom-logo" id="sidebar-logo-img" style="max-height: 28px; max-width: ${isExpanded ? '140px' : '32px'}; object-fit: contain;" />
-         <span class="logo-text" style="${isExpanded ? 'display: block;' : 'display: none;'}">${settings.name || 'FieldForge'}</span>
+         <span class="logo-text" style="${isExpanded ? 'display: block;' : 'display: none;'}">${settings.name || 'Relay — Dispatch'}</span>
        </div>`
     : `
-      <div class="logo-icon">F</div>
-      <span class="logo-text">FieldForge</span>
+      <div class="logo-icon">R</div>
+      <span class="logo-text">Relay — Dispatch</span>
     `;
 
   let html = `
@@ -338,13 +338,13 @@ export function createSidebar() {
       logoContainer.innerHTML = `
         <div style="display:flex; align-items:center; justify-content:center; width:100%; gap:10px">
           <img src="${s.logo}" class="custom-logo" style="max-height: 28px; max-width: ${sidebar.classList.contains('expanded') ? '140px' : '32px'}; object-fit: contain;" />
-          <span class="logo-text" style="${sidebar.classList.contains('expanded') ? 'display: block;' : 'display: none;'}">${s.name || 'FieldForge'}</span>
+          <span class="logo-text" style="${sidebar.classList.contains('expanded') ? 'display: block;' : 'display: none;'}">${s.name || 'Relay — Dispatch'}</span>
         </div>
       `;
     } else {
       logoContainer.innerHTML = `
-        <div class="logo-icon">F</div>
-        <span class="logo-text">FieldForge</span>
+        <div class="logo-icon">R</div>
+        <span class="logo-text">Relay — Dispatch</span>
       `;
     }
   });

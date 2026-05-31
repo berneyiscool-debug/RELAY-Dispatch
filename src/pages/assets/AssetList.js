@@ -5,20 +5,24 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showAssetQuickAdd } from '../../utils/quickModals.js';
 
-export function renderAssetList(container) {
-  let assets = store.getAll('assets');
+export function renderAssetList(container, params) {
+  const customerId = params?.customerId;
+  const customer = customerId ? store.getById('customers', customerId) : null;
+  let allAssets = store.getAll('assets');
   
   // Migrate any old 'fleet' data if 'assets' is empty
   const fleet = store.getAll('fleet');
-  if (assets.length === 0 && fleet.length > 0) {
+  if (allAssets.length === 0 && fleet.length > 0) {
     fleet.forEach(f => {
       f.ownerType = 'Business';
       f.identifier = f.licensePlate;
       store.create('assets', f);
     });
     // Just refresh the asset array
-    assets = store.getAll('assets');
+    allAssets = store.getAll('assets');
   }
+
+  let assets = customerId ? allAssets.filter(a => a.customerId === customerId) : allAssets;
 
   let activeFilter = 'all';
   let searchTerm = '';
@@ -50,7 +54,7 @@ export function renderAssetList(container) {
 
   container.innerHTML = `
     <div class="page-header">
-      <h1>Assets Manager</h1>
+      <h1>${customer ? `Assets — ${escapeHTML(customer.company)}` : 'Assets Manager'}</h1>
       <div class="page-header-actions">
         <button class="btn btn-primary" id="btn-new-asset"><span class="material-icons-outlined">add</span> Add Asset</button>
       </div>
@@ -92,11 +96,21 @@ export function renderAssetList(container) {
         
         const d = new Date(lastS.date);
         d.setMonth(d.getMonth() + parseInt(r.serviceIntervalMonths));
-        const isOverdue = d < new Date();
         
-        return `<span style="color:${isOverdue ? 'var(--color-danger)' : 'var(--text-secondary)'}; font-size:12px; font-weight:${isOverdue ? '600' : '400'}">
-          ${isOverdue ? 'OVERDUE' : d.toLocaleDateString()}
-        </span>`;
+        const today = new Date();
+        const timeDiff = d.getTime() - today.getTime();
+        const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+        
+        let badgeHtml = '';
+        if (daysDiff <= 0) {
+          badgeHtml = `<span class="badge badge-danger">Overdue</span>`;
+        } else if (daysDiff <= 30) {
+          badgeHtml = `<span class="badge badge-warning">Due Soon</span>`;
+        } else {
+          badgeHtml = `<span class="badge badge-success">OK</span>`;
+        }
+        
+        return `<div style="display:inline-flex;align-items:center;gap:8px">${badgeHtml}<span class="text-secondary" style="font-size:12px">${d.toLocaleDateString()}</span></div>`;
       }
     },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>` },

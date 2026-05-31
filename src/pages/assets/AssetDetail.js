@@ -111,7 +111,7 @@ export function renderAssetDetail(container, params) {
                   ${currentAsset.ownerType === 'Business' ? 'Total Maintenance Spend' : 'Current Meter Reading'}
                 </div>
                 <div style="font-weight:600; font-size:16px">
-                  ${currentAsset.ownerType === 'Business' ? `$${totalMaintCost.toLocaleString()}` : `${currentAsset.currentMeter || 0} ${currentAsset.meterUnit || 'hrs'}`}
+                  ${currentAsset.ownerType === 'Business' ? `$${totalMaintCost.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${currentAsset.currentMeter || 0} ${currentAsset.meterUnit || 'hrs'}`}
                 </div>
               </div>
               <button class="btn btn-xs btn-secondary" id="btn-update-meter" style="padding: 2px 8px; font-size:11px; display:flex; align-items:center; gap:4px; margin-top:2px;">

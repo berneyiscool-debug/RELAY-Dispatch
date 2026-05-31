@@ -1173,7 +1173,7 @@ export function renderCustomerPortal(container, params) {
           totalIncGST = subtotal + totalGST;
 
           const statusColors = {
-            'Draft': 'badge-neutral',
+            'Draft': 'badge-draft',
             'Sent': 'badge-warning',
             'Pending Approval': 'badge-warning',
             'Approved': 'badge-success',

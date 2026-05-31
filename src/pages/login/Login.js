@@ -42,6 +42,9 @@ function getLandingRoute(user, dataStore) {
 }
 
 export function renderLogin(container) {
+  // Always display login in light mode by temporarily removing data-theme
+  document.documentElement.removeAttribute('data-theme');
+
   // We need to hide the sidebar and topbar when on login
   const sidebar = document.querySelector('.sidebar');
   const topbar = document.querySelector('.topbar');
@@ -57,7 +60,7 @@ export function renderLogin(container) {
   container.innerHTML = `
     <div class="login-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: var(--bg-primary);">
       <div class="login-box" style="background: var(--bg-surface); padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; max-height: 80vh; overflow-y:auto;">
-        <h1 style="margin-bottom: 10px; color: var(--text-primary);">FieldForge</h1>
+        <h1 style="margin-bottom: 10px; color: var(--text-primary);">Relay — Dispatch</h1>
         <p style="margin-bottom: 30px; color: var(--text-secondary);">Select a user to log in</p>
 
         <div style="display: flex; flex-direction: column; gap: 15px;">
@@ -115,6 +118,13 @@ export function renderLogin(container) {
     // Find the first route this user actually has access to
     const { store: dataStore } = await import('../../data/store.js');
     const landingRoute = getLandingRoute(user, dataStore);
+
+    // Restore stored theme after login completes
+    const storedTheme = localStorage.getItem('simpro_theme') || 'light';
+    if (storedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+
     router.navigate(landingRoute);
   };
 
@@ -126,16 +136,24 @@ export function renderLogin(container) {
   });
 
   const loginAsCustomer = () => {
+    const customers = store.getAll('customers');
+    if (customers.length === 0) {
+      alert('No customer accounts found in the system.');
+      return;
+    }
+    const customer = customers[0];
+    if (!customer.portalToken) {
+      alert('No portal link exists for this customer.');
+      return;
+    }
+
     const user = {
       id: 'customer-user',
-      name: 'Customer User',
-      role: 'customer'
+      name: customer.firstName + ' ' + customer.lastName,
+      role: 'customer',
+      customerId: customer.id,
+      portalToken: customer.portalToken
     };
-    const customers = store.get('people').filter(p => p.type === 'Customer');
-    if (customers.length > 0) {
-      user.customerId = customers[0].id;
-      user.name = customers[0].firstName + ' ' + customers[0].lastName;
-    }
     localStorage.setItem('currentUser', JSON.stringify(user));
 
     if (sidebar) sidebar.style.display = '';
@@ -148,7 +166,14 @@ export function renderLogin(container) {
     import('../../components/TopBar.js').then(({ updateTopbarAccess }) => {
       if (updateTopbarAccess) updateTopbarAccess();
     });
-    router.navigate('/portal');
+
+    // Restore stored theme after login completes
+    const storedTheme = localStorage.getItem('simpro_theme') || 'light';
+    if (storedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+
+    router.navigate('/portal/customer?token=' + user.portalToken);
   };
 
   container.querySelector('#btn-login-customer')?.addEventListener('click', loginAsCustomer);

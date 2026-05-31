@@ -514,8 +514,8 @@ function renderRelatedTable(items, cols, module, emptyMsg) {
   const statusBadge = (status) => {
     const cls = { 'Active': 'success', 'Completed': 'success', 'Paid': 'success', 'Accepted': 'success',
       'In Progress': 'primary', 'Sent': 'info', 'Scheduled': 'info',
-      'Pending': 'warning', 'Draft': 'neutral', 'On Hold': 'neutral',
-      'Overdue': 'danger', 'Declined': 'danger', 'Void': 'danger',
+      'Pending': 'warning', 'Draft': 'draft', 'On Hold': 'neutral',
+      'Overdue': 'danger', 'Declined': 'danger', 'Void': 'void',
       'Invoiced': 'primary',
     };
     return `<span class="badge badge-${cls[status] || 'neutral'}">${escapeHTML(status)}</span>`;

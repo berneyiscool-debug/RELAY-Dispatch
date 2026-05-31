@@ -195,10 +195,10 @@ function generateDocument(type, data) {
         <div class="pdf-company">
           ${companyLogoHtml}
           <div>
-            <div class="pdf-company-name">${escapeHTML(settings.name || 'FieldForge Demo Company')}</div>
-            <div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn || '12 345 678 901')}</div>
-            <div class="pdf-company-detail">${escapeHTML(settings.address || '123 Business St, Melbourne VIC 3000')}</div>
-            <div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone || '1300 123 456')}</div>
+            <div class="pdf-company-name">${escapeHTML(settings.name || 'Apex Power Services')}</div>
+            <div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn || '51 234 567 890')}</div>
+            <div class="pdf-company-detail">${escapeHTML(settings.address || '14 Yarrandale Rd, Dubbo NSW 2830')}</div>
+            <div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
           </div>
         </div>
         <div class="pdf-title-block">
@@ -327,7 +327,7 @@ function generateDocument(type, data) {
             ? 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.'
             : 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.'}
         </div>
-        <div class="pdf-footer-company">${escapeHTML(settings.name || 'FieldForge Demo Company')} — ${escapeHTML(settings.email || 'hello@fieldforge.io')} — ${escapeHTML(settings.phone || '1300 123 456')}</div>
+        <div class="pdf-footer-company">${escapeHTML(settings.name || 'Apex Power Services')} — ${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')} — ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
       </div>
     </div>
   `;
