@@ -49,13 +49,13 @@ export function renderLeadDetail(container, { id }) {
           <span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${lead.status}</span>
         `,
         actionsHtml: `
-          <button class="btn btn-primary" id="btn-convert-quote">
+          <button class="btn btn-primary" id="btn-convert-quote" data-tooltip="Convert this prospective lead into an active sales proposal quote" data-tooltip-pos="left">
             <span class="material-icons-outlined">request_quote</span> Convert to Quote
           </button>
-          <button class="btn btn-secondary" id="btn-edit-lead">
+          <button class="btn btn-secondary" id="btn-edit-lead" data-tooltip="Modify lead details, potential value, or assigned representative" data-tooltip-pos="left">
             <span class="material-icons-outlined">edit</span> Edit
           </button>
-          <button class="btn btn-danger" id="btn-delete-lead">
+          <button class="btn btn-danger" id="btn-delete-lead" data-tooltip="Permanently delete this lead record" data-tooltip-pos="left">
             <span class="material-icons-outlined">delete</span>
           </button>
         `

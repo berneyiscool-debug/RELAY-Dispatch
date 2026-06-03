@@ -188,12 +188,41 @@ class DataStore {
         { id: 'rate_3', name: 'Saturday Rate',    rate: 127.50, description: 'Saturday work',                   overtimeMultiplier: 1.5,  minCallOutFee: 65, applicableDays: ['Sat'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false },
         { id: 'rate_4', name: 'Sunday Rate',      rate: 170.00, description: 'Sunday and public holidays',       overtimeMultiplier: 2.0,  minCallOutFee: 85, applicableDays: ['Sun','PH'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false },
         { id: 'rate_5', name: 'Emergency Rate',   rate: 195.00, description: 'Urgent call-outs any day',        overtimeMultiplier: 2.0,  minCallOutFee: 120, applicableDays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false },
-      ]
+      ],
+      documentTheme: {
+        preset: 'relay',
+        accentColor: '#1B6DE0',
+        headerBg: '#1E2A3A',
+        accentTint: '#F8FAFC',
+        fontFamily: 'sans-serif',
+        invoiceTitle: 'TAX INVOICE',
+        invoiceTerms: 'Please pay within 7 days of invoice issue.',
+        invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
+        quoteTitle: 'PROPOSAL / QUOTE',
+        quoteTerms: 'This quote is valid for 30 days. All work is subject to standard conditions.',
+        logoAlignment: 'left',
+        logoScale: 60,
+        hideLogo: false,
+        paymentStripe: true,
+        paymentDirectTransfer: true,
+        paymentCash: false,
+        quoteSignature: true,
+        footerNote: 'Thank you for your business!'
+      }
     };
 
     try {
       const data = localStorage.getItem(this._key('settings'));
-      return data ? JSON.parse(data) : defaultSettings;
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (!parsed.documentTheme) {
+          parsed.documentTheme = { ...defaultSettings.documentTheme };
+        } else {
+          parsed.documentTheme = { ...defaultSettings.documentTheme, ...parsed.documentTheme };
+        }
+        return parsed;
+      }
+      return defaultSettings;
     } catch {
       return defaultSettings;
     }

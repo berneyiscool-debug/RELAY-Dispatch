@@ -46,12 +46,12 @@ export function renderSupplierDetail(container, params) {
         `,
         actionsHtml: `
           ${canEdit ? `
-            <button class="btn btn-secondary" id="btn-edit-supplier">
+            <button class="btn btn-secondary" id="btn-edit-supplier" data-tooltip="Modify supplier details, payment terms, or contact information" data-tooltip-pos="left">
               <span class="material-icons-outlined">edit</span> Edit
             </button>
           ` : ''}
           ${canDelete ? `
-            <button class="btn btn-danger" id="btn-delete-supplier">
+            <button class="btn btn-danger" id="btn-delete-supplier" data-tooltip="Permanently delete this supplier record" data-tooltip-pos="left">
               <span class="material-icons-outlined">delete</span> Delete
             </button>
           ` : ''}

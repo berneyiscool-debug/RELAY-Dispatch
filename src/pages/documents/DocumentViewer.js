@@ -21,7 +21,7 @@ export function renderDocumentViewer(container) {
         <span class="material-icons-outlined" style="font-size: 48px; color: var(--text-tertiary);">error_outline</span>
         <h3>Document Not Found</h3>
         <p class="text-secondary">The requested document could not be loaded or the session expired.</p>
-        <button class="btn btn-primary" onclick="window.close()" style="margin-top: 20px;">Close Tab</button>
+        <button class="btn btn-primary" onclick="window.close()" data-tooltip="Close this tab and return to app" data-tooltip-pos="top" style="margin-top: 20px;">Close Tab</button>
       </div>
     `;
     return;
@@ -44,7 +44,7 @@ export function renderDocumentViewer(container) {
             </div>
           </div>
           <div>
-            <button class="btn btn-secondary btn-sm" onclick="window.close()">Close</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.close()" data-tooltip="Close viewer tab" data-tooltip-pos="left">Close</button>
           </div>
         </div>
       </div>
@@ -59,7 +59,7 @@ export function renderDocumentViewer(container) {
             <span class="material-icons-outlined" style="font-size: 48px; color: var(--text-tertiary); margin-bottom: 16px;">description</span>
             <h4>Cannot preview this file type</h4>
             <p class="text-secondary" style="margin-bottom: 24px;">This file type (${escapeHTML(docData.type || 'Unknown')}) cannot be previewed in the browser.</p>
-            <a href="${escapeHTML(docData.url)}" download="${escapeHTML(docData.name)}" class="btn btn-primary">Download File</a>
+            <a href="${escapeHTML(docData.url)}" download="${escapeHTML(docData.name)}" class="btn btn-primary" data-tooltip="Download document to computer" data-tooltip-pos="top">Download File</a>
           </div>
         `}
       </div>

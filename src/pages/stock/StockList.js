@@ -206,6 +206,58 @@ export function renderStockList(container, params) {
           onClear: () => table.clearSelection(),
           actions: [
             {
+              label: 'Print Barcodes',
+              icon: 'qr_code_2',
+              onClick: (ids) => {
+                const items = ids.map(id => store.getById('stock', id)).filter(Boolean);
+                const printWindow = window.open('', '_blank');
+                let html = `
+                  <html>
+                  <head>
+                    <title>Barcode Print Sheet</title>
+                    <style>
+                      body { font-family: 'Inter', sans-serif; padding: 20px; }
+                      .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+                      .barcode-card { border: 1px solid #ddd; padding: 12px; border-radius: 6px; text-align: center; background: #fff; }
+                      .item-name { font-weight: 600; font-size: 12px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                      .sku { font-family: monospace; font-size: 11px; color: #666; margin-bottom: 8px; }
+                      .barcode-placeholder { border-top: 2px solid #000; border-bottom: 2px solid #000; height: 35px; display: flex; align-items: center; justify-content: center; font-size: 8px; letter-spacing: 3px; font-weight: bold; background: repeating-linear-gradient(90deg, #000, #000 2px, transparent 2px, transparent 4px); margin-bottom: 4px; }
+                      .price { font-weight: 700; font-size: 12px; color: #111; }
+                      @media print {
+                        body { padding: 0; }
+                        .barcode-card { page-break-inside: avoid; }
+                      }
+                    </style>
+                  </head>
+                  <body>
+                    <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:8px">Inventory Barcode Labels (${items.length} Items)</h3>
+                    <div class="grid">
+                `;
+                items.forEach(item => {
+                  html += `
+                    <div class="barcode-card">
+                      <div class="item-name">${escapeHTML(item.name)}</div>
+                      <div class="sku">${escapeHTML(item.sku)}</div>
+                      <div class="barcode-placeholder">||||| | ||| || |||</div>
+                      <div class="price">$${item.unitPrice.toFixed(2)}</div>
+                    </div>
+                  `;
+                });
+                html += `
+                    </div>
+                    <script>
+                      window.onload = function() {
+                        window.print();
+                      }
+                    </script>
+                  </body>
+                  </html>
+                `;
+                printWindow.document.write(html);
+                printWindow.document.close();
+              }
+            },
+            {
               label: 'Change Category',
               icon: 'category',
               onClick: (ids) => {

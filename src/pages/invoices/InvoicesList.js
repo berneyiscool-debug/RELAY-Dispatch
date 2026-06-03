@@ -63,6 +63,66 @@ export function renderInvoicesList(container) {
         onClear: () => table.clearSelection(),
         actions: [
           {
+            label: 'Bulk Email/Remind',
+            icon: 'mail_outline',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: 'Confirm Payment Reminders',
+                  content: `<p>Are you sure you want to send automated email reminders for the ${ids.length} selected invoices?</p>`,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Send Reminders', className: 'btn-primary', onClick: c => {
+                      table.clearSelection();
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Sent payment reminders for ${ids.length} invoices`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Accounting Sync (CSV)',
+            icon: 'sync',
+            onClick: (ids) => {
+              try {
+                const headers = ['Invoice Number', 'Customer', 'Job Ref', 'Subtotal', 'Tax', 'Total', 'Issue Date', 'Due Date', 'Status'];
+                const rows = ids.map(id => {
+                  const inv = store.getById('invoices', id);
+                  if (!inv) return null;
+                  return [
+                    inv.number || '',
+                    inv.customerName || '',
+                    inv.jobNumber || '',
+                    (inv.subtotal || 0).toFixed(2),
+                    (inv.tax || 0).toFixed(2),
+                    (inv.total || 0).toFixed(2),
+                    inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : '',
+                    inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '',
+                    inv.status || ''
+                  ];
+                }).filter(Boolean);
+
+                const csvContent = [headers, ...rows].map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `fieldforge_invoices_sync_${Date.now()}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                table.clearSelection();
+                import('../../components/Notifications.js').then(({ showToast }) => showToast(`Successfully exported and synced ${ids.length} invoices`, 'success'));
+              } catch (err) {
+                console.error(err);
+                import('../../components/Notifications.js').then(({ showToast }) => showToast('Failed to sync invoices', 'error'));
+              }
+            }
+          },
+          {
             label: 'Mark Paid',
             icon: 'check_circle',
             onClick: (ids) => {

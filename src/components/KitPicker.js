@@ -87,7 +87,7 @@ export function showKitPicker({ onSelect, context = 'quote' }) {
 
     // Bind kit selection
     content.querySelectorAll('.kit-pick-item').forEach(el => {
-      el.addEventListener('mouseenter', () => { el.style.borderColor = 'var(--color-primary)'; el.style.background = 'var(--color-primary-light, rgba(49,86,113,0.04))'; });
+      el.addEventListener('mouseenter', () => { el.style.borderColor = 'var(--color-primary)'; el.style.background = 'var(--color-primary-light, rgba(255,92,0,0.04))'; });
       el.addEventListener('mouseleave', () => { el.style.borderColor = 'var(--border-color)'; el.style.background = ''; });
       el.addEventListener('click', () => {
         const kit = kits.find(k => k.id === el.dataset.id);

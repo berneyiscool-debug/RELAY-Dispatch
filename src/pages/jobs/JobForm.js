@@ -465,6 +465,7 @@ export function renderJobForm(container, { id }) {
                 return `
                   <div class="task-list-item" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:var(--bg-color)'}">
                     <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
+                    ${p.valueFields && p.valueFields.length > 0 ? `<span style="font-size:10px; background:var(--color-primary-light); color:var(--color-primary); padding:2px 6px; border-radius:4px; margin-right:6px; font-weight:600; flex-shrink:0">${p.valueFields.length} fields</span>` : ''}
                     ${p.subTasks && p.subTasks.length > 0 ? `<button type="button" class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="margin-left:8px; padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` : ''}
                   </div>
                 `;
@@ -512,6 +513,68 @@ export function renderJobForm(container, { id }) {
                   <label class="form-label">Description</label>
                   <textarea class="form-input detail-input" data-field="description" rows="3">${escapeHTML(node.description || '')}</textarea>
                 </div>
+                ${!hasSubs ? `
+                <div style="margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+                    <div style="display:flex; align-items:center; gap:6px">
+                      <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">assignment</span>
+                      <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Fields</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary btn-add-value-field" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>
+                  </div>
+                  <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:10px">Define the values a technician needs to record for this task (e.g. pressure readings, temperatures).</div>
+                  <div style="display:flex; flex-direction:column; gap:8px" id="value-fields-config">
+                    ${(node.valueFields || []).map((vf, vi) => {
+                      const ft = vf.fieldType || 'text';
+                      return `
+                      <div style="padding:10px 12px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px" data-vf-idx="${vi}">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:${ft !== 'text' ? '8px' : '0'}">
+                          <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:grab">drag_indicator</span>
+                          <input type="text" class="form-input vf-label-input" data-vf-idx="${vi}" value="${escapeHTML(vf.label)}" placeholder="Field label (e.g. Oil Pressure)" style="flex:2; height:32px; font-size:13px" />
+                          <select class="form-input vf-type-select" data-vf-idx="${vi}" style="flex:0 0 110px; height:32px; font-size:12px">
+                            <option value="text"${ft === 'text' ? ' selected' : ''}>Text</option>
+                            <option value="number"${ft === 'number' ? ' selected' : ''}>Number</option>
+                            <option value="dropdown"${ft === 'dropdown' ? ' selected' : ''}>Dropdown</option>
+                          </select>
+                          <button type="button" class="btn btn-ghost btn-sm btn-icon btn-remove-value-field" data-vf-idx="${vi}" style="color:var(--color-danger); min-width:28px; min-height:28px; padding:0"><span class="material-icons-outlined" style="font-size:16px">close</span></button>
+                        </div>
+                        ${ft === 'number' ? `
+                        <div style="display:flex; align-items:center; gap:8px; margin-left:28px">
+                          <input type="text" class="form-input vf-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                          <div style="display:flex; align-items:center; gap:4px; flex:2">
+                            <span style="font-size:11px; color:var(--text-tertiary); white-space:nowrap">Range:</span>
+                            <input type="number" class="form-input vf-min-input" data-vf-idx="${vi}" value="${vf.min !== undefined ? vf.min : ''}" placeholder="Min" style="flex:1; height:30px; font-size:12px" />
+                            <span style="color:var(--text-tertiary)">–</span>
+                            <input type="number" class="form-input vf-max-input" data-vf-idx="${vi}" value="${vf.max !== undefined ? vf.max : ''}" placeholder="Max" style="flex:1; height:30px; font-size:12px" />
+                          </div>
+                        </div>
+                        ` : ''}
+                        ${ft === 'text' ? `
+                        <div style="display:flex; align-items:center; gap:8px; margin-left:28px; margin-top:4px">
+                          <input type="text" class="form-input vf-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (optional, e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                        </div>
+                        ` : ''}
+                        ${ft === 'dropdown' ? `
+                        <div style="margin-left:28px; display:flex; flex-direction:column; gap:6px">
+                          <div>
+                            <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Options (one per line)</div>
+                            <textarea class="form-input vf-options-input" data-vf-idx="${vi}" rows="3" placeholder="Low\nAs Expected\nHigh" style="font-size:12px; line-height:1.5">${escapeHTML((vf.options || []).join('\n'))}</textarea>
+                          </div>
+                          <div>
+                            <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Expected / Ideal Value <span style="font-weight:400">(flags others as out of range)</span></div>
+                            <select class="form-input vf-expected-select" data-vf-idx="${vi}" style="height:30px; font-size:12px">
+                              <option value=""${!vf.expectedValue ? ' selected' : ''}>— No expected value —</option>
+                              ${(vf.options || []).map(opt => `<option value="${escapeHTML(opt)}"${vf.expectedValue === opt ? ' selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
+                            </select>
+                          </div>
+                        </div>
+                        ` : ''}
+                      </div>`;
+                    }).join('')}
+                    ${(!node.valueFields || node.valueFields.length === 0) ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:16px; border:1px dashed var(--border-color); border-radius:6px">No value fields defined. Click "Add Field" to create one.</div>' : ''}
+                  </div>
+                </div>
+                ` : ''}
               </div>
             `;
           })() : ''}
@@ -601,6 +664,101 @@ export function renderJobForm(container, { id }) {
        
     });
 
+    // Value Fields interactive configuration listeners
+    tc.querySelector('.btn-add-value-field')?.addEventListener('click', () => {
+       const node = getTaskByPath(jobTasks, taskExpandedPath);
+       if (!node) return;
+       if (!node.valueFields) node.valueFields = [];
+       node.valueFields.push({ id: store.generateId(), label: '', unit: '', value: '', fieldType: 'text' });
+       renderFormTasks();
+    });
+
+    tc.querySelectorAll('.btn-remove-value-field').forEach(btn => {
+       btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (!node || !node.valueFields) return;
+          node.valueFields.splice(idx, 1);
+          renderFormTasks();
+       });
+    });
+
+    tc.querySelectorAll('.vf-label-input').forEach(inp => {
+       inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+             node.valueFields[idx].label = inp.value.trim();
+          }
+       });
+    });
+
+    tc.querySelectorAll('.vf-unit-input').forEach(inp => {
+       inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+             node.valueFields[idx].unit = inp.value.trim();
+          }
+       });
+    });
+
+    tc.querySelectorAll('.vf-type-select').forEach(sel => {
+       sel.addEventListener('change', () => {
+          const idx = parseInt(sel.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+             node.valueFields[idx].fieldType = sel.value;
+             if (sel.value !== 'number') { node.valueFields[idx].min = undefined; node.valueFields[idx].max = undefined; }
+             if (sel.value !== 'dropdown') { node.valueFields[idx].options = undefined; }
+             if (sel.value === 'dropdown') { node.valueFields[idx].unit = ''; }
+             node.valueFields[idx].value = '';
+          }
+          renderFormTasks();
+       });
+    });
+
+    tc.querySelectorAll('.vf-min-input').forEach(inp => {
+       inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+             node.valueFields[idx].min = inp.value !== '' ? parseFloat(inp.value) : undefined;
+          }
+       });
+    });
+
+    tc.querySelectorAll('.vf-max-input').forEach(inp => {
+       inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+             node.valueFields[idx].max = inp.value !== '' ? parseFloat(inp.value) : undefined;
+          }
+       });
+    });
+
+    tc.querySelectorAll('.vf-options-input').forEach(inp => {
+       inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+             node.valueFields[idx].options = inp.value.split('\n').map(o => o.trim()).filter(Boolean);
+             renderFormTasks();
+          }
+       });
+    });
+
+    tc.querySelectorAll('.vf-expected-select').forEach(inp => {
+       inp.addEventListener('change', () => {
+          const idx = parseInt(inp.dataset.vfIdx);
+          const node = getTaskByPath(jobTasks, taskExpandedPath);
+          if (node && node.valueFields && node.valueFields[idx]) {
+             node.valueFields[idx].expectedValue = inp.value || undefined;
+          }
+       });
+    });
+
     container.querySelector('#btn-save-as-template')?.addEventListener('click', () => {
       const content = document.createElement('div');
       content.innerHTML = `
@@ -639,6 +797,7 @@ export function renderJobForm(container, { id }) {
                   id: store.generateId(),
                   status: 'Not Started',
                   progress: 0,
+                  valueFields: p.valueFields ? p.valueFields.map(vf => ({ ...vf })) : undefined,
                   subTasks: p.subTasks ? deepClone(p.subTasks) : []
                 }));
               }
@@ -737,6 +896,7 @@ export function renderJobForm(container, { id }) {
                     id: store.generateId(),
                     status: 'Not Started',
                     progress: 0,
+                    valueFields: p.valueFields ? p.valueFields.map(vf => ({ ...vf })) : undefined,
                     subTasks: (p.subTasks || p.subPhases) ? deepClone(p.subTasks || p.subPhases) : []
                   }));
                 }

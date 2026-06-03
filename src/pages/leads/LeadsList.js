@@ -37,7 +37,7 @@ export function renderLeadsList(container) {
     <div class="page-header">
       <h1>Leads</h1>
       <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-lead">
+        <button class="btn btn-primary" id="btn-new-lead" data-tooltip="Create a new prospective customer lead" data-tooltip-pos="left">
           <span class="material-icons-outlined">add</span> New Lead
         </button>
       </div>
@@ -140,6 +140,86 @@ export function renderLeadsList(container) {
         selectedIds,
         onClear: () => table.clearSelection(),
         actions: [
+          {
+            label: 'Assign Sales Rep',
+            icon: 'assignment_ind',
+            onClick: (ids) => {
+              const techs = store.getAll('technicians').filter(t => !t.deactivated);
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">Sales Representative</label>
+                  <select class="form-select" id="bulk-tech">
+                    <option value="">-- Select Sales Rep --</option>
+                    ${techs.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
+                  </select>
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Assign ${ids.length} Leads`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Assign', className: 'btn-primary', onClick: c => {
+                      const techId = content.querySelector('#bulk-tech').value;
+                      if (!techId) return;
+                      const tech = store.getById('technicians', techId);
+                      if (tech) {
+                        ids.forEach(id => {
+                          store.update('leads', id, {
+                            assignedTo: tech.id,
+                            assignedToName: tech.name,
+                            salesRepName: tech.name
+                          });
+                        });
+                        table.clearSelection();
+                        renderLeadsList(container);
+                        import('../../components/Notifications.js').then(({ showToast }) => showToast(`Assigned ${ids.length} leads to ${tech.name}`, 'success'));
+                      }
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Set Priority',
+            icon: 'local_fire_department',
+            onClick: (ids) => {
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">Select Priority</label>
+                  <select class="form-select" id="bulk-priority">
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                  </select>
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Set Priority for ${ids.length} Leads`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Apply', className: 'btn-primary', onClick: c => {
+                      const priority = content.querySelector('#bulk-priority').value;
+                      ids.forEach(id => {
+                        store.update('leads', id, { priority: priority });
+                      });
+                      table.clearSelection();
+                      renderLeadsList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Updated priority of ${ids.length} leads to ${priority}`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
           {
             label: 'Change Status',
             icon: 'sync_alt',

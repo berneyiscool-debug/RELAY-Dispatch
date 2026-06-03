@@ -67,18 +67,18 @@ export function createSidebar() {
   if (isExpanded) sidebar.classList.add('expanded');
 
   const settings = store.getSettings();
-  const logoHtml = settings.logo 
-    ? `<div style="display:flex; align-items:center; justify-content:center; width:100%; gap:10px">
-         <img src="${settings.logo}" class="custom-logo" id="sidebar-logo-img" style="max-height: 28px; max-width: ${isExpanded ? '140px' : '32px'}; object-fit: contain;" />
-         <span class="logo-text" style="${isExpanded ? 'display: block;' : 'display: none;'}">${settings.name || 'Relay — Dispatch'}</span>
-       </div>`
+  const logoSrc = isExpanded 
+    ? (settings.logo || settings.logoSmall) 
+    : (settings.logoSmall || settings.logo);
+  const logoHtml = logoSrc 
+    ? `<img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${isExpanded ? '85%' : '32px'}; object-fit: contain; display: block; margin: auto;" />`
     : `
       <div class="logo-icon">R</div>
-      <span class="logo-text">Relay — Dispatch</span>
+      <span class="logo-text" style="${isExpanded ? 'display: block;' : 'display: none;'}">Relay — Dispatch</span>
     `;
 
   let html = `
-    <div class="sidebar-logo" id="sidebar-logo">
+    <div class="sidebar-logo ${settings.logo ? 'custom-logo-active' : ''}" id="sidebar-logo">
       ${logoHtml}
     </div>
     <div class="sidebar-scroll-arrow up" id="sidebar-scroll-up">
@@ -334,17 +334,19 @@ export function createSidebar() {
   window.addEventListener('simpro-settings-updated', () => {
     const s = store.getSettings();
     const logoContainer = sidebar.querySelector('#sidebar-logo');
-    if (s.logo) {
+    const isExpandedNow = sidebar.classList.contains('expanded');
+    const logoSrc = isExpandedNow 
+      ? (s.logo || s.logoSmall) 
+      : (s.logoSmall || s.logo);
+
+    if (logoSrc) {
       logoContainer.innerHTML = `
-        <div style="display:flex; align-items:center; justify-content:center; width:100%; gap:10px">
-          <img src="${s.logo}" class="custom-logo" style="max-height: 28px; max-width: ${sidebar.classList.contains('expanded') ? '140px' : '32px'}; object-fit: contain;" />
-          <span class="logo-text" style="${sidebar.classList.contains('expanded') ? 'display: block;' : 'display: none;'}">${s.name || 'Relay — Dispatch'}</span>
-        </div>
+        <img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${isExpandedNow ? '85%' : '32px'}; object-fit: contain; display: block; margin: auto;" />
       `;
     } else {
       logoContainer.innerHTML = `
         <div class="logo-icon">R</div>
-        <span class="logo-text">Relay — Dispatch</span>
+        <span class="logo-text" style="${isExpandedNow ? 'display: block;' : 'display: none;'}">Relay — Dispatch</span>
       `;
     }
   });
@@ -437,11 +439,15 @@ export function toggleSidebar(sidebar) {
   icon.textContent = isExpanded ? 'chevron_left' : 'chevron_right';
   
   // Toggle branding elements
+  const s = store.getSettings();
   const customImg = sidebar.querySelector('.custom-logo');
   const logoText = sidebar.querySelector('.logo-text');
   
   if (customImg) {
-    customImg.style.maxWidth = isExpanded ? '140px' : '32px';
+    customImg.src = isExpanded 
+      ? (s.logo || s.logoSmall) 
+      : (s.logoSmall || s.logo);
+    customImg.style.maxWidth = isExpanded ? '85%' : '32px';
   }
   if (logoText) logoText.style.display = isExpanded ? 'block' : 'none';
 

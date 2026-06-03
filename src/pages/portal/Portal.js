@@ -253,7 +253,7 @@ export function renderCustomerPortal(container, params) {
           left: -10%;
           width: 50%;
           height: 50%;
-          background: radial-gradient(circle, rgba(49, 86, 113, 0.08) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(255, 92, 0, 0.08) 0%, transparent 70%);
           z-index: 0;
           pointer-events: none;
         }
@@ -298,7 +298,7 @@ export function renderCustomerPortal(container, params) {
           align-items: center;
           justify-content: center;
           color: var(--color-primary);
-          box-shadow: 0 4px 12px rgba(49, 86, 113, 0.1);
+          box-shadow: 0 4px 12px rgba(255, 92, 0, 0.1);
         }
 
         .portal-company-name {
@@ -361,7 +361,7 @@ export function renderCustomerPortal(container, params) {
         .portal-nav-tab.active {
           color: var(--text-inverse) !important;
           background: var(--color-primary);
-          box-shadow: 0 4px 14px rgba(49, 86, 113, 0.25);
+          box-shadow: 0 4px 14px rgba(255, 92, 0, 0.25);
           font-weight: 600;
         }
         [data-theme="dark"] .portal-nav-tab.active {
@@ -477,7 +477,7 @@ export function renderCustomerPortal(container, params) {
           color: var(--text-primary);
         }
         .accordion-header:hover {
-          background-color: rgba(49, 86, 113, 0.03);
+          background-color: rgba(255, 92, 0, 0.03);
         }
         [data-theme="dark"] .accordion-header:hover {
           background-color: rgba(255, 255, 255, 0.02);
@@ -490,12 +490,12 @@ export function renderCustomerPortal(container, params) {
         }
 
         .customer-portal-hero {
-          background: linear-gradient(135deg, rgba(49, 86, 113, 0.85) 0%, rgba(30, 64, 175, 0.75) 100%);
+          background: linear-gradient(135deg, rgba(255, 92, 0, 0.85) 0%, rgba(30, 64, 175, 0.75) 100%);
           color: #ffffff;
           padding: 36px 32px;
           border-radius: 16px;
           margin-bottom: 28px;
-          box-shadow: 0 20px 40px -15px rgba(49, 86, 113, 0.25);
+          box-shadow: 0 20px 40px -15px rgba(255, 92, 0, 0.25);
           border: 1px solid rgba(255, 255, 255, 0.15);
           position: relative;
           overflow: hidden;

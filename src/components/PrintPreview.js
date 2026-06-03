@@ -44,7 +44,15 @@ export function showPrintPreview({ type, data }) {
   const doc = document.createElement('div');
   doc.id = 'print-document';
   doc.className = 'print-document';
-  doc.innerHTML = generateDocument(type, data);
+  
+  const settings = store.getSettings();
+  const scopedStyle = document.createElement('style');
+  scopedStyle.innerHTML = getPrintStyles(settings).replace(/body\s*{/g, '.print-document {');
+  doc.appendChild(scopedStyle);
+
+  const innerDoc = document.createElement('div');
+  innerDoc.innerHTML = generateDocument(type, data);
+  doc.appendChild(innerDoc);
 
   wrapper.appendChild(toolbar);
   wrapper.appendChild(doc);
@@ -68,13 +76,14 @@ export function showPrintPreview({ type, data }) {
 
   // Print
   toolbar.querySelector('#btn-print-pdf').addEventListener('click', () => {
+    const settings = store.getSettings();
     const htmlString = `
       <!DOCTYPE html>
       <html>
       <head>
         <title>${data.number} — ${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'}</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-        <style>${getPrintStyles()}</style>
+        <style>${getPrintStyles(settings)}</style>
       </head>
       <body>
         ${generateDocument(type, data)}
@@ -121,7 +130,7 @@ export function showPrintPreview({ type, data }) {
   document.addEventListener('keydown', esc);
 }
 
-function generateDocument(type, data) {
+export function generateDocument(type, data) {
   if (type === 'form') {
     return generateFormDocument(data);
   }
@@ -139,9 +148,48 @@ function generateDocument(type, data) {
   const sections = data.sections || [];
 
   const settings = store.getSettings();
-  const companyLogoHtml = settings.logo 
-    ? `<img src="${settings.logo}" style="max-height:60px; max-width:240px; object-fit:contain" />`
-    : `<div class="pdf-logo">F</div>`;
+  const dt = settings.documentTheme || {
+    preset: 'relay',
+    accentColor: '#1B6DE0',
+    headerBg: '#1E2A3A',
+    accentTint: '#F8FAFC',
+    fontFamily: 'sans-serif',
+    invoiceTitle: 'TAX INVOICE',
+    invoiceTerms: 'Please pay within 7 days of invoice issue.',
+    invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
+    quoteTitle: 'PROPOSAL / QUOTE',
+    quoteTerms: 'This quote is valid for 30 days. All work is subject to standard conditions.',
+    logoAlignment: 'left',
+    logoScale: 60,
+    hideLogo: false,
+    paymentStripe: true,
+    paymentDirectTransfer: true,
+    paymentCash: false,
+    quoteSignature: true,
+    footerNote: 'Thank you for your business!'
+  };
+
+  let companyHeaderHtml = '';
+  if (dt.hideLogo) {
+    companyHeaderHtml = `<div style="font-size:24px; font-weight:800; color:${dt.accentColor || '#1B6DE0'}">${escapeHTML(settings.name || 'Apex Power Services')}</div>`;
+  } else {
+    const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
+    companyHeaderHtml = settings.logo 
+      ? `<img src="${settings.logo}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain" />`
+      : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd)">${(settings.name || 'A').charAt(0)}</div>`;
+  }
+
+  let headerFlexStyle = 'display:flex; justify-content:space-between; align-items:flex-start;';
+  let companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start;';
+  let titleBlockStyle = 'text-align: right;';
+  
+  if (dt.logoAlignment === 'right') {
+    companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start; flex-direction: row-reverse; text-align: right;';
+  } else if (dt.logoAlignment === 'center') {
+    headerFlexStyle = 'display:flex; flex-direction:column; align-items:center; gap:20px; border-bottom: 2px solid #E4E9F0; padding-bottom: 24px; margin-bottom: 32px;';
+    companyFlexStyle = 'display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;';
+    titleBlockStyle = 'text-align: center; margin-top: 10px;';
+  }
 
   let tableContent = '';
   if (sections.length > 0) {
@@ -188,12 +236,60 @@ function generateDocument(type, data) {
     `).join('');
   }
 
+  let paymentMethodsHtml = '';
+  if (!isQuote && (dt.paymentStripe || dt.paymentDirectTransfer || dt.paymentCash)) {
+    paymentMethodsHtml = `
+      <div class="pdf-payment-methods">
+        <div class="pdf-payment-title">Payment Options</div>
+        <div class="pdf-payment-grid">
+          ${dt.paymentStripe ? `
+            <div class="pdf-payment-option">
+              <strong>Credit Card / Online</strong><br/>
+              Pay securely via Stripe Credit Card link.
+              <div style="margin-top: 6px;">
+                <a href="#" onclick="alert('Payment link mock: Stripe payment would be loaded here.'); return false;" style="display:inline-block; padding: 4px 10px; background:${dt.accentColor}; color:white; border-radius:4px; font-weight:600; text-decoration:none; font-size:10px;">Pay Invoice Online</a>
+              </div>
+            </div>
+          ` : ''}
+          ${dt.paymentDirectTransfer ? `
+            <div class="pdf-payment-option">
+              <strong>Direct Bank Transfer</strong><br/>
+              ${escapeHTML(dt.invoicePaymentTerms || '').replace(/\n/g, '<br/>')}
+            </div>
+          ` : ''}
+          ${dt.paymentCash ? `
+            <div class="pdf-payment-option">
+              <strong>Cash Payments</strong><br/>
+              Cash payment accepted on site. Please request a paper receipt from the attending service technician.
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  let quoteSignatureHtml = '';
+  if (isQuote && dt.quoteSignature) {
+    quoteSignatureHtml = `
+      <div class="pdf-signature-block">
+        <div class="pdf-sig-line">
+          <div class="pdf-sig-space"></div>
+          <div class="pdf-sig-label">Prepared By (Service Coordinator)</div>
+        </div>
+        <div class="pdf-sig-line">
+          <div class="pdf-sig-space"></div>
+          <div class="pdf-sig-label">Accepted By (Customer Representative Signature)</div>
+        </div>
+      </div>
+    `;
+  }
+
   return `
     <div class="pdf-page">
       <!-- Header -->
-      <div class="pdf-header">
-        <div class="pdf-company">
-          ${companyLogoHtml}
+      <div class="pdf-header" style="${headerFlexStyle}">
+        <div class="pdf-company" style="${companyFlexStyle}">
+          ${companyHeaderHtml}
           <div>
             <div class="pdf-company-name">${escapeHTML(settings.name || 'Apex Power Services')}</div>
             <div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn || '51 234 567 890')}</div>
@@ -201,8 +297,8 @@ function generateDocument(type, data) {
             <div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
           </div>
         </div>
-        <div class="pdf-title-block">
-          <div class="pdf-doc-type">${isQuote ? 'QUOTE' : 'TAX INVOICE'}</div>
+        <div class="pdf-title-block" style="${titleBlockStyle}">
+          <div class="pdf-doc-type">${isQuote ? escapeHTML(dt.quoteTitle || 'QUOTE') : escapeHTML(dt.invoiceTitle || 'TAX INVOICE')}</div>
           <div class="pdf-doc-number">${data.number}</div>
           <div class="pdf-status" style="background:${statusColor}15;color:${statusColor};border:1px solid ${statusColor}40">${data.status}</div>
         </div>
@@ -312,6 +408,8 @@ function generateDocument(type, data) {
       `}
 
 
+      ${paymentMethodsHtml}
+
       ${data.notes ? `
         <div class="pdf-notes">
           <div class="pdf-notes-title">Notes</div>
@@ -319,15 +417,18 @@ function generateDocument(type, data) {
         </div>
       ` : ''}
 
+      ${quoteSignatureHtml}
+
       <!-- Footer -->
       <div class="pdf-footer">
         <div class="pdf-footer-line"></div>
         <div class="pdf-footer-text">
           ${isQuote
-            ? 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.'
-            : 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.'}
+            ? escapeHTML(dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
+            : escapeHTML(dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.')}
         </div>
         <div class="pdf-footer-company">${escapeHTML(settings.name || 'Apex Power Services')} — ${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')} — ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
+        ${dt.footerNote ? `<div style="font-size:10px; color:#8A97A8; font-weight:normal; text-align:center; margin-top:8px;">${escapeHTML(dt.footerNote)}</div>` : ''}
       </div>
     </div>
   `;
@@ -432,24 +533,47 @@ export function formatDate(dateStr) {
   }
 }
 
-function getPrintStyles() {
+export function getPrintStyles(settings = store.getSettings()) {
+  const dt = settings.documentTheme || {
+    preset: 'relay',
+    accentColor: '#1B6DE0',
+    headerBg: '#1E2A3A',
+    accentTint: '#F8FAFC',
+    fontFamily: 'sans-serif'
+  };
+  
+  let fontImport = '';
+  let fontStack = `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+  
+  if (dt.fontFamily === 'serif') {
+    fontImport = `@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Lora:ital,wght@0,400..700;1,400..700&display=swap');`;
+    fontStack = `'Lora', 'Playfair Display', Georgia, serif`;
+  } else if (dt.fontFamily === 'monospace') {
+    fontImport = `@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');`;
+    fontStack = `'Fira Code', 'JetBrains Mono', Courier, monospace`;
+  } else if (dt.preset === 'electric') {
+    fontImport = `@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap');`;
+    fontStack = `'Outfit', 'Inter', sans-serif`;
+  }
+  
   return `
+    ${fontImport}
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1A2332; font-size: 12px; line-height: 1.5; }
+    body { font-family: ${fontStack}; color: #1A2332; font-size: 12px; line-height: 1.5; }
     .pdf-page { padding: 40px 48px; max-width: 210mm; margin: 0 auto; }
 
     .pdf-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #E4E9F0; }
     .pdf-company { display: flex; gap: 14px; align-items: flex-start; }
-    .pdf-logo { width: 44px; height: 44px; background: linear-gradient(135deg, #1B6DE0, #3B95FF); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 22px; flex-shrink: 0; }
+    .pdf-logo { width: 44px; height: 44px; background: linear-gradient(135deg, ${dt.accentColor}, ${dt.accentColor}dd); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 22px; flex-shrink: 0; }
     .pdf-company-name { font-size: 18px; font-weight: 700; color: #1A2332; margin-bottom: 2px; }
     .pdf-company-detail { font-size: 11px; color: #5A6B7F; line-height: 1.6; }
 
     .pdf-title-block { text-align: right; }
-    .pdf-doc-type { font-size: 24px; font-weight: 800; color: #1B6DE0; letter-spacing: 1px; }
+    .pdf-doc-type { font-size: 24px; font-weight: 800; color: ${dt.accentColor}; letter-spacing: 1px; }
     .pdf-doc-number { font-size: 14px; color: #5A6B7F; margin: 2px 0 8px; font-weight: 500; }
     .pdf-status { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
 
-    .pdf-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 28px; padding: 20px; background: #F8FAFC; border-radius: 8px; }
+    .pdf-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 28px; padding: 20px; background: ${dt.accentTint}; border-radius: 8px; }
     .pdf-info-col { display: flex; flex-direction: column; gap: 6px; }
     .pdf-info-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #8A97A8; }
     .pdf-info-value { font-size: 12px; color: #1A2332; }
@@ -457,26 +581,37 @@ function getPrintStyles() {
     .pdf-info-row { display: flex; justify-content: space-between; align-items: center; }
 
     .pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-    .pdf-table th { padding: 10px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: white; background: #1E2A3A; text-align: left; }
+    .pdf-table th { padding: 10px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: white; background: ${dt.headerBg}; text-align: left; }
     .pdf-table th:first-child { border-radius: 6px 0 0 0; }
     .pdf-table th:last-child { border-radius: 0 6px 0 0; }
     .pdf-table td { padding: 10px 12px; border-bottom: 1px solid #E4E9F0; font-size: 12px; }
-    .pdf-table tbody tr:last-child td { border-bottom: 2px solid #1E2A3A; }
-    .pdf-table tbody tr:nth-child(even) { background: #F8FAFC; }
-    .pdf-type-tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #E8F1FC; color: #1B6DE0; }
+    .pdf-table tbody tr:last-child td { border-bottom: 2px solid ${dt.headerBg}; }
+    .pdf-table tbody tr:nth-child(even) { background: ${dt.accentTint}; }
+    .pdf-type-tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: ${dt.accentTint}; color: ${dt.accentColor}; border: 1px solid ${dt.accentColor}22; }
 
     .pdf-totals { margin-left: auto; width: 280px; margin-bottom: 32px; }
     .pdf-total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; color: #5A6B7F; }
-    .pdf-grand-total { border-top: 2px solid #1E2A3A; padding-top: 12px; margin-top: 4px; font-size: 18px; font-weight: 800; color: #1A2332; }
+    .pdf-grand-total { border-top: 2px solid ${dt.headerBg}; padding-top: 12px; margin-top: 4px; font-size: 18px; font-weight: 800; color: #1A2332; }
 
     .pdf-notes { margin-bottom: 32px; padding: 16px; background: #FFFBEB; border-radius: 6px; border: 1px solid #FDE68A; }
     .pdf-notes-title { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #92400E; margin-bottom: 4px; }
     .pdf-notes-text { font-size: 12px; color: #78350F; line-height: 1.6; }
 
     .pdf-footer { margin-top: 40px; }
-    .pdf-footer-line { height: 2px; background: linear-gradient(90deg, #1B6DE0, #3B95FF, #1B6DE0); margin-bottom: 16px; border-radius: 1px; }
+    .pdf-footer-line { height: 2px; background: linear-gradient(90deg, ${dt.accentColor}, ${dt.accentColor}88, ${dt.accentColor}); margin-bottom: 16px; border-radius: 1px; }
     .pdf-footer-text { font-size: 11px; color: #5A6B7F; line-height: 1.6; margin-bottom: 8px; }
     .pdf-footer-company { font-size: 10px; color: #8A97A8; font-weight: 500; }
+
+    .pdf-payment-methods { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; padding: 16px; border: 1px solid #E4E9F0; border-radius: 6px; background: #FAFBFD; page-break-inside: avoid; }
+    .pdf-payment-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: ${dt.accentColor}; margin-bottom: 6px; }
+    .pdf-payment-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+    .pdf-payment-option { font-size: 11px; line-height: 1.5; color: #5A6B7F; }
+    .pdf-payment-option strong { color: #1A2332; }
+
+    .pdf-signature-block { display: flex; justify-content: space-between; margin-top: 32px; padding-top: 24px; border-top: 1px dashed #CBD5E1; page-break-inside: avoid; }
+    .pdf-sig-line { width: 45%; }
+    .pdf-sig-label { font-size: 10px; color: #8A97A8; margin-top: 4px; text-transform: uppercase; }
+    .pdf-sig-space { height: 48px; border-bottom: 1px solid #94A3B8; }
 
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

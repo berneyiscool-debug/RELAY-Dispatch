@@ -88,7 +88,7 @@ export function renderReports(container) {
       <div class="page-header">
         <h1>Reports & Analytics</h1>
         <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-export-csv"><span class="material-icons-outlined">download</span> Export CSV</button>
+          <button class="btn btn-secondary" id="btn-export-csv" data-tooltip="Export current report data to CSV" data-tooltip-pos="left"><span class="material-icons-outlined">download</span> Export CSV</button>
         </div>
       </div>
 
@@ -98,7 +98,7 @@ export function renderReports(container) {
           <div class="card">
             <div class="card-body" style="padding:var(--space-sm)">
               ${reports.map(r => `
-                <button class="report-nav-item ${activeReport === r.id ? 'active' : ''}" data-report="${r.id}" style="
+                <button class="report-nav-item ${activeReport === r.id ? 'active' : ''}" data-report="${r.id}" data-tooltip="View ${escapeHTML(r.label)} report" data-tooltip-pos="right" style="
                   display:flex;align-items:center;gap:10px;padding:10px 14px;width:100%;border:none;
                   background:${activeReport === r.id ? 'var(--color-primary-light)' : 'transparent'};
                   color:${activeReport === r.id ? 'var(--color-primary)' : 'var(--text-secondary)'};

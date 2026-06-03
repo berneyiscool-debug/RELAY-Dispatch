@@ -48,10 +48,10 @@ export function renderPersonDetail(container, { id }) {
           <span class="badge ${person.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(person.status)}</span>
         `,
         actionsHtml: `
-          <button class="btn btn-secondary" id="btn-edit-person">
+          <button class="btn btn-secondary" id="btn-edit-person" data-tooltip="Modify customer details, contacts, or active site addresses" data-tooltip-pos="left">
             <span class="material-icons-outlined">edit</span> Edit
           </button>
-          <button class="btn btn-danger" id="btn-delete-person">
+          <button class="btn btn-danger" id="btn-delete-person" data-tooltip="Permanently delete this customer and all associated history" data-tooltip-pos="left">
             <span class="material-icons-outlined">delete</span> Delete
           </button>
         `

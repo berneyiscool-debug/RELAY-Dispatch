@@ -65,10 +65,10 @@ export function renderKitDetail(container, { id }) {
           <span class="badge ${kit.active ? 'badge-success' : 'badge-neutral'}">${kit.active ? 'Active' : 'Inactive'}</span>
         `,
         actionsHtml: `
-          <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
-          ${!isNew ? `<button class="btn btn-secondary" id="btn-duplicate"><span class="material-icons-outlined">content_copy</span> Duplicate</button>` : ''}
-          ${!isNew ? `<button class="btn btn-secondary" id="btn-delete" style="color:var(--color-danger)"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
-          <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> Save Kit</button>
+          <button class="btn btn-secondary" id="btn-cancel" data-tooltip="Cancel changes and return to kit catalog" data-tooltip-pos="left">Cancel</button>
+          ${!isNew ? `<button class="btn btn-secondary" id="btn-duplicate" data-tooltip="Clone this kit bundle to draft revision variations" data-tooltip-pos="left"><span class="material-icons-outlined">content_copy</span> Duplicate</button>` : ''}
+          ${!isNew ? `<button class="btn btn-secondary" id="btn-delete" style="color:var(--color-danger)" data-tooltip="Permanently delete this kit catalog entry" data-tooltip-pos="left"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
+          <button class="btn btn-primary" id="btn-save" data-tooltip="Commit item updates and total prices to this kit" data-tooltip-pos="left"><span class="material-icons-outlined">save</span> Save Kit</button>
         `
       })}
 

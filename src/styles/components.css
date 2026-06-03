@@ -25,18 +25,18 @@
   cursor: not-allowed;
 }
 .btn-primary {
-  background: rgba(49, 86, 113, 0.08); /* Translucent Nordic Blue tint */
+  background: rgba(255, 92, 0, 0.08); /* Translucent Nordic Blue tint */
   color: var(--color-primary); /* High-contrast Nordic Slate blue */
-  border: 1px solid rgba(49, 86, 113, 0.25); /* Frosted cobalt border */
+  border: 1px solid rgba(255, 92, 0, 0.25); /* Frosted cobalt border */
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 2px 8px rgba(49, 86, 113, 0.04); /* Ambient soft cobalt shadow */
+  box-shadow: 0 2px 8px rgba(255, 92, 0, 0.04); /* Ambient soft cobalt shadow */
 }
 .btn-primary:hover:not(:disabled) {
-  background: rgba(49, 86, 113, 0.15); /* Richer translucent tint */
-  border-color: rgba(49, 86, 113, 0.45); /* Denser tinted border */
+  background: rgba(255, 92, 0, 0.15); /* Richer translucent tint */
+  border-color: rgba(255, 92, 0, 0.45); /* Denser tinted border */
   color: var(--color-primary-hover);
-  box-shadow: 0 4px 12px rgba(49, 86, 113, 0.08);
+  box-shadow: 0 4px 12px rgba(255, 92, 0, 0.08);
   transform: translateY(-1px); /* Gentle hover lift */
 }
 .btn-primary:active:not(:disabled) {
@@ -228,7 +228,7 @@
 .form-select:focus,
 .form-textarea:focus {
   border-color: var(--color-primary); /* Darkens to Nordic Blue */
-  box-shadow: 0 0 0 3px rgba(49, 86, 113, 0.15); /* Ambient focus ring */
+  box-shadow: 0 0 0 3px rgba(255, 92, 0, 0.15); /* Ambient focus ring */
 }
 .form-input::placeholder {
   color: var(--text-tertiary);
@@ -455,7 +455,7 @@
   }
 }
 .data-table tr:hover td {
-  background: rgba(49, 86, 113, 0.04); /* Soft Nordic Blue hover hover tint */
+  background: rgba(255, 92, 0, 0.04); /* Soft Nordic Blue hover hover tint */
 }
 .data-table tr.selected td {
   background: var(--color-primary-light);
@@ -1069,7 +1069,7 @@ tr.selected-row td {
 
 .task-list-checkbox:hover {
   border-color: var(--color-primary);
-  background: rgba(49, 86, 113, 0.05);
+  background: rgba(255, 92, 0, 0.05);
   transform: scale(1.05);
 }
 
@@ -1195,7 +1195,7 @@ tr.selected-row td {
 }
 .searchable-select-option:hover,
 .searchable-select-option.active-highlight {
-  background: rgba(49, 86, 113, 0.08);
+  background: rgba(255, 92, 0, 0.08);
 }
 .searchable-select-option.selected {
   background: var(--color-primary-light);
@@ -1382,6 +1382,241 @@ tr.selected-row td {
 [data-tooltip-pos="left"]:hover::before {
   transform: translateY(50%) translateX(0) scale(1) !important;
 }
+
+/* Bottom-aligned Tooltips */
+[data-tooltip-pos="bottom"]::after {
+  bottom: auto !important;
+  top: calc(100% + 8px) !important;
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) translateY(-4px) scale(0.95) !important;
+}
+[data-tooltip-pos="bottom"]::before {
+  bottom: auto !important;
+  top: calc(100% + 2px) !important;
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) translateY(-4px) !important;
+  border-width: 0 6px 6px !important;
+  border-color: transparent transparent rgba(25, 28, 30, 0.9) transparent !important;
+}
+[data-tooltip-pos="bottom"]:hover::after,
+[data-tooltip-pos="bottom"]:hover::before {
+  transform: translateX(-50%) translateY(0) scale(1) !important;
+}
+
+/* ============================================================
+   TOOLTIP PREFERENCE LEVEL RULES (Full, Partial, None)
+   ============================================================ */
+
+/* Disable all tooltips when preference is none */
+body[data-tooltip-pref="none"] [data-tooltip]::before,
+body[data-tooltip-pref="none"] [data-tooltip]::after {
+  display: none !important;
+  content: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Hide non-critical tooltips when preference is partial */
+body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partial"])::before,
+body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partial"])::after {
+  display: none !important;
+  content: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ============================================================
+   TOOLBAR BULK ACTIONS CAPSULE SYSTEM
+   ============================================================ */
+
+.toolbar-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  background: rgba(255, 92, 0, 0.08); /* Sleek translucent accent bg */
+  border: 1px solid rgba(255, 92, 0, 0.2);
+  border-radius: 9999px; /* premium pill capsule */
+  padding: 4px 10px;
+  box-shadow: 0 2px 10px rgba(255, 92, 0, 0.05);
+  transition: all var(--transition-normal);
+  z-index: 105;
+}
+
+.toolbar-bulk-actions .bulk-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: rgba(255, 92, 0, 0.1);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.toolbar-bulk-actions .bulk-action-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.toolbar-bulk-actions .bulk-action-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-bulk-actions .bulk-actions-separator {
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.08);
+  margin: 0 4px;
+}
+
+/* Style the buttons inside the toolbar action bar as premium icon-only buttons */
+.toolbar-bulk-actions .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  padding: 0;
+}
+
+.toolbar-bulk-actions .btn-icon:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.toolbar-bulk-actions .btn-icon:active {
+  transform: scale(0.95);
+}
+
+/* Override btn-primary inside toolbar action bar */
+.toolbar-bulk-actions .btn-icon.btn-primary {
+  color: var(--color-primary);
+  border-color: rgba(255, 92, 0, 0.15);
+  background: rgba(255, 92, 0, 0.05);
+}
+.toolbar-bulk-actions .btn-icon.btn-primary:hover {
+  background: rgba(255, 92, 0, 0.12);
+  color: var(--color-primary-hover);
+}
+
+/* Danger actions, e.g., bulk delete */
+.toolbar-bulk-actions .btn-icon.btn-danger {
+  color: var(--color-danger);
+  border-color: rgba(220, 38, 38, 0.15);
+  background: rgba(220, 38, 38, 0.05);
+}
+.toolbar-bulk-actions .btn-icon.btn-danger:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+/* Clear/Close button styling */
+.toolbar-bulk-actions .btn-clear-selection {
+  color: var(--text-tertiary);
+}
+.toolbar-bulk-actions .btn-clear-selection:hover {
+  color: var(--color-danger);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* ---- Dark Mode Overrides ---- */
+[data-theme="dark"] .toolbar-bulk-actions {
+  background: rgba(255, 92, 0, 0.2);
+  border-color: rgba(255, 92, 0, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .toolbar-bulk-actions .bulk-count {
+  color: #93c5fd;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+[data-theme="dark"] .toolbar-bulk-actions .bulk-actions-separator {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .toolbar-bulk-actions .btn-icon {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme="dark"] .toolbar-bulk-actions .btn-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .toolbar-bulk-actions .btn-icon.btn-primary {
+  color: #93c5fd;
+  border-color: rgba(147, 197, 253, 0.25);
+  background: rgba(147, 197, 253, 0.08);
+}
+[data-theme="dark"] .toolbar-bulk-actions .btn-icon.btn-primary:hover {
+  background: rgba(147, 197, 253, 0.18);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .toolbar-bulk-actions .btn-icon.btn-danger {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.25);
+  background: rgba(248, 113, 113, 0.08);
+}
+[data-theme="dark"] .toolbar-bulk-actions .btn-icon.btn-danger:hover {
+  background: rgba(248, 113, 113, 0.18);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .toolbar-bulk-actions .btn-clear-selection {
+  color: rgba(255, 255, 255, 0.4);
+}
+[data-theme="dark"] .toolbar-bulk-actions .btn-clear-selection:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+}
+
+/* Override slide-up for toolbar context to prevent translate(-50%) layout displacement */
+.toolbar-bulk-actions.slide-up {
+  animation: toolbarSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes toolbarSlideUp {
+  from {
+    transform: translateY(8px) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Adjust page toolbar first child when bulk actions are active to prevent layout squishing */
+.page-toolbar.has-bulk-actions > *:first-child {
+  flex: 0 1 auto !important;
+  max-width: 40% !important;
+  overflow: hidden;
+}
+
+/* Sidebar custom logo positioning override to fit the available space without clipping */
+.sidebar-logo.custom-logo-active {
+  padding: 4px 8px !important;
+  justify-content: center !important;
+}
+
+
+
+
 
 
 

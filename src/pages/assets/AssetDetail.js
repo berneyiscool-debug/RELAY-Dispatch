@@ -80,7 +80,7 @@ export function renderAssetDetail(container, params) {
           </div>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-edit"><span class="material-icons-outlined" style="font-size:18px">edit</span> Edit Details</button>
+          <button class="btn btn-secondary" id="btn-edit" data-tooltip="Modify asset details, assignments, or properties" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:18px">edit</span> Edit Details</button>
         </div>
       </div>
 

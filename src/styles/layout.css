@@ -156,7 +156,7 @@
 }
 .sidebar-nav-item:not(.sub-item).active {
   background: var(--sidebar-active-bg) !important;
-  border-color: rgba(49, 86, 113, 0.15) !important;
+  border-color: rgba(255, 92, 0, 0.15) !important;
 }
 
 /* Dark mode top-level page buttons */
@@ -201,7 +201,7 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   border: none;
-  background: rgba(49, 86, 113, 0.03); /* Lighter 3% Nordic Blue background backing */
+  background: rgba(255, 92, 0, 0.03); /* Lighter 3% Nordic Blue background backing */
   width: calc(100% - var(--space-base));
   font-size: 10.5px; /* Clean tracking scale */
   font-family: var(--font-family);
@@ -210,7 +210,7 @@
   text-align: left;
 }
 .sidebar-category-header:hover {
-  background: rgba(49, 86, 113, 0.07); /* Swells background opacity on hover */
+  background: rgba(255, 92, 0, 0.07); /* Swells background opacity on hover */
   color: var(--color-primary-hover);
 }
 .sidebar-category-header .category-chevron {
@@ -296,7 +296,7 @@
   margin: 4px var(--space-sm) !important;
   width: calc(100% - var(--space-base)) !important;
   justify-content: center !important;
-  background: rgba(49, 86, 113, 0.03) !important; /* Soft backdrop for folder icon */
+  background: rgba(255, 92, 0, 0.03) !important; /* Soft backdrop for folder icon */
 }
 .sidebar:not(.expanded) .sidebar-category-header .category-chevron {
   display: none !important; /* Hide chevron in collapsed icon rail */
@@ -312,7 +312,7 @@
   background: rgba(255, 255, 255, 0.94); /* High-contrast light frosted glass popover */
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(49, 86, 113, 0.22);
+  border: 1px solid rgba(255, 92, 0, 0.22);
   box-shadow: 0 10px 30px rgba(72, 83, 103, 0.16);
   border-radius: var(--border-radius-md);
   width: 170px;
@@ -340,12 +340,12 @@
   color: var(--sidebar-text) !important;
 }
 .sidebar-collapsed-flyout .sidebar-nav-item.sub-item:hover {
-  background: rgba(49, 86, 113, 0.08) !important;
+  background: rgba(255, 92, 0, 0.08) !important;
   color: var(--sidebar-text-hover) !important;
 }
 .sidebar-collapsed-flyout .sidebar-nav-item.sub-item.active {
   background: var(--sidebar-active-bg) !important;
-  border-color: rgba(49, 86, 113, 0.15) !important;
+  border-color: rgba(255, 92, 0, 0.15) !important;
   color: var(--sidebar-active-text) !important;
 }
 
@@ -635,7 +635,7 @@
   transition: all var(--transition-fast);
 }
 .toolbar-filter:hover {
-  border-color: rgba(49, 86, 113, 0.35);
+  border-color: rgba(255, 92, 0, 0.35);
   background: rgba(255, 255, 255, 0.85);
   color: var(--text-primary);
 }
@@ -661,7 +661,7 @@
 }
 .toolbar-search input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(49, 86, 113, 0.12); /* Soft blue glow */
+  box-shadow: 0 0 0 3px rgba(255, 92, 0, 0.12); /* Soft blue glow */
   width: 224px;
   background: white;
 }
@@ -907,7 +907,7 @@
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(49, 86, 113, 0.35); /* Solid glass outline */
+  border: 1px solid rgba(255, 92, 0, 0.35); /* Solid glass outline */
   box-shadow: 0 4px 12px rgba(72, 83, 103, 0.15);
 }
 .dashboard-module.edit-mode:hover .resize-handle {
@@ -998,6 +998,323 @@
   .module-tall, .module-xtall { grid-row: span 1; height: auto; }
 }
 
+/* ============================================================
+   DASHBOARD — INFINITE CANVAS SYSTEM
+   ============================================================ */
+.dash-page {
+  height: calc(100vh - 92px);
+  min-height: 520px;
+  padding: 0 !important;
+  margin: 0;
+  position: relative;
+  max-width: none;
+}
+
+.dash-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--card-border);
+  background-color: var(--content-bg);
+  /* dot grid that pans/scales with the canvas via JS background-position/size */
+  background-image: radial-gradient(circle, rgba(72, 83, 103, 0.16) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: 0 0;
+  cursor: grab;
+  user-select: none;
+}
+.dash-viewport.panning { cursor: grabbing; }
+.dash-viewport.edit-mode { cursor: default; }
+.dash-viewport.pin-drop { cursor: crosshair; }
+
+[data-theme="dark"] .dash-viewport {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.10) 1px, transparent 1px);
+}
+
+.dash-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.dash-widget {
+  position: absolute;
+  animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dash-widget > .card {
+  height: 100%;
+  width: 100%;
+}
+.dash-widget .card-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.dash-widget.kpi-strip .card-body,
+.dash-widget .card.kpi-strip .card-body {
+  display: grid;
+  gap: var(--space-sm);
+  align-items: stretch;
+  overflow: visible;
+  padding: var(--space-xs) var(--space-md);
+}
+.dash-widget .card.kpi-strip .stat-card {
+  margin: 0;
+  height: auto;
+  padding: var(--space-xs) var(--space-md);
+  gap: 2px;
+}
+
+/* Edit mode: header becomes a drag handle */
+.dash-widget.edit-mode .dash-drag-handle { cursor: grab; }
+.dash-widget.edit-mode.dragging { z-index: 60; }
+.dash-widget.edit-mode.dragging .card {
+  box-shadow: 0 18px 40px rgba(0,0,0,0.18), 0 0 0 1px var(--color-primary) !important;
+  transform: scale(1.01);
+}
+.dash-widget.edit-mode > .card {
+  outline: 1px dashed transparent;
+  transition: outline-color 0.15s, box-shadow 0.15s;
+}
+.dash-widget.edit-mode:hover > .card {
+  outline-color: rgba(255, 92, 0, 0.4);
+}
+
+/* Canvas resize handles */
+.dash-resize {
+  position: absolute;
+  z-index: 40;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, transform 0.12s;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 92, 0, 0.4);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(72, 83, 103, 0.15);
+}
+.dash-widget.edit-mode:hover .dash-resize { opacity: 1; }
+.dash-resize:hover { background: var(--color-primary); color: #fff; transform: scale(1.1); }
+.dash-resize-r  { top: 0; bottom: 0; margin: auto 0; right: -8px; width: 14px; height: 30px; border-radius: 7px; cursor: ew-resize; }
+.dash-resize-b  { left: 0; right: 0; margin: 0 auto; bottom: -8px; height: 14px; width: 30px; border-radius: 7px; cursor: ns-resize; }
+.dash-resize-br { right: -9px; bottom: -9px; width: 22px; height: 22px; border-radius: 50%; cursor: nwse-resize; }
+
+[data-theme="dark"] .dash-resize {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+[data-theme="dark"] .dash-resize:hover { background: var(--color-primary); color: #fff; }
+
+/* Navigation pins */
+.dash-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.dash-pin-marker {
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
+  border: 2px solid #fff;
+}
+.dash-pin-marker .material-icons-outlined { transform: rotate(45deg); }
+.dash-pin-label {
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--card-border);
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+.dash-pin-remove {
+  position: absolute;
+  top: -8px; right: -10px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+
+/* Edge direction lines — a coloured bar on the wall pointing toward an off-screen view */
+.dash-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  border-radius: var(--border-radius-md); /* match the canvas */
+  overflow: hidden;                        /* so edge lines follow the rounded corners */
+}
+.dash-edge-line {
+  position: absolute;
+  border-radius: 4px;
+  opacity: 0.9;
+}
+.dash-edge-line.vertical   { width: 5px; }
+.dash-edge-line.horizontal { height: 5px; }
+
+/* Views section — clickable column of view chips, sits above the zoom controls */
+.dash-views {
+  position: absolute;
+  right: 16px;
+  bottom: 184px;
+  z-index: 75;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.dash-view-chip {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--chip-color, var(--color-primary));
+  background: var(--card-bg);
+  color: var(--chip-color, var(--color-primary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
+  transition: transform 0.12s;
+  padding: 0;
+}
+.dash-view-chip:hover { transform: scale(1.12); }
+
+/* ── Live page widgets — make an embedded full page fit inside a widget ── */
+.dash-widget.page-widget .card-body { padding: 0; }
+.pw-root { display: flex; flex-direction: column; }
+.pw-host { flex: 1; min-height: 0; }
+.pw-backbar { padding: 8px 10px 2px; flex-shrink: 0; }
+
+/* The widget's own header already shows the page name, so hide the page's big H1 */
+.dash-widget.page-widget .page-header { padding: 8px 12px 2px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.dash-widget.page-widget .page-header h1 { display: none; }
+.dash-widget.page-widget .page-header .btn { padding: 4px 10px; font-size: 12px; }
+.dash-widget.page-widget .page-toolbar { padding: 2px 12px 8px; }
+
+/* Neutralise the nested DataTable .card chrome so it isn't a card-in-a-card */
+.dash-widget.page-widget .card { box-shadow: none; border: none; background: transparent; margin: 0; padding: 0; }
+.dash-widget.page-widget .data-table-wrapper { border-radius: 0; }
+.dash-widget.page-widget .empty-state { padding: 24px 12px; }
+
+/* Zoom controls */
+.dash-zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 75;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius);
+  padding: 5px;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
+}
+.dash-zoom-btn {
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.dash-zoom-btn:hover { background: var(--color-primary-light); color: var(--color-primary); }
+.dash-zoom-pct {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.dash-zoom-pct:hover { color: var(--color-primary); }
+.dash-zoom-divider { width: 18px; height: 1px; background: var(--border-color); margin: 2px 0; }
+
+/* Gradient top bar — floats over the canvas, fading out downward */
+.dash-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 65;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px 36px;
+  pointer-events: none; /* canvas stays draggable beneath; buttons re-enable below */
+  background: linear-gradient(to bottom,
+    rgba(247, 249, 251, 0.96) 0%,
+    rgba(247, 249, 251, 0.82) 45%,
+    rgba(247, 249, 251, 0) 100%);
+}
+.dash-topbar-left { display: flex; align-items: center; gap: 10px; }
+.dash-topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.dash-topbar button { pointer-events: auto; }
+.dash-topbar h1 { font-size: var(--font-size-3xl); }
+
+[data-theme="dark"] .dash-topbar {
+  background: linear-gradient(to bottom,
+    rgba(9, 9, 11, 0.96) 0%,
+    rgba(9, 9, 11, 0.82) 45%,
+    rgba(9, 9, 11, 0) 100%);
+}
+
+/* Home pin gets a subtle ring to distinguish it from user pins */
+.dash-pin.home-pin .dash-pin-marker {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Pin-drop hint banner */
+.dash-pin-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 76;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--color-primary);
+  padding: 7px 14px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+}
+
 /* ---- Dark Mode Floating Glass Dock Overrides ---- */
 [data-theme="dark"] .page-toolbar {
   background: rgba(24, 24, 27, 0.7) !important;
@@ -1015,7 +1332,7 @@
   color: var(--text-primary);
 }
 [data-theme="dark"] .toolbar-filter.active {
-  background: rgba(49, 86, 113, 0.3) !important;
+  background: rgba(255, 92, 0, 0.3) !important;
   border-color: var(--color-primary) !important;
   color: #93c5fd !important;
 }

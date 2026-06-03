@@ -154,7 +154,7 @@ export function renderStockDetail(container, { id }) {
     const kitIcon = row.querySelector('.kit-icon');
     
     row.addEventListener('mouseenter', () => {
-      row.style.background = 'var(--color-primary-light, rgba(49,86,113,0.04))';
+      row.style.background = 'var(--color-primary-light, rgba(255, 92, 0, 0.04))';
       if (kitName) kitName.style.textDecoration = 'underline';
       if (chevronIcon) {
         chevronIcon.style.color = 'var(--color-primary)';

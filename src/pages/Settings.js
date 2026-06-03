@@ -9,6 +9,7 @@ import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData } from '../data/seed.js';
+import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 
 // Build a permissions array with all granular keys
 function buildGranularPerms(valueFn) {
@@ -157,8 +158,8 @@ export function renderSettings(container) {
         <button class="tab ${activeTab === 'materials' ? 'active' : ''}" data-tab="materials">Materials</button>
         <button class="tab ${activeTab === 'templates_forms' ? 'active' : ''}" data-tab="templates_forms">Templates &amp; Forms</button>
         <button class="tab ${activeTab === 'tax' ? 'active' : ''}" data-tab="tax">Tax &amp; Rates</button>
-        <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets</button>
         <button class="tab ${activeTab === 'portal' ? 'active' : ''}" data-tab="portal">Customer Portal</button>
+        <button class="tab ${activeTab === 'invoices_quotes' ? 'active' : ''}" data-tab="invoices_quotes">Quotes &amp; Invoices</button>
         <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
       </div>
       <div id="settings-content" style="padding-top:var(--space-lg)"></div>
@@ -184,14 +185,20 @@ export function renderSettings(container) {
       return;
     }
 
+    if (activeTab === 'invoices_quotes') {
+      renderInvoicesQuotesTab(tc);
+      return;
+    }
+
     if (activeTab === 'company') {
       const s = store.getSettings();
       // Use local variables to track changes before saving
       let pendingLogo = s.logo;
+      let pendingLogoSmall = s.logoSmall;
       
       const renderCompanyTab = () => {
         tc.innerHTML = `
-          <div class="card" style="max-width:800px">
+          <div class="card" style="max-width:850px">
             <div class="card-header"><h4>Company Information</h4></div>
             <div class="card-body">
               <div style="display:grid; grid-template-columns: 1fr 280px; gap:var(--space-lg)">
@@ -227,29 +234,54 @@ export function renderSettings(container) {
                 </div>
 
                 <!-- Logo Section -->
-                <div style="border-left:1px solid var(--border-color); padding-left:var(--space-lg); display:flex; flex-direction:column; align-items:center; text-align:center">
-                  <label class="form-label" style="align-self:flex-start">Company Logo</label>
-                  <div id="logo-preview-container" style="width:100%; aspect-ratio:1; margin:12px 0; background:var(--bg-color); border:1px dashed var(--border-color); border-radius:12px; display:flex; align-items:center; justify-content:center; overflow:hidden">
-                    ${pendingLogo ? `<img src="${pendingLogo}" style="max-width:90%; max-height:90%; object-fit:contain" />` : `
-                      <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
-                        <span class="material-icons-outlined" style="font-size:48px">image</span>
-                        <span style="font-size:12px; margin-top:8px">No custom logo</span>
-                      </div>
-                    `}
+                <div style="border-left:1px solid var(--border-color); padding-left:var(--space-lg); display:flex; flex-direction:column; gap:20px; align-items:center; text-align:center">
+                  
+                  <!-- Main Logo -->
+                  <div style="display:flex; flex-direction:column; align-items:center; width:100%">
+                    <label class="form-label" style="align-self:flex-start">Company Logo (Large / Standard)</label>
+                    <div id="logo-preview-container" style="width:100%; height:75px; margin:8px 0; background:var(--bg-color); border:1px dashed var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden">
+                      ${pendingLogo ? `<img src="${pendingLogo}" style="max-width:90%; max-height:90%; object-fit:contain" />` : `
+                        <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
+                          <span class="material-icons-outlined" style="font-size:24px">image</span>
+                          <span style="font-size:10px; margin-top:2px">No custom logo</span>
+                        </div>
+                      `}
+                    </div>
+                    <input type="file" id="logo-upload" accept="image/*" style="display:none" />
+                    <div style="display:flex; gap:6px; width:100%">
+                      <button class="btn btn-secondary btn-sm" id="btn-upload-logo" data-tooltip="Upload new standard company logo" data-tooltip-pos="top" style="flex:1">
+                        <span class="material-icons-outlined" style="font-size:14px">upload</span> Upload
+                      </button>
+                      ${pendingLogo ? `<button class="btn btn-ghost btn-sm" id="btn-remove-logo" data-tooltip="Remove custom company logo" data-tooltip-pos="top" style="color:var(--color-danger); padding:0 8px" title="Remove logo"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
+                    </div>
                   </div>
-                  <input type="file" id="logo-upload" accept="image/*" style="display:none" />
-                  <div style="display:flex; flex-direction:column; gap:8px; width:100%">
-                    <button class="btn btn-secondary btn-sm" id="btn-upload-logo" style="width:100%">
-                      <span class="material-icons-outlined" style="font-size:16px">upload</span> Upload Logo
-                    </button>
-                    ${pendingLogo ? `<button class="btn btn-ghost btn-sm" id="btn-remove-logo" style="color:var(--color-danger); width:100%">Remove Logo</button>` : ''}
+
+                  <!-- Small Logo -->
+                  <div style="display:flex; flex-direction:column; align-items:center; width:100%">
+                    <label class="form-label" style="align-self:flex-start">Company Logo (Small / Shrunk)</label>
+                    <div id="logo-small-preview-container" style="width:100%; height:75px; margin:8px 0; background:var(--bg-color); border:1px dashed var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden">
+                      ${pendingLogoSmall ? `<img src="${pendingLogoSmall}" style="max-width:90%; max-height:90%; object-fit:contain" />` : `
+                        <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
+                          <span class="material-icons-outlined" style="font-size:24px">image</span>
+                          <span style="font-size:10px; margin-top:2px">No small logo</span>
+                        </div>
+                      `}
+                    </div>
+                    <input type="file" id="logo-small-upload" accept="image/*" style="display:none" />
+                    <div style="display:flex; gap:6px; width:100%">
+                      <button class="btn btn-secondary btn-sm" id="btn-upload-logo-small" data-tooltip="Upload new small company logo" data-tooltip-pos="top" style="flex:1">
+                        <span class="material-icons-outlined" style="font-size:14px">upload</span> Upload
+                      </button>
+                      ${pendingLogoSmall ? `<button class="btn btn-ghost btn-sm" id="btn-remove-logo-small" data-tooltip="Remove small company logo" data-tooltip-pos="top" style="color:var(--color-danger); padding:0 8px" title="Remove small logo"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
+                    </div>
                   </div>
-                  <div id="unsaved-logo-hint" style="display:none; margin-top:8px; color:var(--color-warning); font-size:11px; font-weight:600">UNSAVED PREVIEW</div>
+
+                  <div id="unsaved-logo-hint" style="display:none; margin-top:4px; color:var(--color-warning); font-size:11px; font-weight:600">UNSAVED PREVIEW</div>
                 </div>
               </div>
             </div>
             <div class="card-footer">
-              <button class="btn btn-primary" id="btn-save-company">
+              <button class="btn btn-primary" id="btn-save-company" data-tooltip="Save company details permanently" data-tooltip-pos="top">
                 <span class="material-icons-outlined">save</span> Save Company Changes
               </button>
             </div>
@@ -258,36 +290,93 @@ export function renderSettings(container) {
 
         // Handlers for Company Tab
         const logoInput = tc.querySelector('#logo-upload');
-        tc.querySelector('#btn-upload-logo').addEventListener('click', () => logoInput.click());
+        const logoSmallInput = tc.querySelector('#logo-small-upload');
         
+        tc.querySelector('#btn-upload-logo').addEventListener('click', () => logoInput.click());
+        tc.querySelector('#btn-upload-logo-small').addEventListener('click', () => logoSmallInput.click());
+        
+        const removeLogoHandler = () => {
+          pendingLogo = null;
+          const container = tc.querySelector('#logo-preview-container');
+          container.innerHTML = `
+            <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
+              <span class="material-icons-outlined" style="font-size:24px">image</span>
+              <span style="font-size:10px; margin-top:2px">No custom logo</span>
+            </div>
+          `;
+          tc.querySelector('#unsaved-logo-hint').style.display = 'block';
+          tc.querySelector('#btn-remove-logo')?.remove();
+        };
+
+        const removeLogoSmallHandler = () => {
+          pendingLogoSmall = null;
+          const container = tc.querySelector('#logo-small-preview-container');
+          container.innerHTML = `
+            <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
+              <span class="material-icons-outlined" style="font-size:24px">image</span>
+              <span style="font-size:10px; margin-top:2px">No small logo</span>
+            </div>
+          `;
+          tc.querySelector('#unsaved-logo-hint').style.display = 'block';
+          tc.querySelector('#btn-remove-logo-small')?.remove();
+        };
+
         logoInput.addEventListener('change', (e) => {
           const file = e.target.files[0];
           if (file) {
             const reader = new FileReader();
             reader.onload = (re) => {
               pendingLogo = re.target.result;
-              // Update ONLY the preview area and show hint
               const container = tc.querySelector('#logo-preview-container');
               container.innerHTML = `<img src="${pendingLogo}" style="max-width:90%; max-height:90%; object-fit:contain" />`;
               tc.querySelector('#unsaved-logo-hint').style.display = 'block';
-              showToast('Logo preview updated. Click Save to apply.', 'info');
+              showToast('Large logo preview updated. Click Save to apply.', 'info');
+              
+              let removeBtn = tc.querySelector('#btn-remove-logo');
+              if (!removeBtn) {
+                removeBtn = document.createElement('button');
+                removeBtn.className = 'btn btn-ghost btn-sm';
+                removeBtn.id = 'btn-remove-logo';
+                removeBtn.style.cssText = 'color:var(--color-danger); padding:0 8px';
+                removeBtn.title = 'Remove logo';
+                removeBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:16px">delete</span>';
+                tc.querySelector('#btn-upload-logo').parentNode.appendChild(removeBtn);
+                removeBtn.addEventListener('click', removeLogoHandler);
+              }
             };
             reader.readAsDataURL(file);
           }
         });
 
-        tc.querySelector('#btn-remove-logo')?.addEventListener('click', () => {
-          pendingLogo = null;
-          const container = tc.querySelector('#logo-preview-container');
-          container.innerHTML = `
-            <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
-              <span class="material-icons-outlined" style="font-size:48px">image</span>
-              <span style="font-size:12px; margin-top:8px">No custom logo</span>
-            </div>
-          `;
-          tc.querySelector('#unsaved-logo-hint').style.display = 'block';
-          tc.querySelector('#btn-remove-logo').style.display = 'none';
+        logoSmallInput.addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+              pendingLogoSmall = re.target.result;
+              const container = tc.querySelector('#logo-small-preview-container');
+              container.innerHTML = `<img src="${pendingLogoSmall}" style="max-width:90%; max-height:90%; object-fit:contain" />`;
+              tc.querySelector('#unsaved-logo-hint').style.display = 'block';
+              showToast('Small logo preview updated. Click Save to apply.', 'info');
+              
+              let removeBtn = tc.querySelector('#btn-remove-logo-small');
+              if (!removeBtn) {
+                removeBtn = document.createElement('button');
+                removeBtn.className = 'btn btn-ghost btn-sm';
+                removeBtn.id = 'btn-remove-logo-small';
+                removeBtn.style.cssText = 'color:var(--color-danger); padding:0 8px';
+                removeBtn.title = 'Remove small logo';
+                removeBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:16px">delete</span>';
+                tc.querySelector('#btn-upload-logo-small').parentNode.appendChild(removeBtn);
+                removeBtn.addEventListener('click', removeLogoSmallHandler);
+              }
+            };
+            reader.readAsDataURL(file);
+          }
         });
+
+        tc.querySelector('#btn-remove-logo')?.addEventListener('click', removeLogoHandler);
+        tc.querySelector('#btn-remove-logo-small')?.addEventListener('click', removeLogoSmallHandler);
 
         tc.querySelector('#btn-save-company').addEventListener('click', () => {
           const settings = store.getSettings();
@@ -298,6 +387,7 @@ export function renderSettings(container) {
           settings.email = tc.querySelector('#company-email').value;
           settings.address = tc.querySelector('#company-address').value;
           settings.logo = pendingLogo;
+          settings.logoSmall = pendingLogoSmall;
           
           store.saveSettings(settings);
           showToast('Company information saved permanently', 'success');
@@ -362,7 +452,7 @@ export function renderSettings(container) {
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0">Active Users</h4>
-            <button class="btn btn-primary btn-sm" id="btn-add-user"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
+            <button class="btn btn-primary btn-sm" id="btn-add-user" data-tooltip="Create a new user account" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
@@ -405,7 +495,7 @@ export function renderSettings(container) {
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0">User Types & Permissions</h4>
-            <button class="btn btn-secondary btn-sm" id="btn-add-usertype"><span class="material-icons-outlined" style="font-size:16px">add</span> New Type</button>
+            <button class="btn btn-secondary btn-sm" id="btn-add-usertype" data-tooltip="Create a new custom user type / role" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> New Type</button>
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
@@ -701,7 +791,7 @@ export function renderSettings(container) {
             </div>
           </div>
           <div class="card-footer" style="display:flex;justify-content:flex-end">
-            <button class="btn btn-primary" id="save-tax-settings">
+            <button class="btn btn-primary" id="save-tax-settings" data-tooltip="Save tax rates, markup, rounding and profiles" data-tooltip-pos="top">
               <span class="material-icons-outlined">save</span> Save All Settings
             </button>
           </div>
@@ -897,58 +987,7 @@ export function renderSettings(container) {
         renderContent();
       });
 
-    } else if (activeTab === 'assets') {
-      const settings = store.getSettings();
-      const assets = store.getAll('assets').filter(a => a.category === 'Business');
-      
-      tc.innerHTML = `
-        <div class="card" style="max-width:800px">
-          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-            <h4 style="margin:0">Business Asset Defaults</h4>
-            <div class="badge badge-info">Recovery Automation Enabled</div>
-          </div>
-          <div class="card-body">
-            <p class="text-secondary" style="font-size:13px; margin-bottom:20px">Configure the default recovery rates for your business equipment. These rates are used to calculate internal job costs when assets are assigned to tasks.</p>
-            
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Asset Name</th>
-                  <th>Current Rate ($/hr)</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${assets.map(a => `
-                  <tr>
-                    <td class="font-medium">${escapeHTML(a.name)}</td>
-                    <td>
-                      <div style="display:flex; align-items:center; gap:8px">
-                        <span class="text-tertiary">$</span>
-                        <input type="number" class="form-input asset-rate-input" data-id="${a.id}" value="${a.recoveryRate || 0}" step="0.5" style="width:100px; height:32px" />
-                      </div>
-                    </td>
-                    <td><span class="badge badge-success">Active</span></td>
-                  </tr>
-                `).join('')}
-                ${assets.length === 0 ? '<tr><td colspan="3" class="text-center text-tertiary" style="padding:24px">No business assets found. Add assets in the main Assets module.</td></tr>' : ''}
-              </tbody>
-            </table>
-          </div>
-          <div class="card-footer">
-            <button class="btn btn-primary" id="btn-save-asset-settings">Save Asset Recovery Rates</button>
-          </div>
-        </div>
-      `;
 
-      tc.querySelector('#btn-save-asset-settings').addEventListener('click', () => {
-        tc.querySelectorAll('.asset-rate-input').forEach(inp => {
-          const id = inp.dataset.id;
-          const rate = parseFloat(inp.value) || 0;
-          store.update('assets', id, { recoveryRate: rate });
-        });
-        showToast('Asset recovery rates updated across the system', 'success');
-      });
 
     } else if (activeTab === 'portal') {
       const s = store.getSettings();
@@ -981,7 +1020,7 @@ export function renderSettings(container) {
             </div>
           </div>
           <div class="card-footer" style="display:flex; justify-content:flex-end">
-            <button class="btn btn-primary" id="btn-save-portal-settings">
+            <button class="btn btn-primary" id="btn-save-portal-settings" data-tooltip="Save client portal access rules and messages" data-tooltip-pos="top">
               <span class="material-icons-outlined">save</span> Save Portal Settings
             </button>
           </div>
@@ -999,39 +1038,70 @@ export function renderSettings(container) {
       });
 
     } else if (activeTab === 'system') {
+      const s = store.getSettings();
+      const currentPref = s.tooltipPreference || 'full';
       tc.innerHTML = `
-        <div class="card" style="max-width:480px">
-          <div class="card-header"><h4>Data Management</h4></div>
-          <div class="card-body">
-            <p class="text-secondary" style="margin-bottom:var(--space-lg)">Manage your application data. All data is stored locally in your browser.</p>
-            <div style="display:flex;flex-direction:column;gap:12px">
-              <button class="btn btn-secondary" id="btn-reset-data">
-                <span class="material-icons-outlined">refresh</span> Reset to Demo Data
-              </button>
-              <button class="btn btn-danger" id="btn-clear-data">
-                <span class="material-icons-outlined">delete_forever</span> Clear All Data
-              </button>
-              ${currentUser.role === 'admin' ? `
-                <hr style="margin:var(--space-md) 0; border:none; border-top:1px dashed var(--border-color);" />
-                <div style="background:var(--color-danger-bg); padding:var(--space-md); border-radius:var(--border-radius); border:1px solid rgba(220, 38, 38, 0.15)">
-                  <h5 style="color:var(--color-danger); margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:600;">
-                    <span class="material-icons-outlined">admin_panel_settings</span> Administrator Actions
-                  </h5>
-                  <p style="font-size:var(--font-size-sm); color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
-                    Configure clean setups or seed a single test sample to explore the blank app layout.
-                  </p>
-                  <button class="btn btn-secondary" id="btn-seed-minimal" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid rgba(0,0,0,0.12)">
-                    <span class="material-icons-outlined">science</span> Seed One Example Version
-                  </button>
-                  <button class="btn btn-danger" id="btn-restore-new" style="width:100%; justify-content:center;">
-                    <span class="material-icons-outlined">cleaning_services</span> Restore to New (Blank State)
-                  </button>
-                </div>
-              ` : ''}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-lg); max-width:960px; align-items:start;">
+          <!-- Data Management -->
+          <div class="card">
+            <div class="card-header"><h4>Data Management</h4></div>
+            <div class="card-body">
+              <p class="text-secondary" style="margin-bottom:var(--space-lg)">Manage your application data. All data is stored locally in your browser.</p>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <button class="btn btn-secondary" id="btn-reset-data" data-tooltip="Restore default sandbox demo database" data-tooltip-pos="left">
+                  <span class="material-icons-outlined">refresh</span> Reset to Demo Data
+                </button>
+                <button class="btn btn-danger" id="btn-clear-data" data-tooltip="Permanently delete all local database records" data-tooltip-pos="left">
+                  <span class="material-icons-outlined">delete_forever</span> Clear All Data
+                </button>
+                ${currentUser.role === 'admin' ? `
+                  <hr style="margin:var(--space-md) 0; border:none; border-top:1px dashed var(--border-color);" />
+                  <div style="background:var(--color-danger-bg); padding:var(--space-md); border-radius:var(--border-radius); border:1px solid rgba(220, 38, 38, 0.15)">
+                    <h5 style="color:var(--color-danger); margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:600;">
+                      <span class="material-icons-outlined">admin_panel_settings</span> Administrator Actions
+                    </h5>
+                    <p style="font-size:var(--font-size-sm); color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
+                      Configure clean setups or seed a single test sample to explore the blank app layout.
+                    </p>
+                    <button class="btn btn-secondary" id="btn-seed-minimal" data-tooltip="Clean database and seed exactly one sample record of each entity" data-tooltip-pos="left" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid rgba(0,0,0,0.12)">
+                      <span class="material-icons-outlined">science</span> Seed One Example Version
+                    </button>
+                    <button class="btn btn-danger" id="btn-restore-new" data-tooltip="Delete all data and return system to a clean blank state" data-tooltip-pos="left" style="width:100%; justify-content:center;">
+                      <span class="material-icons-outlined">cleaning_services</span> Restore to New (Blank State)
+                    </button>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+
+          <!-- Interface Preferences -->
+          <div class="card">
+            <div class="card-header"><h4>Interface Preferences</h4></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label" style="font-weight:600;">Information Popups (Tooltips)</label>
+                <select class="form-select" id="tooltip-preference" style="width:100%">
+                  <option value="full" ${currentPref === 'full' ? 'selected' : ''}>Full Info (Show all tooltips)</option>
+                  <option value="partial" ${currentPref === 'partial' ? 'selected' : ''}>Partial Info (Critical & destructive actions only)</option>
+                  <option value="none" ${currentPref === 'none' ? 'selected' : ''}>No Info (Disable all tooltips)</option>
+                </select>
+                <p class="text-tertiary" style="font-size:12px; margin-top:8px; line-height:1.4;">
+                  Controls the descriptive popup helpers shown when hovering over buttons, actions, and categories.
+                </p>
+              </div>
             </div>
           </div>
         </div>
       `;
+
+      tc.querySelector('#tooltip-preference')?.addEventListener('change', (e) => {
+        const settings = store.getSettings();
+        settings.tooltipPreference = e.target.value;
+        store.saveSettings(settings);
+        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+        showToast('Interface preferences saved', 'success');
+      });
 
       tc.querySelector('#btn-reset-data')?.addEventListener('click', () => {
         store.clearAll();
@@ -1457,7 +1527,7 @@ export function renderSettings(container) {
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
           <h4 style="margin:0">Tasklist Templates</h4>
-          <button class="btn btn-primary btn-sm" id="btn-add-template">
+          <button class="btn btn-primary btn-sm" id="btn-add-template" data-tooltip="Create a new tasklist template to standardize workflows" data-tooltip-pos="left">
             <span class="material-icons-outlined" style="font-size:16px">add</span> Create Template
           </button>
         </div>
@@ -1633,75 +1703,101 @@ export function renderSettings(container) {
                 const hasSubs = node.subTasks && node.subTasks.length > 0;
                 
                 return `
-                  ${!isInfoPanelEditing ? `
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-                      <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%" title="${escapeHTML(node.name)}">${escapeHTML(node.name)}</h4>
-                      <div style="display:flex; gap:6px">
-                        ${path.length < 3 ? `<button class="btn btn-xs btn-secondary btn-add-child-tmpl" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Sub-task</button>` : ''}
-                        <button class="btn btn-xs btn-primary btn-edit-info-tmpl"><span class="material-icons-outlined" style="font-size:14px">edit</span> Edit</button>
-                        <button class="btn btn-xs btn-danger btn-remove-task-tmpl-item" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:14px">delete</span> Delete</button>
-                      </div>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%" title="${escapeHTML(node.name)}">Task Details</h4>
+                    <div style="display:flex; gap:6px">
+                      ${path.length < 3 ? `<button class="btn btn-xs btn-secondary btn-add-child-tmpl" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Sub-task</button>` : ''}
+                      <button class="btn btn-xs btn-secondary btn-duplicate-task-tmpl" data-path="${path.join('-')}" title="Duplicate"><span class="material-icons-outlined" style="font-size:14px">content_copy</span> Duplicate</button>
+                      <button class="btn btn-xs btn-danger btn-remove-task-tmpl-item" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:14px">delete</span> Delete</button>
                     </div>
+                  </div>
+                  <div class="form-group" style="margin-bottom:12px">
+                    <label class="form-label" style="font-size:11px">Name *</label>
+                    <input type="text" class="form-input tmpl-detail-input" data-field="name" value="${escapeHTML(node.name)}" style="font-size:13px" />
+                  </div>
+                  ${hasSubs ? `
                     <div style="margin-bottom:12px">
-                      <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">Name</div>
-                      <div style="font-size:14px; font-weight:500">${escapeHTML(node.name)}</div>
-                    </div>
-                    ${hasSubs ? `
-                      <div style="margin-bottom:12px">
-                        <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">Total Hours (Rollup)</div>
-                        <div style="font-size:14px; font-weight:500">${calculateTotalHours(node)} hrs</div>
-                      </div>
-                    ` : `
-                      <div style="display:flex; gap:16px; margin-bottom:12px">
-                        <div>
-                          <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">Estimated Hours</div>
-                          <div style="font-size:14px; font-weight:500">${node.estimatedHours || 0} hrs</div>
-                        </div>
-                        <div>
-                          <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">People</div>
-                          <div style="font-size:14px; font-weight:500">${node.people || 1}</div>
-                        </div>
-                      </div>
-                    `}
-                    <div style="margin-top:12px">
-                      <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">Description</div>
-                      <div style="font-size:13px; white-space:pre-wrap; color:var(--text-secondary)">${escapeHTML(node.description || 'No description provided.')}</div>
+                      <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">Total Hours (Rollup)</div>
+                      <div style="font-size:13px; font-weight:500">${calculateTotalHours(node)} hrs</div>
                     </div>
                   ` : `
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-                      <h4 style="margin:0">Edit Item Details</h4>
-                      <div style="display:flex; gap:6px">
-                        <button class="btn btn-xs btn-primary btn-done-info-tmpl">Done</button>
-                        <button class="btn btn-xs btn-secondary btn-duplicate-task-tmpl" data-path="${path.join('-')}" title="Duplicate"><span class="material-icons-outlined" style="font-size:14px">content_copy</span></button>
-                        <button class="btn btn-xs btn-danger btn-remove-task-tmpl-item" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:14px">delete</span> Delete</button>
+                    <div class="form-row" style="margin-bottom:12px; gap:8px">
+                      <div class="form-group">
+                        <label class="form-label" style="font-size:11px">Est. Hours</label>
+                        <input type="number" class="form-input tmpl-detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" style="font-size:13px" />
                       </div>
-                    </div>
-                    <div class="form-group" style="margin-bottom:12px">
-                      <label class="form-label" style="font-size:11px">Name *</label>
-                      <input type="text" class="form-input tmpl-detail-input" data-field="name" value="${escapeHTML(node.name)}" style="font-size:13px" />
-                    </div>
-                    ${hasSubs ? `
-                      <div style="margin-bottom:12px">
-                        <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">Total Hours (Rollup)</div>
-                        <div style="font-size:13px; font-weight:500">${calculateTotalHours(node)} hrs</div>
+                      <div class="form-group">
+                        <label class="form-label" style="font-size:11px">People</label>
+                        <input type="number" class="form-input tmpl-detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" style="font-size:13px" />
                       </div>
-                    ` : `
-                      <div class="form-row" style="margin-bottom:12px; gap:8px">
-                        <div class="form-group">
-                          <label class="form-label" style="font-size:11px">Est. Hours</label>
-                          <input type="number" class="form-input tmpl-detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" style="font-size:13px" />
-                        </div>
-                        <div class="form-group">
-                          <label class="form-label" style="font-size:11px">People</label>
-                          <input type="number" class="form-input tmpl-detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" style="font-size:13px" />
-                        </div>
-                      </div>
-                    `}
-                    <div class="form-group" style="margin-bottom:0">
-                      <label class="form-label" style="font-size:11px">Description</label>
-                      <textarea class="form-input tmpl-detail-input" data-field="description" rows="3" style="font-size:13px">${escapeHTML(node.description || '')}</textarea>
                     </div>
                   `}
+                  <div class="form-group" style="margin-bottom:12px">
+                    <label class="form-label" style="font-size:11px">Description</label>
+                    <textarea class="form-input tmpl-detail-input" data-field="description" rows="3" style="font-size:13px">${escapeHTML(node.description || '')}</textarea>
+                  </div>
+                  ${!hasSubs ? `
+                  <div style="margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+                      <div style="display:flex; align-items:center; gap:6px">
+                        <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">assignment</span>
+                        <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Fields</span>
+                      </div>
+                      <button class="btn btn-sm btn-secondary btn-add-value-field-tmpl" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:10px">Define the values a technician needs to record for this task (e.g. pressure readings, temperatures).</div>
+                    <div style="display:flex; flex-direction:column; gap:8px" id="value-fields-config-tmpl">
+                      ${(node.valueFields || []).map((vf, vi) => {
+                        const ft = vf.fieldType || 'text';
+                        return `
+                        <div style="padding:10px 12px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px" data-vf-idx="${vi}">
+                          <div style="display:flex; align-items:center; gap:8px; margin-bottom:${ft !== 'text' ? '8px' : '0'}">
+                            <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:grab">drag_indicator</span>
+                            <input type="text" class="form-input vf-tmpl-label-input" data-vf-idx="${vi}" value="${escapeHTML(vf.label)}" placeholder="Field label (e.g. Oil Pressure)" style="flex:2; height:32px; font-size:13px" />
+                            <select class="form-input vf-tmpl-type-select" data-vf-idx="${vi}" style="flex:0 0 110px; height:32px; font-size:12px">
+                              <option value="text"${ft === 'text' ? ' selected' : ''}>Text</option>
+                              <option value="number"${ft === 'number' ? ' selected' : ''}>Number</option>
+                              <option value="dropdown"${ft === 'dropdown' ? ' selected' : ''}>Dropdown</option>
+                            </select>
+                            <button class="btn btn-ghost btn-sm btn-icon btn-remove-value-field-tmpl" data-vf-idx="${vi}" style="color:var(--color-danger); min-width:28px; min-height:28px; padding:0"><span class="material-icons-outlined" style="font-size:16px">close</span></button>
+                          </div>
+                          ${ft === 'number' ? `
+                          <div style="display:flex; align-items:center; gap:8px; margin-left:28px">
+                            <input type="text" class="form-input vf-tmpl-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                            <div style="display:flex; align-items:center; gap:4px; flex:2">
+                              <span style="font-size:11px; color:var(--text-tertiary); white-space:nowrap">Range:</span>
+                              <input type="number" class="form-input vf-tmpl-min-input" data-vf-idx="${vi}" value="${vf.min !== undefined ? vf.min : ''}" placeholder="Min" style="flex:1; height:30px; font-size:12px" />
+                              <span style="color:var(--text-tertiary)">–</span>
+                              <input type="number" class="form-input vf-tmpl-max-input" data-vf-idx="${vi}" value="${vf.max !== undefined ? vf.max : ''}" placeholder="Max" style="flex:1; height:30px; font-size:12px" />
+                            </div>
+                          </div>
+                          ` : ''}
+                          ${ft === 'text' ? `
+                          <div style="display:flex; align-items:center; gap:8px; margin-left:28px; margin-top:4px">
+                            <input type="text" class="form-input vf-tmpl-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (optional, e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                          </div>
+                          ` : ''}
+                          ${ft === 'dropdown' ? `
+                          <div style="margin-left:28px; display:flex; flex-direction:column; gap:6px">
+                            <div>
+                              <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Options (one per line)</div>
+                              <textarea class="form-input vf-tmpl-options-input" data-vf-idx="${vi}" rows="3" placeholder="Low\nAs Expected\nHigh" style="font-size:12px; line-height:1.5">${escapeHTML((vf.options || []).join('\n'))}</textarea>
+                            </div>
+                            <div>
+                              <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Expected / Ideal Value <span style="font-weight:400">(flags others as out of range)</span></div>
+                              <select class="form-input vf-tmpl-expected-select" data-vf-idx="${vi}" style="height:30px; font-size:12px">
+                                <option value=""${!vf.expectedValue ? ' selected' : ''}>— No expected value —</option>
+                                ${(vf.options || []).map(opt => `<option value="${escapeHTML(opt)}"${vf.expectedValue === opt ? ' selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
+                              </select>
+                            </div>
+                          </div>
+                          ` : ''}
+                        </div>`;
+                      }).join('')}
+                      ${(!node.valueFields || node.valueFields.length === 0) ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:16px; border:1px dashed var(--border-color); border-radius:6px">No value fields defined. Click "Add Field" to create one.</div>' : ''}
+                    </div>
+                  </div>
+                  ` : ''}
                 `;
               })() : '<div class="text-tertiary text-center" style="margin:auto">Add or select a task on the left to edit details.</div>'}
             </div>
@@ -1839,6 +1935,7 @@ export function renderSettings(container) {
               name: node.name + (isRootCopy ? ' (Copy)' : ''),
               status: 'Not Started',
               progress: 0,
+              valueFields: node.valueFields ? node.valueFields.map(vf => ({ ...vf })) : undefined,
               subTasks: node.subTasks ? node.subTasks.map(c => cloneNode(c, false)) : []
             };
           }
@@ -1856,6 +1953,101 @@ export function renderSettings(container) {
           isInfoPanelEditing = false;
           renderTemplateEditor();
         });
+
+        // 11. Value Fields interactive configuration listeners
+        content.querySelector('.btn-add-value-field-tmpl')?.addEventListener('click', () => {
+          const node = getTaskByPath(localTasks, taskExpandedPath);
+          if (!node) return;
+          if (!node.valueFields) node.valueFields = [];
+          node.valueFields.push({ id: store.generateId(), label: '', unit: '', value: '', fieldType: 'text' });
+          renderTemplateEditor();
+        });
+
+        content.querySelectorAll('.btn-remove-value-field-tmpl').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = parseInt(btn.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (!node || !node.valueFields) return;
+            node.valueFields.splice(idx, 1);
+            renderTemplateEditor();
+          });
+        });
+
+        content.querySelectorAll('.vf-tmpl-label-input').forEach(inp => {
+          inp.addEventListener('change', () => {
+            const idx = parseInt(inp.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (node && node.valueFields && node.valueFields[idx]) {
+              node.valueFields[idx].label = inp.value.trim();
+            }
+          });
+        });
+
+        content.querySelectorAll('.vf-tmpl-unit-input').forEach(inp => {
+          inp.addEventListener('change', () => {
+            const idx = parseInt(inp.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (node && node.valueFields && node.valueFields[idx]) {
+              node.valueFields[idx].unit = inp.value.trim();
+            }
+          });
+        });
+
+        content.querySelectorAll('.vf-tmpl-type-select').forEach(sel => {
+          sel.addEventListener('change', () => {
+            const idx = parseInt(sel.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (node && node.valueFields && node.valueFields[idx]) {
+              node.valueFields[idx].fieldType = sel.value;
+              if (sel.value !== 'number') { node.valueFields[idx].min = undefined; node.valueFields[idx].max = undefined; }
+              if (sel.value !== 'dropdown') { node.valueFields[idx].options = undefined; }
+              if (sel.value === 'dropdown') { node.valueFields[idx].unit = ''; }
+              node.valueFields[idx].value = '';
+            }
+            renderTemplateEditor();
+          });
+        });
+
+        content.querySelectorAll('.vf-tmpl-min-input').forEach(inp => {
+          inp.addEventListener('change', () => {
+            const idx = parseInt(inp.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (node && node.valueFields && node.valueFields[idx]) {
+              node.valueFields[idx].min = inp.value !== '' ? parseFloat(inp.value) : undefined;
+            }
+          });
+        });
+
+        content.querySelectorAll('.vf-tmpl-max-input').forEach(inp => {
+          inp.addEventListener('change', () => {
+            const idx = parseInt(inp.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (node && node.valueFields && node.valueFields[idx]) {
+              node.valueFields[idx].max = inp.value !== '' ? parseFloat(inp.value) : undefined;
+            }
+          });
+        });
+
+        content.querySelectorAll('.vf-tmpl-options-input').forEach(inp => {
+          inp.addEventListener('change', () => {
+            const idx = parseInt(inp.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (node && node.valueFields && node.valueFields[idx]) {
+              node.valueFields[idx].options = inp.value.split('\n').map(o => o.trim()).filter(Boolean);
+              renderTemplateEditor();
+            }
+          });
+        });
+
+        content.querySelectorAll('.vf-tmpl-expected-select').forEach(inp => {
+          inp.addEventListener('change', () => {
+            const idx = parseInt(inp.dataset.vfIdx);
+            const node = getTaskByPath(localTasks, taskExpandedPath);
+            if (node && node.valueFields && node.valueFields[idx]) {
+              node.valueFields[idx].expectedValue = inp.value || undefined;
+            }
+          });
+        });
       };
 
       renderTemplateEditor();
@@ -1863,7 +2055,7 @@ export function renderSettings(container) {
       showModal({
         title: editId ? 'Edit Tasklist Template' : 'Create Tasklist Template',
         content,
-        size: 'modal-lg',
+        size: 'modal-xl',
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Save Template', className: 'btn-primary', onClick: (close) => {
@@ -1895,7 +2087,7 @@ export function renderSettings(container) {
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
           <h4 style="margin:0">Quote Templates</h4>
-          <button class="btn btn-primary btn-sm" id="btn-add-quote-template">
+          <button class="btn btn-primary btn-sm" id="btn-add-quote-template" data-tooltip="Create a new quote template to speed up quoting" data-tooltip-pos="left">
             <span class="material-icons-outlined" style="font-size:16px">add</span> Create Template
           </button>
         </div>
@@ -2046,7 +2238,7 @@ export function renderSettings(container) {
         </div>
 
         <div style="margin-top:24px;display:flex;justify-content:flex-end">
-          <button class="btn btn-primary" id="btn-save-materials">Save Material Settings</button>
+          <button class="btn btn-primary" id="btn-save-materials" data-tooltip="Save material markup rules and categories" data-tooltip-pos="top">Save Material Settings</button>
         </div>
       </div>
     `;
@@ -2191,7 +2383,7 @@ export function renderSettings(container) {
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
           <h4 style="margin:0">Custom Form Templates</h4>
-          <button class="btn btn-primary btn-sm" id="btn-add-form-template">
+          <button class="btn btn-primary btn-sm" id="btn-add-form-template" data-tooltip="Create a new form template for safety checks and inspections" data-tooltip-pos="left">
             <span class="material-icons-outlined" style="font-size:16px">add</span> Create New Form
           </button>
         </div>
@@ -2243,6 +2435,448 @@ export function renderSettings(container) {
         }
       });
     });
+  }
+
+  function renderInvoicesQuotesTab(tc) {
+    const settings = store.getSettings();
+    let dt = JSON.parse(JSON.stringify(settings.documentTheme || {}));
+    let activePreviewTab = 'invoice';
+
+    const mockData = {
+      number: 'INV-10023',
+      status: 'Sent',
+      customerName: 'Acme Developments Pty Ltd',
+      contactName: 'Jane Smith',
+      issueDate: new Date().toISOString(),
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      jobNumber: 'J-88129',
+      originalQuoteNumber: 'Q-54412',
+      title: 'Emergency Electrical & Cabling Installation',
+      notes: 'Please review all measurements. Standard technician notes and variations have been compiled accordingly.',
+      subtotal: 1250.00,
+      tax: 125.00,
+      total: 1375.00,
+      lineItems: [
+        { description: 'Emergency Call-out Service Rate', type: 'labor', qty: 1, rate: 195.00, total: 195.00 },
+        { description: 'Electrical Cabling Installation & Termination', type: 'labor', qty: 4, rate: 85.00, total: 340.00 },
+        { description: 'Premium Circuit Breakers & Switchboards', type: 'material', qty: 3, rate: 150.00, total: 450.00 },
+        { description: 'Sundry Fixings, Consumables & Conduit', type: 'material', qty: 1, rate: 265.00, total: 265.00 }
+      ]
+    };
+
+    const presets = {
+      relay: { name: 'Relay Dispatch', preset: 'relay', accentColor: '#1B6DE0', headerBg: '#1E2A3A', accentTint: '#F8FAFC', fontFamily: 'sans-serif' },
+      classic: { name: 'Classic Corporate', preset: 'classic', accentColor: '#0F172A', headerBg: '#1E293B', accentTint: '#F8FAFC', fontFamily: 'serif' },
+      forest: { name: 'Forest Minimalist', preset: 'forest', accentColor: '#16A34A', headerBg: '#1F2937', accentTint: '#F9FAFB', fontFamily: 'sans-serif' },
+      electric: { name: 'Vibrant Electric', preset: 'electric', accentColor: '#7C3AED', headerBg: '#111827', accentTint: '#F9FAFB', fontFamily: 'sans-serif' },
+      obsidian: { name: 'Sleek Obsidian', preset: 'obsidian', accentColor: '#1E293B', headerBg: '#0F172A', accentTint: '#FAFBFB', fontFamily: 'monospace' },
+      terracotta: { name: 'Sunset Terracotta', preset: 'terracotta', accentColor: '#C2410C', headerBg: '#451A03', accentTint: '#FFF7ED', fontFamily: 'sans-serif' },
+      nordic: { name: 'Nordic Frost', preset: 'nordic', accentColor: '#0891B2', headerBg: '#0F172A', accentTint: '#F0FDFA', fontFamily: 'sans-serif' },
+      luxury: { name: 'Royal Velvet', preset: 'luxury', accentColor: '#D97706', headerBg: '#311005', accentTint: '#FEF3C7', fontFamily: 'serif' },
+      steel: { name: 'Steel Industrial', preset: 'steel', accentColor: '#475569', headerBg: '#1E293B', accentTint: '#F1F5F9', fontFamily: 'monospace' }
+    };
+
+    function renderMarkup() {
+      tc.innerHTML = `
+        <style>
+          .preset-card:hover {
+            border-color: var(--color-primary-light) !important;
+            background: var(--bg-color) !important;
+          }
+          .preset-card.active {
+            border-color: var(--color-primary) !important;
+            background: var(--color-primary-light) !important;
+            color: var(--color-primary) !important;
+          }
+        </style>
+        <div style="display:grid; grid-template-columns: 460px 1fr; gap:var(--space-lg); min-height:calc(100vh - 200px); align-items:stretch">
+          
+          <!-- Control Panel -->
+          <div style="display:flex; flex-direction:column; gap:16px; overflow-y:auto; padding-right:8px; max-height:calc(100vh - 200px)">
+            
+            <!-- Preset Themes -->
+            <div class="card">
+              <div class="card-header"><h4>Choose Theme Preset</h4></div>
+              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:8px">
+                ${Object.entries(presets).map(([key, val]) => {
+                  const isActive = dt.preset === key;
+                  return `
+                    <div class="preset-card ${isActive ? 'active' : ''}" data-preset="${key}" style="
+                      display:flex; justify-content:space-between; align-items:center; 
+                      padding:12px 16px; border:2px solid ${isActive ? 'var(--color-primary)' : 'var(--border-color)'}; 
+                      border-radius:8px; cursor:pointer; background:var(--card-bg); transition:all 0.2s;
+                    ">
+                      <div style="display:flex; align-items:center; gap:10px">
+                        <div style="width:16px; height:16px; border-radius:50%; background:${val.accentColor}"></div>
+                        <span style="font-weight:600">${val.name}</span>
+                      </div>
+                      <span style="font-size:12px; color:var(--text-tertiary)">${val.fontFamily}</span>
+                    </div>
+                  `;
+                }).join('')}
+                <div class="preset-card ${dt.preset === 'custom' ? 'active' : ''}" data-preset="custom" style="
+                  display:flex; justify-content:space-between; align-items:center; 
+                  padding:12px 16px; border:2px solid ${dt.preset === 'custom' ? 'var(--color-primary)' : 'var(--border-color)'}; 
+                  border-radius:8px; cursor:pointer; background:var(--card-bg); transition:all 0.2s;
+                ">
+                  <div style="display:flex; align-items:center; gap:10px">
+                    <span class="material-icons-outlined" style="font-size:18px; color:var(--text-secondary)">palette</span>
+                    <span style="font-weight:600">Custom Styling</span>
+                  </div>
+                  <span style="font-size:12px; color:var(--text-tertiary)">Full control</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Custom Styles (only active/visible if preset is Custom) -->
+            <div class="card" id="custom-style-controls" style="display:${dt.preset === 'custom' ? 'block' : 'none'}">
+              <div class="card-header"><h4>Custom Color & Typography</h4></div>
+              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Primary Accent Color</label>
+                  <div style="display:flex; gap:8px">
+                    <input type="color" class="form-input style-input" data-prop="accentColor" value="${dt.accentColor}" style="width:48px; height:38px; padding:2px; cursor:pointer" />
+                    <input type="text" class="form-input style-text" id="color-accent-text" value="${dt.accentColor}" style="flex:1" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Table Header Fill</label>
+                  <div style="display:flex; gap:8px">
+                    <input type="color" class="form-input style-input" data-prop="headerBg" value="${dt.headerBg}" style="width:48px; height:38px; padding:2px; cursor:pointer" />
+                    <input type="text" class="form-input style-text" id="color-header-text" value="${dt.headerBg}" style="flex:1" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Accent Tint Background</label>
+                  <div style="display:flex; gap:8px">
+                    <input type="color" class="form-input style-input" data-prop="accentTint" value="${dt.accentTint}" style="width:48px; height:38px; padding:2px; cursor:pointer" />
+                    <input type="text" class="form-input style-text" id="color-tint-text" value="${dt.accentTint}" style="flex:1" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Typography Font</label>
+                  <select class="form-select style-input" data-prop="fontFamily">
+                    <option value="sans-serif" ${dt.fontFamily === 'sans-serif' ? 'selected' : ''}>Sans-Serif (Modern / Inter & Outfit)</option>
+                    <option value="serif" ${dt.fontFamily === 'serif' ? 'selected' : ''}>Serif (Prestige / Georgia & Lora)</option>
+                    <option value="monospace" ${dt.fontFamily === 'monospace' ? 'selected' : ''}>Monospace (Industrial / Fira Code)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Branding / Logo layout -->
+            <div class="card">
+              <div class="card-header"><h4>Logo Branding & Scaling</h4></div>
+              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:12px">
+                <div class="form-group" style="display:flex; align-items:center; gap:8px">
+                  <input type="checkbox" id="theme-hide-logo" style="width:16px; height:16px" ${dt.hideLogo ? 'checked' : ''} />
+                  <label for="theme-hide-logo" class="form-label" style="margin:0; cursor:pointer">Hide logo image (show styled text header)</label>
+                </div>
+                <div id="logo-branding-controls" style="display:${dt.hideLogo ? 'none' : 'flex'}; flex-direction:column; gap:12px">
+                  <div class="form-group">
+                    <label class="form-label">Logo Alignment</label>
+                    <div style="display:flex; gap:4px">
+                      <button class="btn btn-secondary btn-sm logo-align-btn ${dt.logoAlignment === 'left' ? 'btn-primary' : ''}" data-align="left" style="flex:1">Left</button>
+                      <button class="btn btn-secondary btn-sm logo-align-btn ${dt.logoAlignment === 'center' ? 'btn-primary' : ''}" data-align="center" style="flex:1">Center</button>
+                      <button class="btn btn-secondary btn-sm logo-align-btn ${dt.logoAlignment === 'right' ? 'btn-primary' : ''}" data-align="right" style="flex:1">Right</button>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Logo Scale (Height): <span id="scale-val-label">${dt.logoScale || 60}px</span></label>
+                    <input type="range" id="theme-logo-scale" min="40" max="120" value="${dt.logoScale || 60}" style="width:100%" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Document Text Custom Copy -->
+            <div class="card">
+              <div class="card-header"><h4>Custom Copy & Titles</h4></div>
+              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:12px">
+                <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:4px">Invoice Options</div>
+                <div class="form-group">
+                  <label class="form-label">Invoice Document Title</label>
+                  <input type="text" class="form-input text-copy-input" data-prop="invoiceTitle" value="${escapeHTML(dt.invoiceTitle || 'TAX INVOICE')}" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Direct Deposit Bank Account Details</label>
+                  <textarea class="form-input text-copy-input" data-prop="invoicePaymentTerms" rows="3" placeholder="BSB: ...\nAccount: ...">${escapeHTML(dt.invoicePaymentTerms || '')}</textarea>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Invoice Legal Terms / Footer Memo</label>
+                  <textarea class="form-input text-copy-input" data-prop="invoiceTerms" rows="2" placeholder="Payment is due...">${escapeHTML(dt.invoiceTerms || '')}</textarea>
+                </div>
+
+                <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px">Quote Options</div>
+                <div class="form-group">
+                  <label class="form-label">Quote Document Title</label>
+                  <input type="text" class="form-input text-copy-input" data-prop="quoteTitle" value="${escapeHTML(dt.quoteTitle || 'PROPOSAL / QUOTE')}" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Quote Validity / General Terms</label>
+                  <textarea class="form-input text-copy-input" data-prop="quoteTerms" rows="2" placeholder="Quote valid for...">${escapeHTML(dt.quoteTerms || '')}</textarea>
+                </div>
+
+                <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px">Global Options</div>
+                <div class="form-group">
+                  <label class="form-label">Footer Signature / Compliance Note</label>
+                  <input type="text" class="form-input text-copy-input" data-prop="footerNote" value="${escapeHTML(dt.footerNote || '')}" placeholder="Thank you for your business..." />
+                </div>
+              </div>
+            </div>
+
+            <!-- Features & Integration Toggles -->
+            <div class="card">
+              <div class="card-header"><h4>Features & Integrations</h4></div>
+              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:10px">
+                <div class="form-group" style="display:flex; align-items:center; gap:8px">
+                  <input type="checkbox" id="theme-stripe" style="width:16px; height:16px" ${dt.paymentStripe ? 'checked' : ''} />
+                  <label for="theme-stripe" class="form-label" style="margin:0; cursor:pointer">Accept Credit Cards (Include online Stripe pay link)</label>
+                </div>
+                <div class="form-group" style="display:flex; align-items:center; gap:8px">
+                  <input type="checkbox" id="theme-bank-transfer" style="width:16px; height:16px" ${dt.paymentDirectTransfer ? 'checked' : ''} />
+                  <label for="theme-bank-transfer" class="form-label" style="margin:0; cursor:pointer">Show Bank Details (Direct Bank Transfers)</label>
+                </div>
+                <div class="form-group" style="display:flex; align-items:center; gap:8px">
+                  <input type="checkbox" id="theme-cash" style="width:16px; height:16px" ${dt.paymentCash ? 'checked' : ''} />
+                  <label for="theme-cash" class="form-label" style="margin:0; cursor:pointer">Accept Cash payment option text</label>
+                </div>
+                <div style="height:1px; background:var(--border-color); margin:4px 0"></div>
+                <div class="form-group" style="display:flex; align-items:center; gap:8px">
+                  <input type="checkbox" id="theme-quote-sig" style="width:16px; height:16px" ${dt.quoteSignature ? 'checked' : ''} />
+                  <label for="theme-quote-sig" class="form-label" style="margin:0; cursor:pointer">Include customer sign-off signature blocks on Quotes</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div style="display:flex; gap:12px; margin-top:4px; padding-bottom:24px">
+              <button class="btn btn-secondary" id="btn-theme-reset" style="flex:1">Reset Defaults</button>
+              <button class="btn btn-primary" id="btn-theme-save" style="flex:1"><span class="material-icons-outlined" style="font-size:16px">save</span> Save Changes</button>
+            </div>
+
+          </div>
+
+          <!-- Sticky Live Preview -->
+          <div style="display:flex; flex-direction:column; gap:12px; height:calc(100vh - 200px); position:sticky; top:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:13px; font-weight:700; color:var(--text-secondary); text-transform:uppercase">Live Layout Preview</span>
+              <div class="tabs" style="margin:0; background:var(--border-color); padding:2px; border-radius:6px; display:inline-flex; gap:2px">
+                <button class="btn btn-sm ${activePreviewTab === 'invoice' ? 'btn-primary' : 'btn-ghost'}" id="preview-tab-invoice" style="padding:6px 12px; border:none; border-radius:4px; font-size:12px; cursor:pointer">Tax Invoice</button>
+                <button class="btn btn-sm ${activePreviewTab === 'quote' ? 'btn-primary' : 'btn-ghost'}" id="preview-tab-quote" style="padding:6px 12px; border:none; border-radius:4px; font-size:12px; cursor:pointer">Quote / Proposal</button>
+              </div>
+            </div>
+            <div style="flex:1; border:1px solid var(--border-color); border-radius:8px; overflow:hidden; background:#f1f5f9; position:relative; box-shadow:inset 0 4px 10px rgba(0,0,0,0.05)">
+              <iframe id="preview-frame" style="width:100%; height:100%; border:none;"></iframe>
+            </div>
+          </div>
+
+        </div>
+      `;
+
+      bindListeners();
+      updatePreview();
+    }
+
+    function bindListeners() {
+      // Preset selection click
+      tc.querySelectorAll('.preset-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const key = card.dataset.preset;
+          if (key === 'custom') {
+            dt.preset = 'custom';
+          } else {
+            const p = presets[key];
+            dt.preset = key;
+            dt.accentColor = p.accentColor;
+            dt.headerBg = p.headerBg;
+            dt.accentTint = p.accentTint;
+            dt.fontFamily = p.fontFamily;
+          }
+          renderMarkup();
+        });
+      });
+
+      // Custom style hex text / inputs
+      tc.querySelectorAll('.style-input').forEach(inp => {
+        inp.addEventListener('input', (e) => {
+          const prop = e.target.dataset.prop;
+          dt[prop] = e.target.value;
+          
+          if (prop === 'accentColor') tc.querySelector('#color-accent-text').value = e.target.value;
+          if (prop === 'headerBg') tc.querySelector('#color-header-text').value = e.target.value;
+          if (prop === 'accentTint') tc.querySelector('#color-tint-text').value = e.target.value;
+          
+          updatePreview();
+        });
+      });
+
+      tc.querySelectorAll('.style-text').forEach(txt => {
+        txt.addEventListener('change', (e) => {
+          const val = e.target.value;
+          if (/^#[0-9A-F]{6}$/i.test(val)) {
+            if (e.target.id === 'color-accent-text') {
+              dt.accentColor = val;
+              tc.querySelector('[data-prop="accentColor"]').value = val;
+            } else if (e.target.id === 'color-header-text') {
+              dt.headerBg = val;
+              tc.querySelector('[data-prop="headerBg"]').value = val;
+            } else if (e.target.id === 'color-tint-text') {
+              dt.accentTint = val;
+              tc.querySelector('[data-prop="accentTint"]').value = val;
+            }
+            updatePreview();
+          }
+        });
+      });
+
+      // Logo Align
+      tc.querySelectorAll('.logo-align-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          dt.logoAlignment = btn.dataset.align;
+          tc.querySelectorAll('.logo-align-btn').forEach(b => b.classList.remove('btn-primary'));
+          btn.classList.add('btn-primary');
+          updatePreview();
+        });
+      });
+
+      // Hide Logo toggle
+      const hideLogoChk = tc.querySelector('#theme-hide-logo');
+      hideLogoChk.addEventListener('change', () => {
+        dt.hideLogo = hideLogoChk.checked;
+        tc.querySelector('#logo-branding-controls').style.display = dt.hideLogo ? 'none' : 'flex';
+        updatePreview();
+      });
+
+      // Scale slider
+      const scaleSlider = tc.querySelector('#theme-logo-scale');
+      scaleSlider.addEventListener('input', () => {
+        dt.logoScale = parseInt(scaleSlider.value);
+        tc.querySelector('#scale-val-label').textContent = dt.logoScale + 'px';
+        updatePreview();
+      });
+
+      // Text copy updates
+      tc.querySelectorAll('.text-copy-input').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const prop = inp.dataset.prop;
+          dt[prop] = inp.value;
+          updatePreview();
+        });
+      });
+
+      // Features integration switches
+      tc.querySelector('#theme-stripe').addEventListener('change', (e) => {
+        dt.paymentStripe = e.target.checked;
+        updatePreview();
+      });
+      tc.querySelector('#theme-bank-transfer').addEventListener('change', (e) => {
+        dt.paymentDirectTransfer = e.target.checked;
+        updatePreview();
+      });
+      tc.querySelector('#theme-cash').addEventListener('change', (e) => {
+        dt.paymentCash = e.target.checked;
+        updatePreview();
+      });
+      tc.querySelector('#theme-quote-sig').addEventListener('change', (e) => {
+        dt.quoteSignature = e.target.checked;
+        updatePreview();
+      });
+
+      // Invoice / Quote Preview tabs
+      tc.querySelector('#preview-tab-invoice').addEventListener('click', () => {
+        activePreviewTab = 'invoice';
+        tc.querySelector('#preview-tab-invoice').classList.add('btn-primary');
+        tc.querySelector('#preview-tab-invoice').classList.remove('btn-ghost');
+        tc.querySelector('#preview-tab-quote').classList.add('btn-ghost');
+        tc.querySelector('#preview-tab-quote').classList.remove('btn-primary');
+        updatePreview();
+      });
+      tc.querySelector('#preview-tab-quote').addEventListener('click', () => {
+        activePreviewTab = 'quote';
+        tc.querySelector('#preview-tab-quote').classList.add('btn-primary');
+        tc.querySelector('#preview-tab-quote').classList.remove('btn-ghost');
+        tc.querySelector('#preview-tab-invoice').classList.add('btn-ghost');
+        tc.querySelector('#preview-tab-invoice').classList.remove('btn-primary');
+        updatePreview();
+      });
+
+      // Save Theme Settings
+      tc.querySelector('#btn-theme-save').addEventListener('click', () => {
+        const freshSettings = store.getSettings();
+        freshSettings.documentTheme = { ...dt };
+        store.saveSettings(freshSettings);
+        showToast('Document customization settings saved permanently', 'success');
+      });
+
+      // Reset Theme Settings
+      tc.querySelector('#btn-theme-reset').addEventListener('click', () => {
+        if (confirm('Are you sure you want to reset documents customization to the factory defaults?')) {
+          dt = {
+            preset: 'relay',
+            accentColor: '#1B6DE0',
+            headerBg: '#1E2A3A',
+            accentTint: '#F8FAFC',
+            fontFamily: 'sans-serif',
+            invoiceTitle: 'TAX INVOICE',
+            invoiceTerms: 'Please pay within 7 days of invoice issue.',
+            invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
+            quoteTitle: 'PROPOSAL / QUOTE',
+            quoteTerms: 'This quote is valid for 30 days. All work is subject to standard conditions.',
+            logoAlignment: 'left',
+            logoScale: 60,
+            hideLogo: false,
+            paymentStripe: true,
+            paymentDirectTransfer: true,
+            paymentCash: false,
+            quoteSignature: true,
+            footerNote: 'Thank you for your business!'
+          };
+          renderMarkup();
+        }
+      });
+    }
+
+    function updatePreview() {
+      const frame = tc.querySelector('#preview-frame');
+      if (!frame) return;
+      
+      const tempSettings = {
+        ...settings,
+        documentTheme: { ...dt }
+      };
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+          <style>
+            ${getPrintStyles(tempSettings)}
+            /* Overwrite general frame layout margins */
+            .pdf-page { padding: 24px 32px !important; max-width: 100% !important; margin: 0 !important; }
+          </style>
+        </head>
+        <body style="background:#f1f5f9; padding: 16px; margin:0">
+          <div style="background:white; border-radius:6px; border:1px solid #e2e8f0; overflow:hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)">
+            ${generateDocument(activePreviewTab, mockData)}
+          </div>
+        </body>
+        </html>
+      `;
+
+      try {
+        const doc = frame.contentDocument || frame.contentWindow.document;
+        doc.open();
+        doc.write(html);
+        doc.close();
+      } catch (err) {
+        console.error('Mock preview document injection error:', err);
+      }
+    }
+
+    renderMarkup();
   }
 
 

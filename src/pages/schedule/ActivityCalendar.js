@@ -151,7 +151,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
               <button class="toolbar-filter act-filter ${filterStatus === 'completed' ? 'active' : ''}" data-filter="completed">Completed</button>
               <button class="toolbar-filter act-filter ${filterStatus === 'overdue' ? 'active' : ''}" data-filter="overdue" style="${stats.overdue > 0 ? 'color:var(--color-danger)' : ''}">Overdue${stats.overdue > 0 ? ` (${stats.overdue})` : ''}</button>
             </div>
-            <button class="btn btn-primary btn-sm" id="btn-new-activity"><span class="material-icons-outlined" style="font-size:16px;margin-right:4px">add</span>New Activity</button>
+            <button class="btn btn-primary btn-sm" id="btn-new-activity" data-tooltip="Schedule a new meeting, call, or email follow-up" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px;margin-right:4px">add</span>New Activity</button>
           </div>
           <div style="flex:1;overflow-y:auto;padding:16px">
             ${days.map(day => {

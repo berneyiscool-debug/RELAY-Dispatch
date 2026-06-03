@@ -16,7 +16,7 @@ export function renderPurchaseOrdersList(container) {
     <div class="page-header">
       <h1>Purchase Orders</h1>
       <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-po"><span class="material-icons-outlined">add</span> New PO</button>
+        <button class="btn btn-primary" id="btn-new-po" data-tooltip="Draft a new purchase order to an external supplier for materials" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New PO</button>
       </div>
     </div>
     <div class="page-toolbar">

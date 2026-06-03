@@ -369,7 +369,7 @@ export function renderContractorPortal(container, params) {
           border: 1px solid rgba(255, 255, 255, 0.05);
         }
         [data-theme="dark"] .portal-header {
-          background: linear-gradient(135deg, rgba(49, 86, 113, 0.3) 0%, rgba(9, 9, 11, 0.6) 100%) !important;
+          background: linear-gradient(135deg, rgba(255, 92, 0, 0.3) 0%, rgba(9, 9, 11, 0.6) 100%) !important;
           border: 1px solid var(--border-color);
         }
         

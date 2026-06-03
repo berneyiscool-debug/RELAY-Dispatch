@@ -789,13 +789,11 @@ export function renderJobDetail(container, { id }) {
           const hasSubs = node.subTasks && node.subTasks.length > 0;
           return `
                 <div style="flex: 1; min-width:300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg); padding:16px">
-                  ${!isInfoPanelEditing ? `
+                  ${!canEditTasks ? `
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Info Panel: ${escapeHTML(node.name)}</h4>
+                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%" title="${escapeHTML(node.name)}">Task Details</h4>
                     <div style="display:flex;gap:8px">
                       <button class="btn btn-sm btn-secondary btn-book-time" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time</button>
-                      ${canEditTasks ? `<button class="btn btn-sm btn-primary btn-edit-info" title="Edit"><span class="material-icons-outlined" style="font-size:16px">edit</span> Edit</button>` : ''}
-                      ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>` : ''}
                     </div>
                   </div>
                   <div style="margin-bottom:16px">
@@ -938,11 +936,10 @@ export function renderJobDetail(container, { id }) {
                    ` : ''}
                   ` : `
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHTML(node.name)}">Edit Info Panel</h4>
+                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%" title="${escapeHTML(node.name)}">Task Details</h4>
                     <div style="display:flex;gap:8px">
-                      <button class="btn btn-sm btn-primary btn-done-info">Done</button>
-                      ${canEditTasks ? `<button class="btn btn-sm btn-secondary btn-duplicate-task" data-path="${path.join('-')}" title="Duplicate Task"><span class="material-icons-outlined" style="font-size:16px">content_copy</span></button>` : ''}
-                      ${canEditTasks ? `<button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>` : ''}
+                      <button class="btn btn-sm btn-secondary btn-duplicate-task" data-path="${path.join('-')}" title="Duplicate Task"><span class="material-icons-outlined" style="font-size:16px">content_copy</span> Duplicate</button>
+                      <button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>
                     </div>
                   </div>
                   <div class="form-group">
@@ -1004,9 +1001,17 @@ export function renderJobDetail(container, { id }) {
                          <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">assignment</span>
                          <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Fields</span>
                        </div>
+                       <div style="display:flex; gap:6px">
+                         <button class="btn btn-xs ${!isRecordingValues ? 'btn-primary' : 'btn-secondary'} btn-sub-tab-config">Configure</button>
+                         ${node.valueFields && node.valueFields.length > 0 ? `<button class="btn btn-xs ${isRecordingValues ? 'btn-primary' : 'btn-secondary'} btn-sub-tab-record">Record Values</button>` : ''}
+                       </div>
+                     </div>
+                     
+                     ${!isRecordingValues ? `
+                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+                       <div style="font-size:11px; color:var(--text-tertiary)">Define the values a technician needs to record for this task.</div>
                        ${canEditTasks ? `<button class="btn btn-sm btn-secondary btn-add-value-field" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>` : ''}
                      </div>
-                     <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:10px">Define the values a technician needs to record for this task (e.g. pressure readings, temperatures).</div>
                      <div style="display:flex; flex-direction:column; gap:8px" id="value-fields-config">
                        ${(node.valueFields || []).map((vf, vi) => {
                          const ft = vf.fieldType || 'text';
@@ -1057,6 +1062,50 @@ export function renderJobDetail(container, { id }) {
                        }).join('')}
                        ${(!node.valueFields || node.valueFields.length === 0) ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:16px; border:1px dashed var(--border-color); border-radius:6px">No value fields defined. Click "Add Field" to create one.</div>' : ''}
                      </div>
+                     ` : `
+                     <!-- Data Recording Panel -->
+                     <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:10px">Enter and save live values for this task.</div>
+                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px" id="value-recording-panel">
+                       ${node.valueFields.map((vf, vi) => {
+                         const ft = vf.fieldType || 'text';
+                         const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
+                         const isNumOutOfRange = hasRange && vf.value !== undefined && vf.value !== '' && (
+                           (vf.min !== undefined && vf.min !== '' && parseFloat(vf.value) < parseFloat(vf.min)) ||
+                           (vf.max !== undefined && vf.max !== '' && parseFloat(vf.value) > parseFloat(vf.max))
+                         );
+                         const isDropdownMismatch = ft === 'dropdown' && vf.expectedValue && vf.value && vf.value !== '' && vf.value !== vf.expectedValue;
+                         const isOutOfRange = isNumOutOfRange || isDropdownMismatch;
+                         const rangeHint = hasRange ? `Expected: ${vf.min !== undefined && vf.min !== '' ? vf.min : '—'} to ${vf.max !== undefined && vf.max !== '' ? vf.max : '—'}${vf.unit ? ' ' + escapeHTML(vf.unit) : ''}` : '';
+                         const dropdownHint = isDropdownMismatch ? `Expected: ${escapeHTML(vf.expectedValue)}` : '';
+                         let inputHtml = '';
+                         if (ft === 'dropdown' && vf.options && vf.options.length > 0) {
+                           inputHtml = `<select class="form-input vf-value-input" data-vf-idx="${vi}" style="height:34px; font-size:14px; font-weight:500; ${isDropdownMismatch ? 'border-color:var(--color-danger); background:rgba(220,53,69,0.06)' : ''}">
+                             <option value=""${!vf.value ? ' selected' : ''}>— Select —</option>
+                             ${vf.options.map(opt => `<option value="${escapeHTML(opt)}"${vf.value === opt ? ' selected' : ''}>${escapeHTML(opt)}${opt === vf.expectedValue ? ' ✓' : ''}</option>`).join('')}
+                           </select>`;
+                         } else if (ft === 'number') {
+                           inputHtml = `<input type="number" class="form-input vf-value-input" data-vf-idx="${vi}" value="${escapeHTML(vf.value || '')}" placeholder="Enter value..." ${vf.min !== undefined && vf.min !== '' ? `min="${vf.min}"` : ''} ${vf.max !== undefined && vf.max !== '' ? `max="${vf.max}"` : ''} style="height:34px; font-size:14px; font-weight:500; ${isNumOutOfRange ? 'border-color:var(--color-danger); background:rgba(220,53,69,0.06)' : ''}" />`;
+                         } else {
+                           inputHtml = `<input type="text" class="form-input vf-value-input" data-vf-idx="${vi}" value="${escapeHTML(vf.value || '')}" placeholder="Enter value..." style="height:34px; font-size:14px; font-weight:500" />`;
+                         }
+                         const hintText = rangeHint || dropdownHint;
+                         return `
+                         <div style="display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--bg-color); border:1px solid ${isOutOfRange ? 'var(--color-danger)' : 'var(--border-color)'}; border-radius:6px; transition:border-color 0.2s" data-vf-idx="${vi}">
+                           <div style="flex:1; min-width:0">
+                             <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:4px">${escapeHTML(vf.label)}${vf.unit ? ` <span style="font-weight:400; text-transform:none">(${escapeHTML(vf.unit)})</span>` : ''}</div>
+                             ${inputHtml}
+                             ${hintText ? `<div style="font-size:10px; color:${isOutOfRange ? 'var(--color-danger)' : 'var(--text-tertiary)'}; margin-top:3px">${isOutOfRange ? '<span class="material-icons-outlined" style="font-size:12px; vertical-align:middle">warning</span> ' + (isDropdownMismatch ? 'Not the expected value — ' : 'Out of range — ') : ''}${hintText}</div>` : ''}
+                           </div>
+                           ${isOutOfRange ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-danger); flex-shrink:0">error</span>` : (vf.value ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-success); flex-shrink:0">check_circle</span>` : `<span class="material-icons-outlined" style="font-size:20px; color:var(--border-color); flex-shrink:0">radio_button_unchecked</span>`)}
+                         </div>`;
+                       }).join('')}
+                       <div style="grid-column: span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:4px">
+                         <button class="btn btn-sm btn-primary btn-save-values" data-path="${path.join('-')}">
+                           <span class="material-icons-outlined" style="font-size:14px">save</span> Save Values
+                         </button>
+                       </div>
+                     </div>
+                     `}
                    </div>
                    ` : ''}
                   `}
@@ -1232,9 +1281,19 @@ export function renderJobDetail(container, { id }) {
         });
       });
 
-      // --- Value Records: Enter Values toggle ---
+      // --- Value Records: Enter Values toggle & Sub-tabs ---
       tc.querySelector('.btn-toggle-recording')?.addEventListener('click', () => {
         isRecordingValues = !isRecordingValues;
+        renderTabContent();
+      });
+
+      tc.querySelector('.btn-sub-tab-config')?.addEventListener('click', () => {
+        isRecordingValues = false;
+        renderTabContent();
+      });
+
+      tc.querySelector('.btn-sub-tab-record')?.addEventListener('click', () => {
+        isRecordingValues = true;
         renderTabContent();
       });
 

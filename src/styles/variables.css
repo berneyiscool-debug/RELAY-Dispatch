@@ -3,11 +3,11 @@
    ============================================ */
 
 :root {
-  /* ---- Colors (Nordic Slate & Blue Palette) ---- */
-  --color-primary: #315671; /* Nordic Blue Accent */
-  --color-primary-hover: #254a65;
-  --color-primary-light: #cae6ff; /* Soft Primary Container backing */
-  --color-primary-dark: #001e30;
+  /* ---- Colors (Relay Orange Palette) ---- */
+  --color-primary: #FF5C00;
+  --color-primary-hover: #E05200;
+  --color-primary-light: rgba(255, 92, 0, 0.10);
+  --color-primary-dark: #2C2C2E;
   --body-bg: linear-gradient(135deg, #f7f9fb 0%, #eceef0 100%) no-repeat fixed;
 
   /* ---- Sidebar (Level 1 Glass Sidebar) ---- */
@@ -15,8 +15,8 @@
   --sidebar-bg-dark: rgba(255, 255, 255, 0.25);
   --sidebar-text: #595f66; /* Secondary slate-gray */
   --sidebar-text-hover: #191c1e; /* On-surface charcoal */
-  --sidebar-active-bg: rgba(49, 86, 113, 0.08); /* 8% Nordic Blue tint */
-  --sidebar-active-text: #315671;
+  --sidebar-active-bg: rgba(255, 92, 0, 0.08);
+  --sidebar-active-text: #FF5C00;
   --sidebar-width-collapsed: 51px;
   --sidebar-width-expanded: 192px;
   --sidebar-transition: 0.22s cubic-bezier(0.16, 1, 0.3, 1);
@@ -33,7 +33,7 @@
   --card-bg: rgba(255, 255, 255, 0.4); /* Level 1 Glass: 40% white fill */
   --card-border: rgba(255, 255, 255, 0.2); /* 1px solid border at 20% white opacity */
   --card-shadow: 0 8px 32px rgba(72, 83, 103, 0.08); /* Ambient soft 8% Slate shadow with 32px blur */
-  --card-shadow-hover: 0 12px 40px rgba(72, 83, 103, 0.12), 0 0 0 1px rgba(49, 86, 113, 0.15);
+  --card-shadow-hover: 0 12px 40px rgba(72, 83, 103, 0.12), 0 0 0 1px rgba(255, 92, 0, 0.15);
 
   /* ---- Text (High Contrast Charcoal & Slate) ---- */
   --text-primary: #191c1e; /* On-surface charcoal */
@@ -110,7 +110,7 @@
 [data-theme="dark"] {
   --body-bg: linear-gradient(135deg, #09090b 0%, #151518 100%) no-repeat fixed;
   --color-primary-dark: #FAFAFA; /* Soft ice-white headings */
-  --color-primary-light: rgba(49, 86, 113, 0.18); /* Elegant semi-transparent Nordic blue tint */
-  --color-primary-hover: #4d7a9b;
+  --color-primary-light: rgba(255, 92, 0, 0.18);
+  --color-primary-hover: #FF7A2E;
 }
 

@@ -44,7 +44,7 @@ export function renderKitList(container) {
           </h2>
           <p style="margin:4px 0 0; color:var(--text-tertiary); font-size:var(--font-size-sm)">Reusable item bundles for quotes, jobs & purchase orders</p>
         </div>
-        <button class="btn btn-primary" id="btn-new-kit">
+        <button class="btn btn-primary" id="btn-new-kit" data-tooltip="Create a new pre-packaged materials and labor bundle" data-tooltip-pos="left">
           <span class="material-icons-outlined">add</span> New Kit
         </button>
       </div>
@@ -66,7 +66,7 @@ export function renderKitList(container) {
           <span class="material-icons-outlined">widgets</span>
           <h3>No Kits Yet</h3>
           <p>Create reusable item bundles to speed up quoting and ordering</p>
-          <button class="btn btn-primary" id="btn-empty-new">Create First Kit</button>
+          <button class="btn btn-primary" id="btn-empty-new" data-tooltip="Create a new pre-packaged materials and labor bundle" data-tooltip-pos="top">Create First Kit</button>
         </div>
       ` : `
         <div class="card" style="overflow:hidden">

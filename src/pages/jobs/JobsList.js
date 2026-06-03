@@ -67,6 +67,138 @@ export function renderJobsList(container, params) {
         onClear: () => table.clearSelection(),
         actions: [
           {
+            label: 'Assign Technician',
+            icon: 'person_add',
+            onClick: (ids) => {
+              const techs = store.getAll('technicians').filter(t => !t.deactivated);
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">Assign to Technician</label>
+                  <select class="form-select" id="bulk-tech">
+                    <option value="">-- Select Technician --</option>
+                    ${techs.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
+                  </select>
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Assign ${ids.length} Jobs`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Assign', className: 'btn-primary', onClick: c => {
+                      const techId = content.querySelector('#bulk-tech').value;
+                      if (!techId) return;
+                      const tech = store.getById('technicians', techId);
+                      if (tech) {
+                        ids.forEach(id => {
+                          store.update('jobs', id, {
+                            technicianId: tech.id,
+                            technicianName: tech.name,
+                            technicians: [{ id: tech.id, name: tech.name }]
+                          });
+                        });
+                        table.clearSelection();
+                        renderJobsList(container);
+                        import('../../components/Notifications.js').then(({ showToast }) => showToast(`Assigned ${ids.length} jobs to ${tech.name}`, 'success'));
+                      }
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Batch Reschedule',
+            icon: 'calendar_month',
+            onClick: (ids) => {
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">Scheduled Date</label>
+                  <input type="date" class="form-input" id="bulk-schedule-date" value="${new Date().toISOString().split('T')[0]}" />
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Reschedule ${ids.length} Jobs`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Reschedule', className: 'btn-primary', onClick: c => {
+                      const newDate = content.querySelector('#bulk-schedule-date').value;
+                      if (!newDate) return;
+                      ids.forEach(id => {
+                        store.update('jobs', id, { scheduledDate: newDate });
+                      });
+                      table.clearSelection();
+                      renderJobsList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Rescheduled ${ids.length} jobs`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Bulk Invoice',
+            icon: 'receipt',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: 'Confirm Bulk Invoicing',
+                  content: `<p>Are you sure you want to generate draft invoices for all ${ids.length} selected jobs? This will set their statuses to 'Invoiced'.</p>`,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Generate Invoices', className: 'btn-primary', onClick: c => {
+                      ids.forEach((id, i) => {
+                        const job = store.getById('jobs', id);
+                        if (job) {
+                          const subtotal = job.totalCost || (job.laborCost || 0) + (job.materialCost || 0) || 150;
+                          const sections = [{
+                            name: 'General Scope',
+                            lineItems: [{
+                              description: `Service completed for Job #${job.number}: ${job.title}`,
+                              qty: 1,
+                              rate: subtotal,
+                              unitPrice: subtotal,
+                              total: subtotal
+                            }]
+                          }];
+                          store.create('invoices', {
+                            number: `INV-${Date.now().toString().slice(-5)}${i}${Math.floor(100 + Math.random() * 900)}`,
+                            invoiceType: 'Job Invoice',
+                            jobId: job.id,
+                            jobNumber: job.number,
+                            customerId: job.customerId,
+                            customerName: job.customerName,
+                            contactName: job.contactName || '',
+                            status: 'Draft',
+                            sections: sections,
+                            originalSubtotal: subtotal,
+                            subtotal: subtotal,
+                            tax: subtotal * 0.1,
+                            total: subtotal * 1.1,
+                            issueDate: new Date().toISOString(),
+                            dueDate: new Date(Date.now() + 30 * 86400000).toISOString()
+                          });
+                          store.update('jobs', job.id, { status: 'Invoiced' });
+                        }
+                      });
+                      table.clearSelection();
+                      renderJobsList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Successfully generated ${ids.length} draft invoices`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
             label: 'Change Status',
             icon: 'sync_alt',
             onClick: (ids) => {

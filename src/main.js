@@ -70,6 +70,43 @@ initSearchableSelects();
 // Expose app globals for cross-component access
 window.__fieldForge = { router, store };
 
+// Initialize body attribute with saved tooltip preference level
+document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPreference || 'full');
+
+// Sync body attribute whenever settings are updated (e.g. from Settings panel)
+window.addEventListener('simpro-settings-updated', () => {
+  document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPreference || 'full');
+});
+
+// Lazy-classify tooltips into 'partial' vs 'full' based on action keywords on hover
+document.addEventListener('mouseover', (e) => {
+  const target = e.target.closest('[data-tooltip]');
+  if (!target || target.hasAttribute('data-tooltip-level')) return;
+
+  const tooltipText = (target.getAttribute('data-tooltip') || '').toLowerCase();
+  const elementId = (target.id || '').toLowerCase();
+  const elementClass = (target.className || '').toLowerCase();
+  const elementText = (target.textContent || '').toLowerCase();
+
+  // Words corresponding to mutating/critical/save/delete/destructive/creation actions
+  const criticalKeywords = [
+    'save', 'delete', 'destroy', 'remove', 'clear', 'reset', 'restore', 'seed',
+    'create', 'add ', 'new ', 'register', 'onboard', 'upload',
+    'send', 'email', 'generate', 'submit', 'post',
+    'deactivate', 'reactivate', 'unlink', 'unlink-',
+    'approve', 'reject', 'void', 'cancel', 'update'
+  ];
+
+  const isCritical = criticalKeywords.some(keyword => 
+    tooltipText.includes(keyword) || 
+    elementId.includes(keyword) || 
+    elementClass.includes(keyword) ||
+    elementText.includes(keyword)
+  );
+
+  target.setAttribute('data-tooltip-level', isCritical ? 'partial' : 'full');
+});
+
 // ---- Build App Shell ----
 const app = document.getElementById('app');
 

@@ -56,7 +56,7 @@ export function renderAssetList(container, params) {
     <div class="page-header">
       <h1>${customer ? `Assets — ${escapeHTML(customer.company)}` : 'Assets Manager'}</h1>
       <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-asset"><span class="material-icons-outlined">add</span> Add Asset</button>
+        <button class="btn btn-primary" id="btn-new-asset" data-tooltip="Register a new customer or company asset" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Asset</button>
       </div>
     </div>
     
@@ -136,6 +136,49 @@ export function renderAssetList(container, params) {
         selectedIds,
         onClear: () => table.clearSelection(),
         actions: [
+          {
+            label: 'Reassign Customer/Site',
+            icon: 'business',
+            onClick: (ids) => {
+              const customers = store.getAll('customers') || [];
+              const content = document.createElement('div');
+              content.innerHTML = `
+                <div class="form-group">
+                  <label class="form-label">New Customer Account</label>
+                  <select class="form-select" id="bulk-customer">
+                    <option value="">-- Select Customer --</option>
+                    ${customers.map(c => `<option value="${c.id}">${escapeHTML(c.company)}</option>`).join('')}
+                  </select>
+                </div>
+              `;
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: `Reassign ${ids.length} Assets`,
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Reassign', className: 'btn-primary', onClick: c => {
+                      const custId = content.querySelector('#bulk-customer').value;
+                      if (!custId) return;
+                      const cust = store.getById('customers', custId);
+                      if (cust) {
+                        ids.forEach(id => {
+                          store.update('assets', id, {
+                            customerId: cust.id,
+                            customerName: cust.company
+                          });
+                        });
+                        table.clearSelection();
+                        renderAssetList(container);
+                        import('../../components/Notifications.js').then(({ showToast }) => showToast(`Reassigned ${ids.length} assets to ${cust.company}`, 'success'));
+                      }
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
           {
             label: 'Change Status',
             icon: 'sync_alt',

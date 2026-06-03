@@ -251,7 +251,7 @@ export function renderDocumentBrowser(container) {
     container.innerHTML = `
       <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
         <h1>Document Center</h1>
-        <button class="btn btn-primary" id="btn-upload-doc"><span class="material-icons-outlined">upload_file</span> Upload Document</button>
+        <button class="btn btn-primary" id="btn-upload-doc" data-tooltip="Upload a new document to shared folders" data-tooltip-pos="left"><span class="material-icons-outlined">upload_file</span> Upload Document</button>
       </div>
 
       <div style="display:flex; gap:10px; align-items:flex-start; margin-top:10px;">
@@ -278,7 +278,7 @@ export function renderDocumentBrowser(container) {
                 
                 return `
                 <li>
-                  <button class="btn btn-ghost ${isActive ? 'active' : ''}" data-folder="${f}" style="width:100%; justify-content:space-between; padding:8px 12px; background:${isActive ? 'var(--color-primary-bg)' : 'transparent'}; color:${isActive ? 'var(--primary-color)' : 'var(--text-primary)'}; font-weight:${isActive ? '600' : '400'}">
+                  <button class="btn btn-ghost ${isActive ? 'active' : ''}" data-folder="${f}" data-tooltip="View documents in ${escapeHTML(f)}" data-tooltip-pos="right" style="width:100%; justify-content:space-between; padding:8px 12px; background:${isActive ? 'var(--color-primary-bg)' : 'transparent'}; color:${isActive ? 'var(--primary-color)' : 'var(--text-primary)'}; font-weight:${isActive ? '600' : '400'}">
                     <div style="display:flex; align-items:center; gap:8px;">
                       <span class="material-icons-outlined" style="font-size:18px">${icon}</span> ${f}
                     </div>
@@ -341,10 +341,10 @@ export function renderDocumentBrowser(container) {
       { key: 'uploadedAt', label: 'Uploaded', render: (r) => r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString() : '—' },
       { key: 'actions', label: '', width: '80px', render: (r) => {
           if (r.url && r.url.startsWith('#/')) {
-            return `<a href="${escapeHTML(r.url)}" target="_blank" class="btn btn-sm btn-outline" style="text-decoration:none">View</a>`;
+            return `<a href="${escapeHTML(r.url)}" target="_blank" class="btn btn-sm btn-outline" data-tooltip="Open link in a new tab" data-tooltip-pos="left" style="text-decoration:none">View</a>`;
           }
           // Use data attributes for event delegation
-          return `<a href="#/document/view" target="_blank" class="btn btn-sm btn-outline btn-view-doc" data-doc-id="${escapeHTML(r.id)}" style="text-decoration:none">View</a>`;
+          return `<a href="#/document/view" target="_blank" class="btn btn-sm btn-outline btn-view-doc" data-doc-id="${escapeHTML(r.id)}" data-tooltip="Open document in standard viewer" data-tooltip-pos="left" style="text-decoration:none">View</a>`;
         }
       }
     ];

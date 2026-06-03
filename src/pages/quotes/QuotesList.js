@@ -63,6 +63,136 @@ export function renderQuotesList(container, params) {
         onClear: () => table.clearSelection(),
         actions: [
           {
+            label: 'Batch Send/Email',
+            icon: 'send',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: 'Confirm Bulk Email',
+                  content: `<p>Are you sure you want to email ${ids.length} proposals to customers? This will set their statuses to 'Sent'.</p>`,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Send Emails', className: 'btn-primary', onClick: c => {
+                      ids.forEach(id => store.update('quotes', id, { status: 'Sent' }));
+                      table.clearSelection();
+                      renderQuotesList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Sent ${ids.length} quotes to customers`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Convert to Jobs',
+            icon: 'construction',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: 'Confirm Job Conversion',
+                  content: `<p>Are you sure you want to convert all ${ids.length} selected quotes into active Project Jobs? This will set quote statuses to 'Accepted'.</p>`,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Convert to Jobs', className: 'btn-primary', onClick: c => {
+                      const techs = store.getAll('technicians') || [];
+                      ids.forEach(id => {
+                        const quote = store.getById('quotes', id);
+                        if (quote) {
+                          const tech = techs[Math.floor(Math.random() * techs.length)];
+                          let laborCost = 0;
+                          let materialCost = 0;
+                          (quote.sections || []).forEach(sec => {
+                            (sec.lineItems || []).forEach(i => {
+                              if (i.type === 'labor') laborCost += i.total;
+                              if (i.type === 'material') materialCost += i.total;
+                            });
+                          });
+
+                          const jobTasks = (quote.sections || []).map(sec => ({
+                            id: store.generateId(),
+                            name: sec.name,
+                            status: 'Not Started',
+                            progress: 0,
+                            startDate: new Date().toISOString(),
+                            technicians: []
+                          }));
+
+                          const newJob = store.create('jobs', {
+                            number: `J-${Date.now().toString().slice(-6)}`,
+                            customerId: quote.customerId,
+                            customerName: quote.customerName,
+                            contactName: quote.contactName || '',
+                            title: quote.title || `Job from Quote ${quote.number}`,
+                            type: 'Project',
+                            status: 'Pending',
+                            priority: 'Medium',
+                            technicianId: tech?.id,
+                            technicianName: tech?.name,
+                            quoteId: id,
+                            tasks: jobTasks,
+                            phases: jobTasks,
+                            laborCost: laborCost,
+                            materialCost: materialCost,
+                            estimatedLaborCost: laborCost,
+                            estimatedMaterialCost: materialCost,
+                          });
+
+                          const activity = store.getAll('activity') || [];
+                          activity.push({
+                            id: Date.now() + Math.random(),
+                            jobId: newJob.id,
+                            type: 'job_converted_from_quote',
+                            text: `Live job ${newJob.number} created from accepted Quote ${quote.number}.`,
+                            user: 'System Automation',
+                            timestamp: new Date().toISOString()
+                          });
+                          store.save('activity', activity);
+
+                          import('../../components/Notifications.js').then(({ addSystemNotification }) => {
+                            addSystemNotification(
+                              'New Job Assigned',
+                              `You have been assigned to Live Job ${newJob.number} (${newJob.title}).`,
+                              `/jobs/${newJob.id}`
+                            );
+                          });
+
+                          store.update('quotes', id, { status: 'Accepted' });
+                        }
+                      });
+                      table.clearSelection();
+                      renderQuotesList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Successfully converted ${ids.length} quotes to active jobs`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Bulk Archive',
+            icon: 'archive',
+            onClick: (ids) => {
+              import('../../components/Modal.js').then(({ showModal }) => {
+                showModal({
+                  title: 'Confirm Bulk Archive',
+                  content: `<p>Are you sure you want to archive the ${ids.length} selected quotes?</p>`,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Archive Quotes', className: 'btn-primary', onClick: c => {
+                      ids.forEach(id => store.update('quotes', id, { status: 'Archived' }));
+                      table.clearSelection();
+                      renderQuotesList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Archived ${ids.length} quotes`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
             label: 'Change Status',
             icon: 'sync_alt',
             onClick: (ids) => {

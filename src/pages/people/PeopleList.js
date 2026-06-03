@@ -17,10 +17,10 @@ export function renderPeopleList(container) {
     <div class="page-header">
       <h1>Customers</h1>
       <div class="page-header-actions">
-        <button class="btn btn-secondary" id="btn-export-people">
+        <button class="btn btn-secondary" id="btn-export-people" data-tooltip="Export customer lists to a CSV spreadsheet" data-tooltip-pos="left">
           <span class="material-icons-outlined">download</span> Export
         </button>
-        <button class="btn btn-primary" id="btn-new-person">
+        <button class="btn btn-primary" id="btn-new-person" data-tooltip="Create a new customer profile or organization record" data-tooltip-pos="left">
           <span class="material-icons-outlined">add</span> New Customer
         </button>
       </div>
