@@ -4,6 +4,8 @@
 
 import { store } from '../data/store.js';
 import { router } from '../router.js';
+import { toggleRelay, onRelayToggle } from './RelayAssistant.js';
+import relayIcon from '../assets/relay-icon.svg?raw';
 
 export function createTopBar() {
   const topbar = document.createElement('header');
@@ -11,6 +13,9 @@ export function createTopBar() {
   topbar.id = 'topbar';
 
   topbar.innerHTML = `
+    <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Relay — your assistant" aria-label="Open Relay assistant">
+      ${relayIcon}
+    </button>
     <div class="topbar-search">
       <span class="material-icons-outlined search-icon">search</span>
       <input type="text" id="global-search" placeholder="Search customers, jobs, quotes..." autocomplete="off" />
@@ -89,6 +94,11 @@ export function createTopBar() {
     e.stopPropagation();
     toggleNotificationsDropdown(notifBtn);
   });
+
+  // Relay assistant button — available on every page
+  const relayBtn = topbar.querySelector('#btn-relay-assistant');
+  relayBtn.addEventListener('click', () => toggleRelay());
+  onRelayToggle(open => relayBtn.classList.toggle('active', open));
 
   updateTopbarAccess(topbar);
 

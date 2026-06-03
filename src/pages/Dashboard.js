@@ -69,6 +69,11 @@ function getLayoutKey() {
   return currentUser ? `dashboardCanvas_v1_${currentUser.id}` : 'dashboardCanvas_v1';
 }
 
+function getLockKey() {
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  return currentUser ? `dashboardLocked_${currentUser.id}` : 'dashboardLocked';
+}
+
 // Each module declares default size + which size options are sensible + its renderer
 const MODULES = {
   'kpi-cards':            { title: 'KPI Cards',                   defaultW: 'L',  defaultH: 'standard', kpiStrip: true,  render: renderKpiCards },
@@ -342,6 +347,8 @@ export function renderDashboard(container) {
     const loaded = loadLayout();
     live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins };
   }
+  // Canvas lock is a per-user view preference (independent of the saved layout)
+  live.locked = localStorage.getItem(getLockKey()) === '1';
 
   const data = {
     jobs:     store.getAll('jobs'),
@@ -358,20 +365,19 @@ export function renderDashboard(container) {
         <div id="dash-guides" class="dash-guides"></div>
 
         <div class="dash-topbar">
-          <div class="dash-topbar-left">
-            <h1 style="margin:0;">Dashboard</h1>
-            <button id="btn-edit-dashboard" class="btn btn-secondary btn-sm" style="display:flex;align-items:center;gap:4px;">
-              <span class="material-icons-outlined" style="font-size:16px;">dashboard_customize</span> Customise
-            </button>
-          </div>
-          <div id="dashboard-header-actions" class="dash-topbar-right">
-            ${getHeaderActionsHtml()}
-          </div>
+          <div class="dash-topbar-left"></div>
+          <!-- In view mode this holds contextual actions for the page-widgets on screen;
+               in edit mode it holds the edit controls. -->
+          <div id="dashboard-header-actions" class="dash-topbar-right"></div>
         </div>
 
         <div class="dash-views" id="dash-views"></div>
 
         <div class="dash-zoom-controls">
+          <button class="dash-zoom-btn" id="lock-toggle" title="Lock canvas — stops accidental dragging (you can still scroll & zoom)">
+            <span class="material-icons-outlined" style="font-size:18px;">lock_open</span>
+          </button>
+          <div class="dash-zoom-divider"></div>
           <button class="dash-zoom-btn" id="zoom-in" title="Zoom in">
             <span class="material-icons-outlined" style="font-size:18px;">add</span>
           </button>
@@ -391,18 +397,122 @@ export function renderDashboard(container) {
   const world = container.querySelector('#dash-world');
   const guides = container.querySelector('#dash-guides');
 
+  // Hooks used by the canvas (pan), context menu and page-widget mounts
+  window.__fieldForge.enterEditMode = () => enterEditMode(container, viewport, world, guides, data);
+  window.__fieldForge.openAddWidget = () => openAddWidgetModal(container, viewport, world, guides, data);
+  window.__fieldForge.refreshContextActions = () => updateContextActions(viewport, true);
+
+  // Hooks the Relay assistant calls to perform real actions
+  window.__fieldForge.addWidgetById = (id) => {
+    const mod = MODULES[id];
+    if (!mod || !widgetAllowed(id)) return false;
+    const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
+    const cy = (viewport.clientHeight / 2 - live.view.panY) / live.view.zoom;
+    const item = {
+      id, instanceId: 'inst_' + Math.random().toString(36).substr(2, 9),
+      x: snap(cx - (W_PX[mod.defaultW] || 460) / 2), y: snap(cy - (H_PX[mod.defaultH] || 200) / 2),
+      w: W_PX[mod.defaultW] || 460, h: H_PX[mod.defaultH] || 200,
+    };
+    resolveOverlap(item);
+    live.widgets.push(item);
+    renderWidgets(world, data); renderPins(world); applyTransform(viewport, world, guides);
+    return mod.title;
+  };
+  window.__fieldForge.flyToViewByName = (name) => {
+    const n = name.toLowerCase();
+    const p = live.pins.find(x => (x.label || '').toLowerCase() === n) || live.pins.find(x => (x.label || '').toLowerCase().includes(n));
+    if (!p) return false;
+    flyTo(viewport, p.x, p.y, p.zoom);
+    return p.label;
+  };
+  window.__fieldForge.fitAll = () => resetView(viewport);
+  window.__fieldForge.setLock = (on) => {
+    live.locked = !!on;
+    localStorage.setItem(getLockKey(), live.locked ? '1' : '0');
+    viewport.classList.toggle('locked', live.locked);
+    const lb = document.querySelector('#lock-toggle');
+    if (lb) { lb.classList.toggle('active', live.locked); lb.querySelector('.material-icons-outlined').textContent = live.locked ? 'lock' : 'lock_open'; }
+  };
+
   renderWidgets(world, data);
   renderPins(world);
   wireCanvas(container, viewport, world, guides, data);
   applyTransform(viewport, world, guides);
+  updateContextActions(viewport, true);
+}
 
-  container.querySelector('#btn-edit-dashboard').addEventListener('click', () => {
-    isEditMode = true;
-    viewport.classList.add('edit-mode');
-    renderWidgets(world, data);
-    renderPins(world);
-    showEditHeader(container, viewport, world, guides, data);
+function enterEditMode(container, viewport, world, guides, data) {
+  if (isEditMode) return;
+  isEditMode = true;
+  viewport.classList.add('edit-mode');
+  renderWidgets(world, data);
+  renderPins(world);
+  showEditHeader(container, viewport, world, guides, data);
+}
+
+// Is a widget's box currently intersecting the viewport? (screen-space test)
+function widgetInView(item, viewport) {
+  const { panX, panY, zoom } = live.view;
+  const x = panX + item.x * zoom, y = panY + item.y * zoom;
+  const w = item.w * zoom, h = item.h * zoom;
+  return x < viewport.clientWidth && x + w > 0 && y < viewport.clientHeight && y + h > 0;
+}
+
+// Contextual top-bar actions: surface the primary actions of the page-widgets currently
+// on screen (list mode only). Cheap visible-set signature guards against rebuilding every
+// frame; `force` (after a mount / detail toggle) bypasses it.
+let _ctxVisibleSig = null;
+function updateContextActions(viewport, force) {
+  if (isEditMode) return; // edit controls own the bar in edit mode
+  const host = document.querySelector('#dashboard-header-actions');
+  if (!host) return;
+
+  const visible = live.widgets.filter(it => MODULES[it.id] && MODULES[it.id].page && widgetInView(it, viewport));
+  const visSig = visible.map(v => v.instanceId).join(',');
+  if (!force && visSig === _ctxVisibleSig) return;
+  _ctxVisibleSig = visSig;
+
+  const seen = new Set();
+  const proxies = [];
+  visible.forEach(it => {
+    const wEl = document.querySelector(`.dash-widget[data-instance-id="${it.instanceId}"]`);
+    if (!wEl || wEl.querySelector('.pw-backbar')) return; // skip widgets drilled into a detail
+    const acts = wEl.querySelector('.page-header-actions');
+    if (!acts) return;
+    acts.querySelectorAll('button').forEach(btn => {
+      const label = btnTextLabel(btn);
+      if (!label || seen.has(label)) return;
+      seen.add(label);
+      proxies.push({
+        label,
+        icon: btn.querySelector('.material-icons-outlined')?.textContent.trim() || 'bolt',
+        primary: btn.classList.contains('btn-primary'),
+        instanceId: it.instanceId,
+      });
+    });
   });
+
+  host.innerHTML = '';
+  proxies.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-sm ' + (p.primary ? 'btn-primary' : 'btn-secondary');
+    b.innerHTML = `<span class="material-icons-outlined" style="font-size:16px;">${p.icon}</span> ${p.label}`;
+    b.addEventListener('click', () => {
+      // Re-find the real button at click time (it may have re-rendered) and trigger it
+      const wEl = document.querySelector(`.dash-widget[data-instance-id="${p.instanceId}"]`);
+      const acts = wEl?.querySelector('.page-header-actions');
+      const real = acts && [...acts.querySelectorAll('button')].find(x => btnTextLabel(x) === p.label);
+      if (real) real.click();
+    });
+    host.appendChild(b);
+  });
+}
+
+// A button's text with any material-icon ligatures stripped out
+function btnTextLabel(btn) {
+  const clone = btn.cloneNode(true);
+  clone.querySelectorAll('.material-icons-outlined, .material-icons, .material-symbols-outlined').forEach(s => s.remove());
+  return clone.textContent.replace(/\s+/g, ' ').trim();
 }
 
 // ── Widget rendering (positioned absolutely in world space) ──────────────────────
@@ -456,17 +566,38 @@ function renderWidgets(world, data) {
       ${resizeHandles}`;
     world.appendChild(el);
 
-    // Page widgets render a real, live page into their body via a mount hook
+    // Page widgets render a real, live page into their body — but LAZILY: the heavy
+    // page only mounts the first time the widget scrolls into view (and then stays
+    // mounted, so no state is lost). Off-screen page widgets show a light placeholder.
     if (mod.page && mod.mount) {
       const body = el.querySelector('.card-body');
-      // In edit mode the body is non-interactive so it doesn't fight widget dragging
       if (isEditMode) body.style.pointerEvents = 'none';
-      try { mod.mount(body, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Could not load page'); }
+      body.innerHTML = renderPlaceholder('hourglass_empty', 'Loads when in view');
+      el.dataset.pwPending = '1';
     }
   });
 
   wireWidgetControls(world, data);
   if (isEditMode) wireEditControls(world, data);
+
+  // Mount any page widgets that are already on screen (synchronously, before paint)
+  const vp = document.querySelector('#dash-viewport');
+  if (vp) mountVisiblePageWidgets(vp);
+}
+
+// Mount any pending (placeholder) page widget whose box is currently in the viewport.
+// Once mounted, the widget is never torn down on pan, so its in-widget state persists.
+function mountVisiblePageWidgets(viewport) {
+  if (!viewport) return;
+  document.querySelectorAll('.dash-widget.page-widget[data-pw-pending]').forEach(el => {
+    const item = live.widgets.find(w => w.instanceId === el.dataset.instanceId);
+    if (!item || !widgetInView(item, viewport)) return;
+    const mod = MODULES[item.id];
+    if (!mod || !mod.mount) return;
+    delete el.dataset.pwPending;
+    const body = el.querySelector('.card-body');
+    try { mod.mount(body, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Could not load page'); }
+  });
 }
 
 // ── Page widgets: render a real CRM page live inside a widget body ────────────────
@@ -475,6 +606,7 @@ function renderWidgets(world, data) {
 // (Back button returns to the list) instead of navigating the whole app away.
 function mountPageWidget(body, cfg) {
   body.classList.add('pw-root');
+  body.innerHTML = renderPlaceholder('hourglass_empty', 'Loading…'); // covers the lazy import gap
   let mode = 'list';
   let listFn = null, detailFn = null;
 
@@ -485,6 +617,7 @@ function mountPageWidget(body, cfg) {
     host.className = 'pw-host';
     body.appendChild(host);
     if (listFn) { try { listFn(host); } catch (e) { host.innerHTML = renderPlaceholder('error_outline', 'Failed to load'); } }
+    window.__fieldForge?.refreshContextActions?.(); // list actions now available → surface them
   };
 
   const showDetail = (id) => {
@@ -500,6 +633,7 @@ function mountPageWidget(body, cfg) {
     body.appendChild(host);
     bar.querySelector('.pw-back').addEventListener('click', showList);
     try { detailFn(host, { id }); } catch (e) { host.innerHTML = renderPlaceholder('error_outline', 'Failed to load detail'); }
+    window.__fieldForge?.refreshContextActions?.(); // detail mode → drop this widget's list actions
   };
 
   // Intercept list row clicks (capture phase) → open detail in-widget.
@@ -620,6 +754,8 @@ function applyTransform(viewport, world, guides) {
   const pct = viewport.querySelector('#zoom-pct');
   if (pct) pct.textContent = Math.round(zoom * 100) + '%';
   updateGuides(viewport, guides);
+  updateContextActions(viewport, false);
+  mountVisiblePageWidgets(viewport); // mount page widgets as they pan into view
 }
 
 
@@ -704,6 +840,7 @@ function renderViewsSection() {
   const viewport = document.querySelector('#dash-viewport');
   if (!cont || !viewport) return;
 
+  cont.style.display = live.pins.length ? 'flex' : 'none';
   cont.innerHTML = '';
   live.pins.forEach(ref => {
     const chip = document.createElement('button');
@@ -807,6 +944,22 @@ function wireCanvas(container, viewport, world, guides, data) {
     zoomTo(1, viewport.clientWidth / 2, viewport.clientHeight / 2));
   container.querySelector('#zoom-reset').addEventListener('click', () => resetView(viewport));
 
+  // Lock toggle — prevents accidental drag-panning (scroll & zoom still work)
+  const lockBtn = container.querySelector('#lock-toggle');
+  const applyLockUI = () => {
+    viewport.classList.toggle('locked', !!live.locked);
+    if (lockBtn) {
+      lockBtn.classList.toggle('active', !!live.locked);
+      lockBtn.querySelector('.material-icons-outlined').textContent = live.locked ? 'lock' : 'lock_open';
+    }
+  };
+  applyLockUI();
+  if (lockBtn) lockBtn.addEventListener('click', () => {
+    live.locked = !live.locked;
+    localStorage.setItem(getLockKey(), live.locked ? '1' : '0');
+    applyLockUI();
+  });
+
   // Drag anywhere to pan. A press that doesn't move past a small threshold is
   // treated as a click (so widget links/buttons still work); a press that moves
   // becomes a pan and its trailing click is suppressed.
@@ -820,6 +973,9 @@ function wireCanvas(container, viewport, world, guides, data) {
 
     // In edit mode, only the widget's title bar moves it; pressing the body pans the canvas
     if (isEditMode && e.target.closest('.dash-drag-handle')) return;
+
+    // Locked (view mode): no drag-panning, so you can't accidentally fling the view away
+    if (live.locked && !isEditMode) return;
 
     const startX = e.clientX, startY = e.clientY;
     const startPanX = live.view.panX, startPanY = live.view.panY;
@@ -854,7 +1010,72 @@ function wireCanvas(container, viewport, world, guides, data) {
     if (viewport.scrollTop || viewport.scrollLeft) { viewport.scrollTop = 0; viewport.scrollLeft = 0; }
   });
 
-  window.addEventListener('resize', () => updateGuides(viewport, guides));
+  window.addEventListener('resize', () => { updateGuides(viewport, guides); updateContextActions(viewport, true); });
+
+  // Double-click empty canvas → Add Widget
+  viewport.addEventListener('dblclick', e => {
+    if (e.target.closest('.dash-widget') || e.target.closest('.dash-zoom-controls') ||
+        e.target.closest('.dash-views') || e.target.closest('.dash-topbar')) return;
+    openAddWidgetModal(container, viewport, world, guides, data);
+  });
+
+  // Right-click → context menu (replaces the old Customise button)
+  viewport.addEventListener('contextmenu', e => {
+    if (e.target.closest('.dash-zoom-controls') || e.target.closest('.dash-views') || e.target.closest('.dash-topbar')) return;
+    e.preventDefault();
+    const onWidget = e.target.closest('.dash-widget');
+    showCanvasContextMenu(e.clientX, e.clientY, { container, viewport, world, guides, data, widgetEl: onWidget });
+  });
+}
+
+// Floating right-click menu for the canvas
+function showCanvasContextMenu(clientX, clientY, ctx) {
+  document.querySelector('.dash-context-menu')?.remove();
+  const { container, viewport, world, guides, data, widgetEl } = ctx;
+
+  const items = [];
+  if (!isEditMode) {
+    items.push({ icon: 'add', label: 'Add widget', onClick: () => window.__fieldForge.openAddWidget() });
+    items.push({ icon: 'dashboard_customize', label: 'Customise layout', onClick: () => window.__fieldForge.enterEditMode() });
+    items.push({ icon: 'bookmark_add', label: 'Save current view', onClick: () => openPinEditor(viewport, world, guides, {}) });
+    items.push({ icon: 'center_focus_strong', label: 'Fit all widgets', onClick: () => resetView(viewport) });
+    if (widgetEl) {
+      const id = widgetEl.dataset.id;
+      if (MODULES[id] && MODULES[id].page) {
+        items.push({ separator: true });
+        items.push({ icon: 'open_in_new', label: 'Remove this widget', onClick: () => {
+          live.widgets = live.widgets.filter(w => w.instanceId !== widgetEl.dataset.instanceId);
+          renderWidgets(world, data); renderPins(world); updateGuides(viewport, guides);
+        } });
+      }
+    }
+  } else {
+    items.push({ icon: 'add', label: 'Add widget', onClick: () => openAddWidgetModal(container, viewport, world, guides, data) });
+    items.push({ icon: 'bookmark_add', label: 'Save current view', onClick: () => openPinEditor(viewport, world, guides, {}) });
+    items.push({ icon: 'center_focus_strong', label: 'Fit all widgets', onClick: () => resetView(viewport) });
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'dash-context-menu';
+  menu.innerHTML = items.map((it, i) => it.separator
+    ? `<div class="dash-context-sep"></div>`
+    : `<button class="dash-context-item" data-i="${i}"><span class="material-icons-outlined" style="font-size:17px;">${it.icon}</span> ${it.label}</button>`
+  ).join('');
+  document.body.appendChild(menu);
+
+  // Position, keeping it on screen
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  menu.style.left = Math.min(clientX, window.innerWidth - mw - 8) + 'px';
+  menu.style.top = Math.min(clientY, window.innerHeight - mh - 8) + 'px';
+
+  items.forEach((it, i) => {
+    if (it.separator) return;
+    menu.querySelector(`[data-i="${i}"]`)?.addEventListener('click', () => { close(); it.onClick(); });
+  });
+
+  function close() { menu.remove(); document.removeEventListener('mousedown', onAway, true); document.removeEventListener('wheel', close); }
+  function onAway(e) { if (!menu.contains(e.target)) close(); }
+  setTimeout(() => { document.addEventListener('mousedown', onAway, true); document.addEventListener('wheel', close); }, 0);
 }
 
 // Current viewport centre (world coords) + zoom — the framing a "saved view" captures
@@ -1399,8 +1620,6 @@ function wireWidgetControls(grid, data) {
 // ── Edit-mode header (Add Widget · Drop Pin · Reset View · Reset Default · Cancel · Save) ──
 function showEditHeader(container, viewport, world, guides, data) {
   const headerActions = container.querySelector('#dashboard-header-actions');
-  const editBtn = container.querySelector('#btn-edit-dashboard');
-  editBtn.style.display = 'none';
   headerActions.innerHTML = `
     <button class="btn btn-secondary btn-sm" id="btn-add-widget">
       <span class="material-icons-outlined" style="font-size:16px;">add</span> Add Widget
@@ -1418,11 +1637,12 @@ function showEditHeader(container, viewport, world, guides, data) {
   const exitEdit = () => {
     isEditMode = false;
     viewport.classList.remove('edit-mode');
-    editBtn.style.display = '';
-    headerActions.innerHTML = getHeaderActionsHtml();
+    headerActions.innerHTML = '';
     renderWidgets(world, data);
     renderPins(world);
     updateGuides(viewport, guides);
+    _ctxVisibleSig = null;
+    updateContextActions(viewport, true); // restore contextual actions
   };
 
   headerActions.querySelector('#btn-save-view').addEventListener('click', () => {
@@ -1457,46 +1677,49 @@ function showEditHeader(container, viewport, world, guides, data) {
   });
 
   headerActions.querySelector('#btn-add-widget').addEventListener('click', () => {
-    // Only offer modules the user is permitted to see
-    const available = Object.entries(MODULES).filter(([id]) => widgetAllowed(id));
-    const content = document.createElement('div');
-    content.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:420px;overflow-y:auto;">
-          ${available.map(([id, mod]) => `
-            <div data-id="${id}" style="padding:12px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;"
-              onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
-              onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
-              <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">widgets</span>
-              <div>
-                <div style="font-weight:600;font-size:13px;">${mod.title}</div>
-                <div style="font-size:11px;color:var(--text-tertiary);">${mod.defaultW} · ${mod.defaultH}</div>
-              </div>
-            </div>`).join('')}
-        </div>`;
+    openAddWidgetModal(container, viewport, world, guides, data);
+  });
+}
 
-    import('../components/Modal.js').then(({ showModal }) => {
-      showModal({ title: 'Add Widget', content, actions: [{ label: 'Close', className: 'btn-secondary', onClick: c => c() }] });
-      content.querySelectorAll('[data-id]').forEach(el => {
-        el.addEventListener('click', e => {
-          const id = e.currentTarget.dataset.id;
-          const mod = MODULES[id];
-          // Drop the new widget near the current viewport centre, then de-overlap
-          const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
-          const cy = (viewport.clientHeight / 2 - live.view.panY) / live.view.zoom;
-          const item = {
-            id,
-            instanceId: 'inst_' + Math.random().toString(36).substr(2, 9),
-            x: snap(cx - (W_PX[mod.defaultW] || 460) / 2),
-            y: snap(cy - (H_PX[mod.defaultH] || 200) / 2),
-            w: W_PX[mod.defaultW] || 460,
-            h: H_PX[mod.defaultH] || 200,
-          };
-          resolveOverlap(item);
-          live.widgets.push(item);
-          document.querySelector('.modal-overlay')?.remove();
-          renderWidgets(world, data);
-          renderPins(world);
-          updateGuides(viewport, guides);
-        });
+// Reusable Add-Widget picker (used by the edit header, the context menu and double-click)
+function openAddWidgetModal(container, viewport, world, guides, data) {
+  const available = Object.entries(MODULES).filter(([id]) => widgetAllowed(id));
+  const content = document.createElement('div');
+  content.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:420px;overflow-y:auto;">
+        ${available.map(([id, mod]) => `
+          <div data-id="${id}" style="padding:12px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;"
+            onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
+            onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
+            <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">${mod.page ? 'web_asset' : 'widgets'}</span>
+            <div>
+              <div style="font-weight:600;font-size:13px;">${mod.title}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);">${mod.page ? 'Live page' : mod.defaultW + ' · ' + mod.defaultH}</div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+
+  import('../components/Modal.js').then(({ showModal }) => {
+    showModal({ title: 'Add Widget', content, actions: [{ label: 'Close', className: 'btn-secondary', onClick: c => c() }] });
+    content.querySelectorAll('[data-id]').forEach(el => {
+      el.addEventListener('click', e => {
+        const id = e.currentTarget.dataset.id;
+        const mod = MODULES[id];
+        const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
+        const cy = (viewport.clientHeight / 2 - live.view.panY) / live.view.zoom;
+        const item = {
+          id,
+          instanceId: 'inst_' + Math.random().toString(36).substr(2, 9),
+          x: snap(cx - (W_PX[mod.defaultW] || 460) / 2),
+          y: snap(cy - (H_PX[mod.defaultH] || 200) / 2),
+          w: W_PX[mod.defaultW] || 460,
+          h: H_PX[mod.defaultH] || 200,
+        };
+        resolveOverlap(item);
+        live.widgets.push(item);
+        document.querySelector('.modal-overlay')?.remove();
+        renderWidgets(world, data);
+        renderPins(world);
+        updateGuides(viewport, guides);
       });
     });
   });

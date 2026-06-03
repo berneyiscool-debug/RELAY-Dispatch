@@ -533,15 +533,19 @@
 
 /* ---- Breadcrumb ---- */
 .breadcrumb {
+  position: relative;
+  z-index: 105;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-sm);
-  padding: var(--space-md) var(--space-xl);
+  padding: 6px var(--space-xl);
   font-size: var(--font-size-sm);
   border-bottom: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  min-height: 48px;
 }
 .breadcrumb-item {
   color: var(--text-tertiary);
@@ -603,7 +607,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-base);
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-lg);
   position: sticky;
   top: 8px; /* Floating slightly below the top boundary when sticky */
   background: var(--card-bg); /* Level 1 Glass Translucent White */
@@ -622,7 +626,15 @@
 .toolbar-filters {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 6px; /* Match the tighter carousel viewport button spacing */
+  overflow-x: auto;
+  scrollbar-width: none; /* Hide scrollbar */
+  -ms-overflow-style: none;
+  width: 100%;
+  padding: 0; /* Match the carousel viewport height (no vertical padding) */
+}
+.toolbar-filters::-webkit-scrollbar {
+  display: none;
 }
 .toolbar-filter {
   padding: 6px 14px;
@@ -647,12 +659,16 @@
 }
 .toolbar-search {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 .toolbar-search input {
-  padding: 6px 12px 6px 34px;
+  padding: 0 16px 0 36px;
+  height: 34px;
+  box-sizing: border-box;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 9999px; /* Match pill design */
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   background: rgba(255, 255, 255, 0.65); /* Translucent white fill */
   color: var(--text-primary);
   outline: none;
@@ -667,11 +683,17 @@
 }
 .toolbar-search .material-icons-outlined {
   position: absolute;
-  left: 10px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 16px;
+  height: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-tertiary);
+  pointer-events: none;
 }
 
 /* ---- Grid Layouts ---- */
@@ -1002,13 +1024,18 @@
    DASHBOARD — INFINITE CANVAS SYSTEM
    ============================================================ */
 .dash-page {
-  height: calc(100vh - 92px);
+  /* Break out of the main content padding so the canvas fills the whole area */
+  height: calc(100vh - var(--topbar-height));
   min-height: 520px;
   padding: 0 !important;
-  margin: 0;
+  margin: -20px -24px;
+  width: calc(100% + 48px);   /* reclaim the 24px L/R padding */
   position: relative;
   max-width: none;
 }
+
+/* Keep every widget title (data + live-page widgets) the same colour */
+.dash-widget .card-header > span:first-child { color: var(--text-primary); }
 
 .dash-viewport {
   position: relative;
@@ -1028,6 +1055,8 @@
 .dash-viewport.panning { cursor: grabbing; }
 .dash-viewport.edit-mode { cursor: default; }
 .dash-viewport.pin-drop { cursor: crosshair; }
+.dash-viewport.locked { cursor: default; }            /* locked: no grab affordance */
+.dash-zoom-btn.active { color: var(--color-primary); background: var(--color-primary-light); }
 
 [data-theme="dark"] .dash-viewport {
   background-image: radial-gradient(circle, rgba(255, 255, 255, 0.10) 1px, transparent 1px);
@@ -1175,16 +1204,23 @@
 .dash-edge-line.vertical   { width: 5px; }
 .dash-edge-line.horizontal { height: 5px; }
 
-/* Views section — clickable column of view chips, sits above the zoom controls */
+/* Views bar — clickable view chips, grouped in a pill in the bottom-left corner
+   (separate from the zoom/lock controls in the bottom-right so they never collide) */
 .dash-views {
   position: absolute;
-  right: 16px;
-  bottom: 184px;
+  left: 16px;
+  bottom: 16px;
   z-index: 75;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 6px;
   align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 5px;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
 }
 .dash-view-chip {
   width: 34px;
@@ -1210,16 +1246,190 @@
 .pw-host { flex: 1; min-height: 0; }
 .pw-backbar { padding: 8px 10px 2px; flex-shrink: 0; }
 
-/* The widget's own header already shows the page name, so hide the page's big H1 */
-.dash-widget.page-widget .page-header { padding: 8px 12px 2px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.dash-widget.page-widget .page-header h1 { display: none; }
-.dash-widget.page-widget .page-header .btn { padding: 4px 10px; font-size: 12px; }
-.dash-widget.page-widget .page-toolbar { padding: 2px 12px 8px; }
+/* The page's own header (title + action buttons) is hidden — the widget header shows the
+   name and the action buttons are promoted to the contextual top bar. */
+.dash-widget.page-widget .page-header { display: none; }
+.dash-widget.page-widget .page-toolbar { padding: 6px 12px 8px; }
 
-/* Neutralise the nested DataTable .card chrome so it isn't a card-in-a-card */
-.dash-widget.page-widget .card { box-shadow: none; border: none; background: transparent; margin: 0; padding: 0; }
+/* Neutralise the nested DataTable .card chrome so it isn't a card-in-a-card.
+   Scope to the body so the widget's OWN card keeps its solid header background. */
+.dash-widget.page-widget .card-body .card { box-shadow: none; border: none; background: transparent; margin: 0; padding: 0; }
 .dash-widget.page-widget .data-table-wrapper { border-radius: 0; }
 .dash-widget.page-widget .empty-state { padding: 24px 12px; }
+
+/* #3 Compact rows — denser tables inside page widgets so more rows show at a glance */
+.dash-widget.page-widget .data-table th,
+.dash-widget.page-widget .data-table td { padding: 5px 8px; font-size: 12px; }
+.dash-widget.page-widget .data-table { font-size: 12px; }
+.dash-widget.page-widget .pagination { padding: 6px 8px; font-size: 11px; }
+
+/* Right-click canvas context menu */
+.dash-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 200px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: popIn 0.12s ease;
+}
+.dash-context-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.dash-context-item:hover { background: var(--color-primary-light); color: var(--color-primary); }
+.dash-context-item .material-icons-outlined { color: var(--text-tertiary); }
+.dash-context-item:hover .material-icons-outlined { color: var(--color-primary); }
+.dash-context-sep { height: 1px; background: var(--border-color); margin: 4px 2px; }
+
+/* Relay button when it lives in the global top bar */
+.topbar-relay { margin-right: 12px; flex-shrink: 0; }
+
+/* ── Relay assistant — top-left button ── */
+.relay-btn {
+  pointer-events: auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
+  transition: transform 0.12s, color 0.15s, border-color 0.15s, background 0.15s;
+}
+.relay-btn .material-icons-outlined { font-size: 20px; }
+.relay-btn svg { width: 24px; height: 24px; display: block; }
+.relay-avatar svg { width: 21px; height: 21px; display: block; }
+.relay-btn:hover { transform: scale(1.06); color: var(--color-primary); border-color: rgba(255, 92, 0, 0.4); }
+.relay-btn.active {
+  color: #fff;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 16px rgba(255, 92, 0, 0.35);
+}
+
+/* ── Relay assistant — slide-in panel ── */
+.relay-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 360px;
+  max-width: 92vw;
+  height: 100vh;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  background: var(--content-bg);
+  border-left: 1px solid var(--card-border);
+  box-shadow: -12px 0 40px rgba(72, 83, 103, 0.16);
+  transform: translateX(100%);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.relay-panel.open { transform: translateX(0); }
+
+.relay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.relay-head-id { display: flex; align-items: center; gap: 10px; }
+.relay-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary), #FF7A2E);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+}
+.relay-avatar .material-icons-outlined { font-size: 19px; }
+.relay-name { font-weight: 700; font-size: 14px; color: var(--text-primary); line-height: 1.1; }
+.relay-sub { font-size: 11px; color: var(--text-tertiary); }
+.relay-close {
+  width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent;
+  color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.relay-close:hover { background: var(--color-primary-light); color: var(--color-primary); }
+
+.relay-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.relay-msg { display: flex; }
+.relay-msg-user { justify-content: flex-end; }
+.relay-bubble {
+  max-width: 84%;
+  padding: 9px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.relay-msg-relay .relay-bubble { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-primary); border-top-left-radius: 4px; }
+.relay-msg-user .relay-bubble { background: var(--color-primary); color: #fff; border-top-right-radius: 4px; }
+
+.relay-typing { display: flex; gap: 4px; align-items: center; }
+.relay-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); animation: relayBlink 1s infinite ease-in-out; }
+.relay-typing span:nth-child(2) { animation-delay: 0.15s; }
+.relay-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes relayBlink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+
+.relay-input-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.relay-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-family: var(--font-family);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  outline: none;
+  max-height: 120px;
+}
+.relay-input:focus { border-color: var(--color-primary); }
+.relay-send, .relay-attach {
+  width: 36px; height: 36px; border-radius: 10px; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.relay-send { background: var(--color-primary); color: #fff; }
+.relay-send:hover { background: var(--color-primary-hover); }
+.relay-attach { background: transparent; color: var(--text-tertiary); }
+.relay-attach:disabled { opacity: 0.5; cursor: not-allowed; }
+.relay-foot { font-size: 10.5px; color: var(--text-tertiary); text-align: center; padding: 0 12px 10px; flex-shrink: 0; }
 
 /* Zoom controls */
 .dash-zoom-controls {
@@ -1321,6 +1531,16 @@
   border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
 }
+[data-theme="dark"] .toolbar-search input {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-primary) !important;
+}
+[data-theme="dark"] .toolbar-search input:focus {
+  background: rgba(0, 0, 0, 0.2) !important;
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgba(255, 92, 0, 0.18) !important;
+}
 [data-theme="dark"] .toolbar-filter {
   background: rgba(255, 255, 255, 0.03);
   border-color: rgba(255, 255, 255, 0.06);
@@ -1345,4 +1565,25 @@
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(130, 180, 230, 0.15);
+}
+
+/* ---- Non-Dashboard / Non-Schedule Page Spacing Alignment ---- */
+.non-dashboard-schedule-page.main-content {
+  padding-top: var(--space-xl) !important;
+  padding-bottom: var(--space-xl) !important;
+}
+.non-dashboard-schedule-page .page-toolbar {
+  margin-top: 0 !important;
+  margin-bottom: var(--space-lg) !important;
+}
+.non-dashboard-schedule-page .detail-header {
+  margin-top: 0 !important;
+  margin-bottom: var(--space-base) !important;
+}
+.non-dashboard-schedule-page .tabs {
+  margin-bottom: var(--space-md) !important;
+}
+.non-dashboard-schedule-page .tab-content {
+  padding-top: 0 !important;
+  padding-bottom: var(--space-lg) !important;
 }
