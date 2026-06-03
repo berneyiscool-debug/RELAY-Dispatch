@@ -2713,7 +2713,7 @@ export function renderSettings(container) {
       });
 
       tc.querySelectorAll('.style-text').forEach(txt => {
-        txt.addEventListener('change', (e) => {
+        txt.addEventListener('input', (e) => {
           const val = e.target.value;
           if (/^#[0-9A-F]{6}$/i.test(val)) {
             if (e.target.id === 'color-accent-text') {
