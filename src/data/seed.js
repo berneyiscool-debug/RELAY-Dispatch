@@ -1133,14 +1133,15 @@ export function seedData(force = false) {
 
   // Save Settings
   const settings = {
-    name: 'Apex Power Services',
-    abn: '51 234 567 890',
-    phone: '(02) 6882 4400',
-    email: 'admin@apexpowerservices.com.au',
-    domain: 'apexpowerservices.com.au',
-    address: '14 Yarrandale Rd, Dubbo NSW 2830',
-    website: 'www.apexpowerservices.com.au',
+    name: 'Company Name',
+    abn: '',
+    phone: '',
+    email: '',
+    domain: '',
+    address: '',
+    website: '',
     logo: null,
+    logoSmall: null,
     materialMarkup: {
       defaultPercent: 30,
       minMarkupAmount: 5.00,

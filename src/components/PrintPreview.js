@@ -174,7 +174,7 @@ export function generateDocument(type, data) {
     ? `<img class="pdf-logo-img" src="${settings.logo}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
     : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${(settings.name || 'A').charAt(0)}</div>`;
 
-  const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#1B6DE0'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Apex Power Services')}</div>`;
+  const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#1B6DE0'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Company Name')}</div>`;
 
   const companyHeaderHtml = `
     ${logoImgHtml}
@@ -283,10 +283,10 @@ export function generateDocument(type, data) {
         <div class="pdf-company" style="${companyFlexStyle}">
           ${companyHeaderHtml}
           <div>
-            <div class="pdf-company-name">${escapeHTML(settings.name || 'Apex Power Services')}</div>
-            <div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn || '51 234 567 890')}</div>
-            <div class="pdf-company-detail">${escapeHTML(settings.address || '14 Yarrandale Rd, Dubbo NSW 2830')}</div>
-            <div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
+            <div class="pdf-company-name">${escapeHTML(settings.name || 'Company Name')}</div>
+            ${settings.abn ? `<div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn)}</div>` : ''}
+            ${settings.address ? `<div class="pdf-company-detail">${escapeHTML(settings.address)}</div>` : ''}
+            ${settings.phone ? `<div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone)}</div>` : ''}
           </div>
         </div>
         <div class="pdf-title-block" style="${titleBlockStyle}">
@@ -419,7 +419,7 @@ export function generateDocument(type, data) {
             ? escapeHTML(dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
             : escapeHTML(dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.')}
         </div>
-        <div class="pdf-footer-company">${escapeHTML(settings.name || 'Apex Power Services')} — ${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')} — ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
+        <div class="pdf-footer-company">${escapeHTML(settings.name || 'Company Name')}${settings.email ? ` — ${escapeHTML(settings.email)}` : ''}${settings.phone ? ` — ${escapeHTML(settings.phone)}` : ''}</div>
         <div class="pdf-footer-note" style="font-size:10px; color:#8A97A8; font-weight:normal; text-align:center; margin-top:8px; display: ${dt.footerNote ? 'block' : 'none'};">${escapeHTML(dt.footerNote || '')}</div>
       </div>
     </div>

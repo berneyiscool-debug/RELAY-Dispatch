@@ -141,7 +141,7 @@ export function renderContractorPortal(container, params) {
           </form>
           
           <p style="font-size:11.5px; color:var(--text-tertiary); margin-top:24px; line-height:1.4;">
-            Forgot your PIN? Please contact our operations office at <strong>${escapeHTML(settings.phone || '(02) 6882 4400')}</strong> to request a reset.
+            Forgot your PIN? Please contact our operations office${settings.phone ? ` at <strong>${escapeHTML(settings.phone)}</strong>` : ''} to request a reset.
           </p>
         </div>
       </div>
@@ -1506,7 +1506,7 @@ export function renderContractorPortal(container, params) {
     }
 
     const settings = store.getSettings();
-    const crmCompanyName = settings.name || 'Relay — Dispatch';
+    const crmCompanyName = settings.name || 'Company Name';
 
     // 1. Fetch or create a Customer matching the CRM Owner Company Name
     const customersList = store.getAll('customers');
@@ -1518,9 +1518,9 @@ export function renderContractorPortal(container, params) {
         company: crmCompanyName,
         firstName: 'Operations',
         lastName: 'Staff',
-        email: settings.domain ? 'dispatch@' + settings.domain : (settings.email ? 'dispatch@' + settings.email.split('@').pop() : 'dispatch@apexpowerservices.com.au'),
-        phone: settings.phone || '(02) 6882 4400',
-        address: settings.address || '123 Business St, Melbourne VIC 3000',
+        email: settings.domain ? 'dispatch@' + settings.domain : (settings.email ? 'dispatch@' + settings.email.split('@').pop() : 'dispatch@company.com'),
+        phone: settings.phone || '',
+        address: settings.address || '',
         status: 'Active',
         type: 'Company',
         notes: 'Auto-created customer representing our parent company during subcontractor B2B job imports.',

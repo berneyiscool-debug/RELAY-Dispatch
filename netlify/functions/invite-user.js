@@ -1,5 +1,5 @@
 // ============================================
-// NETLIFY FUNCTION: INVITE USER
+// NETLIFY FUNCTION: CREATE & INVITE USER
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
 
@@ -10,7 +10,6 @@ const headers = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
-// Initialize Supabase client with the admin Service Role key (bypasses RLS to invite users)
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -39,7 +38,7 @@ exports.handler = async (event, context) => {
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // 1. Authenticate the calling Admin user using their JWT access token
+    // 1. Authenticate calling Admin/Manager user using their JWT access token
     const authHeader = event.headers.authorization || '';
     if (!authHeader.startsWith('Bearer ')) {
       return {
@@ -71,50 +70,44 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 403,
         headers,
-        body: JSON.stringify({ error: 'Forbidden: Only administrators can invite users.' })
+        body: JSON.stringify({ error: 'Forbidden: Only administrators can create users.' })
       };
     }
 
-    // 3. Extract invitation payload
-    const { email, name, role, userTypeId, color, payRate } = JSON.parse(event.body || '{}');
+    // 3. Extract payload
+    const { email, password, name, role, userTypeId, color, payRate } = JSON.parse(event.body || '{}');
 
-    if (!email || !name) {
+    if (!email || !name || !password) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Bad Request: Email and Name are required.' })
+        body: JSON.stringify({ error: 'Bad Request: Email, Name, and Password are required.' })
       };
     }
 
-    // 4. Invite user via Supabase Auth Admin API
-    // The user_metadata will contain name, role, userTypeId, color, payRate, and company_id.
-    // Our DB trigger `on_auth_user_created` will automatically create the profile row from this metadata!
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+    // 4. Create user directly in Supabase Auth with password, auto-confirming email
+    const { data: authUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      {
-        data: {
-          name,
-          phone: '',
-          role: role || 'technician',
-          userTypeId: userTypeId || 'ut_tech',
-          company_id: profile.company_id // Inherit the admin's company id for security
-        }
+      password,
+      email_confirm: true, // auto-confirms email so user can log in instantly
+      user_metadata: {
+        name,
+        role: role || 'technician',
+        userTypeId: userTypeId || 'ut_tech',
+        company_id: profile.company_id // Inherit company ID
       }
-    );
+    });
 
-    if (inviteError) {
-      // If user already exists in auth.users, check if they are in our profiles table.
-      // If not, we can manually create a profile link.
+    if (createError) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Invite Error: ' + inviteError.message })
+        body: JSON.stringify({ error: 'Create User Error: ' + createError.message })
       };
     }
 
-    // 5. Update the profile with color and payRate (since inviteUserByEmail metadata is created automatically)
-    // The DB trigger creates the profile row, so we can update it immediately.
-    // Wait a brief millisecond for trigger to execute if needed
+    // 5. Update the profile with color, payRate and userTypeId
+    // The DB trigger on_auth_user_created creates the profile row, so we update it here.
     const { error: updateError } = await supabaseAdmin
       .from('profiles')
       .update({
@@ -122,10 +115,10 @@ exports.handler = async (event, context) => {
         pay_rate: payRate || 0,
         user_type_id: userTypeId
       })
-      .eq('id', inviteData.user.id);
+      .eq('id', authUser.user.id);
 
     if (updateError) {
-      console.error('Failed to update invited user details:', updateError);
+      console.error('Failed to update created user profile details:', updateError);
     }
 
     return {
@@ -133,12 +126,12 @@ exports.handler = async (event, context) => {
       headers,
       body: JSON.stringify({
         success: true,
-        user: inviteData.user
+        user: authUser.user
       })
     };
 
   } catch (error) {
-    console.error('Netlify Invite User Error:', error);
+    console.error('Netlify Create User Error:', error);
     return {
       statusCode: 500,
       headers,

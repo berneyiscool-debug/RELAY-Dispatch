@@ -24,8 +24,8 @@ export function renderCustomerPortal(container, params) {
           The secure customer portal is currently undergoing scheduled maintenance or has been offline by the operations team. Please contact our main office for immediate assistance:
         </p>
         <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
-          <div><strong>Main Phone:</strong> ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
-          <div><strong>Email support:</strong> ${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')}</div>
+          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
+          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
         </div>
       </div>
     `;
@@ -42,8 +42,8 @@ export function renderCustomerPortal(container, params) {
           This secure portal access link is invalid, expired, or has been revoked. Please check the URL or request a new magic access link from the main office:
         </p>
         <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
-          <div><strong>Main Phone:</strong> ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
-          <div><strong>Email support:</strong> ${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')}</div>
+          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
+          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
         </div>
       </div>
     `;
@@ -164,7 +164,7 @@ export function renderCustomerPortal(container, params) {
           </form>
           
           <p style="font-size:11.5px; color:var(--text-tertiary); margin-top:24px; line-height:1.4;">
-            Forgot your PIN? Please contact our main office at <strong>${escapeHTML(settings.phone || '(02) 6882 4400')}</strong> to request a reset.
+            Forgot your PIN? Please contact our main office${settings.phone ? ` at <strong>${escapeHTML(settings.phone)}</strong>` : ''} to request a reset.
           </p>
         </div>
       </div>
@@ -594,7 +594,7 @@ export function renderCustomerPortal(container, params) {
               <span class="material-icons-outlined" style="font-size: 24px;">bolt</span>
             </div>
             <div>
-              <div class="portal-company-name">${escapeHTML(settings.name || 'Apex Power Services')}</div>
+              <div class="portal-company-name">${escapeHTML(settings.name || 'Company Name')}</div>
               <div class="portal-client-title">Client Access Portal</div>
             </div>
           </div>
@@ -870,14 +870,16 @@ export function renderCustomerPortal(container, params) {
             </div>
           </div>
 
+          ${settings.phone ? `
           <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:12px; padding:16px; text-align:center;">
             <div style="width:36px; height:36px; border-radius:50%; background:var(--bg-color); color:var(--text-secondary); display:flex; align-items:center; justify-content:center; margin:0 auto 10px;">
               <span class="material-icons-outlined" style="font-size:18px;">phone</span>
             </div>
             <div style="font-weight:600; font-size:13px; color:var(--text-primary);">Need Quick Help?</div>
             <p style="font-size:11px; color:var(--text-secondary); margin:4px 0 10px; line-height:1.4;">Call our dispatch office for urgent repairs.</p>
-            <a href="tel:${escapeHTML(settings.phone || '(02) 6882 4400')}" class="font-medium" style="font-size:13px; color:var(--color-primary); text-decoration:none;">${escapeHTML(settings.phone || '(02) 6882 4400')}</a>
+            <a href="tel:${escapeHTML(settings.phone)}" class="font-medium" style="font-size:13px; color:var(--color-primary); text-decoration:none;">${escapeHTML(settings.phone)}</a>
           </div>
+          ` : ''}
         </div>
 
       </div>
@@ -1728,9 +1730,9 @@ export function renderCustomerPortal(container, params) {
           <div style="display:flex; flex-direction:column; gap:12px;">
             <p>Need support or want to follow up on a scheduled service? Please feel free to get in touch with our operations team:</p>
             <div style="background:var(--bg-color); border:1px solid var(--border-color); padding:16px; border-radius:8px; display:flex; flex-direction:column; gap:8px;">
-              <div style="display:flex; justify-content:space-between;"><strong>Main Phone</strong><a href="tel:${escapeHTML(settings.phone || '(02) 6882 4400')}" style="color:var(--color-primary); text-decoration:none;" class="font-medium">${escapeHTML(settings.phone || '(02) 6882 4400')}</a></div>
-              <div style="display:flex; justify-content:space-between;"><strong>Email Support</strong><a href="mailto:${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')}" style="color:var(--color-primary); text-decoration:none;" class="font-medium">${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')}</a></div>
-              <div style="display:flex; justify-content:space-between;"><strong>Main Office</strong><span style="font-weight:600; text-align:right;">${escapeHTML(settings.address || '14 Whylandra Street, Dubbo NSW 2830')}</span></div>
+              ${settings.phone ? `<div style="display:flex; justify-content:space-between;"><strong>Main Phone</strong><a href="tel:${escapeHTML(settings.phone)}" style="color:var(--color-primary); text-decoration:none;" class="font-medium">${escapeHTML(settings.phone)}</a></div>` : ''}
+              ${settings.email ? `<div style="display:flex; justify-content:space-between;"><strong>Email Support</strong><a href="mailto:${escapeHTML(settings.email)}" style="color:var(--color-primary); text-decoration:none;" class="font-medium">${escapeHTML(settings.email)}</a></div>` : ''}
+              ${settings.address ? `<div style="display:flex; justify-content:space-between;"><strong>Main Office</strong><span style="font-weight:600; text-align:right;">${escapeHTML(settings.address)}</span></div>` : ''}
             </div>
           </div>
         `;

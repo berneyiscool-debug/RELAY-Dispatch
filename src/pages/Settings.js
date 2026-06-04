@@ -205,31 +205,31 @@ export function renderSettings(container) {
                 <div style="display:flex; flex-direction:column; gap:16px">
                   <div class="form-group">
                     <label class="form-label">Company Name</label>
-                    <input class="form-input" value="${s.name || 'Apex Power Services'}" id="company-name" />
+                    <input class="form-input" value="${s.name || 'Company Name'}" id="company-name" placeholder="Company Name" />
                   </div>
                   <div class="form-row">
                     <div class="form-group">
                       <label class="form-label">ABN</label>
-                      <input class="form-input" id="company-abn" value="${s.abn || '51 234 567 890'}" />
+                      <input class="form-input" id="company-abn" value="${s.abn || ''}" placeholder="e.g. 51 234 567 890" />
                     </div>
                     <div class="form-group">
                       <label class="form-label">Phone</label>
-                      <input class="form-input" id="company-phone" value="${s.phone || '(02) 6882 4400'}" />
+                      <input class="form-input" id="company-phone" value="${s.phone || ''}" placeholder="e.g. (02) 6882 4400" />
                     </div>
                   </div>
                   <div class="form-row">
                     <div class="form-group">
                       <label class="form-label">Company Domain</label>
-                      <input class="form-input" value="${s.domain || 'apexpowerservices.com.au'}" id="company-domain" placeholder="e.g. yourcompany.com.au" />
+                      <input class="form-input" value="${s.domain || ''}" id="company-domain" placeholder="e.g. yourcompany.com.au" />
                     </div>
                     <div class="form-group">
                       <label class="form-label">Company Email</label>
-                      <input class="form-input" value="${s.email || 'admin@apexpowerservices.com.au'}" id="company-email" placeholder="e.g. admin@yourcompany.com.au" />
+                      <input class="form-input" value="${s.email || ''}" id="company-email" placeholder="e.g. admin@yourcompany.com.au" />
                     </div>
                   </div>
                   <div class="form-group">
                     <label class="form-label">Address</label>
-                    <textarea class="form-textarea" id="company-address" rows="2">${s.address || '14 Yarrandale Rd, Dubbo NSW 2830'}</textarea>
+                    <textarea class="form-textarea" id="company-address" rows="2" placeholder="e.g. 14 Yarrandale Rd, Dubbo NSW 2830">${s.address || ''}</textarea>
                   </div>
                 </div>
 
@@ -1439,6 +1439,12 @@ export function renderSettings(container) {
         <label class="form-label">Email</label>
         <input class="form-input" id="u-email" value="${t.email || ''}" />
       </div>
+      ${!editId ? `
+      <div class="form-group">
+        <label class="form-label">Temporary Password (assigned for worker login)</label>
+        <input class="form-input" id="u-password" type="password" placeholder="Min. 6 characters" />
+      </div>
+      ` : ''}
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Role / Job Title</label>
@@ -1503,8 +1509,11 @@ export function renderSettings(container) {
           const userTypeId = document.getElementById('u-type').value;
           const color = document.getElementById('u-color').value;
           const payRate = parseFloat(document.getElementById('u-payrate').value) || null;
+          const password = editId ? null : (document.getElementById('u-password')?.value || '');
           
           if (!name) { showToast('Name required', 'error'); return; }
+          if (!editId && !password) { showToast('Password required', 'error'); return; }
+          if (!editId && password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
           
           const saveBtn = document.querySelector('.btn-save-user');
           if (saveBtn) {
@@ -1516,7 +1525,7 @@ export function renderSettings(container) {
             if (editId) {
               await store.update('technicians', editId, { name, email, role, userTypeId, color, payRate });
             } else {
-              await store.create('technicians', { name, email, role, userTypeId, color, payRate });
+              await store.create('technicians', { name, email, password, role, userTypeId, color, payRate });
             }
             showToast('User saved successfully', 'success');
             renderContent();
