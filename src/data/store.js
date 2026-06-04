@@ -773,7 +773,22 @@ class DataStore {
   // ── Database Seeding operations (if tables are empty) ──────────────────────
 
   isSeeded() {
-    return this.cache.formTemplates.length > 0;
+    if (this.companyId) return true;
+    return localStorage.getItem('simpro__seeded') === 'true';
+  }
+
+  save(collection, items) {
+    this.cache[collection] = items;
+    this.emit(collection, items);
+    
+    // If not running in cloud mode, fall back to localStorage to support the offline demo users list
+    if (!this.companyId) {
+      localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+    }
+  }
+
+  markSeeded() {
+    localStorage.setItem('simpro__seeded', 'true');
   }
 
   async seedFormTemplates() {
@@ -794,6 +809,12 @@ class DataStore {
 
   clearAll() {
     this.clearSync();
+    if (!this.companyId) {
+      Object.keys(TABLE_MAP).forEach(col => {
+        localStorage.removeItem('simpro_' + col);
+      });
+      localStorage.removeItem('simpro__seeded');
+    }
   }
 }
 
