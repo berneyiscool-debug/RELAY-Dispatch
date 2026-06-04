@@ -7,7 +7,7 @@ import { prebuiltForms } from './prebuiltForms.js';
 // Table name mappings to match local collection keys with PostgreSQL tables
 const TABLE_MAP = {
   companies: 'companies',
-  profiles: 'profiles',
+  technicians: 'profiles',
   userTypes: 'user_types',
   customers: 'customers',
   assets: 'assets',
@@ -140,7 +140,7 @@ class DataStore {
         if (payload.new && payload.new.company_id && payload.new.company_id !== this.companyId) return;
         if (payload.old && payload.old.company_id && payload.old.company_id !== this.companyId) return;
 
-        const items = [...this.cache[col]];
+        const items = [...(this.cache[col] || [])];
         
         if (payload.eventType === 'INSERT') {
           const newItem = this.normalizeRecord(payload.new, col);
@@ -563,7 +563,7 @@ class DataStore {
     item.companyId = this.companyId;
 
     // 1. Update memory cache immediately for responsiveness (Optimistic UI)
-    const items = [...this.cache[collection]];
+    const items = [...(this.cache[collection] || [])];
     items.push(item);
     this.cache[collection] = items;
     this.emit(collection, items);
@@ -636,7 +636,7 @@ class DataStore {
   async update(collection, id, updates) {
     if (!this.companyId) return null;
 
-    const items = [...this.cache[collection]];
+    const items = [...(this.cache[collection] || [])];
     const index = items.findIndex(item => item.id === id);
     if (index === -1) return null;
 
@@ -716,7 +716,7 @@ class DataStore {
     if (!this.companyId) return;
 
     // 1. Update memory cache
-    const items = this.cache[collection].filter(item => item.id !== id);
+    const items = (this.cache[collection] || []).filter(item => item.id !== id);
     this.cache[collection] = items;
     this.emit(collection, items);
 
