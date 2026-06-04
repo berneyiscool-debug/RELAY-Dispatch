@@ -22,12 +22,7 @@ export function renderStockList(container, params) {
   function renderLayout() {
     container.innerHTML = `
       <div class="page-header" style="margin-bottom:16px">
-        <div>
-          <h1 style="margin:0">Stock / Inventory</h1>
-          <p style="margin:4px 0 0; color:var(--text-tertiary); font-size:var(--font-size-sm)">
-            Manage your stock parts, materials, and reusable kit bundles
-          </p>
-        </div>
+        <h1 style="margin:0">Stock / Inventory</h1>
         <div class="page-header-actions" id="header-actions-container">
           <!-- Dynamically populated based on active tab -->
         </div>
@@ -44,7 +39,7 @@ export function renderStockList(container, params) {
       </div>
 
       <!-- Dynamic Toolbar Section -->
-      <div class="page-toolbar" id="toolbar-container" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+      <div class="page-toolbar" id="toolbar-container" style="display:flex; justify-content:space-between; align-items:center;">
         <!-- Dynamically populated based on active tab -->
       </div>
 

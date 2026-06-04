@@ -4,6 +4,8 @@
 
 import { store } from '../data/store.js';
 import { router } from '../router.js';
+import { toggleRelay, onRelayToggle } from './RelayAssistant.js';
+import relayIcon from '../assets/relay-icon.svg?raw';
 
 export function createTopBar() {
   const topbar = document.createElement('header');
@@ -16,6 +18,9 @@ export function createTopBar() {
       <input type="text" id="global-search" placeholder="Search customers, jobs, quotes..." autocomplete="off" />
     </div>
     <div class="topbar-actions">
+      <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Relay — your assistant" aria-label="Open Relay assistant">
+        ${relayIcon}
+      </button>
       <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
         <span class="material-icons-outlined" id="theme-icon">${getStoredTheme() === 'dark' ? 'light_mode' : 'dark_mode'}</span>
       </button>
@@ -89,6 +94,11 @@ export function createTopBar() {
     e.stopPropagation();
     toggleNotificationsDropdown(notifBtn);
   });
+
+  // Relay assistant button — available on every page
+  const relayBtn = topbar.querySelector('#btn-relay-assistant');
+  relayBtn.addEventListener('click', () => toggleRelay());
+  onRelayToggle(open => relayBtn.classList.toggle('active', open));
 
   updateTopbarAccess(topbar);
 

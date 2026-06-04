@@ -130,12 +130,268 @@ mainWrapper.appendChild(mainContent);
 app.appendChild(sidebar);
 app.appendChild(mainWrapper);
 
+// ---- Page Header to Breadcrumb Actions Relocation ----
+// Override mainContent querySelector/querySelectorAll to find moved buttons inside breadcrumb-actions
+const originalQuerySelector = mainContent.querySelector;
+mainContent.querySelector = function(selector) {
+  const result = originalQuerySelector.call(this, selector);
+  if (!result) {
+    const breadcrumbActions = document.getElementById('breadcrumb-actions');
+    if (breadcrumbActions) {
+      return breadcrumbActions.querySelector(selector);
+    }
+  }
+  return result;
+};
+
+const originalQuerySelectorAll = mainContent.querySelectorAll;
+mainContent.querySelectorAll = function(selector) {
+  const result = originalQuerySelectorAll.call(this, selector);
+  if (result.length === 0) {
+    const breadcrumbActions = document.getElementById('breadcrumb-actions');
+    if (breadcrumbActions) {
+      return breadcrumbActions.querySelectorAll(selector);
+    }
+  }
+  return result;
+};
+
+// Relocate page headers actions to navigations (breadcrumb) row
+function adjustPageHeaderLayout(container) {
+  const breadcrumb = document.getElementById('breadcrumb');
+  if (!breadcrumb || breadcrumb.style.display === 'none') return;
+
+  const breadcrumbActions = document.getElementById('breadcrumb-actions');
+  if (!breadcrumbActions) return;
+
+  // 1. Handle .page-header
+  const pageHeader = container.querySelector('.page-header');
+  if (pageHeader) {
+    const actions = pageHeader.querySelector('.page-header-actions') || pageHeader.querySelector('#header-actions-container');
+    if (actions && actions.children.length > 0) {
+      breadcrumbActions.innerHTML = '';
+      while (actions.firstChild) {
+        breadcrumbActions.appendChild(actions.firstChild);
+      }
+    }
+    
+    // Hide title elements, subtitle paragraphs, spans, and icon boxes
+    const titles = pageHeader.querySelectorAll('h1, h2, h3, h4, p, span, .asset-icon-box');
+    titles.forEach(t => t.style.display = 'none');
+
+    // Hide empty wrapper divs
+    const divs = pageHeader.querySelectorAll('div');
+    divs.forEach(d => {
+      if (d === actions) return;
+      const visibleChildren = Array.from(d.children).filter(child => child.style.display !== 'none');
+      if (visibleChildren.length === 0) {
+        d.style.display = 'none';
+      }
+    });
+
+    // If it only had title and actions, hide it
+    const children = Array.from(pageHeader.children);
+    let hasVisibleChildren = false;
+    children.forEach(c => {
+      if (c === actions) return;
+      if (c.style.display === 'none') return;
+      hasVisibleChildren = true;
+    });
+    if (!hasVisibleChildren) {
+      pageHeader.style.display = 'none';
+    } else {
+      pageHeader.style.display = 'flex';
+      pageHeader.style.marginBottom = 'var(--space-md)';
+    }
+  }
+
+  // 2. Handle .detail-header
+  const detailHeader = container.querySelector('.detail-header');
+  if (detailHeader) {
+    const info = detailHeader.querySelector('.detail-header-info');
+    const actions = Array.from(detailHeader.children).find(c => c !== info);
+    if (actions && actions.children.length > 0) {
+      breadcrumbActions.innerHTML = '';
+      while (actions.firstChild) {
+        breadcrumbActions.appendChild(actions.firstChild);
+      }
+      actions.style.display = 'none';
+    }
+
+    // Hide detail title text and icon
+    const titleText = detailHeader.querySelector('.detail-header-text');
+    if (titleText) titleText.style.display = 'none';
+    
+    const iconBlock = detailHeader.querySelector('.detail-header-icon');
+    if (iconBlock) iconBlock.style.display = 'none';
+    
+    const meta = detailHeader.querySelector('.detail-header-meta');
+    if (meta) {
+      detailHeader.style.marginBottom = 'var(--space-base)';
+      detailHeader.style.padding = '0';
+      detailHeader.style.background = 'transparent';
+      detailHeader.style.border = 'none';
+      detailHeader.style.boxShadow = 'none';
+    } else {
+      detailHeader.style.display = 'none';
+    }
+  }
+}
+
+// Relocate search inputs and selectors from page toolbars to navigations (breadcrumb) row
+function adjustPageToolbarLayout(container) {
+  const breadcrumb = document.getElementById('breadcrumb');
+  if (!breadcrumb || breadcrumb.style.display === 'none') return;
+
+  const breadcrumbActions = document.getElementById('breadcrumb-actions');
+  if (!breadcrumbActions) return;
+
+  const pageToolbar = container.querySelector('.page-toolbar');
+  if (pageToolbar) {
+    // 0. Pull out tags containers to be direct children of pageToolbar
+    const tagsContainers = pageToolbar.querySelectorAll('.toolbar-filters, [id$="-filters-carousel-container"]');
+    tagsContainers.forEach(tc => {
+      if (tc.parentNode !== pageToolbar) {
+        pageToolbar.appendChild(tc);
+      }
+    });
+
+    // 1. Find all search containers (.toolbar-search)
+    const searchBars = Array.from(pageToolbar.querySelectorAll('.toolbar-search'));
+
+    // 2. Find all select dropdown selectors (.toolbar-selectors)
+    const selectors = Array.from(pageToolbar.querySelectorAll('.toolbar-selectors'));
+
+    // 3. Find any other filter inputs (like date range and staff selectors in Timesheets)
+    const extraControls = [];
+    const inputsAndSelects = pageToolbar.querySelectorAll('input:not(.toolbar-filter), select, label, span:not(.material-icons-outlined)');
+    inputsAndSelects.forEach(el => {
+      let parent = el;
+      while (parent && parent.parentNode !== pageToolbar) {
+        parent = parent.parentNode;
+      }
+      if (parent && !Array.from(tagsContainers).some(tc => tc.contains(parent))) {
+        if (!searchBars.some(sb => sb.contains(parent)) &&
+            !selectors.some(sel => sel.contains(parent))) {
+          if (!extraControls.includes(parent)) {
+            extraControls.push(parent);
+          }
+        }
+      }
+    });
+
+    // 4. Prepend to breadcrumb-actions in reverse order so they show as [Search] [Selectors/DateFilters] [Action Buttons]
+    extraControls.reverse().forEach(ctrl => {
+      if (!breadcrumbActions.contains(ctrl)) {
+        breadcrumbActions.insertBefore(ctrl, breadcrumbActions.firstChild);
+      }
+    });
+
+    selectors.reverse().forEach(sel => {
+      if (!breadcrumbActions.contains(sel)) {
+        breadcrumbActions.insertBefore(sel, breadcrumbActions.firstChild);
+      }
+    });
+
+    searchBars.reverse().forEach(sb => {
+      if (!breadcrumbActions.contains(sb)) {
+        breadcrumbActions.insertBefore(sb, breadcrumbActions.firstChild);
+      }
+    });
+
+    // 5. Clean up the pageToolbar: keep only tags containers and bulk action bars
+    const activeTagsContainers = Array.from(tagsContainers);
+    const bulkActionsBar = pageToolbar.querySelector('.toolbar-bulk-actions');
+    
+    Array.from(pageToolbar.children).forEach(child => {
+      if (!activeTagsContainers.includes(child) && !child.classList.contains('toolbar-bulk-actions')) {
+        child.remove();
+      }
+    });
+
+    const hasContent = activeTagsContainers.length > 0 || !!bulkActionsBar;
+    if (hasContent) {
+      const hasBulk = !!bulkActionsBar;
+      activeTagsContainers.forEach(tc => {
+        if (hasBulk) {
+          tc.style.flex = '1';
+          tc.style.width = 'auto';
+          tc.style.maxWidth = 'none';
+          tc.style.margin = '0';
+          tc.style.overflow = 'visible';
+        } else {
+          tc.style.flex = '1 1 100%';
+          tc.style.width = '100%';
+          tc.style.maxWidth = '100%';
+          tc.style.margin = '0';
+          tc.style.overflow = 'visible';
+        }
+      });
+      pageToolbar.style.display = 'flex';
+      pageToolbar.style.marginBottom = 'var(--space-lg)';
+    } else {
+      pageToolbar.style.display = 'none';
+      pageToolbar.style.marginBottom = '0';
+    }
+  }
+}
+
+// Observe modifications inside mainContent to reactively adjust layout
+const pageHeaderObserver = new MutationObserver(() => {
+  const pageHeader = mainContent.querySelector('.page-header');
+  const detailHeader = mainContent.querySelector('.detail-header');
+  const pageToolbar = mainContent.querySelector('.page-toolbar');
+
+  let hasHeaderActions = false;
+  if (pageHeader) {
+    const actions = pageHeader.querySelector('.page-header-actions') || pageHeader.querySelector('#header-actions-container');
+    hasHeaderActions = actions && actions.children.length > 0;
+  }
+
+  let hasDetailActions = false;
+  if (detailHeader) {
+    const info = detailHeader.querySelector('.detail-header-info');
+    const actions = Array.from(detailHeader.children).find(c => c !== info);
+    hasDetailActions = actions && actions.children.length > 0;
+  }
+
+  let hasToolbarControls = false;
+  if (pageToolbar) {
+    hasToolbarControls = !!pageToolbar.querySelector('.toolbar-search, .toolbar-selectors, input:not(.toolbar-filter), select');
+  }
+
+  if (hasHeaderActions || hasDetailActions || hasToolbarControls) {
+    pageHeaderObserver.disconnect();
+    adjustPageHeaderLayout(mainContent);
+    adjustPageToolbarLayout(mainContent);
+    pageHeaderObserver.observe(mainContent, { childList: true, subtree: true });
+  }
+});
+
+pageHeaderObserver.observe(mainContent, { childList: true, subtree: true });
+
 // ---- Register Routes ----
 function renderPage(handler) {
   return (params) => {
     mainContent.innerHTML = '';
     mainContent.scrollTop = 0;
     mainContent.removeAttribute('style');
+
+    // Clear breadcrumb actions so we start with a clean slate for the new page
+    const breadcrumbActions = document.getElementById('breadcrumb-actions');
+    if (breadcrumbActions) {
+      breadcrumbActions.innerHTML = '';
+    }
+
+    // Add/remove non-dashboard/schedule class depending on current hash route
+    const hash = window.location.hash || '#/';
+    const isDashboardOrSchedule = hash === '#/' || hash === '#' || hash.startsWith('#/dashboard') || hash.startsWith('#/schedule');
+    if (isDashboardOrSchedule) {
+      mainContent.classList.remove('non-dashboard-schedule-page');
+    } else {
+      mainContent.classList.add('non-dashboard-schedule-page');
+    }
+
     handler(mainContent, params);
   };
 }

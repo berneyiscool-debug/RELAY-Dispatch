@@ -128,7 +128,6 @@ export function renderTimesheetsList(container) {
           </div>
           
           <div style="display:flex; align-items:center; gap:8px;">
-            <label style="font-size:12px; color:var(--text-secondary); font-weight:500;">Date Range:</label>
             <input type="date" class="form-input" id="filter-date-start" value="${filterStartDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
             <span style="font-size:12px; color:var(--text-secondary)">to</span>
             <input type="date" class="form-input" id="filter-date-end" value="${filterEndDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
@@ -137,7 +136,6 @@ export function renderTimesheetsList(container) {
 
         ${canViewAll ? `
           <div style="display:flex; align-items:center; gap:8px;">
-            <label style="font-size:12px; color:var(--text-secondary); font-weight:500;">Filter by Staff:</label>
             <div style="display:flex; align-items:center; gap:4px;">
               <button class="btn btn-ghost btn-sm btn-icon" id="btn-tech-prev" title="Previous technician" style="padding:0; height:32px; width:32px; min-width:32px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); border-radius:var(--border-radius); background:var(--card-bg);">
                 <span class="material-icons-outlined" style="font-size:18px">chevron_left</span>

@@ -53,6 +53,13 @@ export function renderNotificationsList(container) {
 
   const columns = [
     { 
+      key: 'number', 
+      label: 'Notif #', 
+      render: (n) => `<span class="cell-link font-medium">${escapeHTML(n.number || 'NT-' + (n.id.includes('_') ? n.id.split('_')[1].padStart(5, '0') : n.id.substring(0, 5).toUpperCase()))}</span>`,
+      getValue: (n) => n.number || n.id,
+      width: '100px'
+    },
+    { 
       key: 'createdAt', 
       label: 'Date', 
       render: (n) => n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—',
@@ -98,11 +105,7 @@ export function renderNotificationsList(container) {
       render: (n) => `<span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status)}</span>`,
       width: '110px'
     },
-    { 
-      key: 'createdBy', 
-      label: 'Raised By',
-      width: '150px'
-    },
+
     {
       key: 'actions',
       label: '',

@@ -6,92 +6,101 @@
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-sm);
-  padding: 7px 16px;
+  padding: 8px 18px; /* Slightly refined premium padding */
   font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
+  font-weight: 600; /* Crisp semi-bold text */
+  letter-spacing: 0.015em; /* Premium typography touch */
   border: 1px solid transparent;
-  border-radius: var(--border-radius);
+  border-radius: 8px; /* Modern squircle geometry */
   cursor: pointer;
-  transition: all var(--transition-fast), transform 0.05s ease;
   white-space: nowrap;
   line-height: 1.4;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); /* Ultra smooth ease-out */
 }
+
+/* Active click bounce effect */
 .btn:active:not(:disabled) {
-  transform: scale(0.97); /* Physical bounce effect */
+  transform: scale(0.96) translateY(1px) !important;
 }
+
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  pointer-events: none;
 }
+
+/* Primary Button (Vibrant brand gradient & orange aura glow) */
 .btn-primary {
-  background: rgba(255, 92, 0, 0.08); /* Translucent Nordic Blue tint */
-  color: var(--color-primary); /* High-contrast Nordic Slate blue */
-  border: 1px solid rgba(255, 92, 0, 0.25); /* Frosted cobalt border */
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 2px 8px rgba(255, 92, 0, 0.04); /* Ambient soft cobalt shadow */
+  background: linear-gradient(135deg, var(--color-primary) 0%, #FF3D00 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 92, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(255, 92, 0, 0.22);
 }
 .btn-primary:hover:not(:disabled) {
-  background: rgba(255, 92, 0, 0.15); /* Richer translucent tint */
-  border-color: rgba(255, 92, 0, 0.45); /* Denser tinted border */
-  color: var(--color-primary-hover);
-  box-shadow: 0 4px 12px rgba(255, 92, 0, 0.08);
-  transform: translateY(-1px); /* Gentle hover lift */
+  background: linear-gradient(135deg, #FF6B1A 0%, #FF4D14 100%);
+  border-color: rgba(255, 92, 0, 0.3);
+  box-shadow: 0 6px 18px rgba(255, 92, 0, 0.35);
+  transform: translateY(-1.5px);
+  color: #ffffff;
 }
-.btn-primary:active:not(:disabled) {
-  transform: translateY(0) scale(0.97);
-}
+
+/* Secondary Button (Frosted premium glass) */
 .btn-secondary {
-  background: rgba(0, 0, 0, 0.03); /* Subtle translucent tint for high contrast on white cards */
-  color: var(--text-primary); /* Deep Slate */
-  border: 1px solid rgba(0, 0, 0, 0.08); /* Distinct frosted glass border */
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.01);
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--text-primary);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.07); /* Clearer hover overlay */
+  background: rgba(255, 255, 255, 0.9);
   border-color: rgba(0, 0, 0, 0.16);
-  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1.5px);
 }
+
+/* Danger Button (Rose-to-Crimson gradient) */
 .btn-danger {
-  background: rgba(220, 38, 38, 0.06); /* Translucent Crimson tint */
-  color: var(--color-danger); /* High-contrast Crimson red */
-  border: 1px solid rgba(220, 38, 38, 0.25); /* Frosted red border */
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.04); /* Ambient soft crimson shadow */
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+  color: #ffffff;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.22);
 }
 .btn-danger:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.12); /* Richer red tint */
-  border-color: rgba(220, 38, 38, 0.45); /* Denser red border */
-  color: #b91c1c; /* Deep Crimson text on hover */
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.08);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #F87171 0%, #E11D48 100%);
+  border-color: rgba(220, 38, 38, 0.3);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.35);
+  transform: translateY(-1.5px);
+  color: #ffffff;
 }
-.btn-danger:active:not(:disabled) {
-  transform: translateY(0) scale(0.97);
-}
+
+/* Ghost Button (Border-free flat button that swells on hover) */
 .btn-ghost {
-  background: rgba(255, 255, 255, 0.15); /* Sleek translucent frosted base */
+  background: transparent;
   color: var(--text-secondary);
-  border: 1px solid var(--border-color); /* Subtle frosted glass border */
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  border: 1px solid transparent;
 }
 .btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.45); /* Brighter frosted overlay */
-  border-color: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--text-primary);
   transform: translateY(-1px);
 }
-.btn-ghost:active:not(:disabled) {
-  transform: translateY(0) scale(0.97);
+
+/* Outline Button (Premium bordered button) */
+.btn-outline {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid rgba(255, 92, 0, 0.4);
 }
+.btn-outline:hover:not(:disabled) {
+  background: rgba(255, 92, 0, 0.05);
+  border-color: var(--color-primary);
+  transform: translateY(-1.5px);
+}
+
 .btn-sm {
   padding: 4px 10px;
   font-size: var(--font-size-sm);
@@ -1152,6 +1161,9 @@ tr.selected-row td {
   position: relative;
   display: block;
 }
+.searchable-select-container.searchable-select-open {
+  z-index: var(--z-dropdown);
+}
 .searchable-select-input {
   width: 100%;
   padding-right: 32px !important;
@@ -1603,9 +1615,10 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
 
 /* Adjust page toolbar first child when bulk actions are active to prevent layout squishing */
 .page-toolbar.has-bulk-actions > *:first-child {
-  flex: 0 1 auto !important;
-  max-width: 40% !important;
-  overflow: hidden;
+  flex: 1 1 auto !important;
+  max-width: calc(100% - 240px) !important;
+  min-width: 0 !important;
+  overflow: visible;
 }
 
 /* Sidebar custom logo positioning override to fit the available space without clipping */

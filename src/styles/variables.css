@@ -102,9 +102,9 @@
   /* ---- Z-Index ---- */
   --z-sidebar: 100;
   --z-topbar: 110;
-  --z-dropdown: 200;
-  --z-modal: 300;
-  --z-toast: 400;
+  --z-dropdown: 1000;
+  --z-modal: 2000;
+  --z-toast: 3000;
 }
 
 [data-theme="dark"] {

@@ -27,9 +27,12 @@ export function createBreadcrumb(path) {
   }
 
   container.style.display = 'flex';
+  container.style.justifyContent = 'space-between';
+  container.style.alignItems = 'center';
+  
   const parts = path.split('/').filter(Boolean);
 
-  let html = `
+  let linksHtml = `
     <span class="breadcrumb-item" data-path="/">
       <span class="material-icons-outlined" style="font-size:14px">home</span>
     </span>
@@ -41,16 +44,19 @@ export function createBreadcrumb(path) {
     const isLast = i === parts.length - 1;
     const label = routeLabels[currentPath] || decodeURIComponent(part);
 
-    html += `<span class="breadcrumb-separator">›</span>`;
+    linksHtml += `<span class="breadcrumb-separator">›</span>`;
 
     if (isLast) {
-      html += `<span class="breadcrumb-item current">${label}</span>`;
+      linksHtml += `<span class="breadcrumb-item current">${label}</span>`;
     } else {
-      html += `<span class="breadcrumb-item" data-path="${currentPath}">${label}</span>`;
+      linksHtml += `<span class="breadcrumb-item" data-path="${currentPath}">${label}</span>`;
     }
   });
 
-  container.innerHTML = html;
+  container.innerHTML = `
+    <div class="breadcrumb-links" style="display:flex; align-items:center; gap:var(--space-sm);">${linksHtml}</div>
+    <div class="breadcrumb-actions" id="breadcrumb-actions" style="display:flex; gap:var(--space-sm);"></div>
+  `;
 
   // Click handlers
   container.querySelectorAll('.breadcrumb-item[data-path]').forEach(item => {

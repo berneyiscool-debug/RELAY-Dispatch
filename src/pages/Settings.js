@@ -2694,7 +2694,8 @@ export function renderSettings(container) {
             dt.accentTint = p.accentTint;
             dt.fontFamily = p.fontFamily;
           }
-          renderMarkup();
+          syncControlsFromState();
+          updatePreview();
         });
       });
 
@@ -2791,7 +2792,7 @@ export function renderSettings(container) {
         tc.querySelector('#preview-tab-invoice').classList.remove('btn-ghost');
         tc.querySelector('#preview-tab-quote').classList.add('btn-ghost');
         tc.querySelector('#preview-tab-quote').classList.remove('btn-primary');
-        updatePreview();
+        updatePreview(true); // Switch tab = full reload to replace layout
       });
       tc.querySelector('#preview-tab-quote').addEventListener('click', () => {
         activePreviewTab = 'quote';
@@ -2799,7 +2800,7 @@ export function renderSettings(container) {
         tc.querySelector('#preview-tab-quote').classList.remove('btn-ghost');
         tc.querySelector('#preview-tab-invoice').classList.add('btn-ghost');
         tc.querySelector('#preview-tab-invoice').classList.remove('btn-primary');
-        updatePreview();
+        updatePreview(true); // Switch tab = full reload to replace layout
       });
 
       // Save Theme Settings
@@ -2833,12 +2834,111 @@ export function renderSettings(container) {
             quoteSignature: true,
             footerNote: 'Thank you for your business!'
           };
-          renderMarkup();
+          syncControlsFromState();
+          updatePreview();
         }
       });
     }
 
-    function updatePreview() {
+    function syncControlsFromState() {
+      // 1. Preset cards active states
+      tc.querySelectorAll('.preset-card').forEach(card => {
+        const key = card.dataset.preset;
+        const isActive = dt.preset === key;
+        if (isActive) {
+          card.classList.add('active');
+          card.style.borderColor = 'var(--color-primary)';
+          card.style.background = 'var(--color-primary-light)';
+          card.style.color = 'var(--color-primary)';
+        } else {
+          card.classList.remove('active');
+          card.style.borderColor = 'var(--border-color)';
+          card.style.background = 'var(--card-bg)';
+          card.style.color = 'inherit';
+        }
+      });
+
+      // 2. Custom style panel visibility
+      const customStylePanel = tc.querySelector('#custom-style-controls');
+      if (customStylePanel) {
+        customStylePanel.style.display = dt.preset === 'custom' ? 'block' : 'none';
+      }
+
+      // 3. Custom color / font inputs
+      const accentColorVal = tc.querySelector('[data-prop="accentColor"]');
+      if (accentColorVal) accentColorVal.value = dt.accentColor;
+      const accentColorText = tc.querySelector('#color-accent-text');
+      if (accentColorText) accentColorText.value = dt.accentColor;
+
+      const headerBgVal = tc.querySelector('[data-prop="headerBg"]');
+      if (headerBgVal) headerBgVal.value = dt.headerBg;
+      const headerBgText = tc.querySelector('#color-header-text');
+      if (headerBgText) headerBgText.value = dt.headerBg;
+
+      const accentTintVal = tc.querySelector('[data-prop="accentTint"]');
+      if (accentTintVal) accentTintVal.value = dt.accentTint;
+      const accentTintText = tc.querySelector('#color-tint-text');
+      if (accentTintText) accentTintText.value = dt.accentTint;
+
+      const fontFamilySelect = tc.querySelector('[data-prop="fontFamily"]');
+      if (fontFamilySelect) fontFamilySelect.value = dt.fontFamily;
+
+      // 4. Logo visibility checkbox
+      const hideLogoChk = tc.querySelector('#theme-hide-logo');
+      if (hideLogoChk) hideLogoChk.checked = !!dt.hideLogo;
+
+      const logoControls = tc.querySelector('#logo-branding-controls');
+      if (logoControls) logoControls.style.display = dt.hideLogo ? 'none' : 'flex';
+
+      // 5. Logo Alignment buttons
+      tc.querySelectorAll('.logo-align-btn').forEach(btn => {
+        if (btn.dataset.align === dt.logoAlignment) {
+          btn.classList.add('btn-primary');
+        } else {
+          btn.classList.remove('btn-primary');
+        }
+      });
+
+      // 6. Logo Scale slider & label
+      const scaleSlider = tc.querySelector('#theme-logo-scale');
+      if (scaleSlider) scaleSlider.value = dt.logoScale || 60;
+      const scaleLabel = tc.querySelector('#scale-val-label');
+      if (scaleLabel) scaleLabel.textContent = (dt.logoScale || 60) + 'px';
+
+      // 7. Text Copy inputs
+      const invoiceTitleInp = tc.querySelector('[data-prop="invoiceTitle"]');
+      if (invoiceTitleInp) invoiceTitleInp.value = dt.invoiceTitle || '';
+
+      const invoicePaymentTermsInp = tc.querySelector('[data-prop="invoicePaymentTerms"]');
+      if (invoicePaymentTermsInp) invoicePaymentTermsInp.value = dt.invoicePaymentTerms || '';
+
+      const invoiceTermsInp = tc.querySelector('[data-prop="invoiceTerms"]');
+      if (invoiceTermsInp) invoiceTermsInp.value = dt.invoiceTerms || '';
+
+      const quoteTitleInp = tc.querySelector('[data-prop="quoteTitle"]');
+      if (quoteTitleInp) quoteTitleInp.value = dt.quoteTitle || '';
+
+      const quoteTermsInp = tc.querySelector('[data-prop="quoteTerms"]');
+      if (quoteTermsInp) quoteTermsInp.value = dt.quoteTerms || '';
+
+      const footerNoteInp = tc.querySelector('[data-prop="footerNote"]');
+      if (footerNoteInp) footerNoteInp.value = dt.footerNote || '';
+
+      // 8. Toggles / Checkboxes
+      const stripeChk = tc.querySelector('#theme-stripe');
+      if (stripeChk) stripeChk.checked = !!dt.paymentStripe;
+
+      const bankTransferChk = tc.querySelector('#theme-bank-transfer');
+      if (bankTransferChk) bankTransferChk.checked = !!dt.paymentDirectTransfer;
+
+      const cashChk = tc.querySelector('#theme-cash');
+      if (cashChk) cashChk.checked = !!dt.paymentCash;
+
+      const quoteSigChk = tc.querySelector('#theme-quote-sig');
+      if (quoteSigChk) quoteSigChk.checked = !!dt.quoteSignature;
+    }
+
+    function updatePreview(fullReload = false) {
       const frame = tc.querySelector('#preview-frame');
       if (!frame) return;
       
@@ -2847,32 +2947,166 @@ export function renderSettings(container) {
         documentTheme: { ...dt }
       };
 
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-          <style>
-            ${getPrintStyles(tempSettings)}
-            /* Overwrite general frame layout margins */
-            .pdf-page { padding: 24px 32px !important; max-width: 100% !important; margin: 0 !important; }
-          </style>
-        </head>
-        <body style="background:#f1f5f9; padding: 16px; margin:0">
-          <div style="background:white; border-radius:6px; border:1px solid #e2e8f0; overflow:hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)">
-            ${generateDocument(activePreviewTab, mockData)}
-          </div>
-        </body>
-        </html>
-      `;
+      const frameDoc = frame.contentDocument || frame.contentWindow.document;
+      const hasWrapper = frameDoc && frameDoc.getElementById('document-content-wrapper');
 
-      try {
-        const doc = frame.contentDocument || frame.contentWindow.document;
-        doc.open();
-        doc.write(html);
-        doc.close();
-      } catch (err) {
-        console.error('Mock preview document injection error:', err);
+      if (fullReload || !hasWrapper) {
+        // If we already assigned srcdoc and are not forcing a full reload, wait for it to finish loading
+        if (!fullReload && frame.dataset.srcdocAssigned === 'true') {
+          return;
+        }
+
+        const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+            <style id="theme-preview-styles">
+              ${getPrintStyles(tempSettings)}
+              /* Overwrite general frame layout margins */
+              .pdf-page { padding: 24px 32px !important; max-width: 100% !important; margin: 0 !important; }
+            </style>
+          </head>
+          <body style="background:#f1f5f9; padding: 16px; margin:0">
+            <div style="background:white; border-radius:6px; border:1px solid #e2e8f0; overflow:hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)">
+              <div id="document-content-wrapper">
+                ${generateDocument(activePreviewTab, mockData)}
+              </div>
+            </div>
+          </body>
+          </html>
+        `;
+        
+        frame.dataset.srcdocAssigned = 'true';
+        frame.onload = () => {
+          frame.dataset.srcdocAssigned = 'false';
+          frame.onload = null;
+          updatePreview();
+        };
+        frame.srcdoc = html;
+        return;
+      }
+
+      // SELECTIVE DOM PATCHING (No Reload = No Scroll Reset)
+      
+      // 1. Live update the style tag
+      const styleTag = frameDoc.getElementById('theme-preview-styles');
+      if (styleTag) {
+        styleTag.innerHTML = `
+          ${getPrintStyles(tempSettings)}
+          /* Overwrite general frame layout margins */
+          .pdf-page { padding: 24px 32px !important; max-width: 100% !important; margin: 0 !important; }
+        `;
+      }
+
+      // 2. Live update document titles
+      const docTypeEl = frameDoc.querySelector('.pdf-doc-type');
+      if (docTypeEl) {
+        docTypeEl.textContent = activePreviewTab === 'quote' 
+          ? (dt.quoteTitle || 'PROPOSAL / QUOTE') 
+          : (dt.invoiceTitle || 'TAX INVOICE');
+      }
+
+      // 3. Live update logo size and header alignment
+      const headerEl = frameDoc.querySelector('.pdf-header');
+      const companyEl = frameDoc.querySelector('.pdf-company');
+      if (headerEl && companyEl) {
+        let headerFlexStyle = 'display:flex; justify-content:space-between; align-items:flex-start;';
+        let companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start;';
+        let titleBlockStyle = 'text-align: right;';
+        
+        if (dt.logoAlignment === 'right') {
+          companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start; flex-direction: row-reverse; text-align: right;';
+        } else if (dt.logoAlignment === 'center') {
+          headerFlexStyle = 'display:flex; flex-direction:column; align-items:center; gap:20px; border-bottom: 2px solid #E4E9F0; padding-bottom: 24px; margin-bottom: 32px;';
+          companyFlexStyle = 'display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;';
+          titleBlockStyle = 'text-align: center; margin-top: 10px;';
+        }
+        
+        headerEl.style.cssText = headerFlexStyle;
+        companyEl.style.cssText = companyFlexStyle;
+        
+        const titleBlockEl = frameDoc.querySelector('.pdf-title-block');
+        if (titleBlockEl) titleBlockEl.style.cssText = titleBlockStyle;
+      }
+
+      // Logo Scale / Visibility
+      const logoImg = frameDoc.querySelector('.pdf-logo-img');
+      const logoBadge = frameDoc.querySelector('.pdf-logo');
+      const logoText = frameDoc.querySelector('.pdf-logo-text');
+
+      if (dt.hideLogo) {
+        if (logoImg) logoImg.style.display = 'none';
+        if (logoBadge) logoBadge.style.display = 'none';
+        if (logoText) {
+          logoText.style.display = 'block';
+          logoText.style.color = dt.accentColor || '#1B6DE0';
+        }
+      } else {
+        if (logoText) logoText.style.display = 'none';
+        
+        const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
+        if (logoImg) {
+          logoImg.style.display = 'block';
+          logoImg.style.maxHeight = logoHeight + 'px';
+        }
+        if (logoBadge) {
+          logoBadge.style.display = 'flex';
+          logoBadge.style.background = `linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd)`;
+        }
+      }
+
+      // 4. Live update Payment Options
+      const paymentSection = frameDoc.querySelector('.pdf-payment-methods');
+      if (paymentSection) {
+        const showPayment = activePreviewTab === 'invoice' && (dt.paymentStripe || dt.paymentDirectTransfer || dt.paymentCash);
+        paymentSection.style.display = showPayment ? 'block' : 'none';
+        
+        const stripeOption = paymentSection.querySelector('.pdf-payment-option-stripe');
+        if (stripeOption) {
+          stripeOption.style.display = dt.paymentStripe ? 'block' : 'none';
+          const stripeBtn = stripeOption.querySelector('a');
+          if (stripeBtn) stripeBtn.style.background = dt.accentColor || '#1B6DE0';
+        }
+        
+        const directOption = paymentSection.querySelector('.pdf-payment-option-direct');
+        if (directOption) {
+          directOption.style.display = dt.paymentDirectTransfer ? 'block' : 'none';
+          const bankDetailsEl = directOption.querySelector('.pdf-bank-details');
+          if (bankDetailsEl) {
+            bankDetailsEl.innerHTML = escapeHTML(dt.invoicePaymentTerms || '').replace(/\n/g, '<br/>');
+          }
+        }
+        
+        const cashOption = paymentSection.querySelector('.pdf-payment-option-cash');
+        if (cashOption) {
+          cashOption.style.display = dt.paymentCash ? 'block' : 'none';
+        }
+      }
+
+      // 5. Live update Quote Signatures
+      const sigSection = frameDoc.querySelector('.pdf-signature-block');
+      if (sigSection) {
+        const showSig = activePreviewTab === 'quote' && dt.quoteSignature;
+        sigSection.style.display = showSig ? 'flex' : 'none';
+      }
+
+      // 6. Live update Terms in Footer
+      const footerTextEl = frameDoc.querySelector('.pdf-footer-text');
+      if (footerTextEl) {
+        footerTextEl.textContent = activePreviewTab === 'quote'
+          ? (dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
+          : (dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.');
+      }
+
+      const footerNoteEl = frameDoc.querySelector('.pdf-footer-note');
+      if (footerNoteEl) {
+        if (dt.footerNote) {
+          footerNoteEl.style.display = 'block';
+          footerNoteEl.textContent = dt.footerNote;
+        } else {
+          footerNoteEl.style.display = 'none';
+        }
       }
     }
 

@@ -169,15 +169,17 @@ export function generateDocument(type, data) {
     footerNote: 'Thank you for your business!'
   };
 
-  let companyHeaderHtml = '';
-  if (dt.hideLogo) {
-    companyHeaderHtml = `<div style="font-size:24px; font-weight:800; color:${dt.accentColor || '#1B6DE0'}">${escapeHTML(settings.name || 'Apex Power Services')}</div>`;
-  } else {
-    const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
-    companyHeaderHtml = settings.logo 
-      ? `<img src="${settings.logo}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain" />`
-      : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd)">${(settings.name || 'A').charAt(0)}</div>`;
-  }
+  const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
+  const logoImgHtml = settings.logo 
+    ? `<img class="pdf-logo-img" src="${settings.logo}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
+    : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${(settings.name || 'A').charAt(0)}</div>`;
+
+  const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#1B6DE0'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Apex Power Services')}</div>`;
+
+  const companyHeaderHtml = `
+    ${logoImgHtml}
+    ${textLogoHtml}
+  `;
 
   let headerFlexStyle = 'display:flex; justify-content:space-between; align-items:flex-start;';
   let companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start;';
@@ -236,53 +238,43 @@ export function generateDocument(type, data) {
     `).join('');
   }
 
-  let paymentMethodsHtml = '';
-  if (!isQuote && (dt.paymentStripe || dt.paymentDirectTransfer || dt.paymentCash)) {
-    paymentMethodsHtml = `
-      <div class="pdf-payment-methods">
-        <div class="pdf-payment-title">Payment Options</div>
-        <div class="pdf-payment-grid">
-          ${dt.paymentStripe ? `
-            <div class="pdf-payment-option">
-              <strong>Credit Card / Online</strong><br/>
-              Pay securely via Stripe Credit Card link.
-              <div style="margin-top: 6px;">
-                <a href="#" onclick="alert('Payment link mock: Stripe payment would be loaded here.'); return false;" style="display:inline-block; padding: 4px 10px; background:${dt.accentColor}; color:white; border-radius:4px; font-weight:600; text-decoration:none; font-size:10px;">Pay Invoice Online</a>
-              </div>
-            </div>
-          ` : ''}
-          ${dt.paymentDirectTransfer ? `
-            <div class="pdf-payment-option">
-              <strong>Direct Bank Transfer</strong><br/>
-              ${escapeHTML(dt.invoicePaymentTerms || '').replace(/\n/g, '<br/>')}
-            </div>
-          ` : ''}
-          ${dt.paymentCash ? `
-            <div class="pdf-payment-option">
-              <strong>Cash Payments</strong><br/>
-              Cash payment accepted on site. Please request a paper receipt from the attending service technician.
-            </div>
-          ` : ''}
+  const showPayment = !isQuote && (dt.paymentStripe || dt.paymentDirectTransfer || dt.paymentCash);
+  const paymentMethodsHtml = `
+    <div class="pdf-payment-methods" style="display: ${showPayment ? 'block' : 'none'};">
+      <div class="pdf-payment-title">Payment Options</div>
+      <div class="pdf-payment-grid">
+        <div class="pdf-payment-option pdf-payment-option-stripe" style="display: ${dt.paymentStripe ? 'block' : 'none'};">
+          <strong>Credit Card / Online</strong><br/>
+          Pay securely via Stripe Credit Card link.
+          <div style="margin-top: 6px;">
+            <a href="#" onclick="alert('Payment link mock: Stripe payment would be loaded here.'); return false;" style="display:inline-block; padding: 4px 10px; background:${dt.accentColor || '#1B6DE0'}; color:white; border-radius:4px; font-weight:600; text-decoration:none; font-size:10px;">Pay Invoice Online</a>
+          </div>
+        </div>
+        <div class="pdf-payment-option pdf-payment-option-direct" style="display: ${dt.paymentDirectTransfer ? 'block' : 'none'};">
+          <strong>Direct Bank Transfer</strong><br/>
+          <span class="pdf-bank-details">${escapeHTML(dt.invoicePaymentTerms || '').replace(/\n/g, '<br/>')}</span>
+        </div>
+        <div class="pdf-payment-option pdf-payment-option-cash" style="display: ${dt.paymentCash ? 'block' : 'none'};">
+          <strong>Cash Payments</strong><br/>
+          Cash payment accepted on site. Please request a paper receipt from the attending service technician.
         </div>
       </div>
-    `;
-  }
+    </div>
+  `;
 
-  let quoteSignatureHtml = '';
-  if (isQuote && dt.quoteSignature) {
-    quoteSignatureHtml = `
-      <div class="pdf-signature-block">
-        <div class="pdf-sig-line">
-          <div class="pdf-sig-space"></div>
-          <div class="pdf-sig-label">Prepared By (Service Coordinator)</div>
-        </div>
-        <div class="pdf-sig-line">
-          <div class="pdf-sig-space"></div>
-          <div class="pdf-sig-label">Accepted By (Customer Representative Signature)</div>
-        </div>
+  const showSig = isQuote && dt.quoteSignature;
+  const quoteSignatureHtml = `
+    <div class="pdf-signature-block" style="display: ${showSig ? 'flex' : 'none'};">
+      <div class="pdf-sig-line">
+        <div class="pdf-sig-space"></div>
+        <div class="pdf-sig-label">Prepared By (Service Coordinator)</div>
       </div>
-    `;
-  }
+      <div class="pdf-sig-line">
+        <div class="pdf-sig-space"></div>
+        <div class="pdf-sig-label">Accepted By (Customer Representative Signature)</div>
+      </div>
+    </div>
+  `;
 
   return `
     <div class="pdf-page">
@@ -428,7 +420,7 @@ export function generateDocument(type, data) {
             : escapeHTML(dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.')}
         </div>
         <div class="pdf-footer-company">${escapeHTML(settings.name || 'Apex Power Services')} — ${escapeHTML(settings.email || 'admin@apexpowerservices.com.au')} — ${escapeHTML(settings.phone || '(02) 6882 4400')}</div>
-        ${dt.footerNote ? `<div style="font-size:10px; color:#8A97A8; font-weight:normal; text-align:center; margin-top:8px;">${escapeHTML(dt.footerNote)}</div>` : ''}
+        <div class="pdf-footer-note" style="font-size:10px; color:#8A97A8; font-weight:normal; text-align:center; margin-top:8px; display: ${dt.footerNote ? 'block' : 'none'};">${escapeHTML(dt.footerNote || '')}</div>
       </div>
     </div>
   `;

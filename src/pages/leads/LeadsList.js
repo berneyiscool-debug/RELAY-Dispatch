@@ -112,6 +112,7 @@ export function renderLeadsList(container) {
   const priorityBadges = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger' };
 
   const columns = [
+    { key: 'number', label: 'Lead #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number || 'LD-' + (r.id.includes('_') ? r.id.split('_')[1].padStart(5, '0') : r.id.substring(0, 5).toUpperCase()))}</span>`, getValue: (r) => r.number || r.id, width: '100px' },
     { key: 'title', label: 'Lead', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.title)}</span>` },
     { key: 'customerName', label: 'Customer', render: (r) => `<span class="text-secondary">${escapeHTML(r.customerName)}</span>` },
     { key: 'source', label: 'Source', render: (r) => `<span class="text-secondary">${escapeHTML(r.source)}</span>` },

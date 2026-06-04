@@ -9,6 +9,43 @@ const STORE_PREFIX = 'simpro_';
 class DataStore {
   constructor() {
     this.listeners = {};
+    this.migrateNumberFields();
+  }
+
+  migrateNumberFields() {
+    // Migrate leads
+    try {
+      const leads = this.getAll('leads');
+      let leadsUpdated = false;
+      leads.forEach((l, idx) => {
+        if (!l.number) {
+          l.number = 'LD-' + (idx + 1).toString().padStart(5, '0');
+          leadsUpdated = true;
+        }
+      });
+      if (leadsUpdated) {
+        this.save('leads', leads);
+      }
+    } catch (e) {
+      console.error('Error migrating leads numbers:', e);
+    }
+
+    // Migrate notifications
+    try {
+      const notifications = this.getAll('notifications');
+      let notifsUpdated = false;
+      notifications.forEach((n, idx) => {
+        if (!n.number) {
+          n.number = 'NT-' + (idx + 1).toString().padStart(5, '0');
+          notifsUpdated = true;
+        }
+      });
+      if (notifsUpdated) {
+        this.save('notifications', notifications);
+      }
+    } catch (e) {
+      console.error('Error migrating notifications numbers:', e);
+    }
   }
 
   _key(collection) {
@@ -63,6 +100,12 @@ class DataStore {
     }
 
     item.id = item.id || this.generateId();
+    if (collection === 'leads' && !item.number) {
+      item.number = 'LD-' + Date.now().toString().slice(-5);
+    }
+    if (collection === 'notifications' && !item.number) {
+      item.number = 'NT-' + Date.now().toString().slice(-5);
+    }
     item.createdAt = item.createdAt || new Date().toISOString();
     item.updatedAt = new Date().toISOString();
     items.push(item);
