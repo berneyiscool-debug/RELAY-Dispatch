@@ -1,36 +1,9 @@
-# Netlify configuration — Relay Dispatch (web app)
-# Connected via GitHub: berneyiscool-debug/simproclone
-
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
-[build.environment]
-  NODE_VERSION = "20"
-
-# SPA fallback — the app uses hash routing today, but this keeps deep links
-# working if we ever switch to history routing. Harmless either way.
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-
-# Sensible default security headers
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
-    X-Frame-Options = "SAMEORIGIN"
-
-# Long-cache the fingerprinted build assets (filenames change on each build)
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# NOTE: Supabase keys are NOT stored here. Set them in the Netlify UI:
-#   Site settings → Environment variables
-#     VITE_SUPABASE_URL        = https://<project>.supabase.co
-#     VITE_SUPABASE_ANON_KEY   = <anon public key>
-# (anon key is public-by-design; RLS protects the data. Never add service_role.)

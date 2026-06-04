@@ -1034,7 +1034,37 @@ function wireCanvas(container, viewport, world, guides, data) {
     if (viewport.scrollTop || viewport.scrollLeft) { viewport.scrollTop = 0; viewport.scrollLeft = 0; }
   });
 
+  // Recompute size-dependent UI whenever the viewport resizes — this catches the
+  // sidebar expanding/collapsing (which resizes the canvas WITHOUT a window resize
+  // event), so edge-line indicators, contextual actions, lazy mounts and view frames
+  // stay glued to the walls instead of getting stuck mid-canvas until the next pan.
+  const recomputeForSize = (vp) => {
+    const gd = vp.querySelector('#dash-guides');
+    const wd = vp.querySelector('#dash-world');
+    updateGuides(vp, gd);
+    updateContextActions(vp, true);
+    mountVisiblePageWidgets(vp);
+    if (isEditMode) renderPins(wd);
+  };
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => recomputeForSize(viewport));
+    ro.observe(viewport);
+  }
   window.addEventListener('resize', () => { updateGuides(viewport, guides); updateContextActions(viewport, true); });
+
+  // The sidebar's width transition can finish AFTER the ResizeObserver's last tick, leaving
+  // edge indicators a touch off the wall. A one-time transitionend on the sidebar guarantees
+  // a final recompute at the settled width. (Hooked once; re-queries the live dashboard DOM.)
+  const sidebarEl = document.querySelector('.sidebar');
+  if (sidebarEl && !sidebarEl.__dashSizeHooked) {
+    sidebarEl.__dashSizeHooked = true;
+    sidebarEl.addEventListener('transitionend', e => {
+      if (e.propertyName !== 'width') return;
+      const vp = document.querySelector('#dash-viewport');
+      if (vp) recomputeForSize(vp);
+    });
+  }
 
   // Double-click empty canvas → Add Widget
   viewport.addEventListener('dblclick', e => {

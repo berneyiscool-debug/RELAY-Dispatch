@@ -613,6 +613,7 @@ router.onNavigate = (path, params) => {
 // Handle logout events globally
 window.addEventListener('fieldforge-logout', () => {
   localStorage.removeItem('currentUser');
+  import('./utils/supabase.js').then(({ supabase }) => supabase.auth.signOut());
   const sidebar = document.querySelector('.sidebar');
   const topbar = document.querySelector('.topbar');
   const breadcrumb = document.getElementById('breadcrumb');
