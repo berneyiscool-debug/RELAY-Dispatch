@@ -399,6 +399,7 @@ export function renderSettings(container) {
       renderCompanyTab();
     } else if (activeTab === 'users') {
       const techs = store.getAll('technicians');
+      const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
       let userTypes = store.getAll('userTypes');
       if (!userTypes || userTypes.length === 0) {
         userTypes = [
@@ -449,6 +450,13 @@ export function renderSettings(container) {
       }
 
       tc.innerHTML = `
+        <div style="background:rgba(59, 130, 246, 0.1); border-left:4px solid #3b82f6; padding:12px 16px; margin-bottom:var(--space-md); border-radius:4px; font-size:13px; color:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
+          <span style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined" style="color:#3b82f6; font-size:18px;">info</span>
+            <span>Your company login code is <strong style="color:#60a5fa">${companySlug}</strong>. Technicians log in using <strong style="color:#60a5fa">username@${companySlug}</strong>.</span>
+          </span>
+        </div>
+
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0">Active Users</h4>
@@ -457,12 +465,11 @@ export function renderSettings(container) {
           <div class="card-body" style="padding:0">
             <table class="data-table">
               <thead>
-                <tr>
-                  <th style="width:40px"></th>
+                               <th style="width:40px"></th>
                   <th>Name</th>
                   <th>Role</th>
                   <th>User Type</th>
-                  <th>Email</th>
+                  <th>Username</th>
                   <th>Pay Rate</th>
                   <th>Actions</th>
                 </tr>
@@ -476,7 +483,7 @@ export function renderSettings(container) {
                       <td class="font-medium">${t.name}</td>
                       <td class="text-secondary">${t.role}</td>
                       <td><span class="badge ${ut?.id === 'ut_admin' ? 'badge-primary' : 'badge-neutral'}">${ut?.name || 'Unassigned'}</span></td>
-                      <td class="text-tertiary">${t.email || '-'}</td>
+                      <td class="text-tertiary">${t.username || (t.email ? t.email.split('@')[0] : '') || '-'}</td>
                       <td class="text-secondary">${t.payRate ? `$${t.payRate.toFixed(2)}/hr` : '-'}</td>
                       <td>
                         <div style="display:flex; gap:8px;">
@@ -1426,8 +1433,9 @@ export function renderSettings(container) {
   }
 
   function openUserModal(editId = null) {
-    let t = editId ? store.getById('technicians', editId) : { name: '', role: '', color: '#1B6DE0', email: '', userTypeId: '' };
+    let t = editId ? store.getById('technicians', editId) : { name: '', role: '', color: '#1B6DE0', username: '', userTypeId: '' };
     const userTypes = store.getAll('userTypes');
+    const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
     
     const contentDiv = document.createElement('div');
     contentDiv.innerHTML = `
@@ -1436,15 +1444,18 @@ export function renderSettings(container) {
         <input class="form-input" id="u-name" value="${t.name}" />
       </div>
       <div class="form-group">
-        <label class="form-label">Email</label>
-        <input class="form-input" id="u-email" value="${t.email || ''}" />
+        <label class="form-label">Username</label>
+        <input class="form-input" id="u-username" value="${t.username || (t.email ? t.email.split('@')[0] : '')}" ${editId ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''} placeholder="e.g. joshua" />
+        ${!editId ? `
+        <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px; font-weight: 500;">
+          Company login code is: <strong style="color: var(--color-primary)">${companySlug}</strong>. User will log in with <strong style="color: var(--color-primary)">username@${companySlug}</strong>
+        </div>
+        ` : ''}
       </div>
-      ${!editId ? `
       <div class="form-group">
-        <label class="form-label">Temporary Password (assigned for worker login)</label>
-        <input class="form-input" id="u-password" type="password" placeholder="Min. 6 characters" />
+        <label class="form-label">${editId ? 'Reset Password (leave blank to keep current)' : 'Temporary Password (assigned for worker login)'}</label>
+        <input class="form-input" id="u-password" type="password" placeholder="${editId ? '••••••••' : 'Min. 6 characters'}" />
       </div>
-      ` : ''}
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Role / Job Title</label>
@@ -1503,17 +1514,20 @@ export function renderSettings(container) {
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
         { label: 'Save', className: 'btn-primary btn-save-user', onClick: async (c) => {
-          const name = document.getElementById('u-name').value;
-          const email = document.getElementById('u-email').value;
-          const role = document.getElementById('u-role').value;
+          const name = document.getElementById('u-name').value.trim();
+          const username = document.getElementById('u-username').value.trim();
+          const role = document.getElementById('u-role').value.trim();
           const userTypeId = document.getElementById('u-type').value;
           const color = document.getElementById('u-color').value;
           const payRate = parseFloat(document.getElementById('u-payrate').value) || null;
-          const password = editId ? null : (document.getElementById('u-password')?.value || '');
+          const password = document.getElementById('u-password')?.value || '';
           
           if (!name) { showToast('Name required', 'error'); return; }
+          if (!username) { showToast('Username required', 'error'); return; }
+          if (username.includes('@')) { showToast('Username cannot contain @ symbol', 'error'); return; }
+          
           if (!editId && !password) { showToast('Password required', 'error'); return; }
-          if (!editId && password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
+          if (password && password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
           
           const saveBtn = document.querySelector('.btn-save-user');
           if (saveBtn) {
@@ -1522,10 +1536,15 @@ export function renderSettings(container) {
           }
 
           try {
+            const updates = { name, username, role, userTypeId, color, payRate };
+            if (password) {
+              updates.password = password;
+            }
+
             if (editId) {
-              await store.update('technicians', editId, { name, email, role, userTypeId, color, payRate });
+              await store.update('technicians', editId, updates);
             } else {
-              await store.create('technicians', { name, email, password, role, userTypeId, color, payRate });
+              await store.create('technicians', updates);
             }
             showToast('User saved successfully', 'success');
             renderContent();

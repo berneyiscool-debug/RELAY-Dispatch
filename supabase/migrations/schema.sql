@@ -24,11 +24,13 @@ CREATE TABLE profiles (
   company_id uuid REFERENCES companies ON DELETE CASCADE NOT NULL,
   name text,
   email text,
+  username text,
   phone text,
   role text DEFAULT 'technician' NOT NULL CHECK (role IN ('admin', 'manager', 'technician', 'office', 'customer')),
   user_type_id text,
   color text,
   pay_rate numeric DEFAULT 0,
+  force_password_change boolean DEFAULT false NOT NULL,
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -472,6 +474,7 @@ AS $$
 DECLARE
   company_uuid uuid;
   user_name text;
+  user_username text;
   user_phone text;
   user_role text;
 BEGIN
@@ -481,14 +484,15 @@ BEGIN
       company_uuid := (new.raw_user_meta_data->>'company_id')::uuid;
     END IF;
     user_name := new.raw_user_meta_data->>'name';
+    user_username := new.raw_user_meta_data->>'username';
     user_phone := new.raw_user_meta_data->>'phone';
     user_role := COALESCE(new.raw_user_meta_data->>'role', 'technician');
   END IF;
 
   -- Only create profile if company_uuid could be resolved
   IF company_uuid IS NOT NULL THEN
-    INSERT INTO public.profiles (id, company_id, name, email, phone, role)
-    VALUES (new.id, company_uuid, user_name, new.email, user_phone, user_role);
+    INSERT INTO public.profiles (id, company_id, name, email, username, phone, role)
+    VALUES (new.id, company_uuid, user_name, new.email, user_username, user_phone, user_role);
   END IF;
 
   RETURN new;

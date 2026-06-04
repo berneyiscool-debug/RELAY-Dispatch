@@ -77,8 +77,8 @@ export function renderLogin(container) {
             ${currentView === 'signin' ? `
               <!-- Sign In View -->
               <div>
-                <label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; color:#94a3b8; margin-bottom:6px;">Email Address</label>
-                <input type="email" id="auth-email" style="width:100%; padding:10px 14px; border-radius:6px; border:1px solid #334155; background:#0f172a; color:#f8fafc; font-size:15px; outline:none;" placeholder="name@company.com" required>
+                <label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; color:#94a3b8; margin-bottom:6px;">Username or Email</label>
+                <input type="text" id="auth-email" style="width:100%; padding:10px 14px; border-radius:6px; border:1px solid #334155; background:#0f172a; color:#f8fafc; font-size:15px; outline:none;" placeholder="username@company or name@company.com" required>
               </div>
 
               <div>
@@ -155,13 +155,23 @@ export function renderLogin(container) {
     submitBtn.disabled = true;
     submitBtn.innerText = currentView === 'signin' ? 'Signing In...' : 'Registering Company...';
 
-    const email = container.querySelector('#auth-email').value.trim();
+    const rawInput = container.querySelector('#auth-email').value.trim();
     const password = container.querySelector('#auth-password').value;
+
+    let authEmail = rawInput;
+    // Map username@company to username@company.fieldforge.internal behind the scenes if domain has no TLD/dot
+    if (authEmail.includes('@')) {
+      const parts = authEmail.split('@');
+      const domain = parts[1];
+      if (domain && !domain.includes('.')) {
+        authEmail = `${parts[0].toLowerCase()}@${domain.toLowerCase()}.fieldforge.internal`;
+      }
+    }
 
     try {
       if (currentView === 'signin') {
         // 1. Sign in with password
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password });
         if (error) throw error;
 
         // 2. Fetch the corresponding profile record from the database
@@ -175,7 +185,13 @@ export function renderLogin(container) {
           throw new Error('Your user profile could not be found. Please check with your administrator.');
         }
 
-        // 3. Store the user context in localStorage for backward-compatibility with the client-side shell
+        // 3. Intercept if password change is forced
+        if (profile.force_password_change) {
+          renderForcePasswordChange(data.user, profile);
+          return;
+        }
+
+        // 4. Store the user context in localStorage for backward-compatibility
         const user = {
           id: profile.id,
           companyId: profile.company_id,
@@ -197,7 +213,7 @@ export function renderLogin(container) {
 
         // 1. Sign up user in Auth
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: authEmail,
           password,
           options: {
             data: {
@@ -243,6 +259,97 @@ export function renderLogin(container) {
       submitBtn.disabled = false;
       submitBtn.innerText = currentView === 'signin' ? 'Sign In' : 'Create Company & Admin Account';
     }
+  };
+
+  const renderForcePasswordChange = (authUser, profile) => {
+    container.innerHTML = `
+      <div class="login-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0f172a; font-family: 'Inter', sans-serif;">
+        <div class="login-box" style="background: #1e293b; padding: 40px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 100%; max-width: 440px; text-align: center; color: #f8fafc;">
+          
+          <div style="margin-bottom: 25px;">
+            <div style="display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: #f59e0b; border-radius: 8px; margin-bottom: 12px;">
+              <span class="material-icons-outlined" style="font-size: 28px; color: white;">lock_reset</span>
+            </div>
+            <h1 style="font-size: 22px; font-weight: 700; margin: 0; color: #f8fafc;">Change Password</h1>
+            <p style="font-size: 14px; color: #94a3b8; margin: 8px 0 0 0;">An administrator has reset your password. You must choose a new password to log in.</p>
+          </div>
+
+          <div id="pwd-change-error" style="display: none; background: #ef44441a; border: 1px solid #ef44444d; padding: 12px; border-radius: 6px; color: #fca5a5; font-size: 14px; text-align: left; margin-bottom: 20px;"></div>
+
+          <form id="pwd-change-form" style="display: flex; flex-direction: column; gap: 16px; text-align: left;">
+            <div>
+              <label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; color:#94a3b8; margin-bottom:6px;">New Password</label>
+              <input type="password" id="new-password" style="width:100%; padding:10px 14px; border-radius:6px; border:1px solid #334155; background:#0f172a; color:#f8fafc; font-size:15px; outline:none;" placeholder="Min. 6 characters" required>
+            </div>
+
+            <div>
+              <label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; color:#94a3b8; margin-bottom:6px;">Confirm New Password</label>
+              <input type="password" id="confirm-password" style="width:100%; padding:10px 14px; border-radius:6px; border:1px solid #334155; background:#0f172a; color:#f8fafc; font-size:15px; outline:none;" placeholder="Re-enter password" required>
+            </div>
+
+            <button type="submit" id="btn-pwd-submit" class="btn btn-primary" style="width:100%; padding:12px; font-size:16px; justify-content:center; background:#3b82f6; border:none; margin-top:8px;">
+              Update Password & Log In
+            </button>
+          </form>
+
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#pwd-change-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = container.querySelector('#pwd-change-error');
+      const submitBtn = container.querySelector('#btn-pwd-submit');
+      errorEl.style.display = 'none';
+
+      const newPassword = container.querySelector('#new-password').value;
+      const confirmPassword = container.querySelector('#confirm-password').value;
+
+      if (newPassword.length < 6) {
+        errorEl.innerText = 'Password must be at least 6 characters.';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        errorEl.innerText = 'Passwords do not match.';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Updating...';
+
+      try {
+        const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+        if (updateError) throw updateError;
+
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ force_password_change: false })
+          .eq('id', authUser.id);
+        if (profileError) throw profileError;
+
+        const user = {
+          id: profile.id,
+          companyId: profile.company_id,
+          name: profile.name,
+          role: profile.role,
+          userTypeName: profile.role === 'admin' ? 'Admin' : (profile.role === 'manager' ? 'Manager' : 'Technician'),
+          userTypeId: profile.user_type_id || (profile.role === 'admin' ? 'ut_admin' : 'ut_tech'),
+          color: profile.color || '#3B82F6'
+        };
+
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        completeLogin(user);
+      } catch (err) {
+        console.error('Password change error:', err);
+        errorEl.innerText = err.message || 'An error occurred during password change.';
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Update Password & Log In';
+      }
+    });
   };
 
   const completeLogin = async (user) => {

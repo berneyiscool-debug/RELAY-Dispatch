@@ -75,63 +75,139 @@ exports.handler = async (event, context) => {
     }
 
     // 3. Extract payload
-    const { email, password, name, role, userTypeId, color, payRate } = JSON.parse(event.body || '{}');
+    const { action, userId, email, username, password, name, role, userTypeId, color, payRate } = JSON.parse(event.body || '{}');
 
-    if (!email || !name || !password) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Bad Request: Email, Name, and Password are required.' })
-      };
-    }
+    if (action === 'update') {
+      if (!userId) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Bad Request: userId is required for updates.' })
+        };
+      }
 
-    // 4. Create user directly in Supabase Auth with password, auto-confirming email
-    const { data: authUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // auto-confirms email so user can log in instantly
-      user_metadata: {
+      // Update Auth record
+      const authUpdates = {};
+      if (email) authUpdates.email = email;
+      if (password) authUpdates.password = password;
+      
+      authUpdates.user_metadata = {
         name,
         role: role || 'technician',
         userTypeId: userTypeId || 'ut_tech',
-        company_id: profile.company_id // Inherit company ID
-      }
-    });
+        username: username
+      };
 
-    if (createError) {
+      const { data: updatedAuthUser, error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+        userId,
+        authUpdates
+      );
+
+      if (updateAuthError) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Update User Auth Error: ' + updateAuthError.message })
+        };
+      }
+
+      // Update DB Profile record
+      const profileUpdates = {
+        name,
+        username,
+        email,
+        role: role || 'technician',
+        user_type_id: userTypeId,
+        color: color || '#1B6DE0',
+        pay_rate: payRate || 0
+      };
+
+      if (password) {
+        profileUpdates.force_password_change = true; // Force password change on next login if admin reset it!
+      }
+
+      const { error: updateProfileError } = await supabaseAdmin
+        .from('profiles')
+        .update(profileUpdates)
+        .eq('id', userId);
+
+      if (updateProfileError) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Update Profile Error: ' + updateProfileError.message })
+        };
+      }
+
       return {
-        statusCode: 400,
+        statusCode: 200,
         headers,
-        body: JSON.stringify({ error: 'Create User Error: ' + createError.message })
+        body: JSON.stringify({
+          success: true,
+          user: updatedAuthUser.user
+        })
+      };
+
+    } else {
+      // DEFAULT: Create new user
+      if (!email || !name || !password) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Bad Request: Email, Name, and Password are required.' })
+        };
+      }
+
+      // Create user directly in Supabase Auth with password, auto-confirming email
+      const { data: authUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // auto-confirms email so user can log in instantly
+        user_metadata: {
+          name,
+          username,
+          role: role || 'technician',
+          userTypeId: userTypeId || 'ut_tech',
+          company_id: profile.company_id // Inherit company ID
+        }
+      });
+
+      if (createError) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Create User Error: ' + createError.message })
+        };
+      }
+
+      // Update the profile with color, payRate and userTypeId
+      const { error: updateError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          color: color || '#1B6DE0',
+          pay_rate: payRate || 0,
+          user_type_id: userTypeId,
+          username: username,
+          force_password_change: false
+        })
+        .eq('id', authUser.user.id);
+
+      if (updateError) {
+        console.error('Failed to update created user profile details:', updateError);
+      }
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          success: true,
+          user: authUser.user
+        })
       };
     }
 
-    // 5. Update the profile with color, payRate and userTypeId
-    // The DB trigger on_auth_user_created creates the profile row, so we update it here.
-    const { error: updateError } = await supabaseAdmin
-      .from('profiles')
-      .update({
-        color: color || '#1B6DE0',
-        pay_rate: payRate || 0,
-        user_type_id: userTypeId
-      })
-      .eq('id', authUser.user.id);
-
-    if (updateError) {
-      console.error('Failed to update created user profile details:', updateError);
-    }
-
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        success: true,
-        user: authUser.user
-      })
-    };
-
   } catch (error) {
-    console.error('Netlify Create User Error:', error);
+    console.error('Netlify Create/Update User Error:', error);
     return {
       statusCode: 500,
       headers,

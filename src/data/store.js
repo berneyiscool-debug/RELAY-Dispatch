@@ -201,6 +201,10 @@ class DataStore {
       record.userTypeId = record.user_type_id;
       delete record.user_type_id;
     }
+    if (record.force_password_change !== undefined) {
+      record.forcePasswordChange = record.force_password_change;
+      delete record.force_password_change;
+    }
     if (record.pay_rate !== undefined) {
       record.payRate = parseFloat(record.pay_rate);
       delete record.pay_rate;
@@ -368,6 +372,10 @@ class DataStore {
     if (record.userTypeId !== undefined) {
       record.user_type_id = record.userTypeId;
       delete record.userTypeId;
+    }
+    if (record.forcePasswordChange !== undefined) {
+      record.force_password_change = record.forcePasswordChange;
+      delete record.forcePasswordChange;
     }
     if (record.payRate !== undefined) {
       record.pay_rate = record.payRate;
@@ -566,6 +574,10 @@ class DataStore {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error('Authentication session expired. Please log in again.');
 
+        const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const email = `${item.username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
+        item.email = email;
+
         const res = await fetch('/.netlify/functions/invite-user', {
           method: 'POST',
           headers: {
@@ -573,7 +585,9 @@ class DataStore {
             'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({
+            action: 'create',
             email: item.email,
+            username: item.username,
             password: item.password,
             name: item.name,
             role: item.role,
@@ -585,14 +599,14 @@ class DataStore {
 
         const data = await res.json();
         if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to invite user.');
+          throw new Error(data.error || 'Failed to create user.');
         }
 
         // Update local item ID with the real auth user UUID returned from database
         item.id = data.user.id;
         
         const cachedItems = [...this.cache.technicians];
-        const idx = cachedItems.findIndex(x => x.email === item.email);
+        const idx = cachedItems.findIndex(x => x.username === item.username);
         if (idx !== -1) {
           cachedItems[idx] = item;
           this.cache.technicians = cachedItems;
@@ -602,7 +616,7 @@ class DataStore {
         return item;
       } catch (err) {
         // Rollback cache update on failure
-        this.cache.technicians = this.cache.technicians.filter(x => x.email !== item.email);
+        this.cache.technicians = this.cache.technicians.filter(x => x.username !== item.username);
         this.emit('technicians', this.cache.technicians);
         throw err;
       }
@@ -627,6 +641,51 @@ class DataStore {
     if (index === -1) return null;
 
     const previous = items[index];
+
+    // Special Case: Updating a technician profile/password via UI
+    if (collection === 'technicians') {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Authentication session expired. Please log in again.');
+
+        const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const username = updates.username || previous.username;
+        const email = `${username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
+        updates.email = email;
+
+        if (updates.password) {
+          updates.forcePasswordChange = true;
+        }
+
+        const res = await fetch('/.netlify/functions/invite-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            action: 'update',
+            userId: id,
+            email: email,
+            username: username,
+            name: updates.name || previous.name,
+            role: updates.role || previous.role,
+            userTypeId: updates.userTypeId || previous.userTypeId,
+            color: updates.color || previous.color,
+            payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
+            password: updates.password
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to update user.');
+        }
+      } catch (err) {
+        throw err;
+      }
+    }
+
     const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
     
     // 1. Write to local cache synchronously
