@@ -422,6 +422,7 @@ CREATE POLICY documents_tenant_policy ON documents
 -- RPC to register a new company and assign the signup user as the primary administrator.
 -- Runs with SECURITY DEFINER to write profiles and companies safely without RLS deadlock.
 CREATE OR REPLACE FUNCTION create_company_and_admin(
+  user_id uuid,
   company_name text,
   admin_name text,
   admin_phone text
@@ -441,13 +442,13 @@ BEGIN
   )
   RETURNING id INTO new_company_id;
 
-  -- 2. Link the current authenticated user's profile to this company as an administrator
+  -- 2. Link the specified user's profile to this company as an administrator
   INSERT INTO profiles (id, company_id, name, email, phone, role)
   VALUES (
-    auth.uid(),
+    user_id,
     new_company_id,
     admin_name,
-    (SELECT email FROM auth.users WHERE id = auth.uid()),
+    (SELECT email FROM auth.users WHERE id = user_id),
     admin_phone,
     'admin'
   );

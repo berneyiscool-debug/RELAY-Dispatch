@@ -214,6 +214,7 @@ export function renderLogin(container) {
 
         // 2. Call security definer RPC function to create company and profile records
         const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
+          user_id: data.user.id,
           company_name: companyName,
           admin_name: adminName,
           admin_phone: adminPhone
