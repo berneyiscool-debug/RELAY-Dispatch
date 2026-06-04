@@ -261,12 +261,13 @@ function defaultLayoutForUser() {
 // The default "Home" saved view — centred on the widget cluster. It's seeded for new
 // users but is an ordinary view: movable, editable AND removable once they customise.
 function makeHomeView(widgets) {
-  let x = 40, y = 40;
+  // Top-left of the widget cluster (with a small margin) — views anchor by top-left now
+  let x = 0, y = 0;
   if (widgets && widgets.length) {
-    let sx = 0, sy = 0;
-    widgets.forEach(w => { sx += w.x + w.w / 2; sy += w.y + w.h / 2; });
-    x = snap(sx / widgets.length);
-    y = snap(sy / widgets.length);
+    let minX = Infinity, minY = Infinity;
+    widgets.forEach(w => { minX = Math.min(minX, w.x); minY = Math.min(minY, w.y); });
+    x = snap(minX - 40);
+    y = snap(minY - 40);
   }
   return { id: 'view_home', x, y, zoom: 1, color: '#FF5C00', icon: 'home', label: 'Home' };
 }
@@ -656,91 +657,112 @@ function mountPageWidget(body, cfg) {
     .catch(() => { body.innerHTML = renderPlaceholder('error_outline', 'Could not load page'); });
 }
 
-// ── Pins (home pin + navigation pins) ───────────────────────────────────────────
+// ── Saved-view frames (edit mode) ────────────────────────────────────────────────
+// In edit mode each saved view shows as a coloured FRAME outlining the region it
+// captures. Grab any edge (the coloured line) — or the corner tag — to move it; the
+// interior is click-through so it never blocks widgets or panning. In normal use views
+// are invisible (only the edge-line indicators + the views bar represent them).
 function renderPins(world) {
-  world.querySelectorAll('.dash-pin').forEach(p => p.remove());
+  world.querySelectorAll('.dash-view-frame, .dash-pin').forEach(p => p.remove());
 
-  // Keep the right-hand Views section in sync with the current views
   renderViewsSection();
-
-  // Saved views are INVISIBLE during normal use — represented only by edge lines + chips.
-  // Their anchor markers appear only in edit mode, so they can be moved / edited / removed.
   if (!isEditMode) return;
 
-  // Every saved view (incl. the default Home) renders as a movable/editable/removable marker
+  const viewport = document.querySelector('#dash-viewport');
+  const vw = viewport ? viewport.clientWidth : 1200;
+  const vh = viewport ? viewport.clientHeight : 700;
+  // Band at the top of each frame = the area the gradient top bar (contextual actions) covers
+  const topbarEl = viewport ? viewport.querySelector('.dash-topbar') : null;
+  const topbarH = topbarEl ? topbarEl.offsetHeight : 72;
+  const bandPct = vh > 0 ? Math.min(45, (topbarH / vh) * 100) : 10;
+
+  // Extra width the canvas gains when the sidebar is minimised (a strip on the right,
+  // since views anchor top-left). Zero if the sidebar is already minimised.
+  const sidebar = document.querySelector('.sidebar');
+  const sbExpanded = !!sidebar && sidebar.classList.contains('expanded');
+  const csRoot = getComputedStyle(document.documentElement);
+  const sbExpandedW = parseInt(csRoot.getPropertyValue('--sidebar-width-expanded')) || 192;
+  const sbCollapsedW = parseInt(csRoot.getPropertyValue('--sidebar-width-collapsed')) || 51;
+  const bonusScreen = sbExpanded ? (sbExpandedW - sbCollapsedW) : 0;
+
   live.pins.forEach(ref => {
+    const z = ref.zoom || 1;
     const el = document.createElement('div');
-    el.className = 'dash-pin edit-mode';
+    el.className = 'dash-view-frame';
     el.dataset.pinId = ref.id;
     el.style.left = ref.x + 'px';
     el.style.top = ref.y + 'px';
-    el.style.setProperty('--pin-color', ref.color);
+    el.style.width = (vw / z) + 'px';
+    el.style.height = (vh / z) + 'px';
+    el.style.borderColor = ref.color;
+    el.style.background = ref.color + '12'; // ~7% tint
+    const bonusHtml = bonusScreen > 0
+      ? `<div class="dash-view-bonus" style="left:${vw / z}px; width:${bonusScreen / z}px; border-color:${ref.color}; background:${ref.color}0a;" title="Visible when the sidebar is minimised"><span class="material-icons-outlined" style="color:${ref.color};">keyboard_double_arrow_right</span></div>`
+      : '';
     el.innerHTML = `
-      <div class="dash-pin-marker" style="background:${ref.color};">
-        <span class="material-icons-outlined" style="font-size:15px;">${ref.icon}</span>
-      </div>
-      ${ref.label ? `<div class="dash-pin-label">${ref.label}</div>` : ''}
-      <button class="dash-pin-remove" title="Remove view"><span class="material-icons-outlined" style="font-size:13px;">close</span></button>`;
-
+      ${bonusHtml}
+      <div class="dash-view-topband" style="height:${bandPct}%;"></div>
+      <div class="dash-view-edge e-top"></div>
+      <div class="dash-view-edge e-right"></div>
+      <div class="dash-view-edge e-bottom"></div>
+      <div class="dash-view-edge e-left"></div>
+      <div class="dash-view-tag" style="border-color:${ref.color};color:${ref.color};">
+        <span class="material-icons-outlined" style="font-size:14px;">${ref.icon}</span>
+        <span class="dash-view-tag-label">${ref.label || 'View'}</span>
+        <button class="dash-view-remove" title="Remove view"><span class="material-icons-outlined" style="font-size:13px;">close</span></button>
+      </div>`;
     world.appendChild(el);
-    wirePin(el, ref, ref.id, world);
+    wireViewFrame(el, ref, world);
   });
 }
 
-// Wire a single saved-view marker (edit mode): drag · edit-on-click · remove
-function wirePin(el, ref, id, world) {
+// Wire a view frame: drag (edges + tag) to move · tag click to edit · remove button
+function wireViewFrame(el, ref, world) {
   const viewport = document.querySelector('#dash-viewport');
   const guides = document.querySelector('#dash-guides');
 
-  const rm = el.querySelector('.dash-pin-remove');
-  if (rm) {
-    rm.addEventListener('click', e => {
+  el.querySelector('.dash-view-remove')?.addEventListener('click', e => {
+    e.stopPropagation();
+    live.pins = live.pins.filter(p => p.id !== ref.id);
+    renderPins(world);
+    updateGuides(viewport, guides);
+  });
+
+  const grabbers = [...el.querySelectorAll('.dash-view-edge'), el.querySelector('.dash-view-tag')].filter(Boolean);
+  grabbers.forEach(g => {
+    g.addEventListener('mousedown', e => {
+      if (e.button !== 0 || e.target.closest('.dash-view-remove')) return;
       e.stopPropagation();
-      live.pins = live.pins.filter(p => p.id !== id);
-      renderPins(world);
-      updateGuides(viewport, guides);
-    });
-  }
+      e.preventDefault();
+      const startX = e.clientX, startY = e.clientY;
+      const origX = ref.x, origY = ref.y;
+      let moved = false;
+      el.classList.add('dragging');
 
-  const marker = el.querySelector('.dash-pin-marker');
-  if (!marker) return;
-  marker.style.cursor = isEditMode ? 'grab' : 'pointer';
-
-  marker.addEventListener('mousedown', e => {
-    if (e.button !== 0) return;
-    e.stopPropagation(); // never start a canvas pan from a pin
-    const startX = e.clientX, startY = e.clientY;
-    const origX = ref.x, origY = ref.y;
-    let moved = false;
-
-    const onMove = mv => {
-      const dx = mv.clientX - startX, dy = mv.clientY - startY;
-      if (!moved && Math.hypot(dx, dy) < 5) return;
-      if (!isEditMode) return; // view mode: pins don't drag, a click flies to them
-      if (!moved) { moved = true; el.classList.add('dragging'); }
-      ref.x = origX + dx / live.view.zoom;
-      ref.y = origY + dy / live.view.zoom;
-      el.style.left = ref.x + 'px';
-      el.style.top = ref.y + 'px';
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (moved) {
-        el.classList.remove('dragging');
-        ref.x = snap(ref.x);
-        ref.y = snap(ref.y);
+      const onMove = mv => {
+        const dx = mv.clientX - startX, dy = mv.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < 4) return;
+        moved = true;
+        ref.x = origX + dx / live.view.zoom;
+        ref.y = origY + dy / live.view.zoom;
         el.style.left = ref.x + 'px';
         el.style.top = ref.y + 'px';
-        updateGuides(viewport, guides);
-      } else {
-        // A click with no drag: edit it (edit mode) or fly to it (view mode)
-        if (isEditMode) openPinEditor(viewport, world, guides, { pin: ref });
-        else flyTo(viewport, ref.x, ref.y, ref.zoom);
-      }
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        el.classList.remove('dragging');
+        if (moved) {
+          ref.x = snap(ref.x); ref.y = snap(ref.y);
+          el.style.left = ref.x + 'px'; el.style.top = ref.y + 'px';
+          updateGuides(viewport, guides);
+        } else if (g.classList.contains('dash-view-tag')) {
+          openPinEditor(viewport, world, guides, { pin: ref }); // click tag → edit
+        }
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
   });
 }
 
@@ -853,12 +875,14 @@ function renderViewsSection() {
   });
 }
 
+// Fly so the world point (wx,wy) snaps to the viewport's TOP-LEFT. Anchoring the
+// top-left (not the centre) keeps a recalled view aligned regardless of the viewport
+// width changing when the sidebar opens/closes.
 function flyTo(viewport, wx, wy, targetZoom) {
-  const vw = viewport.clientWidth, vh = viewport.clientHeight;
   if (typeof targetZoom === 'number') live.view.zoom = clamp(targetZoom, ZOOM_MIN, ZOOM_MAX);
   const { zoom } = live.view;
-  live.view.panX = vw / 2 - wx * zoom;
-  live.view.panY = vh / 2 - wy * zoom;
+  live.view.panX = -wx * zoom;
+  live.view.panY = -wy * zoom;
   const world = viewport.querySelector('#dash-world');
   const guides = viewport.querySelector('#dash-guides');
   world.style.transition = 'transform 0.35s cubic-bezier(0.16,1,0.3,1)';
@@ -1079,11 +1103,13 @@ function showCanvasContextMenu(clientX, clientY, ctx) {
 }
 
 // Current viewport centre (world coords) + zoom — the framing a "saved view" captures
+// Capture the world point currently at the viewport's TOP-LEFT (+ zoom) — that's what a
+// saved view stores, so it re-snaps to the same top-left when recalled.
 function currentViewCentre(viewport) {
   const { panX, panY, zoom } = live.view;
   return {
-    x: snap((viewport.clientWidth / 2 - panX) / zoom),
-    y: snap((viewport.clientHeight / 2 - panY) / zoom),
+    x: snap(-panX / zoom),
+    y: snap(-panY / zoom),
     zoom,
   };
 }

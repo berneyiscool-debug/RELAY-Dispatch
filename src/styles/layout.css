@@ -421,14 +421,18 @@
   flex: 1;
   max-width: 480px;
   position: relative;
+  display: flex;
+  align-items: center;
 }
 .topbar-search input {
   width: 100%;
-  padding: 7px 12px 7px 36px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
+  padding: 0 16px 0 36px;
+  height: 34px;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9999px; /* Premium fully-rounded pill shape */
   font-size: var(--font-size-base);
-  background: var(--content-bg);
+  background: rgba(255, 255, 255, 0.65); /* Translucent white fill */
   color: var(--text-primary);
   outline: none;
   transition: all var(--transition-fast);
@@ -436,18 +440,23 @@
 .topbar-search input:focus {
   background: white;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(27, 109, 224, 0.12);
+  box-shadow: 0 0 0 3px rgba(255, 92, 0, 0.12); /* Soft orange brand glow */
 }
 .topbar-search input::placeholder {
   color: var(--text-tertiary);
 }
 .topbar-search .search-icon {
   position: absolute;
-  left: 10px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
+  font-size: 16px;
+  height: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-tertiary);
-  font-size: 18px;
   pointer-events: none;
 }
 
@@ -1140,52 +1149,81 @@
 }
 [data-theme="dark"] .dash-resize:hover { background: var(--color-primary); color: #fff; }
 
-/* Navigation pins */
-.dash-pin {
+/* Saved-view frames (edit mode) — a coloured rectangle showing the captured region.
+   Interior is click-through; only the edges + corner tag are grabbable. */
+.dash-view-frame {
   position: absolute;
-  transform: translate(-50%, -50%);
   z-index: 25;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
+  pointer-events: none;            /* interior passes clicks to widgets / canvas */
+  border: 2px solid;
+  border-radius: 8px;
+  box-sizing: border-box;
 }
-.dash-pin-marker {
-  width: 28px;
-  height: 28px;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
+.dash-view-frame.dragging { box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
+/* Top band — represents where the gradient top bar (contextual actions) sits */
+.dash-view-topband {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  pointer-events: none;
+  border-radius: 7px 7px 0 0;
+  background: linear-gradient(to bottom,
+    rgba(247, 249, 251, 0.92) 0%,
+    rgba(247, 249, 251, 0.72) 45%,
+    rgba(247, 249, 251, 0) 100%);
+}
+[data-theme="dark"] .dash-view-topband {
+  background: linear-gradient(to bottom,
+    rgba(9, 9, 11, 0.92) 0%,
+    rgba(9, 9, 11, 0.72) 45%,
+    rgba(9, 9, 11, 0) 100%);
+}
+/* Bonus strip — extra canvas revealed when the sidebar is minimised (right of the frame) */
+.dash-view-bonus {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  border: 2px dashed;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
-  border: 2px solid #fff;
+  opacity: 0.75;
 }
-.dash-pin-marker .material-icons-outlined { transform: rotate(45deg); }
-.dash-pin-label {
-  font-size: 10px;
-  font-weight: 600;
-  background: var(--card-bg);
-  color: var(--text-primary);
-  padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--card-border);
-  white-space: nowrap;
-  box-shadow: var(--shadow-sm);
-}
-.dash-pin-remove {
+.dash-view-bonus .material-icons-outlined { font-size: 20px; opacity: 0.55; }
+
+.dash-view-edge { position: absolute; pointer-events: auto; cursor: move; }
+.dash-view-edge.e-top    { top: -7px;    left: 0; right: 0; height: 14px; }
+.dash-view-edge.e-bottom { bottom: -7px; left: 0; right: 0; height: 14px; }
+.dash-view-edge.e-left   { left: -7px;   top: 0; bottom: 0; width: 14px; }
+.dash-view-edge.e-right  { right: -7px;  top: 0; bottom: 0; width: 14px; }
+.dash-view-tag {
   position: absolute;
-  top: -8px; right: -10px;
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  background: var(--color-danger);
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  padding: 0;
+  top: 6px; left: 6px;
+  pointer-events: auto;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--card-bg);
+  border: 1px solid;
+  border-radius: 7px;
+  padding: 3px 4px 3px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(6px);
+  max-width: 200px;
 }
+.dash-view-tag-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-view-remove {
+  width: 18px; height: 18px;
+  border: none; background: transparent; color: inherit;
+  cursor: pointer; border-radius: 4px; opacity: 0.7;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.dash-view-remove:hover { opacity: 1; background: rgba(0,0,0,0.08); }
 
 /* Edge direction lines — a coloured bar on the wall pointing toward an off-screen view */
 .dash-guides {
@@ -1298,8 +1336,9 @@
 .dash-context-item:hover .material-icons-outlined { color: var(--color-primary); }
 .dash-context-sep { height: 1px; background: var(--border-color); margin: 4px 2px; }
 
-/* Relay button when it lives in the global top bar */
-.topbar-relay { margin-right: 12px; flex-shrink: 0; }
+/* Relay button when it lives in the global top bar (right side, before the theme toggle) */
+.topbar-relay { width: 34px; height: 34px; margin-right: 4px; flex-shrink: 0; }
+.topbar-relay svg { width: 21px; height: 21px; }
 
 /* ── Relay assistant — top-left button ── */
 .relay-btn {
@@ -1531,12 +1570,14 @@
   border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
 }
-[data-theme="dark"] .toolbar-search input {
+[data-theme="dark"] .toolbar-search input,
+[data-theme="dark"] .topbar-search input {
   background: rgba(255, 255, 255, 0.04) !important;
   border-color: rgba(255, 255, 255, 0.08) !important;
   color: var(--text-primary) !important;
 }
-[data-theme="dark"] .toolbar-search input:focus {
+[data-theme="dark"] .toolbar-search input:focus,
+[data-theme="dark"] .topbar-search input:focus {
   background: rgba(0, 0, 0, 0.2) !important;
   border-color: var(--color-primary) !important;
   box-shadow: 0 0 0 3px rgba(255, 92, 0, 0.18) !important;
@@ -1586,4 +1627,40 @@
 .non-dashboard-schedule-page .tab-content {
   padding-top: 0 !important;
   padding-bottom: var(--space-lg) !important;
+}
+
+/* ---- Dark Theme Premium Button Overrides ---- */
+[data-theme="dark"] .btn-primary {
+  background: linear-gradient(135deg, #FF6600 0%, #FF3D00 100%);
+  box-shadow: 0 4px 16px rgba(255, 92, 0, 0.25);
+}
+[data-theme="dark"] .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #FF771A 0%, #FF4D14 100%);
+  box-shadow: 0 6px 22px rgba(255, 92, 0, 0.4);
+}
+
+[data-theme="dark"] .btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #F1F5F9;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+[data-theme="dark"] .btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .btn-outline {
+  border-color: rgba(255, 92, 0, 0.5);
+  color: #FF7A2E;
+}
+[data-theme="dark"] .btn-outline:hover:not(:disabled) {
+  background: rgba(255, 92, 0, 0.08);
+  border-color: var(--color-primary);
 }

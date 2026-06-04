@@ -13,14 +13,14 @@ export function createTopBar() {
   topbar.id = 'topbar';
 
   topbar.innerHTML = `
-    <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Relay — your assistant" aria-label="Open Relay assistant">
-      ${relayIcon}
-    </button>
     <div class="topbar-search">
       <span class="material-icons-outlined search-icon">search</span>
       <input type="text" id="global-search" placeholder="Search customers, jobs, quotes..." autocomplete="off" />
     </div>
     <div class="topbar-actions">
+      <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Relay — your assistant" aria-label="Open Relay assistant">
+        ${relayIcon}
+      </button>
       <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
         <span class="material-icons-outlined" id="theme-icon">${getStoredTheme() === 'dark' ? 'light_mode' : 'dark_mode'}</span>
       </button>
