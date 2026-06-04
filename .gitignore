@@ -1,1 +1,20 @@
+# Dependencies
 node_modules
+
+# Environment / secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# Claude Code local worktrees (must never be committed — break CI checkout)
+.claude/worktrees/
+
+# Build output (Netlify builds fresh on deploy)
+dist
+
+# Netlify CLI
+.netlify
+
+# Editor / OS noise
+.DS_Store
+*.log
