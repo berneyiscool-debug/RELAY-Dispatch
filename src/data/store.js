@@ -550,17 +550,63 @@ class DataStore {
     item.updatedAt = new Date().toISOString();
     item.companyId = this.companyId;
 
-    // 1. Update memory cache immediately for responsiveness
+    // 1. Update memory cache immediately for responsiveness (Optimistic UI)
     const items = [...this.cache[collection]];
     items.push(item);
     this.cache[collection] = items;
     this.emit(collection, items);
 
-    // 2. Perform DB write in background
+    // Special Case: Creating a user (technician) via UI requires a secure invitation Netlify function
+    if (collection === 'technicians') {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Authentication session expired. Please log in again.');
+
+        const res = await fetch('/.netlify/functions/invite-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            email: item.email,
+            name: item.name,
+            role: item.role,
+            userTypeId: item.userTypeId,
+            color: item.color,
+            payRate: item.payRate
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to invite user.');
+        }
+
+        // Update local item ID with the real auth user UUID returned from database
+        item.id = data.user.id;
+        
+        const cachedItems = [...this.cache.technicians];
+        const idx = cachedItems.findIndex(x => x.email === item.email);
+        if (idx !== -1) {
+          cachedItems[idx] = item;
+          this.cache.technicians = cachedItems;
+          this.emit('technicians', cachedItems);
+        }
+
+        return item;
+      } catch (err) {
+        // Rollback cache update on failure
+        this.cache.technicians = this.cache.technicians.filter(x => x.email !== item.email);
+        this.emit('technicians', this.cache.technicians);
+        throw err;
+      }
+    }
+
+    // 2. Perform DB write in background for other collections
     const dbPayload = this.denormalizeRecord(item);
     const table = TABLE_MAP[collection];
     if (table) {
-      // Profiles are keyed to auth.users, and userTypes requires specific IDs
       const { error } = await supabase.from(table).insert([dbPayload]);
       if (error) console.error(`Error saving new record to ${table}:`, error);
     }

@@ -1496,7 +1496,7 @@ export function renderSettings(container) {
       content: contentDiv,
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
-        { label: 'Save', className: 'btn-primary', onClick: c => {
+        { label: 'Save', className: 'btn-primary btn-save-user', onClick: async (c) => {
           const name = document.getElementById('u-name').value;
           const email = document.getElementById('u-email').value;
           const role = document.getElementById('u-role').value;
@@ -1506,14 +1506,28 @@ export function renderSettings(container) {
           
           if (!name) { showToast('Name required', 'error'); return; }
           
-          if (editId) {
-            store.update('technicians', editId, { name, email, role, userTypeId, color, payRate });
-          } else {
-            store.create('technicians', { name, email, role, userTypeId, color, payRate });
+          const saveBtn = document.querySelector('.btn-save-user');
+          if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = 'Saving...';
           }
-          showToast('User saved', 'success');
-          renderContent();
-          c();
+
+          try {
+            if (editId) {
+              await store.update('technicians', editId, { name, email, role, userTypeId, color, payRate });
+            } else {
+              await store.create('technicians', { name, email, role, userTypeId, color, payRate });
+            }
+            showToast('User saved successfully', 'success');
+            renderContent();
+            c();
+          } catch (err) {
+            showToast(err.message || 'Failed to save user.', 'error');
+            if (saveBtn) {
+              saveBtn.disabled = false;
+              saveBtn.innerHTML = 'Save';
+            }
+          }
         }}
       ]
     });
