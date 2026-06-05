@@ -26,7 +26,7 @@ CREATE TABLE profiles (
   email text,
   username text,
   phone text,
-  role text DEFAULT 'technician' NOT NULL CHECK (role IN ('admin', 'manager', 'technician', 'office', 'customer')),
+  role text DEFAULT 'technician' NOT NULL,
   user_type_id text,
   color text,
   pay_rate numeric DEFAULT 0,
