@@ -162,16 +162,19 @@ export function generateDocument(type, data) {
     logoAlignment: 'left',
     logoScale: 60,
     hideLogo: false,
+    logoSource: 'large',
     paymentStripe: true,
     paymentDirectTransfer: true,
     paymentCash: false,
     quoteSignature: true,
+    hideCompanyName: false,
     footerNote: 'Thank you for your business!'
   };
 
   const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
-  const logoImgHtml = settings.logo 
-    ? `<img class="pdf-logo-img" src="${settings.logo}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
+  const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
+  const logoImgHtml = logoUrl 
+    ? `<img class="pdf-logo-img" src="${logoUrl}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
     : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${(settings.name || 'A').charAt(0)}</div>`;
 
   const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#1B6DE0'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Company Name')}</div>`;
@@ -283,7 +286,7 @@ export function generateDocument(type, data) {
         <div class="pdf-company" style="${companyFlexStyle}">
           ${companyHeaderHtml}
           <div>
-            <div class="pdf-company-name">${escapeHTML(settings.name || 'Company Name')}</div>
+            <div class="pdf-company-name" style="display: ${dt.hideCompanyName ? 'none' : 'block'};">${escapeHTML(settings.name || 'Company Name')}</div>
             ${settings.abn ? `<div class="pdf-company-detail">ABN: ${escapeHTML(settings.abn)}</div>` : ''}
             ${settings.address ? `<div class="pdf-company-detail">${escapeHTML(settings.address)}</div>` : ''}
             ${settings.phone ? `<div class="pdf-company-detail">Phone: ${escapeHTML(settings.phone)}</div>` : ''}

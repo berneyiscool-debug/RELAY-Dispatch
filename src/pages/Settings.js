@@ -2638,6 +2638,17 @@ export function renderSettings(container) {
                   <label for="theme-hide-logo" class="form-label" style="margin:0; cursor:pointer">Hide logo image (show styled text header)</label>
                 </div>
                 <div id="logo-branding-controls" style="display:${dt.hideLogo ? 'none' : 'flex'}; flex-direction:column; gap:12px">
+                  <div class="form-group" style="display:flex; align-items:center; gap:8px">
+                    <input type="checkbox" id="theme-hide-company-name" style="width:16px; height:16px" ${dt.hideCompanyName ? 'checked' : ''} />
+                    <label for="theme-hide-company-name" class="form-label" style="margin:0; cursor:pointer">Hide company name text (use logo only)</label>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Logo Variation</label>
+                    <select class="form-select" id="theme-logo-source" style="width:100%">
+                      <option value="large" ${dt.logoSource === 'large' ? 'selected' : ''}>Standard Logo (Large)</option>
+                      <option value="small" ${dt.logoSource === 'small' ? 'selected' : ''}>Small / Shrunk Logo (Small)</option>
+                    </select>
+                  </div>
                   <div class="form-group">
                     <label class="form-label">Logo Alignment</label>
                     <div style="display:flex; gap:4px">
@@ -2814,6 +2825,24 @@ export function renderSettings(container) {
         updatePreview();
       });
 
+      // Hide Company Name toggle
+      const hideCompanyNameChk = tc.querySelector('#theme-hide-company-name');
+      if (hideCompanyNameChk) {
+        hideCompanyNameChk.addEventListener('change', () => {
+          dt.hideCompanyName = hideCompanyNameChk.checked;
+          updatePreview();
+        });
+      }
+
+      // Logo Variation toggle
+      const logoSourceSelect = tc.querySelector('#theme-logo-source');
+      if (logoSourceSelect) {
+        logoSourceSelect.addEventListener('change', (e) => {
+          dt.logoSource = e.target.value;
+          updatePreview();
+        });
+      }
+
       // Scale slider
       const scaleSlider = tc.querySelector('#theme-logo-scale');
       scaleSlider.addEventListener('input', () => {
@@ -2892,6 +2921,8 @@ export function renderSettings(container) {
             logoAlignment: 'left',
             logoScale: 60,
             hideLogo: false,
+            logoSource: 'large',
+            hideCompanyName: false,
             paymentStripe: true,
             paymentDirectTransfer: true,
             paymentCash: false,
@@ -2953,6 +2984,12 @@ export function renderSettings(container) {
 
       const logoControls = tc.querySelector('#logo-branding-controls');
       if (logoControls) logoControls.style.display = dt.hideLogo ? 'none' : 'flex';
+
+      const hideCompanyNameChk = tc.querySelector('#theme-hide-company-name');
+      if (hideCompanyNameChk) hideCompanyNameChk.checked = !!dt.hideCompanyName;
+
+      const logoSourceSelect = tc.querySelector('#theme-logo-source');
+      if (logoSourceSelect) logoSourceSelect.value = dt.logoSource || 'large';
 
       // 5. Logo Alignment buttons
       tc.querySelectorAll('.logo-align-btn').forEach(btn => {
@@ -3110,14 +3147,22 @@ export function renderSettings(container) {
         if (logoText) logoText.style.display = 'none';
         
         const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
+        const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
         if (logoImg) {
           logoImg.style.display = 'block';
+          logoImg.src = logoUrl || '';
           logoImg.style.maxHeight = logoHeight + 'px';
         }
         if (logoBadge) {
           logoBadge.style.display = 'flex';
           logoBadge.style.background = `linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd)`;
         }
+      }
+
+      // Company Name visibility
+      const companyNameEl = frameDoc.querySelector('.pdf-company-name');
+      if (companyNameEl) {
+        companyNameEl.style.display = dt.hideCompanyName ? 'none' : 'block';
       }
 
       // 4. Live update Payment Options

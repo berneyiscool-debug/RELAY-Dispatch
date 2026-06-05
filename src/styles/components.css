@@ -2315,7 +2315,7 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   background-position: 0 0, 0 0, 0 0;
   transform: perspective(300px) rotateX(60deg);
   transform-origin: bottom center;
-  animation: retroGridScroll 12s linear infinite;
+  animation: retroGridScroll 36s linear infinite;
   opacity: 0.85;
 }
 
@@ -2465,24 +2465,21 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
 /* 6. Sakura Blossom Floating Petals */
 .sakura-petal {
   position: absolute;
+  top: -20px;
   background: linear-gradient(135deg, #fbcfe8 0%, #ec4899 100%);
   border-radius: 10px 1px 10px 10px;
   opacity: 0.75;
   box-shadow: 0 2px 5px rgba(236, 72, 153, 0.1);
-  animation: petalFloat 15s linear infinite;
+  animation: petalFloat linear infinite;
   pointer-events: none;
 }
-
-.petal-0 { width: 12px; height: 8px; left: 15%; top: -5%; animation-delay: 0s; animation-duration: 18s; }
-.petal-1 { width: 9px; height: 6px; left: 45%; top: -5%; animation-delay: 3s; animation-duration: 22s; }
-.petal-2 { width: 14px; height: 9px; left: 75%; top: -5%; animation-delay: 6s; animation-duration: 16s; }
-.petal-3 { width: 10px; height: 7px; left: 30%; top: -5%; animation-delay: 9s; animation-duration: 25s; }
-.petal-4 { width: 13px; height: 8px; left: 60%; top: -5%; animation-delay: 1.5s; animation-duration: 20s; }
-.petal-5 { width: 8px; height: 5px; left: 90%; top: -5%; animation-delay: 4.5s; animation-duration: 19s; }
 
 @keyframes petalFloat {
   0% {
     transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
     opacity: 0.8;
   }
   90% {
@@ -2490,6 +2487,228 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   }
   100% {
     transform: translateY(105vh) translateX(150px) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/* 7. Nordic Aurora Falling Twinkles */
+.aurora-star {
+  position: absolute;
+  top: -10px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.4) 60%, rgba(255, 255, 255, 0) 100%);
+  border-radius: 50%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
+  animation: auroraStarDrift linear infinite;
+}
+
+@keyframes auroraStarDrift {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.5);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--star-opacity, 0.6);
+  }
+  90% {
+    opacity: var(--star-opacity, 0.6);
+  }
+  100% {
+    transform: translateY(105vh) translateX(50px) scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* 8. Neon Cyberpunk Digital Rain */
+.cyber-particle {
+  position: absolute;
+  top: -60px;
+  pointer-events: none;
+  animation: cyberRain linear infinite;
+}
+
+@keyframes cyberRain {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(105vh);
+    opacity: 0;
+  }
+}
+
+/* 9. Calm Sunset Wind Breeze Lines */
+.breeze-line {
+  position: absolute;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(251, 146, 60, 0.15) 30%, rgba(251, 146, 60, 0.15) 70%, transparent 100%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: breezeMove linear infinite;
+}
+
+@keyframes breezeMove {
+  0% {
+    transform: translateX(-100%) translateY(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100vw) translateY(var(--breeze-y-drift, 20px));
+    opacity: 0;
+  }
+}
+
+/* 10. Forest Mist Falling Leaves */
+.forest-leaf {
+  position: absolute;
+  top: -30px;
+  border-radius: 80% 0 80% 0;
+  pointer-events: none;
+  animation: leafFall linear infinite;
+  transform-origin: center;
+}
+
+@keyframes leafFall {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) rotateY(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(105vh) translateX(120px) rotate(360deg) rotateY(180deg);
+    opacity: 0;
+  }
+}
+
+/* 11. Deep Ocean Rising Bubbles */
+.ocean-bubble {
+  position: absolute;
+  bottom: -20px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: bubbleRise linear infinite;
+}
+
+@keyframes bubbleRise {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.8);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  90% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-105vh) translateX(var(--bubble-x-drift, 40px)) scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* 12. Obsidian & Gold Twinkling Dust */
+.gold-sparkle {
+  position: absolute;
+  top: -10px;
+  background: radial-gradient(circle, #f59e0b 0%, #fbbf24 40%, rgba(251, 191, 36, 0) 80%);
+  border-radius: 50%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.6));
+  animation: goldDrift linear infinite;
+}
+
+@keyframes goldDrift {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(0.6);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--sparkle-opacity, 0.8);
+  }
+  50% {
+    opacity: calc(var(--sparkle-opacity, 0.8) * 0.4);
+  }
+  75% {
+    opacity: var(--sparkle-opacity, 0.8);
+  }
+  100% {
+    transform: translateY(105vh) translateX(var(--sparkle-x, 60px)) rotate(180deg) scale(1.1);
+    opacity: 0;
+  }
+}
+
+/* 13. Sweet Lavender Falling Petals */
+.lavender-petal {
+  position: absolute;
+  top: -20px;
+  background: linear-gradient(135deg, #e9d5ff 0%, #c084fc 100%);
+  border-radius: 50% 0 50% 50%;
+  opacity: 0.65;
+  pointer-events: none;
+  animation: lavenderFloat linear infinite;
+}
+
+@keyframes lavenderFloat {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(105vh) translateX(80px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+/* 14. Coffee & Cream Steam Waves */
+.steam-line {
+  position: absolute;
+  bottom: -250px;
+  background: linear-gradient(0deg, transparent 0%, rgba(140, 98, 57, 0.08) 50%, transparent 100%);
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(2px);
+  animation: steamRise linear infinite;
+}
+
+@keyframes steamRise {
+  0% {
+    transform: translateY(0) translateX(0) scaleX(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-50vh) translateX(var(--steam-x-1, 20px)) scaleX(1.5);
+  }
+  100% {
+    transform: translateY(-105vh) translateX(var(--steam-x-2, -20px)) scaleX(1);
     opacity: 0;
   }
 }

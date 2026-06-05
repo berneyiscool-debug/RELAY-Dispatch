@@ -836,10 +836,12 @@ class DataStore {
         logoAlignment: 'left',
         logoScale: 60,
         hideLogo: false,
+        logoSource: 'large',
         paymentStripe: true,
         paymentDirectTransfer: true,
         paymentCash: false,
         quoteSignature: true,
+        hideCompanyName: false,
         footerNote: 'Thank you for your business!'
       }
     };
