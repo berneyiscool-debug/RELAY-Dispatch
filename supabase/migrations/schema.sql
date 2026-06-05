@@ -335,9 +335,13 @@ ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 -- ---------------------------------------------------------------------
 
 -- Profiles policy: profiles can be viewed and modified by users in the same company
+CREATE POLICY profile_self_policy ON profiles
+  FOR ALL
+  USING (id = auth.uid());
+
 CREATE POLICY profile_tenant_policy ON profiles
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = (SELECT company_id FROM public.profiles WHERE id = auth.uid()));
 
 -- RLS policies for all other tables referencing company_id
 CREATE POLICY company_tenant_policy ON companies
