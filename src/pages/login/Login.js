@@ -248,7 +248,8 @@ export function renderLogin(container) {
           .single();
 
         if (profileError) {
-          throw new Error('Your user profile could not be found. Please check with your administrator.');
+          console.error('Failed to fetch user profile:', profileError);
+          throw new Error(`Your user profile could not be found: ${profileError.message} (${profileError.code})`);
         }
 
         // 3. Intercept if password change is forced
