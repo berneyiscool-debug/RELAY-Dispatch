@@ -182,4 +182,51 @@ describe('DataStore', () => {
       assert.deepStrictEqual(emittedData, settings);
     });
   });
+
+  describe('Schema Whitelisting & Normalization', () => {
+    test('denormalizeRecord filters out columns not in schema and maps contractor/supplier fields', () => {
+      const contractorPayload = {
+        id: 'c1',
+        companyId: 'comp1',
+        businessName: 'Acme Trade',
+        active: true,
+        hourlyRate: 85,
+        notes: 'Operational comments'
+      };
+
+      const result = store.denormalizeRecord(contractorPayload, 'contractors');
+
+      // Check whitelisted/mapped fields
+      assert.strictEqual(result.id, 'c1');
+      assert.strictEqual(result.company_id, 'comp1');
+      assert.strictEqual(result.name, 'Acme Trade');
+      assert.strictEqual(result.status, 'Active');
+
+      // Check stripped non-schema fields
+      assert.strictEqual(result.businessName, undefined);
+      assert.strictEqual(result.active, undefined);
+      assert.strictEqual(result.hourlyRate, undefined);
+      assert.strictEqual(result.notes, undefined);
+    });
+
+    test('normalizeRecord translates contractor name and active state correctly', () => {
+      const dbContractor = {
+        id: 'c2',
+        company_id: 'comp1',
+        name: 'Electric Solutions',
+        status: 'Active',
+        email: 'electric@sol.com'
+      };
+
+      const result = store.normalizeRecord(dbContractor, 'contractors');
+
+      assert.strictEqual(result.id, 'c2');
+      assert.strictEqual(result.companyId, 'comp1');
+      assert.strictEqual(result.businessName, 'Electric Solutions');
+      assert.strictEqual(result.active, true);
+      assert.strictEqual(result.email, 'electric@sol.com');
+      assert.strictEqual(result.name, 'Electric Solutions');
+    });
+  });
 });
+

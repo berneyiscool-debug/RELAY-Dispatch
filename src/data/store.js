@@ -487,6 +487,15 @@ class DataStore {
       delete record.fields;
     }
 
+    if (collection === 'contractors') {
+      record.businessName = record.name;
+      record.active = record.status === 'Active';
+    }
+
+    if (collection === 'suppliers') {
+      record.active = record.status === 'Active';
+    }
+
     // Standard snake_case mappings used in SQL schema
     if (record.company_id !== undefined) {
       record.companyId = record.company_id;
@@ -667,6 +676,15 @@ class DataStore {
       };
       delete record.description;
       delete record.sections;
+    }
+
+    if (collection === 'contractors') {
+      record.name = record.businessName;
+      record.status = record.active ? 'Active' : 'Inactive';
+    }
+
+    if (collection === 'suppliers') {
+      record.status = record.active ? 'Active' : 'Inactive';
     }
 
     if (record.companyId !== undefined) {
