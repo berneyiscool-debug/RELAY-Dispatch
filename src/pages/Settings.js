@@ -12,6 +12,55 @@ import { seedMinimalData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 
+// Compress uploaded images using Canvas to avoid huge Base64 data payloads
+function compressImage(dataUrl, maxWidth, maxHeight) {
+  return new Promise((resolve) => {
+    if (!dataUrl) {
+      resolve(dataUrl);
+      return;
+    }
+    // SVG vectors are already lightweight; do not compress them
+    if (dataUrl.startsWith('data:image/svg+xml')) {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const isPng = dataUrl.includes('image/png');
+      const format = isPng ? 'image/png' : 'image/jpeg';
+      const quality = isPng ? undefined : 0.85;
+
+      resolve(canvas.toDataURL(format, quality));
+    };
+    img.onerror = () => {
+      resolve(dataUrl);
+    };
+    img.src = dataUrl;
+  });
+}
+
 // Build a permissions array with all granular keys
 function buildGranularPerms(valueFn) {
   return Object.entries(MODULE_PERMS).map(([module, perms]) => {
@@ -327,23 +376,26 @@ export function renderSettings(container) {
           if (file) {
             const reader = new FileReader();
             reader.onload = (re) => {
-              pendingLogo = re.target.result;
-              const container = tc.querySelector('#logo-preview-container');
-              container.innerHTML = `<img src="${pendingLogo}" style="max-width:90%; max-height:90%; object-fit:contain" />`;
-              tc.querySelector('#unsaved-logo-hint').style.display = 'block';
-              showToast('Large logo preview updated. Click Save to apply.', 'info');
-              
-              let removeBtn = tc.querySelector('#btn-remove-logo');
-              if (!removeBtn) {
-                removeBtn = document.createElement('button');
-                removeBtn.className = 'btn btn-ghost btn-sm';
-                removeBtn.id = 'btn-remove-logo';
-                removeBtn.style.cssText = 'color:var(--color-danger); padding:0 8px';
-                removeBtn.title = 'Remove logo';
-                removeBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:16px">delete</span>';
-                tc.querySelector('#btn-upload-logo').parentNode.appendChild(removeBtn);
-                removeBtn.addEventListener('click', removeLogoHandler);
-              }
+              // Compress the Standard Logo (Large) using Canvas to ~600x300 max bounding box
+              compressImage(re.target.result, 600, 300).then((compressed) => {
+                pendingLogo = compressed;
+                const container = tc.querySelector('#logo-preview-container');
+                container.innerHTML = `<img src="${pendingLogo}" style="max-width:90%; max-height:90%; object-fit:contain" />`;
+                tc.querySelector('#unsaved-logo-hint').style.display = 'block';
+                showToast('Large logo preview updated. Click Save to apply.', 'info');
+                
+                let removeBtn = tc.querySelector('#btn-remove-logo');
+                if (!removeBtn) {
+                  removeBtn = document.createElement('button');
+                  removeBtn.className = 'btn btn-ghost btn-sm';
+                  removeBtn.id = 'btn-remove-logo';
+                  removeBtn.style.cssText = 'color:var(--color-danger); padding:0 8px';
+                  removeBtn.title = 'Remove logo';
+                  removeBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:16px">delete</span>';
+                  tc.querySelector('#btn-upload-logo').parentNode.appendChild(removeBtn);
+                  removeBtn.addEventListener('click', removeLogoHandler);
+                }
+              });
             };
             reader.readAsDataURL(file);
           }
@@ -354,23 +406,26 @@ export function renderSettings(container) {
           if (file) {
             const reader = new FileReader();
             reader.onload = (re) => {
-              pendingLogoSmall = re.target.result;
-              const container = tc.querySelector('#logo-small-preview-container');
-              container.innerHTML = `<img src="${pendingLogoSmall}" style="max-width:90%; max-height:90%; object-fit:contain" />`;
-              tc.querySelector('#unsaved-logo-hint').style.display = 'block';
-              showToast('Small logo preview updated. Click Save to apply.', 'info');
-              
-              let removeBtn = tc.querySelector('#btn-remove-logo-small');
-              if (!removeBtn) {
-                removeBtn = document.createElement('button');
-                removeBtn.className = 'btn btn-ghost btn-sm';
-                removeBtn.id = 'btn-remove-logo-small';
-                removeBtn.style.cssText = 'color:var(--color-danger); padding:0 8px';
-                removeBtn.title = 'Remove small logo';
-                removeBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:16px">delete</span>';
-                tc.querySelector('#btn-upload-logo-small').parentNode.appendChild(removeBtn);
-                removeBtn.addEventListener('click', removeLogoSmallHandler);
-              }
+              // Compress the Small/Shrunk Logo using Canvas to ~200x100 max bounding box
+              compressImage(re.target.result, 200, 100).then((compressed) => {
+                pendingLogoSmall = compressed;
+                const container = tc.querySelector('#logo-small-preview-container');
+                container.innerHTML = `<img src="${pendingLogoSmall}" style="max-width:90%; max-height:90%; object-fit:contain" />`;
+                tc.querySelector('#unsaved-logo-hint').style.display = 'block';
+                showToast('Small logo preview updated. Click Save to apply.', 'info');
+                
+                let removeBtn = tc.querySelector('#btn-remove-logo-small');
+                if (!removeBtn) {
+                  removeBtn = document.createElement('button');
+                  removeBtn.className = 'btn btn-ghost btn-sm';
+                  removeBtn.id = 'btn-remove-logo-small';
+                  removeBtn.style.cssText = 'color:var(--color-danger); padding:0 8px';
+                  removeBtn.title = 'Remove small logo';
+                  removeBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:16px">delete</span>';
+                  tc.querySelector('#btn-upload-logo-small').parentNode.appendChild(removeBtn);
+                  removeBtn.addEventListener('click', removeLogoSmallHandler);
+                }
+              });
             };
             reader.readAsDataURL(file);
           }
@@ -379,21 +434,34 @@ export function renderSettings(container) {
         tc.querySelector('#btn-remove-logo')?.addEventListener('click', removeLogoHandler);
         tc.querySelector('#btn-remove-logo-small')?.addEventListener('click', removeLogoSmallHandler);
 
-        tc.querySelector('#btn-save-company').addEventListener('click', () => {
-          const settings = store.getSettings();
-          settings.name = tc.querySelector('#company-name').value;
-          settings.abn = tc.querySelector('#company-abn').value;
-          settings.phone = tc.querySelector('#company-phone').value;
-          settings.domain = tc.querySelector('#company-domain').value;
-          settings.email = tc.querySelector('#company-email').value;
-          settings.address = tc.querySelector('#company-address').value;
-          settings.logo = pendingLogo;
-          settings.logoSmall = pendingLogoSmall;
-          
-          store.saveSettings(settings);
-          showToast('Company information saved permanently', 'success');
-          tc.querySelector('#unsaved-logo-hint').style.display = 'none';
-          window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+        tc.querySelector('#btn-save-company').addEventListener('click', async () => {
+          const saveBtn = tc.querySelector('#btn-save-company');
+          const originalHtml = saveBtn.innerHTML;
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving Changes...';
+
+          try {
+            const settings = store.getSettings();
+            settings.name = tc.querySelector('#company-name').value;
+            settings.abn = tc.querySelector('#company-abn').value;
+            settings.phone = tc.querySelector('#company-phone').value;
+            settings.domain = tc.querySelector('#company-domain').value;
+            settings.email = tc.querySelector('#company-email').value;
+            settings.address = tc.querySelector('#company-address').value;
+            settings.logo = pendingLogo;
+            settings.logoSmall = pendingLogoSmall;
+            
+            await store.saveSettings(settings);
+            showToast('Company information saved successfully to cloud database', 'success');
+            tc.querySelector('#unsaved-logo-hint').style.display = 'none';
+            window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+          } catch (err) {
+            console.error('Error saving company profile settings:', err);
+            showToast('Failed to save settings: ' + (err.message || err), 'error');
+          } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalHtml;
+          }
         });
       };
 
@@ -977,24 +1045,37 @@ export function renderSettings(container) {
       }
 
       // ---- Save ----
-      tc.querySelector('#save-tax-settings').addEventListener('click', () => {
-        const markupPercent = parseFloat(tc.querySelector('#global-markup').value) || 0;
-        const laborRounding = parseInt(tc.querySelector('#labor-rounding').value) || 15;
-        const laborRates = _collectRates(tc);
-        const settings = store.getSettings();
-        settings.markupPercent = markupPercent;
-        settings.laborRounding = laborRounding;
-        settings.laborRates = laborRates;
-        
-        // Save rate mappings
-        settings.rateMappings = {};
-        tc.querySelectorAll('.rate-mapping').forEach(sel => {
-          if (sel.value) settings.rateMappings[sel.dataset.type] = sel.value;
-        });
+      tc.querySelector('#save-tax-settings').addEventListener('click', async () => {
+        const btn = tc.querySelector('#save-tax-settings');
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
 
-        store.saveSettings(settings);
-        showToast('Financial and Rate settings saved', 'success');
-        renderContent();
+        try {
+          const markupPercent = parseFloat(tc.querySelector('#global-markup').value) || 0;
+          const laborRounding = parseInt(tc.querySelector('#labor-rounding').value) || 15;
+          const laborRates = _collectRates(tc);
+          const settings = store.getSettings();
+          settings.markupPercent = markupPercent;
+          settings.laborRounding = laborRounding;
+          settings.laborRates = laborRates;
+          
+          // Save rate mappings
+          settings.rateMappings = {};
+          tc.querySelectorAll('.rate-mapping').forEach(sel => {
+            if (sel.value) settings.rateMappings[sel.dataset.type] = sel.value;
+          });
+
+          await store.saveSettings(settings);
+          showToast('Financial and Rate settings saved successfully', 'success');
+          renderContent();
+        } catch (err) {
+          console.error('Error saving tax and rate settings:', err);
+          showToast('Failed to save settings: ' + (err.message || err), 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+        }
       });
 
 
@@ -1037,14 +1118,27 @@ export function renderSettings(container) {
         </div>
       `;
 
-      tc.querySelector('#btn-save-portal-settings').addEventListener('click', () => {
-        const settings = store.getSettings();
-        settings.enableCustomerPortal = tc.querySelector('#portal-enable').checked;
-        settings.customerPortalWelcome = tc.querySelector('#portal-welcome').value.trim();
-        settings.customerPortalPayment = tc.querySelector('#portal-payment').value.trim();
+      tc.querySelector('#btn-save-portal-settings').addEventListener('click', async () => {
+        const btn = tc.querySelector('#btn-save-portal-settings');
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
 
-        store.saveSettings(settings);
-        showToast('Customer portal settings saved successfully', 'success');
+        try {
+          const settings = store.getSettings();
+          settings.enableCustomerPortal = tc.querySelector('#portal-enable').checked;
+          settings.customerPortalWelcome = tc.querySelector('#portal-welcome').value.trim();
+          settings.customerPortalPayment = tc.querySelector('#portal-payment').value.trim();
+
+          await store.saveSettings(settings);
+          showToast('Customer portal settings saved successfully', 'success');
+        } catch (err) {
+          console.error('Error saving customer portal settings:', err);
+          showToast('Failed to save settings: ' + (err.message || err), 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+        }
       });
 
     } else if (activeTab === 'system') {
@@ -1117,12 +1211,21 @@ export function renderSettings(container) {
         </div>
       `;
 
-      tc.querySelector('#tooltip-preference')?.addEventListener('change', (e) => {
-        const settings = store.getSettings();
-        settings.tooltipPreference = e.target.value;
-        store.saveSettings(settings);
-        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
-        showToast('Interface preferences saved', 'success');
+      tc.querySelector('#tooltip-preference')?.addEventListener('change', async (e) => {
+        const select = e.target;
+        select.disabled = true;
+        try {
+          const settings = store.getSettings();
+          settings.tooltipPreference = select.value;
+          await store.saveSettings(settings);
+          window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+          showToast('Interface preferences saved successfully', 'success');
+        } catch (err) {
+          console.error('Error saving tooltip preference:', err);
+          showToast('Failed to save preferences: ' + (err.message || err), 'error');
+        } finally {
+          select.disabled = false;
+        }
       });
 
       tc.querySelector('#system-theme-select')?.addEventListener('change', (e) => {
@@ -2308,26 +2411,39 @@ export function renderSettings(container) {
     `;
 
     // --- Handlers ---
-    const save = () => {
-      const defaultPercent = parseFloat(tc.querySelector('#mat-default-markup').value);
-      const minMarkupAmount = parseFloat(tc.querySelector('#mat-min-markup').value);
-      const useTiers = tc.querySelector('#mat-use-tiers').checked;
-      
-      const tiers = Array.from(tc.querySelectorAll('#tier-rows tr')).map(tr => ({
-        upTo: parseFloat(tr.querySelector('.tier-upto').value) || null,
-        percent: parseFloat(tr.querySelector('.tier-percent').value) || 0
-      })).sort((a, b) => (a.upTo === null ? 1 : (b.upTo === null ? -1 : a.upTo - b.upTo)));
+    const save = async () => {
+      const btn = tc.querySelector('#btn-save-materials');
+      const origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
 
-      const categories = Array.from(tc.querySelectorAll('.btn-remove-cat')).map(span => span.dataset.name);
+      try {
+        const defaultPercent = parseFloat(tc.querySelector('#mat-default-markup').value);
+        const minMarkupAmount = parseFloat(tc.querySelector('#mat-min-markup').value);
+        const useTiers = tc.querySelector('#mat-use-tiers').checked;
+        
+        const tiers = Array.from(tc.querySelectorAll('#tier-rows tr')).map(tr => ({
+          upTo: parseFloat(tr.querySelector('.tier-upto').value) || null,
+          percent: parseFloat(tr.querySelector('.tier-percent').value) || 0
+        })).sort((a, b) => (a.upTo === null ? 1 : (b.upTo === null ? -1 : a.upTo - b.upTo)));
 
-      const updatedSettings = {
-        ...settings,
-        materialMarkup: { defaultPercent, minMarkupAmount, useTiers, tiers },
-        materialCategories: categories
-      };
-      
-      store.saveSettings(updatedSettings);
-      showToast('Material settings saved', 'success');
+        const categories = Array.from(tc.querySelectorAll('.btn-remove-cat')).map(span => span.dataset.name);
+
+        const updatedSettings = {
+          ...settings,
+          materialMarkup: { defaultPercent, minMarkupAmount, useTiers, tiers },
+          materialCategories: categories
+        };
+        
+        await store.saveSettings(updatedSettings);
+        showToast('Material settings saved successfully', 'success');
+      } catch (err) {
+        console.error('Error saving material settings:', err);
+        showToast('Failed to save settings: ' + (err.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
     };
 
     tc.querySelector('#mat-use-tiers').addEventListener('change', (e) => {
@@ -2897,11 +3013,24 @@ export function renderSettings(container) {
       });
 
       // Save Theme Settings
-      tc.querySelector('#btn-theme-save').addEventListener('click', () => {
-        const freshSettings = store.getSettings();
-        freshSettings.documentTheme = { ...dt };
-        store.saveSettings(freshSettings);
-        showToast('Document customization settings saved permanently', 'success');
+      tc.querySelector('#btn-theme-save').addEventListener('click', async () => {
+        const btn = tc.querySelector('#btn-theme-save');
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
+
+        try {
+          const freshSettings = store.getSettings();
+          freshSettings.documentTheme = { ...dt };
+          await store.saveSettings(freshSettings);
+          showToast('Document customization settings saved successfully', 'success');
+        } catch (err) {
+          console.error('Error saving theme settings:', err);
+          showToast('Failed to save settings: ' + (err.message || err), 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+        }
       });
 
       // Reset Theme Settings

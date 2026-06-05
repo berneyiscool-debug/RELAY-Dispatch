@@ -2294,14 +2294,6 @@ function renderDailyTodo(data, item) {
   let todos = [];
   try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(e) {}
 
-  if (!todos.length) {
-    todos = [
-      { text: 'Check timesheet submissions', completed: false },
-      { text: 'Verify stock levels for split systems', completed: false }
-    ];
-    localStorage.setItem(userKey, JSON.stringify(todos));
-  }
-
   return `
     <div style="display:flex; flex-direction:column; gap:10px; height:100%;">
       <div style="display:flex; gap:6px; margin-bottom:4px;">

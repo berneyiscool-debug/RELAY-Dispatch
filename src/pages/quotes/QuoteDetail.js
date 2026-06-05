@@ -22,6 +22,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
   if (isNew) {
     if (isTemplate) {
       quote = {
+        id: store.generateId(),
         name: 'New Quote Template',
         description: '',
         sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
@@ -29,6 +30,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       };
     } else {
       quote = { 
+        id: store.generateId(),
         status: 'Draft', 
         version: 1,
         sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }], 
@@ -98,7 +100,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         actionsHtml: isTemplate ? `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-delete-template" style="color:var(--color-danger)"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
         ` : `
-          ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and view a print-ready PDF proposal" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
+          <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and view a print-ready PDF proposal" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
           ${!isNew && quote.status !== 'Archived' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-secondary" id="btn-create-revision" data-tooltip="Archive version & draft revisions in a new clone" data-tooltip-pos="left"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
           ${!isNew && quote.status === 'Accepted' && hasPermission('Quotes', 'convert') ? `<button class="btn btn-primary" id="btn-convert-job" data-tooltip="Accept proposal and spawn an active Project Job" data-tooltip-pos="left"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
           ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote" data-tooltip="Email professional proposal to primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}

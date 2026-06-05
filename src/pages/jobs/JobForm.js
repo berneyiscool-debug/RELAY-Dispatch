@@ -22,6 +22,10 @@ export function renderJobForm(container, { id }) {
   // Selected tags state
   let selectedTags = job.tags ? [...job.tags] : [];
 
+  // Selected days for recurring config
+  let selectedDaysOfWeek = [];
+  let selectedDaysOfMonth = [];
+
   function getCustomer(custId) {
     return customers.find(c => c.id === custId) || null;
   }
@@ -95,6 +99,35 @@ export function renderJobForm(container, { id }) {
       #job-description-editor ul,#job-description-editor ol { padding-left:20px; }
       #job-description-editor blockquote { border-left:3px solid var(--color-primary); padding-left:10px; color:var(--text-secondary); margin:8px 0; }
       .site-address-hint { font-size:11px; color:var(--text-tertiary); margin-top:3px; font-style:italic; }
+      .day-toggle-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 36px; height: 36px; border-radius: 50%;
+        border: 1px solid var(--border-color); background: var(--bg-color);
+        color: var(--text-primary); font-size: 13px; font-weight: 500;
+        cursor: pointer; transition: all 0.15s ease; user-select: none;
+      }
+      .day-toggle-btn:hover {
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+        background: var(--bg-color);
+      }
+      .day-toggle-btn.active {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: #fff;
+      }
+      .month-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 36px);
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .week-flex {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
     </style>
     <div class="page-header">
       <h1>${isEdit ? 'Edit Job' : 'New Job'}</h1>
@@ -214,22 +247,29 @@ export function renderJobForm(container, { id }) {
               <label class="form-label" style="margin:0" for="is-recurring">Recurring Job</label>
             </div>
           </div>
-          <div class="form-row" id="recurring-options" style="display:none;background:var(--card-bg);padding:16px;border-radius:4px;border:1px solid var(--border-color);margin-bottom:16px">
-            <div class="form-group">
-              <label class="form-label">Frequency</label>
-              <select class="form-select" id="recurring-freq">
-                <option value="Weekly">Weekly</option>
-                <option value="Monthly">Monthly</option>
-                <option value="Daily">Daily</option>
-              </select>
+          <div id="recurring-options" style="display:none; flex-direction:column; gap:16px; background:var(--card-bg); padding:16px; border-radius:4px; border:1px solid var(--border-color); margin-bottom:16px">
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:16px;">
+              <div class="form-group">
+                <label class="form-label">Frequency</label>
+                <select class="form-select" id="recurring-freq">
+                  <option value="Weekly">Weekly</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Daily">Daily</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">First Job Date</label>
+                <input type="date" class="form-input" id="recurring-start" value="${new Date().toISOString().split('T')[0]}" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">End Date (Max 50 occurrences)</label>
+                <input type="date" class="form-input" id="recurring-end" />
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">First Job Date</label>
-              <input type="date" class="form-input" id="recurring-start" value="${new Date().toISOString().split('T')[0]}" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">End Date (Max 50 occurrences)</label>
-              <input type="date" class="form-input" id="recurring-end" />
+            
+            <div id="recurring-days-selection" style="display:none; flex-direction:column; gap:8px;">
+              <label class="form-label" id="recurring-days-label" style="font-weight:var(--font-weight-medium);"></label>
+              <div id="recurring-days-container"></div>
             </div>
           </div>
           ` : ''}
@@ -385,11 +425,96 @@ export function renderJobForm(container, { id }) {
   if (job.isEmergency) updateEmergencyUI(true);
 
   // ---- Recurring ----
+  function updateRecurringDaysSelector() {
+    const freqSelect = container.querySelector('#recurring-freq');
+    const daysSelection = container.querySelector('#recurring-days-selection');
+    const daysLabel = container.querySelector('#recurring-days-label');
+    const daysContainer = container.querySelector('#recurring-days-container');
+    
+    if (!freqSelect || !daysSelection || !daysContainer) return;
+    
+    const freq = freqSelect.value;
+    
+    if (freq === 'Weekly') {
+      daysSelection.style.display = 'flex';
+      daysLabel.textContent = 'Select days of the week:';
+      
+      const weekdays = [
+        { name: 'Mon', value: 1 },
+        { name: 'Tue', value: 2 },
+        { name: 'Wed', value: 3 },
+        { name: 'Thu', value: 4 },
+        { name: 'Fri', value: 5 },
+        { name: 'Sat', value: 6 },
+        { name: 'Sun', value: 0 }
+      ];
+      
+      daysContainer.className = 'week-flex';
+      daysContainer.innerHTML = weekdays.map(day => {
+        const active = selectedDaysOfWeek.includes(day.value);
+        return `<button type="button" class="day-toggle-btn ${active ? 'active' : ''}" data-day="${day.value}">${day.name}</button>`;
+      }).join('');
+      
+      daysContainer.querySelectorAll('.day-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dayVal = parseInt(btn.dataset.day, 10);
+          if (selectedDaysOfWeek.includes(dayVal)) {
+            selectedDaysOfWeek = selectedDaysOfWeek.filter(d => d !== dayVal);
+            btn.classList.remove('active');
+          } else {
+            selectedDaysOfWeek.push(dayVal);
+            btn.classList.add('active');
+          }
+        });
+      });
+      
+    } else if (freq === 'Monthly') {
+      daysSelection.style.display = 'flex';
+      daysLabel.textContent = 'Select days of the month:';
+      
+      daysContainer.className = 'month-grid';
+      let html = '';
+      for (let i = 1; i <= 31; i++) {
+        const active = selectedDaysOfMonth.includes(i);
+        html += `<button type="button" class="day-toggle-btn ${active ? 'active' : ''}" data-date="${i}">${i}</button>`;
+      }
+      daysContainer.innerHTML = html;
+      
+      daysContainer.querySelectorAll('.day-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dateVal = parseInt(btn.dataset.date, 10);
+          if (selectedDaysOfMonth.includes(dateVal)) {
+            selectedDaysOfMonth = selectedDaysOfMonth.filter(d => d !== dateVal);
+            btn.classList.remove('active');
+          } else {
+            selectedDaysOfMonth.push(dateVal);
+            btn.classList.add('active');
+          }
+        });
+      });
+      
+    } else {
+      daysSelection.style.display = 'none';
+      daysContainer.innerHTML = '';
+    }
+  }
+
   if (!isEdit) {
     const isRecurring = container.querySelector('#is-recurring');
     const recurringOptions = container.querySelector('#recurring-options');
+    const freqSelect = container.querySelector('#recurring-freq');
+    
     isRecurring?.addEventListener('change', e => {
       recurringOptions.style.display = e.target.checked ? 'flex' : 'none';
+      if (e.target.checked) {
+        updateRecurringDaysSelector();
+      }
+    });
+
+    freqSelect?.addEventListener('change', () => {
+      selectedDaysOfWeek = [];
+      selectedDaysOfMonth = [];
+      updateRecurringDaysSelector();
     });
   }
 
@@ -1052,7 +1177,13 @@ export function renderJobForm(container, { id }) {
       if (!startInput || !endInput) {
         showToast('Recurring dates required', 'error'); return;
       }
-      data.recurringConfig = { freq, start: startInput, end: endInput };
+      data.recurringConfig = { 
+        freq, 
+        start: startInput, 
+        end: endInput,
+        daysOfWeek: selectedDaysOfWeek,
+        daysOfMonth: selectedDaysOfMonth
+      };
     }
 
     // Save Job
@@ -1087,22 +1218,63 @@ export function renderJobForm(container, { id }) {
 
     if (!isEdit && data.recurringConfig) {
       // Setup notifications for recurring
-      let current = new Date(data.recurringConfig.start);
-      const end = new Date(data.recurringConfig.end);
+      const freq = data.recurringConfig.freq;
+      const daysOfWeek = data.recurringConfig.daysOfWeek || [];
+      const daysOfMonth = data.recurringConfig.daysOfMonth || [];
+
+      // Parse start/end dates locally to avoid UTC timezone shifts
+      const [sYear, sMonth, sDay] = data.recurringConfig.start.split('-').map(Number);
+      let current = new Date(sYear, sMonth - 1, sDay);
+
+      const [eYear, eMonth, eDay] = data.recurringConfig.end.split('-').map(Number);
+      const end = new Date(eYear, eMonth - 1, eDay, 23, 59, 59);
+
       let count = 0;
-      while (current <= end && count < 50) {
-        store.create('notifications', {
-          type: 'Recurring Job Due',
-          jobId: jobId,
-          title: `Recurring: ${finalJob.title || finalJob.number}`,
-          dueDate: current.toISOString().split('T')[0],
-          status: 'Pending',
-          createdAt: new Date().toISOString()
-        });
-        if (data.recurringConfig.freq === 'Daily') current.setDate(current.getDate() + 1);
-        else if (data.recurringConfig.freq === 'Weekly') current.setDate(current.getDate() + 7);
-        else if (data.recurringConfig.freq === 'Monthly') current.setMonth(current.getMonth() + 1);
-        count++;
+      let iterations = 0;
+
+      // Establish target values for matching. Fall back to start date weekday/month-day if selections are empty.
+      let matchDaysOfWeek = [...daysOfWeek];
+      let matchDaysOfMonth = [...daysOfMonth];
+
+      if (freq === 'Weekly' && matchDaysOfWeek.length === 0) {
+        matchDaysOfWeek.push(current.getDay());
+      }
+      if (freq === 'Monthly' && matchDaysOfMonth.length === 0) {
+        matchDaysOfMonth.push(current.getDate());
+      }
+
+      while (current <= end && count < 50 && iterations < 1000) {
+        iterations++;
+        let isMatch = false;
+
+        if (freq === 'Daily') {
+          isMatch = true;
+        } else if (freq === 'Weekly') {
+          isMatch = matchDaysOfWeek.includes(current.getDay());
+        } else if (freq === 'Monthly') {
+          isMatch = matchDaysOfMonth.includes(current.getDate());
+        }
+
+        if (isMatch) {
+          // Format local date string as YYYY-MM-DD
+          const yyyy = current.getFullYear();
+          const mm = String(current.getMonth() + 1).padStart(2, '0');
+          const dd = String(current.getDate()).padStart(2, '0');
+          const dueDateString = `${yyyy}-${mm}-${dd}`;
+
+          store.create('notifications', {
+            type: 'Recurring Job Due',
+            jobId: jobId,
+            title: `Recurring: ${finalJob.title || finalJob.number}`,
+            dueDate: dueDateString,
+            status: 'Pending',
+            createdAt: new Date().toISOString()
+          });
+          count++;
+        }
+
+        // Move to the next day
+        current.setDate(current.getDate() + 1);
       }
     }
 

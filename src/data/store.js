@@ -62,7 +62,9 @@ class DataStore {
     });
 
     // Auto-trigger sync if user already logged in at boot
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    const currentUser = typeof localStorage !== 'undefined'
+      ? JSON.parse(localStorage.getItem('currentUser') || 'null')
+      : null;
     if (currentUser && currentUser.companyId) {
       this.userId = currentUser.id;
       this.companyId = currentUser.companyId;
@@ -873,7 +875,10 @@ class DataStore {
       })
       .eq('id', this.companyId);
 
-    if (error) console.error('Error saving company settings to Supabase:', error);
+    if (error) {
+      console.error('Error saving company settings to Supabase:', error);
+      throw error;
+    }
   }
 
   // ── In-Memory Event Emitter ────────────────────────────────────────────────

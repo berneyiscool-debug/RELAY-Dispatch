@@ -19,8 +19,8 @@ export function renderPersonForm(container, { id }) {
         <form id="person-form">
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Company Name *</label>
-              <input class="form-input" name="company" value="${person.company || ''}" required />
+              <label class="form-label" id="company-label">Company Name ${person.type === 'Individual' ? '' : '*'}</label>
+              <input class="form-input" name="company" value="${person.company || ''}" ${person.type === 'Individual' ? '' : 'required'} />
             </div>
             <div class="form-group">
               <label class="form-label">Type</label>
@@ -77,6 +77,23 @@ export function renderPersonForm(container, { id }) {
       </div>
     </div>
   `;
+
+  const typeSelect = container.querySelector('[name="type"]');
+  const companyInput = container.querySelector('[name="company"]');
+  const companyLabel = container.querySelector('#company-label');
+
+  if (typeSelect && companyInput && companyLabel) {
+    typeSelect.addEventListener('change', (e) => {
+      const isIndiv = e.target.value === 'Individual';
+      if (isIndiv) {
+        companyInput.removeAttribute('required');
+        companyLabel.textContent = 'Company Name';
+      } else {
+        companyInput.setAttribute('required', 'required');
+        companyLabel.textContent = 'Company Name *';
+      }
+    });
+  }
 
   container.querySelector('#btn-cancel').addEventListener('click', () => {
     router.navigate(isEdit ? `/people/${id}` : '/people');

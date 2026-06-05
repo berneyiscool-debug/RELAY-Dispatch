@@ -16,6 +16,7 @@ import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
   let invoice = isNew ? {
+    id: store.generateId(),
     number: `INV-${Date.now().toString().slice(-6)}`,
     status: 'Draft', 
     sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
@@ -84,7 +85,7 @@ export function renderInvoiceDetail(container, { id }) {
           <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${invoice.status}</span>
         `,
         actionsHtml: `
-          ${!isNew ? `<button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>` : ''}
+          <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
           ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice" data-tooltip="Email this invoice PDF directly to the primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder" data-tooltip="Send an automated friendly payment reminder email to the client" data-tooltip-pos="left"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid" data-tooltip="Record a bank transfer, cheque, cash, or card payment against this invoice" data-tooltip-pos="left"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
