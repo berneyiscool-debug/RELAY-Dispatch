@@ -440,6 +440,7 @@ export function renderDashboard(container) {
   wireCanvas(container, viewport, world, guides, data);
   applyTransform(viewport, world, guides);
   updateContextActions(viewport, true);
+  updateGlueAffordance(viewport);
 }
 
 function enterEditMode(container, viewport, world, guides, data) {
@@ -448,6 +449,7 @@ function enterEditMode(container, viewport, world, guides, data) {
   viewport.classList.add('edit-mode');
   renderWidgets(world, data);
   renderPins(world);
+  updateGlueAffordance(viewport); // show the glue toggle on its candidate (edit mode only)
   showEditHeader(container, viewport, world, guides, data);
 }
 
@@ -548,7 +550,7 @@ function renderWidgets(world, data) {
       </div>` : '';
 
     const el = document.createElement('div');
-    el.className = 'dash-widget' + (isEditMode ? ' edit-mode' : '') + (mod.page ? ' page-widget' : '');
+    el.className = 'dash-widget' + (isEditMode ? ' edit-mode' : '') + (mod.page ? ' page-widget' : '') + (item.glued ? ' glued' : '');
     el.dataset.instanceId = item.instanceId;
     el.dataset.id = item.id;
     el.style.left = item.x + 'px';
@@ -583,7 +585,7 @@ function renderWidgets(world, data) {
 
   // Mount any page widgets that are already on screen (synchronously, before paint)
   const vp = document.querySelector('#dash-viewport');
-  if (vp) mountVisiblePageWidgets(vp);
+  if (vp) { mountVisiblePageWidgets(vp); applyGluedWidths(vp); updateGlueAffordance(vp); }
 }
 
 // Mount any pending (placeholder) page widget whose box is currently in the viewport.
@@ -778,6 +780,136 @@ function applyTransform(viewport, world, guides) {
   updateGuides(viewport, guides);
   updateContextActions(viewport, false);
   mountVisiblePageWidgets(viewport); // mount page widgets as they pan into view
+  applyGluedWidths(viewport);        // glued widgets track the current zoom
+  updateGlueAffordance(viewport);    // the glue button follows its candidate widget
+}
+
+// ── "Glue to the right" — responsive sidebar smart-fill ──────────────────────────
+// A widget can be GLUED so that when the sidebar minimises (revealing a strip of canvas
+// on the right) the glued widget grows by exactly that strip width to smart-fill it —
+// then snaps back to its base width when the sidebar re-opens. The glue toggle appears
+// on whichever widget sits fully inside the current view with its right edge nearest the
+// right wall. Glue is a per-widget flag persisted with the layout.
+
+function isSidebarCollapsed() {
+  const sb = document.querySelector('.sidebar');
+  return !(sb && sb.classList.contains('expanded'));
+}
+
+// Screen px the sidebar gives up when it collapses (expanded − collapsed width).
+function getSidebarDeltaScreen() {
+  const cs = getComputedStyle(document.documentElement);
+  const ex = parseInt(cs.getPropertyValue('--sidebar-width-expanded')) || 192;
+  const co = parseInt(cs.getPropertyValue('--sidebar-width-collapsed')) || 51;
+  return Math.max(0, ex - co);
+}
+
+// Set each glued widget's rendered width. When the sidebar is collapsed (view mode), a
+// glued widget gains `deltaScreen / zoom` world px — which is `deltaScreen` screen px after
+// the world transform, exactly filling the revealed strip regardless of zoom level.
+function applyGluedWidths(viewport) {
+  const world = viewport && viewport.querySelector('#dash-world');
+  if (!world) return;
+  const z = live.view.zoom || 1;
+  const fill = (!isEditMode && isSidebarCollapsed()) ? getSidebarDeltaScreen() / z : 0;
+  live.widgets.forEach(item => {
+    if (!item.glued) return;
+    const el = world.querySelector(`.dash-widget[data-instance-id="${item.instanceId}"]`);
+    if (el) el.style.width = (item.w + fill) + 'px';
+  });
+}
+
+// Screen-space rect of a widget under the current pan/zoom.
+function widgetScreenRect(item) {
+  const { panX, panY, zoom } = live.view;
+  const left = panX + item.x * zoom, top = panY + item.y * zoom;
+  return { left, top, right: left + item.w * zoom, bottom: top + item.h * zoom };
+}
+
+// Every widget eligible for a glue handle. A widget qualifies when it is entirely inside
+// the viewport AND no other entirely-inside widget sits to its right within its vertical
+// band — i.e. it is right-exposed. Several widgets can qualify at once (e.g. a column of
+// widgets stacked down the right edge each gets its own handle).
+function glueWidgets(viewport) {
+  const vw = viewport.clientWidth, vh = viewport.clientHeight;
+  const inside = live.widgets.filter(it => {
+    if (!MODULES[it.id]) return false;
+    const r = widgetScreenRect(it);
+    return r.left >= 2 && r.top >= 2 && r.right <= vw - 2 && r.bottom <= vh - 2;
+  });
+  const rect = new Map(inside.map(it => [it.instanceId, widgetScreenRect(it)]));
+  return inside.filter(w => {
+    const rw = rect.get(w.instanceId);
+    // Blocked if another inside widget overlaps its vertical band and reaches further right.
+    return !inside.some(x => {
+      if (x === w) return false;
+      const rx = rect.get(x.instanceId);
+      const verticalOverlap = rx.top < rw.bottom && rx.bottom > rw.top;
+      return verticalOverlap && rx.right > rw.right + 1;
+    });
+  });
+}
+
+// Show a glue toggle on EVERY right-exposed widget (edit mode only). Each toggle sits on
+// its widget's right edge, just above the right-edge resize handle. The glue EFFECT (the
+// fill) still runs in view mode when the sidebar is actually minimised. Buttons are keyed
+// by instanceId and reconciled in place so panning doesn't churn the DOM.
+function updateGlueAffordance(viewport) {
+  if (!viewport) return;
+  let layer = viewport.querySelector('#dash-glue-layer');
+  if (!isEditMode) { if (layer) layer.innerHTML = ''; return; }
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.id = 'dash-glue-layer';
+    viewport.appendChild(layer);
+  }
+
+  const qualifying = glueWidgets(viewport);
+  const wantIds = new Set(qualifying.map(w => w.instanceId));
+  [...layer.children].forEach(btn => { if (!wantIds.has(btn.dataset.instanceId)) btn.remove(); });
+
+  const vr = viewport.getBoundingClientRect();
+  qualifying.forEach(w => {
+    const el = viewport.querySelector(`.dash-widget[data-instance-id="${w.instanceId}"]`);
+    if (!el) return;
+    let btn = layer.querySelector(`.dash-glue-affordance[data-instance-id="${w.instanceId}"]`);
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.className = 'dash-glue-affordance';
+      btn.dataset.instanceId = w.instanceId;
+      btn.title = 'Glue to the right — this widget fills the space revealed when the sidebar is minimised';
+      btn.innerHTML = '<span class="material-icons-outlined">align_horizontal_right</span>';
+      btn.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleGlue(viewport, btn.dataset.instanceId); });
+      layer.appendChild(btn);
+    }
+    const er = el.getBoundingClientRect();
+    // Sit on the right edge, just above the centred right-edge resize handle (30px tall,
+    // vertically centred → its top is centre−15; tuck the 26px button ~8px above that).
+    const centreY = er.top - vr.top + er.height / 2;
+    const topY = Math.max(er.top - vr.top + 14, centreY - 36);
+    btn.style.left = (er.right - vr.left) + 'px';
+    btn.style.top = topY + 'px';
+    btn.classList.toggle('active', !!w.glued);
+  });
+}
+
+function toggleGlue(viewport, instanceId) {
+  const item = live.widgets.find(w => w.instanceId === instanceId);
+  if (!item) return;
+  item.glued = !item.glued;
+  if (!isEditMode) saveLayout();
+  const el = viewport.querySelector(`.dash-widget[data-instance-id="${instanceId}"]`);
+  if (el) {
+    el.classList.toggle('glued', !!item.glued);
+    if (!item.glued) el.style.width = item.w + 'px'; // un-glue → restore base width immediately
+  }
+  applyGluedWidths(viewport);
+  updateGlueAffordance(viewport);
+  import('../components/Notifications.js').then(({ showToast }) => {
+    showToast(item.glued
+      ? 'Widget glued — it will fill the space when the sidebar is minimised'
+      : 'Widget unglued', item.glued ? 'success' : 'info');
+  }).catch(() => {});
 }
 
 
@@ -993,7 +1125,8 @@ function wireCanvas(container, viewport, world, guides, data) {
     didPan = false; // a fresh press always clears any stale drag-suppression flag
     // Controls and their own draggables handle themselves
     if (e.target.closest('.dash-zoom-controls') || e.target.closest('.dash-guide') ||
-        e.target.closest('.dash-topbar button') || e.target.closest('.dash-pin')) return;
+        e.target.closest('.dash-topbar button') || e.target.closest('.dash-pin') ||
+        e.target.closest('.dash-glue-affordance')) return;
 
     // In edit mode, only the widget's title bar moves it; pressing the body pans the canvas
     if (isEditMode && e.target.closest('.dash-drag-handle')) return;
@@ -1044,6 +1177,8 @@ function wireCanvas(container, viewport, world, guides, data) {
     updateGuides(vp, gd);
     updateContextActions(vp, true);
     mountVisiblePageWidgets(vp);
+    applyGluedWidths(vp);        // grow/shrink glued widgets as the sidebar animates
+    updateGlueAffordance(vp);    // keep the glue button glued to its widget's edge
     if (isEditMode) renderPins(wd);
   };
 
@@ -1279,6 +1414,7 @@ function wireEditControls(world, data) {
         el.style.left = item.x + 'px';
         el.style.top = item.y + 'px';
         updateGuides(viewport, guides);
+        updateGlueAffordance(viewport); // re-evaluate the glue candidate after moving
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -1322,6 +1458,7 @@ function wireEditControls(world, data) {
         el.style.width = item.w + 'px';
         el.style.height = item.h + 'px';
         updateGuides(viewport, guides);
+        updateGlueAffordance(viewport); // keep the glue button on the widget's new edge
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -1699,6 +1836,8 @@ function showEditHeader(container, viewport, world, guides, data) {
     updateGuides(viewport, guides);
     _ctxVisibleSig = null;
     updateContextActions(viewport, true); // restore contextual actions
+    applyGluedWidths(viewport);           // re-apply glue fill now we're back in view mode
+    updateGlueAffordance(viewport);       // hide the glue toggle (edit-mode only)
   };
 
   headerActions.querySelector('#btn-save-view').addEventListener('click', () => {

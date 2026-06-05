@@ -28,6 +28,269 @@ const TABLE_MAP = {
   documents: 'documents'
 };
 
+const TABLE_COLUMNS = {
+  companies: [
+    "id",
+    "name",
+    "abn",
+    "phone",
+    "domain",
+    "email",
+    "address",
+    "settings",
+    "created_at",
+    "updated_at"
+  ],
+  profiles: [
+    "id",
+    "company_id",
+    "name",
+    "email",
+    "username",
+    "phone",
+    "role",
+    "user_type_id",
+    "color",
+    "pay_rate",
+    "force_password_change",
+    "created_at",
+    "updated_at"
+  ],
+  user_types: [
+    "id",
+    "company_id",
+    "name",
+    "description",
+    "permissions",
+    "created_at",
+    "updated_at"
+  ],
+  customers: [
+    "id",
+    "company_id",
+    "company",
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "address",
+    "status",
+    "type",
+    "portal_token",
+    "created_at",
+    "updated_at"
+  ],
+  assets: [
+    "id",
+    "company_id",
+    "name",
+    "type",
+    "serial",
+    "owner_type",
+    "customer_id",
+    "customer_name",
+    "current_meter",
+    "recovery_rate",
+    "status",
+    "logs",
+    "created_at",
+    "updated_at"
+  ],
+  maintenance_plans: [
+    "id",
+    "company_id",
+    "name",
+    "asset_id",
+    "trigger_type",
+    "meter_interval",
+    "last_triggered_meter",
+    "next_service_date",
+    "status",
+    "priority",
+    "frequency",
+    "collision_merging",
+    "created_at",
+    "updated_at"
+  ],
+  task_templates: [
+    "id",
+    "company_id",
+    "name",
+    "description",
+    "tags",
+    "tasks",
+    "created_at",
+    "updated_at"
+  ],
+  quotes: [
+    "id",
+    "company_id",
+    "number",
+    "customer_id",
+    "customer_name",
+    "contact_name",
+    "title",
+    "status",
+    "line_items",
+    "subtotal",
+    "tax",
+    "total",
+    "valid_until",
+    "notes",
+    "created_at",
+    "updated_at"
+  ],
+  jobs: [
+    "id",
+    "company_id",
+    "number",
+    "customer_id",
+    "customer_name",
+    "contact_name",
+    "site_address",
+    "title",
+    "type",
+    "status",
+    "priority",
+    "technician_id",
+    "technician_name",
+    "quote_id",
+    "asset_id",
+    "scheduled_date",
+    "estimated_hours",
+    "labor_cost",
+    "material_cost",
+    "tasks",
+    "notes",
+    "created_at",
+    "updated_at"
+  ],
+  invoices: [
+    "id",
+    "company_id",
+    "number",
+    "job_id",
+    "customer_id",
+    "customer_name",
+    "contact_name",
+    "title",
+    "status",
+    "line_items",
+    "subtotal",
+    "tax",
+    "total",
+    "due_date",
+    "notes",
+    "created_at",
+    "updated_at"
+  ],
+  stock: [
+    "id",
+    "company_id",
+    "name",
+    "category",
+    "unit",
+    "cost_price",
+    "unit_price",
+    "reorder_level",
+    "quantity",
+    "locations",
+    "supplier",
+    "created_at",
+    "updated_at"
+  ],
+  timesheets: [
+    "id",
+    "company_id",
+    "technician_id",
+    "technician_name",
+    "date",
+    "duration_hours",
+    "job_id",
+    "status",
+    "approved_by",
+    "created_at",
+    "updated_at"
+  ],
+  contractors: [
+    "id",
+    "company_id",
+    "name",
+    "email",
+    "phone",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  suppliers: [
+    "id",
+    "company_id",
+    "name",
+    "email",
+    "phone",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  purchase_orders: [
+    "id",
+    "company_id",
+    "number",
+    "supplier_id",
+    "supplier_name",
+    "status",
+    "line_items",
+    "total",
+    "created_at",
+    "updated_at"
+  ],
+  notifications: [
+    "id",
+    "company_id",
+    "title",
+    "message",
+    "link",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  form_templates: [
+    "id",
+    "company_id",
+    "name",
+    "fields",
+    "created_at",
+    "updated_at"
+  ],
+  form_instances: [
+    "id",
+    "company_id",
+    "template_id",
+    "job_id",
+    "values",
+    "created_at",
+    "updated_at"
+  ],
+  kits: [
+    "id",
+    "company_id",
+    "name",
+    "items",
+    "created_at",
+    "updated_at"
+  ],
+  documents: [
+    "id",
+    "company_id",
+    "name",
+    "file_path",
+    "job_id",
+    "created_at",
+    "updated_at"
+  ]
+};
+
+
 export const RELAY_LOGO_SVG = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg viewBox="0 0 320 53.598302" xmlns="http://www.w3.org/2000/svg"><g fill="#FF5C00"><g transform="translate(-19.023693,-210.20382)"><g transform="matrix(0.3804654,0,0,0.3804654,-83.598864,122.48096)"><g transform="translate(107.79013)"><g transform="translate(-22.948867,-9.0404629)"><path d="m 267.58275,347.28778 q 0.0535,9.78228 1.22947,17.15908 1.22947,7.3768 3.74185,11.27903 -2.40547,2.29856 -7.16298,3.42112 -4.7575,1.17601 -7.69753,1.17601 -9.515,-0.10691 -13.31031,-7.10952 -3.31422,-6.20079 -3.31422,-15.92962 0,-1.28292 0.26728,-7.64407 0.26728,-6.41461 3.52803,-20.04566 3.26076,-13.63104 7.80445,-26.94136 4.54368,-13.31031 8.87354,-23.94787 1.22947,-0.10691 2.45893,-0.10691 2.56585,0 5.39897,0.58801 2.83311,0.588 4.32986,4.16949 0.69491,1.65711 0.69491,4.38332 0,3.15385 -0.90873,7.64407 -2.19166,10.26338 -3.63495,20.63366 1.28292,0.64147 2.72621,0.64147 2.88657,0 7.3768,-3.1004 4.49023,-3.10039 8.49936,-9.62191 3.79531,-6.09388 3.79531,-12.34813 v -0.80182 q -1.12256,-11.33248 -7.69753,-14.80706 -3.74186,-1.97784 -8.44591,-1.97784 -3.58149,0 -10.47719,1.87093 -6.84225,1.81747 -16.94526,8.71318 -10.04955,6.8957 -18.17473,16.3038 -8.07171,9.35464 -11.6532,19.5111 -1.92439,5.29205 -1.92439,10.31683 0,4.54368 1.60366,8.87354 -5.66624,0.96219 -10.37029,0.96219 -6.41461,0 -12.82922,-2.40547 -6.36115,-2.45894 -9.14081,-9.03391 -1.33638,-3.26076 -1.33638,-6.89571 0,-3.6884 1.38983,-7.80444 4.00913,-10.53065 18.01436,-22.07694 14.05869,-11.59976 34.05089,-20.36639 20.04565,-8.76663 42.06914,-10.90484 2.56584,-0.16036 4.97132,-0.16036 11.38593,0 19.77838,4.59714 8.4459,4.59713 12.6154,13.47068 3.84877,8.07171 3.84877,17.42635 0,0.80183 -0.21382,6.36116 -0.16037,5.55932 -4.49023,14.91396 -4.32986,9.30119 -12.1343,15.34161 -7.80444,6.04042 -18.49546,6.46806 8.87354,6.41461 19.5111,7.10953 1.17601,0.0534 2.35203,0.0534 9.67537,0 20.90093,-5.07823 0.26728,3.79531 0.26728,7.10953 0,9.0339 -2.35203,16.14343 -2.35202,7.10952 -7.32334,10.90484 -4.97132,3.79531 -10.63756,4.49022 -2.13821,0.26728 -4.11604,0.26728 -3.42113,0 -6.46807,-0.74837 -5.8266,-1.38984 -11.38593,-6.20079 -5.50587,-4.7575 -10.47719,-11.65321 -4.91787,-6.8957 -8.98046,-14.59324 z" /><path d="m 370.43971,354.90523 -15.22212,-9.62244 -16.8901,6.24731 4.44762,-17.45058 -11.16089,-14.13291 17.97088,-1.16261 9.9923,-14.98194 6.659,16.73206 17.33647,4.87357 -13.85539,11.50358 z" /><path d="m 348.39147,304.71497 -3.17554,-13.39823 -12.4452,-5.89179 11.76117,-7.16041 1.75766,-13.65677 10.44434,8.97286 13.53148,-2.54853 -5.30619,12.70593 6.60527,12.08167 -13.72376,-1.12015 z" /><path d="m 334.8158,263.90614 -5.7247,-6.06772 -8.31437,0.67863 4.00173,-7.31954 -3.21471,-7.6977 8.19789,1.544 6.32758,-5.43609 1.06484,8.27379 7.12538,4.33803 -7.53978,3.56946 z" /></g><text x="90" y="35" fill="#FF5C00" font-family="'Inter', -apple-system, sans-serif" font-size="24" font-weight="800" letter-spacing="0.05em">RELAY</text><text x="180" y="35" fill="#8A99AD" font-family="'Inter', -apple-system, sans-serif" font-size="24" font-weight="500" letter-spacing="0.03em">— Dispatch</text></svg>`)}`;
 
 export const RELAY_LOGO_SMALL_SVG = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg viewBox="0 0 75.592812 53.598302" xmlns="http://www.w3.org/2000/svg"><g fill="#FF5C00"><g transform="translate(-19.023693,-210.20382)"><g transform="matrix(0.3804654,0,0,0.3804654,-83.598864,122.48096)"><g transform="translate(107.79013)"><g transform="translate(-22.948867,-9.0404629)"><path d="m 267.58275,347.28778 q 0.0535,9.78228 1.22947,17.15908 1.22947,7.3768 3.74185,11.27903 -2.40547,2.29856 -7.16298,3.42112 -4.7575,1.17601 -7.69753,1.17601 -9.515,-0.10691 -13.31031,-7.10952 -3.31422,-6.20079 -3.31422,-15.92962 0,-1.28292 0.26728,-7.64407 q 0.26728,-6.41461 3.52803,-20.04566 q 3.26076,-13.63104 7.80445,-26.94136 q 4.54368,-13.31031 8.87354,-23.94787 q 1.22947,-0.10691 2.45893,-0.10691 q 2.56585,0 5.39897,0.58801 q 2.83311,0.588 4.32986,4.16949 q 0.69491,1.65711 0.69491,4.38332 0,3.15385 -0.90873,7.64407 -2.19166,10.26338 -3.63495,20.63366 q 1.28292,0.64147 2.72621,0.64147 q 2.88657,0 7.3768,-3.1004 q 4.49023,-3.10039 8.49936,-9.62191 q 3.79531,-6.09388 3.79531,-12.34813 v -0.80182 q -1.12256,-11.33248 -7.69753,-14.80706 -3.74186,-1.97784 -8.44591,-1.97784 -3.58149,0 -10.47719,1.87093 q -6.84225,1.81747 -16.94526,8.71318 q -10.04955,6.8957 -18.17473,16.3038 q -8.07171,9.35464 -11.6532,19.5111 -1.92439,5.29205 -1.92439,10.31683 0,4.54368 1.60366,8.87354 -5.66624,0.96219 -10.37029,0.96219 -6.41461,0 -12.82922,-2.40547 -6.36115,-2.45894 -9.14081,-9.03391 -1.33638,-3.26076 -1.33638,-6.89571 0,-3.6884 1.38983,-7.80444 q 4.00913,-10.53065 18.01436,-22.07694 q 14.05869,-11.59976 34.05089,-20.36639 q 20.04565,-8.76663 42.06914,-10.90484 q 2.56584,-0.16036 4.97132,-0.16036 q 11.38593,0 19.77838,4.59714 q 8.4459,4.59713 12.6154,13.47068 q 3.84877,8.07171 3.84877,17.42635 0,0.80183 -0.21382,6.36116 -0.16037,5.55932 -4.49023,14.91396 q -4.32986,9.30119 -12.1343,15.34161 -7.80444,6.04042 -18.49546,6.46806 q 8.87354,6.41461 19.5111,7.10953 q 1.17601,0.0534 2.35203,0.0534 9.67537,0 20.90093,-5.07823 0.26728,3.79531 0.26728,7.10953 0,9.0339 -2.35203,16.14343 q -2.35202,7.10952 -7.32334,10.90484 -4.97132,3.79531 -10.63756,4.49022 -2.13821,0.26728 -4.11604,0.26728 -3.42113,0 -6.46807,-0.74837 -5.8266,-1.38984 -11.38593,-6.20079 q -5.50587,-4.7575 -10.47719,-11.65321 q -4.91787,-6.8957 -8.98046,-14.59324 z" /><path d="m 370.43971,354.90523 -15.22212,-9.62244 -16.8901,6.24731 4.44762,-17.45058 -11.16089,-14.13291 17.97088,-1.16261 9.9923,-14.98194 6.659,16.73206 17.33647,4.87357 -13.85539,11.50358 z" /><path d="m 348.39147,304.71497 -3.17554,-13.39823 -12.4452,-5.89179 11.76117,-7.16041 1.75766,-13.65677 10.44434,8.97286 13.53148,-2.54853 -5.30619,12.70593 6.60527,12.08167 -13.72376,-1.12015 z" /><path d="m 334.8158,263.90614 -5.7247,-6.06772 -8.31437,0.67863 4.00173,-7.31954 -3.21471,-7.6977 8.19789,1.544 6.32758,-5.43609 1.06484,8.27379 7.12538,4.33803 -7.53978,3.56946 z" /></g></g></g></svg>`)}`;
@@ -218,6 +481,12 @@ class DataStore {
     if (!item) return null;
     const record = { ...item };
 
+    if (collection === 'formTemplates') {
+      record.sections = record.fields?.sections || [];
+      record.description = record.fields?.description || '';
+      delete record.fields;
+    }
+
     // Standard snake_case mappings used in SQL schema
     if (record.company_id !== undefined) {
       record.companyId = record.company_id;
@@ -388,8 +657,17 @@ class DataStore {
   }
 
   // De-normalize camelCase fields -> snake_case schema columns for database updates
-  denormalizeRecord(item) {
+  denormalizeRecord(item, collection) {
     const record = { ...item };
+
+    if (collection === 'formTemplates') {
+      record.fields = {
+        description: record.description || '',
+        sections: record.sections || []
+      };
+      delete record.description;
+      delete record.sections;
+    }
 
     if (record.companyId !== undefined) {
       record.company_id = record.companyId;
@@ -556,6 +834,17 @@ class DataStore {
       delete record.updatedAt;
     }
 
+    // Filter out columns not in schema to prevent 400 Bad Request
+    const table = TABLE_MAP[collection];
+    if (table && TABLE_COLUMNS[table]) {
+      const allowedCols = TABLE_COLUMNS[table];
+      Object.keys(record).forEach(key => {
+        if (!allowedCols.includes(key)) {
+          delete record[key];
+        }
+      });
+    }
+
     return record;
   }
 
@@ -659,7 +948,7 @@ class DataStore {
     }
 
     // 2. Perform DB write in background for other collections
-    const dbPayload = this.denormalizeRecord(item);
+    const dbPayload = this.denormalizeRecord(item, collection);
     const table = TABLE_MAP[collection];
     if (table) {
       supabase.from(table).insert([dbPayload]).then(({ error }) => {
@@ -761,7 +1050,7 @@ class DataStore {
     }
 
     // 3. Write updates asynchronously to Supabase
-    const dbPayload = this.denormalizeRecord(updated);
+    const dbPayload = this.denormalizeRecord(updated, collection);
     const table = TABLE_MAP[collection];
     if (table) {
       supabase
@@ -1001,7 +1290,7 @@ class DataStore {
     this.cache.formTemplates = templates;
     this.emit('formTemplates', templates);
 
-    const dbPayload = templates.map(t => this.denormalizeRecord(t));
+    const dbPayload = templates.map(t => this.denormalizeRecord(t, 'formTemplates'));
     const { error } = await supabase.from('form_templates').insert(dbPayload);
     if (error) console.error('Error seeding form templates:', error);
   }
