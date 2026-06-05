@@ -553,7 +553,7 @@ class DataStore {
   }
 
   // Pushes write changes asynchronously to Supabase while updating local cache synchronously
-  async create(collection, item) {
+  create(collection, item) {
     if (!this.companyId) return item;
 
     item.id = item.id || this.generateId();
@@ -575,70 +575,73 @@ class DataStore {
 
     // Special Case: Creating a user (technician) via UI requires a secure invitation Netlify function
     if (collection === 'technicians') {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error('Authentication session expired. Please log in again.');
+      return (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) throw new Error('Authentication session expired. Please log in again.');
 
-        const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const email = `${item.username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
-        item.email = email;
+          const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const email = `${item.username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
+          item.email = email;
 
-        const res = await fetch('/.netlify/functions/invite-user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({
-            action: 'create',
-            email: item.email,
-            username: item.username,
-            password: item.password,
-            name: item.name,
-            role: item.role,
-            userTypeId: item.userTypeId,
-            color: item.color,
-            payRate: item.payRate
-          })
-        });
+          const res = await fetch('/.netlify/functions/invite-user', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+              action: 'create',
+              email: item.email,
+              username: item.username,
+              password: item.password,
+              name: item.name,
+              role: item.role,
+              userTypeId: item.userTypeId,
+              color: item.color,
+              payRate: item.payRate
+            })
+          });
 
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to create user.');
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to create user.');
+          }
+
+          // Update local item ID with the real auth user UUID returned from database
+          item.id = data.user.id;
+          
+          const cachedItems = [...this.cache.technicians];
+          const idx = cachedItems.findIndex(x => x.username === item.username);
+          if (idx !== -1) {
+            cachedItems[idx] = item;
+            this.cache.technicians = cachedItems;
+            this.emit('technicians', cachedItems);
+          }
+
+          return item;
+        } catch (err) {
+          // Rollback cache update on failure
+          this.cache.technicians = this.cache.technicians.filter(x => x.username !== item.username);
+          this.emit('technicians', this.cache.technicians);
+          throw err;
         }
-
-        // Update local item ID with the real auth user UUID returned from database
-        item.id = data.user.id;
-        
-        const cachedItems = [...this.cache.technicians];
-        const idx = cachedItems.findIndex(x => x.username === item.username);
-        if (idx !== -1) {
-          cachedItems[idx] = item;
-          this.cache.technicians = cachedItems;
-          this.emit('technicians', cachedItems);
-        }
-
-        return item;
-      } catch (err) {
-        // Rollback cache update on failure
-        this.cache.technicians = this.cache.technicians.filter(x => x.username !== item.username);
-        this.emit('technicians', this.cache.technicians);
-        throw err;
-      }
+      })();
     }
 
     // 2. Perform DB write in background for other collections
     const dbPayload = this.denormalizeRecord(item);
     const table = TABLE_MAP[collection];
     if (table) {
-      const { error } = await supabase.from(table).insert([dbPayload]);
-      if (error) console.error(`Error saving new record to ${table}:`, error);
+      supabase.from(table).insert([dbPayload]).then(({ error }) => {
+        if (error) console.error(`Error saving new record to ${table}:`, error);
+      });
     }
 
     return item;
   }
 
-  async update(collection, id, updates) {
+  update(collection, id, updates) {
     if (!this.companyId) return null;
 
     const items = [...(this.cache[collection] || [])];
@@ -649,46 +652,58 @@ class DataStore {
 
     // Special Case: Updating a technician profile/password via UI
     if (collection === 'technicians') {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error('Authentication session expired. Please log in again.');
+      return (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) throw new Error('Authentication session expired. Please log in again.');
 
-        const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const username = updates.username || previous.username;
-        const email = `${username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
-        updates.email = email;
+          const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const username = updates.username || previous.username;
+          const email = `${username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
+          updates.email = email;
 
-        if (updates.password) {
-          updates.forcePasswordChange = true;
+          if (updates.password) {
+            updates.forcePasswordChange = true;
+          }
+
+          const res = await fetch('/.netlify/functions/invite-user', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+              action: 'update',
+              userId: id,
+              email: email,
+              username: username,
+              name: updates.name || previous.name,
+              role: updates.role || previous.role,
+              userTypeId: updates.userTypeId || previous.userTypeId,
+              color: updates.color || previous.color,
+              payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
+              password: updates.password
+            })
+          });
+
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to update user.');
+          }
+
+          const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
+          const cachedItems = [...this.cache.technicians];
+          const idx = cachedItems.findIndex(x => x.id === id);
+          if (idx !== -1) {
+            cachedItems[idx] = updated;
+            this.cache.technicians = cachedItems;
+            this.emit('technicians', cachedItems);
+          }
+          return updated;
+        } catch (err) {
+          throw err;
         }
-
-        const res = await fetch('/.netlify/functions/invite-user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({
-            action: 'update',
-            userId: id,
-            email: email,
-            username: username,
-            name: updates.name || previous.name,
-            role: updates.role || previous.role,
-            userTypeId: updates.userTypeId || previous.userTypeId,
-            color: updates.color || previous.color,
-            payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
-            password: updates.password
-          })
-        });
-
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to update user.');
-        }
-      } catch (err) {
-        throw err;
-      }
+      })();
     }
 
     const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
@@ -707,17 +722,19 @@ class DataStore {
     const dbPayload = this.denormalizeRecord(updated);
     const table = TABLE_MAP[collection];
     if (table) {
-      const { error } = await supabase
+      supabase
         .from(table)
         .update(dbPayload)
-        .eq('id', id);
-      if (error) console.error(`Error updating record in ${table}:`, error);
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) console.error(`Error updating record in ${table}:`, error);
+        });
     }
 
     return updated;
   }
 
-  async delete(collection, id) {
+  delete(collection, id) {
     if (!this.companyId) return;
 
     // 1. Update memory cache
@@ -728,11 +745,13 @@ class DataStore {
     // 2. Write to Supabase asynchronously
     const table = TABLE_MAP[collection];
     if (table) {
-      const { error } = await supabase
+      supabase
         .from(table)
         .delete()
-        .eq('id', id);
-      if (error) console.error(`Error deleting record from ${table}:`, error);
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) console.error(`Error deleting record from ${table}:`, error);
+        });
     }
   }
 
