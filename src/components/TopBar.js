@@ -4,6 +4,7 @@
 
 import { store } from '../data/store.js';
 import { router } from '../router.js';
+import { applyTheme, THEMES } from '../utils/theme.js';
 import { toggleRelay, onRelayToggle } from './RelayAssistant.js';
 import relayIcon from '../assets/relay-icon.svg?raw';
 
@@ -22,7 +23,7 @@ export function createTopBar() {
         ${relayIcon}
       </button>
       <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
-        <span class="material-icons-outlined" id="theme-icon">${getStoredTheme() === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+        <span class="material-icons-outlined" id="theme-icon">${(THEMES[getStoredTheme()] ? THEMES[getStoredTheme()].mode : 'light') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
       </button>
       <button class="topbar-action-btn" id="btn-help" title="Help">
         <span class="material-icons-outlined">help_outline</span>
@@ -63,10 +64,10 @@ export function createTopBar() {
   // Theme toggle
   const themeBtn = topbar.querySelector('#btn-theme-toggle');
   themeBtn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('simpro_theme', next);
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const currentMode = THEMES[current] ? THEMES[current].mode : 'light';
+    const next = currentMode === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
     topbar.querySelector('#theme-icon').textContent = next === 'dark' ? 'light_mode' : 'dark_mode';
   });
 
@@ -340,7 +341,5 @@ function getStoredTheme() {
 
 function applyStoredTheme() {
   const theme = getStoredTheme();
-  if (theme === 'dark') {
-    document.documentElement.setAttribute('data-theme', 'dark');
-  }
+  applyTheme(theme);
 }

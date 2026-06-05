@@ -1,5 +1,6 @@
 import { router } from '../../router.js';
 import { supabase } from '../../utils/supabase.js';
+import { applyTheme, THEMES } from '../../utils/theme.js';
 
 // Ordered list of routes to try — first permitted one wins
 const ROUTE_PRIORITY = [
@@ -45,7 +46,7 @@ const RELAY_LOGO_SMALL_SVG = `<svg viewBox="0 0 75.592812 53.598302" fill="none"
 export function renderLogin(container) {
   // Respect the user's chosen theme (default to light)
   const storedTheme = localStorage.getItem('simpro_theme') || 'light';
-  document.documentElement.setAttribute('data-theme', storedTheme);
+  applyTheme(storedTheme);
 
   // Hide the sidebar, topbar, and breadcrumbs when on login
   const sidebar = document.querySelector('.sidebar');
@@ -67,7 +68,7 @@ export function renderLogin(container) {
 
         <!-- Theme Toggle -->
         <button class="auth-theme-toggle" id="auth-theme-btn" title="Toggle color theme">
-          <span class="material-icons-outlined">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+          <span class="material-icons-outlined">${(THEMES[document.documentElement.getAttribute('data-theme') || 'light'] ? THEMES[document.documentElement.getAttribute('data-theme') || 'light'].mode : 'light') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
         </button>
 
         <div class="auth-card">
@@ -203,9 +204,9 @@ export function renderLogin(container) {
     if (themeBtn) {
       themeBtn.addEventListener('click', () => {
         const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', nextTheme);
-        localStorage.setItem('simpro_theme', nextTheme);
+        const currentMode = THEMES[currentTheme] ? THEMES[currentTheme].mode : 'light';
+        const nextTheme = currentMode === 'dark' ? 'light' : 'dark';
+        applyTheme(nextTheme);
         themeBtn.innerHTML = `<span class="material-icons-outlined">${nextTheme === 'dark' ? 'light_mode' : 'dark_mode'}</span>`;
       });
     }
@@ -474,9 +475,7 @@ export function renderLogin(container) {
 
     // Restore theme settings
     const storedTheme = localStorage.getItem('simpro_theme') || 'light';
-    if (storedTheme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
+    applyTheme(storedTheme);
 
     router.navigate(landingRoute);
   };

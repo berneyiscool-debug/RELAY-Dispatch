@@ -10,6 +10,7 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
+import { applyTheme, THEMES } from '../utils/theme.js';
 
 // Build a permissions array with all granular keys
 function buildGranularPerms(valueFn) {
@@ -1049,6 +1050,7 @@ export function renderSettings(container) {
     } else if (activeTab === 'system') {
       const s = store.getSettings();
       const currentPref = s.tooltipPreference || 'full';
+      const currentTheme = localStorage.getItem('simpro_theme') || 'light';
       tc.innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-lg); max-width:960px; align-items:start;">
           <!-- Data Management -->
@@ -1087,7 +1089,7 @@ export function renderSettings(container) {
           <!-- Interface Preferences -->
           <div class="card">
             <div class="card-header"><h4>Interface Preferences</h4></div>
-            <div class="card-body">
+            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
               <div class="form-group">
                 <label class="form-label" style="font-weight:600;">Information Popups (Tooltips)</label>
                 <select class="form-select" id="tooltip-preference" style="width:100%">
@@ -1097,6 +1099,17 @@ export function renderSettings(container) {
                 </select>
                 <p class="text-tertiary" style="font-size:12px; margin-top:8px; line-height:1.4;">
                   Controls the descriptive popup helpers shown when hovering over buttons, actions, and categories.
+                </p>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="font-weight:600;">System Color Theme</label>
+                <select class="form-select" id="system-theme-select" style="width:100%">
+                  ${Object.entries(THEMES).map(([key, val]) => `
+                    <option value="${key}" ${currentTheme === key ? 'selected' : ''}>${val.name}</option>
+                  `).join('')}
+                </select>
+                <p class="text-tertiary" style="font-size:12px; margin-top:8px; line-height:1.4;">
+                  Select a color profile and visual background effect for your user interface.
                 </p>
               </div>
             </div>
@@ -1110,6 +1123,11 @@ export function renderSettings(container) {
         store.saveSettings(settings);
         window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
         showToast('Interface preferences saved', 'success');
+      });
+
+      tc.querySelector('#system-theme-select')?.addEventListener('change', (e) => {
+        applyTheme(e.target.value);
+        showToast('System theme updated successfully', 'success');
       });
 
       tc.querySelector('#btn-reset-data')?.addEventListener('click', () => {

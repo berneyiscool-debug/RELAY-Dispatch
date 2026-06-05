@@ -8,6 +8,11 @@ import './styles/layout.css';
 
 import { router } from './router.js';
 import { store } from './data/store.js';
+import { applyTheme } from './utils/theme.js';
+
+// Apply stored theme on initial boot
+const initialTheme = localStorage.getItem('simpro_theme') || 'light';
+applyTheme(initialTheme);
 import { seedData } from './data/seed.js';
 import { checkMaintenancePlans } from './utils/maintenanceEngine.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
