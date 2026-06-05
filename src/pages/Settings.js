@@ -488,7 +488,9 @@ export function renderSettings(container) {
                       <td>
                         <div style="display:flex; gap:8px;">
                           <button class="btn btn-icon btn-sm btn-edit-user" data-id="${t.id}"><span class="material-icons-outlined" style="font-size:18px">edit</span></button>
-                          <button class="btn btn-icon btn-sm text-danger btn-deactivate-user" data-id="${t.id}" title="Deactivate"><span class="material-icons-outlined" style="font-size:18px">person_off</span></button>
+                          ${ut?.id !== 'ut_admin' ? `
+                            <button class="btn btn-icon btn-sm text-danger btn-deactivate-user" data-id="${t.id}" title="Deactivate"><span class="material-icons-outlined" style="font-size:18px">person_off</span></button>
+                          ` : ''}
                         </div>
                       </td>
                     </tr>
@@ -1463,11 +1465,13 @@ export function renderSettings(container) {
         </div>
         <div class="form-group">
           <label class="form-label">User Type</label>
-          <select class="form-select" id="u-type">
+          <select class="form-select" id="u-type" ${t.userTypeId === 'ut_admin' ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}>
             <option value="">-- Select --</option>
-            ${userTypes.map(ut => `
-              <option value="${ut.id}" ${t.userTypeId === ut.id ? 'selected' : ''}>${ut.name}</option>
-            `).join('')}
+            ${userTypes
+              .filter(ut => ut.id !== 'ut_admin' || t.userTypeId === 'ut_admin')
+              .map(ut => `
+                <option value="${ut.id}" ${t.userTypeId === ut.id ? 'selected' : ''}>${ut.name}</option>
+              `).join('')}
           </select>
         </div>
       </div>

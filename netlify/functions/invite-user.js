@@ -86,6 +86,30 @@ exports.handler = async (event, context) => {
         };
       }
 
+      // 1. Get target profile to prevent updating another admin
+      const { data: targetProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+
+      if (targetProfile && targetProfile.role === 'admin' && user.id !== userId) {
+        return {
+          statusCode: 403,
+          headers,
+          body: JSON.stringify({ error: 'Forbidden: You cannot modify another administrator\'s account.' })
+        };
+      }
+
+      // 2. Prevent setting role or userType to Admin for other users
+      if (user.id !== userId && (role === 'admin' || userTypeId === 'ut_admin')) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Only one administrator is allowed per company.' })
+        };
+      }
+
       // Update Auth record
       const authUpdates = {};
       if (email) authUpdates.email = email;
@@ -155,6 +179,14 @@ exports.handler = async (event, context) => {
           statusCode: 400,
           headers,
           body: JSON.stringify({ error: 'Bad Request: Email, Name, and Password are required.' })
+        };
+      }
+
+      if (role === 'admin' || userTypeId === 'ut_admin') {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Only one administrator is allowed per company.' })
         };
       }
 

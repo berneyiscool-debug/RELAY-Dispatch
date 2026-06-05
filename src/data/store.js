@@ -82,7 +82,10 @@ class DataStore {
         .eq('id', this.companyId)
         .single();
       if (!compErr && comp) {
-        this.companySettings = comp.settings || {};
+        this.companySettings = {
+          name: comp.name,
+          ...(comp.settings || {})
+        };
       }
 
       // 2. Fetch all collections in parallel
@@ -859,10 +862,13 @@ class DataStore {
     this.companySettings = settings;
     this.emit('settings', settings);
 
-    // Save settings directly into the company JSONB column
+    // Save settings directly into the company JSONB column and keep top-level name in sync
     const { error } = await supabase
       .from('companies')
-      .update({ settings })
+      .update({ 
+        settings,
+        name: settings.name
+      })
       .eq('id', this.companyId);
 
     if (error) console.error('Error saving company settings to Supabase:', error);
