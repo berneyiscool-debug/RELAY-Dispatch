@@ -41,11 +41,12 @@ describe('DataStore', () => {
   });
 
   describe('create', () => {
-    test('does not modify cache if companyId is not set', async () => {
+    test('saves to cache and generates id in local mode (companyId not set)', async () => {
       const item = { name: 'David' };
       const created = await store.create('customers', item);
-      assert.deepStrictEqual(created, item);
-      assert.deepStrictEqual(store.getAll('customers'), []);
+      assert.ok(created.id);
+      assert.strictEqual(created.name, 'David');
+      assert.deepStrictEqual(store.getAll('customers'), [created]);
     });
 
     test('creates item with generated id and timestamps when companyId is set', async () => {
@@ -81,9 +82,13 @@ describe('DataStore', () => {
   });
 
   describe('update', () => {
-    test('returns null if companyId is not set', async () => {
-      const result = await store.update('customers', '1', { name: 'New' });
-      assert.strictEqual(result, null);
+    test('updates item in cache in local mode (companyId not set)', async () => {
+      const item = { id: 'local_1', name: 'Original' };
+      store.cache.customers = [item];
+      const updated = await store.update('customers', 'local_1', { name: 'Updated' });
+      assert.ok(updated);
+      assert.strictEqual(updated.name, 'Updated');
+      assert.deepStrictEqual(store.getAll('customers'), [updated]);
     });
 
     test('updates existing item and its updatedAt timestamp when companyId is set', async () => {
@@ -156,10 +161,10 @@ describe('DataStore', () => {
   });
 
   describe('saveSettings', () => {
-    test('does not save settings if companyId is not set', async () => {
+    test('saves settings to memory in local mode (companyId not set)', async () => {
       const settings = { name: 'Offline Change' };
       await store.saveSettings(settings);
-      assert.strictEqual(store.companySettings, null);
+      assert.deepStrictEqual(store.companySettings, settings);
     });
 
     test('saves settings and emits event when companyId is set', async () => {

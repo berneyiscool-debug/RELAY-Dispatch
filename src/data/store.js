@@ -42,10 +42,31 @@ class DataStore {
     this.subscriptions = [];
     this.initPromise = null;
 
-    // Pre-initialize empty arrays for collections to avoid undefined maps on startup
+    // Pre-initialize empty arrays for collections or load from localStorage in local mode
     Object.keys(TABLE_MAP).forEach(col => {
+      if (typeof localStorage !== 'undefined') {
+        const localData = localStorage.getItem('simpro_' + col);
+        if (localData) {
+          try {
+            this.cache[col] = JSON.parse(localData);
+            return;
+          } catch (e) {
+            console.error(`Error parsing localStorage for ${col}:`, e);
+          }
+        }
+      }
       this.cache[col] = [];
     });
+
+    // Load local settings if they exist
+    if (typeof localStorage !== 'undefined') {
+      const localSettings = localStorage.getItem('simpro_settings');
+      if (localSettings) {
+        try {
+          this.companySettings = JSON.parse(localSettings);
+        } catch {}
+      }
+    }
 
     // Handle authentication state changes
     supabase.auth.onAuthStateChange((event, session) => {
@@ -554,8 +575,6 @@ class DataStore {
 
   // Pushes write changes asynchronously to Supabase while updating local cache synchronously
   create(collection, item) {
-    if (!this.companyId) return item;
-
     item.id = item.id || this.generateId();
     if (collection === 'leads' && !item.number) {
       item.number = 'LD-' + Date.now().toString().slice(-5);
@@ -565,13 +584,23 @@ class DataStore {
     }
     item.createdAt = item.createdAt || new Date().toISOString();
     item.updatedAt = new Date().toISOString();
-    item.companyId = this.companyId;
+    if (this.companyId) {
+      item.companyId = this.companyId;
+    }
 
     // 1. Update memory cache immediately for responsiveness (Optimistic UI)
     const items = [...(this.cache[collection] || [])];
     items.push(item);
     this.cache[collection] = items;
     this.emit(collection, items);
+
+    // If not running in cloud mode, fall back to localStorage
+    if (!this.companyId) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+      }
+      return item;
+    }
 
     // Special Case: Creating a user (technician) via UI requires a secure invitation Netlify function
     if (collection === 'technicians') {
@@ -642,13 +671,26 @@ class DataStore {
   }
 
   update(collection, id, updates) {
-    if (!this.companyId) return null;
-
     const items = [...(this.cache[collection] || [])];
     const index = items.findIndex(item => item.id === id);
     if (index === -1) return null;
 
     const previous = items[index];
+
+    // If not running in cloud mode, perform local cache update and write to localStorage
+    if (!this.companyId) {
+      const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
+      items[index] = updated;
+      this.cache[collection] = items;
+      this.emit(collection, items);
+      if (collection === 'jobs' && updates.status === 'Completed' && previous.status !== 'Completed') {
+        this.handleJobCompletionSideEffects(updated, previous);
+      }
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+      }
+      return updated;
+    }
 
     // Special Case: Updating a technician profile/password via UI
     if (collection === 'technicians') {
@@ -735,12 +777,18 @@ class DataStore {
   }
 
   delete(collection, id) {
-    if (!this.companyId) return;
-
     // 1. Update memory cache
     const items = (this.cache[collection] || []).filter(item => item.id !== id);
     this.cache[collection] = items;
     this.emit(collection, items);
+
+    // If not running in cloud mode, fall back to localStorage
+    if (!this.companyId) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+      }
+      return;
+    }
 
     // 2. Write to Supabase asynchronously
     const table = TABLE_MAP[collection];
@@ -879,25 +927,28 @@ class DataStore {
     return defaultSettings;
   }
 
-  async saveSettings(settings) {
-    if (!this.companyId) return;
-
+  saveSettings(settings) {
     this.companySettings = settings;
     this.emit('settings', settings);
 
+    if (!this.companyId) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('simpro_settings', JSON.stringify(settings));
+      }
+      return;
+    }
+
     // Save settings directly into the company JSONB column and keep top-level name in sync
-    const { error } = await supabase
+    supabase
       .from('companies')
       .update({ 
         settings,
         name: settings.name
       })
-      .eq('id', this.companyId);
-
-    if (error) {
-      console.error('Error saving company settings to Supabase:', error);
-      throw error;
-    }
+      .eq('id', this.companyId)
+      .then(({ error }) => {
+        if (error) console.error('Error saving company settings to Supabase:', error);
+      });
   }
 
   // ── In-Memory Event Emitter ────────────────────────────────────────────────
