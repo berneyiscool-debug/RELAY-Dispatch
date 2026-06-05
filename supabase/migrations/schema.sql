@@ -334,6 +334,19 @@ ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 -- RLS POLICIES (Isolated by company_id)
 -- ---------------------------------------------------------------------
 
+-- Helper function to fetch company_id securely bypassing RLS to avoid circular recursion
+CREATE OR REPLACE FUNCTION public.get_user_company_id(uid uuid)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+  RETURN (SELECT company_id FROM public.profiles WHERE id = uid);
+END;
+$$;
+
 -- Profiles policy: profiles can be viewed and modified by users in the same company
 CREATE POLICY profile_self_policy ON profiles
   FOR ALL
@@ -341,84 +354,84 @@ CREATE POLICY profile_self_policy ON profiles
 
 CREATE POLICY profile_tenant_policy ON profiles
   FOR ALL
-  USING (company_id = (SELECT company_id FROM public.profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 -- RLS policies for all other tables referencing company_id
 CREATE POLICY company_tenant_policy ON companies
   FOR ALL
-  USING (id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY user_types_tenant_policy ON user_types
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY customers_tenant_policy ON customers
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY assets_tenant_policy ON assets
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY maintenance_plans_tenant_policy ON maintenance_plans
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY task_templates_tenant_policy ON task_templates
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY quotes_tenant_policy ON quotes
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY jobs_tenant_policy ON jobs
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY invoices_tenant_policy ON invoices
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY stock_tenant_policy ON stock
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY timesheets_tenant_policy ON timesheets
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY contractors_tenant_policy ON contractors
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY suppliers_tenant_policy ON suppliers
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY purchase_orders_tenant_policy ON purchase_orders
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY notifications_tenant_policy ON notifications
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY form_templates_tenant_policy ON form_templates
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY form_instances_tenant_policy ON form_instances
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY kits_tenant_policy ON kits
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY documents_tenant_policy ON documents
   FOR ALL
-  USING (company_id = (SELECT company_id FROM profiles WHERE id = auth.uid()));
+  USING (company_id = public.get_user_company_id(auth.uid()));
 
 
 -- =====================================================================
