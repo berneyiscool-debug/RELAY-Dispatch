@@ -1766,30 +1766,252 @@ export function renderScheduleView(container) {
             syncJobWithSchedules(job.id);
             showToast(`Moved ${job.number} for ${tech?.name} to ${localDateStr}`, 'success');
           } else {
-            // New schedule booking for unscheduled or legacy blocks
-            store.create('schedule', {
-              jobId: job.id,
-              jobNumber: job.number,
-              technicianId: targetTechId,
-              technicianName: tech?.name || '',
-              date: localDateStr,
-              startTime: startTimeStr,
-              finishTime: finishTimeStr,
-              hours: duration,
-              taskId: dragState.taskId || null,
-              taskName: dragState.taskName || null
-            });
+            if (job.recurringConfig) {
+              const content = document.createElement('div');
+              content.style.padding = '12px 0';
+              content.innerHTML = `
+                <div style="margin-bottom:16px;font-size:14px;color:var(--text-secondary)">
+                  This job is configured as a recurring job. Would you like to create separate job instances and schedule <strong>all recurring occurrences</strong>, or <strong>only this single occurrence</strong>?
+                </div>
+                <div style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:16px">
+                  <div style="font-weight:600;margin-bottom:8px">Recurrence Details:</div>
+                  <div style="font-size:13px;color:var(--text-secondary)">
+                    Frequency: ${job.recurringConfig.freq}<br>
+                    Range: ${job.recurringConfig.start} to ${job.recurringConfig.end}
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  <label style="display:flex;align-items:flex-start;gap:10px;padding:12px;border:1.5px solid var(--border-color);border-radius:8px;cursor:pointer;background:var(--card-bg)">
+                    <input type="radio" name="sched-recurring-opt" value="all" checked style="margin-top:3px">
+                    <div>
+                      <strong style="display:block;font-size:14px">Create & Schedule All Occurrences</strong>
+                      <span style="font-size:12px;color:var(--text-tertiary)">Automatically duplicate this job and create schedule cards for all recurring dates matching the configuration between ${job.recurringConfig.start} and ${job.recurringConfig.end}.</span>
+                    </div>
+                  </label>
+                  <label style="display:flex;align-items:flex-start;gap:10px;padding:12px;border:1.5px solid var(--border-color);border-radius:8px;cursor:pointer;background:var(--card-bg)">
+                    <input type="radio" name="sched-recurring-opt" value="single" style="margin-top:3px">
+                    <div>
+                      <strong style="display:block;font-size:14px">Create & Schedule Only This Occurrence</strong>
+                      <span style="font-size:12px;color:var(--text-tertiary)">Duplicate this job for a single visit on ${localDateStr} at the dropped time.</span>
+                    </div>
+                  </label>
+                </div>
+              `;
 
-            // Update job's scheduled info
-            store.update('jobs', job.id, {
-              scheduledDate: localDateStr,
-              startHour: dropHour,
-              technicianId: targetTechId,
-              technicianName: tech?.name || '',
-              status: job.status === 'Pending' ? 'Scheduled' : job.status,
-            });
-            syncJobWithSchedules(job.id);
-            showToast(`Assigned ${job.number} to ${tech?.name}`, 'success');
+              showModal({
+                title: `Recurring Job: ${escapeHTML(job.title || job.number)}`,
+                content,
+                actions: [
+                  { label: 'Cancel', className: 'btn-secondary', onClick: closeModal => closeModal() },
+                  {
+                    label: 'Confirm & Schedule', className: 'btn-primary', onClick: closeModal => {
+                      const choice = content.querySelector('input[name="sched-recurring-opt"]:checked')?.value;
+                      if (choice === 'all') {
+                        const freq = job.recurringConfig.freq;
+                        const daysOfWeek = job.recurringConfig.daysOfWeek || [];
+                        const daysOfMonth = job.recurringConfig.daysOfMonth || [];
+                        const [sYear, sMonth, sDay] = job.recurringConfig.start.split('-').map(Number);
+                        let current = new Date(sYear, sMonth - 1, sDay);
+                        const [eYear, eMonth, eDay] = job.recurringConfig.end.split('-').map(Number);
+                        const end = new Date(eYear, eMonth - 1, eDay, 23, 59, 59);
+
+                        let count = 0;
+                        let iterations = 0;
+                        let matchDaysOfWeek = [...daysOfWeek];
+                        let matchDaysOfMonth = [...daysOfMonth];
+
+                        if (freq === 'Weekly' && matchDaysOfWeek.length === 0) {
+                          matchDaysOfWeek.push(current.getDay());
+                        }
+                        if (freq === 'Monthly' && matchDaysOfMonth.length === 0) {
+                          matchDaysOfMonth.push(current.getDate());
+                        }
+
+                        const timeStartPart = startTimeStr.split('T')[1] || '08:00';
+                        const timeFinishPart = finishTimeStr.split('T')[1] || '10:00';
+
+                        const matchedDates = [];
+                        while (current <= end && count < 50 && iterations < 1000) {
+                          iterations++;
+                          let isMatch = false;
+                          if (freq === 'Daily') {
+                            isMatch = true;
+                          } else if (freq === 'Weekly') {
+                            isMatch = matchDaysOfWeek.includes(current.getDay());
+                          } else if (freq === 'Monthly') {
+                            isMatch = matchDaysOfMonth.includes(current.getDate());
+                          }
+
+                          if (isMatch) {
+                            const yyyy = current.getFullYear();
+                            const mm = String(current.getMonth() + 1).padStart(2, '0');
+                            const dd = String(current.getDate()).padStart(2, '0');
+                            matchedDates.push(`${yyyy}-${mm}-${dd}`);
+                            count++;
+                          }
+                          current.setDate(current.getDate() + 1);
+                        }
+
+                        if (matchedDates.length === 0) {
+                          showToast('No matching recurring dates found.', 'error');
+                          return;
+                        }
+
+                        matchedDates.forEach(dateStr => {
+                          const clonedMaterials = job.materials ? JSON.parse(JSON.stringify(job.materials)) : [];
+                          const clonedTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [];
+                          clonedTasks.forEach(task => {
+                            task.id = store.generateId();
+                            task.status = 'Not Started';
+                            task.progress = 0;
+                            task.startDate = new Date().toISOString();
+                            task.technicians = [];
+                            if (task.subTasks) {
+                              task.subTasks.forEach(st => {
+                                st.id = store.generateId();
+                                st.status = 'Not Started';
+                                st.progress = 0;
+                                st.startDate = new Date().toISOString();
+                                st.technicians = [];
+                              });
+                            }
+                          });
+
+                          const duplicatedJob = store.create('jobs', {
+                            number: `J-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 10)}`,
+                            title: job.title,
+                            customerId: job.customerId || '',
+                            customerName: job.customerName || '',
+                            contactName: job.contactName || '',
+                            siteAddress: job.siteAddress || '',
+                            priority: job.priority || 'Normal',
+                            description: job.description || '',
+                            notes: `Generated from template job ${job.number}`,
+                            createdAt: new Date().toISOString(),
+                            scheduledDate: dateStr,
+                            status: 'Scheduled',
+                            materials: clonedMaterials,
+                            laborCost: job.laborCost || 0,
+                            materialCost: job.materialCost || 0,
+                            estimatedLaborCost: job.estimatedLaborCost || 0,
+                            estimatedMaterialCost: job.estimatedMaterialCost || 0,
+                            estimatedHours: duration,
+                            parentJobId: job.id,
+                            isRecurring: false,
+                            recurringConfig: null,
+                            tasks: clonedTasks
+                          });
+
+                          store.create('schedule', {
+                            jobId: duplicatedJob.id,
+                            jobNumber: duplicatedJob.number,
+                            technicianId: targetTechId,
+                            technicianName: tech?.name || '',
+                            date: dateStr,
+                            startTime: `${dateStr}T${timeStartPart}`,
+                            finishTime: `${dateStr}T${timeFinishPart}`,
+                            hours: duration,
+                            taskId: dragState.taskId || null,
+                            taskName: dragState.taskName || null
+                          });
+
+                          syncJobWithSchedules(duplicatedJob.id);
+                        });
+
+                        showToast(`Created and scheduled ${matchedDates.length} recurring occurrences for ${tech?.name}`, 'success');
+                      } else {
+                        const clonedMaterials = job.materials ? JSON.parse(JSON.stringify(job.materials)) : [];
+                        const clonedTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [];
+                        clonedTasks.forEach(task => {
+                          task.id = store.generateId();
+                          task.status = 'Not Started';
+                          task.progress = 0;
+                          task.startDate = new Date().toISOString();
+                          task.technicians = [];
+                          if (task.subTasks) {
+                            task.subTasks.forEach(st => {
+                              st.id = store.generateId();
+                              st.status = 'Not Started';
+                              st.progress = 0;
+                              st.startDate = new Date().toISOString();
+                              st.technicians = [];
+                            });
+                          }
+                        });
+
+                        const duplicatedJob = store.create('jobs', {
+                          number: `J-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 10)}`,
+                          title: job.title,
+                          customerId: job.customerId || '',
+                          customerName: job.customerName || '',
+                          contactName: job.contactName || '',
+                          siteAddress: job.siteAddress || '',
+                          priority: job.priority || 'Normal',
+                          description: job.description || '',
+                          notes: `Generated from template job ${job.number}`,
+                          createdAt: new Date().toISOString(),
+                          scheduledDate: localDateStr,
+                          status: 'Scheduled',
+                          materials: clonedMaterials,
+                          laborCost: job.laborCost || 0,
+                          materialCost: job.materialCost || 0,
+                          estimatedLaborCost: job.estimatedLaborCost || 0,
+                          estimatedMaterialCost: job.estimatedMaterialCost || 0,
+                          estimatedHours: duration,
+                          parentJobId: job.id,
+                          isRecurring: false,
+                          recurringConfig: null,
+                          tasks: clonedTasks
+                        });
+
+                        store.create('schedule', {
+                          jobId: duplicatedJob.id,
+                          jobNumber: duplicatedJob.number,
+                          technicianId: targetTechId,
+                          technicianName: tech?.name || '',
+                          date: localDateStr,
+                          startTime: startTimeStr,
+                          finishTime: finishTimeStr,
+                          hours: duration,
+                          taskId: dragState.taskId || null,
+                          taskName: dragState.taskName || null
+                        });
+
+                        syncJobWithSchedules(duplicatedJob.id);
+                        showToast(`Created and scheduled 1 occurrence for ${tech?.name}`, 'success');
+                      }
+                      closeModal();
+                      render();
+                    }
+                  }
+                ]
+              });
+            } else {
+              // New schedule booking for unscheduled or legacy blocks
+              store.create('schedule', {
+                jobId: job.id,
+                jobNumber: job.number,
+                technicianId: targetTechId,
+                technicianName: tech?.name || '',
+                date: localDateStr,
+                startTime: startTimeStr,
+                finishTime: finishTimeStr,
+                hours: duration,
+                taskId: dragState.taskId || null,
+                taskName: dragState.taskName || null
+              });
+
+              // Update job's scheduled info
+              store.update('jobs', job.id, {
+                scheduledDate: localDateStr,
+                startHour: dropHour,
+                technicianId: targetTechId,
+                technicianName: tech?.name || '',
+                status: job.status === 'Pending' ? 'Scheduled' : job.status,
+              });
+              syncJobWithSchedules(job.id);
+              showToast(`Assigned ${job.number} to ${tech?.name}`, 'success');
+            }
           }
         }
 

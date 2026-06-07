@@ -267,7 +267,14 @@ export function renderInvoicesList(container) {
 
   container.querySelector('#invoices-search').addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
-    filteredData = invoices.filter(i => i.number.toLowerCase().includes(q) || i.customerName.toLowerCase().includes(q) || (i.jobNumber||'').toLowerCase().includes(q));
+    filteredData = invoices.filter(i => {
+      const num = i.number || '';
+      const custName = i.customerName || '';
+      const jobNum = i.jobNumber || '';
+      return num.toLowerCase().includes(q) || 
+             custName.toLowerCase().includes(q) || 
+             jobNum.toLowerCase().includes(q);
+    });
     table.updateData(filteredData);
     updateExportButtonVisibility(filteredData);
   });

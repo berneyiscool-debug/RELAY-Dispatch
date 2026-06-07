@@ -278,29 +278,41 @@ function showSearchResults(query) {
 
   // Search customers
   store.getAll('customers').forEach(c => {
-    if (c.company.toLowerCase().includes(q) || `${c.firstName} ${c.lastName}`.toLowerCase().includes(q)) {
-      results.push({ type: 'Customer', label: c.company, icon: 'people', path: `/people/${c.id}` });
+    const company = c.company || '';
+    const firstName = c.firstName || '';
+    const lastName = c.lastName || '';
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (company.toLowerCase().includes(q) || fullName.toLowerCase().includes(q)) {
+      results.push({ type: 'Customer', label: company || fullName || 'Unnamed Customer', icon: 'people', path: `/people/${c.id}` });
     }
   });
 
   // Search jobs
   store.getAll('jobs').forEach(j => {
-    if (j.number.toLowerCase().includes(q) || j.title.toLowerCase().includes(q) || j.customerName.toLowerCase().includes(q)) {
-      results.push({ type: 'Job', label: `${j.number} — ${j.title}`, icon: 'build', path: `/jobs/${j.id}` });
+    const num = j.number || '';
+    const title = j.title || '';
+    const custName = j.customerName || '';
+    if (num.toLowerCase().includes(q) || title.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
+      results.push({ type: 'Job', label: `${num} — ${title}`, icon: 'build', path: `/jobs/${j.id}` });
     }
   });
 
   // Search quotes
   store.getAll('quotes').forEach(qt => {
-    if (qt.number.toLowerCase().includes(q) || qt.title?.toLowerCase().includes(q) || qt.customerName.toLowerCase().includes(q)) {
-      results.push({ type: 'Quote', label: `${qt.number} — ${qt.customerName}`, icon: 'request_quote', path: `/quotes/${qt.id}` });
+    const num = qt.number || '';
+    const title = qt.title || '';
+    const custName = qt.customerName || '';
+    if (num.toLowerCase().includes(q) || title.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
+      results.push({ type: 'Quote', label: `${num} — ${custName || 'Unnamed Customer'}`, icon: 'request_quote', path: `/quotes/${qt.id}` });
     }
   });
 
   // Search invoices
   store.getAll('invoices').forEach(inv => {
-    if (inv.number.toLowerCase().includes(q) || inv.customerName.toLowerCase().includes(q)) {
-      results.push({ type: 'Invoice', label: `${inv.number} — ${inv.customerName}`, icon: 'receipt_long', path: `/invoices/${inv.id}` });
+    const num = inv.number || '';
+    const custName = inv.customerName || '';
+    if (num.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
+      results.push({ type: 'Invoice', label: `${num} — ${custName || 'Unnamed Customer'}`, icon: 'receipt_long', path: `/invoices/${inv.id}` });
     }
   });
 

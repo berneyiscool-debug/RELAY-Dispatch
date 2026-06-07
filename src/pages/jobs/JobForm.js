@@ -159,7 +159,7 @@ export function renderJobForm(container, { id }) {
               <label class="form-label">Customer *</label>
               <select class="form-select" id="jf-customer" name="customerId" required>
                 <option value="">Select customer...</option>
-                ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company)}</option>`).join('')}
+                ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -408,11 +408,12 @@ export function renderJobForm(container, { id }) {
     if (isEmg) {
       prioritySelect.value = 'Urgent';
       suggestionBox.style.display = 'block';
-      const techs = store.getAll('people').filter(p => p.type === 'Staff');
+      const techs = store.getAll('technicians');
       if (techs.length > 0) {
         const t = techs[Math.floor(Math.random() * techs.length)];
         const mins = Math.floor(Math.random() * 15) + 5;
-        dispatchReason.innerHTML = `Based on current GPS location, <strong>${t.firstName} ${t.lastName}</strong> is the most suitable technician (approx. ${mins} mins away).`;
+        const techName = t.name || `${t.firstName || ''} ${t.lastName || ''}`.trim();
+        dispatchReason.innerHTML = `Based on current GPS location, <strong>${techName}</strong> is the most suitable technician (approx. ${mins} mins away).`;
       } else {
         dispatchReason.innerHTML = 'No internal technicians available for dispatch.';
       }
@@ -1130,7 +1131,7 @@ export function renderJobForm(container, { id }) {
 
     const custId = data.customerId;
     const cust = customers.find(c => c.id === custId);
-    data.customerName = cust?.company || '';
+    data.customerName = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : '';
 
     const selSiteOpt = siteSelect.selectedOptions[0];
     data.siteAddress = selSiteOpt?.dataset.address || '';

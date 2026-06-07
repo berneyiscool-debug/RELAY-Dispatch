@@ -15,10 +15,12 @@ import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
+  const newInvoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
   let invoice = isNew ? {
     id: store.generateId(),
-    number: `INV-${Date.now().toString().slice(-6)}`,
-    status: 'Draft', 
+    number: newInvoiceNumber,
+    title: `Invoice ${newInvoiceNumber}`, // satisfies NOT NULL invoices.title in Supabase
+    status: 'Draft',
     sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
     subtotal: 0, tax: 0, total: 0,
     issueDate: new Date().toISOString(), 
@@ -124,7 +126,7 @@ export function renderInvoiceDetail(container, { id }) {
               <label class="form-label">Customer *</label>
               <select class="form-select" id="inv-customer">
                 <option value="">Select customer...</option>
-                ${customers.map(c => `<option value="${c.id}" ${invoice.customerId === c.id ? 'selected' : ''}>${c.company}</option>`).join('')}
+                ${customers.map(c => `<option value="${c.id}" ${invoice.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -368,7 +370,7 @@ export function renderInvoiceDetail(container, { id }) {
       invoice.subtotal = Math.abs(calculatedSubtotal);
     }
 
-    invoice.tax = invoice.subtotal * 0.1;
+    invoice.tax = invoice.subtotal * store.getTaxRate();
     invoice.total = invoice.subtotal + invoice.tax;
     
     invoice.approvedVariationsSum = approvedVariationsSum;
@@ -603,7 +605,7 @@ export function renderInvoiceDetail(container, { id }) {
       }
       const cust = customers.find(c => c.id === custId);
       invoice.customerId = custId;
-      invoice.customerName = cust?.company || '';
+      invoice.customerName = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : '';
       invoice.status = container.querySelector('#inv-status').value;
       invoice.issueDate = container.querySelector('#inv-issue').value;
       invoice.dueDate = container.querySelector('#inv-due').value;
@@ -631,7 +633,7 @@ export function renderInvoiceDetail(container, { id }) {
       
       let calcSubtotal = originalSectionsSum + approvedVariationsSum;
       invoice.subtotal = invoice.invoiceType === 'CreditNote' ? -Math.abs(calcSubtotal) : Math.abs(calcSubtotal);
-      invoice.tax = invoice.subtotal * 0.1;
+      invoice.tax = invoice.subtotal * store.getTaxRate();
       invoice.total = invoice.subtotal + invoice.tax;
       
       invoice.approvedVariationsSum = approvedVariationsSum;

@@ -14,7 +14,8 @@ export const THEMES = {
   'obsidian-gold': { name: 'Obsidian & Gold', mode: 'dark' },
   'sweet-lavender': { name: 'Sweet Lavender', mode: 'light' },
   'retro-arcade': { name: 'Retro Arcade', mode: 'dark' },
-  'coffee-cream': { name: 'Coffee & Cream', mode: 'light' }
+  'coffee-cream': { name: 'Coffee & Cream', mode: 'light' },
+  'ballet-pointe': { name: 'Ballet Pointe', mode: 'light' }
 };
 
 export function applyTheme(theme) {
@@ -171,6 +172,27 @@ function applyBackgroundEffects(theme) {
       const x1 = Math.random() * 40 - 20;
       const x2 = Math.random() * 80 - 40;
       html += `<div class="steam-line" style="left: ${left}%; width: ${width}px; height: ${height}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --steam-x-1: ${x1}px; --steam-x-2: ${x2}px;"></div>`;
+    }
+    bgEffects.innerHTML = html;
+  } else if (theme === 'ballet-pointe') {
+    let html = '';
+    // Elegant drifting rose petals
+    for (let i = 0; i < 8; i++) {
+      const left = Math.random() * 100;
+      const size = Math.random() * 8 + 8; // 8px to 16px
+      const duration = Math.random() * 20 + 15; // 15s to 35s (slow and elegant)
+      const delay = Math.random() * -30;
+      html += `<div class="ballet-rose-petal" style="left: ${left}%; width: ${size}px; height: ${size * 0.9}px; animation-duration: ${duration}s; animation-delay: ${delay}s;"></div>`;
+    }
+    // Twinkling gold/champagne sparkles
+    for (let i = 0; i < 10; i++) {
+      const left = Math.random() * 100;
+      const size = Math.random() * 4 + 2; // 2px to 6px
+      const duration = Math.random() * 12 + 8; // 8s to 20s
+      const delay = Math.random() * -20;
+      const xDrift = Math.random() * 60 - 30;
+      const opacity = Math.random() * 0.4 + 0.4;
+      html += `<div class="ballet-sparkle" style="left: ${left}%; width: ${size}px; height: ${size}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --sparkle-opacity: ${opacity}; --sparkle-x: ${xDrift}px;"></div>`;
     }
     bgEffects.innerHTML = html;
   }

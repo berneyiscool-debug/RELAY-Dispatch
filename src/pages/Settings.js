@@ -760,10 +760,13 @@ export function renderSettings(container) {
           <div class="card">
             <div class="card-header"><h4>Tax & Global Markup</h4></div>
             <div class="card-body">
-              <div class="form-group">
-                <label class="form-label">Default Tax Rate (GST)</label>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <input class="form-input" type="number" value="10" style="width:100px" disabled /> <span class="text-secondary">%</span>
+              <div class="form-group" style="display:flex; flex-direction:column; gap:8px">
+                <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0">
+                  <input type="checkbox" id="tax-enabled" style="width:16px; height:16px; margin:0" ${settings.taxEnabled !== false ? 'checked' : ''} />
+                  Enable GST / Sales Tax
+                </label>
+                <div style="display:${settings.taxEnabled !== false ? 'flex' : 'none'}; align-items:center; gap:8px; margin-top:4px" id="tax-rate-container">
+                  <input class="form-input" id="tax-rate" type="number" value="${settings.taxRate !== undefined ? settings.taxRate : 10}" style="width:100px" min="0" max="100" step="0.1" /> <span class="text-secondary">%</span>
                 </div>
               </div>
               <div class="form-group">
@@ -896,6 +899,14 @@ export function renderSettings(container) {
 
       // Set up interactive timeline drag-selection
       setupTimelineDragSelection(tc);
+
+      // Toggle tax rate container visibility
+      tc.querySelector('#tax-enabled')?.addEventListener('change', (e) => {
+        const container = tc.querySelector('#tax-rate-container');
+        if (container) {
+          container.style.display = e.target.checked ? 'flex' : 'none';
+        }
+      });
 
       // ---- Day pill toggle ----
       tc.addEventListener('click', (e) => {
@@ -1052,10 +1063,14 @@ export function renderSettings(container) {
         btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
 
         try {
+          const taxEnabled = tc.querySelector('#tax-enabled').checked;
+          const taxRate = parseFloat(tc.querySelector('#tax-rate').value) || 0;
           const markupPercent = parseFloat(tc.querySelector('#global-markup').value) || 0;
           const laborRounding = parseInt(tc.querySelector('#labor-rounding').value) || 15;
           const laborRates = _collectRates(tc);
           const settings = store.getSettings();
+          settings.taxEnabled = taxEnabled;
+          settings.taxRate = taxRate;
           settings.markupPercent = markupPercent;
           settings.laborRounding = laborRounding;
           settings.laborRates = laborRates;
@@ -2654,7 +2669,8 @@ export function renderSettings(container) {
       terracotta: { name: 'Sunset Terracotta', preset: 'terracotta', accentColor: '#C2410C', headerBg: '#451A03', accentTint: '#FFF7ED', fontFamily: 'sans-serif' },
       nordic: { name: 'Nordic Frost', preset: 'nordic', accentColor: '#0891B2', headerBg: '#0F172A', accentTint: '#F0FDFA', fontFamily: 'sans-serif' },
       luxury: { name: 'Royal Velvet', preset: 'luxury', accentColor: '#D97706', headerBg: '#311005', accentTint: '#FEF3C7', fontFamily: 'serif' },
-      steel: { name: 'Steel Industrial', preset: 'steel', accentColor: '#475569', headerBg: '#1E293B', accentTint: '#F1F5F9', fontFamily: 'monospace' }
+      steel: { name: 'Steel Industrial', preset: 'steel', accentColor: '#475569', headerBg: '#1E293B', accentTint: '#F1F5F9', fontFamily: 'monospace' },
+      ballet: { name: 'Ballet Pointe', preset: 'ballet', accentColor: '#e58799', headerBg: '#5c2c36', accentTint: '#fff5f6', fontFamily: 'serif' }
     };
 
     function renderMarkup() {

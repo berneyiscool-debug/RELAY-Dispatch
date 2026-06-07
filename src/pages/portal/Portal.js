@@ -690,10 +690,10 @@ export function renderCustomerPortal(container, params) {
         if (items.length > 0) {
           sub = items.reduce((s2, item) => s2 + (parseFloat(item.amount || item.total) || 0), 0);
         } else {
-          sub = inv.total ? (inv.total / 1.1) : 0;
+          sub = inv.total ? (inv.total / (1 + store.getTaxRate())) : 0;
         }
       }
-      const tax = inv.tax !== undefined && inv.tax !== null ? parseFloat(inv.tax) : (sub * 0.10);
+      const tax = inv.tax !== undefined && inv.tax !== null ? parseFloat(inv.tax) : (sub * store.getTaxRate());
       const tot = inv.total !== undefined && inv.total !== null ? parseFloat(inv.total) : (sub + tax);
       return sum + tot;
     }, 0);
@@ -1171,7 +1171,7 @@ export function renderCustomerPortal(container, params) {
             subtotal = quote.total || 0;
           }
           
-          totalGST = subtotal * 0.10;
+          totalGST = subtotal * store.getTaxRate();
           totalIncGST = subtotal + totalGST;
 
           const statusColors = {
@@ -1306,10 +1306,10 @@ export function renderCustomerPortal(container, params) {
         if (items.length > 0) {
           sub = items.reduce((s2, item) => s2 + (parseFloat(item.amount || item.total) || 0), 0);
         } else {
-          sub = inv.total ? (inv.total / 1.1) : 0;
+          sub = inv.total ? (inv.total / (1 + store.getTaxRate())) : 0;
         }
       }
-      const tax = inv.tax !== undefined && inv.tax !== null ? parseFloat(inv.tax) : (sub * 0.10);
+      const tax = inv.tax !== undefined && inv.tax !== null ? parseFloat(inv.tax) : (sub * store.getTaxRate());
       const tot = inv.total !== undefined && inv.total !== null ? parseFloat(inv.total) : (sub + tax);
       return sum + tot;
     }, 0);
@@ -1372,11 +1372,11 @@ export function renderCustomerPortal(container, params) {
             if (flatItems.length > 0) {
               subtotal = flatItems.reduce((sum, item) => sum + (parseFloat(item.amount || item.total) || 0), 0);
             } else {
-              subtotal = invoice.total ? (invoice.total / 1.1) : 0;
+              subtotal = invoice.total ? (invoice.total / (1 + store.getTaxRate())) : 0;
             }
           }
           
-          const totalGST = invoice.tax !== undefined && invoice.tax !== null ? parseFloat(invoice.tax) : (subtotal * 0.10);
+          const totalGST = invoice.tax !== undefined && invoice.tax !== null ? parseFloat(invoice.tax) : (subtotal * store.getTaxRate());
           const totalIncGST = invoice.total !== undefined && invoice.total !== null ? parseFloat(invoice.total) : (subtotal + totalGST);
 
           return `

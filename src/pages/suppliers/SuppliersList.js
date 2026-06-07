@@ -152,12 +152,16 @@ export function renderSuppliersList(container) {
 
     // Apply search term
     if (searchTerm) {
-      result = result.filter(s => 
-        s.name.toLowerCase().includes(searchTerm) || 
-        (s.contactName || '').toLowerCase().includes(searchTerm) || 
-        (s.category || '').toLowerCase().includes(searchTerm) ||
-        (s.email || '').toLowerCase().includes(searchTerm)
-      );
+      result = result.filter(s => {
+        const name = s.name || '';
+        const cName = s.contactName || '';
+        const cat = s.category || '';
+        const email = s.email || '';
+        return name.toLowerCase().includes(searchTerm) || 
+               cName.toLowerCase().includes(searchTerm) || 
+               cat.toLowerCase().includes(searchTerm) ||
+               email.toLowerCase().includes(searchTerm);
+      });
     }
 
     filteredData = result;

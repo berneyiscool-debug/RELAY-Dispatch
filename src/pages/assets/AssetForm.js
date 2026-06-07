@@ -1,5 +1,6 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderAssetForm(container, params) {
   const isNew = params.id === 'new';
@@ -18,7 +19,7 @@ export function renderAssetForm(container, params) {
     return;
   }
 
-  const staff = store.getAll('people').filter(p => p.type === 'Staff');
+  const staff = store.getAll('technicians');
   const customers = store.getAll('customers');
 
   // Find sites for selected customer, if any
@@ -62,7 +63,7 @@ export function renderAssetForm(container, params) {
               <label class="form-label">Customer *</label>
               <select id="customerId" class="form-select">
                 <option value="">Select customer...</option>
-                ${customers.map(c => `<option value="${c.id}" ${asset.customerId === c.id ? 'selected' : ''}>${c.company || c.firstName + ' ' + c.lastName}</option>`).join('')}
+                ${customers.map(c => `<option value="${c.id}" ${asset.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -93,7 +94,7 @@ export function renderAssetForm(container, params) {
                <label class="form-label">Assign to Default Staff</label>
                <select id="assignedToId" class="form-select">
                  <option value="">Unassigned</option>
-                 ${staff.map(s => `<option value="${s.id}" ${asset.assignedToId === s.id ? 'selected' : ''}>${s.firstName} ${s.lastName}</option>`).join('')}
+                 ${staff.map(s => `<option value="${s.id}" ${asset.assignedToId === s.id ? 'selected' : ''}>${s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim()}</option>`).join('')}
                </select>
             </div>
           </div>
@@ -182,6 +183,10 @@ export function renderAssetForm(container, params) {
   });
 
   container.querySelector('#btn-save').addEventListener('click', () => {
+    const isCustomerAsset = container.querySelector('#ownerType').value === 'Customer';
+    const assetCustId = isCustomerAsset ? container.querySelector('#customerId').value : null;
+    const assetCust = assetCustId ? customers.find(c => c.id === assetCustId) : null;
+
     const data = {
       name: container.querySelector('#name').value,
       description: container.querySelector('#description').value,
@@ -191,7 +196,8 @@ export function renderAssetForm(container, params) {
       status: container.querySelector('#status').value,
       assignedToId: container.querySelector('#assignedToId').value,
       ownerType: container.querySelector('#ownerType').value,
-      customerId: container.querySelector('#ownerType').value === 'Customer' ? container.querySelector('#customerId').value : null,
+      customerId: assetCustId,
+      customerName: assetCust ? (assetCust.company || `${assetCust.firstName || ''} ${assetCust.lastName || ''}`.trim()) : null,
       site: container.querySelector('#site').value,
       installDate: container.querySelector('#installDate').value,
       recoveryRate: parseFloat(container.querySelector('#recoveryRate')?.value || 0),

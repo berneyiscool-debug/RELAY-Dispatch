@@ -356,7 +356,7 @@ export function renderDashboard(container) {
     quotes:   store.getAll('quotes'),
     invoices: store.getAll('invoices'),
     leads:    store.getAll('leads'),
-    people:   store.getAll('people'),
+    people:   store.getAll('technicians'),
   };
 
   container.innerHTML = `
@@ -1522,11 +1522,15 @@ function wireWidgetControls(grid, data) {
 
         function updateJobList(filter = '') {
           const cont = content.querySelector('#job-list-container');
-          const filtered = jobs.filter(j =>
-            j.number.toLowerCase().includes(filter.toLowerCase()) ||
-            j.title.toLowerCase().includes(filter.toLowerCase()) ||
-            j.customerName.toLowerCase().includes(filter.toLowerCase())
-          );
+          const filtered = jobs.filter(j => {
+            const num = j.number || '';
+            const title = j.title || '';
+            const custName = j.customerName || '';
+            const f = filter.toLowerCase();
+            return num.toLowerCase().includes(f) ||
+                   title.toLowerCase().includes(f) ||
+                   custName.toLowerCase().includes(f);
+          });
 
           cont.innerHTML = filtered.length > 0 ? filtered.map(j => `
             <div class="job-option" data-job-id="${j.id}" style="padding:10px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.15s;"
@@ -1612,7 +1616,7 @@ function wireWidgetControls(grid, data) {
       const labHours = (job.estimatedHours || 0);
       const billableLab = Math.max(labHours * (profile?.rate || 85), profile?.minCallOutFee || 0);
       const subtotal = matCost + billableLab;
-      const tax = subtotal * 0.1;
+      const tax = subtotal * store.getTaxRate();
 
       const inv = store.create('invoices', {
         jobNumber: job.number,

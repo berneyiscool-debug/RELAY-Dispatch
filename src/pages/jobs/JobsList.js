@@ -180,8 +180,8 @@ export function renderJobsList(container, params) {
                             sections: sections,
                             originalSubtotal: subtotal,
                             subtotal: subtotal,
-                            tax: subtotal * 0.1,
-                            total: subtotal * 1.1,
+                            tax: subtotal * store.getTaxRate(),
+                            total: subtotal * (1 + store.getTaxRate()),
                             issueDate: new Date().toISOString(),
                             dueDate: new Date(Date.now() + 30 * 86400000).toISOString()
                           });
@@ -273,13 +273,17 @@ export function renderJobsList(container, params) {
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
-    const filtered = tagFilteredData.filter(j => 
-      !q || 
-      j.number.toLowerCase().includes(q) || 
-      j.title.toLowerCase().includes(q) || 
-      j.customerName.toLowerCase().includes(q) || 
-      (j.technicianName || '').toLowerCase().includes(q)
-    );
+    const filtered = tagFilteredData.filter(j => {
+      if (!q) return true;
+      const num = j.number || '';
+      const title = j.title || '';
+      const custName = j.customerName || '';
+      const techName = j.technicianName || '';
+      return num.toLowerCase().includes(q) || 
+             title.toLowerCase().includes(q) || 
+             custName.toLowerCase().includes(q) || 
+             techName.toLowerCase().includes(q);
+    });
     table.updateData(filtered);
   }
 

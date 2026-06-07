@@ -25,7 +25,9 @@ const TABLE_MAP = {
   formTemplates: 'form_templates',
   formInstances: 'form_instances',
   kits: 'kits',
-  documents: 'documents'
+  documents: 'documents',
+  leads: 'leads',
+  schedule: 'schedule'
 };
 
 const TABLE_COLUMNS = {
@@ -219,6 +221,15 @@ const TABLE_COLUMNS = {
     "email",
     "phone",
     "status",
+    "contact_name",
+    "license_number",
+    "hourly_rate",
+    "after_hours_rate",
+    "callout_fee",
+    "specialties",
+    "notes",
+    "portal_token",
+    "compliance_docs",
     "created_at",
     "updated_at"
   ],
@@ -229,6 +240,46 @@ const TABLE_COLUMNS = {
     "email",
     "phone",
     "status",
+    "contact_name",
+    "address",
+    "category",
+    "account_number",
+    "payment_terms",
+    "notes",
+    "attachments",
+    "created_at",
+    "updated_at"
+  ],
+  leads: [
+    "id",
+    "company_id",
+    "number",
+    "title",
+    "customer_id",
+    "customer_name",
+    "contact_name",
+    "status",
+    "source",
+    "value",
+    "description",
+    "priority",
+    "created_at",
+    "updated_at"
+  ],
+  schedule: [
+    "id",
+    "company_id",
+    "job_id",
+    "job_number",
+    "title",
+    "technician_id",
+    "technician_name",
+    "color",
+    "day_offset",
+    "start_hour",
+    "end_hour",
+    "customer_name",
+    "site_address",
     "created_at",
     "updated_at"
   ],
@@ -418,8 +469,10 @@ class DataStore {
   subscribeRealtime() {
     this.clearSubscriptions();
 
+    // Unique channel name per subscribe — reusing a fixed name throws
+    // "cannot add postgres_changes callbacks ... after subscribe()" when sync re-inits.
     const channel = supabase
-      .channel('table-db-changes')
+      .channel(`table-db-changes-${this.companyId || 'anon'}-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
         const table = payload.table;
         const col = Object.keys(TABLE_MAP).find(key => TABLE_MAP[key] === table);
@@ -661,6 +714,18 @@ class DataStore {
       record.updatedAt = record.updated_at;
       delete record.updated_at;
     }
+    // Contractor / supplier rich fields + lead / schedule fields
+    if (record.license_number !== undefined) { record.licenseNumber = record.license_number; delete record.license_number; }
+    if (record.hourly_rate !== undefined) { record.hourlyRate = parseFloat(record.hourly_rate); delete record.hourly_rate; }
+    if (record.after_hours_rate !== undefined) { record.afterHoursRate = parseFloat(record.after_hours_rate); delete record.after_hours_rate; }
+    if (record.callout_fee !== undefined) { record.calloutFee = parseFloat(record.callout_fee); delete record.callout_fee; }
+    if (record.compliance_docs !== undefined) { record.complianceDocs = record.compliance_docs; delete record.compliance_docs; }
+    if (record.account_number !== undefined) { record.accountNumber = record.account_number; delete record.account_number; }
+    if (record.payment_terms !== undefined) { record.paymentTerms = record.payment_terms; delete record.payment_terms; }
+    if (record.job_number !== undefined) { record.jobNumber = record.job_number; delete record.job_number; }
+    if (record.day_offset !== undefined) { record.dayOffset = parseInt(record.day_offset); delete record.day_offset; }
+    if (record.start_hour !== undefined) { record.startHour = parseFloat(record.start_hour); delete record.start_hour; }
+    if (record.end_hour !== undefined) { record.endHour = parseFloat(record.end_hour); delete record.end_hour; }
 
     return record;
   }
@@ -851,6 +916,18 @@ class DataStore {
       record.updated_at = record.updatedAt;
       delete record.updatedAt;
     }
+    // Contractor / supplier rich fields + lead / schedule fields
+    if (record.licenseNumber !== undefined) { record.license_number = record.licenseNumber; delete record.licenseNumber; }
+    if (record.hourlyRate !== undefined) { record.hourly_rate = record.hourlyRate; delete record.hourlyRate; }
+    if (record.afterHoursRate !== undefined) { record.after_hours_rate = record.afterHoursRate; delete record.afterHoursRate; }
+    if (record.calloutFee !== undefined) { record.callout_fee = record.calloutFee; delete record.calloutFee; }
+    if (record.complianceDocs !== undefined) { record.compliance_docs = record.complianceDocs; delete record.complianceDocs; }
+    if (record.accountNumber !== undefined) { record.account_number = record.accountNumber; delete record.accountNumber; }
+    if (record.paymentTerms !== undefined) { record.payment_terms = record.paymentTerms; delete record.paymentTerms; }
+    if (record.jobNumber !== undefined) { record.job_number = record.jobNumber; delete record.jobNumber; }
+    if (record.dayOffset !== undefined) { record.day_offset = record.dayOffset; delete record.dayOffset; }
+    if (record.startHour !== undefined) { record.start_hour = record.startHour; delete record.startHour; }
+    if (record.endHour !== undefined) { record.end_hour = record.endHour; delete record.endHour; }
 
     // Filter out columns not in schema to prevent 400 Bad Request
     const table = TABLE_MAP[collection];
@@ -878,6 +955,20 @@ class DataStore {
   getById(collection, id) {
     const items = this.getAll(collection);
     return items.find(item => item.id === id) || null;
+  }
+
+  // Surface a failed background write to the user instead of failing silently.
+  // (A silent insert/update failure leaves the optimistic cache entry in place, so the
+  // record looks saved until the next reload — the classic "it didn't save" symptom.)
+  _notifyWriteError(action, collection, error) {
+    console.error(`Error trying to ${action} ${collection}:`, error?.message || error, error);
+    try {
+      import('../components/Notifications.js')
+        .then(({ showToast }) => showToast(
+          `Couldn't ${action} ${collection.replace(/s$/, '')} — ${error?.message || 'database error'}`,
+          'error'))
+        .catch(() => {});
+    } catch (e) {}
   }
 
   // Pushes write changes asynchronously to Supabase while updating local cache synchronously
@@ -970,7 +1061,12 @@ class DataStore {
     const table = TABLE_MAP[collection];
     if (table) {
       supabase.from(table).insert([dbPayload]).then(({ error }) => {
-        if (error) console.error(`Error saving new record to ${table}:`, error);
+        if (error) {
+          // Roll back the optimistic add so the UI matches the database
+          this.cache[collection] = (this.cache[collection] || []).filter(x => x.id !== item.id);
+          this.emit(collection, this.cache[collection]);
+          this._notifyWriteError('save', collection, error);
+        }
       });
     }
 
@@ -1076,7 +1172,13 @@ class DataStore {
         .update(dbPayload)
         .eq('id', id)
         .then(({ error }) => {
-          if (error) console.error(`Error updating record in ${table}:`, error);
+          if (error) {
+            // Roll back to the previous version so the UI matches the database
+            const arr = [...(this.cache[collection] || [])];
+            const i = arr.findIndex(x => x.id === id);
+            if (i !== -1) { arr[i] = previous; this.cache[collection] = arr; this.emit(collection, arr); }
+            this._notifyWriteError('update', collection, error);
+          }
         });
     }
 
@@ -1084,7 +1186,8 @@ class DataStore {
   }
 
   delete(collection, id) {
-    // 1. Update memory cache
+    // 1. Update memory cache (keep a copy of the removed row for rollback)
+    const removed = (this.cache[collection] || []).find(item => item.id === id);
     const items = (this.cache[collection] || []).filter(item => item.id !== id);
     this.cache[collection] = items;
     this.emit(collection, items);
@@ -1105,7 +1208,11 @@ class DataStore {
         .delete()
         .eq('id', id)
         .then(({ error }) => {
-          if (error) console.error(`Error deleting record from ${table}:`, error);
+          if (error) {
+            // Restore the row we optimistically removed
+            if (removed) { this.cache[collection] = [...(this.cache[collection] || []), removed]; this.emit(collection, this.cache[collection]); }
+            this._notifyWriteError('delete', collection, error);
+          }
         });
     }
   }
@@ -1179,6 +1286,8 @@ class DataStore {
       logo: RELAY_LOGO_SVG,
       logoSmall: RELAY_LOGO_SMALL_SVG,
       markupPercent: 20,
+      taxEnabled: true,
+      taxRate: 10,
       materialMarkup: {
         defaultPercent: 30,
         minMarkupAmount: 5.00,
@@ -1232,6 +1341,13 @@ class DataStore {
       return merged;
     }
     return defaultSettings;
+  }
+
+  getTaxRate() {
+    const settings = this.getSettings();
+    if (settings.taxEnabled === false) return 0;
+    const rate = settings.taxRate !== undefined ? Number(settings.taxRate) : 10;
+    return rate / 100;
   }
 
   saveSettings(settings) {

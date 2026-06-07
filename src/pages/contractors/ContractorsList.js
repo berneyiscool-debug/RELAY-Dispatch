@@ -143,12 +143,16 @@ export function renderContractorsList(container) {
 
     // Apply search term
     if (searchTerm) {
-      result = result.filter(c => 
-        c.businessName.toLowerCase().includes(searchTerm) || 
-        c.contactName.toLowerCase().includes(searchTerm) || 
-        (c.email || '').toLowerCase().includes(searchTerm) ||
-        (c.specialties || []).some(s => s.toLowerCase().includes(searchTerm))
-      );
+      result = result.filter(c => {
+        const bName = c.businessName || '';
+        const cName = c.contactName || '';
+        const email = c.email || '';
+        const specs = c.specialties || [];
+        return bName.toLowerCase().includes(searchTerm) || 
+               cName.toLowerCase().includes(searchTerm) || 
+               email.toLowerCase().includes(searchTerm) ||
+               specs.some(s => (s || '').toLowerCase().includes(searchTerm));
+      });
     }
 
     filteredData = result;

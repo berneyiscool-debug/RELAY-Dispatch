@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+
 /* ============================================
    SIMPRO CLONE — COMPONENT STYLES
    ============================================ */
@@ -2284,6 +2286,58 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   --content-bg: #faf6f0;
 }
 
+/* 11. Ballet Pointe (Elegant light theme with warm cream/tulle, gold/champagne accents, and rose-pink highlights) */
+[data-theme="ballet-pointe"] {
+  --color-primary: #e58799;
+  --color-primary-hover: #d27082;
+  --color-primary-light: rgba(229, 135, 153, 0.1);
+  --color-primary-gradient-end: #c46b7d;
+  --color-primary-hover-gradient-start: #f2a2b2;
+  --color-primary-hover-gradient-end: #d27082;
+  --color-primary-shadow: rgba(229, 135, 153, 0.25);
+  --color-primary-shadow-hover: rgba(229, 135, 153, 0.4);
+  --color-primary-border: rgba(229, 135, 153, 0.25);
+  --color-primary-border-hover: rgba(229, 135, 153, 0.45);
+
+  --body-bg: linear-gradient(135deg, #fff5f6 0%, #ffe8ea 50%, #fce2e5 100%) no-repeat fixed;
+  --card-bg: rgba(255, 255, 255, 0.65);
+  --card-border: rgba(255, 255, 255, 0.45);
+  --card-shadow: 0 8px 32px rgba(229, 135, 153, 0.04);
+  --card-shadow-hover: 0 12px 40px rgba(229, 135, 153, 0.1), 0 0 0 1px rgba(229, 135, 153, 0.25);
+
+  --text-primary: #5c2c36;
+  --text-secondary: #7e424d;
+  --text-tertiary: #c46b7d;
+  --border-color: rgba(92, 44, 54, 0.05);
+  --border-color-dark: rgba(92, 44, 54, 0.12);
+
+  --sidebar-bg: rgba(255, 255, 255, 0.65);
+  --sidebar-bg-dark: rgba(255, 255, 255, 0.85);
+  --sidebar-text: #7e424d;
+  --sidebar-active-bg: rgba(229, 135, 153, 0.1);
+  --sidebar-active-text: #5c2c36;
+
+  --topbar-bg: rgba(255, 255, 255, 0.7);
+  --topbar-border: rgba(255, 255, 255, 0.45);
+  --topbar-shadow: 0 4px 15px rgba(92, 44, 54, 0.02);
+
+  --bg-color: #fff5f6;
+  --content-bg: #fff5f6;
+  
+  --font-family: 'Lora', 'Georgia', serif;
+}
+
+[data-theme="ballet-pointe"] h1,
+[data-theme="ballet-pointe"] h2,
+[data-theme="ballet-pointe"] h3,
+[data-theme="ballet-pointe"] h4,
+[data-theme="ballet-pointe"] h5,
+[data-theme="ballet-pointe"] h6,
+[data-theme="ballet-pointe"] .heading-font {
+  font-family: 'Playfair Display', 'Georgia', serif;
+  font-weight: 700;
+}
+
 
 /* ============================================================
    THEME ANIMATED BACKGROUND CANVAS
@@ -2709,6 +2763,65 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   }
   100% {
     transform: translateY(-105vh) translateX(var(--steam-x-2, -20px)) scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* 15. Ballet Pointe Floating Petals & Sparkles */
+.ballet-rose-petal {
+  position: absolute;
+  top: -20px;
+  background: linear-gradient(135deg, #ffd3db 0%, #e58799 100%);
+  border-radius: 12px 2px 12px 12px;
+  opacity: 0.7;
+  pointer-events: none;
+  animation: balletPetalFloat linear infinite;
+  box-shadow: 0 2px 6px rgba(229, 135, 153, 0.15);
+}
+
+@keyframes balletPetalFloat {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) rotateY(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(105vh) translateX(100px) rotate(450deg) rotateY(180deg);
+    opacity: 0;
+  }
+}
+
+.ballet-sparkle {
+  position: absolute;
+  top: -10px;
+  background: radial-gradient(circle, #fff5e6 0%, #e6c587 40%, rgba(230, 197, 135, 0) 80%);
+  border-radius: 50%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px rgba(230, 197, 135, 0.8));
+  animation: balletSparkleDrift linear infinite;
+}
+
+@keyframes balletSparkleDrift {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.6);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--sparkle-opacity, 0.8);
+  }
+  50% {
+    opacity: calc(var(--sparkle-opacity, 0.8) * 0.3);
+  }
+  75% {
+    opacity: var(--sparkle-opacity, 0.8);
+  }
+  100% {
+    transform: translateY(105vh) translateX(var(--sparkle-x, 40px)) scale(1.1);
     opacity: 0;
   }
 }

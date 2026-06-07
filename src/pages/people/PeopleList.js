@@ -41,7 +41,7 @@ export function renderPeopleList(container) {
     {
       key: 'company',
       label: 'Company / Name',
-      render: (row) => `<span class="cell-link font-medium">${escapeHTML(row.company)}</span>`,
+      render: (row) => `<span class="cell-link font-medium">${escapeHTML(row.company || `${row.firstName || ''} ${row.lastName || ''}`.trim() || 'Unnamed Customer')}</span>`,
     },
     {
       key: 'contact',
@@ -164,12 +164,17 @@ export function renderPeopleList(container) {
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
-    const filtered = tagFilteredData.filter(c =>
-      !q ||
-      c.company.toLowerCase().includes(q) ||
-      `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) ||
-      c.email.toLowerCase().includes(q)
-    );
+    const filtered = tagFilteredData.filter(c => {
+      if (!q) return true;
+      const company = c.company || '';
+      const firstName = c.firstName || '';
+      const lastName = c.lastName || '';
+      const fullName = `${firstName} ${lastName}`.trim();
+      const email = c.email || '';
+      return company.toLowerCase().includes(q) ||
+             fullName.toLowerCase().includes(q) ||
+             email.toLowerCase().includes(q);
+    });
     table.updateData(filtered);
   }
 

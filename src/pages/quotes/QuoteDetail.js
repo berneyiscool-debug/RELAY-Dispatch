@@ -149,7 +149,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
               <label class="form-label">Customer *</label>
               <select class="form-select" id="quote-customer" ${quote.status === 'Archived' ? 'disabled' : ''}>
                 <option value="">Select customer...</option>
-                ${customers.map(c => `<option value="${c.id}" ${quote.customerId === c.id ? 'selected' : ''}>${c.company}</option>`).join('')}
+                ${customers.map(c => `<option value="${c.id}" ${quote.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -395,7 +395,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       quote.subtotal += sec.subtotal;
     });
 
-    quote.tax = quote.subtotal * 0.1;
+    quote.tax = quote.subtotal * store.getTaxRate();
     quote.total = quote.subtotal + quote.tax;
 
     render();
@@ -768,7 +768,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         const custId = container.querySelector('#quote-customer').value;
         const cust = customers.find(c => c.id === custId);
         quote.customerId = custId;
-        quote.customerName = cust?.company || '';
+        quote.customerName = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : '';
         quote.contactName = cust ? `${cust.firstName} ${cust.lastName}` : '';
         quote.title = container.querySelector('#quote-title').value;
         quote.status = container.querySelector('#quote-status').value;

@@ -275,7 +275,14 @@ export function renderQuotesList(container, params) {
 
   container.querySelector('#quotes-search').addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
-    filteredData = quotes.filter(qt => qt.number.toLowerCase().includes(q) || qt.customerName.toLowerCase().includes(q) || (qt.title||'').toLowerCase().includes(q));
+    filteredData = quotes.filter(qt => {
+      const num = qt.number || '';
+      const custName = qt.customerName || '';
+      const title = qt.title || '';
+      return num.toLowerCase().includes(q) || 
+             custName.toLowerCase().includes(q) || 
+             title.toLowerCase().includes(q);
+    });
     table.updateData(filteredData);
   });
 }

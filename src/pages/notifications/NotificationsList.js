@@ -655,6 +655,48 @@ export function renderNotificationsList(container) {
           mergedPlanIds: []
         };
       }
+    } else if (n.jobId) {
+      const parentJob = store.getById('jobs', n.jobId);
+      if (parentJob) {
+        const jobMaterials = parentJob.materials ? JSON.parse(JSON.stringify(parentJob.materials)) : [];
+        const jobTasks = parentJob.tasks ? JSON.parse(JSON.stringify(parentJob.tasks)) : [];
+        jobTasks.forEach(task => {
+          task.id = store.generateId();
+          task.status = 'Not Started';
+          task.progress = 0;
+          task.startDate = new Date().toISOString();
+          task.technicians = [];
+          if (task.subTasks) {
+            task.subTasks.forEach(st => {
+              st.id = store.generateId();
+              st.status = 'Not Started';
+              st.progress = 0;
+              st.startDate = new Date().toISOString();
+              st.technicians = [];
+            });
+          }
+        });
+
+        jobData = {
+          ...jobData,
+          customerId: parentJob.customerId || '',
+          customerName: parentJob.customerName || '',
+          contactName: parentJob.contactName || '',
+          siteAddress: parentJob.siteAddress || '',
+          assetId: parentJob.assetId || undefined,
+          priority: parentJob.priority || 'Normal',
+          description: parentJob.description || '',
+          materials: jobMaterials,
+          laborCost: parentJob.laborCost || 0,
+          materialCost: parentJob.materialCost || 0,
+          estimatedLaborCost: parentJob.estimatedLaborCost || 0,
+          estimatedMaterialCost: parentJob.estimatedMaterialCost || 0,
+          isRecurring: false,
+          recurringConfig: null,
+          tasks: jobTasks,
+          parentJobId: parentJob.id
+        };
+      }
     }
 
     let tasks = [];
@@ -663,6 +705,10 @@ export function renderNotificationsList(container) {
     }
     if (tasks.length > 0) {
       jobData.tasks = tasks;
+    }
+
+    if (n.dueDate) {
+      jobData.scheduledDate = n.dueDate;
     }
 
     // Create Job directly

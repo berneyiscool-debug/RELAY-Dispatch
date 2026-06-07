@@ -42,7 +42,7 @@ export function renderAssetList(container, params) {
     // Apply search
     if (searchTerm) {
       result = result.filter(a => 
-        a.name.toLowerCase().includes(searchTerm) || 
+        (a.name || '').toLowerCase().includes(searchTerm) || 
         (a.serial || a.identifier || a.licensePlate || '').toLowerCase().includes(searchTerm) || 
         (a.type || '').toLowerCase().includes(searchTerm)
       );
@@ -54,7 +54,7 @@ export function renderAssetList(container, params) {
 
   container.innerHTML = `
     <div class="page-header">
-      <h1>${customer ? `Assets — ${escapeHTML(customer.company)}` : 'Assets Manager'}</h1>
+      <h1>${customer ? `Assets — ${escapeHTML(customer.company || `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed Customer')}` : 'Assets Manager'}</h1>
       <div class="page-header-actions">
         <button class="btn btn-primary" id="btn-new-asset" data-tooltip="Register a new customer or company asset" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Asset</button>
       </div>
@@ -83,7 +83,7 @@ export function renderAssetList(container, params) {
     { key: 'owner', label: 'Owner Type', render: (r) => {
         if (r.ownerType === 'Customer' && r.customerId) {
           const cust = store.getById('customers', r.customerId);
-          return cust ? `<span class="badge badge-neutral">${escapeHTML(cust.company)}</span>` : 'Customer';
+          return cust ? `<span class="badge badge-neutral">${escapeHTML(cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Unnamed Customer')}</span>` : 'Customer';
         }
         return `<span class="badge badge-primary">My Business</span>`;
       } 
@@ -147,7 +147,7 @@ export function renderAssetList(container, params) {
                   <label class="form-label">New Customer Account</label>
                   <select class="form-select" id="bulk-customer">
                     <option value="">-- Select Customer --</option>
-                    ${customers.map(c => `<option value="${c.id}">${escapeHTML(c.company)}</option>`).join('')}
+                    ${customers.map(c => `<option value="${c.id}">${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
                   </select>
                 </div>
               `;
@@ -162,15 +162,16 @@ export function renderAssetList(container, params) {
                       if (!custId) return;
                       const cust = store.getById('customers', custId);
                       if (cust) {
+                        const displayName = cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Unnamed Customer';
                         ids.forEach(id => {
                           store.update('assets', id, {
                             customerId: cust.id,
-                            customerName: cust.company
+                            customerName: displayName
                           });
                         });
                         table.clearSelection();
                         renderAssetList(container);
-                        import('../../components/Notifications.js').then(({ showToast }) => showToast(`Reassigned ${ids.length} assets to ${cust.company}`, 'success'));
+                        import('../../components/Notifications.js').then(({ showToast }) => showToast(`Reassigned ${ids.length} assets to ${displayName}`, 'success'));
                       }
                       c();
                     }}

@@ -302,7 +302,12 @@ export function renderLeadsList(container) {
 
   container.querySelector('#leads-search').addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
-    filteredData = leads.filter(l => l.title.toLowerCase().includes(q) || l.customerName.toLowerCase().includes(q));
+    filteredData = leads.filter(l => {
+      const title = l.title || '';
+      const custName = l.customerName || '';
+      return title.toLowerCase().includes(q) || 
+             custName.toLowerCase().includes(q);
+    });
     table.updateData(filteredData);
   });
 }

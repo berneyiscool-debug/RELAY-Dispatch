@@ -63,7 +63,7 @@ export function renderReports(container) {
     const hoursByJob = {};
     const internalLaborCostByJob = {};
     
-    const people = store.getAll('people');
+    const people = store.getAll('technicians');
     const techRates = {};
     people.forEach(p => { if (p.payRate) techRates[p.id] = p.payRate; });
 

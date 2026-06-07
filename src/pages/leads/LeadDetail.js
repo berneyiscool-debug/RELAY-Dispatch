@@ -171,8 +171,8 @@ export function renderLeadDetail(container, { id }) {
         status: 'Draft',
         sections: [{ id: store.generateId(), name: 'Main Scope', lineItems: [{ description: `${lead.title} - Scope of Work`, type: 'labor', qty: 1, rate: lead.value || 0, total: lead.value || 0 }] }],
         subtotal: lead.value || 0,
-        tax: (lead.value || 0) * 0.1,
-        total: (lead.value || 0) * 1.1,
+        tax: (lead.value || 0) * store.getTaxRate(),
+        total: (lead.value || 0) * (1 + store.getTaxRate()),
         createdAt: new Date().toISOString()
       });
       store.update('leads', id, { status: 'Won' });

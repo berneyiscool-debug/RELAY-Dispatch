@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderLeadForm(container, { id }) {
   const isEdit = id && id !== 'new';
@@ -25,7 +26,7 @@ export function renderLeadForm(container, { id }) {
               <label class="form-label">Customer *</label>
               <select class="form-select" name="customerId" required id="lead-customer-select">
                 <option value="">Select customer...</option>
-                ${customers.map(c => `<option value="${c.id}" ${lead.customerId === c.id ? 'selected' : ''}>${c.company}</option>`).join('')}
+                ${customers.map(c => `<option value="${c.id}" ${lead.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -104,7 +105,7 @@ export function renderLeadForm(container, { id }) {
     data.value = parseFloat(data.value) || 0;
     data.budget = parseFloat(data.budget) || 0;
     const cust = customers.find(c => c.id === data.customerId);
-    data.customerName = cust?.company || '';
+    data.customerName = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : '';
     data.contactName = cust ? `${cust.firstName} ${cust.lastName}` : '';
 
     if (isEdit) { store.update('leads', id, data); showToast('Lead updated', 'success'); router.navigate(`/leads/${id}`); }

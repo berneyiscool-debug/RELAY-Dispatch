@@ -376,10 +376,12 @@ export function generateDocument(type, data) {
             <span>Invoice Subtotal</span>
             <span>$${(data.subtotal || 0).toFixed(2)}</span>
           </div>
+          ${settings.taxEnabled !== false ? `
           <div class="pdf-total-row">
-            <span>GST (10%)</span>
+            <span>GST (${settings.taxRate !== undefined ? settings.taxRate : 10}%)</span>
             <span>$${(data.tax || 0).toFixed(2)}</span>
           </div>
+          ` : ''}
           <div class="pdf-total-row pdf-grand-total">
             <span>Total Payable (AUD)</span>
             <span>$${(data.total || 0).toFixed(2)}</span>
@@ -391,10 +393,12 @@ export function generateDocument(type, data) {
             <span>Subtotal</span>
             <span>$${(data.subtotal || 0).toFixed(2)}</span>
           </div>
+          ${settings.taxEnabled !== false ? `
           <div class="pdf-total-row">
-            <span>GST (10%)</span>
+            <span>GST (${settings.taxRate !== undefined ? settings.taxRate : 10}%)</span>
             <span>$${(data.tax || 0).toFixed(2)}</span>
           </div>
+          ` : ''}
           <div class="pdf-total-row pdf-grand-total">
             <span>Total (AUD)</span>
             <span>$${(data.total || 0).toFixed(2)}</span>
