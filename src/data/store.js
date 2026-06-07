@@ -302,6 +302,14 @@ const TABLE_COLUMNS = {
     "message",
     "link",
     "status",
+    "type",
+    "description",
+    "priority",
+    "read",
+    "number",
+    "asset_id",
+    "job_id",
+    "due_date",
     "created_at",
     "updated_at"
   ],
@@ -1400,12 +1408,38 @@ class DataStore {
   }
 
   save(collection, items) {
+    const prev = this.cache[collection] || [];
     this.cache[collection] = items;
     this.emit(collection, items);
-    
+
     // If not running in cloud mode, fall back to localStorage to support the offline demo users list
     if (!this.companyId) {
       localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+      return;
+    }
+
+    // Cloud mode: persist the whole collection. Upsert every current row, then delete
+    // any rows that were removed from the array. (Previously this only touched the
+    // in-memory cache, so every save() — assign-tech, role edits, form templates,
+    // portal edits, stock receiving, mark-read, etc. — silently failed to persist.)
+    const table = TABLE_MAP[collection];
+    if (!table) return; // cache-only collections (e.g. 'activity') have no table
+
+    const payload = items
+      .filter(it => it && it.id)
+      .map(it => this.denormalizeRecord({ ...it, companyId: this.companyId }, collection));
+    if (payload.length) {
+      supabase.from(table).upsert(payload).then(({ error }) => {
+        if (error) this._notifyWriteError('save', collection, error);
+      });
+    }
+
+    const currentIds = new Set(items.map(it => it && it.id));
+    const removedIds = prev.filter(p => p && p.id && !currentIds.has(p.id)).map(p => p.id);
+    if (removedIds.length) {
+      supabase.from(table).delete().in('id', removedIds).then(({ error }) => {
+        if (error) this._notifyWriteError('save', collection, error);
+      });
     }
   }
 
