@@ -10,6 +10,7 @@ const navItems = [
   // Top Level / Uncollapsed Items
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
   { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
+  { id: 'field', icon: 'phone_android', label: 'Simple Mode', path: '/field' },
   
   // Collapsible Category Groups
   {

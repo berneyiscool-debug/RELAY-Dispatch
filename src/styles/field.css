@@ -1,0 +1,574 @@
+/* ============================================
+   FIELDFORGE — SIMPLE / FIELD MODE STYLES
+   ============================================ */
+
+.field-mode {
+  min-height: 100vh;
+  background: var(--body-bg);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-family);
+}
+
+/* ---- Field Header ---- */
+.field-header {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 var(--space-base);
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.field-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.field-header-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--border-radius);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.field-header-back:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.field-header-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.field-header-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  margin-left: var(--space-xs);
+}
+
+.field-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.field-user-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  background: var(--color-primary-light);
+  border-radius: 99px;
+}
+
+.field-header-exit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  padding: 6px 10px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+
+.field-header-exit:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+/* ---- Field Body ---- */
+.field-body {
+  flex: 1;
+  padding: var(--space-xl);
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* ---- Home Tiles ---- */
+.field-tiles-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-base);
+  margin-top: var(--space-xl);
+}
+
+.field-tile {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--card-shadow);
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-md);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  min-height: 130px;
+  text-decoration: none;
+}
+
+.field-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+  border-color: rgba(255, 92, 0, 0.2);
+}
+
+.field-tile-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--border-radius);
+  background: var(--color-primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+}
+
+.field-tile-icon .material-icons-outlined {
+  font-size: 22px;
+}
+
+.field-tile-label {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.field-tile-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.field-greeting {
+  margin-bottom: var(--space-xs);
+}
+
+.field-greeting h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.field-greeting p {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* ---- Jobs List ---- */
+.field-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.field-job-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--card-shadow);
+  padding: var(--space-base) var(--space-lg);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  text-decoration: none;
+  display: block;
+}
+
+.field-job-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--card-shadow-hover);
+  border-color: rgba(255, 92, 0, 0.2);
+}
+
+.field-job-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.field-job-card-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.field-job-card-number {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-weight: 500;
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+.field-job-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-top: var(--space-sm);
+}
+
+.field-job-card-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.field-job-card-meta-item .material-icons-outlined {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.field-jobs-empty {
+  text-align: center;
+  padding: var(--space-4xl) var(--space-xl);
+  color: var(--text-tertiary);
+}
+
+.field-jobs-empty .material-icons-outlined {
+  font-size: 48px;
+  display: block;
+  margin-bottom: var(--space-md);
+  opacity: 0.4;
+}
+
+.field-jobs-empty p {
+  font-size: var(--font-size-md);
+  margin: 0;
+}
+
+.field-section-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-md);
+}
+
+/* ---- Job Detail ---- */
+.field-detail-hero {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--card-shadow);
+  padding: var(--space-lg) var(--space-xl);
+  margin-bottom: var(--space-base);
+}
+
+.field-detail-hero-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-xs);
+}
+
+.field-detail-hero-sub {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  margin: 0 0 var(--space-md);
+}
+
+.field-detail-badges {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* ---- Tabs ---- */
+.field-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--space-lg);
+  background: rgba(0,0,0,0.04);
+  border-radius: var(--border-radius);
+  padding: 3px;
+}
+
+.field-tab-btn {
+  flex: 1;
+  padding: 7px var(--space-sm);
+  border: none;
+  background: transparent;
+  border-radius: calc(var(--border-radius) - 1px);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.field-tab-btn.active {
+  background: white;
+  color: var(--text-primary);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* ---- Info Grid (Overview tab) ---- */
+.field-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+.field-info-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--card-shadow);
+  padding: var(--space-base);
+}
+
+.field-info-card.full-width {
+  grid-column: 1 / -1;
+}
+
+.field-info-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 5px;
+}
+
+.field-info-value {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.field-info-value.muted {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+/* ---- Tasks tab ---- */
+.field-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.field-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--border-radius);
+  padding: var(--space-md) var(--space-base);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.field-task-item.completed {
+  opacity: 0.6;
+}
+
+.field-task-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: all 0.15s;
+}
+
+.field-task-check.done {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: white;
+}
+
+.field-task-check .material-icons-outlined {
+  font-size: 13px;
+}
+
+.field-task-text {
+  flex: 1;
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.field-task-text.done {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+/* ---- Status update row ---- */
+.field-status-row {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--card-shadow);
+  padding: var(--space-base) var(--space-lg);
+  margin-bottom: var(--space-base);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.field-status-row label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.field-status-select {
+  padding: 7px 12px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color-dark);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family);
+  background: white;
+  color: var(--text-primary);
+  cursor: pointer;
+  min-width: 150px;
+}
+
+/* ---- Notes tab ---- */
+.field-notes-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--card-shadow);
+  padding: var(--space-base);
+}
+
+.field-notes-text {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+/* ---- Filter row ---- */
+.field-filter-row {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.field-filter-chip {
+  padding: 5px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--border-color-dark);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.6);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.field-filter-chip.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+/* ---- Timer button ---- */
+.field-timer-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 10px var(--space-lg);
+  border-radius: var(--border-radius);
+  border: none;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.field-timer-btn.start {
+  background: var(--color-success);
+  color: white;
+}
+
+.field-timer-btn.stop {
+  background: var(--color-danger);
+  color: white;
+}
+
+.field-timer-btn .material-icons-outlined {
+  font-size: 18px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 600px) {
+  .field-tiles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .field-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-body {
+    padding: var(--space-base);
+  }
+}

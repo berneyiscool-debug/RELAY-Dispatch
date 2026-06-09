@@ -5,6 +5,7 @@
 import './styles/global.css';
 import './styles/components.css';
 import './styles/layout.css';
+import './styles/field.css';
 
 import { router } from './router.js';
 import { store } from './data/store.js';
@@ -66,6 +67,7 @@ import { renderAssetDetail } from './pages/assets/AssetDetail.js';
 
 import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
 import { renderDocumentViewer } from './pages/documents/DocumentViewer.js';
+import { renderFieldHome, renderFieldJobsList, renderFieldJobDetail } from './pages/field/FieldMode.js';
 
 // ---- Initialize ----
 seedData();
@@ -391,10 +393,15 @@ function renderPage(handler) {
     // Add/remove non-dashboard/schedule class depending on current hash route
     const hash = window.location.hash || '#/';
     const isDashboardOrSchedule = hash === '#/' || hash === '#' || hash.startsWith('#/dashboard') || hash.startsWith('#/schedule');
-    if (isDashboardOrSchedule) {
+    const isFieldRoute = hash.startsWith('#/field');
+    if (isDashboardOrSchedule || isFieldRoute) {
       mainContent.classList.remove('non-dashboard-schedule-page');
     } else {
       mainContent.classList.add('non-dashboard-schedule-page');
+    }
+    if (isFieldRoute) {
+      mainContent.style.padding = '0';
+      mainContent.style.background = 'transparent';
     }
 
     handler(mainContent, params);
@@ -490,6 +497,11 @@ router.register('/document/view', renderPage(renderDocumentViewer));
 // Reports
 router.register('/reports', renderPage(renderReports));
 
+// Field / Simple Mode
+router.register('/field', renderPage(renderFieldHome));
+router.register('/field/jobs', renderPage(renderFieldJobsList));
+router.register('/field/jobs/:id', renderPage(renderFieldJobDetail));
+
 // Settings
 router.register('/settings', renderPage(renderSettings));
 router.register('/settings/forms/new', renderPage((c, p) => renderFormBuilder(c, { id: 'new' })));
@@ -507,14 +519,15 @@ router.onNavigate = (path, params) => {
 
   const isContractorPortal = path.startsWith('/contractor-portal');
   const isCustomerPortal = path.startsWith('/portal/customer');
+  const isFieldMode = path.startsWith('/field');
   const isPortal = isContractorPortal || isCustomerPortal;
 
-  // Toggle app shell elements (sidebar, topbar, breadcrumb) based on whether it is a portal
+  // Toggle app shell elements (sidebar, topbar, breadcrumb) based on whether it is a portal or field mode
   const sidebarEl = document.querySelector('.sidebar');
   const topbarEl = document.querySelector('.topbar');
   const breadcrumbEl = document.getElementById('breadcrumb');
 
-  if (isPortal) {
+  if (isPortal || isFieldMode) {
     if (sidebarEl) sidebarEl.style.display = 'none';
     if (topbarEl) topbarEl.style.display = 'none';
     if (breadcrumbEl) breadcrumbEl.style.display = 'none';
