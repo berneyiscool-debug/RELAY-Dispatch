@@ -1,80 +1,105 @@
-# FieldForge — Feature Priority List
+# RELAY — Dispatch
 
-## ✅ Phase 1: Core Clone (COMPLETE)
-- [x] App shell, sidebar, top bar, routing, design system
-- [x] Dashboard with KPI cards, charts, activity feed
-- [x] People/CRM — list, detail, create/edit
-- [x] Leads — list, detail, form, convert-to-quote
-- [x] Quotes — list, builder with line items, convert-to-job
-- [x] Jobs — list, detail, form, create-invoice
-- [x] Schedule — day/week calendar, technician rows
-- [x] Stock — list, detail, form, low-stock alerts
-- [x] Invoices — list, builder, send/mark-paid
-- [x] Settings — company, users, tax, system
-- [x] Global search, breadcrumbs, toast notifications
+**Free, offline-first field-service management for Australian trade businesses.**
+
+The free answer to bloated, overpriced trade software. No per-seat fees, no
+lock-in, and it works where your job is — not where the wifi is.
 
 ---
 
-## ✅ Phase 2: High Priority — Core Business Value (COMPLETE)
-- [x] **PDF export** for quotes & invoices (print-friendly preview)
-- [x] **Drag-and-drop scheduling** (move blocks between technicians)
-- [x] **Reporting & Analytics module** (P&L by job, revenue by customer, tech productivity, CSV export)
-- [x] **Time tracking / Timesheets** (per technician per job, approval workflow)
-- [x] **Job attachments** (upload photos, documents, PDFs)
-- [x] **Multiple contacts per customer** (contacts sub-table)
-- [x] **Multiple sites per customer** (sites management)
-- [x] **Job costing report** (estimated vs actual comparison)
-- [x] **Asset tracking** per customer site (equipment registry)
-- [x] **Dark mode toggle**
+## Why RELAY exists
 
----
+Every major field-service platform charges a monthly fee *per user* and falls
+over the moment you lose signal — in a basement, a plant room, or anywhere
+regional. RELAY flips both:
 
-## ✅ Phase 3: Medium Priority — Workflow Depth (COMPLETE)
-- [x] **Multi-stage project management** (phases, milestones, progress tracking)
-- [x] **Digital forms / Checklists** (configurable safety audits, inspection forms)
-- [x] **Quote templates** (save & reuse common job templates)
-- [x] **Quote versioning** (v1, v2, amendments)
-- [x] **Multi-section quotes** (grouped by phase/area)
-- [x] **Email quote with tracking** (opened/viewed status)
-- [x] **Progress invoicing** (partial billing on long projects)
-- [x] **Deposit invoicing**
-- [x] **Credit notes**
-- [x] **Payment reminders** / overdue notification triggers
-- [x] **Purchase orders** to suppliers
-- [x] **Stock usage linked to jobs** (materials consumed on job)
-- [x] **Stock transfers** between warehouses/vans
-- [x] **Recurring job scheduling**
-- [x] **Schedule conflict detection** (double-booking warnings)
-- [x] **Customer communication log** (calls, emails, notes timeline)
-- [x] **Notifications center** (structured alerts panel)
+- **Free, forever, in local mode.** Run the whole business — jobs, quotes,
+  invoices, scheduling, stock — without paying a cent or creating an account.
+- **Offline-first.** Your data lives on your machine; the app works with no
+  internet at all. The cloud is optional, not a hostage situation.
+- **Australian by default.** GST, ABN, AS/NZS compliance and SWMS are built in,
+  not bolted on.
+- **Your data is yours.** Local data is stored on your device. Export anytime.
+  No vendor lock-in.
 
----
+## What it does
 
-## 🟡 Phase 4: Lower Priority — Extended Features
-- [ ] **Contractor management** module (subcontractors, rates, compliance)
-- [ ] **Fleet / Vehicle tracking** (vans, vehicle stock, mileage, servicing)
-- [ ] **Document management** (centralized file storage linked to jobs/customers)
-- [ ] **Activity calendar** (personal tasks, reminders, follow-ups)
-- [ ] **Customer portal** (read-only view for customers — job status, approve quotes, pay invoices)
-- [ ] **Role-based access control** (Admin/Manager/Technician permissions)
-- [ ] **Accounting integration stubs** (Xero/QuickBooks export format)
-- [ ] **Zone-based dispatching** (geographic area grouping)
-- [ ] **Technician GPS/location** indicators on schedule
-- [ ] **Digital takeoffs** (upload plans, annotate, smart symbol recognition)
-- [ ] **Barcode/SKU scanning** interface for stock
-- [ ] **Auto-reorder alerts** with supplier integration
+**Sales & jobs**
+- CRM — customers with multiple contacts, sites, and equipment; lead pipeline
+  with weighted forecasting and one-click convert-to-quote
+- Quotes — multi-section builder, line items, kit insertion with margin
+  control, versioning, email-with-tracking, accept/decline
+- Jobs — hierarchical task lists, progress rollup, materials & costs, activity
+  timeline, attachments, recurring schedules, create-invoice
+- Invoices — progress & deposit billing, credit notes, payment tracking,
+  overdue reminders
+- **PDF export** for quotes and invoices (branded, print-ready)
 
----
+**Scheduling & time**
+- Drag-and-drop calendar (day/week), technician rows, conflict detection
+- Recurring job scheduling and an activity calendar
+- Timesheets with an approval workflow and payroll-ready CSV export
 
-## 🟢 Phase 5: UX Polish & Quality of Life
-- [ ] **Keyboard shortcuts** (Alt+J → Jobs, Alt+Q → Quotes, etc.)
-- [ ] **Bulk actions** on list views (multi-select delete, status change)
-- [ ] **Column customization** on tables (show/hide, reorder columns)
-- [ ] **Data export** (CSV/Excel) on every list view
-- [ ] **Customizable dashboard** (drag-and-drop widget layout)
-- [ ] **Multiple saved dashboards** (Operations, Sales, QA views)
-- [ ] **Revenue trend line chart** on dashboard
-- [ ] **Technician utilization metrics** on dashboard
-- [ ] **Undo/redo** on forms
-- [ ] **Responsive mobile layout** for field use
-- [ ] **Onboarding tour** (first-time walkthrough tooltips)
+**Inventory & resources**
+- Stock with multi-location tracking, transfers, reorder alerts, CSV import,
+  and barcode label printing
+- Purchase orders with receive-into-stock and job cost allocation
+- Reusable kits (materials + labour) with target-margin override
+- Asset registry with meter tracking, service logs, and a maintenance engine
+  that auto-generates jobs from meter- or calendar-based plans (with smart
+  collision merging)
+
+**Office & field**
+- Drag-and-drop digital form builder (safety audits, inspections, checklists)
+- Document centre with role-based folders and auto-indexed attachments
+- Reports & analytics (P&L by job, revenue by customer, tech productivity)
+  with CSV export
+- Role-based permissions (Admin / Manager / Office / Technician)
+- 13 themes including a light/dark toggle
+
+**Cloud mode (optional, paid)**
+Adds only what genuinely needs the internet:
+- Multi-device sync (Supabase)
+- **Customer portal** — clients view jobs, approve quotes, pay invoices,
+  request callouts
+- **Contractor portal** — subbies see assigned tasks, update progress, upload
+  photos, manage compliance docs
+- Xero / Stripe, SMS & email automation
+
+## How it works
+
+RELAY runs entirely in the browser. In **local mode** all data persists to your
+device (localStorage) and never leaves it. Switch on **Cloud mode** and the same
+app syncs through Supabase (Postgres + auth + storage) to add multi-device
+access and the hosted portals. The free, offline experience is complete on its
+own — the cloud is an upgrade, not a requirement.
+
+## Tech stack
+
+- **Frontend:** Vanilla JS (ES modules) + Vite — no framework tax, fast loads
+- **Local storage:** browser localStorage (offline-first)
+- **Cloud backend:** Supabase (Postgres, Auth, Storage) — Cloud mode only
+- **Charts/PDF:** print-friendly HTML render pipeline
+
+## Getting started
+
+```bash
+npm install
+npm run dev      # start the dev server (Vite)
+npm run build    # production build
+npm run preview  # serve the production build
+```
+
+The app boots straight into **local mode** — no account needed. To enable Cloud
+mode, point it at a Supabase project using the schema in
+`supabase/migrations/schema.sql` (see `docs/SUPABASE_MIGRATION.md`).
+
+## Project status
+
+Actively developed. Core sales→job→invoice workflow, scheduling, inventory,
+assets/maintenance, forms, documents, reporting, and both portals are in place.
+Free local mode is the focus; Cloud mode adds the connected services above.
+
+## License
+
+Free to use. See the repository for license details.
