@@ -4,6 +4,8 @@
 
 import { escapeHTML } from '../utils/security.js';
 import { store } from '../data/store.js';
+const logoLarge = new URL('../assets/logo-large.png', import.meta.url).href;
+
 
 export function showPrintPreview({ type, data }) {
   const overlay = document.createElement('div');
@@ -168,8 +170,12 @@ export function generateDocument(type, data) {
     paymentCash: false,
     quoteSignature: true,
     hideCompanyName: false,
+    hideBrandLogo: false,
     footerNote: 'Thank you for your business!'
   };
+
+  const isLocalMode = !store.companyId;
+  const hideBrandLogo = isLocalMode ? false : !!dt.hideBrandLogo;
 
   const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
   const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
@@ -421,12 +427,20 @@ export function generateDocument(type, data) {
       <!-- Footer -->
       <div class="pdf-footer">
         <div class="pdf-footer-line"></div>
-        <div class="pdf-footer-text">
-          ${isQuote
-            ? escapeHTML(dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
-            : escapeHTML(dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.')}
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;">
+          <div style="flex: 1;">
+            <div class="pdf-footer-text">
+              ${isQuote
+                ? escapeHTML(dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
+                : escapeHTML(dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.')}
+            </div>
+            <div class="pdf-footer-company">${escapeHTML(settings.name || 'Company Name')}${settings.email ? ` — ${escapeHTML(settings.email)}` : ''}${settings.phone ? ` — ${escapeHTML(settings.phone)}` : ''}</div>
+          </div>
+          <div class="pdf-footer-branding" style="flex-shrink: 0; display: ${hideBrandLogo ? 'none' : 'flex'}; flex-direction: column; align-items: flex-end; gap: 4px;">
+            <span style="font-size: 8px; text-transform: uppercase; letter-spacing: 0.5px; color: #8A97A8; font-weight: 600;">Powered by</span>
+            <img src="${logoLarge}" style="height: 18px; max-width: 110px; object-fit: contain; opacity: 0.85; vertical-align: bottom;" alt="Relay Dispatch" />
+          </div>
         </div>
-        <div class="pdf-footer-company">${escapeHTML(settings.name || 'Company Name')}${settings.email ? ` — ${escapeHTML(settings.email)}` : ''}${settings.phone ? ` — ${escapeHTML(settings.phone)}` : ''}</div>
         <div class="pdf-footer-note" style="font-size:10px; color:#8A97A8; font-weight:normal; text-align:center; margin-top:8px; display: ${dt.footerNote ? 'block' : 'none'};">${escapeHTML(dt.footerNote || '')}</div>
       </div>
     </div>

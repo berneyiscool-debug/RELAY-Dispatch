@@ -4,6 +4,10 @@
 import { supabase } from '../utils/supabase.js';
 import { prebuiltForms } from './prebuiltForms.js';
 
+const defaultLogoLarge = new URL('../assets/logo-large.png', import.meta.url).href;
+const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
+
+
 // Table name mappings to match local collection keys with PostgreSQL tables
 const TABLE_MAP = {
   companies: 'companies',
@@ -349,10 +353,36 @@ const TABLE_COLUMNS = {
   ]
 };
 
-
-export const RELAY_LOGO_SVG = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg viewBox="0 0 320 53.598302" xmlns="http://www.w3.org/2000/svg"><g fill="#FF5C00"><g transform="translate(-19.023693,-210.20382)"><g transform="matrix(0.3804654,0,0,0.3804654,-83.598864,122.48096)"><g transform="translate(107.79013)"><g transform="translate(-22.948867,-9.0404629)"><path d="m 267.58275,347.28778 q 0.0535,9.78228 1.22947,17.15908 1.22947,7.3768 3.74185,11.27903 -2.40547,2.29856 -7.16298,3.42112 -4.7575,1.17601 -7.69753,1.17601 -9.515,-0.10691 -13.31031,-7.10952 -3.31422,-6.20079 -3.31422,-15.92962 0,-1.28292 0.26728,-7.64407 0.26728,-6.41461 3.52803,-20.04566 3.26076,-13.63104 7.80445,-26.94136 4.54368,-13.31031 8.87354,-23.94787 1.22947,-0.10691 2.45893,-0.10691 2.56585,0 5.39897,0.58801 2.83311,0.588 4.32986,4.16949 0.69491,1.65711 0.69491,4.38332 0,3.15385 -0.90873,7.64407 -2.19166,10.26338 -3.63495,20.63366 1.28292,0.64147 2.72621,0.64147 2.88657,0 7.3768,-3.1004 4.49023,-3.10039 8.49936,-9.62191 3.79531,-6.09388 3.79531,-12.34813 v -0.80182 q -1.12256,-11.33248 -7.69753,-14.80706 -3.74186,-1.97784 -8.44591,-1.97784 -3.58149,0 -10.47719,1.87093 -6.84225,1.81747 -16.94526,8.71318 -10.04955,6.8957 -18.17473,16.3038 -8.07171,9.35464 -11.6532,19.5111 -1.92439,5.29205 -1.92439,10.31683 0,4.54368 1.60366,8.87354 -5.66624,0.96219 -10.37029,0.96219 -6.41461,0 -12.82922,-2.40547 -6.36115,-2.45894 -9.14081,-9.03391 -1.33638,-3.26076 -1.33638,-6.89571 0,-3.6884 1.38983,-7.80444 4.00913,-10.53065 18.01436,-22.07694 14.05869,-11.59976 34.05089,-20.36639 20.04565,-8.76663 42.06914,-10.90484 2.56584,-0.16036 4.97132,-0.16036 11.38593,0 19.77838,4.59714 8.4459,4.59713 12.6154,13.47068 3.84877,8.07171 3.84877,17.42635 0,0.80183 -0.21382,6.36116 -0.16037,5.55932 -4.49023,14.91396 -4.32986,9.30119 -12.1343,15.34161 -7.80444,6.04042 -18.49546,6.46806 8.87354,6.41461 19.5111,7.10953 1.17601,0.0534 2.35203,0.0534 9.67537,0 20.90093,-5.07823 0.26728,3.79531 0.26728,7.10953 0,9.0339 -2.35203,16.14343 -2.35202,7.10952 -7.32334,10.90484 -4.97132,3.79531 -10.63756,4.49022 -2.13821,0.26728 -4.11604,0.26728 -3.42113,0 -6.46807,-0.74837 -5.8266,-1.38984 -11.38593,-6.20079 -5.50587,-4.7575 -10.47719,-11.65321 -4.91787,-6.8957 -8.98046,-14.59324 z" /><path d="m 370.43971,354.90523 -15.22212,-9.62244 -16.8901,6.24731 4.44762,-17.45058 -11.16089,-14.13291 17.97088,-1.16261 9.9923,-14.98194 6.659,16.73206 17.33647,4.87357 -13.85539,11.50358 z" /><path d="m 348.39147,304.71497 -3.17554,-13.39823 -12.4452,-5.89179 11.76117,-7.16041 1.75766,-13.65677 10.44434,8.97286 13.53148,-2.54853 -5.30619,12.70593 6.60527,12.08167 -13.72376,-1.12015 z" /><path d="m 334.8158,263.90614 -5.7247,-6.06772 -8.31437,0.67863 4.00173,-7.31954 -3.21471,-7.6977 8.19789,1.544 6.32758,-5.43609 1.06484,8.27379 7.12538,4.33803 -7.53978,3.56946 z" /></g><text x="90" y="35" fill="#FF5C00" font-family="'Inter', -apple-system, sans-serif" font-size="24" font-weight="800" letter-spacing="0.05em">RELAY</text><text x="180" y="35" fill="#8A99AD" font-family="'Inter', -apple-system, sans-serif" font-size="24" font-weight="500" letter-spacing="0.03em">— Dispatch</text></svg>`)}`;
+export const RELAY_LOGO_SVG = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg viewBox="0 0 320 53.598302" xmlns="http://www.w3.org/2000/svg"><g fill="#FF5C00"><g transform="translate(-19.023693,-210.20382)"><g transform="matrix(0.3804654,0,0,0.3804654,-83.598864,122.48096)"><g transform="translate(107.79013)"><g transform="translate(-22.948867,-9.0404629)"><path d="m 267.58275,347.28778 q 0.0535,9.78228 1.22947,17.15908 1.22947,7.3768 3.74185,11.27903 -2.40547,2.29856 -7.16298,3.42112 -4.7575,1.17601 -7.69753,1.17601 -9.515,-0.10691 -13.31031,-7.10952 -3.31422,-6.20079 -3.31422,-15.92962 0,-1.28292 0.26728,-7.64407 0.26728,-6.41461 3.52803,-20.04566 3.26076,-13.63104 7.80445,-26.94136 4.54368,-13.31031 8.87354,-23.94787 1.22947,-0.10691 2.45893,-0.10691 2.56585,0 5.39897,0.58801 2.83311,0.588 4.32986,4.16949 0.69491,1.65711 0.69491,4.38332 0,3.15385 -0.90873,7.64407 -2.19166,10.26338 -3.63495,20.63366 1.28292,0.64147 2.72621,0.64147 2.88657,0 7.3768,-3.1004 4.49023,-3.10039 8.49936,-9.62191 3.79531,-6.09388 3.79531,-12.34813 v -0.80182 q -1.12256,-11.33248 -7.69753,-14.80706 -3.74186,-1.97784 -8.44591,-1.97784 -3.58149,0 -10.47719,1.87093 -6.84225,1.81747 -16.94526,8.71318 -10.04955,6.8957 -18.17473,16.3038 -8.07171,9.35464 -11.6532,19.5111 -1.92439,5.29205 -1.92439,10.31683 0,4.54368 1.60366,8.87354 -5.66624,0.96219 -10.37029,0.96219 -6.41461,0 -12.82922,-2.40547 -6.36115,-2.45894 -9.14081,-9.03391 -1.33638,-3.26076 -1.33638,-6.89571 0,-3.6884 1.38983,-7.80444 4.00913,-10.53065 18.01436,-22.07694 14.05869,-11.59976 34.05089,-20.36639 20.04565,-8.76663 42.06914,-10.90484 2.56584,-0.16036 4.97132,-0.16036 11.38593,0 19.77838,4.59714 8.4459,4.59713 12.6154,13.47068 3.84877,8.07171 3.84877,17.42635 0,0.80183 -0.21382,6.36116 -0.16037,5.55932 -4.49023,14.91396 -4.32986,9.30119 -12.1343,15.34161 -7.80444,6.04042 -18.49546,6.46806 8.87354,6.41461 19.5111,7.10953 1.17601,0.0534 2.35203,0.0534 9.67537,0 20.90093,-5.07823 0.26728,3.79531 0.26728,7.10953 0,9.0339 -2.35203,16.14343 -2.35202,7.10952 -7.32334,10.90484 -4.97132,3.79531 -10.63756,4.49022 -2.13821,0.26728 -4.11604,0.26728 -3.42113,0 -6.46807,-0.74837 -5.8266,-1.38984 -11.38593,-6.20079 -5.50587,-4.7575 -10.47719,-11.65321 -4.91787,-6.8957 -8.98046,-14.59324 z" /><path d="m 370.43971,354.90523 -15.22212,-9.62244 -16.8901,6.24731 4.44762,-17.45058 -11.16089,-14.13291 17.97088,-1.16261 9.9923,-14.98194 6.659,16.73206 17.33647,4.87357 -13.85539,11.50358 z" /><path d="m 348.39147,304.71497 -3.17554,-13.39823 -12.4452,-5.89179 11.76117,-7.16041 1.75766,-13.65677 10.44434,8.97286 13.53148,-2.54853 -5.30619,12.70593 6.60527,12.08167 -13.72376,-1.12015 z" /><path d="m 334.8158,263.90614 -5.7247,-6.06772 -8.31437,0.67863 4.00173,-7.31954 -3.21471,-7.6977 8.19789,1.544 6.32758,-5.43609 1.06484,8.27379 7.12538,4.33803 -7.53978,3.56946 z" /></g></g></g><text x="90" y="36" fill="#2D3134" font-family="'Inter', -apple-system, sans-serif" font-size="25" font-weight="900" letter-spacing="0.04em">DISPATCH</text></svg>`)}`;
 
 export const RELAY_LOGO_SMALL_SVG = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg viewBox="0 0 75.592812 53.598302" xmlns="http://www.w3.org/2000/svg"><g fill="#FF5C00"><g transform="translate(-19.023693,-210.20382)"><g transform="matrix(0.3804654,0,0,0.3804654,-83.598864,122.48096)"><g transform="translate(107.79013)"><g transform="translate(-22.948867,-9.0404629)"><path d="m 267.58275,347.28778 q 0.0535,9.78228 1.22947,17.15908 1.22947,7.3768 3.74185,11.27903 -2.40547,2.29856 -7.16298,3.42112 -4.7575,1.17601 -7.69753,1.17601 -9.515,-0.10691 -13.31031,-7.10952 -3.31422,-6.20079 -3.31422,-15.92962 0,-1.28292 0.26728,-7.64407 q 0.26728,-6.41461 3.52803,-20.04566 q 3.26076,-13.63104 7.80445,-26.94136 q 4.54368,-13.31031 8.87354,-23.94787 q 1.22947,-0.10691 2.45893,-0.10691 q 2.56585,0 5.39897,0.58801 q 2.83311,0.588 4.32986,4.16949 q 0.69491,1.65711 0.69491,4.38332 0,3.15385 -0.90873,7.64407 -2.19166,10.26338 -3.63495,20.63366 q 1.28292,0.64147 2.72621,0.64147 q 2.88657,0 7.3768,-3.1004 q 4.49023,-3.10039 8.49936,-9.62191 q 3.79531,-6.09388 3.79531,-12.34813 v -0.80182 q -1.12256,-11.33248 -7.69753,-14.80706 -3.74186,-1.97784 -8.44591,-1.97784 -3.58149,0 -10.47719,1.87093 q -6.84225,1.81747 -16.94526,8.71318 q -10.04955,6.8957 -18.17473,16.3038 q -8.07171,9.35464 -11.6532,19.5111 -1.92439,5.29205 -1.92439,10.31683 0,4.54368 1.60366,8.87354 -5.66624,0.96219 -10.37029,0.96219 -6.41461,0 -12.82922,-2.40547 -6.36115,-2.45894 -9.14081,-9.03391 -1.33638,-3.26076 -1.33638,-6.89571 0,-3.6884 1.38983,-7.80444 q 4.00913,-10.53065 18.01436,-22.07694 q 14.05869,-11.59976 34.05089,-20.36639 q 20.04565,-8.76663 42.06914,-10.90484 q 2.56584,-0.16036 4.97132,-0.16036 q 11.38593,0 19.77838,4.59714 q 8.4459,4.59713 12.6154,13.47068 q 3.84877,8.07171 3.84877,17.42635 0,0.80183 -0.21382,6.36116 -0.16037,5.55932 -4.49023,14.91396 q -4.32986,9.30119 -12.1343,15.34161 -7.80444,6.04042 -18.49546,6.46806 q 8.87354,6.41461 19.5111,7.10953 q 1.17601,0.0534 2.35203,0.0534 9.67537,0 20.90093,-5.07823 0.26728,3.79531 0.26728,7.10953 0,9.0339 -2.35203,16.14343 q -2.35202,7.10952 -7.32334,10.90484 -4.97132,3.79531 -10.63756,4.49022 -2.13821,0.26728 -4.11604,0.26728 -3.42113,0 -6.46807,-0.74837 -5.8266,-1.38984 -11.38593,-6.20079 q -5.50587,-4.7575 -10.47719,-11.65321 q -4.91787,-6.8957 -8.98046,-14.59324 z" /><path d="m 370.43971,354.90523 -15.22212,-9.62244 -16.8901,6.24731 4.44762,-17.45058 -11.16089,-14.13291 17.97088,-1.16261 9.9923,-14.98194 6.659,16.73206 17.33647,4.87357 -13.85539,11.50358 z" /><path d="m 348.39147,304.71497 -3.17554,-13.39823 -12.4452,-5.89179 11.76117,-7.16041 1.75766,-13.65677 10.44434,8.97286 13.53148,-2.54853 -5.30619,12.70593 6.60527,12.08167 -13.72376,-1.12015 z" /><path d="m 334.8158,263.90614 -5.7247,-6.06772 -8.31437,0.67863 4.00173,-7.31954 -3.21471,-7.6977 8.19789,1.544 6.32758,-5.43609 1.06484,8.27379 7.12538,4.33803 -7.53978,3.56946 z" /></g></g></g></svg>`)}`;
+
+const MODULE_PERMS = {
+  'Dashboard': [{ key: 'view' }],
+  'Customers': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }, { key: 'delete' }, { key: 'manage_contacts' }],
+  'Leads': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }, { key: 'delete' }, { key: 'convert' }],
+  'Quotes': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }, { key: 'delete' }, { key: 'approve' }, { key: 'convert' }, { key: 'generate_pdf' }],
+  'Jobs': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }, { key: 'delete' }, { key: 'manage_tasks' }, { key: 'book_time' }, { key: 'view_costs' }, { key: 'view_quotes_tab' }, { key: 'view_pos_tab' }, { key: 'view_timesheets_tab' }, { key: 'view_invoices_tab' }, { key: 'manage_materials' }, { key: 'create_invoice' }],
+  'Timesheets': [{ key: 'view_own' }, { key: 'view' }, { key: 'create' }, { key: 'approve' }, { key: 'edit_all' }, { key: 'export' }],
+  'Assets': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }, { key: 'delete' }],
+  'Schedule': [{ key: 'view_own' }, { key: 'view' }, { key: 'edit' }],
+  'Contractors': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }],
+  'Suppliers': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }, { key: 'delete' }],
+  'Stock': [{ key: 'view' }, { key: 'create' }, { key: 'edit' }, { key: 'delete' }],
+  'Purchase Orders': [{ key: 'view' }, { key: 'create' }, { key: 'approve' }],
+  'Invoices': [{ key: 'view' }, { key: 'create' }, { key: 'send' }, { key: 'void' }],
+  'Reports': [{ key: 'view' }, { key: 'export' }],
+  'Documents': [{ key: 'view' }, { key: 'upload' }],
+  'Settings': [{ key: 'view' }, { key: 'edit_company' }, { key: 'manage_users' }, { key: 'manage_tax' }]
+};
+
+function buildGranularPerms(valueFn) {
+  return Object.entries(MODULE_PERMS).map(([module, perms]) => {
+    const obj = { module };
+    perms.forEach(({ key }) => { obj[key] = valueFn(module, key); });
+    return obj;
+  });
+}
 
 class DataStore {
   constructor() {
@@ -363,26 +393,31 @@ class DataStore {
     this.userId = null;
     this.subscriptions = [];
     this.initPromise = null;
+    this.db = null;
+    this.dirHandle = null;
+    this.folderSyncEnabled = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(this.getStorageKey('folder_sync_enabled')) === 'true'
+      : false;
+    this.folderSyncPermissionGranted = false;
 
-    // Pre-initialize empty arrays for collections or load from localStorage in local mode
+    // Check if we have a cloud user at boot (before filling cache)
+    const bootUser = typeof localStorage !== 'undefined'
+      ? JSON.parse(localStorage.getItem('currentUser') || 'null')
+      : null;
+    const isCloudUser = !!(bootUser && bootUser.companyId && !bootUser.companyId.startsWith('acct_'));
+
+    if (!isCloudUser && bootUser && bootUser.companyId && typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('relay_active_account', bootUser.companyId);
+    }
+
+    // Pre-initialize empty arrays for collections.
     Object.keys(TABLE_MAP).forEach(col => {
-      if (typeof localStorage !== 'undefined') {
-        const localData = localStorage.getItem('simpro_' + col);
-        if (localData) {
-          try {
-            this.cache[col] = JSON.parse(localData);
-            return;
-          } catch (e) {
-            console.error(`Error parsing localStorage for ${col}:`, e);
-          }
-        }
-      }
       this.cache[col] = [];
     });
 
-    // Load local settings if they exist
-    if (typeof localStorage !== 'undefined') {
-      const localSettings = localStorage.getItem('simpro_settings');
+    // Load local settings if they exist (only for offline/demo mode)
+    if (!isCloudUser && typeof localStorage !== 'undefined') {
+      const localSettings = localStorage.getItem(this.getStorageKey('settings'));
       if (localSettings) {
         try {
           this.companySettings = JSON.parse(localSettings);
@@ -396,7 +431,7 @@ class DataStore {
         this.userId = session.user.id;
         const userMeta = JSON.parse(localStorage.getItem('currentUser') || '{}');
         this.companyId = userMeta.companyId || null;
-        if (this.companyId) {
+        if (this.companyId && !this.companyId.startsWith('acct_')) {
           this.initPromise = this.initializeCloudSync();
         }
       } else {
@@ -404,16 +439,530 @@ class DataStore {
       }
     });
 
-    // Auto-trigger sync if user already logged in at boot
-    const currentUser = typeof localStorage !== 'undefined'
-      ? JSON.parse(localStorage.getItem('currentUser') || 'null')
-      : null;
-    if (currentUser && currentUser.companyId) {
-      this.userId = currentUser.id;
-      this.companyId = currentUser.companyId;
+    // Auto-trigger sync or local load if user already logged in at boot
+    if (isCloudUser) {
+      this.userId = bootUser.id;
+      this.companyId = bootUser.companyId;
       this.initPromise = this.initializeCloudSync();
+    } else {
+      if (bootUser && bootUser.companyId) {
+        this.userId = bootUser.id;
+        this.companyId = bootUser.companyId;
+      }
+      this.initPromise = this.initializeLocalStore();
     }
   }
+
+  getStorageKey(collection) {
+    const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
+    if (activeAccount) {
+      return `relay_${activeAccount}_${collection}`;
+    }
+    return `simpro_${collection}`;
+  }
+
+  getDBName() {
+    const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
+    return activeAccount ? `RelayDispatchDB_${activeAccount}` : 'RelayDispatchDB';
+  }
+
+  async initializeUser(user) {
+    if (user && user.companyId && !user.companyId.startsWith('acct_')) {
+      this.userId = user.id;
+      this.companyId = user.companyId;
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('relay_active_account');
+      }
+      this.initPromise = this.initializeCloudSync();
+      await this.initPromise;
+    } else {
+      this.clearSync();
+      if (user && user.companyId) {
+        this.userId = user.id;
+        this.companyId = user.companyId;
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('relay_active_account', user.companyId);
+        }
+      } else {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem('relay_active_account');
+        }
+      }
+      this.initPromise = this.initializeLocalStore();
+      await this.initPromise;
+    }
+  }
+
+  async initializeLocalStore() {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+    this.dirHandle = null;
+    this.folderSyncEnabled = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(this.getStorageKey('folder_sync_enabled')) === 'true'
+      : false;
+    this.folderSyncPermissionGranted = false;
+
+    try {
+      await this.initIndexedDB();
+    } catch (e) {
+      console.error('Failed to initialize IndexedDB, falling back to empty arrays:', e);
+    }
+
+    // Load local settings if they exist (namespaced)
+    this.companySettings = null;
+    if (typeof localStorage !== 'undefined') {
+      const localSettings = localStorage.getItem(this.getStorageKey('settings'));
+      if (localSettings) {
+        try {
+          this.companySettings = JSON.parse(localSettings);
+        } catch {}
+      }
+    }
+    this.emit('settings', this.getSettings());
+
+    // Seed default user types and forms if empty
+    if (this.cache.userTypes.length === 0) {
+      await this.seedDefaultUserTypes();
+    }
+    if (this.cache.formTemplates.length === 0) {
+      await this.seedFormTemplates();
+    }
+    if (this.cache.technicians.length === 0) {
+      await this.seedDefaultTechnicians();
+    }
+  }
+
+  initIndexedDB() {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined' || !window.indexedDB) {
+        return resolve();
+      }
+
+      const dbName = this.getDBName();
+      const request = window.indexedDB.open(dbName, 2);
+
+      request.onerror = (e) => {
+        console.error('IndexedDB open error:', e.target.error);
+        reject(e.target.error);
+      };
+
+      request.onsuccess = async (e) => {
+        this.db = e.target.result;
+        
+        // 1. Load custom directory sync config from IndexedDB config store if it exists
+        try {
+          if (this.db.objectStoreNames.contains('config')) {
+            await new Promise((resConfig) => {
+              const transaction = this.db.transaction('config', 'readonly');
+              const configStore = transaction.objectStore('config');
+              const getReq = configStore.get('directory_handle');
+              getReq.onsuccess = () => {
+                if (getReq.result) {
+                  this.dirHandle = getReq.result.value;
+                }
+                resConfig();
+              };
+              getReq.onerror = () => resConfig();
+            });
+          }
+        } catch (err) {
+          console.warn('Failed to read config from IndexedDB:', err);
+        }
+
+        // Verify directory permission silently on boot if handle exists
+        if (this.dirHandle) {
+          try {
+            // Check permission silently without prompt dialog
+            const opts = { mode: 'readwrite' };
+            const status = await this.dirHandle.queryPermission(opts);
+            this.folderSyncPermissionGranted = status === 'granted';
+          } catch (err) {
+            console.warn('Failed to query directory permission on boot:', err);
+          }
+        }
+
+        // Load all collections into cache
+        const collections = Object.keys(TABLE_MAP);
+        const loadPromises = collections.map(async (col) => {
+          try {
+            this.cache[col] = await this.readAllFromIndexedDB(col);
+          } catch (err) {
+            console.error(`Error loading collection ${col} from IndexedDB:`, err);
+            this.cache[col] = [];
+          }
+        });
+
+        await Promise.all(loadPromises);
+
+        // Perform migration if we have old data in localStorage (only if not in a namespaced local account profile)
+        const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
+        if (!activeAccount) {
+          const migratePromises = collections.map(async (col) => {
+            const localData = localStorage.getItem('simpro_' + col);
+            if (localData) {
+              try {
+                const items = JSON.parse(localData);
+                if (Array.isArray(items) && items.length > 0) {
+                  // Write all items to IndexedDB
+                  await this.writeAllToIndexedDB(col, items);
+                  // Merge into cache if cache is empty
+                  if (this.cache[col].length === 0) {
+                    this.cache[col] = items;
+                  }
+                }
+                localStorage.removeItem('simpro_' + col);
+              } catch (err) {
+                console.error(`Migration error for ${col}:`, err);
+              }
+            }
+          });
+
+          await Promise.all(migratePromises);
+        }
+        resolve();
+      };
+
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        const collections = Object.keys(TABLE_MAP);
+        collections.forEach(col => {
+          if (!db.objectStoreNames.contains(col)) {
+            db.createObjectStore(col, { keyPath: 'id' });
+          }
+        });
+        if (!db.objectStoreNames.contains('config')) {
+          db.createObjectStore('config', { keyPath: 'key' });
+        }
+      };
+    });
+  }
+
+  readAllFromIndexedDB(storeName) {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve([]);
+      try {
+        const transaction = this.db.transaction(storeName, 'readonly');
+        const store = transaction.objectStore(storeName);
+        const getAllRequest = store.getAll();
+
+        getAllRequest.onsuccess = () => {
+          resolve(getAllRequest.result || []);
+        };
+
+        getAllRequest.onerror = (e) => {
+          reject(e.target.error);
+        };
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  writeRecordToIndexedDB(storeName, record) {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve();
+      try {
+        const transaction = this.db.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const putRequest = store.put(record);
+
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = (e) => reject(e.target.error);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  deleteRecordFromIndexedDB(storeName, id) {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve();
+      try {
+        const transaction = this.db.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const deleteRequest = store.delete(id);
+
+        deleteRequest.onsuccess = () => resolve();
+        deleteRequest.onerror = (e) => reject(e.target.error);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  writeAllToIndexedDB(storeName, items) {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve();
+      try {
+        const transaction = this.db.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        // Clear existing
+        const clearRequest = store.clear();
+        clearRequest.onerror = (e) => reject(e.target.error);
+        
+        clearRequest.onsuccess = () => {
+          let count = 0;
+          if (items.length === 0) return resolve();
+          
+          items.forEach(item => {
+            const putRequest = store.put(item);
+            putRequest.onerror = (e) => reject(e.target.error);
+            putRequest.onsuccess = () => {
+              count++;
+              if (count === items.length) {
+                resolve();
+              }
+            };
+          });
+        };
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  clearAllIndexedDB() {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve();
+      try {
+        const collections = Object.keys(TABLE_MAP);
+        const transaction = this.db.transaction(collections, 'readwrite');
+        let count = 0;
+        
+        collections.forEach(col => {
+          const store = transaction.objectStore(col);
+          const clearRequest = store.clear();
+          clearRequest.onerror = (e) => reject(e.target.error);
+          clearRequest.onsuccess = () => {
+            count++;
+            if (count === collections.length) {
+              resolve();
+            }
+          };
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  // ── Local Folder Sync / File System Access Driver ──────────────────────────
+
+  async verifyDirPermission(readWrite) {
+    if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+      this.folderSyncPermissionGranted = true;
+      return true; // Capacitor native has permissions checked at app level
+    }
+
+    if (!this.dirHandle) return false;
+    const opts = {};
+    if (readWrite) opts.mode = 'readwrite';
+    
+    try {
+      const currentPerm = await this.dirHandle.queryPermission(opts);
+      if (currentPerm === 'granted') {
+        this.folderSyncPermissionGranted = true;
+        return true;
+      }
+      
+      // Request permission (must be called within a user gesture handler)
+      const newPerm = await this.dirHandle.requestPermission(opts);
+      this.folderSyncPermissionGranted = newPerm === 'granted';
+      return this.folderSyncPermissionGranted;
+    } catch (e) {
+      this.folderSyncPermissionGranted = false;
+      return false;
+    }
+  }
+
+  async setLocalDirectory(dirHandle) {
+    this.dirHandle = dirHandle;
+    if (dirHandle) {
+      this.folderSyncEnabled = true;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(this.getStorageKey('folder_sync_enabled'), 'true');
+      }
+      
+      // Save handle to IndexedDB
+      if (this.db) {
+        await new Promise((resolve, reject) => {
+          const transaction = this.db.transaction('config', 'readwrite');
+          const configStore = transaction.objectStore('config');
+          const putReq = configStore.put({ key: 'directory_handle', value: dirHandle });
+          putReq.onsuccess = () => resolve();
+          putReq.onerror = (e) => reject(e.target.error);
+        });
+      }
+      
+      this.folderSyncPermissionGranted = true;
+      
+      // Force rewrite all cached collections to directory immediately
+      const collections = Object.keys(TABLE_MAP);
+      await Promise.all(collections.map(col => this.writeCollectionToFolder(col, this.cache[col])));
+    } else {
+      this.folderSyncEnabled = false;
+      this.folderSyncPermissionGranted = false;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(this.getStorageKey('folder_sync_enabled'));
+      }
+      
+      // Remove handle from IndexedDB
+      if (this.db) {
+        await new Promise((resolve) => {
+          const transaction = this.db.transaction('config', 'readwrite');
+          const configStore = transaction.objectStore('config');
+          const deleteReq = configStore.delete('directory_handle');
+          deleteReq.onsuccess = () => resolve();
+          deleteReq.onerror = () => resolve();
+        });
+      }
+    }
+  }
+
+  async writeCollectionToFolder(collection, items) {
+    if (!this.folderSyncEnabled) return;
+
+    // 1. Capacitor Native environment
+    if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+      try {
+        const Filesystem = window.Capacitor.Plugins.Filesystem;
+        await Filesystem.writeFile({
+          path: `RelayDispatchData/data/${collection}.json`,
+          data: JSON.stringify(items || [], null, 2),
+          directory: 'DOCUMENTS',
+          encoding: 'utf8',
+          recursive: true
+        });
+      } catch (err) {
+        console.error(`Capacitor failed to write collection ${collection}:`, err);
+      }
+      return;
+    }
+
+    // 2. Standard Browser File System Access API
+    if (!this.dirHandle) return;
+    try {
+      const hasPerm = await this.verifyDirPermission(true);
+      if (!hasPerm) return;
+
+      const dataDir = await this.dirHandle.getDirectoryHandle('data', { create: true });
+      const fileHandle = await dataDir.getFileHandle(`${collection}.json`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(items || [], null, 2));
+      await writable.close();
+    } catch (err) {
+      console.error(`Failed to write collection ${collection} to local directory:`, err);
+    }
+  }
+
+  async writeDocumentFileToFolder(docId, name, dataUrl) {
+    if (!this.folderSyncEnabled) return null;
+
+    const ext = name.includes('.') ? name.split('.').pop() : 'bin';
+    const fileName = `${docId}.${ext}`;
+    const relativePath = `documents/${fileName}`;
+
+    // Extract base64 payload
+    const base64Parts = dataUrl.split(',');
+    if (base64Parts.length < 2) return null;
+    const base64Data = base64Parts[1];
+
+    // 1. Capacitor Native environment
+    if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+      try {
+        const Filesystem = window.Capacitor.Plugins.Filesystem;
+        await Filesystem.writeFile({
+          path: `RelayDispatchData/documents/${fileName}`,
+          data: base64Data,
+          directory: 'DOCUMENTS',
+          recursive: true
+        });
+        return relativePath;
+      } catch (err) {
+        console.error('Capacitor failed to write document:', err);
+        return null;
+      }
+    }
+
+    // 2. Standard Browser File System Access API
+    if (!this.dirHandle) return null;
+    try {
+      const hasPerm = await this.verifyDirPermission(true);
+      if (!hasPerm) return null;
+
+      const mimeMatch = base64Parts[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+      const binaryStr = atob(base64Data);
+      const len = binaryStr.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: mime });
+
+      const docsDir = await this.dirHandle.getDirectoryHandle('documents', { create: true });
+      const fileHandle = await docsDir.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+
+      return relativePath;
+    } catch (err) {
+      console.error('Failed to save document file to local directory:', err);
+      return null;
+    }
+  }
+
+  async getDocumentUrl(doc) {
+    if (!doc || !doc.url) return '';
+    if (doc.url.startsWith('data:') || doc.url.startsWith('http')) {
+      return doc.url;
+    }
+
+    // 1. Capacitor Native environment
+    if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+      try {
+        const Filesystem = window.Capacitor.Plugins.Filesystem;
+        const result = await Filesystem.readFile({
+          path: `RelayDispatchData/${doc.url}`,
+          directory: 'DOCUMENTS'
+        });
+        const mime = doc.type || 'application/octet-stream';
+        return `data:${mime};base64,${result.data}`;
+      } catch (err) {
+        console.error('Capacitor failed to read document file:', err);
+        throw err;
+      }
+    }
+
+    // 2. Standard Browser File System Access API
+    if (!this.dirHandle) {
+      throw new Error('Local directory sync is not configured.');
+    }
+
+    try {
+      const hasPerm = await this.verifyDirPermission(false);
+      if (!hasPerm) {
+        throw new Error('Permission to access the local directory was not granted.');
+      }
+
+      const parts = doc.url.split('/');
+      const dirName = parts[0];
+      const fileName = parts[1];
+
+      const dir = await this.dirHandle.getDirectoryHandle(dirName);
+      const fileHandle = await dir.getFileHandle(fileName);
+      const file = await fileHandle.getFile();
+      return URL.createObjectURL(file);
+    } catch (err) {
+      console.error('Failed to read file from local directory:', err);
+      throw err;
+    }
+  }
+
 
   // Fetch all tenant data into memory cache and subscribe to real-time updates
   async initializeCloudSync() {
@@ -441,10 +990,8 @@ class DataStore {
 
         let query = supabase.from(table).select('*');
         
-        // Scope queries by company_id (except for profiles where we fetch tenant users)
-        if (table !== 'profiles') {
-          query = query.eq('company_id', this.companyId);
-        }
+        // Scope queries by company_id
+        query = query.eq('company_id', this.companyId);
 
         const { data, error } = await query;
         if (!error && data) {
@@ -454,6 +1001,11 @@ class DataStore {
       });
 
       await Promise.all(promises);
+
+      // Seed default user types if database is empty
+      if (this.cache.userTypes.length === 0) {
+        await this.seedDefaultUserTypes();
+      }
 
       // Seed form templates if database is empty
       if (this.cache.formTemplates.length === 0) {
@@ -1000,11 +1552,25 @@ class DataStore {
     this.cache[collection] = items;
     this.emit(collection, items);
 
-    // If not running in cloud mode, fall back to localStorage
-    if (!this.companyId) {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+    // If not running in cloud mode, fall back to IndexedDB / Local Folder Sync
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
+      if (this.folderSyncEnabled) {
+        if (collection === 'documents' && item.url && item.url.startsWith('data:')) {
+          this.writeDocumentFileToFolder(item.id, item.name, item.url).then(relPath => {
+            if (relPath) {
+              item.url = relPath;
+              // Re-save in IndexedDB and rewrite folder collection with updated path
+              this.writeRecordToIndexedDB(collection, item);
+              this.writeCollectionToFolder(collection, this.cache[collection]);
+            }
+          });
+        } else {
+          this.writeCollectionToFolder(collection, this.cache[collection]);
+        }
       }
+      this.writeRecordToIndexedDB(collection, item).catch(err => {
+        console.error(`Error saving ${collection} to IndexedDB:`, err);
+      });
       return item;
     }
 
@@ -1038,9 +1604,15 @@ class DataStore {
             })
           });
 
-          const data = await res.json();
+          let data;
+          const text = await res.text();
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (e) {
+            throw new Error(`Server returned status ${res.status}. Response: ${text.substring(0, 150) || '[Empty]'}`);
+          }
           if (!res.ok || !data.success) {
-            throw new Error(data.error || 'Failed to create user.');
+            throw new Error(data.error || `Failed to create user (Status ${res.status}).`);
           }
 
           // Update local item ID with the real auth user UUID returned from database
@@ -1088,8 +1660,8 @@ class DataStore {
 
     const previous = items[index];
 
-    // If not running in cloud mode, perform local cache update and write to localStorage
-    if (!this.companyId) {
+    // If not running in cloud mode, perform local cache update and write to IndexedDB / Folder Sync
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
       const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
       items[index] = updated;
       this.cache[collection] = items;
@@ -1097,8 +1669,11 @@ class DataStore {
       if (collection === 'jobs' && updates.status === 'Completed' && previous.status !== 'Completed') {
         this.handleJobCompletionSideEffects(updated, previous);
       }
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+      this.writeRecordToIndexedDB(collection, updated).catch(err => {
+        console.error(`Error saving updated ${collection} to IndexedDB:`, err);
+      });
+      if (this.folderSyncEnabled) {
+        this.writeCollectionToFolder(collection, this.cache[collection]);
       }
       return updated;
     }
@@ -1139,9 +1714,15 @@ class DataStore {
             })
           });
 
-          const data = await res.json();
+          let data;
+          const text = await res.text();
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (e) {
+            throw new Error(`Server returned status ${res.status}. Response: ${text.substring(0, 150) || '[Empty]'}`);
+          }
           if (!res.ok || !data.success) {
-            throw new Error(data.error || 'Failed to update user.');
+            throw new Error(data.error || `Failed to update user (Status ${res.status}).`);
           }
 
           const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
@@ -1200,10 +1781,13 @@ class DataStore {
     this.cache[collection] = items;
     this.emit(collection, items);
 
-    // If not running in cloud mode, fall back to localStorage
-    if (!this.companyId) {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+    // If not running in cloud mode, fall back to IndexedDB / Folder Sync
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
+      this.deleteRecordFromIndexedDB(collection, id).catch(err => {
+        console.error(`Error deleting ${id} from ${collection} in IndexedDB:`, err);
+      });
+      if (this.folderSyncEnabled) {
+        this.writeCollectionToFolder(collection, this.cache[collection]);
       }
       return;
     }
@@ -1291,8 +1875,8 @@ class DataStore {
       email: '',
       address: '',
       website: '',
-      logo: RELAY_LOGO_SVG,
-      logoSmall: RELAY_LOGO_SMALL_SVG,
+      logo: defaultLogoLarge,
+      logoSmall: defaultLogoSmall,
       markupPercent: 20,
       taxEnabled: true,
       taxRate: 10,
@@ -1341,13 +1925,14 @@ class DataStore {
 
     if (this.companySettings) {
       const merged = { ...defaultSettings, ...this.companySettings };
-      // Fallback to default RELAY logos if user has not uploaded custom ones
-      if (!merged.logo) merged.logo = RELAY_LOGO_SVG;
-      if (!merged.logoSmall) merged.logoSmall = RELAY_LOGO_SMALL_SVG;
+      // Fallback to default logos if user has not uploaded custom ones
+      if (!merged.logo) merged.logo = defaultLogoLarge;
+      if (!merged.logoSmall) merged.logoSmall = defaultLogoSmall;
       // Ensure sub-objects merge safely
       merged.documentTheme = { ...defaultSettings.documentTheme, ...this.companySettings.documentTheme };
       return merged;
     }
+
     return defaultSettings;
   }
 
@@ -1362,9 +1947,9 @@ class DataStore {
     this.companySettings = settings;
     this.emit('settings', settings);
 
-    if (!this.companyId) {
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
       if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('simpro_settings', JSON.stringify(settings));
+        localStorage.setItem(this.getStorageKey('settings'), JSON.stringify(settings));
       }
       return;
     }
@@ -1403,8 +1988,8 @@ class DataStore {
   // ── Database Seeding operations (if tables are empty) ──────────────────────
 
   isSeeded() {
-    if (this.companyId) return true;
-    return localStorage.getItem('simpro__seeded') === 'true';
+    if (this.companyId && !this.companyId.startsWith('acct_')) return true;
+    return localStorage.getItem(this.getStorageKey('seeded')) === 'true';
   }
 
   save(collection, items) {
@@ -1412,9 +1997,14 @@ class DataStore {
     this.cache[collection] = items;
     this.emit(collection, items);
 
-    // If not running in cloud mode, fall back to localStorage to support the offline demo users list
-    if (!this.companyId) {
-      localStorage.setItem('simpro_' + collection, JSON.stringify(items));
+    // If not running in cloud mode, fall back to IndexedDB / Folder Sync
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
+      this.writeAllToIndexedDB(collection, items).catch(err => {
+        console.error(`Error saving all items to ${collection} in IndexedDB:`, err);
+      });
+      if (this.folderSyncEnabled) {
+        this.writeCollectionToFolder(collection, items);
+      }
       return;
     }
 
@@ -1444,7 +2034,7 @@ class DataStore {
   }
 
   markSeeded() {
-    localStorage.setItem('simpro__seeded', 'true');
+    localStorage.setItem(this.getStorageKey('seeded'), 'true');
   }
 
   async seedFormTemplates() {
@@ -1458,18 +2048,189 @@ class DataStore {
     this.cache.formTemplates = templates;
     this.emit('formTemplates', templates);
 
+    if (this.companyId.startsWith('acct_')) {
+      await this.writeAllToIndexedDB('formTemplates', templates);
+      return;
+    }
+
     const dbPayload = templates.map(t => this.denormalizeRecord(t, 'formTemplates'));
     const { error } = await supabase.from('form_templates').insert(dbPayload);
     if (error) console.error('Error seeding form templates:', error);
   }
 
+  async seedDefaultUserTypes() {
+    if (!this.companyId) return;
+
+    const userTypes = [
+      {
+        id: `${this.companyId}_ut_admin`,
+        name: 'Admin',
+        description: 'Full system access',
+        permissions: buildGranularPerms(() => true)
+      },
+      {
+        id: `${this.companyId}_ut_manager`,
+        name: 'Manager',
+        description: 'Can manage most workflows but limited settings access',
+        permissions: buildGranularPerms((mod, key) => {
+          if (mod === 'Settings') return ['view', 'edit_company', 'manage_tax'].includes(key);
+          return true;
+        })
+      },
+      {
+        id: `${this.companyId}_ut_tech`,
+        name: 'Technician',
+        description: 'Field staff — limited to their own jobs, schedule and timesheets',
+        permissions: buildGranularPerms((mod, key) => {
+          if (mod === 'Dashboard') return key === 'view';
+          if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
+          if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
+          if (mod === 'Schedule') return ['view_own'].includes(key);
+          return false;
+        })
+      },
+      {
+        id: `${this.companyId}_ut_office`,
+        name: 'Office Staff',
+        description: 'Admin / reception — can manage customers, quotes, invoices but not system settings',
+        permissions: buildGranularPerms((mod, key) => {
+          if (mod === 'Settings') return false;
+          if (mod === 'Reports') return key === 'view';
+          if (['Invoices', 'Purchase Orders', 'Suppliers'].includes(mod) && key === 'delete') return false;
+          return true;
+        })
+      }
+    ];
+
+    this.cache.userTypes = userTypes;
+    this.emit('userTypes', userTypes);
+
+    if (this.companyId.startsWith('acct_')) {
+      await this.writeAllToIndexedDB('userTypes', userTypes);
+      return;
+    }
+
+    const dbPayload = userTypes.map(ut => this.denormalizeRecord({ ...ut, companyId: this.companyId }, 'userTypes'));
+    const { error } = await supabase.from('user_types').insert(dbPayload);
+    if (error) console.error('Error seeding default user types:', error);
+  }
+
+  async seedDefaultTechnicians() {
+    const companyId = this.companyId;
+    const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
+    const techTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_tech` : 'ut_tech';
+
+    const defaultTechs = [
+      { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445', username: 'jake', password: '123456' },
+      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Electrician',         color: '#10B981', userTypeId: techTypeId,    payRate: 80.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556', username: 'ryan', password: '123456' },
+      { id: `${companyId}_tech_3`, name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: techTypeId,    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667', username: 'sandra', password: '123456' },
+      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Apprentice',          color: '#F59E0B', userTypeId: techTypeId,    payRate: 45.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778', username: 'dean', password: '123456' }
+    ];
+
+    this.cache.technicians = defaultTechs;
+    this.emit('technicians', defaultTechs);
+
+    if (companyId.startsWith('acct_')) {
+      await this.writeAllToIndexedDB('technicians', defaultTechs);
+      if (this.folderSyncEnabled) {
+        this.writeCollectionToFolder('technicians', defaultTechs).catch(err => {
+          console.error('Error writing seeded technicians to local folder:', err);
+        });
+      }
+      return;
+    }
+
+    const dbPayload = defaultTechs.map(t => this.denormalizeRecord({ ...t, companyId }, 'technicians'));
+    const { error } = await supabase.from('technicians').insert(dbPayload);
+    if (error) console.error('Error seeding default technicians:', error);
+  }
+
+  async migrateLocalToCloud(companyId, adminUserId) {
+    this.companyId = companyId;
+    this.userId = adminUserId;
+
+    // 1. Update the remote company settings with local companySettings
+    const currentSettings = this.getSettings();
+    const { error: compErr } = await supabase.from('companies').update({
+      abn: currentSettings.abn || '',
+      phone: currentSettings.phone || '',
+      domain: currentSettings.domain || '',
+      email: currentSettings.email || '',
+      address: currentSettings.address || '',
+      settings: currentSettings
+    }).eq('id', companyId);
+    if (compErr) console.error('Error updating cloud company settings during migration:', compErr);
+
+    // 2. Loop through all collections and push to Supabase
+    // Skip 'companies' and 'technicians'
+    const collectionsToMigrate = Object.keys(TABLE_MAP).filter(col => col !== 'companies' && col !== 'technicians');
+
+    for (const col of collectionsToMigrate) {
+      const items = this.cache[col] || [];
+      if (items.length === 0) continue;
+
+      const table = TABLE_MAP[col];
+      if (!table) continue;
+
+      // Assign the new cloud company_id and denormalize
+      const payload = items.map(item => {
+        const itemCopy = { ...item, companyId };
+        return this.denormalizeRecord(itemCopy, col);
+      });
+
+      // Write to Supabase using upsert
+      const { error } = await supabase.from(table).upsert(payload);
+      if (error) {
+        console.error(`Error migrating collection ${col}:`, error);
+        throw new Error(`Failed to migrate ${col} data: ${error.message}`);
+      }
+    }
+
+    // 3. Clear/close local DB connection and sync from Cloud
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+    this.initPromise = this.initializeCloudSync();
+    await this.initPromise;
+  }
+
+  deleteLocalAccountData(accountId) {
+    if (typeof localStorage !== 'undefined') {
+      Object.keys(TABLE_MAP).forEach(col => {
+        localStorage.removeItem(`relay_${accountId}_${col}`);
+      });
+      localStorage.removeItem(`relay_${accountId}_folder_sync_enabled`);
+      localStorage.removeItem(`relay_${accountId}_seeded`);
+      localStorage.removeItem(`relay_${accountId}_settings`);
+    }
+    if (typeof window !== 'undefined' && window.indexedDB) {
+      window.indexedDB.deleteDatabase(`RelayDispatchDB_${accountId}`);
+    }
+  }
+
   clearAll() {
     this.clearSync();
-    if (!this.companyId) {
-      Object.keys(TABLE_MAP).forEach(col => {
-        localStorage.removeItem('simpro_' + col);
-      });
-      localStorage.removeItem('simpro__seeded');
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
+      const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
+      
+      if (activeAccount) {
+        this.deleteLocalAccountData(activeAccount);
+      } else {
+        Object.keys(TABLE_MAP).forEach(col => {
+          localStorage.removeItem('simpro_' + col);
+        });
+        localStorage.removeItem('simpro__seeded');
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(this.getStorageKey('folder_sync_enabled'));
+        }
+        this.folderSyncEnabled = false;
+        this.folderSyncPermissionGranted = false;
+        this.dirHandle = null;
+        this.clearAllIndexedDB().catch(err => {
+          console.error('Error clearing IndexedDB:', err);
+        });
+      }
     }
   }
 }

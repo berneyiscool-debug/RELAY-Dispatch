@@ -531,7 +531,7 @@ export function renderTimesheetsList(container) {
   }
 
   function openLogTimeModal() {
-    const isTech = currentUser.role === 'technician' || currentUser.userTypeId === 'ut_tech';
+    const isTech = currentUser.role === 'technician' || currentUser.userTypeId === 'ut_tech' || (currentUser.userTypeId && currentUser.userTypeId.endsWith('_ut_tech'));
     const pathBreadcrumbs = {};
     const idToPath = {};
     function populateBreadcrumbs(tasks, currentPath = [], currentNamePath = []) {

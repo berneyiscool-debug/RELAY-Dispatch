@@ -18,15 +18,44 @@ export const THEMES = {
   'ballet-pointe': { name: 'Ballet Pointe', mode: 'light' }
 };
 
-export function applyTheme(theme) {
-  if (!THEMES[theme]) {
-    theme = 'light';
+export function applyTheme(theme, saveToDatabase = false) {
+  if (!theme || !THEMES[theme]) {
+    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('data-theme-mode');
+    const bgEffects = document.getElementById('theme-bg-effects');
+    if (bgEffects) {
+      bgEffects.remove();
+    }
+    return;
   }
   
   const mode = THEMES[theme].mode;
   document.documentElement.setAttribute('data-theme', theme);
   document.documentElement.setAttribute('data-theme-mode', mode);
   localStorage.setItem('simpro_theme', theme);
+  
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  if (currentUser && currentUser.id) {
+    currentUser.theme = theme;
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    localStorage.setItem(`simpro_theme_${currentUser.id}`, theme);
+
+    if (saveToDatabase) {
+      import('./supabase.js').then(({ supabase }) => {
+        supabase
+          .from('profiles')
+          .update({ theme })
+          .eq('id', currentUser.id)
+          .then(({ error }) => {
+            if (error) {
+              console.error('Failed to update theme in Supabase profiles:', error);
+            }
+          });
+      }).catch(err => {
+        console.error('Failed to load supabase module for theme update:', err);
+      });
+    }
+  }
 
   // Apply visual background effects
   applyBackgroundEffects(theme);

@@ -49,7 +49,9 @@ import { renderSettings } from './pages/Settings.js';
 import { renderFormBuilder } from './pages/forms/FormBuilder.js';
 import { renderKitDetail } from './pages/kits/KitDetail.js';
 
-import { renderLogin } from './pages/login/Login.js';
+import { renderLogin, handleCloudLoginSuccess } from './pages/login/Login.js';
+import { renderLaunchScreen } from './pages/launch/LaunchScreen.js';
+import { storageGet, storageSet } from './utils/tauriStore.js';
 import { renderCustomerPortal } from './pages/portal/Portal.js';
 import { renderContractorPortal } from './pages/portal/ContractorPortal.js';
 import { renderContractorsList } from './pages/contractors/ContractorsList.js';
@@ -402,7 +404,68 @@ function renderPage(handler) {
 }
 
 // Login
-router.register('/login', renderPage(renderLogin));
+router.register('/login', renderPage((container) => {
+  renderLaunchScreen(container, async (result) => {
+    if (result.mode === 'local' || result.mode === 'local_multiuser') {
+      const accountId = result.accountId;
+      sessionStorage.setItem('relay_active_account', accountId);
+
+      // Update the profile's lastAccessedAt timestamp in storage
+      const accounts = await storageGet('relay_accounts') || [];
+      const acct = accounts.find(a => a.id === accountId);
+      if (acct) {
+        acct.lastAccessedAt = new Date().toISOString();
+        await storageSet('relay_accounts', accounts);
+      }
+
+      // Initialize the namespaced IndexedDB connection / load local files
+      let localUser = result.user;
+      if (!localUser) {
+        localUser = {
+          id: `${accountId}_admin`,
+          companyId: accountId,
+          name: acct?.businessName || 'Local Admin',
+          role: 'admin',
+          userTypeName: 'Admin',
+          userTypeId: `${accountId}_ut_admin`,
+          color: acct?.avatarColor || '#FF5C00',
+          theme: 'light'
+        };
+      }
+
+      // Set currentUser in localStorage
+      localStorage.setItem('currentUser', JSON.stringify(localUser));
+
+      // Show the shell elements
+      const sidebar = document.querySelector('.sidebar');
+      const topbar = document.querySelector('.topbar');
+      const breadcrumb = document.getElementById('breadcrumb');
+      if (sidebar) sidebar.style.display = '';
+      if (topbar) topbar.style.display = '';
+      if (breadcrumb) breadcrumb.style.display = '';
+
+      // Initialize data store for local user
+      await store.initializeUser(localUser);
+
+      // Update sidebar and topbar access permissions and user profile
+      const { updateSidebarAccess } = await import('./components/Sidebar.js');
+      if (updateSidebarAccess) updateSidebarAccess();
+
+      const { updateTopbarAccess } = await import('./components/TopBar.js');
+      if (updateTopbarAccess) updateTopbarAccess();
+
+      applyTheme('light');
+      router.navigate('/');
+    } else if (result.mode === 'cloud') {
+      try {
+        await handleCloudLoginSuccess(container, { id: result.userId });
+      } catch (err) {
+        const { showToast: toast } = await import('./components/Notifications.js');
+        toast(err.message || err, 'error');
+      }
+    }
+  });
+}));
 
 // Customer Portal
 router.register('/portal/customer', renderPage(renderCustomerPortal));
@@ -514,16 +577,14 @@ router.onNavigate = (path, params) => {
   const topbarEl = document.querySelector('.topbar');
   const breadcrumbEl = document.getElementById('breadcrumb');
 
-  if (isPortal) {
+  if (isPortal || path === '/login' || !currentUser) {
     if (sidebarEl) sidebarEl.style.display = 'none';
     if (topbarEl) topbarEl.style.display = 'none';
     if (breadcrumbEl) breadcrumbEl.style.display = 'none';
   } else {
-    if (currentUser) {
-      if (sidebarEl) sidebarEl.style.display = '';
-      if (topbarEl) topbarEl.style.display = '';
-      if (breadcrumbEl) breadcrumbEl.style.display = '';
-    }
+    if (sidebarEl) sidebarEl.style.display = '';
+    if (topbarEl) topbarEl.style.display = '';
+    if (breadcrumbEl) breadcrumbEl.style.display = '';
   }
 
   if (!currentUser && path !== '/login' && !isPortal) {
@@ -629,6 +690,13 @@ window.addEventListener('fieldforge-logout', () => {
 });
 
 // ---- Boot ----
+// Session Launch Guard
+if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('relay_session_initialized')) {
+  localStorage.removeItem('currentUser');
+  sessionStorage.removeItem('relay_active_account');
+  sessionStorage.setItem('relay_session_initialized', 'true');
+}
+
 // Before resolving, check if we need to redirect to login
 const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
 const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
@@ -636,4 +704,16 @@ if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
   window.location.hash = '#/login';
 }
 
-router.resolve();
+if (store.initPromise && typeof store.initPromise.then === 'function') {
+  store.initPromise
+    .then(() => {
+      router.resolve();
+    })
+    .catch((err) => {
+      console.error('Failed to initialize data store:', err);
+      router.resolve();
+    });
+} else {
+  router.resolve();
+}
+

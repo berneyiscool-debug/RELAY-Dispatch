@@ -196,6 +196,11 @@ export function renderSettings(container) {
     activeTab = tabParam;
   }
 
+  const isLocalMode = !store.companyId;
+  if (isLocalMode && (activeTab === 'users' || activeTab === 'portal')) {
+    activeTab = 'company';
+  }
+
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
   function render() {
@@ -204,12 +209,13 @@ export function renderSettings(container) {
 
       <div class="tabs" style="margin-bottom:0">
         <button class="tab ${activeTab === 'company' ? 'active' : ''}" data-tab="company">Company</button>
-        <button class="tab ${activeTab === 'users' ? 'active' : ''}" data-tab="users">Users & Permissions</button>
+        <button class="tab ${activeTab === 'users' ? 'active' : ''} ${isLocalMode ? 'disabled-local' : ''}" data-tab="users" ${isLocalMode ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Users & Permissions</button>
         <button class="tab ${activeTab === 'materials' ? 'active' : ''}" data-tab="materials">Materials</button>
         <button class="tab ${activeTab === 'templates_forms' ? 'active' : ''}" data-tab="templates_forms">Templates &amp; Forms</button>
         <button class="tab ${activeTab === 'tax' ? 'active' : ''}" data-tab="tax">Tax &amp; Rates</button>
-        <button class="tab ${activeTab === 'portal' ? 'active' : ''}" data-tab="portal">Customer Portal</button>
+        <button class="tab ${activeTab === 'portal' ? 'active' : ''} ${isLocalMode ? 'disabled-local' : ''}" data-tab="portal" ${isLocalMode ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Customer Portal</button>
         <button class="tab ${activeTab === 'invoices_quotes' ? 'active' : ''}" data-tab="invoices_quotes">Quotes &amp; Invoices</button>
+        <button class="tab ${activeTab === 'folder_sync' ? 'active' : ''}" data-tab="folder_sync">Folder Sync</button>
         <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
       </div>
       <div id="settings-content" style="padding-top:var(--space-lg)"></div>
@@ -219,6 +225,7 @@ export function renderSettings(container) {
 
     container.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => {
+        if (tab.classList.contains('disabled-local')) return;
         activeTab = tab.dataset.tab;
         container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
@@ -229,6 +236,11 @@ export function renderSettings(container) {
 
   function renderContent() {
     const tc = container.querySelector('#settings-content');
+
+    if (activeTab === 'folder_sync') {
+      renderFolderSyncTab(tc);
+      return;
+    }
 
     if (activeTab === 'templates_forms') {
       renderTemplatesFormsTab(tc);
@@ -246,7 +258,217 @@ export function renderSettings(container) {
       let pendingLogo = s.logo;
       let pendingLogoSmall = s.logoSmall;
       
+      const openMigrationModal = () => {
+        const modalContent = document.createElement('div');
+        modalContent.innerHTML = `
+          <form id="convert-cloud-form" style="display:flex; flex-direction:column; gap:16px;">
+            <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-info); display:flex; gap:8px;">
+              <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
+              <div>
+                Configure your cloud administrator credentials. This username and password will be your new secure login.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Administrator Full Name</label>
+              <input class="form-input" id="migrate-admin-name" required placeholder="e.g. John Doe" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Administrator Phone Number</label>
+              <input class="form-input" id="migrate-admin-phone" required placeholder="e.g. 0412 345 678" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Email Address (Username)</label>
+              <input class="form-input" type="email" id="migrate-admin-email" required placeholder="e.g. admin@yourcompany.com" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Password</label>
+              <input class="form-input" type="password" id="migrate-admin-password" required minlength="6" placeholder="At least 6 characters" />
+            </div>
+
+            <div id="migration-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
+              <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
+              <span id="migration-error-text"></span>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
+              <button type="button" class="btn btn-secondary" id="btn-migrate-cancel">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="btn-migrate-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined" id="submit-icon" style="font-size:18px;">cloud_done</span>
+                <span id="submit-text">Register & Start Migration</span>
+              </button>
+            </div>
+          </form>
+        `;
+
+        const { close } = showModal({
+          title: 'Register & Migrate to Cloud',
+          content: modalContent,
+          size: 'modal-md'
+        });
+
+        modalContent.querySelector('#btn-migrate-cancel').addEventListener('click', close);
+
+        const form = modalContent.querySelector('#convert-cloud-form');
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+
+          const errorEl = modalContent.querySelector('#migration-error');
+          const errorTextEl = modalContent.querySelector('#migration-error-text');
+          const submitBtn = modalContent.querySelector('#btn-migrate-submit');
+          const cancelBtn = modalContent.querySelector('#btn-migrate-cancel');
+          const submitText = modalContent.querySelector('#submit-text');
+          const submitIcon = modalContent.querySelector('#submit-icon');
+
+          errorEl.style.display = 'none';
+          submitBtn.disabled = true;
+          cancelBtn.disabled = true;
+          submitText.textContent = 'Migrating to Cloud...';
+          submitIcon.className = 'material-icons-outlined spinner';
+          submitIcon.textContent = 'sync';
+          submitIcon.style.animation = 'spin 1s linear infinite';
+
+          const adminName = modalContent.querySelector('#migrate-admin-name').value.trim();
+          const adminPhone = modalContent.querySelector('#migrate-admin-phone').value.trim();
+          const email = modalContent.querySelector('#migrate-admin-email').value.trim();
+          const password = modalContent.querySelector('#migrate-admin-password').value;
+          const companyName = store.getSettings().name || 'My Local Business';
+
+          try {
+            // Import supabase dynamically to avoid issues
+            const { supabase } = await import('../utils/supabase.js');
+
+            // 1. Sign up the user in Supabase Auth
+            const { data: authData, error: authErr } = await supabase.auth.signUp({
+              email,
+              password,
+              options: {
+                data: {
+                  name: adminName,
+                  phone: adminPhone
+                }
+              }
+            });
+            if (authErr) throw authErr;
+
+            if (!authData.user) {
+              throw new Error('Verification required or signup was blocked. Check your email inbox.');
+            }
+
+            // 2. Call the security definer RPC function to create company and profile records
+            const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
+              user_id: authData.user.id,
+              company_name: companyName,
+              admin_name: adminName,
+              admin_phone: adminPhone
+            });
+            if (rpcError) throw rpcError;
+
+            // 3. Trigger local to cloud data migration
+            const activeAccountId = sessionStorage.getItem('relay_active_account');
+            await store.migrateLocalToCloud(companyId, authData.user.id);
+
+            // 4. Remove the local profile from the account list
+            if (activeAccountId) {
+              const localAccountsKey = 'relay_accounts';
+              let localAccounts = [];
+              try {
+                const stored = localStorage.getItem(localAccountsKey);
+                if (stored) {
+                  localAccounts = JSON.parse(stored);
+                }
+              } catch (e) {
+                console.error('Error reading local accounts:', e);
+              }
+              localAccounts = localAccounts.filter(a => a.id !== activeAccountId);
+              localStorage.setItem(localAccountsKey, JSON.stringify(localAccounts));
+
+              // 5. Delete local namespaced data
+              store.deleteLocalAccountData(activeAccountId);
+            }
+
+            // 6. Fetch the newly created profile to construct currentUser session object
+            const { data: profile, error: profileErr } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', authData.user.id)
+              .single();
+            if (profileErr) throw profileErr;
+
+            const user = {
+              id: profile.id,
+              companyId: profile.company_id,
+              name: profile.name,
+              role: profile.role,
+              userTypeName: 'Admin',
+              userTypeId: `${profile.company_id}_ut_admin`,
+              color: profile.color || '#FF5C00',
+              theme: 'light'
+            };
+
+            localStorage.setItem('currentUser', JSON.stringify(user));
+            sessionStorage.removeItem('relay_active_account');
+
+            showToast('Migration completed successfully! Redirecting...', 'success');
+            close();
+
+            // 7. Reload application shell to boot into cloud mode
+            setTimeout(() => {
+              window.location.hash = '#/';
+              window.location.reload();
+            }, 1500);
+
+          } catch (err) {
+            console.error('Migration failed:', err);
+            errorTextEl.textContent = err.message || 'An error occurred during migration.';
+            errorEl.style.display = 'flex';
+
+            submitBtn.disabled = false;
+            cancelBtn.disabled = false;
+            submitText.textContent = 'Register & Start Migration';
+            submitIcon.className = 'material-icons-outlined';
+            submitIcon.textContent = 'cloud_done';
+            submitIcon.style.animation = '';
+          }
+        });
+      };
+
       const renderCompanyTab = () => {
+        let convertToCloudCard = '';
+        if (store.companyId && store.companyId.startsWith('acct_')) {
+          convertToCloudCard = `
+            <div class="card" style="max-width:850px; margin-top:24px; border:1px solid var(--color-warning);">
+              <div class="card-header" style="background:var(--color-warning-bg); color:var(--color-warning); display:flex; align-items:center; gap:8px;">
+                <span class="material-icons-outlined">cloud_upload</span>
+                <h4 style="color:var(--color-warning); margin:0;">Convert to Cloud Account</h4>
+              </div>
+              <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+                <p style="font-size:13.5px; line-height:1.6; color:var(--text-secondary); margin:0;">
+                  This business profile is currently running locally. You can migrate this profile and all its offline data (customers, jobs, quotes, settings, etc.) to the Antigravity Cloud, creating a secure online account.
+                </p>
+                <div style="background:var(--bg-color); border-left:4px solid var(--color-warning); padding:16px; border-radius:4px;">
+                  <strong style="display:block; margin-bottom:8px; font-size:13px; color:var(--text-primary);">Conversion Process Highlights:</strong>
+                  <ul style="margin:0; padding-left:20px; font-size:12.5px; color:var(--text-secondary); display:flex; flex-direction:column; gap:6px;">
+                    <li>Registers a new administrator account in Supabase.</li>
+                    <li>Safely uploads all local offline data to the cloud databases.</li>
+                    <li>Wipes namespaced local files and IndexedDB databases from this device.</li>
+                    <li>Transitions your session seamlessly to the cloud company dashboard.</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="card-footer">
+                <button class="btn btn-primary" id="btn-convert-cloud" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
+                  <span class="material-icons-outlined" style="font-size:18px;">cloud_upload</span>
+                  <span>Register & Migrate to Cloud</span>
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
         tc.innerHTML = `
           <div class="card" style="max-width:850px">
             <div class="card-header"><h4>Company Information</h4></div>
@@ -336,6 +558,7 @@ export function renderSettings(container) {
               </button>
             </div>
           </div>
+          ${convertToCloudCard}
         `;
 
         // Handlers for Company Tab
@@ -434,6 +657,13 @@ export function renderSettings(container) {
         tc.querySelector('#btn-remove-logo')?.addEventListener('click', removeLogoHandler);
         tc.querySelector('#btn-remove-logo-small')?.addEventListener('click', removeLogoSmallHandler);
 
+        const convertBtn = tc.querySelector('#btn-convert-cloud');
+        if (convertBtn) {
+          convertBtn.addEventListener('click', () => {
+            openMigrationModal();
+          });
+        }
+
         tc.querySelector('#btn-save-company').addEventListener('click', async () => {
           const saveBtn = tc.querySelector('#btn-save-company');
           const originalHtml = saveBtn.innerHTML;
@@ -452,7 +682,7 @@ export function renderSettings(container) {
             settings.logoSmall = pendingLogoSmall;
             
             await store.saveSettings(settings);
-            showToast('Company information saved successfully to cloud database', 'success');
+            showToast('Company information saved successfully to database', 'success');
             tc.querySelector('#unsaved-logo-hint').style.display = 'none';
             window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
           } catch (err) {
@@ -529,7 +759,7 @@ export function renderSettings(container) {
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0">Active Users</h4>
-            <button class="btn btn-primary btn-sm" id="btn-add-user" data-tooltip="Create a new user account" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
+            <button class="btn btn-primary btn-sm ${!store.companyId ? 'disabled-local' : ''}" id="btn-add-user" data-tooltip="${!store.companyId ? 'Requires Cloud Account' : 'Create a new user account'}" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
@@ -646,7 +876,10 @@ export function renderSettings(container) {
         </div>
       `;
 
-      tc.querySelector('#btn-add-user').addEventListener('click', () => openUserModal());
+      tc.querySelector('#btn-add-user').addEventListener('click', () => {
+        if (!store.companyId) return;
+        openUserModal();
+      });
       tc.querySelectorAll('.btn-edit-user').forEach(btn => {
         btn.addEventListener('click', (e) => openUserModal(e.currentTarget.dataset.id));
       });
@@ -758,7 +991,7 @@ export function renderSettings(container) {
       tc.innerHTML = `
         <div class="grid-2">
           <div class="card">
-            <div class="card-header"><h4>Tax & Global Markup</h4></div>
+            <div class="card-header"><h4>Tax Rates</h4></div>
             <div class="card-body">
               <div class="form-group" style="display:flex; flex-direction:column; gap:8px">
                 <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0">
@@ -767,12 +1000,6 @@ export function renderSettings(container) {
                 </label>
                 <div style="display:${settings.taxEnabled !== false ? 'flex' : 'none'}; align-items:center; gap:8px; margin-top:4px" id="tax-rate-container">
                   <input class="form-input" id="tax-rate" type="number" value="${settings.taxRate !== undefined ? settings.taxRate : 10}" style="width:100px" min="0" max="100" step="0.1" /> <span class="text-secondary">%</span>
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Global Material Markup</label>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <input class="form-input" id="global-markup" type="number" value="${settings.markupPercent || 20}" style="width:100px" /> <span class="text-secondary">%</span>
                 </div>
               </div>
             </div>
@@ -1065,13 +1292,11 @@ export function renderSettings(container) {
         try {
           const taxEnabled = tc.querySelector('#tax-enabled').checked;
           const taxRate = parseFloat(tc.querySelector('#tax-rate').value) || 0;
-          const markupPercent = parseFloat(tc.querySelector('#global-markup').value) || 0;
           const laborRounding = parseInt(tc.querySelector('#labor-rounding').value) || 15;
           const laborRates = _collectRates(tc);
           const settings = store.getSettings();
           settings.taxEnabled = taxEnabled;
           settings.taxRate = taxRate;
-          settings.markupPercent = markupPercent;
           settings.laborRounding = laborRounding;
           settings.laborRates = laborRates;
           
@@ -1159,7 +1384,8 @@ export function renderSettings(container) {
     } else if (activeTab === 'system') {
       const s = store.getSettings();
       const currentPref = s.tooltipPreference || 'full';
-      const currentTheme = localStorage.getItem('simpro_theme') || 'light';
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      const currentTheme = (currentUser && currentUser.id) ? (currentUser.theme || localStorage.getItem(`simpro_theme_${currentUser.id}`) || 'light') : 'light';
       tc.innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-lg); max-width:960px; align-items:start;">
           <!-- Data Management -->
@@ -1244,7 +1470,7 @@ export function renderSettings(container) {
       });
 
       tc.querySelector('#system-theme-select')?.addEventListener('change', (e) => {
-        applyTheme(e.target.value);
+        applyTheme(e.target.value, true);
         showToast('System theme updated successfully', 'success');
       });
 
@@ -1601,10 +1827,10 @@ export function renderSettings(container) {
         </div>
         <div class="form-group">
           <label class="form-label">User Type</label>
-          <select class="form-select" id="u-type" ${t.userTypeId === 'ut_admin' ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}>
+          <select class="form-select" id="u-type" ${(t.userTypeId === 'ut_admin' || (t.userTypeId && t.userTypeId.endsWith('_ut_admin'))) ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}>
             <option value="">-- Select --</option>
             ${userTypes
-              .filter(ut => ut.id !== 'ut_admin' || t.userTypeId === 'ut_admin')
+              .filter(ut => (!ut.id.endsWith('_ut_admin') && ut.id !== 'ut_admin') || t.userTypeId === ut.id)
               .map(ut => `
                 <option value="${ut.id}" ${t.userTypeId === ut.id ? 'selected' : ''}>${ut.name}</option>
               `).join('')}
@@ -2633,6 +2859,7 @@ export function renderSettings(container) {
   }
 
   function renderInvoicesQuotesTab(tc) {
+    const isLocalMode = !store.companyId;
     const settings = store.getSettings();
     let dt = JSON.parse(JSON.stringify(settings.documentTheme || {}));
     let activePreviewTab = 'invoice';
@@ -2793,6 +3020,11 @@ export function renderSettings(container) {
                     <label class="form-label">Logo Scale (Height): <span id="scale-val-label">${dt.logoScale || 60}px</span></label>
                     <input type="range" id="theme-logo-scale" min="40" max="120" value="${dt.logoScale || 60}" style="width:100%" />
                   </div>
+                </div>
+                <div style="height:1px; background:var(--border-color); margin:8px 0"></div>
+                <div class="form-group ${isLocalMode ? 'disabled-local' : ''}" ${isLocalMode ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''} style="display:flex; align-items:center; gap:8px">
+                  <input type="checkbox" id="theme-hide-brand-logo" style="width:16px; height:16px" ${dt.hideBrandLogo ? 'checked' : ''} ${isLocalMode ? 'disabled' : ''} />
+                  <label for="theme-hide-brand-logo" class="form-label" style="margin:0; cursor:${isLocalMode ? 'not-allowed' : 'pointer'}">Remove Relay-dispatch brand logo from document footers</label>
                 </div>
               </div>
             </div>
@@ -2983,6 +3215,15 @@ export function renderSettings(container) {
         updatePreview();
       });
 
+      // Hide Brand Logo toggle
+      const hideBrandLogoChk = tc.querySelector('#theme-hide-brand-logo');
+      if (hideBrandLogoChk) {
+        hideBrandLogoChk.addEventListener('change', () => {
+          dt.hideBrandLogo = hideBrandLogoChk.checked;
+          updatePreview();
+        });
+      }
+
       // Text copy updates
       tc.querySelectorAll('.text-copy-input').forEach(inp => {
         inp.addEventListener('input', () => {
@@ -3068,6 +3309,7 @@ export function renderSettings(container) {
             hideLogo: false,
             logoSource: 'large',
             hideCompanyName: false,
+            hideBrandLogo: false,
             paymentStripe: true,
             paymentDirectTransfer: true,
             paymentCash: false,
@@ -3182,6 +3424,9 @@ export function renderSettings(container) {
 
       const quoteSigChk = tc.querySelector('#theme-quote-sig');
       if (quoteSigChk) quoteSigChk.checked = !!dt.quoteSignature;
+
+      const hideBrandLogoChk = tc.querySelector('#theme-hide-brand-logo');
+      if (hideBrandLogoChk) hideBrandLogoChk.checked = !!dt.hideBrandLogo;
     }
 
     function updatePreview(fullReload = false) {
@@ -3362,9 +3607,241 @@ export function renderSettings(container) {
           footerNoteEl.style.display = 'none';
         }
       }
+
+      const footerBrandingEl = frameDoc.querySelector('.pdf-footer-branding');
+      if (footerBrandingEl) {
+        const hideBrandLogo = isLocalMode ? false : !!dt.hideBrandLogo;
+        footerBrandingEl.style.display = hideBrandLogo ? 'none' : 'flex';
+      }
     }
 
     renderMarkup();
   }
+
+  function renderFolderSyncTab(tc) {
+    const isSupported = typeof window !== 'undefined' && (
+      (window.indexedDB && window.showDirectoryPicker) ||
+      (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem)
+    );
+
+    const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+
+    function render() {
+      const isEnabled = store.folderSyncEnabled;
+      const isPermissionGranted = store.folderSyncPermissionGranted;
+      const hasHandle = !!store.dirHandle;
+
+      let statusHtml = '';
+      if (!isSupported) {
+        statusHtml = `
+          <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:16px; border-radius:4px; color:var(--color-danger); margin-bottom:var(--space-lg);">
+            <div style="display:flex; align-items:center; gap:8px; font-weight:600; margin-bottom:4px;">
+              <span class="material-icons-outlined">error_outline</span>
+              <span>Browser Directory Access Unsupported</span>
+            </div>
+            <p style="font-size:var(--font-size-sm); margin:0; line-height:1.4;">
+              Your current browser does not support local folder access. To enable direct folder synchronization, please run this app in a Chromium-based browser (Chrome, Edge, Opera, or as a compiled native app). High-capacity IndexedDB storage remains active.
+            </p>
+          </div>
+        `;
+      } else if (!isEnabled) {
+        statusHtml = `
+          <div style="background:var(--bg-color); border:1px solid var(--border-color); padding:16px; border-radius:6px; color:var(--text-secondary); margin-bottom:var(--space-lg); display:flex; align-items:center; gap:12px;">
+            <span class="material-icons-outlined" style="font-size:32px; color:var(--text-tertiary);">folder_off</span>
+            <div>
+              <div style="font-weight:600; color:var(--text-primary); margin-bottom:2px;">Folder Synchronization Inactive</div>
+              <p style="font-size:12.5px; margin:0; line-height:1.4;">All data is currently stored in your browser's private IndexedDB database sandbox.</p>
+            </div>
+          </div>
+        `;
+      } else if (isCapacitor) {
+        statusHtml = `
+          <div style="background:var(--color-success-bg); border-left:4px solid var(--color-success); padding:16px; border-radius:4px; color:var(--color-success); margin-bottom:var(--space-lg); display:flex; align-items:center; gap:12px;">
+            <span class="material-icons-outlined" style="font-size:32px;">cloud_done</span>
+            <div>
+              <div style="font-weight:600; margin-bottom:2px;">Capacitor Direct Folder Sync Active</div>
+              <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">
+                Data is synchronizing directly to the application's native <strong>Documents/RelayDispatchData</strong> directory on your iPad/device.
+              </p>
+            </div>
+          </div>
+        `;
+      } else if (!hasHandle) {
+        statusHtml = `
+          <div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:16px; border-radius:4px; color:var(--color-warning); margin-bottom:var(--space-lg); display:flex; align-items:center; gap:12px;">
+            <span class="material-icons-outlined" style="font-size:32px;">warning</span>
+            <div>
+              <div style="font-weight:600; margin-bottom:2px;">No Directory Selected</div>
+              <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">Please select a directory folder on your computer to begin syncing.</p>
+            </div>
+          </div>
+        `;
+      } else if (!isPermissionGranted) {
+        statusHtml = `
+          <div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:16px; border-radius:4px; color:var(--color-warning); margin-bottom:var(--space-lg);">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+              <span class="material-icons-outlined" style="font-size:32px;">lock</span>
+              <div>
+                <div style="font-weight:600; margin-bottom:2px;">Access Permission Suspended</div>
+                <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">
+                  The browser requires re-authorization to read/write files in <strong>${escapeHTML(store.dirHandle.name)}</strong>.
+                </p>
+              </div>
+            </div>
+            <button class="btn btn-warning" id="btn-reauthorize-dir" style="margin-left:44px;">
+              <span class="material-icons-outlined">vpn_key</span> Re-authorize Access
+            </button>
+          </div>
+        `;
+      } else {
+        statusHtml = `
+          <div style="background:var(--color-success-bg); border-left:4px solid var(--color-success); padding:16px; border-radius:4px; color:var(--color-success); margin-bottom:var(--space-lg); display:flex; align-items:center; gap:12px;">
+            <span class="material-icons-outlined" style="font-size:32px;">check_circle</span>
+            <div>
+              <div style="font-weight:600; margin-bottom:2px;">Folder Sync Active & Synchronized</div>
+              <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">
+                Active Folder: <strong>${escapeHTML(store.dirHandle.name)}</strong>. All data edits are writing dynamically.
+              </p>
+            </div>
+          </div>
+        `;
+      }
+
+      tc.innerHTML = `
+        <div style="display:grid; grid-template-columns:1fr 340px; gap:var(--space-lg); max-width:1100px; align-items:start;">
+          <!-- Folder Configuration -->
+          <div class="card">
+            <div class="card-header"><h4>Direct Directory Sync</h4></div>
+            <div class="card-body">
+              ${statusHtml}
+
+              <div class="form-group" style="margin-bottom:var(--space-lg);">
+                <label class="form-label" style="font-weight:600; margin-bottom:8px;">Synchronization Toggle</label>
+                <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                  <input type="checkbox" id="toggle-folder-sync" ${isEnabled ? 'checked' : ''} ${!isSupported ? 'disabled' : ''} style="width:20px; height:20px; cursor:pointer;" />
+                  <div>
+                    <span style="font-weight:500;">Enable Direct Local Folder Storage</span>
+                    <div class="text-tertiary" style="font-size:12px; margin-top:2px;">Saves all data records and attachments straight to your machine.</div>
+                  </div>
+                </label>
+              </div>
+
+              ${isEnabled && isSupported && !isCapacitor ? `
+                <div style="display:flex; gap:12px; flex-wrap:wrap; border-top:1px solid var(--border-color); padding-top:var(--space-lg);">
+                  <button class="btn btn-secondary" id="btn-pick-dir">
+                    <span class="material-icons-outlined">folder</span> Choose Sync Folder...
+                  </button>
+                  ${hasHandle && isPermissionGranted ? `
+                    <button class="btn btn-secondary" id="btn-force-sync" data-tooltip="Overwrite folder JSONs with current memory cache" data-tooltip-pos="top">
+                      <span class="material-icons-outlined">sync</span> Sync Now
+                    </button>
+                    <button class="btn btn-danger" id="btn-disconnect-dir">
+                      <span class="material-icons-outlined">link_off</span> Disconnect Folder
+                    </button>
+                  ` : ''}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Instructions Card -->
+          <div class="card" style="background:var(--content-bg);">
+            <div class="card-header"><h4>How Self-Hosting Works</h4></div>
+            <div class="card-body" style="font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
+              <p>
+                By linking a local folder, you establish a <strong>serverless self-hosted data hub</strong>.
+              </p>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">storage</span>
+                <span><strong>Readable Data:</strong> Your jobs, quotes, and company configurations are saved in <code>data/*.json</code> files.</span>
+              </div>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">photo_library</span>
+                <span><strong>Physical Attachments:</strong> Uploaded photos and PDF catalogs are saved as standard image/PDF files under the <code>documents/</code> subfolder.</span>
+              </div>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">sync_alt</span>
+                <span><strong>Cloud Backups:</strong> Select a folder synced to <strong>OneDrive, Google Drive, or Dropbox</strong> to automatically back up and sync your data to the cloud.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Event Listeners
+      const toggle = tc.querySelector('#toggle-folder-sync');
+      toggle?.addEventListener('change', async (e) => {
+        if (isCapacitor) {
+          await store.setLocalDirectory(e.target.checked ? {} : null);
+          showToast(e.target.checked ? 'Capacitor folder sync activated' : 'Folder sync deactivated', 'success');
+          render();
+          return;
+        }
+
+        if (e.target.checked) {
+          // Trigger directory picker
+          try {
+            const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            await store.setLocalDirectory(handle);
+            showToast('Sync directory configured successfully', 'success');
+          } catch (err) {
+            console.error('Directory selection cancelled or failed:', err);
+            toggle.checked = false;
+            showToast('Folder selection cancelled', 'info');
+          }
+        } else {
+          await store.setLocalDirectory(null);
+          showToast('Direct directory synchronization disabled', 'info');
+        }
+        render();
+      });
+
+      tc.querySelector('#btn-pick-dir')?.addEventListener('click', async () => {
+        try {
+          const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+          await store.setLocalDirectory(handle);
+          showToast('Sync directory updated successfully', 'success');
+          render();
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
+      tc.querySelector('#btn-reauthorize-dir')?.addEventListener('click', async () => {
+        const granted = await store.verifyDirPermission(true);
+        if (granted) {
+          showToast('Folder access re-authorized successfully', 'success');
+        } else {
+          showToast('Failed to acquire write permissions', 'error');
+        }
+        render();
+      });
+
+      tc.querySelector('#btn-disconnect-dir')?.addEventListener('click', async () => {
+        await store.setLocalDirectory(null);
+        showToast('Local folder disconnected', 'info');
+        render();
+      });
+
+      tc.querySelector('#btn-force-sync')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        showToast('Writing cache data to local directory...', 'info');
+        try {
+          const collections = Object.keys(store.cache);
+          await Promise.all(collections.map(col => store.writeCollectionToFolder(col, store.cache[col])));
+          showToast('Folder sync completed successfully!', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('Folder sync failed: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    render();
+  }
+
 
 

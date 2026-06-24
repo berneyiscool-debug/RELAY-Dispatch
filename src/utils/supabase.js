@@ -16,7 +16,7 @@ const isConfigured =
   supabaseUrl.startsWith('http');
 
 if (!isConfigured) {
-  console.warn('FieldForge: Supabase credentials are not configured. Running in offline/stub mode.');
+  console.warn('RELAY: Supabase credentials are not configured. Running in offline/stub mode.');
 }
 
 // Export active client or a safe fallback mock that prevents boot-time crashes

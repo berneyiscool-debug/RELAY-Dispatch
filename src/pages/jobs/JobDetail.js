@@ -206,8 +206,19 @@ export function renderJobDetail(container, { id }) {
             <span class="material-icons-outlined">build</span>
           </div>
           <div>
-            <div class="detail-header-text"><h2>${escapeHTML(job.number)} — ${escapeHTML(job.title)}</h2></div>
-            <div class="detail-header-meta">
+            <div class="detail-header-text" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+              <h2 style="margin:0">${escapeHTML(job.number)} — ${escapeHTML(job.title)}</h2>
+              ${job.parentJobId ? (() => {
+                const parent = store.getById('jobs', job.parentJobId);
+                return parent ? `
+                  <a href="#/jobs/${parent.id}" class="badge badge-info" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; font-weight:600">
+                    <span class="material-icons-outlined" style="font-size:12px">event_repeat</span>
+                    Generated from Service Plan ${escapeHTML(parent.number)}
+                  </a>
+                ` : '';
+              })() : ''}
+            </div>
+            <div class="detail-header-meta" style="margin-top:6px">
               <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(job.customerName)}</span>
               <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
               <span class="badge ${sb[job.status] || 'badge-neutral'}">${escapeHTML(job.status)}</span>
@@ -302,6 +313,109 @@ export function renderJobDetail(container, { id }) {
                 </div>
               </div>
             </div>
+            ${job.isRecurring === true ? `
+            <div class="card" style="grid-column: span 2">
+              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+                <h4 style="margin:0;display:flex;align-items:center;gap:6px">
+                  <span class="material-icons-outlined" style="color:var(--color-primary)">event_repeat</span>
+                  Recurring Service Plan (Master)
+                </h4>
+                <button class="btn btn-outline btn-sm" id="btn-sync-recurring" style="font-size:12px;padding:4px 8px">
+                  <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">sync</span> Check for Due Occurrences
+                </button>
+              </div>
+              <div class="card-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border-color)">
+                  <div>
+                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Frequency</div>
+                    <div style="font-size:14px;font-weight:600;margin-top:2px">${escapeHTML(job.recurringConfig?.freq || '—')}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Date Range</div>
+                    <div style="font-size:14px;font-weight:600;margin-top:2px">${job.recurringConfig?.start ? new Date(job.recurringConfig.start).toLocaleDateString() : '—'} to ${job.recurringConfig?.end ? new Date(job.recurringConfig.end).toLocaleDateString() : '—'}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Preferred Days</div>
+                    <div style="font-size:14px;font-weight:600;margin-top:2px">${escapeHTML((() => {
+                      if (!job.recurringConfig) return '—';
+                      if (job.recurringConfig.freq === 'Weekly') {
+                        const daysMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+                        let days = (job.recurringConfig.daysOfWeek || []).map(d => daysMap[d]).join(', ');
+                        if (!days && job.recurringConfig.start) {
+                          days = daysMap[new Date(job.recurringConfig.start).getDay()];
+                        }
+                        return days || '—';
+                      } else if (job.recurringConfig.freq === 'Monthly') {
+                        let days = (job.recurringConfig.daysOfMonth || []).map(d => `Day ${d}`).join(', ');
+                        if (!days && job.recurringConfig.start) {
+                          days = `Day ${new Date(job.recurringConfig.start).getDate()}`;
+                        }
+                        return days || '—';
+                      } else {
+                        return 'Every Day';
+                      }
+                    })())}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Total Occurrences</div>
+                    <div style="font-size:14px;font-weight:600;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id).length} spawned</div>
+                  </div>
+                </div>
+
+                <div style="font-weight:600;font-size:13px;color:var(--text-secondary);margin-bottom:8px">Generated Job Tickets</div>
+                ${(() => {
+                  const genJobs = (store.getAll('jobs') || []).filter(j => j.parentJobId === job.id);
+                  if (genJobs.length === 0) {
+                    return `
+                      <div style="font-size:12px;color:var(--text-tertiary);font-style:italic;padding:12px;background:var(--bg-color);border:1px dashed var(--border-color);border-radius:6px;text-align:center">
+                        No job tickets generated yet.
+                      </div>
+                    `;
+                  }
+                  
+                  function getTechNames(j) {
+                    if (j.technicians && j.technicians.length > 0) {
+                      return j.technicians.map(t => {
+                        const resolved = store.getById('technicians', typeof t === 'object' ? t.id : t);
+                        return resolved ? resolved.name : (t.name || t);
+                      }).join(', ');
+                    }
+                    return escapeHTML(j.technicianName || 'Unassigned');
+                  }
+
+                  return `
+                    <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px">
+                      <table class="table" style="width:100%;font-size:12px;margin:0">
+                        <thead>
+                          <tr>
+                            <th style="padding:6px 12px;text-align:left">Job #</th>
+                            <th style="padding:6px 12px;text-align:left">Scheduled Date</th>
+                            <th style="padding:6px 12px;text-align:left">Technician</th>
+                            <th style="padding:6px 12px;text-align:left">Status</th>
+                            <th style="padding:6px 12px;text-align:right"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${genJobs.map(gj => {
+                            const statusBadge = gj.status === 'Completed' ? 'badge-success' : gj.status === 'Scheduled' ? 'badge-info' : 'badge-warning';
+                            return `
+                              <tr>
+                                <td style="padding:6px 12px;font-weight:600"><a href="#/jobs/${gj.id}">${escapeHTML(gj.number)}</a></td>
+                                <td style="padding:6px 12px">${gj.scheduledDate ? new Date(gj.scheduledDate).toLocaleDateString() : '—'}</td>
+                                <td style="padding:6px 12px">${escapeHTML(getTechNames(gj))}</td>
+                                <td style="padding:6px 12px"><span class="badge ${statusBadge}">${escapeHTML(gj.status)}</span></td>
+                                <td style="padding:6px 12px;text-align:right"><a href="#/jobs/${gj.id}" class="btn btn-sm btn-ghost" style="padding:2px 6px"><span class="material-icons-outlined" style="font-size:16px">visibility</span></a></td>
+                              </tr>
+                            `;
+                          }).join('')}
+                        </tbody>
+                      </table>
+                    </div>
+                  `;
+                })()}
+              </div>
+            </div>
+            ` : `
             <div class="card" style="grid-column: span 2">
               <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
                 <h4 style="margin:0">Schedule & Assignment</h4>
@@ -322,6 +436,7 @@ export function renderJobDetail(container, { id }) {
                 </div>
               </div>
             </div>
+            `}
           </div>
 
         </div>
@@ -443,28 +558,6 @@ export function renderJobDetail(container, { id }) {
           html += '<button type="button" id="btn-add-entry" class="btn btn-secondary btn-sm" style="width:100%;margin-top:4px">';
           html += '<span class="material-icons-outlined" style="font-size:16px">add</span> Add Another Entry</button>';
 
-          if (job.recurringConfig) {
-            const freq = job.recurringConfig.freq;
-            const start = job.recurringConfig.start;
-            const end = job.recurringConfig.end;
-            let recurringDesc = `${freq} from ${start} to ${end}`;
-            if (freq === 'Weekly' && job.recurringConfig.daysOfWeek && job.recurringConfig.daysOfWeek.length > 0) {
-              const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-              const days = job.recurringConfig.daysOfWeek.map(d => dayNames[d]).join(', ');
-              recurringDesc = `${freq} (${days}) from ${start} to ${end}`;
-            } else if (freq === 'Monthly' && job.recurringConfig.daysOfMonth && job.recurringConfig.daysOfMonth.length > 0) {
-              const days = job.recurringConfig.daysOfMonth.join(', ');
-              recurringDesc = `${freq} (Days: ${days}) from ${start} to ${end}`;
-            }
-
-            html += '<div style="background:var(--color-primary-light);border:1.5px dashed var(--color-primary);border-radius:8px;padding:12px;margin-top:16px;display:flex;align-items:center;gap:10px">';
-            html += '<input type="checkbox" id="sched-all-recurring" style="width:18px;height:18px;cursor:pointer">';
-            html += '<label for="sched-all-recurring" style="font-size:13px;font-weight:600;color:var(--color-primary);cursor:pointer;margin:0;user-select:none">';
-            html += `Auto-schedule all recurring occurrences (${escapeHTML(recurringDesc)})`;
-            html += '</label>';
-            html += '</div>';
-          }
-
           content.innerHTML = html;
 
           // Tech chip toggles
@@ -565,269 +658,92 @@ export function renderJobDetail(container, { id }) {
                   return;
                 }
 
-                const isRecurringChecked = content.querySelector('#sched-all-recurring')?.checked;
+                currentEntries.forEach((e) => {
+                  const startDate = new Date(e.start);
+                  const finishDate = new Date(e.finish);
+                  const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
+                  const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
 
-                if (isRecurringChecked && job.recurringConfig) {
-                  const freq = job.recurringConfig.freq;
-                  const daysOfWeek = job.recurringConfig.daysOfWeek || [];
-                  const daysOfMonth = job.recurringConfig.daysOfMonth || [];
-                  const [sYear, sMonth, sDay] = job.recurringConfig.start.split('-').map(Number);
-                  let current = new Date(sYear, sMonth - 1, sDay);
-                  const [eYear, eMonth, eDay] = job.recurringConfig.end.split('-').map(Number);
-                  const end = new Date(eYear, eMonth - 1, eDay, 23, 59, 59);
-
-                  let count = 0;
-                  let iterations = 0;
-                  let matchDaysOfWeek = [...daysOfWeek];
-                  let matchDaysOfMonth = [...daysOfMonth];
-
-                  if (freq === 'Weekly' && matchDaysOfWeek.length === 0) {
-                    matchDaysOfWeek.push(current.getDay());
-                  }
-                  if (freq === 'Monthly' && matchDaysOfMonth.length === 0) {
-                    matchDaysOfMonth.push(current.getDate());
-                  }
-
-                  const matchedDates = [];
-                  while (current <= end && count < 50 && iterations < 1000) {
-                    iterations++;
-                    let isMatch = false;
-                    if (freq === 'Daily') {
-                      isMatch = true;
-                    } else if (freq === 'Weekly') {
-                      isMatch = matchDaysOfWeek.includes(current.getDay());
-                    } else if (freq === 'Monthly') {
-                      isMatch = matchDaysOfMonth.includes(current.getDate());
-                    }
-
-                    if (isMatch) {
-                      const yyyy = current.getFullYear();
-                      const mm = String(current.getMonth() + 1).padStart(2, '0');
-                      const dd = String(current.getDate()).padStart(2, '0');
-                      matchedDates.push(`${yyyy}-${mm}-${dd}`);
-                      count++;
-                    }
-                    current.setDate(current.getDate() + 1);
-                  }
-
-                  if (matchedDates.length === 0) {
-                    showToast('No matching recurring dates found.', 'error');
-                    return;
-                  }
-
-                  let totalCreatedSchedules = 0;
-
-                  matchedDates.forEach(dateStr => {
-                    const clonedMaterials = job.materials ? JSON.parse(JSON.stringify(job.materials)) : [];
-                    const clonedTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [];
-                    clonedTasks.forEach(task => {
-                      task.id = store.generateId();
-                      task.status = 'Not Started';
-                      task.progress = 0;
-                      task.startDate = new Date().toISOString();
-                      task.technicians = [];
-                      if (task.subTasks) {
-                        task.subTasks.forEach(st => {
-                          st.id = store.generateId();
-                          st.status = 'Not Started';
-                          st.progress = 0;
-                          st.startDate = new Date().toISOString();
-                          st.technicians = [];
-                        });
-                      }
+                  e.techIds.forEach(techId => {
+                    const tech = techs.find(t => t.id === techId);
+                    if (!tech) return;
+                    store.create('schedule', {
+                      jobId: id,
+                      jobNumber: job.number,
+                      taskPath: e.taskPath,
+                      taskName: taskName,
+                      technicianId: techId,
+                      technicianName: tech.name,
+                      date: e.start.split('T')[0],
+                      startTime: e.start,
+                      finishTime: e.finish,
+                      hours
                     });
-
-                    const duplicatedJob = store.create('jobs', {
-                      number: `J-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 10)}`,
-                      title: job.title,
-                      customerId: job.customerId || '',
-                      customerName: job.customerName || '',
-                      contactName: job.contactName || '',
-                      siteAddress: job.siteAddress || '',
-                      priority: job.priority || 'Normal',
-                      description: job.description || '',
-                      notes: `Generated from template job ${job.number}`,
-                      createdAt: new Date().toISOString(),
-                      scheduledDate: dateStr,
-                      status: 'Scheduled',
-                      materials: clonedMaterials,
-                      laborCost: job.laborCost || 0,
-                      materialCost: job.materialCost || 0,
-                      estimatedLaborCost: job.estimatedLaborCost || 0,
-                      estimatedMaterialCost: job.estimatedMaterialCost || 0,
-                      estimatedHours: job.estimatedHours || 2,
-                      parentJobId: job.id,
-                      isRecurring: false,
-                      recurringConfig: null,
-                      tasks: clonedTasks
-                    });
-
-                    const jobTechIds = new Set();
-                    const jobEntriesForSync = [];
-
-                    currentEntries.forEach(e => {
-                      const startTimePart = e.start.split('T')[1] || '08:00';
-                      const finishTimePart = e.finish.split('T')[1] || '16:00';
-                      const startDateTimeStr = `${dateStr}T${startTimePart}`;
-                      const finishDateTimeStr = `${dateStr}T${finishTimePart}`;
-
-                      const startDate = new Date(startDateTimeStr);
-                      const finishDate = new Date(finishDateTimeStr);
-                      const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-                      const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
-
-                      e.techIds.forEach(techId => {
-                        const tech = techs.find(t => t.id === techId);
-                        if (!tech) return;
-
-                        store.create('schedule', {
-                          jobId: duplicatedJob.id,
-                          jobNumber: duplicatedJob.number,
-                          taskPath: e.taskPath,
-                          taskName: taskName,
-                          technicianId: techId,
-                          technicianName: tech.name,
-                          date: dateStr,
-                          startTime: startDateTimeStr,
-                          finishTime: finishDateTimeStr,
-                          hours
-                        });
-                        totalCreatedSchedules++;
-                        jobTechIds.add(techId);
-                      });
-
-                      jobEntriesForSync.push({ start: startDateTimeStr, finish: finishDateTimeStr, techIds: e.techIds });
-
-                      if (e.assetIds && e.assetIds.length > 0) {
-                        e.assetIds.forEach(assetId => {
-                          const asset = store.getById('assets', assetId);
-                          if (!asset) return;
-                          store.create('assetUsage', {
-                            jobId: duplicatedJob.id,
-                            assetId: assetId,
-                            assetName: asset.name,
-                            taskPath: e.taskPath,
-                            taskName: taskName,
-                            startTime: startDateTimeStr,
-                            finishTime: finishDateTimeStr,
-                            hours,
-                            recoveryRate: asset.recoveryRate || 0
-                          });
-                        });
-                      }
-                    });
-
-                    const jobTechs = [...jobTechIds].map(tid => {
-                      const t = techs.find(x => x.id === tid);
-                      const totalHours = jobEntriesForSync
-                        .filter(e => e.techIds.includes(tid))
-                        .reduce((sum, e) => {
-                          const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
-                          return sum + (isNaN(h) ? 0 : h);
-                        }, 0);
-                      return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
-                    });
-
-                    store.update('jobs', duplicatedJob.id, {
-                      scheduledDate: dateStr,
-                      technicians: jobTechs,
-                      technicianName: jobTechs.map(t => t.name).join(', ')
-                    });
-
-                    import('../../components/Notifications.js').then(({ addSystemNotification }) => {
-                      jobTechs.forEach(t => {
-                        addSystemNotification(
-                          'New Schedule Assignment',
-                          `You have been scheduled for Job ${duplicatedJob.number} (${duplicatedJob.title}) on ${dateStr} (${t.hours} hrs total).`,
-                          `/jobs/${duplicatedJob.id}`
-                        );
-                      });
-                    });
+                    saved++;
                   });
 
-                  showToast(`${totalCreatedSchedules} schedule entries created across ${matchedDates.length} recurring jobs`, 'success');
-                  close();
-                  renderTabContent();
-                } else {
-                  currentEntries.forEach((e) => {
-                    const startDate = new Date(e.start);
-                    const finishDate = new Date(e.finish);
-                    const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-                    const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
-
-                    e.techIds.forEach(techId => {
-                      const tech = techs.find(t => t.id === techId);
-                      if (!tech) return;
-                      store.create('schedule', {
+                  if (e.assetIds && e.assetIds.length > 0) {
+                    e.assetIds.forEach(assetId => {
+                      const asset = store.getById('assets', assetId);
+                      if (!asset) return;
+                      store.create('assetUsage', {
                         jobId: id,
-                        jobNumber: job.number,
+                        assetId: assetId,
+                        assetName: asset.name,
                         taskPath: e.taskPath,
                         taskName: taskName,
-                        technicianId: techId,
-                        technicianName: tech.name,
-                        date: e.start.split('T')[0],
                         startTime: e.start,
                         finishTime: e.finish,
-                        hours
-                      });
-                      saved++;
-                    });
-
-                    if (e.assetIds && e.assetIds.length > 0) {
-                      e.assetIds.forEach(assetId => {
-                        const asset = store.getById('assets', assetId);
-                        if (!asset) return;
-                        store.create('assetUsage', {
-                          jobId: id,
-                          assetId: assetId,
-                          assetName: asset.name,
-                          taskPath: e.taskPath,
-                          taskName: taskName,
-                          startTime: e.start,
-                          finishTime: e.finish,
-                          hours,
-                          recoveryRate: asset.recoveryRate || 0
-                        });
-                      });
-                    }
-                  });
-
-                  if (currentEntries.length > 0 && currentEntries[0].start) {
-                    const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
-                    const jobTechs = allTechIds.map(tid => {
-                      const t = techs.find(x => x.id === tid);
-                      const totalHours = currentEntries
-                        .filter(e => e.techIds.includes(tid))
-                        .reduce((sum, e) => {
-                          const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
-                          return sum + (isNaN(h) ? 0 : h);
-                        }, 0);
-                      return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
-                    });
-                    store.update('jobs', id, {
-                      scheduledDate: currentEntries[0].start.split('T')[0],
-                      technicians: jobTechs,
-                      technicianName: jobTechs.map(t => t.name).join(', ')
-                    });
-
-                    import('../../components/Notifications.js').then(({ addSystemNotification }) => {
-                      jobTechs.forEach(t => {
-                        addSystemNotification(
-                          'New Schedule Assignment',
-                          `You have been scheduled for Job ${job.number} (${job.title}) starting ${currentEntries[0].start.replace('T', ' ')} (${t.hours} hrs total).`,
-                          `/jobs/${id}`
-                        );
+                        hours,
+                        recoveryRate: asset.recoveryRate || 0
                       });
                     });
                   }
+                });
 
-                  showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
-                  close();
-                  renderTabContent();
+                if (currentEntries.length > 0 && currentEntries[0].start) {
+                  const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
+                  const jobTechs = allTechIds.map(tid => {
+                    const t = techs.find(x => x.id === tid);
+                    const totalHours = currentEntries
+                      .filter(e => e.techIds.includes(tid))
+                      .reduce((sum, e) => {
+                        const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
+                        return sum + (isNaN(h) ? 0 : h);
+                      }, 0);
+                    return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
+                  });
+                  store.update('jobs', id, {
+                    scheduledDate: currentEntries[0].start.split('T')[0],
+                    technicians: jobTechs,
+                    technicianName: jobTechs.map(t => t.name).join(', ')
+                  });
+
+                  import('../../components/Notifications.js').then(({ addSystemNotification }) => {
+                    jobTechs.forEach(t => {
+                      addSystemNotification(
+                        'New Schedule Assignment',
+                        `You have been scheduled for Job ${job.number} (${job.title}) starting ${currentEntries[0].start.replace('T', ' ')} (${t.hours} hrs total).`,
+                        `/jobs/${id}`
+                      );
+                    });
+                  });
                 }
+
+                showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
+                close();
+                renderTabContent();
               }
             }
           ]
+        });
+      });
+
+      tc.querySelector('#btn-sync-recurring')?.addEventListener('click', () => {
+        import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs }) => {
+          checkRecurringJobs();
+          showToast('Checked for due occurrences. Check Notifications list.', 'success');
+          renderJobDetail(container, { id });
         });
       });
 

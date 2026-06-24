@@ -435,4 +435,124 @@ export function checkMaintenancePlans() {
   if (storeUpdated) {
     store.save('maintenancePlans', plans);
   }
+
+  // Run recurring jobs check
+  checkRecurringJobs();
 }
+
+function getRecurringDates(config) {
+  if (!config) return [];
+  const freq = config.freq;
+  const daysOfWeek = config.daysOfWeek || [];
+  const daysOfMonth = config.daysOfMonth || [];
+
+  if (!config.start || !config.end) return [];
+
+  const [sYear, sMonth, sDay] = config.start.split('-').map(Number);
+  let current = new Date(sYear, sMonth - 1, sDay);
+
+  const [eYear, eMonth, eDay] = config.end.split('-').map(Number);
+  const end = new Date(eYear, eMonth - 1, eDay, 23, 59, 59);
+
+  let count = 0;
+  let iterations = 0;
+  const dates = [];
+
+  let matchDaysOfWeek = [...daysOfWeek];
+  let matchDaysOfMonth = [...daysOfMonth];
+
+  if (freq === 'Weekly' && matchDaysOfWeek.length === 0) {
+    matchDaysOfWeek.push(current.getDay());
+  }
+  if (freq === 'Monthly' && matchDaysOfMonth.length === 0) {
+    matchDaysOfMonth.push(current.getDate());
+  }
+
+  while (current <= end && count < 50 && iterations < 1000) {
+    iterations++;
+    let isMatch = false;
+
+    if (freq === 'Daily') {
+      isMatch = true;
+    } else if (freq === 'Weekly') {
+      isMatch = matchDaysOfWeek.includes(current.getDay());
+    } else if (freq === 'Monthly') {
+      isMatch = matchDaysOfMonth.includes(current.getDate());
+    }
+
+    if (isMatch) {
+      const yyyy = current.getFullYear();
+      const mm = String(current.getMonth() + 1).padStart(2, '0');
+      const dd = String(current.getDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
+      count++;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
+export function checkRecurringJobs() {
+  const jobs = store.getAll('jobs') || [];
+  const notifications = store.getAll('notifications') || [];
+  
+  let storeUpdated = false;
+  const newNotifications = [...notifications];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const next7Days = new Date(today);
+  next7Days.setDate(next7Days.getDate() + 7);
+  next7Days.setHours(23, 59, 59, 999);
+
+  // Find all active recurring jobs
+  const recurringJobs = jobs.filter(j => j.isRecurring === true && j.recurringConfig);
+
+  recurringJobs.forEach(job => {
+    const occurrenceDates = getRecurringDates(job.recurringConfig);
+    
+    occurrenceDates.forEach(dateStr => {
+      const [yr, mo, dy] = dateStr.split('-').map(Number);
+      const occurrenceDate = new Date(yr, mo - 1, dy);
+      
+      if (occurrenceDate >= today && occurrenceDate <= next7Days) {
+        // Check if there is already a notification or a spawned job for this occurrence
+        const hasNotif = newNotifications.some(n => 
+          n.jobId === job.id && n.dueDate === dateStr
+        );
+        const hasJob = jobs.some(j => 
+          j.parentJobId === job.id && j.scheduledDate === dateStr
+        );
+
+        if (!hasNotif && !hasJob) {
+          const notifId = 'notif_recurring_' + Date.now() + Math.random().toString(36).substr(2, 5);
+          const description = `Upcoming recurring service for ${job.title || job.number} due on ${dateStr}`;
+          
+          const notif = {
+            id: notifId,
+            type: 'Recurring Job Due',
+            jobId: job.id,
+            title: `Recurring: ${job.title || job.number}`,
+            description: description,
+            message: description,
+            dueDate: dateStr,
+            status: 'Pending',
+            priority: job.priority || 'Normal',
+            createdAt: new Date().toISOString(),
+            createdBy: 'System Engine'
+          };
+          
+          newNotifications.push(notif);
+          storeUpdated = true;
+        }
+      }
+    });
+  });
+
+  if (storeUpdated) {
+    store.save('notifications', newNotifications);
+  }
+}
+

@@ -309,6 +309,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
             <span class="badge badge-neutral" style="margin-right:12px">Phase Subtotal: $${(section.subtotal || 0).toFixed(2)}</span>
             ${!isArchived ? `
             <button class="btn btn-sm btn-primary btn-add-line" data-sidx="${sIdx}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Item</button>
+            <button class="btn btn-sm btn-secondary btn-add-labor" data-sidx="${sIdx}" style="margin-left: 4px"><span class="material-icons-outlined" style="font-size:14px; vertical-align: middle">work</span> Add Labour</button>
             <button class="btn btn-sm btn-secondary btn-add-kit" data-sidx="${sIdx}" style="margin-left: 4px"><span class="material-icons-outlined" style="font-size:14px; vertical-align: middle">widgets</span> Add Kit</button>
             <button class="btn btn-sm btn-ghost btn-remove-section" data-sidx="${sIdx}"><span class="material-icons-outlined" style="font-size:16px; color:var(--color-danger)">delete</span></button>
             ` : ''}
@@ -606,7 +607,10 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
             if (quote.sections) {
               quote.sections.forEach(sec => {
                 sec.lineItems.forEach(i => {
-                  if (i.type === 'labor') i.rate = rateObj.rate;
+                  if (i.type === 'labor') {
+                    i.rate = rateObj.rate;
+                    i.unitPrice = rateObj.rate;
+                  }
                 });
               });
             }
@@ -656,6 +660,26 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       btn.addEventListener('click', (e) => {
         const sIdx = parseInt(btn.dataset.sidx);
         quote.sections[sIdx].lineItems.push({ description: '', type: 'labor', qty: 1, rate: 0, total: 0 });
+        render();
+      });
+    });
+
+    container.querySelectorAll('.btn-add-labor').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const sIdx = parseInt(btn.dataset.sidx);
+        const rateObj = settings.laborRates.find(r => r.id === quote.laborProfileId) || settings.laborRates.find(r => r.isDefault) || settings.laborRates[0];
+        const rate = rateObj ? rateObj.rate : 85;
+        const name = rateObj ? rateObj.name : 'Labour';
+        quote.sections[sIdx].lineItems.push({
+          description: name,
+          type: 'labor',
+          qty: 1,
+          rate: rate,
+          unitPrice: rate,
+          internalCost: 45,
+          total: rate
+        });
+        recalculate();
         render();
       });
     });

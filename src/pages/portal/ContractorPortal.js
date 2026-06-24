@@ -4,13 +4,13 @@ import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js
 import { showToast } from '../../components/Notifications.js';
 
 export function renderContractorPortal(container, params) {
-  // Ensure the stored theme is applied on portal load
-  const storedTheme = localStorage.getItem('simpro_theme') || 'light';
-  document.documentElement.setAttribute('data-theme', storedTheme);
-
   const token = params.token;
   const contractors = store.getAll('contractors');
   const contractor = contractors.find(c => c.portalToken === token);
+
+  // Ensure the stored theme is applied on portal load
+  const storedTheme = contractor ? (localStorage.getItem(`simpro_theme_contractor_${contractor.id}`) || 'light') : 'light';
+  document.documentElement.setAttribute('data-theme', storedTheme);
 
   if (!contractor) {
     container.innerHTML = `
@@ -102,7 +102,7 @@ export function renderContractorPortal(container, params) {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('simpro_theme', next);
+      localStorage.setItem(`simpro_theme_contractor_${contractor.id}`, next);
       renderContractorPortal(container, params);
     });
 
@@ -166,7 +166,7 @@ export function renderContractorPortal(container, params) {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('simpro_theme', next);
+      localStorage.setItem(`simpro_theme_contractor_${contractor.id}`, next);
       renderContractorPortal(container, params);
     });
 
@@ -1199,7 +1199,7 @@ export function renderContractorPortal(container, params) {
         const current = document.documentElement.getAttribute('data-theme');
         const next = current === 'dark' ? 'light' : 'dark';
         document.documentElement.setAttribute('data-theme', next);
-        localStorage.setItem('simpro_theme', next);
+        localStorage.setItem(`simpro_theme_contractor_${contractor.id}`, next);
         render();
         return;
       }

@@ -67,7 +67,7 @@ export function createTopBar() {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
     const currentMode = THEMES[current] ? THEMES[current].mode : 'light';
     const next = currentMode === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
+    applyTheme(next, true);
     topbar.querySelector('#theme-icon').textContent = next === 'dark' ? 'light_mode' : 'dark_mode';
   });
 
@@ -348,7 +348,11 @@ function hideSearchResults() {
 }
 
 function getStoredTheme() {
-  return localStorage.getItem('simpro_theme') || 'light';
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  if (currentUser && currentUser.id) {
+    return currentUser.theme || localStorage.getItem(`simpro_theme_${currentUser.id}`) || 'light';
+  }
+  return 'light';
 }
 
 function applyStoredTheme() {

@@ -240,7 +240,7 @@ export function renderJobForm(container, { id }) {
             <p style="margin:5px 0 0 0;" id="dispatch-reason">Loading best technician...</p>
           </div>
 
-          ${!isEdit ? `
+          ${(!isEdit && !job.parentJobId) ? `
           <div class="form-row">
             <div class="form-group" style="display:flex;align-items:center;gap:8px">
               <input type="checkbox" id="is-recurring" style="width:16px;height:16px" />
@@ -500,7 +500,7 @@ export function renderJobForm(container, { id }) {
     }
   }
 
-  if (!isEdit) {
+  if (!isEdit && !job.parentJobId) {
     const isRecurring = container.querySelector('#is-recurring');
     const recurringOptions = container.querySelector('#recurring-options');
     const freqSelect = container.querySelector('#recurring-freq');
@@ -1178,6 +1178,7 @@ export function renderJobForm(container, { id }) {
       if (!startInput || !endInput) {
         showToast('Recurring dates required', 'error'); return;
       }
+      data.isRecurring = true;
       data.recurringConfig = { 
         freq, 
         start: startInput, 
@@ -1185,6 +1186,11 @@ export function renderJobForm(container, { id }) {
         daysOfWeek: selectedDaysOfWeek,
         daysOfMonth: selectedDaysOfMonth
       };
+    } else {
+      if (!isEdit) {
+        data.isRecurring = false;
+        data.recurringConfig = null;
+      }
     }
 
     // Save Job
@@ -1216,68 +1222,6 @@ export function renderJobForm(container, { id }) {
        }
     });
     store.save('formInstances', filteredInstances);
-
-    if (!isEdit && data.recurringConfig) {
-      // Setup notifications for recurring
-      const freq = data.recurringConfig.freq;
-      const daysOfWeek = data.recurringConfig.daysOfWeek || [];
-      const daysOfMonth = data.recurringConfig.daysOfMonth || [];
-
-      // Parse start/end dates locally to avoid UTC timezone shifts
-      const [sYear, sMonth, sDay] = data.recurringConfig.start.split('-').map(Number);
-      let current = new Date(sYear, sMonth - 1, sDay);
-
-      const [eYear, eMonth, eDay] = data.recurringConfig.end.split('-').map(Number);
-      const end = new Date(eYear, eMonth - 1, eDay, 23, 59, 59);
-
-      let count = 0;
-      let iterations = 0;
-
-      // Establish target values for matching. Fall back to start date weekday/month-day if selections are empty.
-      let matchDaysOfWeek = [...daysOfWeek];
-      let matchDaysOfMonth = [...daysOfMonth];
-
-      if (freq === 'Weekly' && matchDaysOfWeek.length === 0) {
-        matchDaysOfWeek.push(current.getDay());
-      }
-      if (freq === 'Monthly' && matchDaysOfMonth.length === 0) {
-        matchDaysOfMonth.push(current.getDate());
-      }
-
-      while (current <= end && count < 50 && iterations < 1000) {
-        iterations++;
-        let isMatch = false;
-
-        if (freq === 'Daily') {
-          isMatch = true;
-        } else if (freq === 'Weekly') {
-          isMatch = matchDaysOfWeek.includes(current.getDay());
-        } else if (freq === 'Monthly') {
-          isMatch = matchDaysOfMonth.includes(current.getDate());
-        }
-
-        if (isMatch) {
-          // Format local date string as YYYY-MM-DD
-          const yyyy = current.getFullYear();
-          const mm = String(current.getMonth() + 1).padStart(2, '0');
-          const dd = String(current.getDate()).padStart(2, '0');
-          const dueDateString = `${yyyy}-${mm}-${dd}`;
-
-          store.create('notifications', {
-            type: 'Recurring Job Due',
-            jobId: jobId,
-            title: `Recurring: ${finalJob.title || finalJob.number}`,
-            dueDate: dueDateString,
-            status: 'Pending',
-            createdAt: new Date().toISOString()
-          });
-          count++;
-        }
-
-        // Move to the next day
-        current.setDate(current.getDate() + 1);
-      }
-    }
 
     showToast(`Job ${isEdit ? 'updated' : 'created'} successfully`, 'success', { link: `/jobs/${jobId}` });
     router.navigate(`/jobs/${jobId}`);

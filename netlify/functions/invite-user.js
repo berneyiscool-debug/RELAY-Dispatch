@@ -102,7 +102,8 @@ exports.handler = async (event, context) => {
       }
 
       // 2. Prevent setting role or userType to Admin for other users
-      if (user.id !== userId && (role === 'admin' || userTypeId === 'ut_admin')) {
+      const isAdminType = (id) => id === 'ut_admin' || (id && id.endsWith('_ut_admin'));
+      if (user.id !== userId && (role === 'admin' || isAdminType(userTypeId))) {
         return {
           statusCode: 400,
           headers,
@@ -115,14 +116,15 @@ exports.handler = async (event, context) => {
       if (email) authUpdates.email = email;
       if (password) authUpdates.password = password;
       
+      const defaultTechType = profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_tech' : `${profile.company_id}_ut_tech`;
       authUpdates.user_metadata = {
         name,
         role: role || 'technician',
-        userTypeId: userTypeId || 'ut_tech',
+        userTypeId: userTypeId || defaultTechType,
         username: username
       };
 
-      const { data: updatedAuthUser, error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+      const { data: authData, error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
         userId,
         authUpdates
       );
@@ -168,7 +170,7 @@ exports.handler = async (event, context) => {
         headers,
         body: JSON.stringify({
           success: true,
-          user: updatedAuthUser.user
+          user: authData?.user
         })
       };
 
@@ -182,7 +184,8 @@ exports.handler = async (event, context) => {
         };
       }
 
-      if (role === 'admin' || userTypeId === 'ut_admin') {
+      const isAdminType = (id) => id === 'ut_admin' || (id && id.endsWith('_ut_admin'));
+      if (role === 'admin' || isAdminType(userTypeId)) {
         return {
           statusCode: 400,
           headers,
@@ -190,8 +193,9 @@ exports.handler = async (event, context) => {
         };
       }
 
+      const defaultTechType = profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_tech' : `${profile.company_id}_ut_tech`;
       // Create user directly in Supabase Auth with password, auto-confirming email
-      const { data: authUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true, // auto-confirms email so user can log in instantly
@@ -199,7 +203,7 @@ exports.handler = async (event, context) => {
           name,
           username,
           role: role || 'technician',
-          userTypeId: userTypeId || 'ut_tech',
+          userTypeId: userTypeId || defaultTechType,
           company_id: profile.company_id // Inherit company ID
         }
       });
@@ -222,7 +226,7 @@ exports.handler = async (event, context) => {
           username: username,
           force_password_change: false
         })
-        .eq('id', authUser.user.id);
+        .eq('id', authData?.user?.id);
 
       if (updateError) {
         console.error('Failed to update created user profile details:', updateError);
@@ -233,7 +237,7 @@ exports.handler = async (event, context) => {
         headers,
         body: JSON.stringify({
           success: true,
-          user: authUser.user
+          user: authData?.user
         })
       };
     }

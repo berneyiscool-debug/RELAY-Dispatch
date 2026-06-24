@@ -11,6 +11,7 @@
 //   • Layout, view (pan/zoom) and pins persist per-user; new users get a role-based default
 // ============================================
 import { store } from '../data/store.js';
+import { supabase } from '../utils/supabase.js';
 import { calculateTotalBillableMaterials } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 
@@ -272,22 +273,47 @@ function makeHomeView(widgets) {
   return { id: 'view_home', x, y, zoom: 1, color: '#FF5C00', icon: 'home', label: 'Home' };
 }
 
-function loadLayout() {
+async function loadLayout() {
   let widgets = null, view = null, pins = null, home = null, stored = false;
-  try {
-    const s = localStorage.getItem(getLayoutKey());
-    if (s) {
-      const parsed = JSON.parse(s);
-      if (parsed && Array.isArray(parsed.widgets)) {
-        stored = true;
-        widgets = parsed.widgets;
-        view = parsed.view || null;
-        pins = Array.isArray(parsed.pins) ? parsed.pins : [];
-        home = parsed.home || null; // legacy separate home → migrate into views below
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  // Try Supabase first if user is logged in
+  if (currentUser && currentUser.id) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('dashboard_layout')
+        .eq('id', currentUser.id)
+        .single();
+      if (!error && data && data.dashboard_layout) {
+        const parsed = data.dashboard_layout;
+        if (parsed && Array.isArray(parsed.widgets)) {
+          stored = true;
+          widgets = parsed.widgets;
+          view = parsed.view || null;
+          pins = Array.isArray(parsed.pins) ? parsed.pins : [];
+          home = parsed.home || null;
+        }
       }
+    } catch (e) {
+      console.warn('Failed to load dashboard layout from Supabase:', e);
     }
-  } catch (e) {}
-
+  }
+  // Fallback to localStorage if not stored in Supabase or fetch failed
+  if (!stored) {
+    try {
+      const s = localStorage.getItem(getLayoutKey());
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (parsed && Array.isArray(parsed.widgets)) {
+          stored = true;
+          widgets = parsed.widgets;
+          view = parsed.view || null;
+          pins = Array.isArray(parsed.pins) ? parsed.pins : [];
+          home = parsed.home || null; // legacy separate home → migrate into views below
+        }
+      }
+    } catch (e) {}
+  }
   if (!stored) widgets = defaultLayoutForUser();
 
   // Ensure every widget has an instanceId + valid module + is permitted
@@ -318,13 +344,23 @@ function loadLayout() {
   };
 }
 
-function saveLayout() {
+async function saveLayout() {
   if (!live) return;
-  localStorage.setItem(getLayoutKey(), JSON.stringify({
-    widgets: live.widgets,
-    view: live.view,
-    pins: live.pins,
-  }));
+  const layout = { widgets: live.widgets, view: live.view, pins: live.pins };
+  // Save to localStorage for offline fallback
+  localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  if (currentUser && currentUser.id) {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ dashboard_layout: layout })
+        .eq('id', currentUser.id);
+      if (error) console.warn('Failed to save dashboard layout to Supabase:', error);
+    } catch (err) {
+      console.warn('Supabase save layout error:', err);
+    }
+  }
 }
 
 function renderPlaceholder(icon, msg) {
@@ -335,7 +371,7 @@ function renderPlaceholder(icon, msg) {
 }
 
 // ── Top-level render ─────────────────────────────────────────────────────────────
-export function renderDashboard(container) {
+export async function renderDashboard(container) {
   if (!window.__fieldForge) window.__fieldForge = {};
   window.__fieldForge.reloadDashboard = () => renderDashboard(container);
 
@@ -345,7 +381,16 @@ export function renderDashboard(container) {
   // (Re)load live state on first paint or when the user changes; otherwise keep the
   // in-session working copy so pan/zoom survive widget-triggered reloads.
   if (!live || live.userId !== uid) {
-    const loaded = loadLayout();
+    const loaded = await loadLayout();
+    if (loaded.pins && loaded.pins.length > 0) {
+      const firstPin = loaded.pins[0];
+      const targetZoom = typeof firstPin.zoom === 'number' ? firstPin.zoom : 1;
+      loaded.view = {
+        zoom: targetZoom,
+        panX: -firstPin.x * targetZoom,
+        panY: -firstPin.y * targetZoom
+      };
+    }
     live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins };
   }
   // Canvas lock is a per-user view preference (independent of the saved layout)
@@ -999,12 +1044,36 @@ function renderViewsSection() {
   live.pins.forEach(ref => {
     const chip = document.createElement('button');
     chip.className = 'dash-view-chip';
+    chip.dataset.id = ref.id; // set data-id for SortableJS identification
     chip.title = ref.label || 'Saved view';
     chip.style.setProperty('--chip-color', ref.color);
     chip.innerHTML = `<span class="material-icons-outlined" style="font-size:16px;">${ref.icon}</span>`;
     chip.addEventListener('click', () => flyTo(viewport, ref.x, ref.y, ref.zoom));
     cont.appendChild(chip);
   });
+
+  if (window.Sortable) {
+    if (cont._sortable) {
+      cont._sortable.destroy();
+    }
+    cont._sortable = new window.Sortable(cont, {
+      animation: 150,
+      onEnd: () => {
+        const order = cont._sortable.toArray();
+        const orderedPins = [];
+        order.forEach(id => {
+          const pin = live.pins.find(p => p.id === id);
+          if (pin) orderedPins.push(pin);
+        });
+        live.pins = orderedPins;
+        saveLayout();
+        const world = document.querySelector('#dash-world');
+        if (world) {
+          renderPins(world);
+        }
+      }
+    });
+  }
 }
 
 // Fly so the world point (wx,wy) snaps to the viewport's TOP-LEFT. Anchoring the
@@ -1858,22 +1927,34 @@ function showEditHeader(container, viewport, world, guides, data) {
     }
   });
 
-  headerActions.querySelector('#btn-save-layout').addEventListener('click', () => {
-    saveLayout();
+  headerActions.querySelector('#btn-save-layout').addEventListener('click', async () => {
+    const btn = headerActions.querySelector('#btn-save-layout');
+    // Show loading state
+    btn.disabled = true;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...`;
+    try {
+      await saveLayout();
+      // Show success toast
+      import('../components/Notifications.js').then(({ showToast }) => {
+        showToast('Dashboard layout saved', 'success');
+      }).catch(() => {});
+    } finally {
+      // Restore button state
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
     exitEdit();
-    import('../components/Notifications.js').then(({ showToast }) => {
-      showToast('Dashboard layout saved', 'success');
-    }).catch(() => {});
-  });
+});
 
-  headerActions.querySelector('#btn-cancel-edit').addEventListener('click', () => {
-    const loaded = loadLayout();
+  headerActions.querySelector('#btn-cancel-edit').addEventListener('click', async () => {
+    const loaded = await loadLayout();
     live.widgets = loaded.widgets;
     live.pins = loaded.pins;
     live.view = loaded.view;
     applyTransform(viewport, world, guides);
     exitEdit();
-  });
+});
 
   headerActions.querySelector('#btn-add-widget').addEventListener('click', () => {
     openAddWidgetModal(container, viewport, world, guides, data);

@@ -121,8 +121,9 @@ export function createSidebar() {
       `;
 
       item.items.forEach(child => {
+        const isChildDisabled = !store.companyId && child.id === 'documents';
         html += `
-          <button class="sidebar-nav-item sub-item" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}">
+          <button class="sidebar-nav-item sub-item ${isChildDisabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${isChildDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
             <span class="nav-icon"><span class="material-icons-outlined">${child.icon}</span></span>
             <span class="nav-label">${child.label}</span>
           </button>
@@ -135,8 +136,9 @@ export function createSidebar() {
       `;
     } else {
       // Top Level Item
+      const isItemDisabled = !store.companyId && item.id === 'documents';
       html += `
-        <button class="sidebar-nav-item" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}">
+        <button class="sidebar-nav-item ${isItemDisabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}" ${isItemDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
           <span class="nav-icon"><span class="material-icons-outlined">${item.icon}</span></span>
           <span class="nav-label">${item.label}</span>
         </button>
@@ -156,7 +158,7 @@ export function createSidebar() {
       </button>
     </div>
     <button class="sidebar-toggle" id="sidebar-toggle">
-      <span class="material-icons-outlined" id="sidebar-toggle-icon">${isExpanded ? 'chevron_left' : 'chevron_right'}</span>
+      <span class="material-icons-outlined" id="sidebar-toggle-icon">chevron_right</span>
     </button>
   `;
 
@@ -191,6 +193,11 @@ export function createSidebar() {
     // 2. Navigation item click
     const navItem = e.target.closest('.sidebar-nav-item');
     if (navItem && navItem.id !== 'btn-logout') {
+      if (navItem.classList.contains('disabled-local')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const path = navItem.dataset.path;
       if (path) router.navigate(path);
     }
@@ -281,8 +288,9 @@ export function createSidebar() {
       let subItemsHtml = '';
       visibleItems.forEach(item => {
         const isActive = item.classList.contains('active');
+        const isDisabled = item.classList.contains('disabled-local');
         subItemsHtml += `
-          <button class="sidebar-nav-item sub-item ${isActive ? 'active' : ''}" data-path="${item.dataset.path}" data-id="${item.dataset.id}">
+          <button class="sidebar-nav-item sub-item ${isActive ? 'active' : ''} ${isDisabled ? 'disabled-local' : ''}" data-path="${item.dataset.path}" data-id="${item.dataset.id}" ${isDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
             <span class="nav-icon">${item.querySelector('.nav-icon').innerHTML}</span>
             <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">${item.querySelector('.nav-label').textContent}</span>
           </button>
@@ -303,6 +311,11 @@ export function createSidebar() {
       flyout.addEventListener('click', (e) => {
         const navItem = e.target.closest('.sidebar-nav-item');
         if (navItem) {
+          if (navItem.classList.contains('disabled-local')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           const path = navItem.dataset.path;
           if (path) {
             router.navigate(path);
@@ -330,10 +343,10 @@ export function createSidebar() {
     });
   });
 
-  // Listen for settings changes (e.g. logo update)
-  window.addEventListener('simpro-settings-updated', () => {
+  const updateSidebarLogo = () => {
     const s = store.getSettings();
     const logoContainer = sidebar.querySelector('#sidebar-logo');
+    if (!logoContainer) return;
     const isExpandedNow = sidebar.classList.contains('expanded');
     const logoSrc = isExpandedNow 
       ? (s.logo || s.logoSmall) 
@@ -349,7 +362,11 @@ export function createSidebar() {
         <span class="logo-text" style="${isExpandedNow ? 'display: block;' : 'display: none;'}">Relay — Dispatch</span>
       `;
     }
-  });
+  };
+
+  // Listen for settings changes (e.g. logo update)
+  window.addEventListener('simpro-settings-updated', updateSidebarLogo);
+  store.on('settings', updateSidebarLogo);
 
   return sidebar;
 }
@@ -435,13 +452,10 @@ export function toggleSidebar(sidebar) {
   sidebar.classList.toggle('expanded');
   const isExpanded = sidebar.classList.contains('expanded');
   localStorage.setItem('simpro_sidebar_expanded', isExpanded);
-  const icon = sidebar.querySelector('#sidebar-toggle-icon');
-  icon.textContent = isExpanded ? 'chevron_left' : 'chevron_right';
   
   // Toggle branding elements
   const s = store.getSettings();
   const customImg = sidebar.querySelector('.custom-logo');
-  const logoText = sidebar.querySelector('.logo-text');
   
   if (customImg) {
     customImg.src = isExpanded 
@@ -449,7 +463,6 @@ export function toggleSidebar(sidebar) {
       : (s.logoSmall || s.logo);
     customImg.style.maxWidth = isExpanded ? '85%' : '32px';
   }
-  if (logoText) logoText.style.display = isExpanded ? 'block' : 'none';
 
   // Update arrows state
   const nav = sidebar.querySelector('#sidebar-nav');

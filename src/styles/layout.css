@@ -364,7 +364,9 @@
   border: 1px solid rgba(255, 92, 0, 0.22);
   box-shadow: 0 10px 30px rgba(72, 83, 103, 0.16);
   border-radius: var(--border-radius-md);
-  width: 170px;
+  width: max-content;
+  min-width: 170px;
+  max-width: 260px;
   padding: var(--space-xs);
   z-index: 99999;
   transform-origin: left center;
@@ -387,6 +389,16 @@
   background: none !important;
   border: 1px solid transparent !important;
   color: var(--sidebar-text) !important;
+}
+.sidebar-collapsed-flyout .nav-label {
+  opacity: 1 !important;
+  max-width: 180px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  width: auto !important;
+  display: inline-block !important;
+  transform: none !important;
 }
 .sidebar-collapsed-flyout .sidebar-nav-item.sub-item:hover {
   background: rgba(255, 92, 0, 0.08) !important;

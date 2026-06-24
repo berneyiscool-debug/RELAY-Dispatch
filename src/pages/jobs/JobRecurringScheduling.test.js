@@ -1,6 +1,14 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { store } from '../../data/store.js';
+import { checkRecurringJobs } from '../../utils/maintenanceEngine.js';
+
+// Stub localStorage for Node.js test runs
+globalThis.localStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {}
+};
 
 describe('Job Recurring Scheduling Integrations', () => {
   beforeEach(() => {
@@ -73,4 +81,42 @@ describe('Job Recurring Scheduling Integrations', () => {
     assert.strictEqual(duplicatedJob.tasks[0].id, 'task_new_1');
     assert.strictEqual(duplicatedJob.tasks[0].subTasks[0].id, 'sub_new_1');
   });
+
+  test('Dynamic checkRecurringJobs generator', () => {
+    // 1. Create a parent recurring job template
+    const parentJob = store.create('jobs', {
+      number: 'J-001',
+      title: 'Weekly Recurring Service',
+      customerId: 'cust_1',
+      customerName: 'ACME Corp',
+      priority: 'High',
+      isRecurring: true,
+      recurringConfig: {
+        freq: 'Weekly',
+        start: new Date().toISOString().split('T')[0], // starts today
+        end: new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString().split('T')[0], // 3 days in future
+        daysOfWeek: [] // defaults to today's day of week
+      }
+    });
+
+    // 2. Call checkRecurringJobs
+    checkRecurringJobs();
+
+    // 3. Verify that a notification is created for the occurrence within the next 7 days
+    const notifications = store.getAll('notifications') || [];
+    const relevantNotifs = notifications.filter(n => n.jobId === parentJob.id);
+
+    // There should be exactly 1 notification because today falls in the 7-day window
+    assert.strictEqual(relevantNotifs.length, 1);
+    assert.strictEqual(relevantNotifs[0].type, 'Recurring Job Due');
+    assert.strictEqual(relevantNotifs[0].status, 'Pending');
+    assert.strictEqual(relevantNotifs[0].dueDate, new Date().toISOString().split('T')[0]);
+
+    // 4. Running it again should NOT create a duplicate notification
+    checkRecurringJobs();
+    const notificationsAfterSecondRun = store.getAll('notifications') || [];
+    const relevantNotifsSecondRun = notificationsAfterSecondRun.filter(n => n.jobId === parentJob.id);
+    assert.strictEqual(relevantNotifsSecondRun.length, 1);
+  });
 });
+

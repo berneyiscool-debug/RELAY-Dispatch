@@ -4,13 +4,13 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 
 export function renderCustomerPortal(container, params) {
-  // Ensure the stored theme is applied on portal load
-  const storedTheme = localStorage.getItem('simpro_theme') || 'light';
-  document.documentElement.setAttribute('data-theme', storedTheme);
-
   const token = params.token;
   const customers = store.getAll('customers');
   const customer = customers.find(c => c.portalToken === token);
+
+  // Ensure the stored theme is applied on portal load
+  const storedTheme = customer ? (localStorage.getItem(`simpro_theme_customer_${customer.id}`) || 'light') : 'light';
+  document.documentElement.setAttribute('data-theme', storedTheme);
 
   const settings = store.getSettings();
 
@@ -125,7 +125,7 @@ export function renderCustomerPortal(container, params) {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('simpro_theme', next);
+      localStorage.setItem(`simpro_theme_customer_${customer.id}`, next);
       renderCustomerPortal(container, params);
     });
 
@@ -189,7 +189,7 @@ export function renderCustomerPortal(container, params) {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('simpro_theme', next);
+      localStorage.setItem(`simpro_theme_customer_${customer.id}`, next);
       renderCustomerPortal(container, params);
     });
 
@@ -1684,7 +1684,7 @@ export function renderCustomerPortal(container, params) {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('simpro_theme', next);
+      localStorage.setItem(`simpro_theme_customer_${customer.id}`, next);
       render();
     });
 

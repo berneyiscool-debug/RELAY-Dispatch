@@ -191,7 +191,8 @@ describe('DataStore', () => {
         businessName: 'Acme Trade',
         active: true,
         hourlyRate: 85,
-        notes: 'Operational comments'
+        notes: 'Operational comments',
+        dummyField: 'should be stripped'
       };
 
       const result = store.denormalizeRecord(contractorPayload, 'contractors');
@@ -201,12 +202,13 @@ describe('DataStore', () => {
       assert.strictEqual(result.company_id, 'comp1');
       assert.strictEqual(result.name, 'Acme Trade');
       assert.strictEqual(result.status, 'Active');
+      assert.strictEqual(result.notes, 'Operational comments');
 
       // Check stripped non-schema fields
       assert.strictEqual(result.businessName, undefined);
       assert.strictEqual(result.active, undefined);
       assert.strictEqual(result.hourlyRate, undefined);
-      assert.strictEqual(result.notes, undefined);
+      assert.strictEqual(result.dummyField, undefined);
     });
 
     test('normalizeRecord translates contractor name and active state correctly', () => {
