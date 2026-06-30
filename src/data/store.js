@@ -4,7 +4,7 @@
 import { supabase } from '../utils/supabase.js';
 import { prebuiltForms } from './prebuiltForms.js';
 
-const defaultLogoLarge = new URL('../assets/logo-large.png', import.meta.url).href;
+const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
 
 
@@ -13,6 +13,7 @@ const TABLE_MAP = {
   companies: 'companies',
   technicians: 'profiles',
   userTypes: 'user_types',
+  passwordResetRequests: 'password_reset_requests',
   customers: 'customers',
   assets: 'assets',
   maintenancePlans: 'maintenance_plans',
@@ -287,6 +288,16 @@ const TABLE_COLUMNS = {
     "created_at",
     "updated_at"
   ],
+  password_reset_requests: [
+    "id",
+    "technician_id",
+    "employee_id",
+    "requested_at",
+    "status",
+    "token",
+    "created_at",
+    "updated_at"
+  ],
   purchase_orders: [
     "id",
     "company_id",
@@ -399,6 +410,8 @@ class DataStore {
       ? localStorage.getItem(this.getStorageKey('folder_sync_enabled')) === 'true'
       : false;
     this.folderSyncPermissionGranted = false;
+    this.backupDirHandle = null;
+    this.backupDirPermissionGranted = false;
 
     // Check if we have a cloud user at boot (before filling cache)
     const bootUser = typeof localStorage !== 'undefined'
@@ -435,7 +448,10 @@ class DataStore {
           this.initPromise = this.initializeCloudSync();
         }
       } else {
-        this.clearSync();
+        // Only clear sync if we were previously in cloud sync mode or companyId is not defined
+        if (!this.companyId || !this.companyId.startsWith('acct_')) {
+          this.clearSync();
+        }
       }
     });
 
@@ -557,14 +573,33 @@ class DataStore {
             await new Promise((resConfig) => {
               const transaction = this.db.transaction('config', 'readonly');
               const configStore = transaction.objectStore('config');
-              const getReq = configStore.get('directory_handle');
-              getReq.onsuccess = () => {
-                if (getReq.result) {
-                  this.dirHandle = getReq.result.value;
-                }
-                resConfig();
-              };
-              getReq.onerror = () => resConfig();
+              
+              const getSync = new Promise((resolve) => {
+                const req = configStore.get('directory_handle');
+                req.onsuccess = () => {
+                  console.log('[DEBUG Store] getSync onsuccess result:', req.result);
+                  if (req.result) {
+                    this.dirHandle = req.result.value;
+                    console.log('[DEBUG Store] loaded dirHandle:', this.dirHandle ? this.dirHandle.name : null);
+                  }
+                  resolve();
+                };
+                req.onerror = (e) => {
+                  console.error('[DEBUG Store] getSync onerror:', e);
+                  resolve();
+                };
+              });
+
+              const getBackup = new Promise((resolve) => {
+                const req = configStore.get('backup_directory_handle');
+                req.onsuccess = () => {
+                  if (req.result) this.backupDirHandle = req.result.value;
+                  resolve();
+                };
+                req.onerror = () => resolve();
+              });
+
+              Promise.all([getSync, getBackup]).then(() => resConfig());
             });
           }
         } catch (err) {
@@ -580,6 +615,28 @@ class DataStore {
             this.folderSyncPermissionGranted = status === 'granted';
           } catch (err) {
             console.warn('Failed to query directory permission on boot:', err);
+          }
+        }
+
+        // Verify backup directory permission silently on boot if handle exists
+        if (this.backupDirHandle) {
+          try {
+            const opts = { mode: 'readwrite' };
+            const status = await this.backupDirHandle.queryPermission(opts);
+            this.backupDirPermissionGranted = status === 'granted';
+
+            // Auto-trigger backup if granted and > 7 days since last backup
+            if (this.backupDirPermissionGranted) {
+              const lastBackup = localStorage.getItem('relay_last_backup_time');
+              const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+              if (!lastBackup || new Date(lastBackup).getTime() < sevenDaysAgo) {
+                this.backupToFolder().catch(err => {
+                  console.error('Auto background backup failed:', err);
+                });
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to query backup directory permission on boot:', err);
           }
         }
 
@@ -778,6 +835,93 @@ class DataStore {
     }
   }
 
+  async verifyBackupDirPermission(requestInteractive) {
+    if (!this.backupDirHandle) return false;
+    const opts = { mode: 'readwrite' };
+    try {
+      const currentPerm = await this.backupDirHandle.queryPermission(opts);
+      if (currentPerm === 'granted') {
+        this.backupDirPermissionGranted = true;
+        return true;
+      }
+      if (requestInteractive) {
+        const newPerm = await this.backupDirHandle.requestPermission(opts);
+        this.backupDirPermissionGranted = newPerm === 'granted';
+        return this.backupDirPermissionGranted;
+      }
+      this.backupDirPermissionGranted = false;
+      return false;
+    } catch (e) {
+      this.backupDirPermissionGranted = false;
+      return false;
+    }
+  }
+
+  // Ensure a subfolder for the current company exists within the selected directory.
+  async ensureCompanyFolderHandle(customDirHandle) {
+    const baseHandle = customDirHandle || this.dirHandle;
+    if (!baseHandle) return null;
+    const rawName = this.companySettings?.name || this.companySettings?.id || 'Company';
+    const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_');
+    try {
+      const companyHandle = await baseHandle.getDirectoryHandle(safeName, { create: true });
+      return companyHandle;
+    } catch (e) {
+      console.error('Failed to get/create company folder:', e);
+      return null;
+    }
+  }
+
+  async setBackupDirectory(dirHandle) {
+    this.backupDirHandle = dirHandle || null;
+    this.backupDirPermissionGranted = !!dirHandle;
+    
+    if (this.db) {
+      await new Promise((resolve) => {
+        const transaction = this.db.transaction('config', 'readwrite');
+        const configStore = transaction.objectStore('config');
+        if (dirHandle) {
+          const putReq = configStore.put({ key: 'backup_directory_handle', value: dirHandle });
+          putReq.onsuccess = () => resolve();
+          putReq.onerror = () => resolve();
+        } else {
+          const deleteReq = configStore.delete('backup_directory_handle');
+          deleteReq.onsuccess = () => resolve();
+          deleteReq.onerror = () => resolve();
+        }
+      });
+    }
+  }
+
+  async backupToFolder(dirHandle) {
+    const handle = dirHandle || this.backupDirHandle;
+    if (!handle) throw new Error('No backup directory configured.');
+    
+    const currentPerm = await handle.queryPermission({ mode: 'readwrite' });
+    if (currentPerm !== 'granted') {
+      const newPerm = await handle.requestPermission({ mode: 'readwrite' });
+      if (newPerm !== 'granted') {
+        throw new Error('Write permission denied for backup directory.');
+      }
+    }
+    
+    // Ensure company-specific folder exists within the selected directory
+    const companyFolderHandle = await this.ensureCompanyFolderHandle(dirHandle);
+    const dataDir = await companyFolderHandle.getDirectoryHandle('data', { create: true });
+    const collections = Object.keys(TABLE_MAP);
+    for (const col of collections) {
+      const items = this.cache[col] || [];
+      const fileHandle = await dataDir.getFileHandle(`${col}.json`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(items, null, 2));
+      await writable.close();
+    }
+    
+    // Update last backup timestamp
+    localStorage.setItem('relay_last_backup_time', new Date().toISOString());
+    this.backupDirPermissionGranted = true;
+  }
+
   async setLocalDirectory(dirHandle) {
     this.dirHandle = dirHandle;
     if (dirHandle) {
@@ -848,7 +992,9 @@ class DataStore {
       const hasPerm = await this.verifyDirPermission(true);
       if (!hasPerm) return;
 
-      const dataDir = await this.dirHandle.getDirectoryHandle('data', { create: true });
+      const companyFolder = await this.ensureCompanyFolderHandle();
+      if (!companyFolder) return;
+      const dataDir = await companyFolder.getDirectoryHandle('data', { create: true });
       const fileHandle = await dataDir.getFileHandle(`${collection}.json`, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(JSON.stringify(items || [], null, 2));
@@ -903,7 +1049,9 @@ class DataStore {
       }
       const blob = new Blob([bytes], { type: mime });
 
-      const docsDir = await this.dirHandle.getDirectoryHandle('documents', { create: true });
+      const companyFolder = await this.ensureCompanyFolderHandle();
+      if (!companyFolder) return null;
+      const docsDir = await companyFolder.getDirectoryHandle('documents', { create: true });
       const fileHandle = await docsDir.getFileHandle(fileName, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
@@ -969,6 +1117,9 @@ class DataStore {
     if (!this.companyId) return;
 
     try {
+      // Initialize IndexedDB for cloud users too, to store backup directory handles
+      await this.initIndexedDB();
+
       // 1. Fetch Company Settings
       const { data: comp, error: compErr } = await supabase
         .from('companies')
@@ -1509,7 +1660,28 @@ class DataStore {
   // ── Local-First Core API Operations ────────────────────────────────────────
 
   getAll(collection) {
-    return this.cache[collection] || [];
+    const items = this.cache[collection] || [];
+    if (collection === 'technicians') {
+      const loginMode = typeof localStorage !== 'undefined' ? localStorage.getItem('relay_login_mode') : null;
+      if (loginMode === 'local') {
+        const currentUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('currentUser') : null;
+        if (currentUserStr) {
+          const currentUser = JSON.parse(currentUserStr);
+          if (currentUser && currentUser.id) {
+            return [{
+              id: currentUser.id,
+              name: currentUser.name || 'Local Admin',
+              role: 'Administrator',
+              color: currentUser.color || '#FF5C00',
+              userTypeId: currentUser.userTypeId,
+              email: currentUser.email || '',
+              username: currentUser.username || ''
+            }];
+          }
+        }
+      }
+    }
+    return items;
   }
 
   getById(collection, id) {
@@ -1535,10 +1707,22 @@ class DataStore {
   create(collection, item) {
     item.id = item.id || this.generateId();
     if (collection === 'leads' && !item.number) {
-      item.number = 'LD-' + Date.now().toString().slice(-5);
+      item.number = this.getNextNumber('LD-', 'leads');
     }
     if (collection === 'notifications' && !item.number) {
-      item.number = 'NT-' + Date.now().toString().slice(-5);
+      item.number = this.getNextNumber('NT-', 'notifications');
+    }
+    if (collection === 'invoices' && !item.number) {
+      item.number = this.getNextNumber('INV-', 'invoices');
+    }
+    if (collection === 'quotes' && !item.number) {
+      item.number = this.getNextNumber('Q-', 'quotes');
+    }
+    if (collection === 'jobs' && !item.number) {
+      item.number = this.getNextNumber('J-', 'jobs');
+    }
+    if (collection === 'purchaseOrders' && !item.number) {
+      item.number = this.getNextNumber('PO-', 'purchaseOrders');
     }
     item.createdAt = item.createdAt || new Date().toISOString();
     item.updatedAt = new Date().toISOString();
@@ -1864,6 +2048,28 @@ class DataStore {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
   }
 
+  /**
+   * Generate the next sequential number for a collection.
+   * Scans existing records, finds the highest numeric suffix, and returns prefix + (max+1) zero-padded to 5 digits.
+   * e.g. getNextNumber('INV-', 'invoices') → 'INV-00001', 'INV-00002', ...
+   */
+  getNextNumber(prefix, collection) {
+    const items = this.getAll(collection) || [];
+    let maxNum = 0;
+
+    items.forEach(item => {
+      if (item.number && typeof item.number === 'string' && item.number.startsWith(prefix)) {
+        const numStr = item.number.slice(prefix.length);
+        const num = parseInt(numStr, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    return prefix + (maxNum + 1).toString().padStart(5, '0');
+  }
+
   // ── Company Settings API ───────────────────────────────────────────────────
 
   getSettings() {
@@ -1926,7 +2132,7 @@ class DataStore {
     if (this.companySettings) {
       const merged = { ...defaultSettings, ...this.companySettings };
       // Fallback to default logos if user has not uploaded custom ones
-      if (!merged.logo) merged.logo = defaultLogoLarge;
+      if (!merged.logo || merged.logo.includes('logo-large.png')) merged.logo = defaultLogoLarge;
       if (!merged.logoSmall) merged.logoSmall = defaultLogoSmall;
       // Ensure sub-objects merge safely
       merged.documentTheme = { ...defaultSettings.documentTheme, ...this.companySettings.documentTheme };
@@ -1999,13 +2205,13 @@ class DataStore {
 
     // If not running in cloud mode, fall back to IndexedDB / Folder Sync
     if (!this.companyId || this.companyId.startsWith('acct_')) {
-      this.writeAllToIndexedDB(collection, items).catch(err => {
+      const p = this.writeAllToIndexedDB(collection, items).catch(err => {
         console.error(`Error saving all items to ${collection} in IndexedDB:`, err);
       });
       if (this.folderSyncEnabled) {
         this.writeCollectionToFolder(collection, items);
       }
-      return;
+      return p;
     }
 
     // Cloud mode: persist the whole collection. Upsert every current row, then delete
@@ -2083,9 +2289,19 @@ class DataStore {
         description: 'Field staff — limited to their own jobs, schedule and timesheets',
         permissions: buildGranularPerms((mod, key) => {
           if (mod === 'Dashboard') return key === 'view';
-          if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
-          if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
-          if (mod === 'Schedule') return ['view_own'].includes(key);
+          if (mod === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
+          if (mod === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
+          if (mod === 'Jobs') {
+            return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+          }
+          if (mod === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
+          if (mod === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);
+          if (mod === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
+          if (mod === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
+          if (mod === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
+          if (mod === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
+          if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
+          if (mod === 'Documents') return ['view', 'upload'].includes(key);
           return false;
         })
       },
@@ -2117,14 +2333,17 @@ class DataStore {
 
   async seedDefaultTechnicians() {
     const companyId = this.companyId;
+    if (!companyId) return;
     const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
+    const managerTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_manager` : 'ut_manager';
     const techTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_tech` : 'ut_tech';
+    const officeTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_office` : 'ut_office';
 
     const defaultTechs = [
       { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445', username: 'jake', password: '123456' },
-      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Electrician',         color: '#10B981', userTypeId: techTypeId,    payRate: 80.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556', username: 'ryan', password: '123456' },
+      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: managerTypeId, payRate: 85.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556', username: 'ryan', password: '123456' },
       { id: `${companyId}_tech_3`, name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: techTypeId,    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667', username: 'sandra', password: '123456' },
-      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Apprentice',          color: '#F59E0B', userTypeId: techTypeId,    payRate: 45.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778', username: 'dean', password: '123456' }
+      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: officeTypeId,  payRate: 50.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778', username: 'dean', password: '123456' }
     ];
 
     this.cache.technicians = defaultTechs;
@@ -2196,26 +2415,40 @@ class DataStore {
   }
 
   deleteLocalAccountData(accountId) {
-    if (typeof localStorage !== 'undefined') {
-      Object.keys(TABLE_MAP).forEach(col => {
-        localStorage.removeItem(`relay_${accountId}_${col}`);
-      });
-      localStorage.removeItem(`relay_${accountId}_folder_sync_enabled`);
-      localStorage.removeItem(`relay_${accountId}_seeded`);
-      localStorage.removeItem(`relay_${accountId}_settings`);
-    }
-    if (typeof window !== 'undefined' && window.indexedDB) {
-      window.indexedDB.deleteDatabase(`RelayDispatchDB_${accountId}`);
-    }
+    return new Promise((resolve) => {
+      if (this.db) {
+        this.db.close();
+        this.db = null;
+      }
+      if (typeof localStorage !== 'undefined') {
+        Object.keys(TABLE_MAP).forEach(col => {
+          localStorage.removeItem(`relay_${accountId}_${col}`);
+        });
+        localStorage.removeItem(`relay_${accountId}_folder_sync_enabled`);
+        localStorage.removeItem(`relay_${accountId}_seeded`);
+        localStorage.removeItem(`relay_${accountId}_settings`);
+      }
+      if (typeof window !== 'undefined' && window.indexedDB) {
+        const req = window.indexedDB.deleteDatabase(`RelayDispatchDB_${accountId}`);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => {
+          console.warn('Database deletion blocked, resolving anyway');
+          resolve();
+        };
+      } else {
+        resolve();
+      }
+    });
   }
 
-  clearAll() {
+  async clearAll() {
     this.clearSync();
     if (!this.companyId || this.companyId.startsWith('acct_')) {
       const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
       
       if (activeAccount) {
-        this.deleteLocalAccountData(activeAccount);
+        await this.deleteLocalAccountData(activeAccount);
       } else {
         Object.keys(TABLE_MAP).forEach(col => {
           localStorage.removeItem('simpro_' + col);
@@ -2227,9 +2460,11 @@ class DataStore {
         this.folderSyncEnabled = false;
         this.folderSyncPermissionGranted = false;
         this.dirHandle = null;
-        this.clearAllIndexedDB().catch(err => {
+        try {
+          await this.clearAllIndexedDB();
+        } catch (err) {
           console.error('Error clearing IndexedDB:', err);
-        });
+        }
       }
     }
   }

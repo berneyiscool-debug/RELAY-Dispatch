@@ -15,7 +15,7 @@ import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
-  const newInvoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+  const newInvoiceNumber = store.getNextNumber('INV-', 'invoices');
   let invoice = isNew ? {
     id: store.generateId(),
     number: newInvoiceNumber,

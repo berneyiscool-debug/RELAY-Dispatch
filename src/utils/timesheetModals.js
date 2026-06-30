@@ -119,9 +119,20 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
     <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
       <div class="form-group" style="margin:0">
         <label class="form-label">Technician *</label>
-        <select class="form-select" id="lt-tech" style="width:100%" ${currentUser.role === 'technician' ? 'disabled' : ''}>
+        <select class="form-select" id="lt-tech" style="width:100%" ${(() => {
+          const hasTechRecord = technicians.some(t => t.id === currentUser.id);
+          return (currentUser.role === 'technician' && hasTechRecord) ? 'disabled' : '';
+        })()}>
           <option value="">Select technician...</option>
-          ${technicians.map(t => `<option value="${t.id}" ${ts.technicianId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+          ${(() => {
+            const hasTechRecord = technicians.some(t => t.id === currentUser.id);
+            let html = '';
+            if (!hasTechRecord) {
+              html += `<option value="${currentUser.id}" ${ts.technicianId === currentUser.id ? 'selected' : ''}>${currentUser.name} (You)</option>`;
+            }
+            html += technicians.map(t => `<option value="${t.id}" ${ts.technicianId === t.id ? 'selected' : ''}>${t.name}</option>`).join('');
+            return html;
+          })()}
         </select>
       </div>
       <div class="form-group" style="margin:0">
@@ -307,5 +318,10 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
         if (onSaveCallback) onSaveCallback();
       }}
     ]
+  });
+
+  import('./clockPicker.js').then(({ initClockPicker }) => {
+    initClockPicker(document.getElementById('lt-start'));
+    initClockPicker(document.getElementById('lt-finish'));
   });
 }

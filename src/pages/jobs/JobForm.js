@@ -13,9 +13,25 @@ const AVAILABLE_TAGS = [
   'High Value', 'Recurring', 'Compliance', 'Hazardous', 'New Site'
 ];
 
-export function renderJobForm(container, { id }) {
+export function renderJobForm(container, params) {
+  const id = params.id;
+  const customerId = params.customerId;
   const isEdit = id && id !== 'new';
   const job = isEdit ? store.getById('jobs', id) : {};
+  if (!isEdit && customerId) {
+    job.customerId = customerId;
+    const cust = store.getById('customers', customerId);
+    if (cust) {
+      job.customerName = cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim();
+      if (cust.sites && cust.sites.length > 0) {
+        job.siteId = cust.sites[0].name;
+        job.siteAddress = cust.sites[0].address;
+      }
+      if (cust.contacts && cust.contacts.length > 0) {
+        job.primaryContactId = cust.contacts[0].name;
+      }
+    }
+  }
   const customers = store.getAll('customers');
   const contractors = store.getAll('contractors').filter(c => c.active);
 
@@ -520,9 +536,13 @@ export function renderJobForm(container, { id }) {
   }
 
   // ---- Cancel ----
-  container.querySelector('#btn-cancel').addEventListener('click', () =>
-    router.navigate(isEdit ? `/jobs/${id}` : '/jobs')
-  );
+  container.querySelector('#btn-cancel').addEventListener('click', () => {
+    if (params.customerId) {
+      router.navigate(`/people/${params.customerId}?tab=jobs`);
+    } else {
+      router.navigate(isEdit ? `/jobs/${id}` : '/jobs');
+    }
+  });
 
   // ==== Task List Management ====
   let jobTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, estimatedHours: 2, people: 1, subTasks: [] }];
@@ -1157,7 +1177,7 @@ export function renderJobForm(container, { id }) {
     });
     
     delete data.notes;
-    data.number = job.number || `J-${Date.now().toString().slice(-6)}`;
+    data.number = job.number || store.getNextNumber('J-', 'jobs');
     const isEmg = container.querySelector('#is-emergency')?.checked;
     data.isEmergency = isEmg;
 
@@ -1224,6 +1244,10 @@ export function renderJobForm(container, { id }) {
     store.save('formInstances', filteredInstances);
 
     showToast(`Job ${isEdit ? 'updated' : 'created'} successfully`, 'success', { link: `/jobs/${jobId}` });
-    router.navigate(`/jobs/${jobId}`);
+    if (params.customerId) {
+      router.navigate(`/people/${params.customerId}?tab=jobs`);
+    } else {
+      router.navigate(`/jobs/${jobId}`);
+    }
   });
 }

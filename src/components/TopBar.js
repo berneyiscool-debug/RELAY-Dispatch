@@ -38,6 +38,11 @@ export function createTopBar() {
           <span class="topbar-user-name" id="topbar-name">Loading...</span>
           <span class="topbar-user-role" id="topbar-role">Role</span>
         </div>
+         <!-- UI Mode Toggle Switch -->
+          <label class="toggle-pill" title="Toggle Simple/Complete Mode">
+            <input type="checkbox" id="ui-mode-toggle" />
+            <span class="slider"></span>
+          </label>
       </div>
     </div>
   `;
@@ -61,7 +66,7 @@ export function createTopBar() {
     setTimeout(hideSearchResults, 200);
   });
 
-  // Theme toggle
+    // Theme toggle
   const themeBtn = topbar.querySelector('#btn-theme-toggle');
   themeBtn.addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
@@ -70,6 +75,41 @@ export function createTopBar() {
     applyTheme(next, true);
     topbar.querySelector('#theme-icon').textContent = next === 'dark' ? 'light_mode' : 'dark_mode';
   });
+
+// UI Mode toggle — just wire up the change listener here.
+  // Visibility is handled in updateTopbarAccess() which runs after login.
+  const uiToggle = topbar.querySelector('#ui-mode-toggle');
+  if (uiToggle) {
+    const toggleLabel = uiToggle.closest('label');
+    // Hidden by default until updateTopbarAccess shows it for local admin
+    if (toggleLabel) toggleLabel.style.display = 'none';
+
+    uiToggle.addEventListener('change', () => {
+      const mode = uiToggle.checked ? 'admin' : 'technician';
+      localStorage.setItem('uiMode', mode);
+      // Update currentUser role and userTypeId accordingly
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      currentUser.role = mode;
+      if (currentUser.companyId) {
+        if (mode === 'admin') {
+          currentUser.userTypeId = `${currentUser.companyId}_ut_admin`;
+        } else {
+          currentUser.userTypeId = `${currentUser.companyId}_ut_tech`;
+        }
+      }
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      // Refresh top-bar display to reflect role change
+      updateTopbarAccess(topbar);
+      // Refresh sidebar to show/hide items based on new role
+      import('./Sidebar.js').then(({ updateSidebarAccess }) => {
+        if (updateSidebarAccess) updateSidebarAccess();
+      });
+      // Trigger a page refresh/rerender to re-evaluate auth guards/permissions
+      if (window.__fieldForge && window.__fieldForge.router) {
+        window.__fieldForge.router.resolve();
+      }
+    });
+  }
 
   // Apply stored theme on load
   applyStoredTheme();
@@ -101,6 +141,23 @@ export function createTopBar() {
   relayBtn.addEventListener('click', () => toggleRelay());
   onRelayToggle(open => relayBtn.classList.toggle('active', open));
 
+  // Navigate to profile on user click
+  const userBtn = topbar.querySelector('#topbar-user');
+  if (userBtn) {
+    userBtn.style.cursor = 'pointer';
+    userBtn.addEventListener('click', (e) => {
+      if (e.target.closest('#ui-mode-toggle') || e.target.closest('.toggle-pill')) {
+        return;
+      }
+      router.navigate('/profile');
+    });
+  }
+
+  // Update on profile details update
+  window.addEventListener('fieldforge-profile-updated', () => {
+    updateTopbarAccess(topbar);
+  });
+
   updateTopbarAccess(topbar);
 
   return topbar;
@@ -112,6 +169,26 @@ export function updateTopbarAccess(topbarEl) {
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
+  // --- Toggle visibility (re-evaluated every time, including after login) ---
+  const uiToggle = topbar.querySelector('#ui-mode-toggle');
+  if (uiToggle) {
+    // Toggle is ONLY for local admin (single user) mode.
+    //   'local'            → Local Admin (single user) — toggle VISIBLE
+    //   'local_multiuser'  → Local System (multi user, PIN login) — toggle HIDDEN
+    //   'cloud'            → Cloud — toggle HIDDEN
+    const loginMode = localStorage.getItem('relay_login_mode');
+    const isLocalAdminMode = loginMode === 'local';
+    const toggleLabel = uiToggle.closest('label');
+    if (isLocalAdminMode) {
+      if (toggleLabel) toggleLabel.style.display = '';
+      const savedMode = localStorage.getItem('uiMode') || 'admin';
+      uiToggle.checked = savedMode === 'admin';
+    } else {
+      if (toggleLabel) toggleLabel.style.display = 'none';
+    }
+  }
+
+  // --- Name / role / avatar ---
   const nameEl = topbar.querySelector('#topbar-name');
   const roleEl = topbar.querySelector('#topbar-role');
   const avatarEl = topbar.querySelector('#topbar-avatar');
@@ -132,6 +209,15 @@ export function updateTopbarAccess(topbarEl) {
       const roleMap = { 'admin': 'Administrator', 'manager': 'Manager', 'technician': 'Technician', 'customer': 'Customer' };
       displayRole = roleMap[currentUser.role] || currentUser.role;
     }
+
+    // If local admin is using the toggle, show the toggled role instead
+    const loginMode = localStorage.getItem('relay_login_mode');
+    if (loginMode === 'local') {
+      const uiMode = localStorage.getItem('uiMode') || 'admin';
+      const modeMap = { 'admin': 'Complete Mode', 'technician': 'Simple Mode' };
+      displayRole = modeMap[uiMode] || displayRole;
+    }
+
     roleEl.textContent = displayRole;
   }
 
@@ -139,6 +225,7 @@ export function updateTopbarAccess(topbarEl) {
     const nameStr = currentUser.name || '';
     const initials = nameStr.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
     avatarEl.textContent = initials;
+    avatarEl.style.backgroundColor = currentUser.color || '#FF5C00';
   }
 }
 

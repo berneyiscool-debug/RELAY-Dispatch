@@ -169,7 +169,7 @@ export function renderJobsList(container, params) {
                             }]
                           }];
                           store.create('invoices', {
-                            number: `INV-${Date.now().toString().slice(-5)}${i}${Math.floor(100 + Math.random() * 900)}`,
+                            number: store.getNextNumber('INV-', 'invoices'),
                             invoiceType: 'Job Invoice',
                             jobId: job.id,
                             jobNumber: job.number,
@@ -191,6 +191,123 @@ export function renderJobsList(container, params) {
                       table.clearSelection();
                       renderJobsList(container);
                       import('../../components/Notifications.js').then(({ showToast }) => showToast(`Successfully generated ${ids.length} draft invoices`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
+            label: 'Combine into Invoice',
+            icon: 'merge',
+            onClick: (ids) => {
+              const jobs = ids.map(id => store.getById('jobs', id)).filter(Boolean);
+              if (jobs.length < 2) {
+                import('../../components/Notifications.js').then(({ showToast }) => showToast('Select at least 2 jobs to combine', 'error'));
+                return;
+              }
+
+              // Validate same customer
+              const customerIds = [...new Set(jobs.map(j => j.customerId).filter(Boolean))];
+              if (customerIds.length > 1) {
+                import('../../components/Notifications.js').then(({ showToast }) => showToast('All selected jobs must belong to the same customer', 'error'));
+                return;
+              }
+
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `
+                  <p style="margin-bottom:12px;">This will create a <strong>single invoice</strong> with each job as a separate section:</p>
+                  <div style="max-height:200px; overflow-y:auto; margin-bottom:16px;">
+                    ${jobs.map(j => `
+                      <div style="padding:8px 12px; background:var(--bg-secondary); border-radius:6px; margin-bottom:6px; font-size:13px;">
+                        <strong>${j.number || 'No #'}</strong> — ${j.title || 'Untitled'}
+                        <span style="float:right; color:var(--text-secondary);">${j.customerName || ''}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                  <p style="font-size:12px; color:var(--text-secondary);">Customer: <strong>${jobs[0].customerName || 'Unknown'}</strong></p>
+                `;
+                showModal({
+                  title: 'Combine Jobs into One Invoice',
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Create Combined Invoice', className: 'btn-primary', onClick: c => {
+                      const sections = jobs.map(job => {
+                        const laborCost = job.laborCost || 0;
+                        const materialCost = job.materialCost || 0;
+                        const lineItems = [];
+
+                        if (laborCost > 0) {
+                          lineItems.push({
+                            description: `Labour — Job #${job.number}${job.title ? ': ' + job.title : ''}`,
+                            type: 'labor',
+                            qty: 1,
+                            rate: laborCost,
+                            unitPrice: laborCost,
+                            total: laborCost
+                          });
+                        }
+
+                        if (materialCost > 0) {
+                          lineItems.push({
+                            description: `Materials — Job #${job.number}${job.title ? ': ' + job.title : ''}`,
+                            type: 'material',
+                            qty: 1,
+                            rate: materialCost,
+                            unitPrice: materialCost,
+                            total: materialCost
+                          });
+                        }
+
+                        // Fallback if no costs set
+                        if (lineItems.length === 0) {
+                          const fallback = job.totalCost || 0;
+                          lineItems.push({
+                            description: `Service — Job #${job.number}${job.title ? ': ' + job.title : ''}`,
+                            type: 'other',
+                            qty: 1,
+                            rate: fallback,
+                            unitPrice: fallback,
+                            total: fallback
+                          });
+                        }
+
+                        return {
+                          id: store.generateId(),
+                          name: `Job #${job.number} — ${job.title || 'Untitled'}`,
+                          lineItems
+                        };
+                      });
+
+                      const subtotal = sections.reduce((sum, sec) => sum + sec.lineItems.reduce((s, li) => s + (li.total || 0), 0), 0);
+                      const taxRate = store.getTaxRate();
+
+                      store.create('invoices', {
+                        number: store.getNextNumber('INV-', 'invoices'),
+                        invoiceType: 'Standard',
+                        customerId: jobs[0].customerId,
+                        customerName: jobs[0].customerName,
+                        contactName: jobs[0].contactName || '',
+                        status: 'Draft',
+                        sections,
+                        subtotal,
+                        tax: subtotal * taxRate,
+                        total: subtotal * (1 + taxRate),
+                        issueDate: new Date().toISOString(),
+                        dueDate: new Date(Date.now() + 30 * 86400000).toISOString()
+                      });
+
+                      // Mark all jobs as invoiced
+                      jobs.forEach(job => {
+                        store.update('jobs', job.id, { status: 'Invoiced' });
+                      });
+
+                      table.clearSelection();
+                      renderJobsList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Combined ${jobs.length} jobs into one invoice`, 'success'));
                       c();
                     }}
                   ]

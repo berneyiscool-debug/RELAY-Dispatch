@@ -12,7 +12,7 @@ import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showAssetQuickAdd } from '../../utils/quickModals.js';
 
-export function renderPersonDetail(container, { id }) {
+export function renderPersonDetail(container, { id, tab }) {
   const person = store.getById('customers', id);
   if (!person) {
     container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Customer not found</h3></div>';
@@ -32,7 +32,7 @@ export function renderPersonDetail(container, { id }) {
   const quotes = store.getAll('quotes').filter(q => q.customerId === id);
   const invoices = store.getAll('invoices').filter(i => i.customerId === id);
 
-  let activeTab = 'details';
+  let activeTab = tab || 'details';
 
   function render() {
     container.innerHTML = `
@@ -261,15 +261,18 @@ export function renderPersonDetail(container, { id }) {
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
-              <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th style="width:50px"></th></tr></thead>
+              <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th style="width:90px"></th></tr></thead>
               <tbody>
                 ${contacts.map((c, i) => `
                   <tr>
                     <td class="font-medium">${escapeHTML(c.name)}</td>
                     <td>${escapeHTML(c.role || '—')}</td>
-                    <td><a href="mailto:${escapeHTML(c.email)}" class="cell-link">${escapeHTML(c.email)}</a></td>
-                    <td><a href="tel:${escapeHTML(c.phone)}" class="cell-link">${escapeHTML(c.phone)}</a></td>
-                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-contact" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
+                    <td><a href="mailto:${escapeHTML(c.email)}" class="cell-link">${escapeHTML(c.email || '—')}</a></td>
+                    <td><a href="tel:${escapeHTML(c.phone)}" class="cell-link">${escapeHTML(c.phone || '—')}</a></td>
+                    <td>
+                      <button class="btn btn-icon btn-sm btn-secondary btn-edit-contact" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">edit</span></button>
+                      <button class="btn btn-icon btn-sm btn-danger btn-delete-contact" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+                    </td>
                   </tr>
                 `).join('')}
                 ${!contacts.length ? '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No additional contacts</td></tr>' : ''}
@@ -279,20 +282,36 @@ export function renderPersonDetail(container, { id }) {
         </div>
       `;
 
-      tabContent.querySelector('#btn-toggle-contact').addEventListener('click', () => {
+      function showContactDrawer(index = null) {
+        const isEditContact = index !== null;
+        const contact = isEditContact ? contacts[index] : { name: '', role: '', email: '', phone: '' };
+
         const content = document.createElement('div');
         content.innerHTML = `
           <div class="form-row">
-            <div class="form-group"><label class="form-label">Name *</label><input type="text" id="new-c-name" class="form-input"></div>
-            <div class="form-group"><label class="form-label">Role</label><input type="text" id="new-c-role" class="form-input"></div>
+            <div class="form-group">
+              <label class="form-label">Name *</label>
+              <input type="text" id="new-c-name" class="form-input" value="${escapeHTML(contact.name)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Role</label>
+              <input type="text" id="new-c-role" class="form-input" value="${escapeHTML(contact.role || '')}">
+            </div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label class="form-label">Email</label><input type="email" id="new-c-email" class="form-input"></div>
-            <div class="form-group"><label class="form-label">Phone</label><input type="text" id="new-c-phone" class="form-input"></div>
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" id="new-c-email" class="form-input" value="${escapeHTML(contact.email || '')}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input type="text" id="new-c-phone" class="form-input" value="${escapeHTML(contact.phone || '')}">
+            </div>
           </div>
         `;
+
         showDrawer({
-          title: 'Add Contact',
+          title: isEditContact ? 'Edit Contact' : 'Add Contact',
           content: content.outerHTML,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
@@ -300,28 +319,63 @@ export function renderPersonDetail(container, { id }) {
               const dOverlay = document.querySelector('.drawer-overlay');
               const name = dOverlay.querySelector('#new-c-name').value.trim();
               if (!name) return showToast('Name is required', 'error');
-              if (!person.contacts) person.contacts = [];
-              person.contacts.push({
-                name, role: dOverlay.querySelector('#new-c-role').value,
-                email: dOverlay.querySelector('#new-c-email').value,
-                phone: dOverlay.querySelector('#new-c-phone').value
-              });
+              
+              const newContact = {
+                name,
+                role: dOverlay.querySelector('#new-c-role').value.trim(),
+                email: dOverlay.querySelector('#new-c-email').value.trim(),
+                phone: dOverlay.querySelector('#new-c-phone').value.trim()
+              };
+
+              if (isEditContact) {
+                person.contacts[index] = newContact;
+              } else {
+                if (!person.contacts) person.contacts = [];
+                person.contacts.push(newContact);
+              }
+
               store.update('customers', id, { contacts: person.contacts });
-              showToast('Contact added', 'success');
+              showToast(isEditContact ? 'Contact updated' : 'Contact added', 'success');
               renderTabContent();
               render(); // update tab count
               close();
             }}
           ]
         });
+      }
+
+      tabContent.querySelector('#btn-toggle-contact').addEventListener('click', () => {
+        showContactDrawer();
       });
+
+      tabContent.querySelectorAll('.btn-edit-contact').forEach(btn => {
+        btn.addEventListener('click', () => {
+          showContactDrawer(parseInt(btn.dataset.index));
+        });
+      });
+
       tabContent.querySelectorAll('.btn-delete-contact').forEach(btn => {
         btn.addEventListener('click', () => {
-          person.contacts.splice(btn.dataset.index, 1);
-          store.update('customers', id, { contacts: person.contacts });
-          showToast('Contact deleted', 'success');
-          renderTabContent();
-          render();
+          const idx = parseInt(btn.dataset.index);
+          const contact = person.contacts?.[idx];
+          const contactName = contact ? contact.name : 'this contact';
+          const content = document.createElement('div');
+          content.innerHTML = `<p>Are you sure you want to delete contact <strong>${escapeHTML(contactName)}</strong>? This action cannot be undone.</p>`;
+          showModal({
+            title: 'Delete Contact',
+            content,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Delete', className: 'btn-danger', onClick: (close) => {
+                person.contacts.splice(idx, 1);
+                store.update('customers', id, { contacts: person.contacts });
+                showToast('Contact deleted', 'success');
+                renderTabContent();
+                render();
+                close();
+              }}
+            ]
+          });
         });
       });
 
@@ -335,14 +389,17 @@ export function renderPersonDetail(container, { id }) {
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
-              <thead><tr><th>Site Name</th><th>Address</th><th>Notes</th><th style="width:50px"></th></tr></thead>
+              <thead><tr><th>Site Name</th><th>Address</th><th>Notes</th><th style="width:90px"></th></tr></thead>
               <tbody>
                 ${sites.map((s, i) => `
                   <tr>
                     <td class="font-medium">${escapeHTML(s.name)}</td>
                     <td>${escapeHTML(s.address)}</td>
                     <td class="text-secondary">${escapeHTML(s.notes || '—')}</td>
-                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-site" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
+                    <td>
+                      <button class="btn btn-icon btn-sm btn-secondary btn-edit-site" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">edit</span></button>
+                      <button class="btn btn-icon btn-sm btn-danger btn-delete-site" data-index="${i}"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+                    </td>
                   </tr>
                 `).join('')}
                 ${!sites.length ? '<tr><td colspan="4" style="text-align:center;padding:20px" class="text-secondary">No sites added</td></tr>' : ''}
@@ -352,17 +409,30 @@ export function renderPersonDetail(container, { id }) {
         </div>
       `;
 
-      tabContent.querySelector('#btn-toggle-site').addEventListener('click', () => {
+      function showSiteDrawer(index = null) {
+        const isEditSite = index !== null;
+        const site = isEditSite ? sites[index] : { name: '', address: '', notes: '' };
+
         const content = document.createElement('div');
         content.innerHTML = `
           <div class="form-row">
-            <div class="form-group"><label class="form-label">Site Name *</label><input type="text" id="new-s-name" class="form-input" placeholder="e.g. Headquarters"></div>
-            <div class="form-group"><label class="form-label">Address *</label><input type="text" id="new-s-address" class="form-input"></div>
+            <div class="form-group">
+              <label class="form-label">Site Name *</label>
+              <input type="text" id="new-s-name" class="form-input" value="${escapeHTML(site.name)}" placeholder="e.g. Headquarters">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Address *</label>
+              <input type="text" id="new-s-address" class="form-input" value="${escapeHTML(site.address)}">
+            </div>
           </div>
-          <div class="form-group"><label class="form-label">Notes</label><input type="text" id="new-s-notes" class="form-input"></div>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <input type="text" id="new-s-notes" class="form-input" value="${escapeHTML(site.notes || '')}">
+          </div>
         `;
+
         showDrawer({
-          title: 'Add Site',
+          title: isEditSite ? 'Edit Site' : 'Add Site',
           content: content.outerHTML,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
@@ -371,24 +441,62 @@ export function renderPersonDetail(container, { id }) {
               const name = dOverlay.querySelector('#new-s-name').value.trim();
               const address = dOverlay.querySelector('#new-s-address').value.trim();
               if (!name || !address) return showToast('Name and Address are required', 'error');
-              if (!person.sites) person.sites = [];
-              person.sites.push({ name, address, notes: dOverlay.querySelector('#new-s-notes').value });
+
+              const newSite = {
+                name,
+                address,
+                notes: dOverlay.querySelector('#new-s-notes').value.trim()
+              };
+
+              if (isEditSite) {
+                person.sites[index] = newSite;
+              } else {
+                if (!person.sites) person.sites = [];
+                person.sites.push(newSite);
+              }
+
               store.update('customers', id, { sites: person.sites });
-              showToast('Site added', 'success');
+              showToast(isEditSite ? 'Site updated' : 'Site added', 'success');
               renderTabContent();
               render(); // update tab count
               close();
             }}
           ]
         });
+      }
+
+      tabContent.querySelector('#btn-toggle-site').addEventListener('click', () => {
+        showSiteDrawer();
       });
+
+      tabContent.querySelectorAll('.btn-edit-site').forEach(btn => {
+        btn.addEventListener('click', () => {
+          showSiteDrawer(parseInt(btn.dataset.index));
+        });
+      });
+
       tabContent.querySelectorAll('.btn-delete-site').forEach(btn => {
         btn.addEventListener('click', () => {
-          person.sites.splice(btn.dataset.index, 1);
-          store.update('customers', id, { sites: person.sites });
-          showToast('Site deleted', 'success');
-          renderTabContent();
-          render();
+          const idx = parseInt(btn.dataset.index);
+          const site = person.sites?.[idx];
+          const siteName = site ? site.name : 'this site';
+          const content = document.createElement('div');
+          content.innerHTML = `<p>Are you sure you want to delete site <strong>${escapeHTML(siteName)}</strong>? This action cannot be undone.</p>`;
+          showModal({
+            title: 'Delete Site',
+            content,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Delete', className: 'btn-danger', onClick: (close) => {
+                person.sites.splice(idx, 1);
+                store.update('customers', id, { sites: person.sites });
+                showToast('Site deleted', 'success');
+                renderTabContent();
+                render();
+                close();
+              }}
+            ]
+          });
         });
       });
 
@@ -421,15 +529,18 @@ export function renderPersonDetail(container, { id }) {
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
-              <thead><tr><th>Asset Name</th><th>Serial No.</th><th>Site</th><th>Install Date</th><th style="width:50px"></th></tr></thead>
+              <thead><tr><th>Asset Name</th><th>Serial No.</th><th>Site</th><th>Install Date</th><th style="width:90px"></th></tr></thead>
               <tbody>
                 ${assets.map((a, i) => `
                   <tr>
-                    <td class="font-medium">${escapeHTML(a.name)}</td>
+                    <td class="font-medium"><a href="#/assets/${escapeHTML(a.id)}" class="cell-link">${escapeHTML(a.name)}</a></td>
                     <td style="font-family:monospace" class="text-secondary">${escapeHTML(a.serial || '—')}</td>
                     <td>${escapeHTML(a.site || '—')}</td>
                     <td>${a.installDate ? new Date(a.installDate).toLocaleDateString() : '—'}</td>
-                    <td><button class="btn btn-icon btn-sm btn-danger btn-delete-asset" data-id="${a.id}"><span class="material-icons-outlined" style="font-size:14px">close</span></button></td>
+                    <td>
+                      <button class="btn btn-icon btn-sm btn-secondary btn-edit-asset" data-id="${a.id}"><span class="material-icons-outlined" style="font-size:14px">edit</span></button>
+                      <button class="btn btn-icon btn-sm btn-danger btn-delete-asset" data-id="${a.id}"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+                    </td>
                   </tr>
                 `).join('')}
                 ${!assets.length ? '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No assets tracked</td></tr>' : ''}
@@ -449,23 +560,57 @@ export function renderPersonDetail(container, { id }) {
         });
       });
 
+      tabContent.querySelectorAll('.btn-edit-asset').forEach(btn => {
+        btn.addEventListener('click', () => {
+          router.navigate(`/assets/${btn.dataset.id}/edit?customerId=${id}`);
+        });
+      });
+
       tabContent.querySelectorAll('.btn-delete-asset').forEach(btn => {
         btn.addEventListener('click', () => {
           const assetId = btn.dataset.id;
-          store.delete('assets', assetId);
-          showToast('Asset disabled/deleted', 'success');
-          renderTabContent();
-          render();
+          const asset = store.getById('assets', assetId);
+          const assetName = asset ? asset.name : 'this asset';
+          const content = document.createElement('div');
+          content.innerHTML = `<p>Are you sure you want to delete asset <strong>${escapeHTML(assetName)}</strong>? This action cannot be undone.</p>`;
+          showModal({
+            title: 'Delete Asset',
+            content,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Delete', className: 'btn-danger', onClick: (close) => {
+                store.delete('assets', assetId);
+                showToast('Asset disabled/deleted', 'success');
+                renderTabContent();
+                render();
+                close();
+              }}
+            ]
+          });
         });
       });
 
     } else if (activeTab === 'jobs') {
-      tabContent.innerHTML = renderRelatedTable(jobs, [
-        { label: 'Job #', key: 'number' },
-        { label: 'Title', key: 'title' },
-        { label: 'Status', key: 'status', badge: true },
-        { label: 'Technician', key: 'technicianName' },
-      ], 'jobs', 'No jobs for this customer');
+      tabContent.innerHTML = `
+        <div style="margin-bottom:var(--space-base);display:flex;justify-content:flex-end">
+          <button class="btn btn-primary btn-sm" id="btn-create-job">
+            <span class="material-icons-outlined" style="font-size:16px">add</span> Create Job
+          </button>
+        </div>
+        ${renderRelatedTable(jobs, [
+          { label: 'Job #', key: 'number' },
+          { label: 'Title', key: 'title' },
+          { label: 'Status', key: 'status', badge: true },
+          { label: 'Technician', key: 'technicianName' },
+        ], 'jobs', 'No jobs for this customer')}
+      `;
+
+      const createJobBtn = tabContent.querySelector('#btn-create-job');
+      if (createJobBtn) {
+        createJobBtn.addEventListener('click', () => {
+          router.navigate(`/jobs/new?customerId=${id}`);
+        });
+      }
     } else if (activeTab === 'quotes') {
       tabContent.innerHTML = `
         <div style="margin-bottom:var(--space-base);display:flex;justify-content:flex-end">

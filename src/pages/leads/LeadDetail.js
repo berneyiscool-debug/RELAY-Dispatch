@@ -163,7 +163,7 @@ export function renderLeadDetail(container, { id }) {
   function bindEvents() {
     container.querySelector('#btn-convert-quote').addEventListener('click', () => {
       const newQuote = store.create('quotes', {
-        number: `Q-${Date.now().toString().slice(-7)}`,
+        number: store.getNextNumber('Q-', 'quotes'),
         customerId: lead.customerId,
         customerName: lead.customerName,
         contactName: lead.contactName,

@@ -538,7 +538,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
         const job = jobs.find(j => j.id === selectedJobId);
 
         const poData = {
-          number: po.number || `PO-${Date.now().toString().slice(-6)}`,
+          number: po.number || store.getNextNumber('PO-', 'purchaseOrders'),
           supplierId: suppId,
           supplierName: supplier?.name || supplier?.company || 'Unknown',
           jobId: selectedJobId || null,

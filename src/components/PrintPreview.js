@@ -4,7 +4,7 @@
 
 import { escapeHTML } from '../utils/security.js';
 import { store } from '../data/store.js';
-const logoLarge = new URL('../assets/logo-large.png', import.meta.url).href;
+const logoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
 
 export function showPrintPreview({ type, data }) {

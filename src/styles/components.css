@@ -197,6 +197,49 @@
   background: var(--content-bg);
   color: var(--text-secondary);
 }
+
+/* ---- UI Mode Toggle Pill ---- */
+.toggle-pill {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  margin-left: 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle-pill input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-pill .slider {
+  position: absolute;
+  inset: 0;
+  background: var(--text-muted, #b0b0b0);
+  border-radius: 12px;
+  transition: background 0.25s ease;
+}
+.toggle-pill .slider::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.25s ease;
+}
+.toggle-pill input:checked + .slider {
+  background: var(--color-primary, #2563eb);
+}
+.toggle-pill input:checked + .slider::before {
+  transform: translateX(20px);
+}
+
 .badge-draft {
   background: rgba(0, 0, 0, 0.06);
   color: #4b5563; /* dark grey text */
@@ -3016,6 +3059,192 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
 .line-items-table td:focus-within {
   position: relative;
   z-index: 15;
+}
+
+/* ---- Custom Clock Picker ---- */
+.clock-picker-container {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.clock-picker-popup {
+  position: absolute;
+  z-index: 10000;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  width: 330px;
+  padding: 8px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+  font-family: var(--font-family, inherit);
+}
+.clock-picker-left-panel {
+  flex: 0 0 150px;
+  width: 150px;
+}
+.clock-picker-right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.clock-picker-header {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-secondary, #475569);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  white-space: nowrap;
+}
+.clock-picker-header-time span {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.clock-picker-header-time span.active {
+  color: var(--color-primary, #3b82f6);
+  background: var(--color-primary-light, #eff6ff);
+}
+.clock-picker-ampm-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--content-bg, #f1f5f9);
+  padding: 2px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.clock-picker-ampm-toggle button {
+  border: none;
+  background: none;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--text-secondary, #64748b);
+}
+.clock-picker-ampm-toggle button.active {
+  background: var(--card-bg, #fff);
+  color: var(--color-primary, #3b82f6);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.clock-picker-face-container {
+  width: 150px;
+  height: 150px;
+  position: relative;
+  background: #f1f5f9;
+  border-radius: 50%;
+  margin-bottom: 8px;
+}
+.clock-picker-face {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.clock-picker-hand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 50px;
+  background: var(--color-primary, #3b82f6);
+  transform-origin: bottom center;
+  margin-left: -1px;
+  margin-top: -50px;
+  pointer-events: none;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.clock-picker-hand::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: var(--color-primary, #3b82f6);
+  border-radius: 50%;
+}
+.clock-picker-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  margin-top: -3px;
+  background: var(--color-primary, #3b82f6);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.clock-number {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+  transition: all 0.15s ease;
+}
+.clock-number:hover {
+  background: var(--color-primary-light, #eff6ff);
+  color: var(--color-primary, #3b82f6);
+}
+.clock-number.active {
+  background: var(--color-primary, #3b82f6);
+  color: #fff !important;
+}
+.clock-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  padding-top: 8px;
+}
+
+[data-theme-mode="dark"] .clock-picker-popup {
+  background: #18181b;
+  border-color: #27272a;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+[data-theme-mode="dark"] .clock-picker-face-container {
+  background: #09090b;
+}
+[data-theme-mode="dark"] .clock-number {
+  color: #e4e4e7;
+}
+[data-theme-mode="dark"] .clock-number:hover {
+  background: rgba(255, 92, 0, 0.15);
+  color: var(--color-primary, #ff5c00);
+}
+[data-theme-mode="dark"] .clock-picker-ampm-toggle {
+  background: #09090b;
+}
+[data-theme-mode="dark"] .clock-picker-ampm-toggle button {
+  color: #a1a1aa;
+}
+[data-theme-mode="dark"] .clock-picker-ampm-toggle button.active {
+  background: #18181b;
+  color: var(--color-primary, #ff5c00);
 }
 
 

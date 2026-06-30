@@ -1978,36 +1978,30 @@ export function renderCustomerPortal(container, params) {
 
         const selectedSite = data.siteName || 'General / None';
 
-        // Create new Lead inside CRM
-        const lead = store.create('leads', {
-          title: `Request: ${data.requestType}`,
+        // Create notification for staff
+        const notif = store.create('notifications', {
+          title: `Service Request: ${data.requestType}`,
+          message: `Request from ${customer.company} via portal`,
+          description: `Request Type: ${data.requestType}\nPriority: ${data.priority}\nSelected Site: ${selectedSite}\nLinked Asset: ${linkedAssetName}\nPreferred Contact Method: ${data.contactMethod}\n\nDescription:\n${data.description}`,
+          read: false,
+          source: 'customer_portal',
+          type: 'Client Request',
+          priority: data.priority === 'Urgent' ? 'High' : data.priority,
+          status: 'Pending',
           customerId: customer.id,
           customerName: customer.company,
           contactName: `${customer.firstName} ${customer.lastName}`,
-          source: 'customer_portal',
-          phone: customer.phone,
-          email: customer.email,
-          status: 'New',
-          priority: data.priority === 'Urgent' ? 'High' : data.priority,
-          site: data.siteName || '',
-          requirements: `Request Type: ${data.requestType}\nPreferred Contact Method: ${data.contactMethod}\nSelected Site: ${selectedSite}\nLinked Asset: ${linkedAssetName}\n\nDescription:\n${data.description}`,
-          description: `Submitted by customer via portal link on ${new Date().toLocaleString()}`,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          siteName: data.siteName || '',
+          assetId: data.assetId || '',
+          createdAt: new Date().toISOString()
         });
 
-        // Create notification for staff
-        store.create('notifications', {
-          title: 'New Service Request Received',
-          message: `New service request from ${customer.company} via portal`,
-          link: `/leads/${lead.id}`,
-          read: false,
-          source: 'customer_portal',
-          createdAt: new Date().toISOString(),
-          status: 'Pending'
+        // Show toast notification
+        showToast(`New Service Request: ${customer.company} requested a callout`, 'info', {
+          link: `/notifications`,
+          skipBell: true
         });
 
-        showToast('Service request submitted successfully', 'success');
         requestSubmitted = true;
         render();
       });

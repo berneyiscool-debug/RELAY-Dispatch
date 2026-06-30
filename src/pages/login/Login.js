@@ -2,7 +2,7 @@ import { router } from '../../router.js';
 import { supabase } from '../../utils/supabase.js';
 import { applyTheme, THEMES } from '../../utils/theme.js';
 import { store } from '../../data/store.js';
-const logoLarge = new URL('../../assets/relay-brand-logo.png', import.meta.url).href;
+const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
 
 // Ordered list of routes to try — first permitted one wins
@@ -116,10 +116,11 @@ export function renderLogin(container) {
               </form>
 
               <!-- Footer Toggle -->
-              <div class="auth-footer">
-                Don't have a company account? 
-                <a href="#" id="link-to-signup">Sign up your company</a>
-              </div>
+               <div class="auth-footer">
+                 Don't have a company account? 
+                 <a href="#" id="link-to-signup">Sign up your company</a>
+                 <a href="#" id="link-forgot-password" style="margin-left:12px;">Forgot password?</a>
+               </div>
 
               <div class="auth-footer" style="margin-top: 16px; border-top: 1px dashed var(--border-color); padding-top: 16px;">
                 <a href="#" id="btn-login-local" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--color-primary); text-decoration: none;">
@@ -208,11 +209,79 @@ export function renderLogin(container) {
               <div class="auth-footer">
                 Already registered? 
                 <a href="#" id="link-to-signin">Sign in to your company</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+               </div>
+             </div>
+           </div>
+         </div>
+         <!-- Forgot Password Modal -->
+         <div class="modal" id="forgot-password-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center;">
+           <div class="modal-content" style="max-width:420px; width:90%; margin:auto; background:var(--bg-primary, #fff); padding:28px; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.25); border:1px solid var(--border-color, #e0e0e0);">
+             <h3 style="margin-top:0; font-size:18px; display:flex; align-items:center; gap:8px;">
+               <span class="material-icons-outlined" style="color:var(--color-primary, #FF5C00); font-size:22px;">lock_reset</span>
+               Reset Password
+             </h3>
+
+             <!-- Step 1: Find user -->
+             <div id="reset-step-find">
+               <p style="color:var(--text-secondary, #666); font-size:13px; margin-bottom:16px;">Enter your username or email address to reset your password.</p>
+               <div class="auth-form-group" style="margin-bottom:16px;">
+                 <label class="auth-form-label" style="font-size:12px; font-weight:600;">Username or Email</label>
+                 <div class="auth-input-wrapper">
+                   <span class="material-icons-outlined">person</span>
+                   <input type="text" id="reset-employee-id" class="auth-form-input" placeholder="e.g. jake or jake@company.com">
+                 </div>
+               </div>
+               <div id="reset-find-error" style="display:none; color:#EF4444; font-size:12px; margin-bottom:12px; padding:8px 12px; background:rgba(239,68,68,0.08); border-radius:6px; display:none; align-items:center; gap:6px;">
+                 <span class="material-icons-outlined" style="font-size:14px;">error_outline</span>
+                 <span id="reset-find-error-text"></span>
+               </div>
+               <div style="display:flex; justify-content:flex-end; gap:8px;">
+                 <button id="btn-reset-cancel" class="btn btn-secondary">Cancel</button>
+                 <button id="btn-reset-find" class="btn btn-primary">Find Account</button>
+               </div>
+             </div>
+
+             <!-- Step 2: Set new password (local users only) -->
+             <div id="reset-step-password" style="display:none;">
+               <div style="padding:10px 14px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:8px; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+                 <span class="material-icons-outlined" style="color:#10B981; font-size:18px;">check_circle</span>
+                 <span style="font-size:13px; color:var(--text-primary);">Account found: <strong id="reset-found-name"></strong></span>
+               </div>
+               <p style="color:var(--text-secondary, #666); font-size:13px; margin-bottom:16px;">Enter a new password for this account.</p>
+               <div class="auth-form-group" style="margin-bottom:12px;">
+                 <label class="auth-form-label" style="font-size:12px; font-weight:600;">New Password</label>
+                 <div class="auth-input-wrapper">
+                   <span class="material-icons-outlined">lock</span>
+                   <input type="password" id="reset-new-password" class="auth-form-input" placeholder="Min. 6 characters" minlength="6">
+                 </div>
+               </div>
+               <div class="auth-form-group" style="margin-bottom:16px;">
+                 <label class="auth-form-label" style="font-size:12px; font-weight:600;">Confirm Password</label>
+                 <div class="auth-input-wrapper">
+                   <span class="material-icons-outlined">lock</span>
+                   <input type="password" id="reset-confirm-password" class="auth-form-input" placeholder="Re-enter new password" minlength="6">
+                 </div>
+               </div>
+               <div id="reset-pwd-error" style="display:none; color:#EF4444; font-size:12px; margin-bottom:12px; padding:8px 12px; background:rgba(239,68,68,0.08); border-radius:6px; align-items:center; gap:6px;">
+                 <span class="material-icons-outlined" style="font-size:14px;">error_outline</span>
+                 <span id="reset-pwd-error-text"></span>
+               </div>
+               <div style="display:flex; justify-content:flex-end; gap:8px;">
+                 <button id="btn-reset-back" class="btn btn-secondary">Back</button>
+                 <button id="btn-reset-save" class="btn btn-primary">Reset Password</button>
+               </div>
+             </div>
+
+             <!-- Step 3: Success -->
+             <div id="reset-step-success" style="display:none; text-align:center; padding:12px 0;">
+               <span class="material-icons-outlined" style="font-size:48px; color:#10B981; margin-bottom:12px;">task_alt</span>
+               <h4 style="margin:0 0 8px;">Password Reset Successfully</h4>
+               <p style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">You can now sign in with your new password.</p>
+               <button id="btn-reset-done" class="btn btn-primary" style="width:100%;">Done</button>
+             </div>
+           </div>
+         </div>
+       </div>
     `;
 
     // Active panel switching handlers
@@ -233,23 +302,130 @@ export function renderLogin(container) {
       }
     };
 
-    signinPanel.addEventListener('click', (e) => {
-      if (signinPanel.classList.contains('collapsed')) {
-        switchToPanel('signin');
-      }
-    });
+     signinPanel.addEventListener('click', (e) => {
+       if (signinPanel.classList.contains('collapsed')) {
+         switchToPanel('signin');
+       }
+     });
 
-    signupPanel.addEventListener('click', (e) => {
-      if (signupPanel.classList.contains('collapsed')) {
-        switchToPanel('signup');
-      }
-    });
+     signupPanel.addEventListener('click', (e) => {
+       if (signupPanel.classList.contains('collapsed')) {
+         switchToPanel('signup');
+       }
+     });
 
     container.querySelector('#link-to-signup').addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       switchToPanel('signup');
     });
+
+     // Forgot password — multi-step flow
+     let _resetTech = null; // track the matched local technician
+
+     const resetModal = container.querySelector('#forgot-password-modal');
+     const resetStepFind = container.querySelector('#reset-step-find');
+     const resetStepPwd = container.querySelector('#reset-step-password');
+     const resetStepSuccess = container.querySelector('#reset-step-success');
+
+     const showResetStep = (step) => {
+       resetStepFind.style.display = step === 'find' ? 'block' : 'none';
+       resetStepPwd.style.display = step === 'password' ? 'block' : 'none';
+       resetStepSuccess.style.display = step === 'success' ? 'block' : 'none';
+     };
+
+     const closeResetModal = () => {
+       resetModal.style.display = 'none';
+       showResetStep('find');
+       _resetTech = null;
+       container.querySelector('#reset-employee-id').value = '';
+       const newPwdEl = container.querySelector('#reset-new-password');
+       const confPwdEl = container.querySelector('#reset-confirm-password');
+       if (newPwdEl) newPwdEl.value = '';
+       if (confPwdEl) confPwdEl.value = '';
+       container.querySelector('#reset-find-error').style.display = 'none';
+       const pwdErr = container.querySelector('#reset-pwd-error');
+       if (pwdErr) pwdErr.style.display = 'none';
+     };
+
+     container.querySelector('#link-forgot-password').addEventListener('click', (e) => {
+       e.preventDefault();
+       e.stopPropagation();
+       showResetStep('find');
+       resetModal.style.display = 'flex';
+     });
+
+     container.querySelector('#btn-reset-cancel').addEventListener('click', closeResetModal);
+
+     // Step 1 → Find Account
+     container.querySelector('#btn-reset-find').addEventListener('click', () => {
+       const input = container.querySelector('#reset-employee-id').value.trim().toLowerCase();
+       const findErr = container.querySelector('#reset-find-error');
+       const findErrText = container.querySelector('#reset-find-error-text');
+
+       if (!input) {
+         findErrText.textContent = 'Please enter a username or email address.';
+         findErr.style.display = 'flex';
+         return;
+       }
+
+       // Look up in local store
+       const technicians = store.getAll('technicians') || [];
+       const match = technicians.find(t =>
+         (t.email && t.email.toLowerCase() === input) ||
+         (t.username && t.username.toLowerCase() === input) ||
+         (t.name && t.name.toLowerCase() === input)
+       );
+
+       if (!match) {
+         findErrText.textContent = 'No account found with that username or email. Please check and try again.';
+         findErr.style.display = 'flex';
+         return;
+       }
+
+       findErr.style.display = 'none';
+       _resetTech = match;
+       container.querySelector('#reset-found-name').textContent = match.name || match.username || match.email;
+       showResetStep('password');
+     });
+
+     // Step 2 → Back
+     container.querySelector('#btn-reset-back').addEventListener('click', () => {
+       showResetStep('find');
+       _resetTech = null;
+     });
+
+     // Step 2 → Save new password
+     container.querySelector('#btn-reset-save').addEventListener('click', () => {
+       const newPwd = container.querySelector('#reset-new-password').value;
+       const confirmPwd = container.querySelector('#reset-confirm-password').value;
+       const pwdErr = container.querySelector('#reset-pwd-error');
+       const pwdErrText = container.querySelector('#reset-pwd-error-text');
+
+       if (!newPwd || newPwd.length < 6) {
+         pwdErrText.textContent = 'Password must be at least 6 characters.';
+         pwdErr.style.display = 'flex';
+         return;
+       }
+
+       if (newPwd !== confirmPwd) {
+         pwdErrText.textContent = 'Passwords do not match.';
+         pwdErr.style.display = 'flex';
+         return;
+       }
+
+       pwdErr.style.display = 'none';
+
+       if (_resetTech) {
+         // Update the technician's password in the local store
+         store.update('technicians', _resetTech.id, { password: newPwd });
+       }
+
+       showResetStep('success');
+     });
+
+     // Step 3 → Done
+     container.querySelector('#btn-reset-done').addEventListener('click', closeResetModal);
 
     container.querySelector('#link-to-signin').addEventListener('click', (e) => {
       e.preventDefault();
@@ -311,12 +487,21 @@ export function renderLogin(container) {
           userTypeName = 'Office Staff';
         }
 
+        let companyId = null;
+        if (tech.id && tech.id.startsWith('acct_')) {
+          const match = tech.id.match(/^(acct_[^_]+)/);
+          if (match) {
+            companyId = match[1];
+          }
+        }
+
         const user = {
           id: tech.id,
           name: tech.name,
           role: role,
           userTypeName: userTypeName,
           userTypeId: tech.userTypeId || 'ut_tech',
+          companyId: companyId,
           color: tech.color || '#3B82F6',
           theme: tech.theme || 'light'
         };

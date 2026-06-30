@@ -10,6 +10,27 @@ export function hasPermission(module, key) {
   if (currentUser.role === 'admin') return true;
   if (currentUser.role === 'customer') return false;
 
+  // If a local admin toggles to technician view, we bypass database-defined permissions
+  // and give them a standard set of technician permissions to declutter the UI.
+  const isLocalAdminTechView = localStorage.getItem('relay_login_mode') === 'local' && localStorage.getItem('uiMode') === 'technician';
+  if (isLocalAdminTechView) {
+    if (module === 'Dashboard') return key === 'view';
+    if (module === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
+    if (module === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
+    if (module === 'Jobs') {
+      return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+    }
+    if (module === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
+    if (module === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);
+    if (module === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
+    if (module === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
+    if (module === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
+    if (module === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
+    if (module === 'Settings') return ['view', 'edit_company'].includes(key);
+    if (module === 'Documents') return ['view', 'upload'].includes(key);
+    return false;
+  }
+
   if (currentUser.userTypeId) {
     const ut = store.getById('userTypes', currentUser.userTypeId);
     if (ut && ut.permissions) {
@@ -21,9 +42,19 @@ export function hasPermission(module, key) {
   // Fallbacks if no userType is associated or defined:
   if (currentUser.role === 'technician') {
     if (module === 'Dashboard') return key === 'view';
-    if (module === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
-    if (module === 'Timesheets') return ['view_own', 'create'].includes(key);
-    if (module === 'Schedule') return ['view_own'].includes(key);
+    if (module === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
+    if (module === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
+    if (module === 'Jobs') {
+      return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+    }
+    if (module === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
+    if (module === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);
+    if (module === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
+    if (module === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
+    if (module === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
+    if (module === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
+    if (module === 'Settings') return ['view', 'edit_company'].includes(key);
+    if (module === 'Documents') return ['view', 'upload'].includes(key);
     return false;
   }
 

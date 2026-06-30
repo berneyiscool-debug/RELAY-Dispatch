@@ -16,12 +16,31 @@ export function renderScheduleView(container) {
   container.style.flexDirection = 'column';
   container.style.overflow = 'hidden';
 
-  const technicians = store.getAll('technicians');
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const loginMode = localStorage.getItem('relay_login_mode');
+  const isLocalAdmin = loginMode === 'local';
+
+  function getTechnicians() {
+    const allTechs = store.getAll('technicians') || [];
+    if (isLocalAdmin) {
+      return [{
+        id: currentUser.id,
+        name: currentUser.name || 'Local Admin',
+        role: 'Administrator',
+        color: currentUser.color || '#FF5C00',
+        userTypeId: currentUser.userTypeId
+      }];
+    }
+    return allTechs;
+  }
+
+  const technicians = getTechnicians();
   // jobs read fresh each render — do NOT cache here
 
   // Role-based access: read who is logged in
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const isTechnician = currentUser.role === 'technician';
+  const hasTechRecord = technicians.some(t => t.id === currentUser.id);
+  const isLocalAdminTechView = isTechnician && !hasTechRecord;
 
   let viewMode = 'week';
   let calendarType = 'schedule'; // 'schedule' or 'activity'
@@ -30,7 +49,8 @@ export function renderScheduleView(container) {
   let dragState = null;
   let resizeState = null;
   // Technicians are locked to their own view; admins/managers can toggle multiple
-  let visibleTechIds = new Set(isTechnician ? [currentUser.id] : technicians.map(t => t.id));
+  // If in technician view but has no technician record (local admin toggled), show all.
+  let visibleTechIds = new Set((isTechnician && hasTechRecord) ? [currentUser.id] : technicians.map(t => t.id));
   let contextMenu = null;
   let savedScrollTop = 0;
   let savedScrollLeft = 0;
@@ -211,7 +231,7 @@ export function renderScheduleView(container) {
               jobNumber: s.type === 'leave' ? 'LEAVE' : (s.type === 'blockout' ? 'BLOCKOUT' : 'MEETING'),
               customerName: s.notes || (s.type === 'leave' ? 'On Leave' : (s.type === 'blockout' ? 'Calendar Block' : 'Scheduled Meeting')),
               title: s.notes || '',
-              technicianId: s.technicianId,
+              technicianId: isLocalAdmin ? currentUser.id : s.technicianId,
               dayIdx,
               startHour,
               endHour,
@@ -265,7 +285,7 @@ export function renderScheduleView(container) {
              jobNumber: job.number,
              customerName: s.taskName ? `${job.customerName} (${s.taskName})` : job.customerName,
              title: job.title,
-             technicianId: s.technicianId,
+             technicianId: isLocalAdmin ? currentUser.id : s.technicianId,
              dayIdx,
              startHour,
              endHour,
@@ -296,7 +316,7 @@ export function renderScheduleView(container) {
                   jobNumber: job.number,
                   customerName: job.customerName,
                   title: job.title,
-                  technicianId: t.id,
+                  technicianId: isLocalAdmin ? currentUser.id : t.id,
                   dayIdx,
                   startHour,
                   endHour: startHour + duration,
@@ -313,7 +333,7 @@ export function renderScheduleView(container) {
                 jobNumber: job.number,
                 customerName: job.customerName,
                 title: job.title,
-                technicianId: job.technicianId,
+                technicianId: isLocalAdmin ? currentUser.id : job.technicianId,
                 dayIdx,
                 startHour,
                 endHour: startHour + duration,
@@ -552,7 +572,7 @@ export function renderScheduleView(container) {
           </div>
 
           <!-- Team / Technician Filter Button & Dropdown -->
-          ${!isTechnician ? `
+          ${(!isTechnician || isLocalAdminTechView) && !isLocalAdmin ? `
             <div style="position:relative;">
               <button class="btn btn-secondary btn-sm btn-icon" id="btn-tech-filter-trigger" title="Visible Team (${visibleTechIds.size})" style="position:relative; width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center;">
                 <span class="material-icons-outlined" style="font-size:18px">people</span>
@@ -707,7 +727,7 @@ export function renderScheduleView(container) {
 
   function handleAddJobSchedule() {
     const activeJobs = getUnscheduledJobs();
-    const technicians = store.getAll('technicians');
+    const technicians = getTechnicians();
 
     if (activeJobs.length === 0) {
       showToast('No active jobs available.', 'info');
@@ -805,7 +825,7 @@ export function renderScheduleView(container) {
   }
 
   function handleAddLeave() {
-    const technicians = store.getAll('technicians');
+    const technicians = getTechnicians();
 
     showDrawer({
       title: 'Book Technician Leave',
@@ -888,7 +908,7 @@ export function renderScheduleView(container) {
   }
 
   function handleAddBlockout() {
-    const technicians = store.getAll('technicians');
+    const technicians = getTechnicians();
 
     showDrawer({
       title: 'Book Calendar Blockout',
@@ -966,7 +986,7 @@ export function renderScheduleView(container) {
   }
 
   function handleAddMeeting() {
-    const technicians = store.getAll('technicians');
+    const technicians = getTechnicians();
 
     showDrawer({
       title: 'Book Team Meeting',

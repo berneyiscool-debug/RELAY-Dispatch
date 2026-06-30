@@ -6,7 +6,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 
-export function renderNotificationsList(container) {
+export function renderNotificationsList(container, params) {
   const allNotifications = store.getAll('notifications') || [];
   let searchTerm = '';
   let activeFilter = 'all';
@@ -84,12 +84,35 @@ export function renderNotificationsList(container) {
         const portalIcon = isPortal 
           ? `<span class="material-icons-outlined" style="font-size:18px;color:var(--color-primary);margin-right:6px;vertical-align:middle;" title="Submitted via Customer Portal">open_in_browser</span>` 
           : '';
+
+        const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
+        const linkedPlan = n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId) : null;
         
         return `
           <div style="font-weight:500;display:flex;align-items:center;">
             ${portalIcon}<span>${escapeHTML(n.title)}</span>
           </div>
           <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description || n.message || '')}</div>
+          ${n.type === 'Recurring Job Due' ? `
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:11px">
+              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);background:var(--bg-color);padding:2px 6px;border-radius:4px;border:1px solid var(--border-color)">
+                <span class="material-icons-outlined" style="font-size:12px">precision_manufacturing</span>
+                ${escapeHTML(linkedAsset?.name || 'Asset')}
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);background:var(--bg-color);padding:2px 6px;border-radius:4px;border:1px solid var(--border-color)">
+                <span class="material-icons-outlined" style="font-size:12px">place</span>
+                ${escapeHTML(linkedAsset?.site || 'Main Office')}
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--color-primary-dark);background:var(--color-primary-light);padding:2px 6px;border-radius:4px;font-weight:600">
+                <span class="material-icons-outlined" style="font-size:12px">calendar_month</span>
+                Due: ${n.targetServiceDate 
+                  ? new Date(n.targetServiceDate).toLocaleDateString('en-AU')
+                  : n.currentMeterAtTrigger 
+                    ? `${parseFloat(n.currentMeterAtTrigger) + (linkedPlan ? parseFloat(linkedPlan.meterInterval || 0) : 0)} ${escapeHTML(linkedAsset?.meterUnit || 'hrs')}`
+                    : '—'}
+              </span>
+            </div>
+          ` : ''}
         `;
       }
     },
@@ -338,6 +361,78 @@ export function renderNotificationsList(container) {
     const linkedQuote = n.quoteId ? store.getById('quotes', n.quoteId) : null;
     const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
     const linkedPlan = n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId) : null;
+    const customer = linkedAsset?.customerId ? store.getById('customers', linkedAsset.customerId) : null;
+
+    // Build maintenance plan details card if relevant
+    let maintenanceDetailsCardHtml = '';
+    if (n.type === 'Recurring Job Due') {
+      maintenanceDetailsCardHtml = `
+        <div class="maint-details-card" style="padding:16px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:6px">
+            <span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">settings_suggest</span>
+            Service Maintenance Details
+          </div>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Service Plan</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHTML(linkedPlan?.name || '—')}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Frequency / Trigger</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">
+                ${escapeHTML(linkedPlan?.frequency || '—')} (${escapeHTML(linkedPlan?.triggerType || '—')})
+              </div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border-color);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Asset Name</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHTML(linkedAsset?.name || '—')}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Asset Type & S/N</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">
+                ${escapeHTML(linkedAsset?.type || '—')} · S/N: ${escapeHTML(linkedAsset?.serial || '—')}
+              </div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border-color);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Customer</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHTML(customer?.company || customer?.name || '—')}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Location / Site</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">
+                ${escapeHTML(linkedAsset?.site || 'Main Office')}${customer?.address ? `<br><span style="font-size:11px;color:var(--text-secondary)">${escapeHTML(customer.address)}</span>` : ''}
+              </div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border-color);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Due / Milestone</div>
+              <div style="font-size:13px;font-weight:600;color:var(--color-primary-dark)">
+                ${n.targetServiceDate 
+                  ? new Date(n.targetServiceDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+                  : n.currentMeterAtTrigger 
+                    ? `Milestone: ${parseFloat(n.currentMeterAtTrigger) + (linkedPlan ? parseFloat(linkedPlan.meterInterval || 0) : 0)} ${escapeHTML(linkedAsset?.meterUnit || 'hrs')}`
+                    : '—'}
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Current Reading</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">
+                ${linkedAsset?.currentMeter ? `${escapeHTML(linkedAsset.currentMeter)} ${escapeHTML(linkedAsset.meterUnit || 'hrs')}` : '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     // Build linked references section
     let referencesHtml = '';
@@ -360,7 +455,7 @@ export function renderNotificationsList(container) {
               <div>
                 <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Asset</div>
                 <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${escapeHTML(linkedAsset.name)}</div>
-                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${escapeHTML(linkedAsset.category || '')}${linkedAsset.site ? ` · Site: ${escapeHTML(linkedAsset.site)}` : ''}${linkedAsset.serialNumber ? ` · S/N: ${escapeHTML(linkedAsset.serialNumber)}` : ''}</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${escapeHTML(linkedAsset.type || '')}${linkedAsset.site ? ` · Site: ${escapeHTML(linkedAsset.site)}` : ''}${linkedAsset.serial ? ` · S/N: ${escapeHTML(linkedAsset.serial)}` : ''}</div>
               </div>
               <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">precision_manufacturing</span>
             </div>
@@ -437,6 +532,7 @@ export function renderNotificationsList(container) {
               <div>${n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—'}</div>
             </div>
           </div>
+          ${maintenanceDetailsCardHtml}
           ${referencesHtml}
         </div>
       `,
@@ -467,13 +563,16 @@ export function renderNotificationsList(container) {
     
     // Create Quote directly
     const quote = store.create('quotes', {
-      number: `Q-${Date.now().toString().slice(-6)}`,
+      number: store.getNextNumber('Q-', 'quotes'),
       title: n.title,
       description: n.description,
       priority: n.priority,
       status: 'Draft',
       notes: `Generated from Notification: ${n.title}\n\n${n.description}`,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      customerId: n.customerId || '',
+      customerName: n.customerName || '',
+      contactName: n.contactName || ''
     });
 
     // Update Notification status
@@ -694,9 +793,25 @@ export function renderNotificationsList(container) {
           isRecurring: false,
           recurringConfig: null,
           tasks: jobTasks,
-          parentJobId: parentJob.id
         };
       }
+    } else if (n.customerId) {
+      const customer = store.getById('customers', n.customerId);
+      const asset = n.assetId ? store.getById('assets', n.assetId) : null;
+      let siteAddress = 'Main Office';
+      if (n.siteName && customer && customer.sites) {
+        const matchingSite = customer.sites.find(s => s.name === n.siteName);
+        if (matchingSite) siteAddress = matchingSite.address || matchingSite.name;
+      }
+      jobData = {
+        ...jobData,
+        customerId: n.customerId,
+        customerName: customer ? customer.company : (n.customerName || 'Internal'),
+        contactName: n.contactName || (customer ? `${customer.firstName} ${customer.lastName}` : 'Unassigned'),
+        siteAddress: siteAddress,
+        siteName: n.siteName || '',
+        assetId: n.assetId || undefined
+      };
     }
 
     let tasks = [];
@@ -720,4 +835,14 @@ export function renderNotificationsList(container) {
     showToast('Converted to Job successfully', 'success');
     router.navigate(`/jobs/${job.id}`);
   }
+
+  if (params && params.id) {
+    const targetNotif = allNotifications.find(n => n.id === params.id);
+    if (targetNotif) {
+      setTimeout(() => {
+        openNotificationDetails(targetNotif);
+      }, 50);
+    }
+  }
 }
+

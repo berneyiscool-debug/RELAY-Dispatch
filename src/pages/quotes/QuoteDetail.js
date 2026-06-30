@@ -35,7 +35,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         version: 1,
         sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }], 
         subtotal: 0, tax: 0, total: 0, 
-        number: `Q-${Date.now().toString().slice(-7)}`, 
+        number: store.getNextNumber('Q-', 'quotes'), 
         customerId: customerId || '' 
       };
     }

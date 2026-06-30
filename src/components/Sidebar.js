@@ -4,6 +4,7 @@
 
 import { router } from '../router.js';
 import { store } from '../data/store.js';
+import { hasPermission } from '../utils/permissions.js';
 
 // Structured navigation items with collapsible categories
 const navItems = [
@@ -18,9 +19,9 @@ const navItems = [
     icon: 'account_tree',
     items: [
       { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
+      { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
       { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
       { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
-      { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
       { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' }
     ]
   },
@@ -121,7 +122,8 @@ export function createSidebar() {
       `;
 
       item.items.forEach(child => {
-        const isChildDisabled = !store.companyId && child.id === 'documents';
+        const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
+        const isChildDisabled = isLocalMode && child.id === 'documents';
         html += `
           <button class="sidebar-nav-item sub-item ${isChildDisabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${isChildDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
             <span class="nav-icon"><span class="material-icons-outlined">${child.icon}</span></span>
@@ -136,7 +138,8 @@ export function createSidebar() {
       `;
     } else {
       // Top Level Item
-      const isItemDisabled = !store.companyId && item.id === 'documents';
+      const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
+      const isItemDisabled = isLocalMode && item.id === 'documents';
       html += `
         <button class="sidebar-nav-item ${isItemDisabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}" ${isItemDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
           <span class="nav-icon"><span class="material-icons-outlined">${item.icon}</span></span>
@@ -368,6 +371,9 @@ export function createSidebar() {
   window.addEventListener('simpro-settings-updated', updateSidebarLogo);
   store.on('settings', updateSidebarLogo);
 
+  // Apply initial role-based sidebar link access
+  updateSidebarAccess(sidebar);
+
   return sidebar;
 }
 
@@ -402,25 +408,18 @@ export function updateSidebarAccess(sidebarElement) {
       if (!labelEl) return;
       const label = labelEl.textContent.trim();
 
-      if (currentUser.role === 'admin') {
+      // Dashboard and Notifications are always visible to authenticated users
+      if (label === 'Dashboard' || label === 'Notifications') {
         item.style.display = '';
         return;
       }
 
-      if (permissions) {
-        const p = permissions.find(m => m.module === label);
-        // Page visible if ANY permission key is truthy
-        const hasAnyPerm = p && Object.entries(p).some(([k, v]) => k !== 'module' && v === true);
-        if (hasAnyPerm || label === 'Notifications' || label === 'Dashboard') {
-          item.style.display = '';
-        } else {
-          item.style.display = 'none';
-        }
+      // Check if user has permission to view this module (either view or view_own)
+      const canView = hasPermission(label, 'view') || hasPermission(label, 'view_own');
+      if (canView) {
+        item.style.display = '';
       } else {
-        // Fallbacks for default roles if not using new permissions system
-        if (label === 'Settings' || label === 'Reports' || label === 'Invoices') {
-          item.style.display = 'none';
-        }
+        item.style.display = 'none';
       }
     });
 

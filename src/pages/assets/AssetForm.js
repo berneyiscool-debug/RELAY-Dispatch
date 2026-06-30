@@ -179,7 +179,11 @@ export function renderAssetForm(container, params) {
   }
 
   container.querySelector('#btn-cancel').addEventListener('click', () => {
-    router.navigate(isNew ? '/assets' : `/assets/${params.id}`);
+    if (params.customerId) {
+      router.navigate(`/people/${params.customerId}?tab=assets`);
+    } else {
+      router.navigate(isNew ? '/assets' : `/assets/${params.id}`);
+    }
   });
 
   container.querySelector('#btn-save').addEventListener('click', () => {
@@ -218,6 +222,10 @@ export function renderAssetForm(container, params) {
       store.update('assets', params.id, data);
     }
 
-    router.navigate('/assets');
+    if (params.customerId) {
+      router.navigate(`/people/${params.customerId}?tab=assets`);
+    } else {
+      router.navigate('/assets');
+    }
   });
 }

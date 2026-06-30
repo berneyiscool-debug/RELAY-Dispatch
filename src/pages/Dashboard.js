@@ -14,6 +14,7 @@ import { store } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
 import { calculateTotalBillableMaterials } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
+import { showDrawer } from '../components/Drawer.js';
 
 function getHeaderActionsHtml() {
   const canCreateJob = hasPermission('Jobs', 'create');
@@ -98,6 +99,7 @@ const MODULES = {
   'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', render: renderCustomerNPS },
   'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', render: renderCashFlow },
   'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', render: renderWeatherForecast },
+  'notifications-widget': { title: 'Notifications',             defaultW: 'M',  defaultH: 'tall',     render: renderNotificationsWidget },
 
   // ── Live page widgets (full, interactive pages embedded in a widget) ──
   // Workflow group
@@ -1728,7 +1730,7 @@ function wireWidgetControls(grid, data) {
       const totalCost = item.costPrice * orderQty;
 
       const po = store.create('purchaseOrders', {
-        number: 'PO-' + Date.now().toString().substr(-6),
+        number: store.getNextNumber('PO-', 'purchaseOrders'),
         supplierName: item.supplier || 'General Supplier',
         supplierId: 'sup_1',
         issueDate: new Date().toISOString(),
@@ -1780,7 +1782,7 @@ function wireWidgetControls(grid, data) {
       const asset = assets.find(a => a.id === plan.assetId);
 
       const job = store.create('jobs', {
-        number: 'J-' + Date.now().toString().substr(-6),
+        number: store.getNextNumber('J-', 'jobs'),
         customerId: asset?.customerId || 'cust_1',
         customerName: 'Internal Asset Maintenance',
         siteAddress: asset?.site || 'Main Workshop',
@@ -1879,6 +1881,25 @@ function wireWidgetControls(grid, data) {
         showToast('Quote status marked as Declined', 'error');
       });
       window.__fieldForge.reloadDashboard?.();
+    });
+  });
+
+  // 11. Notifications Widget row click
+  grid.querySelectorAll('.notif-widget-row').forEach(row => {
+    row.addEventListener('click', e => {
+      e.stopPropagation();
+      const notifId = row.dataset.notifId;
+      const n = store.getById('notifications', notifId);
+      if (n) {
+        if (!n.read) {
+          store.update('notifications', n.id, { read: true });
+          const world = document.querySelector('#dash-world');
+          if (world) {
+            renderWidgets(world, data);
+          }
+        }
+        openNotificationDetailsInDashboard(n, data, grid);
+      }
     });
   });
 }
@@ -2627,4 +2648,197 @@ function renderWeatherForecast(data, item) {
       </div>
     </div>
   `;
+}
+
+function renderNotificationsWidget(data, item) {
+  const notifs = (store.getAll('notifications') || []).sort((a, b) => {
+    const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+    const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+    return dateB - dateA;
+  });
+
+  const displayNotifs = notifs.slice(0, 5);
+
+  if (notifs.length === 0) {
+    return `<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text-tertiary);padding:16px;text-align:center;">
+      <span class="material-icons-outlined" style="font-size:28px;opacity:0.4;">notifications_off</span>
+      <span style="font-size:13px;">You're all caught up!</span>
+    </div>`;
+  }
+
+  const escapeHTML = (str) => (str || '').replace(/[&<>'"]/g, 
+    tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+  );
+
+  const listHtml = displayNotifs.map(n => {
+    let icon = 'notifications';
+    let color = 'var(--color-primary)';
+    let bg = 'var(--color-primary-light)';
+    
+    if (n.priority === 'Urgent' || n.priority === 'High') {
+      icon = 'warning';
+      color = 'var(--color-danger)';
+      bg = 'rgba(239, 68, 68, 0.1)';
+    } else if (n.type === 'Low Stock') {
+      icon = 'inventory_2';
+      color = 'var(--color-warning)';
+      bg = 'rgba(217, 119, 6, 0.1)';
+    } else if (n.type === 'Asset Alert') {
+      icon = 'precision_manufacturing';
+      color = 'var(--color-danger)';
+      bg = 'rgba(239, 68, 68, 0.1)';
+    }
+
+    return `
+      <div class="notif-widget-row" data-notif-id="${n.id}" style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);cursor:pointer;align-items:flex-start;transition:background 0.2s;border-radius:4px;">
+        <div style="width:28px;height:28px;border-radius:50%;background:${bg};color:${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span class="material-icons-outlined" style="font-size:14px;">${icon}</span>
+        </div>
+        <div style="flex:1;min-width:0;padding-right:8px;">
+          <div style="font-size:13px;font-weight:${n.read ? '500' : '700'};color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;">
+            ${n.read ? '' : '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--color-info);flex-shrink:0;"></span>'}
+            ${escapeHTML(n.title)}
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${escapeHTML(n.description || n.message || '')}
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text-tertiary);white-space:nowrap;flex-shrink:0;align-self:flex-start;margin-top:2px;">
+          ${fmtAgo(n.createdAt)}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div style="display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+      <div style="flex:1;overflow-y:auto;margin-bottom:8px;">
+        ${listHtml}
+      </div>
+      <div style="text-align:center;padding-top:8px;border-top:1px solid var(--border-color);">
+        <a href="#/notifications" style="font-size:12px;color:var(--color-primary);text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;">
+          View All Notifications
+          <span class="material-icons-outlined" style="font-size:14px;">arrow_forward</span>
+        </a>
+      </div>
+    </div>
+  `;
+}
+
+function openNotificationDetailsInDashboard(n, data, grid) {
+  const escapeHTML = (str) => (str || '').replace(/[&<>'"]/g, 
+    tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+  );
+
+  const linkedQuote = n.quoteId ? store.getById('quotes', n.quoteId) : null;
+  const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
+  const linkedPlan = n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId) : null;
+
+  let referencesHtml = '';
+  if (linkedQuote || linkedAsset || linkedPlan || n.targetServiceDate || n.convertedTo || n.jobId) {
+    referencesHtml = `
+      <div style="padding:14px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;display:flex;flex-direction:column;gap:12px;margin-top:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Linked References</div>
+        ${linkedQuote ? `
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Linked Quote</div>
+              <div style="font-size:14px;font-weight:600;color:var(--color-primary);cursor:pointer" class="drawer-link-quote" data-id="${linkedQuote.id}">${escapeHTML(linkedQuote.number)} — ${escapeHTML(linkedQuote.title || linkedQuote.customerName || 'Untitled')}</div>
+            </div>
+            <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">request_quote</span>
+          </div>
+        ` : ''}
+        ${linkedAsset ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;${linkedQuote ? 'border-top:1px solid var(--border-color);padding-top:12px' : ''}">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Asset</div>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${escapeHTML(linkedAsset.name)}</div>
+            </div>
+            <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">precision_manufacturing</span>
+          </div>
+        ` : ''}
+        ${linkedPlan ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-color);padding-top:12px">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Maintenance Plan</div>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${escapeHTML(linkedPlan.name)}</div>
+            </div>
+            <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">event_repeat</span>
+          </div>
+        ` : ''}
+        ${n.jobId ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-color);padding-top:12px">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Related Job</div>
+              <div style="font-size:14px;font-weight:600;color:var(--color-primary);cursor:pointer" class="drawer-link-job" data-id="${n.jobId}">${escapeHTML(n.jobId)}</div>
+            </div>
+            <span class="material-icons-outlined" style="font-size:18px;color:var(--text-tertiary)">build</span>
+          </div>
+        ` : ''}
+        ${n.convertedTo ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-color);padding-top:12px">
+            <div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Converted To</div>
+              <div style="font-size:14px;font-weight:700;color:var(--color-success)">${escapeHTML(n.convertedTo)}</div>
+            </div>
+            <span class="material-icons-outlined" style="font-size:18px;color:var(--color-success)">check_circle</span>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  showDrawer({
+    title: `Notification Details`,
+    width: 480,
+    content: `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <label class="form-label">Status</label>
+          <div><span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status)}</span></div>
+        </div>
+        <div>
+          <label class="form-label">Subject</label>
+          <div style="font-size:16px;font-weight:500">${escapeHTML(n.title)}</div>
+        </div>
+        <div>
+          <label class="form-label">Description / Fault</label>
+          <div style="padding:12px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:4px;white-space:pre-wrap;font-size:14px">${escapeHTML(n.description || n.message || '')}</div>
+        </div>
+        <div style="display:flex;gap:32px">
+          <div>
+            <label class="form-label">Priority</label>
+            <div><span class="badge ${n.priority === 'Urgent' || n.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${escapeHTML(n.priority || 'Normal')}</span></div>
+          </div>
+          <div>
+            <label class="form-label">Raised By</label>
+            <div>${escapeHTML(n.createdBy || 'System')}</div>
+          </div>
+          <div>
+            <label class="form-label">Date</label>
+            <div>${n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—'}</div>
+          </div>
+        </div>
+        ${referencesHtml}
+      </div>
+    `,
+    actions: [
+      { label: 'Close', className: 'btn-secondary', onClick: close => close() },
+      { label: 'Manage on Notifications Page', className: 'btn-primary', onClick: close => {
+          close();
+          window.location.hash = `#/notifications?id=${n.id}`;
+        }
+      }
+    ],
+    onMount: (drawerEl) => {
+      drawerEl.querySelector('.drawer-link-quote')?.addEventListener('click', () => {
+        drawerEl.querySelector('.drawer-close-btn')?.click();
+        window.location.hash = `#/quotes/${linkedQuote.id}`;
+      });
+      drawerEl.querySelector('.drawer-link-job')?.addEventListener('click', () => {
+        drawerEl.querySelector('.drawer-close-btn')?.click();
+        window.location.hash = `#/jobs/${n.jobId}`;
+      });
+    }
+  });
 }

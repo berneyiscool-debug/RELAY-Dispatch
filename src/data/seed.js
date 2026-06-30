@@ -36,9 +36,19 @@ const userTypes = [
     description: 'Field staff — limited to their own jobs, schedule and timesheets',
     permissions: buildGranularPerms((mod, key) => {
       if (mod === 'Dashboard') return key === 'view';
-      if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
-      if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
-      if (mod === 'Schedule') return ['view_own'].includes(key);
+      if (mod === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
+      if (mod === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
+      if (mod === 'Jobs') {
+        return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+      }
+      if (mod === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
+      if (mod === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);
+      if (mod === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
+      if (mod === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
+      if (mod === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
+      if (mod === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
+      if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
+      if (mod === 'Documents') return ['view', 'upload'].includes(key);
       return false;
     }),
   },
@@ -58,9 +68,9 @@ const userTypes = [
 // Staff Technicians
 const technicians = [
   { id: 'tech_1', name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: 'ut_admin',   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445' },
-  { id: 'tech_2', name: 'Ryan Holt',    role: 'Electrician',         color: '#10B981', userTypeId: 'ut_tech',    payRate: 80.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556' },
+  { id: 'tech_2', name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: 'ut_manager', payRate: 85.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556' },
   { id: 'tech_3', name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: 'ut_tech',    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667' },
-  { id: 'tech_4', name: 'Dean Caruso',   role: 'Apprentice',          color: '#F59E0B', userTypeId: 'ut_tech',    payRate: 45.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778' }
+  { id: 'tech_4', name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: 'ut_office',  payRate: 50.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778' }
 ];
 
 // Helper to calculate exact seed dates relative to today (May 27, 2026)
@@ -253,7 +263,7 @@ function createJobTasks(templateId, completed = false) {
 const quotes = [
   {
     id: 'q_001',
-    number: 'Q-001',
+    number: 'Q-00001',
     customerId: 'cust_1',
     customerName: 'Western NSW Local Health District',
     contactName: 'Margaret Ellison',
@@ -276,7 +286,7 @@ const quotes = [
   },
   {
     id: 'q_002',
-    number: 'Q-002',
+    number: 'Q-00002',
     customerId: 'cust_1',
     customerName: 'Western NSW Local Health District',
     contactName: 'Margaret Ellison',
@@ -299,7 +309,7 @@ const quotes = [
   },
   {
     id: 'q_003',
-    number: 'Q-003',
+    number: 'Q-00003',
     customerId: 'cust_4',
     customerName: 'Dubbo City Council',
     contactName: 'Sandra Nguyen',
@@ -320,7 +330,7 @@ const quotes = [
   },
   {
     id: 'q_004',
-    number: 'Q-004',
+    number: 'Q-00004',
     customerId: 'cust_7',
     customerName: 'Canopus Station',
     contactName: 'Bruce Halliday',
@@ -341,7 +351,7 @@ const quotes = [
   },
   {
     id: 'q_005',
-    number: 'Q-005',
+    number: 'Q-00005',
     customerId: 'cust_3',
     customerName: 'Cobar Mining Pty Ltd',
     contactName: 'Phil Drummond',
@@ -361,7 +371,7 @@ const quotes = [
   },
   {
     id: 'q_006',
-    number: 'Q-006',
+    number: 'Q-00006',
     customerId: 'cust_2',
     customerName: 'Optus Network Infrastructure',
     contactName: 'Trevor Nash',
@@ -382,7 +392,7 @@ const quotes = [
   },
   {
     id: 'q_007',
-    number: 'Q-007',
+    number: 'Q-00007',
     customerId: 'cust_5',
     customerName: 'NBN Co Regional',
     contactName: 'James Whitfield',
@@ -403,7 +413,7 @@ const quotes = [
   },
   {
     id: 'q_008',
-    number: 'Q-008',
+    number: 'Q-00008',
     customerId: 'cust_8',
     customerName: 'Essential Energy',
     contactName: 'Darren Stubbs',
@@ -430,7 +440,7 @@ const jobs = [
   // --- PAST COMPLETED & INVOICED ---
   {
     id: 'job_001',
-    number: 'J-001',
+    number: 'J-00001',
     customerId: 'cust_1',
     customerName: 'Western NSW Local Health District',
     contactName: 'Margaret Ellison',
@@ -454,7 +464,7 @@ const jobs = [
   },
   {
     id: 'job_002',
-    number: 'J-002',
+    number: 'J-00002',
     customerId: 'cust_2',
     customerName: 'Optus Network Infrastructure',
     contactName: 'Trevor Nash',
@@ -478,7 +488,7 @@ const jobs = [
   },
   {
     id: 'job_003',
-    number: 'J-003',
+    number: 'J-00003',
     customerId: 'cust_1',
     customerName: 'Western NSW Local Health District',
     contactName: 'Margaret Ellison',
@@ -502,7 +512,7 @@ const jobs = [
   },
   {
     id: 'job_004',
-    number: 'J-004',
+    number: 'J-00004',
     customerId: 'cust_7',
     customerName: 'Canopus Station',
     contactName: 'Bruce Halliday',
@@ -526,7 +536,7 @@ const jobs = [
   },
   {
     id: 'job_005',
-    number: 'J-005',
+    number: 'J-00005',
     customerId: 'cust_5',
     customerName: 'NBN Co Regional',
     contactName: 'James Whitfield',
@@ -550,7 +560,7 @@ const jobs = [
   },
   {
     id: 'job_006',
-    number: 'J-006',
+    number: 'J-00006',
     customerId: 'cust_1',
     customerName: 'Western NSW Local Health District',
     contactName: 'Margaret Ellison',
@@ -574,7 +584,7 @@ const jobs = [
   },
   {
     id: 'job_007',
-    number: 'J-007',
+    number: 'J-00007',
     customerId: 'cust_4',
     customerName: 'Dubbo City Council',
     contactName: 'Sandra Nguyen',
@@ -598,7 +608,7 @@ const jobs = [
   },
   {
     id: 'job_008',
-    number: 'J-008',
+    number: 'J-00008',
     customerId: 'cust_3',
     customerName: 'Cobar Mining Pty Ltd',
     contactName: 'Phil Drummond',
@@ -624,7 +634,7 @@ const jobs = [
   // --- CURRENT IN PROGRESS ---
   {
     id: 'job_009',
-    number: 'J-009',
+    number: 'J-00009',
     customerId: 'cust_4',
     customerName: 'Dubbo City Council',
     contactName: 'Sandra Nguyen',
@@ -648,7 +658,7 @@ const jobs = [
   },
   {
     id: 'job_010',
-    number: 'J-010',
+    number: 'J-00010',
     customerId: 'cust_6',
     customerName: 'Transgrid',
     contactName: 'Robyn Cassidy',
@@ -674,7 +684,7 @@ const jobs = [
   // --- UPCOMING SCHEDULED ---
   {
     id: 'job_011',
-    number: 'J-011',
+    number: 'J-00011',
     customerId: 'cust_7',
     customerName: 'Canopus Station',
     contactName: 'Bruce Halliday',
@@ -698,7 +708,7 @@ const jobs = [
   },
   {
     id: 'job_012',
-    number: 'J-012',
+    number: 'J-00012',
     customerId: 'cust_1',
     customerName: 'Western NSW Local Health District',
     contactName: 'Margaret Ellison',
@@ -722,7 +732,7 @@ const jobs = [
   },
   {
     id: 'job_013',
-    number: 'J-013',
+    number: 'J-00013',
     customerId: 'cust_2',
     customerName: 'Optus Network Infrastructure',
     contactName: 'Trevor Nash',
@@ -746,7 +756,7 @@ const jobs = [
   },
   {
     id: 'job_014',
-    number: 'J-014',
+    number: 'J-00014',
     customerId: 'cust_3',
     customerName: 'Cobar Mining Pty Ltd',
     contactName: 'Phil Drummond',
@@ -770,7 +780,7 @@ const jobs = [
   },
   {
     id: 'job_015',
-    number: 'J-015',
+    number: 'J-00015',
     customerId: 'cust_8',
     customerName: 'Essential Energy',
     contactName: 'Darren Stubbs',
@@ -796,7 +806,7 @@ const jobs = [
   // --- EXTRA Timeline Jobs ---
   {
     id: 'job_016',
-    number: 'J-016',
+    number: 'J-00016',
     customerId: 'cust_1',
     customerName: 'Western NSW Local Health District',
     contactName: 'Margaret Ellison',
@@ -820,7 +830,7 @@ const jobs = [
   },
   {
     id: 'job_017',
-    number: 'J-017',
+    number: 'J-00017',
     customerId: 'cust_4',
     customerName: 'Dubbo City Council',
     contactName: 'Sandra Nguyen',
@@ -844,7 +854,7 @@ const jobs = [
   },
   {
     id: 'job_018',
-    number: 'J-018',
+    number: 'J-00018',
     customerId: 'cust_3',
     customerName: 'Cobar Mining Pty Ltd',
     contactName: 'Phil Drummond',
@@ -868,7 +878,7 @@ const jobs = [
   },
   {
     id: 'job_019',
-    number: 'J-019',
+    number: 'J-00019',
     customerId: 'cust_7',
     customerName: 'Canopus Station',
     contactName: 'Bruce Halliday',
@@ -892,7 +902,7 @@ const jobs = [
   },
   {
     id: 'job_020',
-    number: 'J-020',
+    number: 'J-00020',
     customerId: 'cust_2',
     customerName: 'Optus Network Infrastructure',
     contactName: 'Trevor Nash',
@@ -916,7 +926,7 @@ const jobs = [
   },
   {
     id: 'job_021',
-    number: 'J-021',
+    number: 'J-00021',
     customerId: 'cust_4',
     customerName: 'Dubbo City Council',
     contactName: 'Sandra Nguyen',
@@ -940,7 +950,7 @@ const jobs = [
   },
   {
     id: 'job_022',
-    number: 'J-022',
+    number: 'J-00022',
     customerId: 'cust_6',
     customerName: 'Transgrid',
     contactName: 'Robyn Cassidy',
@@ -964,7 +974,7 @@ const jobs = [
   },
   {
     id: 'job_023',
-    number: 'J-023',
+    number: 'J-00023',
     customerId: 'cust_5',
     customerName: 'NBN Co Regional',
     contactName: 'James Whitfield',
@@ -988,7 +998,7 @@ const jobs = [
   },
   {
     id: 'job_024',
-    number: 'J-024',
+    number: 'J-00024',
     customerId: 'cust_8',
     customerName: 'Essential Energy',
     contactName: 'Darren Stubbs',
@@ -1012,7 +1022,7 @@ const jobs = [
   },
   {
     id: 'job_025',
-    number: 'J-025',
+    number: 'J-00025',
     customerId: 'cust_7',
     customerName: 'Canopus Station',
     contactName: 'Bruce Halliday',
@@ -1038,32 +1048,32 @@ const jobs = [
 
 // Invoices List
 const invoices = [
-  { id: 'inv_1', number: 'INV-50001', jobId: 'job_001', jobNumber: 'J-001', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Paid', lineItems: [{ description: 'Cat 500kVA 250hr Service - Labor', amount: 580 }, { description: 'Cat 500kVA 250hr Service - Materials', amount: 1075 }], subtotal: 1655, tax: 165.50, total: 1820.50, invoiceType: 'Standard', issueDate: relativeDate(-90), dueDate: relativeDateString(-76), paidDate: relativeDate(-76), notes: 'Fully paid by health district.' },
-  { id: 'inv_2', number: 'INV-50002', jobId: 'job_002', jobNumber: 'J-002', customerId: 'cust_2', customerName: 'Optus Network Infrastructure',      contactName: 'Trevor Nash',      status: 'Paid', lineItems: [{ description: 'Narromine Tower Service - Labor', amount: 282 }, { description: 'Narromine Tower Service - Materials', amount: 500 }], subtotal: 782,  tax: 78.20,  total: 860.20,  invoiceType: 'Standard', issueDate: relativeDate(-60), dueDate: relativeDateString(-46), paidDate: relativeDate(-46), notes: 'Telecom maintenance account paid.' },
-  { id: 'inv_3', number: 'INV-50003', jobId: 'job_003', jobNumber: 'J-003', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Sent', lineItems: [{ description: 'Emergency Callout - ATS Switchboard Fault', amount: 650 }], subtotal: 650,  tax: 65.00,  total: 715.00,  invoiceType: 'Standard', issueDate: relativeDate(-42), dueDate: relativeDateString(-28), paidDate: null,              notes: 'Outstanding emergency invoice.' },
-  { id: 'inv_4', number: 'INV-50004', jobId: 'job_004', jobNumber: 'J-004', customerId: 'cust_7', customerName: 'Canopus Station',                   contactName: 'Bruce Halliday',   status: 'Paid', lineItems: [{ description: 'Canopus Station Routine - Labor', amount: 275 }, { description: 'Canopus Station Routine - Materials', amount: 380 }], subtotal: 655,  tax: 65.50,  total: 720.50,  invoiceType: 'Standard', issueDate: relativeDate(-35), dueDate: relativeDateString(-21), paidDate: relativeDate(-20), notes: 'Station account settled.' },
-  { id: 'inv_5', number: 'INV-50005', jobId: 'job_005', jobNumber: 'J-005', customerId: 'cust_5', customerName: 'NBN Co Regional',                   contactName: 'James Whitfield',  status: 'Paid', lineItems: [{ description: 'Wellington Battery Exchange - Labor', amount: 300 }, { description: 'Wellington Battery Exchange - Materials', amount: 82 }], subtotal: 382,  tax: 38.20,  total: 420.20,  invoiceType: 'Standard', issueDate: relativeDate(-28), dueDate: relativeDateString(-14), paidDate: relativeDate(-14), notes: 'Telecom account paid.' },
-  { id: 'inv_6', number: 'INV-50006', jobId: 'job_006', jobNumber: 'J-006', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Paid', lineItems: [{ description: 'Cat 500kVA Overhaul & Standard Service - Labor', amount: 2000 }, { description: 'Cat 500kVA Overhaul - Materials', amount: 1783 }], subtotal: 3783, tax: 378.30, total: 4161.30, invoiceType: 'Standard', issueDate: relativeDate(-21), dueDate: relativeDateString(-7),  paidDate: relativeDate(-7),  notes: 'Hospital accounts paid.' },
-  { id: 'inv_7', number: 'INV-50007', jobId: 'job_007', jobNumber: 'J-007', customerId: 'cust_4', customerName: 'Dubbo City Council',                contactName: 'Sandra Nguyen',    status: 'Sent', lineItems: [{ description: 'Dubbo Airport Generator Test - Labor', amount: 540 }, { description: 'Dubbo Airport Generator Test - Materials', amount: 180 }], subtotal: 720,  tax: 72.00,  total: 792.00,  invoiceType: 'Standard', issueDate: relativeDate(-14), dueDate: relativeDateString(0),   paidDate: null,              notes: 'Council invoice outstanding.' },
-  { id: 'inv_8', number: 'INV-50008', jobId: 'job_008', jobNumber: 'J-008', customerId: 'cust_3', customerName: 'Cobar Mining Pty Ltd',              contactName: 'Phil Drummond',    status: 'Sent', lineItems: [{ description: 'Cobar Gen 1 Load Bank Test - Labor', amount: 1080 }, { description: 'Cobar Gen 1 Load Bank Test - Materials', amount: 280 }], subtotal: 1360, tax: 136.00, total: 1496.00, invoiceType: 'Standard', issueDate: relativeDate(-7),  dueDate: relativeDateString(7),   paidDate: null,              notes: 'Mining invoice outstanding.' }
+  { id: 'inv_1', number: 'INV-00001', jobId: 'job_001', jobNumber: 'J-00001', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Paid', lineItems: [{ description: 'Cat 500kVA 250hr Service - Labor', amount: 580 }, { description: 'Cat 500kVA 250hr Service - Materials', amount: 1075 }], subtotal: 1655, tax: 165.50, total: 1820.50, invoiceType: 'Standard', issueDate: relativeDate(-90), dueDate: relativeDateString(-76), paidDate: relativeDate(-76), notes: 'Fully paid by health district.' },
+  { id: 'inv_2', number: 'INV-00002', jobId: 'job_002', jobNumber: 'J-00002', customerId: 'cust_2', customerName: 'Optus Network Infrastructure',      contactName: 'Trevor Nash',      status: 'Paid', lineItems: [{ description: 'Narromine Tower Service - Labor', amount: 282 }, { description: 'Narromine Tower Service - Materials', amount: 500 }], subtotal: 782,  tax: 78.20,  total: 860.20,  invoiceType: 'Standard', issueDate: relativeDate(-60), dueDate: relativeDateString(-46), paidDate: relativeDate(-46), notes: 'Telecom maintenance account paid.' },
+  { id: 'inv_3', number: 'INV-00003', jobId: 'job_003', jobNumber: 'J-00003', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Sent', lineItems: [{ description: 'Emergency Callout - ATS Switchboard Fault', amount: 650 }], subtotal: 650,  tax: 65.00,  total: 715.00,  invoiceType: 'Standard', issueDate: relativeDate(-42), dueDate: relativeDateString(-28), paidDate: null,              notes: 'Outstanding emergency invoice.' },
+  { id: 'inv_4', number: 'INV-00004', jobId: 'job_004', jobNumber: 'J-00004', customerId: 'cust_7', customerName: 'Canopus Station',                   contactName: 'Bruce Halliday',   status: 'Paid', lineItems: [{ description: 'Canopus Station Routine - Labor', amount: 275 }, { description: 'Canopus Station Routine - Materials', amount: 380 }], subtotal: 655,  tax: 65.50,  total: 720.50,  invoiceType: 'Standard', issueDate: relativeDate(-35), dueDate: relativeDateString(-21), paidDate: relativeDate(-20), notes: 'Station account settled.' },
+  { id: 'inv_5', number: 'INV-00005', jobId: 'job_005', jobNumber: 'J-00005', customerId: 'cust_5', customerName: 'NBN Co Regional',                   contactName: 'James Whitfield',  status: 'Paid', lineItems: [{ description: 'Wellington Battery Exchange - Labor', amount: 300 }, { description: 'Wellington Battery Exchange - Materials', amount: 82 }], subtotal: 382,  tax: 38.20,  total: 420.20,  invoiceType: 'Standard', issueDate: relativeDate(-28), dueDate: relativeDateString(-14), paidDate: relativeDate(-14), notes: 'Telecom account paid.' },
+  { id: 'inv_6', number: 'INV-00006', jobId: 'job_006', jobNumber: 'J-00006', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Paid', lineItems: [{ description: 'Cat 500kVA Overhaul & Standard Service - Labor', amount: 2000 }, { description: 'Cat 500kVA Overhaul - Materials', amount: 1783 }], subtotal: 3783, tax: 378.30, total: 4161.30, invoiceType: 'Standard', issueDate: relativeDate(-21), dueDate: relativeDateString(-7),  paidDate: relativeDate(-7),  notes: 'Hospital accounts paid.' },
+  { id: 'inv_7', number: 'INV-00007', jobId: 'job_007', jobNumber: 'J-00007', customerId: 'cust_4', customerName: 'Dubbo City Council',                contactName: 'Sandra Nguyen',    status: 'Sent', lineItems: [{ description: 'Dubbo Airport Generator Test - Labor', amount: 540 }, { description: 'Dubbo Airport Generator Test - Materials', amount: 180 }], subtotal: 720,  tax: 72.00,  total: 792.00,  invoiceType: 'Standard', issueDate: relativeDate(-14), dueDate: relativeDateString(0),   paidDate: null,              notes: 'Council invoice outstanding.' },
+  { id: 'inv_8', number: 'INV-00008', jobId: 'job_008', jobNumber: 'J-00008', customerId: 'cust_3', customerName: 'Cobar Mining Pty Ltd',              contactName: 'Phil Drummond',    status: 'Sent', lineItems: [{ description: 'Cobar Gen 1 Load Bank Test - Labor', amount: 1080 }, { description: 'Cobar Gen 1 Load Bank Test - Materials', amount: 280 }], subtotal: 1360, tax: 136.00, total: 1496.00, invoiceType: 'Standard', issueDate: relativeDate(-7),  dueDate: relativeDateString(7),   paidDate: null,              notes: 'Mining invoice outstanding.' }
 ];
 
 // Schedule Seeding
 const schedules = [
   // J-009
-  { id: 'sc_1', jobId: 'job_009', jobNumber: 'J-009', title: 'Water Treatment Plant Quarterly Service', technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 0, startHour: 8,  endHour: 13, customerName: 'Dubbo City Council', siteAddress: 'Dubbo NSW 2830' },
+  { id: 'sc_1', jobId: 'job_009', jobNumber: 'J-00009', title: 'Water Treatment Plant Quarterly Service', technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 0, startHour: 8,  endHour: 13, customerName: 'Dubbo City Council', siteAddress: 'Dubbo NSW 2830' },
   // J-010
-  { id: 'sc_2', jobId: 'job_010', jobNumber: 'J-010', title: 'Transgrid Substation UPS Inspection',    technicianId: 'tech_3', technicianName: 'Sandra Okafor', color: '#8B5CF6', dayOffset: 0, startHour: 10, endHour: 16, customerName: 'Transgrid', siteAddress: 'Sydney NSW 2000' },
+  { id: 'sc_2', jobId: 'job_010', jobNumber: 'J-00010', title: 'Transgrid Substation UPS Inspection',    technicianId: 'tech_3', technicianName: 'Sandra Okafor', color: '#8B5CF6', dayOffset: 0, startHour: 10, endHour: 16, customerName: 'Transgrid', siteAddress: 'Sydney NSW 2000' },
   // J-011
-  { id: 'sc_3', jobId: 'job_011', jobNumber: 'J-011', title: 'Canopus Station 3 Monthly Service',     technicianId: 'tech_3', technicianName: 'Sandra Okafor', color: '#8B5CF6', dayOffset: 7, startHour: 8,  endHour: 12, customerName: 'Canopus Station', siteAddress: 'Bourke NSW 2840' },
+  { id: 'sc_3', jobId: 'job_011', jobNumber: 'J-00011', title: 'Canopus Station 3 Monthly Service',     technicianId: 'tech_3', technicianName: 'Sandra Okafor', color: '#8B5CF6', dayOffset: 7, startHour: 8,  endHour: 12, customerName: 'Canopus Station', siteAddress: 'Bourke NSW 2840' },
   // J-012
-  { id: 'sc_4', jobId: 'job_012', jobNumber: 'J-012', title: 'Bourke Hospital Generator Service',      technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 14,startHour: 8,  endHour: 16, customerName: 'Western NSW Local Health District', siteAddress: 'Bourke NSW 2840' },
+  { id: 'sc_4', jobId: 'job_012', jobNumber: 'J-00012', title: 'Bourke Hospital Generator Service',      technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 14,startHour: 8,  endHour: 16, customerName: 'Western NSW Local Health District', siteAddress: 'Bourke NSW 2840' },
   // J-013
-  { id: 'sc_5', jobId: 'job_013', jobNumber: 'J-013', title: 'Optus Trangie Tower Service',            technicianId: 'tech_2', technicianName: 'Ryan Holt',    color: '#10B981', dayOffset: 21,startHour: 9,  endHour: 12, customerName: 'Optus Network Infrastructure', siteAddress: 'Trangie NSW 2823' },
+  { id: 'sc_5', jobId: 'job_013', jobNumber: 'J-00013', title: 'Optus Trangie Tower Service',            technicianId: 'tech_2', technicianName: 'Ryan Holt',    color: '#10B981', dayOffset: 21,startHour: 9,  endHour: 12, customerName: 'Optus Network Infrastructure', siteAddress: 'Trangie NSW 2823' },
   // J-014
-  { id: 'sc_6', jobId: 'job_014', jobNumber: 'J-014', title: 'Cobar Mine Gen 2 Inspection',            technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 28,startHour: 9,  endHour: 14, customerName: 'Cobar Mining Pty Ltd', siteAddress: 'Cobar NSW 2835' },
+  { id: 'sc_6', jobId: 'job_014', jobNumber: 'J-00014', title: 'Cobar Mine Gen 2 Inspection',            technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 28,startHour: 9,  endHour: 14, customerName: 'Cobar Mining Pty Ltd', siteAddress: 'Cobar NSW 2835' },
   // J-015
-  { id: 'sc_7', jobId: 'job_015', jobNumber: 'J-015', title: 'Essential Energy Annual Service',        technicianId: 'tech_2', technicianName: 'Ryan Holt',    color: '#10B981', dayOffset: 35,startHour: 8,  endHour: 14, customerName: 'Essential Energy', siteAddress: 'Bathurst NSW 2795' }
+  { id: 'sc_7', jobId: 'job_015', jobNumber: 'J-00015', title: 'Essential Energy Annual Service',        technicianId: 'tech_2', technicianName: 'Ryan Holt',    color: '#10B981', dayOffset: 35,startHour: 8,  endHour: 14, customerName: 'Essential Energy', siteAddress: 'Bathurst NSW 2795' }
 ];
 
 // Leads Seeding
@@ -1081,7 +1091,7 @@ const notifications = [
   { id: 'notif_1', number: 'NT-00001', type: 'Maintenance', title: 'Maintenance Due — Cummins 150kVA', description: 'Maintenance Due — Cummins 150kVA Water Treatment Plant Quarterly Service', priority: 'High',   status: 'Pending', createdAt: relativeDate(-1), assetId: 'asset_11' },
   { id: 'notif_2', number: 'NT-00002', type: 'Maintenance', title: 'Maintenance Due — Kubota 15kVA',   description: 'Maintenance Due — Kubota 15kVA Canopus Station 3 Monthly Service',          priority: 'Standard', status: 'Pending', createdAt: relativeDate(0),  assetId: 'asset_16' },
   { id: 'notif_3', number: 'NT-00003', type: 'Low Stock',   title: 'Low Stock Alert — Service Kit',   description: 'Low Stock Alert — Generator Service Kit Cummins 150kVA (1 left)',           priority: 'High',   status: 'Pending', createdAt: relativeDate(-2) },
-  { id: 'notif_4', number: 'NT-00004', type: 'Job Update',  title: 'Job Completed — J-008',           description: 'Job Update — J-008 Cobar Mine Completed by Jake Morrow (Awaiting Invoice)',  priority: 'High',   status: 'Pending', createdAt: relativeDate(0),  jobId: 'job_008' }
+  { id: 'notif_4', number: 'NT-00004', type: 'Job Update',  title: 'Job Completed — J-00008',           description: 'Job Update — J-00008 Cobar Mine Completed by Jake Morrow (Awaiting Invoice)',  priority: 'High',   status: 'Pending', createdAt: relativeDate(0),  jobId: 'job_008' }
 ];
 
 // Contractors List
@@ -1125,21 +1135,24 @@ const suppliers = [
 ];
 
 // Seeding main execution
-export function seedData(force = false) {
+export async function seedData(force = false) {
   if (!force && store.isSeeded()) {
     return;
   }
-  store.clearAll();
+  await store.clearAll();
+
+  // Re-initialize local store to open a fresh database connection!
+  await store.initializeLocalStore();
 
   // Save Settings
   const settings = {
-    name: 'Company Name',
-    abn: '',
-    phone: '',
-    email: '',
-    domain: '',
-    address: '',
-    website: '',
+    name: 'Apex Power Services',
+    abn: '12 345 678 901',
+    phone: '02 6801 4000',
+    email: 'admin@apexpowerservices.com.au',
+    domain: 'apexpowerservices.com.au',
+    address: 'Civic Administration Building, Dubbo NSW 2830',
+    website: 'www.apexpowerservices.com.au',
     logo: null,
     logoSmall: null,
     materialMarkup: {
@@ -1160,28 +1173,315 @@ export function seedData(force = false) {
       { id: 'rate_3', name: 'Emergency Rate',   rate: 290.00, description: 'Urgent call-outs any day',        overtimeMultiplier: 2.0,  minCallOutFee: 120, applicableDays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','PH'], activeHours: Array.from({length:48}, (_,i)=>i), isDefault: false }
     ]
   };
-  store.saveSettings(settings);
+  await store.saveSettings(settings);
+
+  // Generate 5 of everything (Procedural Generator)
+  const techniciansList = [
+    { id: 'tech_1', name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: 'ut_admin',   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445' },
+    { id: 'tech_2', name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: 'ut_manager', payRate: 85.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556' },
+    { id: 'tech_3', name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: 'ut_tech',    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667' },
+    { id: 'tech_4', name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: 'ut_office',  payRate: 50.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778' },
+    { id: 'tech_5', name: 'Liam Vance',    role: 'Electrician Apprentice', color: '#EC4899', userTypeId: 'ut_tech', payRate: 40.00,  email: 'liam@apexpowerservices.com.au',  phone: '0456 677 889' }
+  ];
+
+  const stockList = [
+    { id: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', qty: 120, costPrice: 85, unitPrice: 120, unit: 'Each', category: 'Consumables' },
+    { id: 'st_2', name: 'Oil Filter — Cat 3306', sku: 'SKU-ST2', qty: 85, costPrice: 45, unitPrice: 75, unit: 'Each', category: 'Filters' },
+    { id: 'st_3', name: 'ATS Control Board', sku: 'SKU-ST3', qty: 15, costPrice: 420, unitPrice: 680, unit: 'Each', category: 'Electrical' },
+    { id: 'st_4', name: 'Battery 12V 100Ah AGM', sku: 'SKU-ST4', qty: 40, costPrice: 185, unitPrice: 280, unit: 'Each', category: 'Electrical' },
+    { id: 'st_5', name: 'Coolant Concentrate 5L', sku: 'SKU-ST5', qty: 60, costPrice: 55, unitPrice: 85, unit: 'Each', category: 'Consumables' }
+  ];
+
+  const customerNames = [
+    { company: 'Western NSW Health', first: 'Margaret', last: 'Ellison', email: 'facilities@wnswhealth.gov.au', phone: '02 6809 8888', address: '42 Bultje Street, Dubbo NSW 2830' },
+    { company: 'Optus Regional', first: 'Trevor', last: 'Nash', email: 't.nash@optus.com.au', phone: '0418 772 334', address: 'Level 3, 201 Elizabeth Street, Sydney NSW 2000' },
+    { company: 'Cobar Mining', first: 'Phil', last: 'Drummond', email: 'p.drummond@cobarmining.com.au', phone: '0427 883 221', address: 'Mine Site, Peak Hill Road, Cobar NSW 2835' },
+    { company: 'Dubbo City Council', first: 'Sandra', last: 'Nguyen', email: 's.nguyen@dubbo.nsw.gov.au', phone: '02 6801 4000', address: 'Civic Building, Dubbo NSW 2830' },
+    { company: 'Canopus Station', first: 'Bruce', last: 'Halliday', email: 'bruce@canopusstation.com.au', phone: '0428 991 003', address: 'Bourke Road, Bourke NSW 2840' }
+  ];
+
+  const generatedCustomers = [];
+  const generatedAssets = [];
+  const generatedPlans = [];
+  const generatedQuotes = [];
+  const generatedJobs = [];
+  const generatedInvoices = [];
+  const generatedSchedule = [];
+  const generatedLeads = [];
+  const generatedNotifications = [];
+
+  customerNames.forEach((cData, cIdx) => {
+    const custId = `cust_${cIdx + 1}`;
+    generatedCustomers.push({
+      id: custId,
+      company: cData.company,
+      firstName: cData.first,
+      lastName: cData.last,
+      email: cData.email,
+      phone: cData.phone,
+      address: cData.address,
+      status: 'Active',
+      type: 'Commercial',
+      portalToken: `c_pt_${custId}`,
+      createdAt: relativeDate(-120),
+      updatedAt: relativeDate(-1)
+    });
+
+    // 5 assets per customer
+    for (let aIdx = 1; aIdx <= 5; aIdx++) {
+      const assetId = `asset_${cIdx + 1}_${aIdx}`;
+      const assetName = `${cData.company} GenSet ${aIdx * 100}kVA`;
+      const serial = `SN-GEN-${cIdx + 1}-${aIdx}`;
+      generatedAssets.push({
+        id: assetId,
+        name: assetName,
+        type: 'Generator',
+        serial: serial,
+        ownerType: 'Customer',
+        customerId: custId,
+        customerName: cData.company,
+        currentMeter: 1200 + aIdx * 300,
+        recoveryRate: 25.00,
+        status: 'Active',
+        logs: []
+      });
+
+      // 5 maintenance plans (1 per asset)
+      const planId = `plan_${cIdx + 1}_${aIdx}`;
+      generatedPlans.push({
+        id: planId,
+        name: `Service Plan - ${serial}`,
+        assetId: assetId,
+        assetName: assetName,
+        customerId: custId,
+        customerName: cData.company,
+        frequency: 'Monthly',
+        lastCompleted: relativeDate(-15),
+        nextDue: relativeDate(15),
+        status: 'Active'
+      });
+    }
+
+    // 5 quotes, jobs, invoices, and schedule blocks per customer
+    for (let jIdx = 1; jIdx <= 5; jIdx++) {
+      const indexNum = (cIdx * 5) + jIdx;
+      const indexStr = String(indexNum).padStart(5, '0');
+      
+      const quoteId = `q_${indexStr}`;
+      const jobId = `job_${indexStr}`;
+      const invoiceId = `inv_${indexStr}`;
+
+      const title = `Generator Maintenance ${jIdx}`;
+      const laborHours = 2 + jIdx;
+      const materialQty = 1 + jIdx;
+      const materialRate = 120;
+      const laborRate = 145;
+      const subtotal = (materialQty * materialRate) + (laborHours * laborRate);
+      const tax = parseFloat((subtotal * 0.1).toFixed(2));
+      const total = parseFloat((subtotal + tax).toFixed(2));
+
+      // 1. Quote
+      generatedQuotes.push({
+        id: quoteId,
+        number: `Q-${indexStr}`,
+        customerId: custId,
+        customerName: cData.company,
+        contactName: `${cData.first} ${cData.last}`,
+        title: `${title} - Estimate`,
+        status: 'Accepted',
+        lineItems: [
+          { description: 'Engine Oil 15W-40 20L', type: 'material', qty: materialQty, rate: materialRate, total: materialQty * materialRate },
+          { description: 'Qualified Service Labor', type: 'labor', qty: laborHours, rate: laborRate, total: laborHours * laborRate }
+        ],
+        subtotal: subtotal,
+        tax: tax,
+        total: total,
+        validUntil: relativeDateString(30),
+        notes: 'Seeded estimate.',
+        createdAt: relativeDate(-45),
+        updatedAt: relativeDate(-43)
+      });
+
+      // 2. Job
+      const assignTechId = `tech_${(jIdx % 5) + 1}`;
+      const assignTech = techniciansList.find(t => t.id === assignTechId);
+      
+      generatedJobs.push({
+        id: jobId,
+        number: `J-${indexStr}`,
+        quoteId: quoteId,
+        customerId: custId,
+        customerName: cData.company,
+        contactName: `${cData.first} ${cData.last}`,
+        title: `${title} - Action`,
+        description: `Scheduled maintenance check for generator system.`,
+        status: jIdx === 5 ? 'In Progress' : 'Invoiced',
+        priority: jIdx === 3 ? 'High' : 'Medium',
+        tasks: [
+          { id: 'tsk_1', name: 'Inspect battery terminals', status: 'Completed', completeDate: relativeDate(-5) },
+          { id: 'tsk_2', name: 'Replace engine oil & filters', status: jIdx === 5 ? 'In Progress' : 'Completed', completeDate: jIdx === 5 ? null : relativeDate(-5) }
+        ],
+        materials: [
+          { id: 'mat_1', stockId: 'st_1', name: 'Engine Oil 15W-40 20L', qty: materialQty, cost: 85, price: materialRate, total: materialQty * materialRate }
+        ],
+        labor: [
+          { id: 'lab_1', rateId: 'rate_1', name: 'Standard Rate', rate: laborRate, hours: laborHours, total: laborHours * laborRate }
+        ],
+        technicians: [
+          { id: assignTech.id, name: assignTech.name, role: assignTech.role, color: assignTech.color }
+        ],
+        assetIds: [`asset_${cIdx + 1}_${(jIdx % 5) + 1}`],
+        notes: '',
+        createdAt: relativeDate(-40),
+        updatedAt: relativeDate(-5)
+      });
+
+      // 3. Invoice (for the first 4 jobs of each customer)
+      if (jIdx < 5) {
+        generatedInvoices.push({
+          id: invoiceId,
+          number: `INV-${indexStr}`,
+          jobId: jobId,
+          customerId: custId,
+          customerName: cData.company,
+          title: `Invoice for ${title}`,
+          status: 'Paid',
+          lineItems: [
+            { description: 'Engine Oil 15W-40 20L', type: 'material', qty: materialQty, rate: materialRate, total: materialQty * materialRate },
+            { description: 'Qualified Service Labor', type: 'labor', qty: laborHours, rate: laborRate, total: laborHours * laborRate }
+          ],
+          subtotal: subtotal,
+          tax: tax,
+          total: total,
+          dueDate: relativeDateString(14),
+          paymentReceivedDate: relativeDate(-3),
+          notes: 'Thank you for your business!',
+          createdAt: relativeDate(-30),
+          updatedAt: relativeDate(-3)
+        });
+      }
+
+      // 4. Schedule block
+      const startHour = 8 + (jIdx * 2);
+      const endHour = startHour + laborHours;
+      generatedSchedule.push({
+        id: `sch_${indexStr}`,
+        jobId: jobId,
+        jobTitle: `${title} - Action`,
+        technicianId: assignTech.id,
+        technicianName: assignTech.name,
+        technicianColor: assignTech.color,
+        date: relativeDateString(jIdx - 3), // Spreads schedule across days
+        startHour: startHour,
+        startMinute: 0,
+        endHour: endHour,
+        endMinute: 0,
+        notes: 'Seeded schedule block.'
+      });
+    }
+
+    // 5. Leads (5 leads total, 1 per customer)
+    const leadIndexStr = String(cIdx + 1).padStart(5, '0');
+    generatedLeads.push({
+      id: `lead_${leadIndexStr}`,
+      companyName: `${cData.company} Extension`,
+      contactName: `${cData.first} ${cData.last}`,
+      email: cData.email,
+      phone: cData.phone,
+      title: 'Upgrade standby system capacity',
+      description: 'Customer requested a quote to replace their backup generator with a larger 1MVA unit.',
+      status: cIdx === 4 ? 'New' : 'Converted',
+      value: 12000,
+      createdAt: relativeDate(-60),
+      updatedAt: relativeDate(-1)
+    });
+  });
+
+  // 6. Timesheets (5 users, 5 days, 5 time entries each)
+  const generatedTimesheets = [];
+  techniciansList.forEach((tech, tIdx) => {
+    // Generate timesheets over 5 days (days -2 to +2)
+    for (let dayOffset = -2; dayOffset <= 2; dayOffset++) {
+      const entryId = `ts_${tech.id}_day_${dayOffset + 3}`;
+      const hours = 7.5;
+      const startHour = 8;
+      const endHour = 16;
+      generatedTimesheets.push({
+        id: entryId,
+        technicianId: tech.id,
+        technicianName: tech.name,
+        date: relativeDateString(dayOffset),
+        startTime: `${String(startHour).padStart(2, '0')}:00`,
+        endTime: `${String(endHour).padStart(2, '0')}:00`,
+        breakDuration: 30, // 30 mins
+        hours: hours,
+        description: `Serviced generator assets and completed site inspections.`,
+        status: 'Approved',
+        createdAt: relativeDate(-1),
+        updatedAt: relativeDate(-1)
+      });
+    }
+  });
+
+  // 7. Contractors and Suppliers (5 each)
+  const generatedContractors = [];
+  const generatedSuppliers = [];
+  for (let i = 1; i <= 5; i++) {
+    generatedContractors.push({
+      id: `con_${i}`,
+      name: `Contractor Services Pty Ltd ${i}`,
+      contactName: `Contractor John ${i}`,
+      email: `john.con${i}@contractorservices.com.au`,
+      phone: `0499 000 00${i}`,
+      trade: i % 2 === 0 ? 'HVAC Technician' : 'Subcontractor Electrician',
+      status: 'Active',
+      rate: 90.00
+    });
+
+    generatedSuppliers.push({
+      id: `sup_${i}`,
+      name: `Global Electrical Supplies ${i}`,
+      contactName: `Supplier Alice ${i}`,
+      email: `sales@globalsupplies${i}.com.au`,
+      phone: `0488 000 00${i}`,
+      address: `Industrial Area, Dubbo NSW 2830`,
+      paymentTerms: '30 Days',
+      active: true,
+      notes: `Reliable supply partner ${i}.`
+    });
+  }
+
+  // 8. Notifications
+  for (let i = 1; i <= 5; i++) {
+    generatedNotifications.push({
+      id: `notif_${i}`,
+      title: `System Alert - Service Due ${i}`,
+      message: `Asset SN-GEN-1-${i} has a service scheduled soon.`,
+      read: i > 2,
+      createdAt: relativeDate(-1)
+    });
+  }
 
   // Save Collections
-  store.save('userTypes', userTypes);
-  store.save('technicians', technicians);
-  store.save('stock', stockItems);
-  store.save('customers', customers);
-  store.save('assets', assets);
-  store.save('maintenancePlans', plans);
-  store.save('taskTemplates', taskTemplates);
-  store.save('quotes', quotes);
-  store.save('jobs', jobs);
-  store.save('invoices', invoices);
-  store.save('schedule', schedules);
-  store.save('leads', leads);
-  store.save('notifications', notifications);
-  store.save('contractors', contractors);
-  store.save('suppliers', suppliers);
+  await store.save('userTypes', userTypes);
+  await store.save('technicians', techniciansList);
+  await store.save('stock', stockList);
+  await store.save('customers', generatedCustomers);
+  await store.save('assets', generatedAssets);
+  await store.save('maintenancePlans', generatedPlans);
+  await store.save('taskTemplates', taskTemplates);
+  await store.save('quotes', generatedQuotes);
+  await store.save('jobs', generatedJobs);
+  await store.save('invoices', generatedInvoices);
+  await store.save('schedule', generatedSchedule);
+  await store.save('leads', generatedLeads);
+  await store.save('notifications', generatedNotifications);
+  await store.save('contractors', generatedContractors);
+  await store.save('suppliers', generatedSuppliers);
 
   // Form templates seeding
   store.seedFormTemplates();
-  store.save('formInstances', []);
+  await store.save('formInstances', []);
 
   // Kits — reusable item bundles
   const kits = [
@@ -1192,88 +1492,22 @@ export function seedData(force = false) {
       category: 'Service Kits',
       items: [
         { type: 'material', stockId: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', qty: 1, costPrice: 85, unitPrice: 120, unit: 'Each' },
-        { type: 'material', stockId: 'st_2', name: 'Oil Filter — Cat 3306', sku: 'SKU-ST2', qty: 1, costPrice: 45, unitPrice: 75, unit: 'Each' },
-        { type: 'material', stockId: 'st_15', name: 'Fuse Kit Assorted', sku: 'SKU-ST15', qty: 1, costPrice: 28, unitPrice: 45, unit: 'Pack' },
-        { type: 'material', stockId: 'st_20', name: 'Inhibitor Test Strips', sku: 'SKU-ST20', qty: 1, costPrice: 22, unitPrice: 38, unit: 'Pack' },
-        { type: 'labor', stockId: null, name: 'Service Labour', sku: '', qty: 3, costPrice: 45, unitPrice: 145, unit: 'hrs' }
+        { type: 'material', stockId: 'st_2', name: 'Oil Filter — Cat 3306', sku: 'SKU-ST2', qty: 1, costPrice: 45, unitPrice: 75, unit: 'Each' }
       ],
-      totalCost: 315, totalPrice: 713, itemCount: 5, active: true,
+      totalCost: 130, totalPrice: 195, itemCount: 2, active: true,
       createdAt: relativeDate(-30), updatedAt: relativeDate(-5)
-    },
-    {
-      id: 'kit_2',
-      name: 'Generator Standard Service Kit (500hr)',
-      description: 'Comprehensive mid-interval service kit with all filters, fluids, and labour',
-      category: 'Service Kits',
-      items: [
-        { type: 'material', stockId: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', qty: 2, costPrice: 85, unitPrice: 120, unit: 'Each' },
-        { type: 'material', stockId: 'st_2', name: 'Oil Filter — Cat 3306', sku: 'SKU-ST2', qty: 1, costPrice: 45, unitPrice: 75, unit: 'Each' },
-        { type: 'material', stockId: 'st_5', name: 'Air Filter — Cat 3306', sku: 'SKU-ST5', qty: 1, costPrice: 120, unitPrice: 180, unit: 'Each' },
-        { type: 'material', stockId: 'st_7', name: 'Fuel Filter Assembly', sku: 'SKU-ST7', qty: 1, costPrice: 65, unitPrice: 110, unit: 'Each' },
-        { type: 'material', stockId: 'st_8', name: 'Coolant Concentrate 5L', sku: 'SKU-ST8', qty: 1, costPrice: 55, unitPrice: 85, unit: 'Each' },
-        { type: 'material', stockId: 'st_9', name: 'V-Belt Set', sku: 'SKU-ST9', qty: 1, costPrice: 95, unitPrice: 150, unit: 'Set' },
-        { type: 'material', stockId: 'st_20', name: 'Inhibitor Test Strips', sku: 'SKU-ST20', qty: 1, costPrice: 22, unitPrice: 38, unit: 'Pack' },
-        { type: 'labor', stockId: null, name: 'Standard Service Labour', sku: '', qty: 6, costPrice: 45, unitPrice: 145, unit: 'hrs' }
-      ],
-      totalCost: 842, totalPrice: 1698, itemCount: 8, active: true,
-      createdAt: relativeDate(-30), updatedAt: relativeDate(-3)
-    },
-    {
-      id: 'kit_3',
-      name: 'ATS Panel Commissioning Kit',
-      description: 'Items needed for commissioning an automatic transfer switch panel',
-      category: 'Commissioning Kits',
-      items: [
-        { type: 'material', stockId: 'st_12', name: 'ATS Control Board', sku: 'SKU-ST12', qty: 1, costPrice: 420, unitPrice: 680, unit: 'Each' },
-        { type: 'material', stockId: 'st_14', name: 'Cable Lugs Assorted Pack', sku: 'SKU-ST14', qty: 2, costPrice: 35, unitPrice: 58, unit: 'Pack' },
-        { type: 'material', stockId: 'st_15', name: 'Fuse Kit Assorted', sku: 'SKU-ST15', qty: 1, costPrice: 28, unitPrice: 45, unit: 'Pack' },
-        { type: 'material', stockId: 'st_21', name: 'Load Bank Cable Set', sku: 'SKU-ST21', qty: 1, costPrice: 180, unitPrice: 280, unit: 'Set' },
-        { type: 'labor', stockId: null, name: 'Commissioning Labour', sku: '', qty: 8, costPrice: 45, unitPrice: 145, unit: 'hrs' }
-      ],
-      totalCost: 1058, totalPrice: 2281, itemCount: 5, active: true,
-      createdAt: relativeDate(-25), updatedAt: relativeDate(-2)
-    },
-    {
-      id: 'kit_4',
-      name: 'Vehicle Loadout — Service Tech',
-      description: 'Standard consumables and parts for a service technician vehicle restock',
-      category: 'Vehicle Loadouts',
-      items: [
-        { type: 'material', stockId: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', qty: 2, costPrice: 85, unitPrice: 120, unit: 'Each' },
-        { type: 'material', stockId: 'st_8', name: 'Coolant Concentrate 5L', sku: 'SKU-ST8', qty: 2, costPrice: 55, unitPrice: 85, unit: 'Each' },
-        { type: 'material', stockId: 'st_11', name: 'Battery Terminal Connectors', sku: 'SKU-ST11', qty: 4, costPrice: 12, unitPrice: 22, unit: 'Pair' },
-        { type: 'material', stockId: 'st_14', name: 'Cable Lugs Assorted Pack', sku: 'SKU-ST14', qty: 3, costPrice: 35, unitPrice: 58, unit: 'Pack' },
-        { type: 'material', stockId: 'st_15', name: 'Fuse Kit Assorted', sku: 'SKU-ST15', qty: 2, costPrice: 28, unitPrice: 45, unit: 'Pack' },
-        { type: 'material', stockId: 'st_20', name: 'Inhibitor Test Strips', sku: 'SKU-ST20', qty: 3, costPrice: 22, unitPrice: 38, unit: 'Pack' }
-      ],
-      totalCost: 559, totalPrice: 878, itemCount: 6, active: true,
-      createdAt: relativeDate(-20), updatedAt: relativeDate(-1)
-    },
-    {
-      id: 'kit_5',
-      name: 'Battery Replacement Kit',
-      description: 'Complete battery swap kit including batteries, connectors, and installation labour',
-      category: 'Installation Kits',
-      items: [
-        { type: 'material', stockId: 'st_10', name: 'Battery 12V 100Ah AGM', sku: 'SKU-ST10', qty: 2, costPrice: 185, unitPrice: 280, unit: 'Each' },
-        { type: 'material', stockId: 'st_11', name: 'Battery Terminal Connectors', sku: 'SKU-ST11', qty: 2, costPrice: 12, unitPrice: 22, unit: 'Pair' },
-        { type: 'material', stockId: 'st_14', name: 'Cable Lugs Assorted Pack', sku: 'SKU-ST14', qty: 1, costPrice: 35, unitPrice: 58, unit: 'Pack' },
-        { type: 'labor', stockId: null, name: 'Installation Labour', sku: '', qty: 2, costPrice: 45, unitPrice: 145, unit: 'hrs' }
-      ],
-      totalCost: 519, totalPrice: 940, itemCount: 4, active: true,
-      createdAt: relativeDate(-15), updatedAt: relativeDate(-1)
     }
   ];
 
-  store.save('kits', kits);
+  await store.save('kits', kits);
 
   // Mark seeded
   localStorage.removeItem('simpro__prevent_seeding');
   store.markSeeded();
 }
 
-export function seedMinimalData() {
-  seedData(true);
+export async function seedMinimalData() {
+  await seedData(true);
 }
 
 export { technicians };

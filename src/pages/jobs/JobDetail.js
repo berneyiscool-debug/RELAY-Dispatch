@@ -46,7 +46,7 @@ export function renderJobDetail(container, { id }) {
     }
 
     const inv = store.create('invoices', {
-      number: `INV-${Date.now().toString().slice(-6)}`,
+      number: store.getNextNumber('INV-', 'invoices'),
       invoiceType: type,
       jobId: id, jobNumber: job.number,
       customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
@@ -1798,9 +1798,23 @@ export function renderJobDetail(container, { id }) {
             </div>
             <div class="form-group">
               <label class="form-label">Technician *</label>
-              <select class="form-select" id="bt-tech">
+              <select class="form-select" id="bt-tech" ${(() => {
+                const hasTechRecord = techs.some(t => t.id === currentUser.id);
+                return (currentUser.role === 'technician' && hasTechRecord) ? 'disabled' : '';
+              })()}>
                 <option value="">Select tech...</option>
-                ${techs.map(t => `<option value="${t.id}" ${t.name === currentUser.name ? 'selected' : ''}>${t.name}</option>`).join('')}
+                ${(() => {
+                  const hasTechRecord = techs.some(t => t.id === currentUser.id);
+                  let html = '';
+                  if (!hasTechRecord) {
+                    html += `<option value="${currentUser.id}" selected>${currentUser.name} (You)</option>`;
+                  }
+                  html += techs.map(t => {
+                    const isSelected = hasTechRecord ? t.id === currentUser.id : t.name === currentUser.name;
+                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${t.name}</option>`;
+                  }).join('');
+                  return html;
+                })()}
               </select>
             </div>
             `;
@@ -1858,6 +1872,11 @@ export function renderJobDetail(container, { id }) {
                 }
               }
             ]
+          });
+
+          import('../../utils/clockPicker.js').then(({ initClockPicker }) => {
+            initClockPicker(document.getElementById('bt-start'));
+            initClockPicker(document.getElementById('bt-finish'));
           });
         });
       });
@@ -2451,7 +2470,7 @@ export function renderJobDetail(container, { id }) {
           version: 1,
           sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
           subtotal: 0, tax: 0, total: 0,
-          number: 'Q-' + Date.now().toString().slice(-7)
+          number: store.getNextNumber('Q-', 'quotes')
         });
         showToast('Draft quote created', 'success', { link: `/quotes/${newQ.id}` });
         router.navigate('/quotes/' + newQ.id);
@@ -2829,9 +2848,23 @@ export function renderJobDetail(container, { id }) {
             </div>
             <div class="form-group">
               <label class="form-label">Technician *</label>
-              <select class="form-select" id="lt-tech" ${currentUser.role === 'technician' ? 'disabled' : ''}>
+              <select class="form-select" id="lt-tech" ${(() => {
+                const hasTechRecord = techs.some(t => t.id === currentUser.id);
+                return (currentUser.role === 'technician' && hasTechRecord) ? 'disabled' : '';
+              })()}>
                 <option value="">Select tech...</option>
-                ${techs.map(t => `<option value="${t.id}" ${t.name === currentUser.name ? 'selected' : ''}>${t.name}</option>`).join('')}
+                ${(() => {
+                  const hasTechRecord = techs.some(t => t.id === currentUser.id);
+                  let html = '';
+                  if (!hasTechRecord) {
+                    html += `<option value="${currentUser.id}" selected>${currentUser.name} (You)</option>`;
+                  }
+                  html += techs.map(t => {
+                    const isSelected = hasTechRecord ? t.id === currentUser.id : t.name === currentUser.name;
+                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${t.name}</option>`;
+                  }).join('');
+                  return html;
+                })()}
               </select>
             </div>
           </div>
@@ -3057,7 +3090,7 @@ export function renderJobDetail(container, { id }) {
                 const part = stockItems.find(s => s.id === partId);
 
                 const po = store.create('purchaseOrders', {
-                  number: `PO-${Date.now().toString().slice(-5)}`,
+                  number: store.getNextNumber('PO-', 'purchaseOrders'),
                   jobId: id,
                   supplierName: supplier,
                   issueDate: new Date().toISOString(),

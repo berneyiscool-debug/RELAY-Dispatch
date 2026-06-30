@@ -68,9 +68,9 @@ import { renderAssetDetail } from './pages/assets/AssetDetail.js';
 
 import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
 import { renderDocumentViewer } from './pages/documents/DocumentViewer.js';
+import { renderProfile } from './pages/Profile.js';
 
 // ---- Initialize ----
-seedData();
 checkMaintenancePlans();
 initSearchableSelects();
 
@@ -409,6 +409,7 @@ router.register('/login', renderPage((container) => {
     if (result.mode === 'local' || result.mode === 'local_multiuser') {
       const accountId = result.accountId;
       sessionStorage.setItem('relay_active_account', accountId);
+      localStorage.setItem('relay_login_mode', result.mode);
 
       // Update the profile's lastAccessedAt timestamp in storage
       const accounts = await storageGet('relay_accounts') || [];
@@ -458,6 +459,7 @@ router.register('/login', renderPage((container) => {
       router.navigate('/');
     } else if (result.mode === 'cloud') {
       try {
+        localStorage.setItem('relay_login_mode', 'cloud');
         await handleCloudLoginSuccess(container, { id: result.userId });
       } catch (err) {
         const { showToast: toast } = await import('./components/Notifications.js');
@@ -510,7 +512,7 @@ router.register('/quotes/:id', renderPage(renderQuoteDetail));
 
 // Jobs
 router.register('/jobs', renderPage(renderJobsList));
-router.register('/jobs/new', renderPage((c, p) => renderJobForm(c, { id: 'new' })));
+router.register('/jobs/new', renderPage((c, p) => renderJobForm(c, { id: 'new', ...p })));
 router.register('/jobs/:id', renderPage(renderJobDetail));
 router.register('/jobs/:id/edit', renderPage((c, p) => renderJobForm(c, p)));
 
@@ -519,7 +521,7 @@ router.register('/timesheets', renderPage(renderTimesheetsList));
 
 // Assets
 router.register('/assets', renderPage(renderAssetList));
-router.register('/assets/new', renderPage((c, p) => renderAssetForm(c, { id: 'new' })));
+router.register('/assets/new', renderPage((c, p) => renderAssetForm(c, { id: 'new', ...p })));
 router.register('/assets/:id', renderPage(renderAssetDetail));
 router.register('/assets/:id/edit', renderPage((c, p) => renderAssetForm(c, p)));
 
@@ -560,8 +562,11 @@ router.register('/settings/forms/:id/edit', renderPage((c, p) => renderFormBuild
 router.register('/settings/quote-templates/new', renderPage((c, p) => renderQuoteDetail(c, { id: 'new', type: 'template' })));
 router.register('/settings/quote-templates/:id/edit', renderPage((c, p) => renderQuoteDetail(c, { id: p.id, type: 'template' })));
 
+// Profile
+router.register('/profile', renderPage(renderProfile));
+
 // ---- Auth Guard Hook ----
-const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits'];
+const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile'];
 const customerRoutes = ['/portal'];
 
 router.onNavigate = (path, params) => {
@@ -607,66 +612,61 @@ router.onNavigate = (path, params) => {
     }
 
     // Check page permissions
-    if (currentUser.role !== 'admin' && currentUser.role !== 'customer' && currentUser.userTypeId && path !== '/login') {
-       const ut = store.getById('userTypes', currentUser.userTypeId);
-       if (ut && ut.permissions) {
-          const pathMap = {
-             '/': 'Dashboard',
-             '/people': 'Customers',
-             '/leads': 'Leads',
-             '/notifications': 'Notifications',
-             '/quotes': 'Quotes',
-             '/jobs': 'Jobs',
-             '/timesheets': 'Timesheets',
-             '/assets': 'Assets',
-             '/schedule': 'Schedule',
-             '/contractors': 'Contractors',
-             '/suppliers': 'Suppliers',
-             '/stock': 'Stock',
-             '/purchase-orders': 'Purchase Orders',
-             '/invoices': 'Invoices',
-             '/documents': 'Documents',
-             '/reports': 'Reports',
-             '/settings': 'Settings'
-          };
-          const moduleName = pathMap[basePath];
-          if (moduleName) {
-             // Granular route guard checks
-             let block = false;
-             if (path.endsWith('/new') && !hasPermission(moduleName, 'create')) block = true;
-             if (path.endsWith('/edit') && !hasPermission(moduleName, 'edit')) block = true;
+    if (currentUser.role !== 'admin' && currentUser.role !== 'customer' && path !== '/login') {
+       const pathMap = {
+          '/': 'Dashboard',
+          '/people': 'Customers',
+          '/leads': 'Leads',
+          '/notifications': 'Notifications',
+          '/quotes': 'Quotes',
+          '/jobs': 'Jobs',
+          '/timesheets': 'Timesheets',
+          '/assets': 'Assets',
+          '/schedule': 'Schedule',
+          '/contractors': 'Contractors',
+          '/suppliers': 'Suppliers',
+          '/stock': 'Stock',
+          '/purchase-orders': 'Purchase Orders',
+          '/invoices': 'Invoices',
+          '/documents': 'Documents',
+          '/reports': 'Reports',
+          '/settings': 'Settings'
+       };
+       const moduleName = pathMap[basePath];
+       if (moduleName) {
+          // Granular route guard checks
+          let block = false;
+          if (path.endsWith('/new') && !hasPermission(moduleName, 'create')) block = true;
+          if (path.endsWith('/edit') && !hasPermission(moduleName, 'edit')) block = true;
 
-             if (block) {
-                const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/suppliers', '/assets', '/documents', '/settings'];
-                const fallback = PRIORITY.find(route => {
-                  const mod = pathMap[route];
-                  if (mod === 'Notifications' || mod === 'Dashboard') return true;
-                  const perm = ut.permissions.find(m => m.module === mod);
-                  return perm && Object.entries(perm).some(([k,v]) => k !== 'module' && v === true);
-                }) || '/';
-                router.navigate(fallback);
-                return false;
-             }
+          if (block) {
+             const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/suppliers', '/assets', '/documents', '/settings'];
+             const fallback = PRIORITY.find(route => {
+               const mod = pathMap[route];
+               if (mod === 'Notifications' || mod === 'Dashboard') return true;
+               return hasPermission(mod, 'view') || hasPermission(mod, 'view_own');
+             }) || '/';
+             router.navigate(fallback);
+             return false;
+          }
 
-             if (moduleName === 'Notifications' || moduleName === 'Dashboard') {
-                // globally accessible, allow
-             } else {
-               const p = ut.permissions.find(m => m.module === moduleName);
-               if (!p || (Object.entries(p || {}).every(([k,v]) => k === 'module' || !v))) {
-                  // Not permitted — find first page they CAN access
-                  const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/suppliers', '/assets', '/documents', '/settings'];
-                  const fallback = PRIORITY.find(route => {
-                    const mod = pathMap[route];
-                    if (mod === 'Notifications' || mod === 'Dashboard') return true;
-                    const perm = ut.permissions.find(m => m.module === mod);
-                    return perm && Object.entries(perm).some(([k,v]) => k !== 'module' && v === true);
-                  }) || '/';
-                  if (basePath !== fallback) {
-                     router.navigate(fallback);
-                     return false;
-                  }
+          if (moduleName === 'Notifications' || moduleName === 'Dashboard') {
+             // globally accessible, allow
+          } else {
+            const canAccessModule = hasPermission(moduleName, 'view') || hasPermission(moduleName, 'view_own');
+            if (!canAccessModule) {
+               // Not permitted — find first page they CAN access
+               const PRIORITY = ['/', '/schedule', '/jobs', '/quotes', '/leads', '/timesheets', '/invoices', '/people', '/stock', '/purchase-orders', '/reports', '/contractors', '/suppliers', '/assets', '/documents', '/settings'];
+               const fallback = PRIORITY.find(route => {
+                 const mod = pathMap[route];
+                 if (mod === 'Notifications' || mod === 'Dashboard') return true;
+                 return hasPermission(mod, 'view') || hasPermission(mod, 'view_own');
+               }) || '/';
+               if (basePath !== fallback) {
+                  router.navigate(fallback);
+                  return false;
                }
-             }
+            }
           }
        }
     }
@@ -679,6 +679,7 @@ router.onNavigate = (path, params) => {
 // Handle logout events globally
 window.addEventListener('fieldforge-logout', () => {
   localStorage.removeItem('currentUser');
+  localStorage.removeItem('relay_login_mode');
   import('./utils/supabase.js').then(({ supabase }) => supabase.auth.signOut());
   const sidebar = document.querySelector('.sidebar');
   const topbar = document.querySelector('.topbar');
@@ -693,12 +694,24 @@ window.addEventListener('fieldforge-logout', () => {
 // Session Launch Guard
 if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('relay_session_initialized')) {
   localStorage.removeItem('currentUser');
+  localStorage.removeItem('relay_login_mode');
   sessionStorage.removeItem('relay_active_account');
   sessionStorage.setItem('relay_session_initialized', 'true');
 }
 
 // Before resolving, check if we need to redirect to login
 const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+if (currentUser && !localStorage.getItem('relay_login_mode')) {
+  let mode = 'cloud';
+  if (currentUser.companyId && currentUser.companyId.startsWith('acct_')) {
+    if (currentUser.id === `${currentUser.companyId}_admin`) {
+      mode = 'local';
+    } else {
+      mode = 'local_multiuser';
+    }
+  }
+  localStorage.setItem('relay_login_mode', mode);
+}
 const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
 if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
   window.location.hash = '#/login';

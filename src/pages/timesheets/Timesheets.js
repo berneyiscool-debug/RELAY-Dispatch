@@ -36,6 +36,7 @@ export function renderTimesheetsList(container) {
   let selectedIds = [];
 
   function render() {
+    const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
     const allTimesheets = store.getAll('timesheets').sort((a, b) => new Date(b.date) - new Date(a.date));
     const technicians = store.getAll('technicians');
     
@@ -99,8 +100,8 @@ export function renderTimesheetsList(container) {
             </button>
           ` : ''}
           ${hasPermission('Timesheets', 'create') ? `
-            <button class="btn ${['admin', 'manager', 'office'].includes(currentUser.role) ? 'btn-secondary' : 'btn-primary'}" id="btn-log-time" data-tooltip="${['admin', 'manager', 'office'].includes(currentUser.role) ? 'Manually enter a timesheet record for another employee' : 'Log a new timesheet entry'}" data-tooltip-pos="left" style="margin-right:8px">
-              <span class="material-icons-outlined">add</span> ${['admin', 'manager', 'office'].includes(currentUser.role) ? 'Log Time on Behalf' : 'Log Time'}
+            <button class="btn ${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'btn-primary' : 'btn-secondary'}" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="margin-right:8px">
+              <span class="material-icons-outlined">add</span> ${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log Time' : 'Log Time on Behalf'}
             </button>
           ` : ''}
           ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
@@ -134,7 +135,7 @@ export function renderTimesheetsList(container) {
           </div>
         </div>
 
-        ${canViewAll ? `
+        ${canViewAll && !isLocalAdmin ? `
           <div style="display:flex; align-items:center; gap:8px;">
             <div style="display:flex; align-items:center; gap:4px;">
               <button class="btn btn-ghost btn-sm btn-icon" id="btn-tech-prev" title="Previous technician" style="padding:0; height:32px; width:32px; min-width:32px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); border-radius:var(--border-radius); background:var(--card-bg);">
@@ -142,7 +143,15 @@ export function renderTimesheetsList(container) {
               </button>
               <select class="form-select" id="filter-tech" style="width:180px; height:32px; padding:0 8px; font-size:13px; margin:0;">
                 <option value="All">All Technicians</option>
-                ${technicians.map(t => `<option value="${t.id}" ${filterTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                ${(() => {
+                  const hasCurrentUser = technicians.some(t => t.id === currentUser.id);
+                  let html = '';
+                  if (!hasCurrentUser) {
+                    html += `<option value="${currentUser.id}" ${filterTechId === currentUser.id ? 'selected' : ''}>${currentUser.name} (You)</option>`;
+                  }
+                  html += technicians.map(t => `<option value="${t.id}" ${filterTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('');
+                  return html;
+                })()}
               </select>
               <button class="btn btn-ghost btn-sm btn-icon" id="btn-tech-next" title="Next technician" style="padding:0; height:32px; width:32px; min-width:32px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); border-radius:var(--border-radius); background:var(--card-bg);">
                 <span class="material-icons-outlined" style="font-size:18px">chevron_right</span>
@@ -531,6 +540,7 @@ export function renderTimesheetsList(container) {
   }
 
   function openLogTimeModal() {
+    const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
     const isTech = currentUser.role === 'technician' || currentUser.userTypeId === 'ut_tech' || (currentUser.userTypeId && currentUser.userTypeId.endsWith('_ut_tech'));
     const pathBreadcrumbs = {};
     const idToPath = {};
@@ -643,12 +653,23 @@ export function renderTimesheetsList(container) {
         </div>
       </div>
       <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
-        <div class="form-group" style="margin:0">
+        <div class="form-group" style="margin:0; ${isLocalAdmin ? 'display:none;' : ''}">
           <label class="form-label">Technician *</label>
-          <select class="form-select" id="lt-tech" style="width:100%" ${isTech ? 'disabled' : ''}>
-            <option value="">Select technician...</option>
-            ${technicians.map(t => `<option value="${t.id}" ${(isTech ? String(currentUser.id) === String(t.id) : filterTechId === t.id) ? 'selected' : ''}>${t.name}</option>`).join('')}
-          </select>
+          ${isLocalAdmin ? `
+            <select class="form-select" id="lt-tech" style="width:100%">
+              <option value="${currentUser.id}" selected>${currentUser.name}</option>
+            </select>
+          ` : (() => {
+            const hasTechRecord = technicians.some(t => t.id === currentUser.id);
+            const forceOwnTech = isTech && hasTechRecord;
+            return `
+              <select class="form-select" id="lt-tech" style="width:100%" ${forceOwnTech ? 'disabled' : ''}>
+                <option value="">Select technician...</option>
+                ${!hasTechRecord ? `<option value="${currentUser.id}" selected>${currentUser.name} (You)</option>` : ''}
+                ${technicians.map(t => `<option value="${t.id}" ${(forceOwnTech ? String(currentUser.id) === String(t.id) : false) ? 'selected' : ''}>${t.name}</option>`).join('')}
+              </select>
+            `;
+          })()}
         </div>
         <div class="form-group" style="margin:0">
           <label class="form-label">Job *</label>
@@ -770,7 +791,9 @@ export function renderTimesheetsList(container) {
         { label: 'Log Time', className: 'btn-primary', onClick: (close) => {
           const startVal = document.getElementById('lt-start').value;
           const finishVal = document.getElementById('lt-finish').value;
-          const techId = isTech ? currentUser.id : document.getElementById('lt-tech').value;
+          const hasTechRecord = technicians.some(t => t.id === currentUser.id);
+          const forceOwnTech = isTech && hasTechRecord;
+          const techId = forceOwnTech ? currentUser.id : document.getElementById('lt-tech').value;
           const jobId = document.getElementById('lt-job').value;
           const taskPathVal = document.getElementById('lt-task').value;
           const taskNameVal = document.getElementById('lt-task-name').value;
@@ -813,6 +836,11 @@ export function renderTimesheetsList(container) {
           render();
         }}
       ]
+    });
+
+    import('../../utils/clockPicker.js').then(({ initClockPicker }) => {
+      initClockPicker(document.getElementById('lt-start'));
+      initClockPicker(document.getElementById('lt-finish'));
     });
   }
 

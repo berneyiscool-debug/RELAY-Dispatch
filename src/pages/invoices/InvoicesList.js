@@ -175,6 +175,105 @@ export function renderInvoicesList(container) {
             }
           },
           {
+            label: 'Combine Invoices',
+            icon: 'merge',
+            onClick: (ids) => {
+              const invoices = ids.map(id => store.getById('invoices', id)).filter(Boolean);
+              if (invoices.length < 2) {
+                import('../../components/Notifications.js').then(({ showToast }) => showToast('Select at least 2 invoices to combine', 'error'));
+                return;
+              }
+
+              // Validate same customer
+              const customerIds = [...new Set(invoices.map(inv => inv.customerId).filter(Boolean))];
+              if (customerIds.length > 1) {
+                import('../../components/Notifications.js').then(({ showToast }) => showToast('All selected invoices must belong to the same customer', 'error'));
+                return;
+              }
+
+              import('../../components/Modal.js').then(({ showModal }) => {
+                const content = document.createElement('div');
+                content.innerHTML = `
+                  <p style="margin-bottom:12px;">This will merge <strong>${invoices.length} invoices</strong> into a single invoice. Each original invoice becomes a section in the combined invoice.</p>
+                  <div style="max-height:200px; overflow-y:auto; margin-bottom:16px;">
+                    ${invoices.map(inv => `
+                      <div style="padding:8px 12px; background:var(--bg-secondary); border-radius:6px; margin-bottom:6px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
+                        <span><strong>${inv.number || 'No #'}</strong> — ${inv.title || inv.customerName || 'Untitled'}</span>
+                        <span style="font-weight:600;">$${(inv.total || 0).toFixed(2)}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                  <p style="font-size:12px; color:var(--text-secondary);">Customer: <strong>${invoices[0].customerName || 'Unknown'}</strong></p>
+                  <p style="font-size:12px; color:var(--text-secondary);">Original invoices will be marked as <strong>Void</strong>.</p>
+                `;
+                showModal({
+                  title: 'Combine Invoices',
+                  content,
+                  actions: [
+                    { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                    { label: 'Combine Invoices', className: 'btn-primary', onClick: c => {
+                      // Build sections from each invoice
+                      const combinedSections = [];
+                      invoices.forEach(inv => {
+                        if (inv.sections && inv.sections.length > 0) {
+                          inv.sections.forEach(sec => {
+                            combinedSections.push({
+                              id: store.generateId(),
+                              name: `${inv.number} — ${sec.name || 'Items'}`,
+                              lineItems: (sec.lineItems || []).map(li => ({ ...li }))
+                            });
+                          });
+                        } else {
+                          // Fallback: create a section from the invoice total
+                          combinedSections.push({
+                            id: store.generateId(),
+                            name: `${inv.number} — ${inv.title || 'Invoice Items'}`,
+                            lineItems: [{
+                              description: `${inv.title || 'Invoice'} (${inv.number})`,
+                              type: 'other',
+                              qty: 1,
+                              rate: inv.subtotal || inv.total || 0,
+                              unitPrice: inv.subtotal || inv.total || 0,
+                              total: inv.subtotal || inv.total || 0
+                            }]
+                          });
+                        }
+                      });
+
+                      const subtotal = combinedSections.reduce((sum, sec) => sum + (sec.lineItems || []).reduce((s, li) => s + (li.total || 0), 0), 0);
+                      const taxRate = store.getTaxRate();
+
+                      const newInvoice = store.create('invoices', {
+                        number: store.getNextNumber('INV-', 'invoices'),
+                        invoiceType: 'Standard',
+                        customerId: invoices[0].customerId,
+                        customerName: invoices[0].customerName,
+                        contactName: invoices[0].contactName || '',
+                        status: 'Draft',
+                        sections: combinedSections,
+                        subtotal,
+                        tax: subtotal * taxRate,
+                        total: subtotal * (1 + taxRate),
+                        issueDate: new Date().toISOString(),
+                        dueDate: new Date(Date.now() + 30 * 86400000).toISOString()
+                      });
+
+                      // Void the originals
+                      invoices.forEach(inv => {
+                        store.update('invoices', inv.id, { status: 'Void' });
+                      });
+
+                      table.clearSelection();
+                      renderInvoicesList(container);
+                      import('../../components/Notifications.js').then(({ showToast }) => showToast(`Combined ${invoices.length} invoices into ${newInvoice.number || 'new invoice'}`, 'success'));
+                      c();
+                    }}
+                  ]
+                });
+              });
+            }
+          },
+          {
             label: 'Delete Selected',
             icon: 'delete',
             className: 'btn-danger',

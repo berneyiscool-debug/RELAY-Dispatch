@@ -149,11 +149,11 @@ export function checkMaintenancePlans() {
       
       let standaloneDesc = '';
       if (plan.triggerType === 'Calendar') {
-        standaloneDesc = `Scheduled maintenance is due on ${plan.nextServiceDate} at ${asset.site || 'Main Office'}. Required parts: ${partsText}. Labor Profile: ${laborHrs} hrs.`;
+        standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nDue Date: ${plan.nextServiceDate}\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
       } else {
         const currentMeter = parseFloat(asset.currentMeter || 0);
         const targetMilestone = parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0);
-        standaloneDesc = `Asset meter reading is at ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone reached: ${targetMilestone} ${asset.meterUnit || 'hrs'}). Required parts: ${partsText}. Labor: ${laborHrs} hrs.`;
+        standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nMeter Reading: ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone: ${targetMilestone} ${asset.meterUnit || 'hrs'})\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
       }
 
       const notif = {
@@ -246,11 +246,11 @@ export function checkMaintenancePlans() {
         
         let standaloneDesc = '';
         if (plan.triggerType === 'Calendar') {
-          standaloneDesc = `Scheduled maintenance is due on ${plan.nextServiceDate} at ${asset.site || 'Main Office'}. Required parts: ${partsText}. Labor Profile: ${laborHrs} hrs.`;
+          standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nDue Date: ${plan.nextServiceDate}\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
         } else {
           const currentMeter = parseFloat(asset.currentMeter || 0);
           const targetMilestone = parseFloat(plan.lastTriggeredMeter || 0) + parseFloat(plan.meterInterval || 0);
-          standaloneDesc = `Asset meter reading is at ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone reached: ${targetMilestone} ${asset.meterUnit || 'hrs'}). Required parts: ${partsText}. Labor: ${laborHrs} hrs.`;
+          standaloneDesc = `Service Plan: ${plan.name}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nMeter Reading: ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone: ${targetMilestone} ${asset.meterUnit || 'hrs'})\nRequired parts: ${partsText}\nLabor: ${laborHrs} hrs.`;
         }
 
         const notif = {
@@ -360,11 +360,11 @@ export function checkMaintenancePlans() {
 
         let mergedDescription = '';
         if (triggeredPlan.triggerType === 'Calendar') {
-          mergedDescription = `Scheduled maintenance is due on ${triggeredPlan.nextServiceDate} at ${asset.site || 'Main Office'}. Required parts: ${partsText}. Labor Profile: ${totalLaborHrs} hrs.`;
+          mergedDescription = `Service Plan: ${mergedTitle}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nDue Date: ${triggeredPlan.nextServiceDate}\nRequired parts: ${partsText}\nLabor: ${totalLaborHrs} hrs.`;
         } else {
           const currentMeter = parseFloat(asset.currentMeter || 0);
           const targetMilestone = parseFloat(triggeredPlan.lastTriggeredMeter || 0) + parseFloat(triggeredPlan.meterInterval || 0);
-          mergedDescription = `Asset meter reading is at ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone reached: ${targetMilestone} ${asset.meterUnit || 'hrs'}). Required parts: ${partsText}. Labor: ${totalLaborHrs} hrs.`;
+          mergedDescription = `Service Plan: ${mergedTitle}\nAsset: ${asset.name} (${asset.type || 'Generator'}, S/N: ${asset.serial || '—'})\nLocation/Site: ${asset.site || 'Main Office'}\nMeter Reading: ${currentMeter} ${asset.meterUnit || 'hrs'} (Milestone: ${targetMilestone} ${asset.meterUnit || 'hrs'})\nRequired parts: ${partsText}\nLabor: ${totalLaborHrs} hrs.`;
         }
 
         const notif = {

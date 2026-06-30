@@ -358,7 +358,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
     };
 
     if (isNew) {
-      poData.number = `PO-${Date.now().toString().slice(-6)}`;
+      poData.number = store.getNextNumber('PO-', 'purchaseOrders');
       const created = store.create('purchaseOrders', poData);
       showToast(`PO ${newStatus === 'Issued' ? 'issued' : 'created'} successfully`, 'success');
       router.navigate(`/purchase-orders/${created.id}`);

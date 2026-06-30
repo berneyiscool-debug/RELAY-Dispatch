@@ -8,9 +8,10 @@ import { showModal } from '../components/Modal.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
-import { seedMinimalData } from '../data/seed.js';
+import { seedMinimalData, seedData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
+import { storageGet, storageSet } from '../utils/tauriStore.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -59,6 +60,14 @@ function compressImage(dataUrl, maxWidth, maxHeight) {
     };
     img.src = dataUrl;
   });
+}
+
+// Helper to hash password using SHA-256 Web Crypto API
+async function hashPassword(password) {
+  const msgBuffer = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Build a permissions array with all granular keys
@@ -196,10 +205,209 @@ export function renderSettings(container) {
     activeTab = tabParam;
   }
 
-  const isLocalMode = !store.companyId;
-  if (isLocalMode && (activeTab === 'users' || activeTab === 'portal')) {
+  const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
+  const settings = store.getSettings();
+  const localDeploymentType = settings.localDeploymentType || 'single_user';
+
+  const isUsersDisabled = isLocalMode && localDeploymentType === 'single_user';
+  const isPortalDisabled = isLocalMode;
+  const isFolderSyncDisabled = !isLocalMode;
+
+  if (isUsersDisabled && activeTab === 'users') {
     activeTab = 'company';
   }
+  if (isPortalDisabled && activeTab === 'portal') {
+    activeTab = 'company';
+  }
+  if (isFolderSyncDisabled && activeTab === 'folder_sync') {
+    activeTab = 'company';
+  }
+
+  const openMigrationModal = () => {
+    const modalContent = document.createElement('div');
+    modalContent.innerHTML = `
+      <form id="convert-cloud-form" style="display:flex; flex-direction:column; gap:16px;">
+        <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-danger); display:flex; gap:8px;">
+          <span class="material-icons-outlined" style="color:var(--color-danger);">warning</span>
+          <div>
+            <strong>CRITICAL WARNING:</strong> Converting to Cloud Sync is a permanent, one-way transition. Once converted, you cannot revert this profile back to a local/offline account. All data will be migrated to the secure cloud database.
+          </div>
+        </div>
+
+        <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-info); display:flex; gap:8px;">
+          <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
+          <div>
+            Configure your cloud administrator credentials. This username and password will be your new secure login.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Confirm Business Name</label>
+          <input class="form-input" id="migrate-company-name" required value="${escapeHTML(store.getSettings().name || '')}" placeholder="Company Name" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Administrator Full Name</label>
+          <input class="form-input" id="migrate-admin-name" required placeholder="e.g. John Doe" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Administrator Phone Number</label>
+          <input class="form-input" id="migrate-admin-phone" required placeholder="e.g. 0412 345 678" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Email Address (Username)</label>
+          <input class="form-input" type="email" id="migrate-admin-email" required placeholder="e.g. admin@yourcompany.com" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Password</label>
+          <input class="form-input" type="password" id="migrate-admin-password" required minlength="6" placeholder="At least 6 characters" />
+        </div>
+
+        <div id="migration-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
+          <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
+          <span id="migration-error-text"></span>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
+          <button type="button" class="btn btn-secondary" id="btn-migrate-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-migrate-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
+            <span class="material-icons-outlined" id="submit-icon" style="font-size:18px;">cloud_done</span>
+            <span id="submit-text">Register & Start Migration</span>
+          </button>
+        </div>
+      </form>
+    `;
+
+    const { close } = showModal({
+      title: 'Register & Migrate to Cloud',
+      content: modalContent,
+      size: 'modal-md'
+    });
+
+    modalContent.querySelector('#btn-migrate-cancel').addEventListener('click', close);
+
+    const form = modalContent.querySelector('#convert-cloud-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const errorEl = modalContent.querySelector('#migration-error');
+      const errorTextEl = modalContent.querySelector('#migration-error-text');
+      const submitBtn = modalContent.querySelector('#btn-migrate-submit');
+      const cancelBtn = modalContent.querySelector('#btn-migrate-cancel');
+      const submitText = modalContent.querySelector('#submit-text');
+      const submitIcon = modalContent.querySelector('#submit-icon');
+
+      errorEl.style.display = 'none';
+      submitBtn.disabled = true;
+      cancelBtn.disabled = true;
+      submitText.textContent = 'Migrating to Cloud...';
+      submitIcon.className = 'material-icons-outlined spinner';
+      submitIcon.textContent = 'sync';
+      submitIcon.style.animation = 'spin 1s linear infinite';
+
+      const companyName = modalContent.querySelector('#migrate-company-name').value.trim();
+      const adminName = modalContent.querySelector('#migrate-admin-name').value.trim();
+      const adminPhone = modalContent.querySelector('#migrate-admin-phone').value.trim();
+      const email = modalContent.querySelector('#migrate-admin-email').value.trim();
+      const password = modalContent.querySelector('#migrate-admin-password').value;
+
+      try {
+        const settings = store.getSettings();
+        settings.name = companyName;
+        await store.saveSettings(settings);
+
+        const { supabase } = await import('../utils/supabase.js');
+
+        const { data: authData, error: authErr } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name: adminName,
+              phone: adminPhone
+            }
+          }
+        });
+        if (authErr) throw authErr;
+
+        if (!authData.user) {
+          throw new Error('Verification required or signup was blocked. Check your email inbox.');
+        }
+
+        const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
+          user_id: authData.user.id,
+          company_name: companyName,
+          admin_name: adminName,
+          admin_phone: adminPhone
+        });
+        if (rpcError) throw rpcError;
+
+        const activeAccountId = sessionStorage.getItem('relay_active_account');
+        await store.migrateLocalToCloud(companyId, authData.user.id);
+
+        if (activeAccountId) {
+          const localAccountsKey = 'relay_accounts';
+          let localAccounts = [];
+          try {
+            const stored = localStorage.getItem(localAccountsKey);
+            if (stored) {
+              localAccounts = JSON.parse(stored);
+            }
+          } catch (e) {
+            console.error('Error reading local accounts:', e);
+          }
+          localAccounts = localAccounts.filter(a => a.id !== activeAccountId);
+          localStorage.setItem(localAccountsKey, JSON.stringify(localAccounts));
+
+          store.deleteLocalAccountData(activeAccountId);
+        }
+
+        const { data: profile, error: profileErr } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+        if (profileErr) throw profileErr;
+
+        const user = {
+          id: profile.id,
+          companyId: profile.company_id,
+          name: profile.name,
+          role: profile.role,
+          userTypeName: 'Admin',
+          userTypeId: `${profile.company_id}_ut_admin`,
+          color: profile.color || '#FF5C00',
+          theme: 'light'
+        };
+
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        sessionStorage.removeItem('relay_active_account');
+
+        showToast('Migration completed successfully! Redirecting...', 'success');
+        close();
+
+        setTimeout(() => {
+          window.location.hash = '#/';
+          window.location.reload();
+        }, 1500);
+
+      } catch (err) {
+        console.error('Migration failed:', err);
+        errorTextEl.textContent = err.message || 'An error occurred during migration.';
+        errorEl.style.display = 'flex';
+
+        submitBtn.disabled = false;
+        cancelBtn.disabled = false;
+        submitText.textContent = 'Register & Start Migration';
+        submitIcon.className = 'material-icons-outlined';
+        submitIcon.textContent = 'cloud_done';
+        submitIcon.style.animation = '';
+      }
+    });
+  };
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
@@ -209,13 +417,13 @@ export function renderSettings(container) {
 
       <div class="tabs" style="margin-bottom:0">
         <button class="tab ${activeTab === 'company' ? 'active' : ''}" data-tab="company">Company</button>
-        <button class="tab ${activeTab === 'users' ? 'active' : ''} ${isLocalMode ? 'disabled-local' : ''}" data-tab="users" ${isLocalMode ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Users & Permissions</button>
+        <button class="tab ${activeTab === 'users' ? 'active' : ''} ${isUsersDisabled ? 'disabled-local' : ''}" data-tab="users" ${isUsersDisabled ? 'data-tooltip="Requires Cloud Account or Local Server" data-tooltip-pos="top"' : ''}>Users & Permissions</button>
         <button class="tab ${activeTab === 'materials' ? 'active' : ''}" data-tab="materials">Materials</button>
         <button class="tab ${activeTab === 'templates_forms' ? 'active' : ''}" data-tab="templates_forms">Templates &amp; Forms</button>
         <button class="tab ${activeTab === 'tax' ? 'active' : ''}" data-tab="tax">Tax &amp; Rates</button>
-        <button class="tab ${activeTab === 'portal' ? 'active' : ''} ${isLocalMode ? 'disabled-local' : ''}" data-tab="portal" ${isLocalMode ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Customer Portal</button>
+        <button class="tab ${activeTab === 'portal' ? 'active' : ''} ${isPortalDisabled ? 'disabled-local' : ''}" data-tab="portal" ${isPortalDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Customer Portal</button>
         <button class="tab ${activeTab === 'invoices_quotes' ? 'active' : ''}" data-tab="invoices_quotes">Quotes &amp; Invoices</button>
-        <button class="tab ${activeTab === 'folder_sync' ? 'active' : ''}" data-tab="folder_sync">Folder Sync</button>
+        <button class="tab ${activeTab === 'folder_sync' ? 'active' : ''} ${isFolderSyncDisabled ? 'disabled-local' : ''}" data-tab="folder_sync" ${isFolderSyncDisabled ? 'data-tooltip="Requires Local Folder Storage" data-tooltip-pos="top"' : ''}>Folder Sync</button>
         <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
       </div>
       <div id="settings-content" style="padding-top:var(--space-lg)"></div>
@@ -257,218 +465,8 @@ export function renderSettings(container) {
       // Use local variables to track changes before saving
       let pendingLogo = s.logo;
       let pendingLogoSmall = s.logoSmall;
-      
-      const openMigrationModal = () => {
-        const modalContent = document.createElement('div');
-        modalContent.innerHTML = `
-          <form id="convert-cloud-form" style="display:flex; flex-direction:column; gap:16px;">
-            <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-info); display:flex; gap:8px;">
-              <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
-              <div>
-                Configure your cloud administrator credentials. This username and password will be your new secure login.
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Administrator Full Name</label>
-              <input class="form-input" id="migrate-admin-name" required placeholder="e.g. John Doe" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Administrator Phone Number</label>
-              <input class="form-input" id="migrate-admin-phone" required placeholder="e.g. 0412 345 678" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Email Address (Username)</label>
-              <input class="form-input" type="email" id="migrate-admin-email" required placeholder="e.g. admin@yourcompany.com" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Password</label>
-              <input class="form-input" type="password" id="migrate-admin-password" required minlength="6" placeholder="At least 6 characters" />
-            </div>
-
-            <div id="migration-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
-              <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
-              <span id="migration-error-text"></span>
-            </div>
-
-            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
-              <button type="button" class="btn btn-secondary" id="btn-migrate-cancel">Cancel</button>
-              <button type="submit" class="btn btn-primary" id="btn-migrate-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
-                <span class="material-icons-outlined" id="submit-icon" style="font-size:18px;">cloud_done</span>
-                <span id="submit-text">Register & Start Migration</span>
-              </button>
-            </div>
-          </form>
-        `;
-
-        const { close } = showModal({
-          title: 'Register & Migrate to Cloud',
-          content: modalContent,
-          size: 'modal-md'
-        });
-
-        modalContent.querySelector('#btn-migrate-cancel').addEventListener('click', close);
-
-        const form = modalContent.querySelector('#convert-cloud-form');
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-
-          const errorEl = modalContent.querySelector('#migration-error');
-          const errorTextEl = modalContent.querySelector('#migration-error-text');
-          const submitBtn = modalContent.querySelector('#btn-migrate-submit');
-          const cancelBtn = modalContent.querySelector('#btn-migrate-cancel');
-          const submitText = modalContent.querySelector('#submit-text');
-          const submitIcon = modalContent.querySelector('#submit-icon');
-
-          errorEl.style.display = 'none';
-          submitBtn.disabled = true;
-          cancelBtn.disabled = true;
-          submitText.textContent = 'Migrating to Cloud...';
-          submitIcon.className = 'material-icons-outlined spinner';
-          submitIcon.textContent = 'sync';
-          submitIcon.style.animation = 'spin 1s linear infinite';
-
-          const adminName = modalContent.querySelector('#migrate-admin-name').value.trim();
-          const adminPhone = modalContent.querySelector('#migrate-admin-phone').value.trim();
-          const email = modalContent.querySelector('#migrate-admin-email').value.trim();
-          const password = modalContent.querySelector('#migrate-admin-password').value;
-          const companyName = store.getSettings().name || 'My Local Business';
-
-          try {
-            // Import supabase dynamically to avoid issues
-            const { supabase } = await import('../utils/supabase.js');
-
-            // 1. Sign up the user in Supabase Auth
-            const { data: authData, error: authErr } = await supabase.auth.signUp({
-              email,
-              password,
-              options: {
-                data: {
-                  name: adminName,
-                  phone: adminPhone
-                }
-              }
-            });
-            if (authErr) throw authErr;
-
-            if (!authData.user) {
-              throw new Error('Verification required or signup was blocked. Check your email inbox.');
-            }
-
-            // 2. Call the security definer RPC function to create company and profile records
-            const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
-              user_id: authData.user.id,
-              company_name: companyName,
-              admin_name: adminName,
-              admin_phone: adminPhone
-            });
-            if (rpcError) throw rpcError;
-
-            // 3. Trigger local to cloud data migration
-            const activeAccountId = sessionStorage.getItem('relay_active_account');
-            await store.migrateLocalToCloud(companyId, authData.user.id);
-
-            // 4. Remove the local profile from the account list
-            if (activeAccountId) {
-              const localAccountsKey = 'relay_accounts';
-              let localAccounts = [];
-              try {
-                const stored = localStorage.getItem(localAccountsKey);
-                if (stored) {
-                  localAccounts = JSON.parse(stored);
-                }
-              } catch (e) {
-                console.error('Error reading local accounts:', e);
-              }
-              localAccounts = localAccounts.filter(a => a.id !== activeAccountId);
-              localStorage.setItem(localAccountsKey, JSON.stringify(localAccounts));
-
-              // 5. Delete local namespaced data
-              store.deleteLocalAccountData(activeAccountId);
-            }
-
-            // 6. Fetch the newly created profile to construct currentUser session object
-            const { data: profile, error: profileErr } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', authData.user.id)
-              .single();
-            if (profileErr) throw profileErr;
-
-            const user = {
-              id: profile.id,
-              companyId: profile.company_id,
-              name: profile.name,
-              role: profile.role,
-              userTypeName: 'Admin',
-              userTypeId: `${profile.company_id}_ut_admin`,
-              color: profile.color || '#FF5C00',
-              theme: 'light'
-            };
-
-            localStorage.setItem('currentUser', JSON.stringify(user));
-            sessionStorage.removeItem('relay_active_account');
-
-            showToast('Migration completed successfully! Redirecting...', 'success');
-            close();
-
-            // 7. Reload application shell to boot into cloud mode
-            setTimeout(() => {
-              window.location.hash = '#/';
-              window.location.reload();
-            }, 1500);
-
-          } catch (err) {
-            console.error('Migration failed:', err);
-            errorTextEl.textContent = err.message || 'An error occurred during migration.';
-            errorEl.style.display = 'flex';
-
-            submitBtn.disabled = false;
-            cancelBtn.disabled = false;
-            submitText.textContent = 'Register & Start Migration';
-            submitIcon.className = 'material-icons-outlined';
-            submitIcon.textContent = 'cloud_done';
-            submitIcon.style.animation = '';
-          }
-        });
-      };
 
       const renderCompanyTab = () => {
-        let convertToCloudCard = '';
-        if (store.companyId && store.companyId.startsWith('acct_')) {
-          convertToCloudCard = `
-            <div class="card" style="max-width:850px; margin-top:24px; border:1px solid var(--color-warning);">
-              <div class="card-header" style="background:var(--color-warning-bg); color:var(--color-warning); display:flex; align-items:center; gap:8px;">
-                <span class="material-icons-outlined">cloud_upload</span>
-                <h4 style="color:var(--color-warning); margin:0;">Convert to Cloud Account</h4>
-              </div>
-              <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-                <p style="font-size:13.5px; line-height:1.6; color:var(--text-secondary); margin:0;">
-                  This business profile is currently running locally. You can migrate this profile and all its offline data (customers, jobs, quotes, settings, etc.) to the Antigravity Cloud, creating a secure online account.
-                </p>
-                <div style="background:var(--bg-color); border-left:4px solid var(--color-warning); padding:16px; border-radius:4px;">
-                  <strong style="display:block; margin-bottom:8px; font-size:13px; color:var(--text-primary);">Conversion Process Highlights:</strong>
-                  <ul style="margin:0; padding-left:20px; font-size:12.5px; color:var(--text-secondary); display:flex; flex-direction:column; gap:6px;">
-                    <li>Registers a new administrator account in Supabase.</li>
-                    <li>Safely uploads all local offline data to the cloud databases.</li>
-                    <li>Wipes namespaced local files and IndexedDB databases from this device.</li>
-                    <li>Transitions your session seamlessly to the cloud company dashboard.</li>
-                  </ul>
-                </div>
-              </div>
-              <div class="card-footer">
-                <button class="btn btn-primary" id="btn-convert-cloud" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
-                  <span class="material-icons-outlined" style="font-size:18px;">cloud_upload</span>
-                  <span>Register & Migrate to Cloud</span>
-                </button>
-              </div>
-            </div>
-          `;
-        }
-
         tc.innerHTML = `
           <div class="card" style="max-width:850px">
             <div class="card-header"><h4>Company Information</h4></div>
@@ -558,7 +556,6 @@ export function renderSettings(container) {
               </button>
             </div>
           </div>
-          ${convertToCloudCard}
         `;
 
         // Handlers for Company Tab
@@ -657,12 +654,7 @@ export function renderSettings(container) {
         tc.querySelector('#btn-remove-logo')?.addEventListener('click', removeLogoHandler);
         tc.querySelector('#btn-remove-logo-small')?.addEventListener('click', removeLogoSmallHandler);
 
-        const convertBtn = tc.querySelector('#btn-convert-cloud');
-        if (convertBtn) {
-          convertBtn.addEventListener('click', () => {
-            openMigrationModal();
-          });
-        }
+
 
         tc.querySelector('#btn-save-company').addEventListener('click', async () => {
           const saveBtn = tc.querySelector('#btn-save-company');
@@ -685,6 +677,7 @@ export function renderSettings(container) {
             showToast('Company information saved successfully to database', 'success');
             tc.querySelector('#unsaved-logo-hint').style.display = 'none';
             window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+            render();
           } catch (err) {
             console.error('Error saving company profile settings:', err);
             showToast('Failed to save settings: ' + (err.message || err), 'error');
@@ -698,6 +691,7 @@ export function renderSettings(container) {
       renderCompanyTab();
     } else if (activeTab === 'users') {
       const techs = store.getAll('technicians');
+      const pendingResets = store.getAll('passwordResetRequests') || [];
       const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
       let userTypes = store.getAll('userTypes');
       if (!userTypes || userTypes.length === 0) {
@@ -713,9 +707,19 @@ export function renderSettings(container) {
           { id: 'ut_tech', name: 'Technician', description: 'Field staff — limited to their own jobs',
             permissions: buildGranularPerms((mod, key) => {
               if (mod === 'Dashboard') return key === 'view';
-              if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
-              if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
-              if (mod === 'Schedule') return ['view_own'].includes(key);
+              if (mod === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
+              if (mod === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
+              if (mod === 'Jobs') {
+                return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+              }
+              if (mod === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
+              if (mod === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);
+              if (mod === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
+              if (mod === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
+              if (mod === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
+              if (mod === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
+              if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
+              if (mod === 'Documents') return ['view', 'upload'].includes(key);
               return false;
             })
           },
@@ -759,7 +763,7 @@ export function renderSettings(container) {
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0">Active Users</h4>
-            <button class="btn btn-primary btn-sm ${!store.companyId ? 'disabled-local' : ''}" id="btn-add-user" data-tooltip="${!store.companyId ? 'Requires Cloud Account' : 'Create a new user account'}" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
+            <button class="btn btn-primary btn-sm" id="btn-add-user" data-tooltip="Create a new user account" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
           </div>
           <div class="card-body" style="padding:0">
             <table class="data-table">
@@ -801,6 +805,45 @@ export function renderSettings(container) {
         </div>
 
         <div class="card" style="margin-bottom:var(--space-lg)">
+          <div class="card-header">
+            <h4 style="margin:0">Pending Password Reset Requests</h4>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Username/Email</th>
+                  <th>Requested On</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${pendingResets.filter(r => r.status === 'pending').length === 0 ? '<tr><td colspan="4" class="text-center text-tertiary" style="padding:24px">No pending reset requests</td></tr>' : ''}
+                ${pendingResets.filter(r => r.status === 'pending').map(r => {
+                  const tech = techs.find(t => t.id === r.technician_id) || {};
+                  const requestedAt = r.requested_at ? new Date(r.requested_at).toLocaleString() : 'Unknown';
+                  return `
+                    <tr>
+                      <td class="font-medium">${tech.name || 'Unknown'}</td>
+                      <td class="text-secondary">${r.employee_id || tech.username || ''}</td>
+                      <td class="text-tertiary">${requestedAt}</td>
+                      <td>
+                        <div style="display:flex; gap:8px;">
+                          <button class="btn btn-sm btn-ghost btn-approve-reset" data-id="${r.id}" data-tech-id="${tech.id}">Approve &amp; Reset</button>
+                          <button class="btn btn-sm btn-ghost text-danger btn-deny-reset" data-id="${r.id}">Deny</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        ${isLocalMode ? '' : `
+        <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0">User Types & Permissions</h4>
             <button class="btn btn-secondary btn-sm" id="btn-add-usertype" data-tooltip="Create a new custom user type / role" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> New Type</button>
@@ -826,6 +869,7 @@ export function renderSettings(container) {
             </table>
           </div>
         </div>
+        `}
 
         <div class="card">
           <div class="card-header"><h4>Deactivated Users (Cooldown Period)</h4></div>
@@ -877,7 +921,6 @@ export function renderSettings(container) {
       `;
 
       tc.querySelector('#btn-add-user').addEventListener('click', () => {
-        if (!store.companyId) return;
         openUserModal();
       });
       tc.querySelectorAll('.btn-edit-user').forEach(btn => {
@@ -938,6 +981,57 @@ export function renderSettings(container) {
               }}
             ]
           });
+        });
+      });
+
+      tc.querySelectorAll('.btn-approve-reset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = e.currentTarget.dataset.id;
+          const techId = e.currentTarget.dataset.techId;
+          const t = store.getById('technicians', techId);
+          if (!t) return;
+          const contentDiv = document.createElement('div');
+          contentDiv.innerHTML = `
+            <p>Approve password reset request for <strong>${t.name}</strong>? Please enter their new password below:</p>
+            <div class="form-group" style="margin-top:12px">
+              <label class="form-label">New Password</label>
+              <input type="password" id="admin-reset-pwd-input" class="form-input" placeholder="Min. 6 characters" minlength="6" autofocus />
+            </div>
+          `;
+          showModal({
+            title: 'Approve Password Reset',
+            content: contentDiv,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+              { label: 'Reset Password', className: 'btn-primary', onClick: c => {
+                const pwdInput = document.getElementById('admin-reset-pwd-input');
+                const newPwd = pwdInput ? pwdInput.value : '';
+                if (!newPwd || newPwd.length < 6) {
+                  showToast('Password must be at least 6 characters.', 'error');
+                  return;
+                }
+                
+                // Update technician password
+                store.update('technicians', techId, { password: newPwd });
+                
+                // Approve the request
+                store.update('passwordResetRequests', id, { status: 'approved', updated_at: new Date().toISOString() });
+                
+                showToast(`Password updated for ${t.name}`, 'success');
+                c();
+                renderContent();
+              }}
+            ]
+          });
+        });
+      });
+
+      tc.querySelectorAll('.btn-deny-reset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = e.currentTarget.dataset.id;
+          store.update('passwordResetRequests', id, { status: 'denied', updated_at: new Date().toISOString() });
+          showToast('Password reset request denied', 'info');
+          renderContent();
         });
       });
 
@@ -1388,39 +1482,76 @@ export function renderSettings(container) {
       const currentTheme = (currentUser && currentUser.id) ? (currentUser.theme || localStorage.getItem(`simpro_theme_${currentUser.id}`) || 'light') : 'light';
       tc.innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-lg); max-width:960px; align-items:start;">
-          <!-- Data Management -->
-          <div class="card">
-            <div class="card-header"><h4>Data Management</h4></div>
-            <div class="card-body">
-              <p class="text-secondary" style="margin-bottom:var(--space-lg)">Manage your application data. All data is stored locally in your browser.</p>
-              <div style="display:flex;flex-direction:column;gap:12px">
-                <button class="btn btn-secondary" id="btn-reset-data" data-tooltip="Restore default sandbox demo database" data-tooltip-pos="left">
-                  <span class="material-icons-outlined">refresh</span> Reset to Demo Data
-                </button>
-                <button class="btn btn-danger" id="btn-clear-data" data-tooltip="Permanently delete all local database records" data-tooltip-pos="left">
-                  <span class="material-icons-outlined">delete_forever</span> Clear All Data
-                </button>
-                ${currentUser.role === 'admin' ? `
-                  <hr style="margin:var(--space-md) 0; border:none; border-top:1px dashed var(--border-color);" />
-                  <div style="background:var(--color-danger-bg); padding:var(--space-md); border-radius:var(--border-radius); border:1px solid rgba(220, 38, 38, 0.15)">
-                    <h5 style="color:var(--color-danger); margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:600;">
-                      <span class="material-icons-outlined">admin_panel_settings</span> Administrator Actions
-                    </h5>
-                    <p style="font-size:var(--font-size-sm); color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
-                      Configure clean setups or seed a single test sample to explore the blank app layout.
-                    </p>
-                    <button class="btn btn-secondary" id="btn-seed-minimal" data-tooltip="Clean database and seed exactly one sample record of each entity" data-tooltip-pos="left" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid rgba(0,0,0,0.12)">
-                      <span class="material-icons-outlined">science</span> Seed One Example Version
-                    </button>
-                    <button class="btn btn-danger" id="btn-restore-new" data-tooltip="Delete all data and return system to a clean blank state" data-tooltip-pos="left" style="width:100%; justify-content:center;">
-                      <span class="material-icons-outlined">cleaning_services</span> Restore to New (Blank State)
-                    </button>
-                  </div>
-                ` : ''}
+          <!-- Left Column -->
+          <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+            <!-- Data Management -->
+            <div class="card">
+              <div class="card-header"><h4>Data Management</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="margin-bottom:var(--space-lg)">
+                  ${isLocalMode ? 'Manage your application data. All data is stored locally in your browser.' : 'Manage database records for your cloud company account.'}
+                </p>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  ${currentUser.role === 'admin' ? `
+                    <div style="background:var(--color-danger-bg); padding:var(--space-md); border-radius:var(--border-radius); border:1px solid rgba(220, 38, 38, 0.15)">
+                      <h5 style="color:var(--color-danger); margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:600;">
+                        <span class="material-icons-outlined">admin_panel_settings</span> Administrator Actions
+                      </h5>
+                      <p style="font-size:var(--font-size-sm); color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
+                        Configure clean setups, seed a single test sample, or convert your company account deployment profile.
+                      </p>
+                      <button class="btn btn-secondary" id="btn-seed-minimal" data-tooltip="Clean database and seed a complete demonstration dataset" data-tooltip-pos="left" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid rgba(0,0,0,0.12)">
+                        <span class="material-icons-outlined">science</span> Seed Demonstration Data
+                      </button>
+                      <button class="btn btn-danger" id="btn-restore-new" data-tooltip="Delete all data and return system to a clean blank state" data-tooltip-pos="left" style="width:100%; justify-content:center; margin-bottom:12px;">
+                        <span class="material-icons-outlined">cleaning_services</span> Restore to New (Blank State)
+                      </button>
+                      <button class="btn btn-danger" id="btn-delete-company" data-tooltip="Permanently delete the entire company profile and all data" data-tooltip-pos="left" style="width:100%; justify-content:center; background:var(--color-danger); border-color:var(--color-danger); color:#fff; display:flex; align-items:center; gap:6px;">
+                        <span class="material-icons-outlined">delete_forever</span> Delete Company Profile
+                      </button>
+
+                      ${isLocalMode ? `
+                        <div style="margin-top:16px; padding-top:12px; border-top:1px dashed rgba(220, 38, 38, 0.2)">
+                          <h6 style="color:var(--color-warning); margin-bottom:8px; font-weight:600; display:flex; align-items:center; gap:4px;">
+                            <span class="material-icons-outlined" style="font-size:16px">warning</span> Irreversible Profile Conversions
+                          </h6>
+                          <p style="font-size:11px; color:var(--text-secondary); margin-bottom:12px; line-height:1.3;">
+                            Convert your deployment type. These transitions are permanent and one-way.
+                          </p>
+                          ${localDeploymentType === 'single_user' ? `
+                            <button class="btn" id="btn-convert-multiuser" style="width:100%; justify-content:center; margin-bottom:12px; background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px; font-size:12.5px;">
+                              <span class="material-icons-outlined" style="font-size:16px">lan</span> Convert to Multi-User Local Network Sync
+                            </button>
+                          ` : ''}
+                          <button class="btn" id="btn-convert-cloud-action" style="width:100%; justify-content:center; background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px; font-size:12.5px;">
+                            <span class="material-icons-outlined" style="font-size:16px">cloud_upload</span> Convert to Cloud Sync
+                          </button>
+                        </div>
+                      ` : ''}
+                    </div>
+                  ` : '<div style="font-size:12.5px; color:var(--text-tertiary)">Administrative actions are restricted to company administrators.</div>'}
+                </div>
               </div>
             </div>
+
+            <!-- Local Data Backup -->
+            ${!isLocalMode && currentUser.role === 'admin' ? `
+              <div class="card">
+                <div class="card-header" style="display:flex; align-items:center; gap:8px;">
+                  <span class="material-icons-outlined" style="color:var(--color-primary)">backup</span>
+                  <h4 style="margin:0;">Local Data Backup</h4>
+                </div>
+                <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
+                  <p class="text-secondary" style="font-size:var(--font-size-sm); line-height:1.4; margin:0;">
+                    To keep your data completely safe, configure a local directory to back up all your cloud database records as JSON files.
+                  </p>
+                  <div id="backup-status-container"></div>
+                </div>
+              </div>
+            ` : ''}
           </div>
 
+          <!-- Right Column -->
           <!-- Interface Preferences -->
           <div class="card">
             <div class="card-header"><h4>Interface Preferences</h4></div>
@@ -1474,32 +1605,20 @@ export function renderSettings(container) {
         showToast('System theme updated successfully', 'success');
       });
 
-      tc.querySelector('#btn-reset-data')?.addEventListener('click', () => {
-        store.clearAll();
-        showToast('Data reset. Reloading...', 'info');
-        setTimeout(() => window.location.reload(), 1000);
-      });
-
-      tc.querySelector('#btn-clear-data')?.addEventListener('click', () => {
-        store.clearAll();
-        showToast('All data cleared. Reloading...', 'warning');
-        setTimeout(() => window.location.reload(), 1000);
-      });
-
       tc.querySelector('#btn-seed-minimal')?.addEventListener('click', () => {
         const content = document.createElement('div');
         content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
         content.innerHTML = `
-          <p style="margin-bottom:12px">You are about to seed a minimal example dataset.</p>
+          <p style="margin-bottom:12px">You are about to seed a complete demonstration dataset.</p>
           <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-info); font-weight:500; display:flex; align-items:center; gap:8px;">
             <span class="material-icons-outlined">info</span>
-            <span>This will clear current database records and load <strong>exactly one example</strong> of each business entity (1 customer, 1 lead, 1 quote, 1 job, 1 invoice, etc.) for testing.</span>
+            <span>This will clear current database records and load a complete, realistic demonstration dataset representing an active trade business (5 customers, 5 quotes/jobs per customer, 5 assets per customer, 5 materials, 5 users/timesheets, etc.) for testing.</span>
           </div>
-          <p style="font-size:12px; color:var(--text-secondary)">This is highly recommended for quick feature walkthroughs.</p>
+          <p style="font-size:12px; color:var(--text-secondary)">This is highly recommended for testing and walkthroughs.</p>
         `;
 
         showModal({
-          title: "Seed One Example Version",
+          title: "Seed Demonstration Data",
           content: content,
           actions: [
             {
@@ -1508,12 +1627,13 @@ export function renderSettings(container) {
               onClick: (close) => close()
             },
             {
-              label: "Seed Example",
+              label: "Seed Demo Data",
               className: "btn-primary",
-              onClick: (close) => {
+              onClick: async (close) => {
                 close();
-                seedMinimalData();
-                showToast('Single-item example seeded. Reloading...', 'success');
+                showToast('Seeding demonstration data...', 'info');
+                await seedMinimalData();
+                showToast('Demonstration data seeded. Reloading...', 'success');
                 setTimeout(() => window.location.reload(), 1200);
               }
             }
@@ -1594,6 +1714,492 @@ export function renderSettings(container) {
           ]
         });
       });
+
+      tc.querySelector('#btn-delete-company')?.addEventListener('click', () => {
+        // Modal Warning 1 of 2
+        const content1 = document.createElement('div');
+        content1.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+        content1.innerHTML = `
+          <p style="margin-bottom:12px; font-weight:600; color:var(--color-danger)">WARNING: CRITICAL DESTRUCTIVE ACTION (1 of 2)</p>
+          <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined" style="font-size:24px">warning</span>
+            <span>You are about to permanently delete the entire company profile for <strong>${escapeHTML(store.getSettings().name || '')}</strong> and all associated database records (jobs, quotes, invoices, people, assets, forms, etc.).</span>
+          </div>
+          <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:12px">
+            This action is final, irreversible, and cannot be undone under any circumstances.
+          </p>
+          <p style="font-size:12px; color:var(--text-secondary)">Do you want to proceed to password confirmation?</p>
+        `;
+
+        showModal({
+          title: "Delete Company Profile - Step 1 of 2",
+          content: content1,
+          actions: [
+            {
+              label: "Cancel",
+              className: "btn-secondary",
+              onClick: (closeModal) => closeModal()
+            },
+            {
+              label: "Proceed to Confirm",
+              className: "btn-danger",
+              onClick: (closeModal) => {
+                closeModal();
+                
+                // Modal Warning 2 of 2
+                const content2 = document.createElement('div');
+                content2.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+                content2.innerHTML = `
+                  <form id="delete-company-confirm-form" style="display:flex; flex-direction:column; gap:16px;">
+                    <p style="margin-bottom:8px; font-weight:600; color:var(--color-danger)">FINAL CONFIRMATION (2 of 2)</p>
+                    <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
+                      <span class="material-icons-outlined" style="font-size:24px">gavel</span>
+                      <span>To authorize the permanent destruction of this company, you must enter the Administrator password.</span>
+                    </div>
+
+                    <div class="form-group" style="margin-top:12px;">
+                      <label class="form-label" style="font-weight:600;">Administrator Password</label>
+                      <input class="form-input" type="password" id="delete-confirm-password" required placeholder="Enter admin password to proceed" />
+                    </div>
+
+                    <div id="delete-confirm-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
+                      <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
+                      <span id="delete-confirm-error-text"></span>
+                    </div>
+
+                    <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
+                      <button type="button" class="btn btn-secondary" id="btn-delete-abort">Abort Deletion</button>
+                      <button type="submit" class="btn btn-danger" id="btn-delete-confirm-submit" style="display:flex; align-items:center; gap:6px;">
+                        <span class="material-icons-outlined">delete_forever</span>
+                        <span>Permanently Delete Company</span>
+                      </button>
+                    </div>
+                  </form>
+                `;
+
+                const { close: close2 } = showModal({
+                  title: "⚠️ Confirm Company Deletion - Step 2 of 2",
+                  content: content2,
+                  size: "modal-md"
+                });
+
+                content2.querySelector('#btn-delete-abort').addEventListener('click', close2);
+
+                const form2 = content2.querySelector('#delete-company-confirm-form');
+                form2.addEventListener('submit', async (ev) => {
+                  ev.preventDefault();
+
+                  const errorEl = content2.querySelector('#delete-confirm-error');
+                  const errorTextEl = content2.querySelector('#delete-confirm-error-text');
+                  const submitBtn = content2.querySelector('#btn-delete-confirm-submit');
+                  const abortBtn = content2.querySelector('#btn-delete-abort');
+                  const passwordInput = content2.querySelector('#delete-confirm-password').value;
+
+                  errorEl.style.display = 'none';
+                  submitBtn.disabled = true;
+                  abortBtn.disabled = true;
+                  const origSubmitText = submitBtn.innerHTML;
+                  submitBtn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Deleting...';
+
+                  try {
+                    let passwordVerified = false;
+
+                    if (isLocalMode) {
+                      if (localDeploymentType === 'single_user') {
+                        const activeAccountId = sessionStorage.getItem('relay_active_account');
+                        const storedAccounts = await storageGet('relay_accounts') || [];
+                        const acct = storedAccounts.find(a => a.id === activeAccountId);
+                        if (acct && acct.hasPassword) {
+                          const hashedInput = await hashPassword(passwordInput);
+                          if (hashedInput === acct.passwordHash) {
+                            passwordVerified = true;
+                          } else {
+                            throw new Error('Incorrect administrator password.');
+                          }
+                        } else {
+                          // No password set
+                          passwordVerified = true;
+                        }
+                      } else {
+                        // local_multiuser
+                        const techs = store.getAll('technicians') || [];
+                        const currentTech = techs.find(t => t.id === currentUser.id);
+                        const expectedPassword = currentTech ? currentTech.password : '123456';
+                        if (passwordInput === expectedPassword) {
+                          passwordVerified = true;
+                        } else {
+                          throw new Error('Incorrect administrator password.');
+                        }
+                      }
+                    } else {
+                      // Cloud mode
+                      const { supabase } = await import('../utils/supabase.js');
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (user && user.email) {
+                        const { error } = await supabase.auth.signInWithPassword({
+                          email: user.email,
+                          password: passwordInput
+                        });
+                        if (!error) {
+                          passwordVerified = true;
+                        } else {
+                          throw new Error('Incorrect administrator password.');
+                        }
+                      } else {
+                        throw new Error('Could not retrieve logged-in cloud user credentials.');
+                      }
+                    }
+
+                    if (passwordVerified) {
+                      // 1. If cloud mode, delete the company row in Supabase
+                      if (!isLocalMode) {
+                        const { supabase } = await import('../utils/supabase.js');
+                        const { error: deleteErr } = await supabase.from('companies').delete().eq('id', store.companyId);
+                        if (deleteErr) {
+                          throw new Error('Failed to delete cloud company: ' + deleteErr.message);
+                        }
+                      }
+
+                      // 2. Trigger store.clearAll()
+                      store.clearAll();
+
+                      // 3. Clear local account launcher keys if local mode
+                      if (isLocalMode) {
+                        const activeAccountId = sessionStorage.getItem('relay_active_account');
+                        if (activeAccountId) {
+                          const storedAccounts = await storageGet('relay_accounts') || [];
+                          const updatedAccounts = storedAccounts.filter(a => a.id !== activeAccountId);
+                          await storageSet('relay_accounts', updatedAccounts);
+                        }
+                      }
+
+                      // 4. Remove session user & active account
+                      localStorage.removeItem('currentUser');
+                      sessionStorage.removeItem('relay_active_account');
+
+                      showToast('Company profile deleted successfully.', 'success');
+                      close2();
+
+                      setTimeout(() => {
+                        window.location.hash = '#/login';
+                        window.location.reload();
+                      }, 1200);
+                    }
+                  } catch (err) {
+                    console.error('Company deletion failed:', err);
+                    errorTextEl.textContent = err.message || 'An error occurred during verification.';
+                    errorEl.style.display = 'flex';
+                    submitBtn.disabled = false;
+                    abortBtn.disabled = false;
+                    submitBtn.innerHTML = origSubmitText;
+                  }
+                });
+              }
+            }
+          ]
+        });
+      });
+
+      tc.querySelector('#btn-convert-multiuser')?.addEventListener('click', () => {
+        const content = document.createElement('div');
+        content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+
+        const techs = store.getAll('technicians') || [];
+        const companyId = store.companyId || '';
+        const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
+        const existingAdmin = techs.find(t => t.userTypeId === adminTypeId || t.role?.toLowerCase() === 'admin');
+
+        const currentTechName = existingAdmin ? existingAdmin.name : (currentUser.name && currentUser.name !== 'Local Admin' ? currentUser.name : '');
+        const currentTechUsernameOrEmail = existingAdmin ? (existingAdmin.email || existingAdmin.username || '') : '';
+
+        content.innerHTML = `
+          <form id="convert-multiuser-form" style="display:flex; flex-direction:column; gap:16px;">
+            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-danger); display:flex; gap:8px;">
+              <span class="material-icons-outlined" style="color:var(--color-danger);">warning</span>
+              <div>
+                <strong>CRITICAL WARNING:</strong> Converting to Multi-User Local Network Sync is a permanent, one-way transition. Once converted, you cannot revert this profile back to a single-user Local Admin profile.
+              </div>
+            </div>
+
+            <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-info); display:flex; gap:8px;">
+              <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
+              <div>
+                Configure the administrator user credentials. This user will have admin access to add other users in the unlocked Users tab.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Confirm Business Name</label>
+              <input class="form-input" id="multiuser-company-name" required value="${escapeHTML(store.getSettings().name || '')}" placeholder="e.g. Apex Power Services" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Administrator Full Name</label>
+              <input class="form-input" id="multiuser-admin-name" required value="${escapeHTML(currentTechName)}" placeholder="e.g. John Doe" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Administrator Email Address (Required)</label>
+              <input class="form-input" type="email" id="multiuser-admin-email" required value="${escapeHTML(currentTechUsernameOrEmail)}" placeholder="e.g. admin@yourcompany.com" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Admin Password</label>
+              <input class="form-input" type="password" id="multiuser-admin-password" required minlength="6" placeholder="At least 6 characters" />
+            </div>
+
+            <div id="multiuser-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
+              <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
+              <span id="multiuser-error-text"></span>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
+              <button type="button" class="btn btn-secondary" id="btn-multiuser-cancel">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="btn-multiuser-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined" style="font-size:18px;">lan</span>
+                <span>Convert Company</span>
+              </button>
+            </div>
+          </form>
+        `;
+
+        const { close } = showModal({
+          title: "Convert to Multi-User Local Sync",
+          content: content,
+          size: "modal-md"
+        });
+
+        content.querySelector('#btn-multiuser-cancel').addEventListener('click', close);
+
+        const form = content.querySelector('#convert-multiuser-form');
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const errorEl = content.querySelector('#multiuser-error');
+          const errorTextEl = content.querySelector('#multiuser-error-text');
+          const submitBtn = content.querySelector('#btn-multiuser-submit');
+          const cancelBtn = content.querySelector('#btn-multiuser-cancel');
+
+          errorEl.style.display = 'none';
+          submitBtn.disabled = true;
+          cancelBtn.disabled = true;
+
+          const businessName = content.querySelector('#multiuser-company-name').value.trim();
+          const adminName = content.querySelector('#multiuser-admin-name').value.trim();
+          const adminEmail = content.querySelector('#multiuser-admin-email').value.trim();
+          const adminPassword = content.querySelector('#multiuser-admin-password').value;
+
+          try {
+            if (!businessName || !adminName || !adminEmail || !adminPassword) {
+              throw new Error('All fields are required.');
+            }
+            if (adminPassword.length < 6) {
+              throw new Error('Password must be at least 6 characters.');
+            }
+
+            // 1. Update settings
+            const settings = store.getSettings();
+            settings.name = businessName;
+            settings.localDeploymentType = 'multi_user';
+            await store.saveSettings(settings);
+
+            // 2. Update launcher accounts businessName
+            const activeAccountId = sessionStorage.getItem('relay_active_account');
+            if (activeAccountId) {
+              const storedAccounts = await storageGet('relay_accounts') || [];
+              const acctIndex = storedAccounts.findIndex(a => a.id === activeAccountId);
+              if (acctIndex !== -1) {
+                storedAccounts[acctIndex].businessName = businessName;
+                await storageSet('relay_accounts', storedAccounts);
+              }
+            }
+
+            // 3. Create or update admin user in technicians
+            const companyId = store.companyId;
+            const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
+            const techs = store.getAll('technicians') || [];
+            let adminTech = techs.find(t => t.userTypeId === adminTypeId || t.role?.toLowerCase() === 'admin');
+
+            if (!adminTech) {
+              adminTech = {
+                id: `${companyId}_tech_admin_created`,
+                role: 'Admin',
+                color: '#FF5C00',
+                userTypeId: adminTypeId,
+                payRate: 100.00,
+                phone: ''
+              };
+              techs.push(adminTech);
+            }
+
+            adminTech.name = adminName;
+            adminTech.username = adminEmail.split('@')[0];
+            adminTech.email = adminEmail;
+            adminTech.password = adminPassword;
+
+            store.save('technicians', techs);
+
+            // 4. Update currentUser session in localStorage
+            const localUser = {
+              id: adminTech.id,
+              companyId: companyId,
+              name: adminTech.name,
+              role: 'admin',
+              userTypeName: 'Admin',
+              userTypeId: adminTech.userTypeId,
+              color: adminTech.color || '#FF5C00',
+              theme: 'light'
+            };
+            localStorage.setItem('currentUser', JSON.stringify(localUser));
+
+            showToast('Converted to Multi-User Local Network Sync. Reloading...', 'success');
+            close();
+            window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+            setTimeout(() => window.location.reload(), 1200);
+          } catch (err) {
+            console.error('Conversion failed:', err);
+            errorTextEl.textContent = err.message || 'An error occurred during conversion.';
+            errorEl.style.display = 'flex';
+            submitBtn.disabled = false;
+            cancelBtn.disabled = false;
+          }
+        });
+      });
+
+      tc.querySelector('#btn-convert-cloud-action')?.addEventListener('click', () => {
+        openMigrationModal();
+      });
+
+      const renderBackupStatus = () => {
+        const bsc = tc.querySelector('#backup-status-container');
+        if (!bsc) return;
+
+        const hasHandle = !!store.backupDirHandle;
+        const isPermissionGranted = store.backupDirPermissionGranted;
+        const lastBackup = localStorage.getItem('relay_last_backup_time');
+        const formattedLastBackup = lastBackup ? new Date(lastBackup).toLocaleString() : 'Never';
+        const isSupported = typeof window !== 'undefined' && window.showDirectoryPicker;
+
+        if (!isSupported) {
+          bsc.innerHTML = `
+            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 12px; border-radius:4px; font-size:12px; color:var(--color-danger); line-height:1.4;">
+              <strong style="display:block; margin-bottom:4px;">Browser Local Folder Access Unsupported</strong>
+              Your current browser does not support local folder access. Please use Chrome, Edge, or a Chromium-based browser to configure local backups.
+            </div>
+          `;
+          return;
+        }
+
+        if (!hasHandle) {
+          bsc.innerHTML = `
+            <div style="background:var(--bg-color); border:1px solid var(--border-color); padding:12px; border-radius:6px; margin-bottom:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
+              <span class="material-icons-outlined" style="color:var(--text-tertiary);">folder_off</span>
+              <div style="font-size:12.5px;">No backup folder configured.</div>
+            </div>
+            <button class="btn btn-secondary" id="btn-backup-pick" style="width:100%; justify-content:center;">
+              <span class="material-icons-outlined">folder</span> Choose Backup Folder...
+            </button>
+          `;
+        } else if (!isPermissionGranted) {
+          bsc.innerHTML = `
+            <div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:10px 12px; border-radius:4px; font-size:12px; color:var(--color-warning); line-height:1.4; margin-bottom:12px;">
+              <strong>Permission Required</strong><br/>
+              Access permission to <strong>${escapeHTML(store.backupDirHandle.name)}</strong> has expired. Please re-authorize.
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-warning" id="btn-backup-auth" style="flex:1; justify-content:center;">
+                <span class="material-icons-outlined">vpn_key</span> Re-authorize & Backup
+              </button>
+              <button class="btn btn-ghost" id="btn-backup-disconnect" style="color:var(--color-danger); border:1px solid var(--border-color);" title="Disconnect Folder">
+                <span class="material-icons-outlined">link_off</span>
+              </button>
+            </div>
+          `;
+        } else {
+          bsc.innerHTML = `
+            <div style="background:var(--color-success-bg); border-left:4px solid var(--color-success); padding:10px 12px; border-radius:4px; font-size:12px; color:var(--color-success); line-height:1.4; margin-bottom:12px;">
+              <strong>Backup Configured</strong><br/>
+              Folder: <strong>${escapeHTML(store.backupDirHandle.name)}</strong><br/>
+              Last Backup: <strong>${formattedLastBackup}</strong>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <button class="btn btn-primary" id="btn-backup-now" style="width:100%; justify-content:center;">
+                <span class="material-icons-outlined">backup</span> Backup Now
+              </button>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-secondary" id="btn-backup-pick" style="flex:1; justify-content:center; border:1px solid var(--border-color);">
+                  <span class="material-icons-outlined">folder</span> Change Folder...
+                </button>
+                <button class="btn btn-ghost" id="btn-backup-disconnect" style="color:var(--color-danger); border:1px solid var(--border-color);" title="Disconnect Folder">
+                  <span class="material-icons-outlined">link_off</span>
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
+        // Attach event listeners for backup buttons inside container
+        bsc.querySelector('#btn-backup-pick')?.addEventListener('click', async () => {
+          try {
+            const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            await store.setBackupDirectory(handle);
+            showToast('Backup directory selected successfully.', 'success');
+            showToast('Running initial backup...', 'info');
+            await store.backupToFolder(handle);
+            showToast('Backup completed successfully!', 'success');
+            renderBackupStatus();
+          } catch (err) {
+            console.error('Failed to select backup directory:', err);
+            if (err.name !== 'AbortError') {
+              showToast('Failed to configure backup: ' + err.message, 'error');
+            }
+          }
+        });
+
+        bsc.querySelector('#btn-backup-auth')?.addEventListener('click', async () => {
+          const granted = await store.verifyBackupDirPermission(true);
+          if (granted) {
+            showToast('Permission re-authorized. Backing up...', 'info');
+            try {
+              await store.backupToFolder();
+              showToast('Backup completed successfully!', 'success');
+            } catch (err) {
+              showToast('Backup failed: ' + err.message, 'error');
+            }
+          } else {
+            showToast('Failed to acquire write permission.', 'error');
+          }
+          renderBackupStatus();
+        });
+
+        bsc.querySelector('#btn-backup-now')?.addEventListener('click', async (e) => {
+          const btn = e.currentTarget;
+          const origHtml = btn.innerHTML;
+          btn.disabled = true;
+          btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Backing up...';
+          
+          try {
+            await store.backupToFolder();
+            showToast('Backup completed successfully!', 'success');
+          } catch (err) {
+            console.error(err);
+            showToast('Backup failed: ' + err.message, 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            renderBackupStatus();
+          }
+        });
+
+        bsc.querySelector('#btn-backup-disconnect')?.addEventListener('click', async () => {
+          await store.setBackupDirectory(null);
+          showToast('Backup folder disconnected.', 'info');
+          renderBackupStatus();
+        });
+      };
+
+      if (!isLocalMode && currentUser.role === 'admin') {
+        renderBackupStatus();
+      }
     }
   }
 
@@ -2859,21 +3465,21 @@ export function renderSettings(container) {
   }
 
   function renderInvoicesQuotesTab(tc) {
-    const isLocalMode = !store.companyId;
+    const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
     const settings = store.getSettings();
     let dt = JSON.parse(JSON.stringify(settings.documentTheme || {}));
     let activePreviewTab = 'invoice';
 
     const mockData = {
-      number: 'INV-10023',
+      number: 'INV-00023',
       status: 'Sent',
       customerName: 'Acme Developments Pty Ltd',
       contactName: 'Jane Smith',
       issueDate: new Date().toISOString(),
       validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      jobNumber: 'J-88129',
-      originalQuoteNumber: 'Q-54412',
+      jobNumber: 'J-00129',
+      originalQuoteNumber: 'Q-00412',
       title: 'Emergency Electrical & Cabling Installation',
       notes: 'Please review all measurements. Standard technician notes and variations have been compiled accordingly.',
       subtotal: 1250.00,
@@ -3626,8 +4232,12 @@ export function renderSettings(container) {
 
     const isCapacitor = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
 
+    const activeAccountId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
+    const isLocalCompany = !!activeAccountId;
+
     function render() {
-      const isEnabled = store.folderSyncEnabled;
+      console.log('[DEBUG Settings] render: isLocalCompany =', isLocalCompany, 'store.dirHandle =', store.dirHandle, 'permissionGranted =', store.folderSyncPermissionGranted);
+      const isEnabled = isLocalCompany ? true : store.folderSyncEnabled;
       const isPermissionGranted = store.folderSyncPermissionGranted;
       const hasHandle = !!store.dirHandle;
 
@@ -3717,11 +4327,13 @@ export function renderSettings(container) {
 
               <div class="form-group" style="margin-bottom:var(--space-lg);">
                 <label class="form-label" style="font-weight:600; margin-bottom:8px;">Synchronization Toggle</label>
-                <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
-                  <input type="checkbox" id="toggle-folder-sync" ${isEnabled ? 'checked' : ''} ${!isSupported ? 'disabled' : ''} style="width:20px; height:20px; cursor:pointer;" />
+                <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:${(!isSupported || isLocalCompany) ? 'not-allowed' : 'pointer'};">
+                  <input type="checkbox" id="toggle-folder-sync" ${isEnabled ? 'checked' : ''} ${(!isSupported || isLocalCompany) ? 'disabled' : ''} style="width:20px; height:20px; cursor:${(!isSupported || isLocalCompany) ? 'not-allowed' : 'pointer'};" />
                   <div>
                     <span style="font-weight:500;">Enable Direct Local Folder Storage</span>
-                    <div class="text-tertiary" style="font-size:12px; margin-top:2px;">Saves all data records and attachments straight to your machine.</div>
+                    <div class="text-tertiary" style="font-size:12px; margin-top:2px;">
+                      ${isLocalCompany ? 'Mandatory for offline/local company profile storage.' : 'Saves all data records and attachments straight to your machine.'}
+                    </div>
                   </div>
                 </label>
               </div>
@@ -3735,9 +4347,11 @@ export function renderSettings(container) {
                     <button class="btn btn-secondary" id="btn-force-sync" data-tooltip="Overwrite folder JSONs with current memory cache" data-tooltip-pos="top">
                       <span class="material-icons-outlined">sync</span> Sync Now
                     </button>
-                    <button class="btn btn-danger" id="btn-disconnect-dir">
-                      <span class="material-icons-outlined">link_off</span> Disconnect Folder
-                    </button>
+                    ${!isLocalCompany ? `
+                      <button class="btn btn-danger" id="btn-disconnect-dir">
+                        <span class="material-icons-outlined">link_off</span> Disconnect Folder
+                      </button>
+                    ` : ''}
                   ` : ''}
                 </div>
               ` : ''}
@@ -3771,6 +4385,12 @@ export function renderSettings(container) {
       // Event Listeners
       const toggle = tc.querySelector('#toggle-folder-sync');
       toggle?.addEventListener('change', async (e) => {
+        if (isLocalCompany) {
+          e.preventDefault();
+          toggle.checked = true;
+          return;
+        }
+
         if (isCapacitor) {
           await store.setLocalDirectory(e.target.checked ? {} : null);
           showToast(e.target.checked ? 'Capacitor folder sync activated' : 'Folder sync deactivated', 'success');
