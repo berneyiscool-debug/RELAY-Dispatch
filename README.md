@@ -68,26 +68,33 @@ Adds only what genuinely needs the internet:
 
 ## How it works
 
-RELAY runs entirely in the browser. In **local mode** all data persists to your
-device (localStorage) and never leaves it. Switch on **Cloud mode** and the same
-app syncs through Supabase (Postgres + auth + storage) to add multi-device
-access and the hosted portals. The free, offline experience is complete on its
-own — the cloud is an upgrade, not a requirement.
+RELAY runs as a native desktop application (powered by Electron) or directly in the browser. In **local mode** all data persists to your device (localStorage) and never leaves it. Switch on **Cloud mode** and the same app syncs through Supabase (Postgres + auth + storage) to add multi-device access and the hosted portals. The free, offline experience is complete on its own — the cloud is an upgrade, not a requirement.
 
 ## Tech stack
 
 - **Frontend:** Vanilla JS (ES modules) + Vite — no framework tax, fast loads
+- **Desktop Wrapper:** Electron — runs natively on your machine
+- **Installer & Updates:** electron-builder — packages into a Windows NSIS Installer (.exe) with automatic background updates via GitHub Releases
 - **Local storage:** browser localStorage (offline-first)
 - **Cloud backend:** Supabase (Postgres, Auth, Storage) — Cloud mode only
 - **Charts/PDF:** print-friendly HTML render pipeline
 
 ## Getting started
 
+### Development (Web)
 ```bash
 npm install
-npm run dev      # start the dev server (Vite)
-npm run build    # production build
-npm run preview  # serve the production build
+npm run dev      # start the Vite dev server
+```
+
+### Development (Desktop)
+```bash
+npm run electron:dev    # start Vite and launch Electron window concurrently
+```
+
+### Building the Desktop Installer
+```bash
+npm run electron:build  # build Vite production assets and compile the Windows NSIS Installer (.exe)
 ```
 
 The app boots straight into **local mode** — no account needed. To enable Cloud
