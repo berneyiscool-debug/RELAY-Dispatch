@@ -16,6 +16,31 @@ let panel = null;
 let onStateChange = null;
 let chatHistory = [];
 
+function getUserId() {
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  return currentUser ? currentUser.id : 'default';
+}
+
+function loadChatHistory() {
+  const key = `relay_chat_history_${getUserId()}`;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.error('Failed to load chat history', e);
+    return [];
+  }
+}
+
+function saveChatHistory(history) {
+  const key = `relay_chat_history_${getUserId()}`;
+  try {
+    localStorage.setItem(key, JSON.stringify(history));
+  } catch (e) {
+    console.error('Failed to save chat history', e);
+  }
+}
+
 const GREETINGS = [
   "Hi, I'm Relay. I can add page widgets, jump to your saved views, and fit or lock the canvas. Try “add a schedule widget” or ask “how many overdue invoices?”",
   "Hi, I'm Relay. How can I help you manage your dispatch and jobs today?",
@@ -42,10 +67,13 @@ export function openRelay() {
         <span class="relay-avatar">${relayIcon}</span>
         <div>
           <div class="relay-name">Relay</div>
-          <div class="relay-sub">Your assistant</div>
+          <div class="relay-sub">Your co-pilot</div>
         </div>
       </div>
-      <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
+        <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button>
+      </div>
     </div>
     <div class="relay-thread" id="relay-thread"></div>
     <div class="relay-input-wrap">
@@ -65,12 +93,33 @@ export function openRelay() {
   const input = panel.querySelector('#relay-input');
   const send = panel.querySelector('#relay-send');
 
-  const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
-  addMessage(thread, 'relay', randomGreeting);
+  // Load persisted history
+  chatHistory = loadChatHistory();
+
+  // If no history exists, generate and save the random greeting as the first message
+  if (chatHistory.length === 0) {
+    const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+    chatHistory.push({ role: 'assistant', content: randomGreeting });
+    saveChatHistory(chatHistory);
+  }
+
+  // Render all messages from history
+  chatHistory.forEach(msg => {
+    const uiRole = msg.role === 'assistant' ? 'relay' : msg.role;
+    addMessage(thread, uiRole, msg.content);
+  });
 
   const submit = async () => {
     const text = input.value.trim();
     if (!text) return;
+
+    chatHistory = loadChatHistory();
+    chatHistory.push({ role: 'user', content: text });
+    if (chatHistory.length > 20) {
+      chatHistory = chatHistory.slice(-20);
+    }
+    saveChatHistory(chatHistory);
+
     addMessage(thread, 'user', text);
     input.value = '';
     autoGrow(input);
@@ -82,20 +131,32 @@ export function openRelay() {
       const ai = s.ai || {};
       
       if (isCloud && ai.enabled && ai.apiKey) {
-        const response = await callAIEngine(text);
+        const response = await callAIEngine();
         typing.remove();
         addMessage(thread, 'relay', response);
       } else {
         // Fallback to rule-based local assistant
         setTimeout(() => {
           typing.remove();
-          addMessage(thread, 'relay', runLocalCommand(text));
+          const reply = runLocalCommand(text);
+          chatHistory.push({ role: 'assistant', content: reply });
+          if (chatHistory.length > 20) {
+            chatHistory = chatHistory.slice(-20);
+          }
+          saveChatHistory(chatHistory);
+          addMessage(thread, 'relay', reply);
         }, 380);
       }
     } catch (err) {
       console.error('AI assistant failed, falling back to local commands:', err);
       typing.remove();
-      addMessage(thread, 'relay', `[Error: ${err.message || err}]. Falling back to local assistant:\n\n` + runLocalCommand(text));
+      const reply = `[Error: ${err.message || err}]. Falling back to local assistant:\n\n` + runLocalCommand(text);
+      chatHistory.push({ role: 'assistant', content: reply });
+      if (chatHistory.length > 20) {
+        chatHistory = chatHistory.slice(-20);
+      }
+      saveChatHistory(chatHistory);
+      addMessage(thread, 'relay', reply);
     }
   };
 
@@ -105,6 +166,24 @@ export function openRelay() {
   });
   input.addEventListener('input', () => autoGrow(input));
   panel.querySelector('.relay-close').addEventListener('click', closeRelay);
+  
+  const btnClearChat = panel.querySelector('.relay-clear-chat');
+  if (btnClearChat) {
+    btnClearChat.addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear your chat history?')) {
+        chatHistory = [];
+        const key = `relay_chat_history_${getUserId()}`;
+        localStorage.removeItem(key);
+        thread.innerHTML = '';
+        const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+        chatHistory.push({ role: 'assistant', content: randomGreeting });
+        saveChatHistory(chatHistory);
+        addMessage(thread, 'relay', randomGreeting);
+        showToast('Chat history cleared.', 'success');
+      }
+    });
+  }
+
   document.addEventListener('keydown', escClose, true);
 
   setTimeout(() => input.focus(), 250);
@@ -223,12 +302,7 @@ function countMsg(label, n) {
 
 // ── AI Engine completions call (DeepSeek) ───────────────────────────────────
 
-async function callAIEngine(text) {
-  chatHistory.push({ role: 'user', content: text });
-  if (chatHistory.length > 20) {
-    chatHistory = chatHistory.slice(-20); // Keep last 20 messages for context
-  }
-
+async function callAIEngine() {
   const s = store.getSettings();
   const ai = s.ai || {};
   const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
@@ -243,7 +317,7 @@ async function callAIEngine(text) {
   const isCloud = store.companyId && !store.companyId.startsWith('acct_');
 
   if (isCloud) {
-    // Call the secure Supabase Edge Function proxy
+    // Call secure Supabase Edge Function proxy
     const { data, error } = await supabase.functions.invoke('relay-copilot', {
       body: {
         messages,
@@ -258,7 +332,7 @@ async function callAIEngine(text) {
 
     reply = data.choices?.[0]?.message?.content || '';
   } else {
-    // Check if running inside Electron and secure API handler is exposed
+    // Check Electron secure handler
     if (window.electronAPI && window.electronAPI.callDeepSeek) {
       const data = await window.electronAPI.callDeepSeek({
         messages,
@@ -267,7 +341,7 @@ async function callAIEngine(text) {
       });
       reply = data.choices?.[0]?.message?.content || '';
     } else {
-      // Browser fetch fallback (direct connection)
+      // Direct connection
       const res = await fetch(ai.endpoint || 'https://api.deepseek.com/chat/completions', {
         method: 'POST',
         headers: {
@@ -292,6 +366,10 @@ async function callAIEngine(text) {
   }
 
   chatHistory.push({ role: 'assistant', content: reply });
+  if (chatHistory.length > 20) {
+    chatHistory = chatHistory.slice(-20);
+  }
+  saveChatHistory(chatHistory);
   return parseAndExecuteActions(reply);
 }
 

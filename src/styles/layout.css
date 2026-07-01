@@ -8,6 +8,15 @@
   height: 100vh;
   overflow: hidden;
   gap: 0; /* Sit flush with the main content area for a cohesive interface */
+  width: 100vw;
+}
+@media (min-width: 769px) {
+  #app {
+    transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .relay-panel.open ~ #app {
+    width: calc(100vw - 360px);
+  }
 }
 
 /* ---- Sidebar ---- */
@@ -1528,6 +1537,12 @@
   color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .relay-close:hover { background: var(--color-primary-light); color: var(--color-primary); }
+
+.relay-clear-chat {
+  width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent;
+  color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.relay-clear-chat:hover { background: rgba(239, 68, 68, 0.08); color: #EF4444; }
 
 .relay-thread {
   flex: 1;
