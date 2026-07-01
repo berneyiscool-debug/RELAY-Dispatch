@@ -59,6 +59,10 @@ export function toggleRelay() { panel ? closeRelay() : openRelay(); }
 
 export function openRelay() {
   if (panel) return;
+
+  const draftKey = `relay_draft_message_${getUserId()}`;
+  const draftVal = localStorage.getItem(draftKey) || '';
+
   panel = document.createElement('div');
   panel.className = 'relay-panel';
   panel.innerHTML = `
@@ -78,7 +82,7 @@ export function openRelay() {
     <div class="relay-thread" id="relay-thread"></div>
     <div class="relay-input-wrap">
       <button class="relay-attach" title="Image support is coming soon" disabled><span class="material-icons-outlined">image</span></button>
-      <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Relay…  (try “add a jobs widget”)"></textarea>
+      <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Relay…  (try “add a jobs widget”)">${escapeHtml(draftVal)}</textarea>
       <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
     </div>
     <div class="relay-foot">Early mode — local actions only. Full chat arrives with the backend.</div>
@@ -92,6 +96,10 @@ export function openRelay() {
   const thread = panel.querySelector('#relay-thread');
   const input = panel.querySelector('#relay-input');
   const send = panel.querySelector('#relay-send');
+
+  if (draftVal) {
+    autoGrow(input);
+  }
 
   // Load persisted history
   chatHistory = loadChatHistory();
@@ -113,6 +121,7 @@ export function openRelay() {
     const text = input.value.trim();
     if (!text) return;
 
+    localStorage.removeItem(draftKey);
     chatHistory = loadChatHistory();
     chatHistory.push({ role: 'user', content: text });
     if (chatHistory.length > 20) {
@@ -164,7 +173,10 @@ export function openRelay() {
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
   });
-  input.addEventListener('input', () => autoGrow(input));
+  input.addEventListener('input', () => {
+    autoGrow(input);
+    localStorage.setItem(draftKey, input.value);
+  });
   panel.querySelector('.relay-close').addEventListener('click', closeRelay);
   
   const btnClearChat = panel.querySelector('.relay-clear-chat');
@@ -174,6 +186,7 @@ export function openRelay() {
         chatHistory = [];
         const key = `relay_chat_history_${getUserId()}`;
         localStorage.removeItem(key);
+        localStorage.removeItem(draftKey);
         thread.innerHTML = '';
         const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
         chatHistory.push({ role: 'assistant', content: randomGreeting });
