@@ -4542,44 +4542,6 @@ export function renderSettings(container) {
               </div>
             </div>
 
-            <div class="card">
-              <div class="card-header"><h4>Your Personal Co-Pilot Factsheet (User Memory)</h4></div>
-              <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
-                <div class="text-tertiary" style="font-size:12px; line-height:1.4;">
-                  This factsheet stores preferences, custom habits, and patterns specific to your user profile (e.g. how you write notes, your default technicians, or the types of jobs you handle). Relay loads this context dynamically. You can edit it manually below, or tell Relay to remember facts in the chat.
-                </div>
-                <div class="form-group" style="margin-top:4px;">
-                  <textarea class="form-input" id="ai-factsheet" rows="6" style="font-family:inherit; resize:vertical; font-size:13px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe on Mondays' or 'I like writing job notes in bullet points')."></textarea>
-                </div>
-                <div style="border-top:1px solid var(--border-color); padding-top:12px; display:flex; justify-content:flex-end;">
-                  <button class="btn btn-secondary" id="btn-save-factsheet">Save Factsheet</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Helper instructions card -->
-          <div class="card" style="background:var(--content-bg);">
-            <div class="card-header"><h4>Cheapest Smart AI</h4></div>
-            <div class="card-body" style="font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
-              <p>
-                <strong>DeepSeek</strong> is one of the most cost-efficient and high-performance language models currently available, making it perfect for lightweight co-pilot tasks.
-              </p>
-              <div style="display:flex; gap:8px; align-items:flex-start;">
-                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">key</span>
-                <span><strong>API Key:</strong> Get your key from <a href="https://platform.deepseek.com/" target="_blank" style="color:var(--color-primary); text-decoration:underline;">platform.deepseek.com</a>. New accounts typically receive free trial credits.</span>
-              </div>
-              <div style="display:flex; gap:8px; align-items:flex-start;">
-                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">security</span>
-                <span><strong>CORS Restrictions:</strong> Due to browser security, direct API calls to DeepSeek may be blocked. To bypass this:
-                  <ul style="margin:4px 0 0 16px; padding:0; list-style:disc; font-size:12px;">
-                    <li>Route via a CORS proxy (e.g. <code>https://cors-anywhere.herokuapp.com/</code> prefix).</li>
-                    <li>Connect via an aggregator like <strong>OpenRouter</strong> (API Endpoint: <code>https://openrouter.ai/api/v1/chat/completions</code>).</li>
-                    <li>Use a local LLM runner like <strong>Ollama</strong> (API Endpoint: <code>http://localhost:11434/v1/chat/completions</code>).</li>
-                  </ul>
-                </span>
-              </div>
-            </div>
           </div>
         </div>
       `;
@@ -4589,21 +4551,6 @@ export function renderSettings(container) {
       const fieldsContainer = tc.querySelector('#ai-fields');
       enabledCheckbox.addEventListener('change', (e) => {
         fieldsContainer.style.display = e.target.checked ? 'flex' : 'none';
-      });
-
-      // Load factsheet
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-      const userId = currentUser ? currentUser.id : 'default';
-      const factsheetKey = `relay_factsheet_${userId}`;
-      const factsheetTextarea = tc.querySelector('#ai-factsheet');
-      if (factsheetTextarea) {
-        factsheetTextarea.value = localStorage.getItem(factsheetKey) || '';
-      }
-
-      tc.querySelector('#btn-save-factsheet').addEventListener('click', () => {
-        const val = factsheetTextarea.value.trim();
-        localStorage.setItem(factsheetKey, val);
-        showToast('Personal factsheet saved successfully', 'success');
       });
 
       // Save handler

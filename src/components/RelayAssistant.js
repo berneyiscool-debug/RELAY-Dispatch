@@ -313,7 +313,9 @@ function getSystemContext() {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const userId = currentUser ? currentUser.id : 'default';
   const factsheetKey = `relay_factsheet_${userId}`;
-  const userFactsheet = localStorage.getItem(factsheetKey) || '';
+  const optoutKey = `relay_factsheet_optout_${userId}`;
+  const isOptedOut = localStorage.getItem(optoutKey) === 'true';
+  const userFactsheet = isOptedOut ? 'User has opted out of AI Personal Memory tracking.' : (localStorage.getItem(factsheetKey) || '');
 
   return `Current Live CRM Data Context (updated real-time):
 - Active Technicians: ${techsList || 'None'}
@@ -660,6 +662,12 @@ function parseAndExecuteActions(reply) {
       } else if (action === 'UPDATE_FACTSHEET' && param) {
         const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
         const userId = currentUser ? currentUser.id : 'default';
+        const optoutKey = `relay_factsheet_optout_${userId}`;
+        const isOptedOut = localStorage.getItem(optoutKey) === 'true';
+        if (isOptedOut) {
+          console.log('User has opted out of AI memory, skipping factsheet write.');
+          return;
+        }
         const factsheetKey = `relay_factsheet_${userId}`;
         const existing = localStorage.getItem(factsheetKey) || '';
         const updated = (existing.trim() ? existing.trim() + '\n- ' : '- ') + param;

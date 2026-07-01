@@ -28,6 +28,42 @@ const PRESET_AVATAR_COLORS = [
   '#DB2777', // Pink
 ];
 
+// Canvas Image Compression helper
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 128;
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+    };
+  });
+};
+
 export function renderProfile(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const loginMode = sessionStorage.getItem('relay_login_mode') || 'cloud'; // 'local' | 'local_multiuser' | 'cloud'
@@ -36,20 +72,29 @@ export function renderProfile(container) {
   let activeRecoveryQuestion = '';
   let activeAccountObj = null;
   let accounts = [];
+  let uploadedAvatarUrl = currentUser.avatarUrl || null;
 
-  const loadLocalAdminProfile = async () => {
+  const loadProfileAvatar = async () => {
     if (loginMode === 'local') {
       accounts = await storageGet('relay_accounts') || [];
       activeAccountObj = accounts.find(a => a.id === currentUser.companyId);
       if (activeAccountObj) {
         activeRecoveryQuestion = activeAccountObj.recoveryQuestion || '';
         activeAvatarColor = activeAccountObj.avatarColor || activeAvatarColor;
+        uploadedAvatarUrl = activeAccountObj.avatarUrl || null;
       }
+    } else if (loginMode === 'local_multiuser') {
+      const tech = store.getById('technicians', currentUser.id);
+      if (tech) {
+        uploadedAvatarUrl = tech.avatarUrl || null;
+      }
+    } else {
+      uploadedAvatarUrl = currentUser.avatarUrl || null;
     }
   };
 
   const init = async () => {
-    await loadLocalAdminProfile();
+    await loadProfileAvatar();
     render();
   };
 
@@ -76,6 +121,11 @@ export function renderProfile(container) {
       const tech = store.getById('technicians', currentUser.id) || {};
       usernameOrEmail = tech.username || tech.email || 'Local User';
     }
+
+    const factsheetKey = `relay_factsheet_${currentUser.id || 'default'}`;
+    const optoutKey = `relay_factsheet_optout_${currentUser.id || 'default'}`;
+    const factsheetVal = localStorage.getItem(factsheetKey) || '';
+    const optoutVal = localStorage.getItem(optoutKey) === 'true';
 
     container.innerHTML = `
       <style>
@@ -156,6 +206,9 @@ export function renderProfile(container) {
           border-color: var(--text-primary);
           box-shadow: 0 0 0 2px var(--card-bg);
         }
+        .profile-avatar-preview:hover .avatar-hover-overlay {
+          opacity: 1 !important;
+        }
       </style>
 
       <div class="profile-container">
@@ -169,8 +222,24 @@ export function renderProfile(container) {
           <div class="profile-card">
             <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">Personal Information</h3>
             
-            <div class="profile-avatar-preview" id="profile-avatar" style="background-color: ${activeAvatarColor}">
-              ${initials}
+            <div class="profile-avatar-preview" id="profile-avatar" style="background-color: ${activeAvatarColor}; position: relative; overflow: hidden; cursor: pointer;">
+              ${uploadedAvatarUrl 
+                ? `<img src="${uploadedAvatarUrl}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" id="profile-avatar-img" />`
+                : escapeHTML(initials)
+              }
+              <div class="avatar-hover-overlay" style="
+                position: absolute; inset: 0; background: rgba(15, 23, 42, 0.6);
+                display: flex; align-items: center; justify-content: center;
+                opacity: 0; transition: opacity 0.2s; color: #fff; font-size: 11px; font-weight: 600;
+                pointer-events: none;
+              ">
+                Upload Photo
+              </div>
+            </div>
+            <input type="file" id="profile-avatar-input" accept="image/*" style="display: none;" />
+            
+            <div style="text-align: center; margin-top: -8px; margin-bottom: 12px;">
+              <a href="#" id="link-remove-avatar" style="color: var(--color-danger); text-decoration: none; font-size: 12px; display: ${uploadedAvatarUrl ? 'inline-block' : 'none'};">Remove Photo</a>
             </div>
 
             <div class="form-group">
@@ -262,6 +331,30 @@ export function renderProfile(container) {
               </div>
             ` : ''}
 
+            <!-- Card 3: AI Co-Pilot Memory & Factsheet -->
+            <div class="profile-card">
+              <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">AI Co-Pilot Memory & Factsheet</h3>
+              <p style="margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;">
+                Manage the factsheet Relay stores about you to personalize your co-pilot interactions.
+              </p>
+              
+              <div class="form-group">
+                <label class="switch-container" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+                  <input type="checkbox" id="profile-ai-optout" ${optoutVal ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
+                  <span>Opt out of AI Personal Memory (Do not remember preferences)</span>
+                </label>
+              </div>
+
+              <div class="form-group" id="profile-factsheet-group" style="margin-top: 8px; display: ${optoutVal ? 'none' : 'block'};">
+                <label class="form-label" style="font-weight: 600;">Personal Factsheet Context</label>
+                <textarea class="form-input" id="profile-ai-factsheet" rows="5" style="font-family:inherit; resize:vertical; font-size:12.5px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe').">${escapeHTML(factsheetVal)}</textarea>
+              </div>
+
+              <button class="btn btn-primary" id="btn-save-profile-factsheet" style="margin-top: 4px; justify-content: center;">
+                Save AI Preferences
+              </button>
+            </div>
+
           </div>
         </div>
       </div>
@@ -271,6 +364,66 @@ export function renderProfile(container) {
   };
 
   const attachListeners = () => {
+    // Image Upload Click Trigger and Change Handler
+    const avatarDiv = container.querySelector('#profile-avatar');
+    const fileInput = container.querySelector('#profile-avatar-input');
+    const removeLink = container.querySelector('#link-remove-avatar');
+
+    if (avatarDiv && fileInput) {
+      avatarDiv.addEventListener('click', () => fileInput.click());
+      
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+          uploadedAvatarUrl = await compressImage(file);
+          
+          // Update preview visually immediately
+          avatarDiv.innerHTML = `
+            <img src="${uploadedAvatarUrl}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" id="profile-avatar-img" />
+            <div class="avatar-hover-overlay" style="
+              position: absolute; inset: 0; background: rgba(15, 23, 42, 0.6);
+              display: flex; align-items: center; justify-content: center;
+              opacity: 0; transition: opacity 0.2s; color: #fff; font-size: 11px; font-weight: 600;
+              pointer-events: none;
+            ">
+              Upload Photo
+            </div>
+          `;
+          if (removeLink) removeLink.style.display = 'inline-block';
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to process image.', 'error');
+        }
+      });
+    }
+
+    if (removeLink) {
+      removeLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        uploadedAvatarUrl = null;
+        fileInput.value = ''; // Reset input selection
+        
+        // Reset preview back to initials
+        const initials = currentUser.name ? currentUser.name.trim().charAt(0).toUpperCase() : 'U';
+        if (avatarDiv) {
+          avatarDiv.innerHTML = `
+            ${escapeHTML(initials)}
+            <div class="avatar-hover-overlay" style="
+              position: absolute; inset: 0; background: rgba(15, 23, 42, 0.6);
+              display: flex; align-items: center; justify-content: center;
+              opacity: 0; transition: opacity 0.2s; color: #fff; font-size: 11px; font-weight: 600;
+              pointer-events: none;
+            ">
+              Upload Photo
+            </div>
+          `;
+        }
+        removeLink.style.display = 'none';
+      });
+    }
+
     // 1. Color Picker
     const swatches = container.querySelectorAll('.color-swatch');
     swatches.forEach(swatch => {
@@ -303,16 +456,17 @@ export function renderProfile(container) {
         return;
       }
 
-      // Update local storage currentUser first
+      // Update local storage currentUser
       currentUser.name = name;
       currentUser.color = activeAvatarColor;
+      currentUser.avatarUrl = uploadedAvatarUrl;
       localStorage.setItem('currentUser', JSON.stringify(currentUser));
 
       try {
         if (loginMode === 'cloud') {
           // Cloud Supabase User Profile Update
           const { error } = await supabase.auth.updateUser({
-            data: { name: name }
+            data: { name: name, avatarUrl: uploadedAvatarUrl }
           });
           if (error) throw error;
           
@@ -329,13 +483,15 @@ export function renderProfile(container) {
           if (activeAccountObj) {
             activeAccountObj.businessName = name; // sync businessName with updated name
             activeAccountObj.avatarColor = activeAvatarColor;
+            activeAccountObj.avatarUrl = uploadedAvatarUrl;
             await storageSet('relay_accounts', accounts);
           }
         } else {
           // Local Multi-user Technician update
           store.update('technicians', currentUser.id, {
             name: name,
-            color: activeAvatarColor
+            color: activeAvatarColor,
+            avatarUrl: uploadedAvatarUrl
           });
         }
 
@@ -427,6 +583,34 @@ export function renderProfile(container) {
           showToast('Security recovery settings saved successfully.', 'success');
           render();
         }
+      });
+    }
+
+    // 6. Save AI Profile Factsheet & Opt-out
+    const optoutCheckbox = container.querySelector('#profile-ai-optout');
+    const factsheetGroup = container.querySelector('#profile-factsheet-group');
+    const factsheetTextarea = container.querySelector('#profile-ai-factsheet');
+    const btnSaveFactsheet = container.querySelector('#btn-save-profile-factsheet');
+
+    if (optoutCheckbox && factsheetGroup) {
+      optoutCheckbox.addEventListener('change', (e) => {
+        factsheetGroup.style.display = e.target.checked ? 'none' : 'block';
+      });
+    }
+
+    if (btnSaveFactsheet) {
+      btnSaveFactsheet.addEventListener('click', () => {
+        const optout = optoutCheckbox.checked;
+        const factsheet = factsheetTextarea.value.trim();
+
+        const factsheetKey = `relay_factsheet_${currentUser.id || 'default'}`;
+        const optoutKey = `relay_factsheet_optout_${currentUser.id || 'default'}`;
+
+        localStorage.setItem(optoutKey, String(optout));
+        localStorage.setItem(factsheetKey, factsheet);
+
+        window.dispatchEvent(new Event('storage'));
+        showToast('AI memory preferences saved successfully', 'success');
       });
     }
   };
