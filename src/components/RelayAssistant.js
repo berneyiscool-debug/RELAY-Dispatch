@@ -313,8 +313,15 @@ Action tags MUST follow these exact formats:
 - To fit canvas: [ACTION: FIT_CANVAS]
 - To lock/unlock canvas: [ACTION: LOCK_CANVAS, true] or [ACTION: LOCK_CANVAS, false]
 
-- To create a new customer: [ACTION: CREATE_CUSTOMER, Name | Email | Phone | Address]
-  (Example: [ACTION: CREATE_CUSTOMER, Barry Buttons | barry@buttons.com | 0412345678 | 12 Spring St, Sydney])
+- To create a new customer: [ACTION: CREATE_CUSTOMER, Type | First Name | Last Name | Company Name | Email | Phone | Address]
+  - Type: Must be 'Commercial' (for companies/businesses) or 'Residential' (for individual people).
+  - First Name: First name of the person.
+  - Last Name: Last name of the person.
+  - Company Name: Name of the company (leave empty for Residential).
+  - Email: Extrapolate if not provided (e.g. name@company.com or name@example.com).
+  - Phone: Extrapolate or leave empty.
+  - Address: Extrapolate or leave empty.
+  (Example: [ACTION: CREATE_CUSTOMER, Commercial | Barry | Buttons | Buttons Plumbing Pty Ltd | barry@buttonsplumbing.com | 0412345678 | 12 Spring St, Sydney])
 - To create a job: [ACTION: CREATE_JOB, Title | Status | Customer Name | Technician Name | Scheduled Date | Est Hours | Notes]
   (Example: [ACTION: CREATE_JOB, Fix Leaking Tap | Scheduled | Barry Buttons | John Doe | 2026-07-05 | 2 | Please bring parts])
 - To create a quote: [ACTION: CREATE_QUOTE, Title | Status | Customer Name | Subtotal | Tax | Total | Valid Until | Notes]
@@ -358,31 +365,32 @@ function parseAndExecuteActions(reply) {
         }
       } else if (action === 'CREATE_CUSTOMER' && param) {
         const parts = param.split('|').map(p => p.trim());
-        const name = parts[0] || '';
-        const email = parts[1] || '';
-        const phone = parts[2] || '';
-        const address = parts[3] || '';
-
-        const nameParts = name.split(' ');
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.slice(1).join(' ') || '';
+        const type = parts[0] || 'Residential';
+        const firstName = parts[1] || '';
+        const lastName = parts[2] || '';
+        const companyName = parts[3] || '';
+        const email = parts[4] || '';
+        const phone = parts[5] || '';
+        const address = parts[6] || '';
 
         const list = store.getAll('customers') || [];
         const newItem = {
           id: store.generateId(),
           first_name: firstName,
           last_name: lastName,
+          company: companyName,
           email,
           phone,
           address,
           status: 'Active',
-          type: 'Commercial',
+          type: type,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
         list.push(newItem);
         store.save('customers', list);
-        showToast(`Created customer "${name}" successfully.`, 'success');
+        const displayName = companyName || `${firstName} ${lastName}`.trim() || 'New Customer';
+        showToast(`Created customer "${displayName}" successfully.`, 'success');
 
       } else if (action === 'CREATE_JOB' && param) {
         const parts = param.split('|').map(p => p.trim());
