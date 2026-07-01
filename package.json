@@ -1,7 +1,7 @@
 {
   "name": "relay",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Offline-first field service management platform",
   "author": "RELAY Team",
   "type": "module",

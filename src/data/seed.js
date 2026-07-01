@@ -65,14 +65,6 @@ const userTypes = [
   },
 ];
 
-// Staff Technicians
-const technicians = [
-  { id: 'tech_1', name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: 'ut_admin',   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445' },
-  { id: 'tech_2', name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: 'ut_manager', payRate: 85.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556' },
-  { id: 'tech_3', name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: 'ut_tech',    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667' },
-  { id: 'tech_4', name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: 'ut_office',  payRate: 50.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778' }
-];
-
 // Helper to calculate exact seed dates relative to today (May 27, 2026)
 function relativeDate(days) {
   const base = new Date('2026-05-27T10:00:00Z');
@@ -85,100 +77,6 @@ function relativeDateString(days) {
   base.setDate(base.getDate() + days);
   return base.toISOString().split('T')[0];
 }
-
-// 25 realistic Stock items
-const stockItems = [
-  { id: 'st_1',  name: 'Engine Oil 15W-40 20L',                   category: 'Consumables', unit: 'Each', costPrice: 85,  unitPrice: 120, reorderLevel: 5,  quantity: 18, locations: [{ location: 'Main Warehouse', quantity: 18 }], supplier: 'OilCorp' },
-  { id: 'st_2',  name: 'Oil Filter — Cat 3306',                   category: 'Filters',     unit: 'Each', costPrice: 45,  unitPrice: 75,  reorderLevel: 3,  quantity: 8,  locations: [{ location: 'Main Warehouse', quantity: 8 }],  supplier: 'FiltersDirect' },
-  { id: 'st_3',  name: 'Oil Filter — Cummins 150kVA',             category: 'Filters',     unit: 'Each', costPrice: 38,  unitPrice: 65,  reorderLevel: 4,  quantity: 12, locations: [{ location: 'Main Warehouse', quantity: 12 }], supplier: 'FiltersDirect' },
-  { id: 'st_4',  name: 'Oil Filter — Kohler 20kVA',               category: 'Filters',     unit: 'Each', costPrice: 28,  unitPrice: 48,  reorderLevel: 4,  quantity: 15, locations: [{ location: 'Main Warehouse', quantity: 15 }], supplier: 'FiltersDirect' },
-  { id: 'st_5',  name: 'Air Filter — Cat 3306',                   category: 'Filters',     unit: 'Each', costPrice: 120, unitPrice: 180, reorderLevel: 2,  quantity: 4,  locations: [{ location: 'Main Warehouse', quantity: 4 }],  supplier: 'FiltersDirect' },
-  { id: 'st_6',  name: 'Air Filter — Cummins 150kVA',             category: 'Filters',     unit: 'Each', costPrice: 95,  unitPrice: 145, reorderLevel: 2,  quantity: 5,  locations: [{ location: 'Main Warehouse', quantity: 5 }],  supplier: 'FiltersDirect' },
-  { id: 'st_7',  name: 'Fuel Filter Assembly',                    category: 'Filters',     unit: 'Each', costPrice: 65,  unitPrice: 110, reorderLevel: 3,  quantity: 9,  locations: [{ location: 'Main Warehouse', quantity: 9 }],  supplier: 'IndustrialFilters' },
-  { id: 'st_8',  name: 'Coolant Concentrate 5L',                  category: 'Consumables', unit: 'Each', costPrice: 55,  unitPrice: 85,  reorderLevel: 5,  quantity: 14, locations: [{ location: 'Main Warehouse', quantity: 14 }], supplier: 'OilCorp' },
-  { id: 'st_9',  name: 'V-Belt Set',                              category: 'Mechanical',  unit: 'Set',  costPrice: 95,  unitPrice: 150, reorderLevel: 3,  quantity: 7,  locations: [{ location: 'Main Warehouse', quantity: 7 }],  supplier: 'Belts&Pulleys' },
-  { id: 'st_10', name: 'Battery 12V 100Ah AGM',                   category: 'Electrical',  unit: 'Each', costPrice: 185, unitPrice: 280, reorderLevel: 3,  quantity: 10, locations: [{ location: 'Main Warehouse', quantity: 10 }], supplier: 'PowerBat' },
-  { id: 'st_11', name: 'Battery Terminal Connectors',             category: 'Electrical',  unit: 'Pair', costPrice: 12,  unitPrice: 22,  reorderLevel: 10, quantity: 24, locations: [{ location: 'Main Warehouse', quantity: 24 }], supplier: 'PowerBat' },
-  { id: 'st_12', name: 'ATS Control Board',                       category: 'Electrical',  unit: 'Each', costPrice: 420, unitPrice: 680, reorderLevel: 1,  quantity: 2,  locations: [{ location: 'Main Warehouse', quantity: 2 }],  supplier: 'ApexParts' },
-  { id: 'st_13', name: 'Transfer Switch 100A',                    category: 'Electrical',  unit: 'Each', costPrice: 285, unitPrice: 440, reorderLevel: 2,  quantity: 3,  locations: [{ location: 'Main Warehouse', quantity: 3 }],  supplier: 'ApexParts' },
-  { id: 'st_14', name: 'Cable Lugs Assorted Pack',                category: 'Electrical',  unit: 'Pack', costPrice: 35,  unitPrice: 58,  reorderLevel: 5,  quantity: 12, locations: [{ location: 'Main Warehouse', quantity: 12 }], supplier: 'ApexParts' },
-  { id: 'st_15', name: 'Fuse Kit Assorted',                       category: 'Electrical',  unit: 'Pack', costPrice: 28,  unitPrice: 45,  reorderLevel: 5,  quantity: 16, locations: [{ location: 'Main Warehouse', quantity: 16 }], supplier: 'ApexParts' },
-  { id: 'st_16', name: 'Spark Plugs Set of 6',                    category: 'Mechanical',  unit: 'Set',  costPrice: 75,  unitPrice: 120, reorderLevel: 3,  quantity: 8,  locations: [{ location: 'Main Warehouse', quantity: 8 }],  supplier: 'ApexParts' },
-  { id: 'st_17', name: 'Generator Service Kit — Cat 500kVA',       category: 'Service Kits',unit: 'Each', costPrice: 380, unitPrice: 580, reorderLevel: 2,  quantity: 4,  locations: [{ location: 'Main Warehouse', quantity: 4 }],  supplier: 'FiltersDirect' },
-  { id: 'st_18', name: 'Generator Service Kit — Cummins 150kVA',   category: 'Service Kits',unit: 'Each', costPrice: 245, unitPrice: 380, reorderLevel: 2,  quantity: 1,  locations: [{ location: 'Main Warehouse', quantity: 1 }],  supplier: 'FiltersDirect' }, // Low Stock Alert Trigger
-  { id: 'st_19', name: 'Generator Service Kit — Kohler 20kVA',     category: 'Service Kits',unit: 'Each', costPrice: 165, unitPrice: 260, reorderLevel: 3,  quantity: 6,  locations: [{ location: 'Main Warehouse', quantity: 6 }],  supplier: 'FiltersDirect' },
-  { id: 'st_20', name: 'Inhibitor Test Strips',                   category: 'Consumables', unit: 'Pack', costPrice: 22,  unitPrice: 38,  reorderLevel: 5,  quantity: 14, locations: [{ location: 'Main Warehouse', quantity: 14 }], supplier: 'OilCorp' },
-  { id: 'st_21', name: 'Load Bank Cable Set',                     category: 'Testing',     unit: 'Set',  costPrice: 180, unitPrice: 280, reorderLevel: 1,  quantity: 3,  locations: [{ location: 'Main Warehouse', quantity: 3 }],  supplier: 'ApexParts' },
-  { id: 'st_22', name: 'Exhaust Flex Joint',                      category: 'Mechanical',  unit: 'Each', costPrice: 145, unitPrice: 225, reorderLevel: 2,  quantity: 5,  locations: [{ location: 'Main Warehouse', quantity: 5 }],  supplier: 'ApexParts' },
-  { id: 'st_23', name: 'Radiator Hose Kit',                       category: 'Mechanical',  unit: 'Kit',  costPrice: 88,  unitPrice: 140, reorderLevel: 2,  quantity: 4,  locations: [{ location: 'Main Warehouse', quantity: 4 }],  supplier: 'ApexParts' },
-  { id: 'st_24', name: 'Anti-Vibration Mounts Set',               category: 'Mechanical',  unit: 'Set',  costPrice: 110, unitPrice: 175, reorderLevel: 2,  quantity: 5,  locations: [{ location: 'Main Warehouse', quantity: 5 }],  supplier: 'ApexParts' },
-  { id: 'st_25', name: 'Hour Meter Digital',                      category: 'Electrical',  unit: 'Each', costPrice: 65,  unitPrice: 105, reorderLevel: 3,  quantity: 9,  locations: [{ location: 'Main Warehouse', quantity: 9 }],  supplier: 'ApexParts' }
-];
-
-// Customers List
-const customers = [
-  { id: 'cust_1', company: 'Western NSW Local Health District', firstName: 'Margaret', lastName: 'Ellison', email: 'facilities@wnswlhd.health.nsw.gov.au', phone: '(02) 6809 8888', address: '42 Bultje Street, Dubbo NSW 2830', status: 'Active', type: 'Commercial', portalToken: 'c_pt_western', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) },
-  { id: 'cust_2', company: 'Optus Network Infrastructure',      firstName: 'Trevor',   lastName: 'Nash',    email: 't.nash@optus.com.au',                 phone: '0418 772 334', address: 'Level 3, 201 Elizabeth Street, Sydney NSW 2000', status: 'Active', type: 'Commercial', portalToken: 'c_pt_optus', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) },
-  { id: 'cust_3', company: 'Cobar Mining Pty Ltd',              firstName: 'Phil',     lastName: 'Drummond',email: 'p.drummond@cobarmining.com.au',      phone: '0427 883 221', address: 'Cobar Mine Site, Peak Hill Road, Cobar NSW 2835', status: 'Active', type: 'Commercial', portalToken: 'c_pt_cobar', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) },
-  { id: 'cust_4', company: 'Dubbo City Council',                firstName: 'Sandra',   lastName: 'Nguyen',  email: 's.nguyen@dubbo.nsw.gov.au',            phone: '(02) 6801 4000', address: 'Civic Administration Building, Dubbo NSW 2830', status: 'Active', type: 'Government', portalToken: 'c_pt_dubbo', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) },
-  { id: 'cust_5', company: 'NBN Co Regional',                   firstName: 'James',    lastName: 'Whitfield',email: 'j.whitfield@nbnco.com.au',          phone: '0401 234 567', address: '100 Miller Street, North Sydney NSW 2060', status: 'Active', type: 'Commercial', portalToken: 'c_pt_nbn', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) },
-  { id: 'cust_6', company: 'Transgrid',                         firstName: 'Robyn',    lastName: 'Cassidy', email: 'r.cassidy@transgrid.com.au',         phone: '(02) 9620 3100', address: '180 Thomas Street, Sydney NSW 2000', status: 'Active', type: 'Commercial', portalToken: 'c_pt_transgrid', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) },
-  { id: 'cust_7', company: 'Canopus Station',                   firstName: 'Bruce',    lastName: 'Halliday',email: 'bruce@canopusstation.com.au',         phone: '0428 991 003', address: 'Canopus Station, Bourke Road, Bourke NSW 2840', status: 'Active', type: 'Commercial', portalToken: 'c_pt_canopus', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) },
-  { id: 'cust_8', company: 'Essential Energy',                  firstName: 'Darren',   lastName: 'Stubbs',  email: 'd.stubbs@essentialenergy.com.au',      phone: '(02) 6588 8000', address: '328 Oliver Street, Bathurst NSW 2795', status: 'Active', type: 'Commercial', portalToken: 'c_pt_essential', createdAt: relativeDate(-120), updatedAt: relativeDate(-1) }
-];
-
-// Assets List
-const assets = [
-  // Western NSW Local Health District
-  { id: 'asset_1', name: 'Caterpillar 3306 500kVA Diesel Generator — Dubbo Base Hospital', type: 'Generator', serial: 'CAT-3306-DH-001', ownerType: 'Customer', customerId: 'cust_1', customerName: 'Western NSW Local Health District', currentMeter: 4420, recoveryRate: 35.00, status: 'Active', logs: [] },
-  { id: 'asset_2', name: 'Kohler 20kVA Standby Generator — Bourke Hospital',              type: 'Generator', serial: 'KOH-20-BH-001',   ownerType: 'Customer', customerId: 'cust_1', customerName: 'Western NSW Local Health District', currentMeter: 1870, recoveryRate: 25.00, status: 'Active', logs: [] },
-  { id: 'asset_3', name: '80kVA Automatic Transfer Switch — Dubbo Base Hospital',         type: 'ATS Panel', serial: 'ATS-80-DH-001',   ownerType: 'Customer', customerId: 'cust_1', customerName: 'Western NSW Local Health District', currentMeter: 0,    recoveryRate: 20.00, status: 'Active', logs: [] },
-  { id: 'asset_4', name: '40kVA UPS Battery Bank — Dubbo Base Hospital ICU',              type: 'UPS System',serial: 'UPS-40-DH-001',   ownerType: 'Customer', customerId: 'cust_1', customerName: 'Western NSW Local Health District', currentMeter: 0,    recoveryRate: 25.00, status: 'Active', logs: [] },
-
-  // Optus Network Infrastructure
-  { id: 'asset_5', name: 'Cummins 20kVA Diesel Generator — Narromine Tower Site',        type: 'Generator', serial: 'CUM-20-NT-001',   ownerType: 'Customer', customerId: 'cust_2', customerName: 'Optus Network Infrastructure',      currentMeter: 3210, recoveryRate: 25.00, status: 'Active', logs: [] },
-  { id: 'asset_6', name: 'Cummins 20kVA Diesel Generator — Trangie Tower Site',          type: 'Generator', serial: 'CUM-20-TT-001',   ownerType: 'Customer', customerId: 'cust_2', customerName: 'Optus Network Infrastructure',      currentMeter: 2880, recoveryRate: 25.00, status: 'Active', logs: [] },
-  { id: 'asset_7', name: 'Battery Backup System 48V — Narromine Tower',                  type: 'UPS System',serial: 'BAT-48-NT-001',   ownerType: 'Customer', customerId: 'cust_2', customerName: 'Optus Network Infrastructure',      currentMeter: 0,    recoveryRate: 20.00, status: 'Active', logs: [] },
-
-  // Cobar Mining Pty Ltd
-  { id: 'asset_8', name: 'Caterpillar 1MVA Diesel Generator — Main Plant',                type: 'Generator', serial: 'CAT-1M-CM-001',   ownerType: 'Customer', customerId: 'cust_3', customerName: 'Cobar Mining Pty Ltd',              currentMeter: 8840, recoveryRate: 50.00, status: 'Active', logs: [] },
-  { id: 'asset_9', name: 'Caterpillar 1MVA Diesel Generator — Processing Plant',          type: 'Generator', serial: 'CAT-1M-CM-002',   ownerType: 'Customer', customerId: 'cust_3', customerName: 'Cobar Mining Pty Ltd',              currentMeter: 7620, recoveryRate: 50.00, status: 'Active', logs: [] },
-  { id: 'asset_10',name: 'Manual Changeover Panel 415V — Main Plant',                    type: 'ATS Panel', serial: 'MCP-415-CM-001',  ownerType: 'Customer', customerId: 'cust_3', customerName: 'Cobar Mining Pty Ltd',              currentMeter: 0,    recoveryRate: 20.00, status: 'Active', logs: [] },
-
-  // Dubbo City Council
-  { id: 'asset_11',name: 'Cummins 150kVA Diesel Generator — Water Treatment Plant',        type: 'Generator', serial: 'CUM-150-WTP-001', ownerType: 'Customer', customerId: 'cust_4', customerName: 'Dubbo City Council',                currentMeter: 5330, recoveryRate: 35.00, status: 'Active', logs: [] },
-  { id: 'asset_12',name: 'ATS Panel 150A — Water Treatment Plant',                       type: 'ATS Panel', serial: 'ATS-150-WTP-001', ownerType: 'Customer', customerId: 'cust_4', customerName: 'Dubbo City Council',                currentMeter: 0,    recoveryRate: 20.00, status: 'Active', logs: [] },
-  { id: 'asset_13',name: 'Cummins 60kVA Diesel Generator — Dubbo Airport',               type: 'Generator', serial: 'CUM-60-DA-001',   ownerType: 'Customer', customerId: 'cust_4', customerName: 'Dubbo City Council',                currentMeter: 2110, recoveryRate: 30.00, status: 'Active', logs: [] },
-
-  // NBN Co Regional
-  { id: 'asset_14',name: 'Powergen 15kVA Diesel Generator — Wellington Exchange',        type: 'Generator', serial: 'PWR-15-WE-001',   ownerType: 'Customer', customerId: 'cust_5', customerName: 'NBN Co Regional',                   currentMeter: 1640, recoveryRate: 25.00, status: 'Active', logs: [] },
-  { id: 'asset_15',name: 'Battery Backup 24V 200Ah — Wellington Exchange',               type: 'UPS System',serial: 'BAT-24-WE-001',   ownerType: 'Customer', customerId: 'cust_5', customerName: 'NBN Co Regional',                   currentMeter: 0,    recoveryRate: 20.00, status: 'Active', logs: [] },
-
-  // Canopus Station
-  { id: 'asset_16',name: 'Kubota 15kVA Diesel Generator — Main Homestead',               type: 'Generator', serial: 'KUB-15-CS-001',   ownerType: 'Customer', customerId: 'cust_7', customerName: 'Canopus Station',                   currentMeter: 3780, recoveryRate: 25.00, status: 'Active', logs: [] },
-  { id: 'asset_17',name: '48V 400Ah Lithium Battery Bank — Solar Hybrid System',         type: 'UPS System',serial: 'LIT-48-CS-001',   ownerType: 'Customer', customerId: 'cust_7', customerName: 'Canopus Station',                   currentMeter: 0,    recoveryRate: 30.00, status: 'Active', logs: [] },
-
-  // Essential Energy
-  { id: 'asset_18',name: 'Cummins 100kVA Diesel Generator — Bathurst Depot',             type: 'Generator', serial: 'CUM-100-BD-001',  ownerType: 'Customer', customerId: 'cust_8', customerName: 'Essential Energy',                  currentMeter: 2990, recoveryRate: 30.00, status: 'Active', logs: [] }
-];
-
-// Maintenance Plans
-const plans = [
-  // Caterpillar 500kVA — Dubbo Base Hospital
-  { id: 'plan_1', name: '250hr Minor Service',  assetId: 'asset_1', triggerType: 'Meter',    meterInterval: 250,  lastTriggeredMeter: 4250, nextServiceDate: null, status: 'Active', priority: 'Minor',    collisionMerging: true },
-  { id: 'plan_2', name: '500hr Standard Service', assetId: 'asset_1', triggerType: 'Meter',    meterInterval: 500,  lastTriggeredMeter: 4000, nextServiceDate: null, status: 'Active', priority: 'Standard', collisionMerging: true },
-  { id: 'plan_3', name: 'Annual Major Overhaul',  assetId: 'asset_1', triggerType: 'Calendar', frequency: 'Annually', meterInterval: null, lastTriggeredMeter: null, nextServiceDate: relativeDateString(180), status: 'Active', priority: 'Major', collisionMerging: true },
-
-  // Cummins 150kVA — Water Treatment Plant
-  { id: 'plan_4', name: 'Quarterly Service',      assetId: 'asset_11',triggerType: 'Calendar', frequency: 'Quarterly',meterInterval: null, lastTriggeredMeter: null, nextServiceDate: relativeDateString(4), status: 'Active', priority: 'Standard' }, // Due in 4 days
-  { id: 'plan_5', name: 'Annual Load Bank Test',  assetId: 'asset_11',triggerType: 'Calendar', frequency: 'Annually', meterInterval: null, lastTriggeredMeter: null, nextServiceDate: relativeDateString(120), status: 'Active', priority: 'Major' },
-
-  // Cummins 20kVA — Narromine Tower
-  { id: 'plan_6', name: '6 Monthly Service',      assetId: 'asset_5', triggerType: 'Calendar', frequency: 'Semi-Annually', meterInterval: null, lastTriggeredMeter: null, nextServiceDate: relativeDateString(60), status: 'Active', priority: 'Standard' },
-
-  // Kubota 15kVA — Canopus Station
-  { id: 'plan_7', name: '3 Monthly Service',      assetId: 'asset_16',triggerType: 'Calendar', frequency: 'Quarterly',meterInterval: null, lastTriggeredMeter: null, nextServiceDate: relativeDateString(6), status: 'Active', priority: 'Standard' } // Due in 6 days
-];
 
 // Reusable Task Lists
 const taskTemplates = [
@@ -259,881 +157,6 @@ function createJobTasks(templateId, completed = false) {
   });
 }
 
-// Quotes Seeding
-const quotes = [
-  {
-    id: 'q_001',
-    number: 'Q-00001',
-    customerId: 'cust_1',
-    customerName: 'Western NSW Local Health District',
-    contactName: 'Margaret Ellison',
-    title: 'Cat 500kVA 500hr Service',
-    status: 'Accepted',
-    lineItems: [
-      { description: 'Generator Service Kit — Cat 500kVA', type: 'material', qty: 1, rate: 580, total: 580 },
-      { description: 'Engine Oil 15W-40 20L', type: 'material', qty: 2, rate: 120, total: 240 },
-      { description: 'Oil Filter — Cat 3306', type: 'material', qty: 1, rate: 75,  total: 75 },
-      { description: 'Air Filter — Cat 3306', type: 'material', qty: 1, rate: 180, total: 180 },
-      { description: 'Qualified Electrical & Mechanical Labor', type: 'labor', qty: 4, rate: 145, total: 580 }
-    ],
-    subtotal: 1655,
-    tax: 165.50,
-    total: 1820.50, // Matches original brief ~1840 estimation closely
-    validUntil: relativeDateString(30),
-    notes: 'Approved by district management.',
-    createdAt: relativeDate(-90),
-    updatedAt: relativeDate(-88)
-  },
-  {
-    id: 'q_002',
-    number: 'Q-00002',
-    customerId: 'cust_1',
-    customerName: 'Western NSW Local Health District',
-    contactName: 'Margaret Ellison',
-    title: 'Cat 500kVA Annual Overhaul',
-    status: 'Accepted',
-    lineItems: [
-      { description: 'Generator Service Kit — Cat 500kVA', type: 'material', qty: 1, rate: 580, total: 580 },
-      { description: 'Battery 12V 100Ah AGM', type: 'material', qty: 2, rate: 280, total: 560 },
-      { description: 'V-Belt Set & Anti-Vibration Mounts', type: 'material', qty: 1, rate: 325, total: 325 },
-      { description: 'Load Bank Test Cables & Inhibitors', type: 'material', qty: 1, rate: 318, total: 318 },
-      { description: 'Standard Overhaul Labor (Dual Technician)', type: 'labor', qty: 8, rate: 200, total: 2000 }
-    ],
-    subtotal: 3783,
-    tax: 378.30,
-    total: 4161.30, // Brief: $4,200
-    validUntil: relativeDateString(30),
-    notes: 'Annual mandatory overhaul.',
-    createdAt: relativeDate(-90),
-    updatedAt: relativeDate(-85)
-  },
-  {
-    id: 'q_003',
-    number: 'Q-00003',
-    customerId: 'cust_4',
-    customerName: 'Dubbo City Council',
-    contactName: 'Sandra Nguyen',
-    title: 'Cummins 150kVA Quarterly Service',
-    status: 'Accepted',
-    lineItems: [
-      { description: 'Generator Service Kit — Cummins 150kVA', type: 'material', qty: 1, rate: 380, total: 380 },
-      { description: 'Engine Oil 15W-40 20L', type: 'material', qty: 1, rate: 120, total: 120 },
-      { description: 'Specialist Mechanical Labor', type: 'labor', qty: 3, rate: 130, total: 390 }
-    ],
-    subtotal: 890,
-    tax: 89.00,
-    total: 979.00, // Brief: $980
-    validUntil: relativeDateString(30),
-    notes: 'Routine quarterly check.',
-    createdAt: relativeDate(-45),
-    updatedAt: relativeDate(-40)
-  },
-  {
-    id: 'q_004',
-    number: 'Q-00004',
-    customerId: 'cust_7',
-    customerName: 'Canopus Station',
-    contactName: 'Bruce Halliday',
-    title: 'Kubota 3 Monthly Service',
-    status: 'Accepted',
-    lineItems: [
-      { description: 'Generator Service Kit — Kohler 20kVA', type: 'material', qty: 1, rate: 260, total: 260 },
-      { description: 'Engine Oil 15W-40 20L', type: 'material', qty: 1, rate: 120, total: 120 },
-      { description: 'Rural Maintenance Travel & Labor', type: 'labor', qty: 3, rate: 90,  total: 275 }
-    ],
-    subtotal: 655,
-    tax: 65.50,
-    total: 720.50, // Brief: $720
-    validUntil: relativeDateString(30),
-    notes: 'Accepted via phone.',
-    createdAt: relativeDate(-35),
-    updatedAt: relativeDate(-32)
-  },
-  {
-    id: 'q_005',
-    number: 'Q-00005',
-    customerId: 'cust_3',
-    customerName: 'Cobar Mining Pty Ltd',
-    contactName: 'Phil Drummond',
-    title: 'Cat 1MVA Annual Inspection',
-    status: 'Sent',
-    lineItems: [
-      { description: 'Double Caterpillar 1MVA Overhaul & Testing Parts', type: 'material', qty: 2, rate: 2800, total: 5600 },
-      { description: 'Industrial Site Testing Labor', type: 'labor', qty: 16, rate: 135, total: 2160 }
-    ],
-    subtotal: 7760,
-    tax: 776.00,
-    total: 8536.00, // Brief: $8,500
-    validUntil: relativeDateString(45),
-    notes: 'Awaiting site manager approval.',
-    createdAt: relativeDate(-12),
-    updatedAt: relativeDate(-12)
-  },
-  {
-    id: 'q_006',
-    number: 'Q-00006',
-    customerId: 'cust_2',
-    customerName: 'Optus Network Infrastructure',
-    contactName: 'Trevor Nash',
-    title: 'Narromine Tower 6 Monthly Service',
-    status: 'Accepted',
-    lineItems: [
-      { description: 'Generator Service Kit — Cummins 150kVA', type: 'material', qty: 1, rate: 380, total: 380 },
-      { description: 'Engine Oil 15W-40 20L', type: 'material', qty: 1, rate: 120, total: 120 },
-      { description: 'Qualified Electrical & Testing Labor', type: 'labor', qty: 3, rate: 90,  total: 282 }
-    ],
-    subtotal: 782,
-    tax: 78.20,
-    total: 860.20, // Brief: $860
-    validUntil: relativeDateString(30),
-    notes: 'Scheduled for telecom tower generator.',
-    createdAt: relativeDate(-65),
-    updatedAt: relativeDate(-60)
-  },
-  {
-    id: 'q_007',
-    number: 'Q-00007',
-    customerId: 'cust_5',
-    customerName: 'NBN Co Regional',
-    contactName: 'James Whitfield',
-    title: 'Wellington Exchange Battery Check',
-    status: 'Draft',
-    lineItems: [
-      { description: 'Battery Terminal Connectors', type: 'material', qty: 2, rate: 22, total: 44 },
-      { description: 'Inhibitor Test Strips', type: 'material', qty: 1, rate: 38, total: 38 },
-      { description: 'Service Labor', type: 'labor', qty: 2, rate: 150, total: 300 }
-    ],
-    subtotal: 382,
-    tax: 38.20,
-    total: 420.20, // Brief: $420
-    validUntil: relativeDateString(30),
-    notes: 'Draft review prior to field dispatch.',
-    createdAt: relativeDate(-32),
-    updatedAt: relativeDate(-30)
-  },
-  {
-    id: 'q_008',
-    number: 'Q-00008',
-    customerId: 'cust_8',
-    customerName: 'Essential Energy',
-    contactName: 'Darren Stubbs',
-    title: 'Cummins 100kVA Annual Service',
-    status: 'Sent',
-    lineItems: [
-      { description: 'Generator Service Kit — Cummins 150kVA', type: 'material', qty: 1, rate: 380, total: 380 },
-      { description: 'Battery 12V 100Ah AGM', type: 'material', qty: 1, rate: 280, total: 280 },
-      { description: 'Radiator Hose Kit & Belts', type: 'material', qty: 1, rate: 290, total: 290 },
-      { description: 'Testing & Calibration Labor', type: 'labor', qty: 4, rate: 135, total: 540 }
-    ],
-    subtotal: 1490,
-    tax: 149.00,
-    total: 1639.00, // Brief: $1,640
-    validUntil: relativeDateString(45),
-    notes: 'Annual scheduled maintenance quote.',
-    createdAt: relativeDate(-14),
-    updatedAt: relativeDate(-14)
-  }
-];
-
-// Jobs Seeding
-const jobs = [
-  // --- PAST COMPLETED & INVOICED ---
-  {
-    id: 'job_001',
-    number: 'J-00001',
-    customerId: 'cust_1',
-    customerName: 'Western NSW Local Health District',
-    contactName: 'Margaret Ellison',
-    siteAddress: '42 Bultje Street, Dubbo NSW 2830',
-    title: 'Cat 500kVA 250hr Service — Dubbo Base Hospital',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'Standard',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: 'q_001',
-    assetId: 'asset_1',
-    scheduledDate: relativeDateString(-90),
-    estimatedHours: 4,
-    laborCost: 580,
-    materialCost: 1075,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'Completed base generator service successfully.',
-    createdAt: relativeDate(-95),
-    updatedAt: relativeDate(-90)
-  },
-  {
-    id: 'job_002',
-    number: 'J-00002',
-    customerId: 'cust_2',
-    customerName: 'Optus Network Infrastructure',
-    contactName: 'Trevor Nash',
-    siteAddress: 'Level 3, 201 Elizabeth Street, Sydney NSW 2000',
-    title: 'Narromine Tower 6 Monthly Service',
-    type: 'Electrical',
-    status: 'Invoiced',
-    priority: 'Standard',
-    technicianId: 'tech_2',
-    technicianName: 'Ryan Holt',
-    quoteId: 'q_006',
-    assetId: 'asset_5',
-    scheduledDate: relativeDateString(-60),
-    estimatedHours: 3,
-    laborCost: 282,
-    materialCost: 500,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'All items completed.',
-    createdAt: relativeDate(-65),
-    updatedAt: relativeDate(-60)
-  },
-  {
-    id: 'job_003',
-    number: 'J-00003',
-    customerId: 'cust_1',
-    customerName: 'Western NSW Local Health District',
-    contactName: 'Margaret Ellison',
-    siteAddress: '42 Bultje Street, Dubbo NSW 2830',
-    title: 'Emergency Callout — ATS Fault — Dubbo Base Hospital',
-    type: 'Electrical',
-    status: 'Invoiced',
-    priority: 'Urgent',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: null,
-    assetId: 'asset_3',
-    scheduledDate: relativeDateString(-42),
-    estimatedHours: 2,
-    laborCost: 650,
-    materialCost: 0,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'Resolved switchboard lockout. Replaced fuse assembly.',
-    createdAt: relativeDate(-42),
-    updatedAt: relativeDate(-42)
-  },
-  {
-    id: 'job_004',
-    number: 'J-00004',
-    customerId: 'cust_7',
-    customerName: 'Canopus Station',
-    contactName: 'Bruce Halliday',
-    siteAddress: 'Canopus Station, Bourke Road, Bourke NSW 2840',
-    title: 'Canopus Station 3 Monthly Service',
-    type: 'Electrical',
-    status: 'Invoiced',
-    priority: 'Standard',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: 'q_004',
-    assetId: 'asset_16',
-    scheduledDate: relativeDateString(-35),
-    estimatedHours: 3,
-    laborCost: 275,
-    materialCost: 380,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'Standard generator checks completed. Hybrid bank active.',
-    createdAt: relativeDate(-38),
-    updatedAt: relativeDate(-35)
-  },
-  {
-    id: 'job_005',
-    number: 'J-00005',
-    customerId: 'cust_5',
-    customerName: 'NBN Co Regional',
-    contactName: 'James Whitfield',
-    siteAddress: '100 Miller Street, North Sydney NSW 2060',
-    title: 'Wellington Exchange Battery Check',
-    type: 'Electrical',
-    status: 'Invoiced',
-    priority: 'Standard',
-    technicianId: 'tech_2',
-    technicianName: 'Ryan Holt',
-    quoteId: 'q_007',
-    assetId: 'asset_15',
-    scheduledDate: relativeDateString(-28),
-    estimatedHours: 2,
-    laborCost: 300,
-    materialCost: 82,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'Exchanged corroded battery lugs.',
-    createdAt: relativeDate(-32),
-    updatedAt: relativeDate(-28)
-  },
-  {
-    id: 'job_006',
-    number: 'J-00006',
-    customerId: 'cust_1',
-    customerName: 'Western NSW Local Health District',
-    contactName: 'Margaret Ellison',
-    siteAddress: '42 Bultje Street, Dubbo NSW 2830',
-    title: 'Cat 500kVA 500hr Service — Dubbo Base Hospital',
-    type: 'Electrical',
-    status: 'Invoiced',
-    priority: 'Standard',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: 'q_002',
-    assetId: 'asset_1',
-    scheduledDate: relativeDateString(-21),
-    estimatedHours: 8,
-    laborCost: 2000,
-    materialCost: 1783,
-    tasks: createJobTasks('tmpl_std_500', true),
-    notes: 'Collaborated with apprentice Dean Caruso on full overhaul & testing.',
-    createdAt: relativeDate(-25),
-    updatedAt: relativeDate(-21)
-  },
-  {
-    id: 'job_007',
-    number: 'J-00007',
-    customerId: 'cust_4',
-    customerName: 'Dubbo City Council',
-    contactName: 'Sandra Nguyen',
-    siteAddress: 'Civic Administration Building, Dubbo NSW 2830',
-    title: 'Dubbo Airport Generator Annual Test',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'High',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: null,
-    assetId: 'asset_13',
-    scheduledDate: relativeDateString(-14),
-    estimatedHours: 4,
-    laborCost: 540,
-    materialCost: 180,
-    tasks: createJobTasks('tmpl_std_500', true),
-    notes: 'Generator performance tested cleanly. Invoice pending approval.',
-    createdAt: relativeDate(-18),
-    updatedAt: relativeDate(-14)
-  },
-  {
-    id: 'job_008',
-    number: 'J-00008',
-    customerId: 'cust_3',
-    customerName: 'Cobar Mining Pty Ltd',
-    contactName: 'Phil Drummond',
-    siteAddress: 'Cobar Mine Site, Peak Hill Road, Cobar NSW 2835',
-    title: 'Cobar Mine Gen 1 Load Bank Test',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'High',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: 'q_005',
-    assetId: 'asset_8',
-    scheduledDate: relativeDateString(-7),
-    estimatedHours: 8,
-    laborCost: 1080,
-    materialCost: 280,
-    tasks: createJobTasks('tmpl_std_500', true),
-    notes: 'Load bank validation complete. Highly successful test.',
-    createdAt: relativeDate(-10),
-    updatedAt: relativeDate(-7)
-  },
-
-  // --- CURRENT IN PROGRESS ---
-  {
-    id: 'job_009',
-    number: 'J-00009',
-    customerId: 'cust_4',
-    customerName: 'Dubbo City Council',
-    contactName: 'Sandra Nguyen',
-    siteAddress: 'Civic Administration Building, Dubbo NSW 2830',
-    title: 'Water Treatment Plant Quarterly Service',
-    type: 'Electrical',
-    status: 'In Progress',
-    priority: 'Standard',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: 'q_003',
-    assetId: 'asset_11',
-    scheduledDate: relativeDateString(0),
-    estimatedHours: 4,
-    laborCost: 390,
-    materialCost: 500,
-    tasks: createJobTasks('tmpl_minor_250', false),
-    notes: 'Currently performing routine inspection on plant.',
-    createdAt: relativeDate(-4),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_010',
-    number: 'J-00010',
-    customerId: 'cust_6',
-    customerName: 'Transgrid',
-    contactName: 'Robyn Cassidy',
-    siteAddress: '180 Thomas Street, Sydney NSW 2000',
-    title: 'Transgrid Substation UPS Inspection',
-    type: 'Electrical',
-    status: 'In Progress',
-    priority: 'High',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: null,
-    assetId: null,
-    scheduledDate: relativeDateString(0),
-    estimatedHours: 6,
-    laborCost: 750,
-    materialCost: 280,
-    tasks: createJobTasks('tmpl_minor_250', false),
-    notes: 'Testing backup battery parameters.',
-    createdAt: relativeDate(-2),
-    updatedAt: relativeDate(0)
-  },
-
-  // --- UPCOMING SCHEDULED ---
-  {
-    id: 'job_011',
-    number: 'J-00011',
-    customerId: 'cust_7',
-    customerName: 'Canopus Station',
-    contactName: 'Bruce Halliday',
-    siteAddress: 'Canopus Station, Bourke Road, Bourke NSW 2840',
-    title: 'Canopus Station 3 Monthly Service',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'Standard',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: null,
-    assetId: 'asset_16',
-    scheduledDate: relativeDateString(7),
-    estimatedHours: 4,
-    laborCost: 450,
-    materialCost: 260,
-    tasks: createJobTasks('tmpl_minor_250', false),
-    notes: 'Travel to outback Bourke homestead scheduled.',
-    createdAt: relativeDate(-1),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_012',
-    number: 'J-00012',
-    customerId: 'cust_1',
-    customerName: 'Western NSW Local Health District',
-    contactName: 'Margaret Ellison',
-    siteAddress: 'Bourke Hospital Site, Bourke NSW 2840',
-    title: 'Bourke Hospital Generator Annual Service',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'High',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: null,
-    assetId: 'asset_2',
-    scheduledDate: relativeDateString(14),
-    estimatedHours: 8,
-    laborCost: 1160,
-    materialCost: 580,
-    tasks: createJobTasks('tmpl_std_500', false),
-    notes: 'Jake to lead, Dean Caruso assisting on apprentice hours.',
-    createdAt: relativeDate(-2),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_013',
-    number: 'J-00013',
-    customerId: 'cust_2',
-    customerName: 'Optus Network Infrastructure',
-    contactName: 'Trevor Nash',
-    siteAddress: 'Trangie Tower Site, Trangie NSW 2823',
-    title: 'Optus Trangie Tower Service',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'Standard',
-    technicianId: 'tech_2',
-    technicianName: 'Ryan Holt',
-    quoteId: null,
-    assetId: 'asset_6',
-    scheduledDate: relativeDateString(21),
-    estimatedHours: 3,
-    laborCost: 350,
-    materialCost: 245,
-    tasks: createJobTasks('tmpl_minor_250', false),
-    notes: 'Tower inspection.',
-    createdAt: relativeDate(-5),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_014',
-    number: 'J-00014',
-    customerId: 'cust_3',
-    customerName: 'Cobar Mining Pty Ltd',
-    contactName: 'Phil Drummond',
-    siteAddress: 'Cobar Mine Site, Peak Hill Road, Cobar NSW 2835',
-    title: 'Cobar Mine Gen 2 Inspection',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'High',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: null,
-    assetId: 'asset_9',
-    scheduledDate: relativeDateString(28),
-    estimatedHours: 5,
-    laborCost: 725,
-    materialCost: 380,
-    tasks: createJobTasks('tmpl_std_500', false),
-    notes: 'Inspection on generator 2.',
-    createdAt: relativeDate(-4),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_015',
-    number: 'J-00015',
-    customerId: 'cust_8',
-    customerName: 'Essential Energy',
-    contactName: 'Darren Stubbs',
-    siteAddress: '328 Oliver Street, Bathurst NSW 2795',
-    title: 'Essential Energy Annual Service',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'High',
-    technicianId: 'tech_2',
-    technicianName: 'Ryan Holt',
-    quoteId: 'q_008',
-    assetId: 'asset_18',
-    scheduledDate: relativeDateString(35),
-    estimatedHours: 6,
-    laborCost: 540,
-    materialCost: 1100,
-    tasks: createJobTasks('tmpl_std_500', false),
-    notes: 'Mandatory essential energy inspection.',
-    createdAt: relativeDate(-8),
-    updatedAt: relativeDate(0)
-  },
-
-  // --- EXTRA Timeline Jobs ---
-  {
-    id: 'job_016',
-    number: 'J-00016',
-    customerId: 'cust_1',
-    customerName: 'Western NSW Local Health District',
-    contactName: 'Margaret Ellison',
-    siteAddress: 'Bourke Hospital Site, Bourke NSW 2840',
-    title: 'Bourke Hospital Switchboard Repair',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'Urgent',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: null,
-    assetId: null,
-    scheduledDate: relativeDateString(-18),
-    estimatedHours: 3,
-    laborCost: 450,
-    materialCost: 110,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'Replaced fuses.',
-    createdAt: relativeDate(-18),
-    updatedAt: relativeDate(-18)
-  },
-  {
-    id: 'job_017',
-    number: 'J-00017',
-    customerId: 'cust_4',
-    customerName: 'Dubbo City Council',
-    contactName: 'Sandra Nguyen',
-    siteAddress: 'Water Treatment Plant, Dubbo NSW 2830',
-    title: 'Treatment Plant ATS Wiring Calibration',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'Standard',
-    technicianId: 'tech_4',
-    technicianName: 'Dean Caruso',
-    quoteId: null,
-    assetId: 'asset_12',
-    scheduledDate: relativeDateString(-25),
-    estimatedHours: 4,
-    laborCost: 180,
-    materialCost: 45,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'Apprentice Dean completed wiring.',
-    createdAt: relativeDate(-27),
-    updatedAt: relativeDate(-25)
-  },
-  {
-    id: 'job_018',
-    number: 'J-00018',
-    customerId: 'cust_3',
-    customerName: 'Cobar Mining Pty Ltd',
-    contactName: 'Phil Drummond',
-    siteAddress: 'Cobar Mine Site, Peak Hill Road, Cobar NSW 2835',
-    title: 'Mine Site Changeover Switch Installation',
-    type: 'Electrical',
-    status: 'Invoiced',
-    priority: 'High',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: null,
-    assetId: 'asset_10',
-    scheduledDate: relativeDateString(-12),
-    estimatedHours: 5,
-    laborCost: 725,
-    materialCost: 440,
-    tasks: createJobTasks('tmpl_std_500', true),
-    notes: 'Changeover panel configured.',
-    createdAt: relativeDate(-15),
-    updatedAt: relativeDate(-12)
-  },
-  {
-    id: 'job_019',
-    number: 'J-00019',
-    customerId: 'cust_7',
-    customerName: 'Canopus Station',
-    contactName: 'Bruce Halliday',
-    siteAddress: 'Bourke Road, Bourke NSW 2840',
-    title: 'Canopus Hybrid Battery Configuration',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'Standard',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: null,
-    assetId: 'asset_17',
-    scheduledDate: relativeDateString(-3),
-    estimatedHours: 4,
-    laborCost: 480,
-    materialCost: 58,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'Lithium battery bank sync successful.',
-    createdAt: relativeDate(-5),
-    updatedAt: relativeDate(-3)
-  },
-  {
-    id: 'job_020',
-    number: 'J-00020',
-    customerId: 'cust_2',
-    customerName: 'Optus Network Infrastructure',
-    contactName: 'Trevor Nash',
-    siteAddress: 'Narromine Tower Site, Narromine NSW 2821',
-    title: 'Tower Battery Diagnostics & Swap',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'High',
-    technicianId: 'tech_2',
-    technicianName: 'Ryan Holt',
-    quoteId: null,
-    assetId: 'asset_7',
-    scheduledDate: relativeDateString(-10),
-    estimatedHours: 2,
-    laborCost: 195,
-    materialCost: 280,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'AGM 12V Battery swapped in Narromine Tower.',
-    createdAt: relativeDate(-12),
-    updatedAt: relativeDate(-10)
-  },
-  {
-    id: 'job_021',
-    number: 'J-00021',
-    customerId: 'cust_4',
-    customerName: 'Dubbo City Council',
-    contactName: 'Sandra Nguyen',
-    siteAddress: 'Dubbo Airport, Dubbo NSW 2830',
-    title: 'Airport Generator V-Belt Replacement',
-    type: 'Electrical',
-    status: 'Completed',
-    priority: 'Urgent',
-    technicianId: 'tech_1',
-    technicianName: 'Jake Morrow',
-    quoteId: null,
-    assetId: 'asset_13',
-    scheduledDate: relativeDateString(-5),
-    estimatedHours: 3,
-    laborCost: 435,
-    materialCost: 150,
-    tasks: createJobTasks('tmpl_minor_250', true),
-    notes: 'V-Belt set replaced successfully during airport test.',
-    createdAt: relativeDate(-5),
-    updatedAt: relativeDate(-5)
-  },
-  {
-    id: 'job_022',
-    number: 'J-00022',
-    customerId: 'cust_6',
-    customerName: 'Transgrid',
-    contactName: 'Robyn Cassidy',
-    siteAddress: '180 Thomas Street, Sydney NSW 2000',
-    title: 'Transgrid Depot Maintenance Service',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'Standard',
-    technicianId: 'tech_4',
-    technicianName: 'Dean Caruso',
-    quoteId: null,
-    assetId: null,
-    scheduledDate: relativeDateString(10),
-    estimatedHours: 4,
-    laborCost: 180,
-    materialCost: 45,
-    tasks: createJobTasks('tmpl_minor_250', false),
-    notes: 'Apprentice Dean Caruso scheduled for checking.',
-    createdAt: relativeDate(-2),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_023',
-    number: 'J-00023',
-    customerId: 'cust_5',
-    customerName: 'NBN Co Regional',
-    contactName: 'James Whitfield',
-    siteAddress: 'Wellington Exchange, Wellington NSW 2820',
-    title: 'Powergen 15kVA Routine Check',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'Standard',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: null,
-    assetId: 'asset_14',
-    scheduledDate: relativeDateString(17),
-    estimatedHours: 3,
-    laborCost: 350,
-    materialCost: 38,
-    tasks: createJobTasks('tmpl_minor_250', false),
-    notes: 'Generator check Wellington.',
-    createdAt: relativeDate(-3),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_024',
-    number: 'J-00024',
-    customerId: 'cust_8',
-    customerName: 'Essential Energy',
-    contactName: 'Darren Stubbs',
-    siteAddress: ' Bathurst Depot, Bathurst NSW 2795',
-    title: 'Essential Energy Hour Meter Update',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'Standard',
-    technicianId: 'tech_4',
-    technicianName: 'Dean Caruso',
-    quoteId: null,
-    assetId: 'asset_18',
-    scheduledDate: relativeDateString(25),
-    estimatedHours: 2,
-    laborCost: 90,
-    materialCost: 105,
-    tasks: createJobTasks('tmpl_minor_250', false),
-    notes: 'Install Digital Hour Meter.',
-    createdAt: relativeDate(-1),
-    updatedAt: relativeDate(0)
-  },
-  {
-    id: 'job_025',
-    number: 'J-00025',
-    customerId: 'cust_7',
-    customerName: 'Canopus Station',
-    contactName: 'Bruce Halliday',
-    siteAddress: 'Canopus Station, Bourke Road, Bourke NSW 2840',
-    title: 'New Solar Hybrid Installation Follow-up',
-    type: 'Electrical',
-    status: 'Scheduled',
-    priority: 'High',
-    technicianId: 'tech_3',
-    technicianName: 'Sandra Okafor',
-    quoteId: null,
-    assetId: 'asset_17',
-    scheduledDate: relativeDateString(32),
-    estimatedHours: 4,
-    laborCost: 450,
-    materialCost: 0,
-    tasks: createJobTasks('tmpl_std_500', false),
-    notes: 'Converted from a new farm battery-solar system lead.',
-    createdAt: relativeDate(-4),
-    updatedAt: relativeDate(0)
-  }
-];
-
-// Invoices List
-const invoices = [
-  { id: 'inv_1', number: 'INV-00001', jobId: 'job_001', jobNumber: 'J-00001', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Paid', lineItems: [{ description: 'Cat 500kVA 250hr Service - Labor', amount: 580 }, { description: 'Cat 500kVA 250hr Service - Materials', amount: 1075 }], subtotal: 1655, tax: 165.50, total: 1820.50, invoiceType: 'Standard', issueDate: relativeDate(-90), dueDate: relativeDateString(-76), paidDate: relativeDate(-76), notes: 'Fully paid by health district.' },
-  { id: 'inv_2', number: 'INV-00002', jobId: 'job_002', jobNumber: 'J-00002', customerId: 'cust_2', customerName: 'Optus Network Infrastructure',      contactName: 'Trevor Nash',      status: 'Paid', lineItems: [{ description: 'Narromine Tower Service - Labor', amount: 282 }, { description: 'Narromine Tower Service - Materials', amount: 500 }], subtotal: 782,  tax: 78.20,  total: 860.20,  invoiceType: 'Standard', issueDate: relativeDate(-60), dueDate: relativeDateString(-46), paidDate: relativeDate(-46), notes: 'Telecom maintenance account paid.' },
-  { id: 'inv_3', number: 'INV-00003', jobId: 'job_003', jobNumber: 'J-00003', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Sent', lineItems: [{ description: 'Emergency Callout - ATS Switchboard Fault', amount: 650 }], subtotal: 650,  tax: 65.00,  total: 715.00,  invoiceType: 'Standard', issueDate: relativeDate(-42), dueDate: relativeDateString(-28), paidDate: null,              notes: 'Outstanding emergency invoice.' },
-  { id: 'inv_4', number: 'INV-00004', jobId: 'job_004', jobNumber: 'J-00004', customerId: 'cust_7', customerName: 'Canopus Station',                   contactName: 'Bruce Halliday',   status: 'Paid', lineItems: [{ description: 'Canopus Station Routine - Labor', amount: 275 }, { description: 'Canopus Station Routine - Materials', amount: 380 }], subtotal: 655,  tax: 65.50,  total: 720.50,  invoiceType: 'Standard', issueDate: relativeDate(-35), dueDate: relativeDateString(-21), paidDate: relativeDate(-20), notes: 'Station account settled.' },
-  { id: 'inv_5', number: 'INV-00005', jobId: 'job_005', jobNumber: 'J-00005', customerId: 'cust_5', customerName: 'NBN Co Regional',                   contactName: 'James Whitfield',  status: 'Paid', lineItems: [{ description: 'Wellington Battery Exchange - Labor', amount: 300 }, { description: 'Wellington Battery Exchange - Materials', amount: 82 }], subtotal: 382,  tax: 38.20,  total: 420.20,  invoiceType: 'Standard', issueDate: relativeDate(-28), dueDate: relativeDateString(-14), paidDate: relativeDate(-14), notes: 'Telecom account paid.' },
-  { id: 'inv_6', number: 'INV-00006', jobId: 'job_006', jobNumber: 'J-00006', customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Paid', lineItems: [{ description: 'Cat 500kVA Overhaul & Standard Service - Labor', amount: 2000 }, { description: 'Cat 500kVA Overhaul - Materials', amount: 1783 }], subtotal: 3783, tax: 378.30, total: 4161.30, invoiceType: 'Standard', issueDate: relativeDate(-21), dueDate: relativeDateString(-7),  paidDate: relativeDate(-7),  notes: 'Hospital accounts paid.' },
-  { id: 'inv_7', number: 'INV-00007', jobId: 'job_007', jobNumber: 'J-00007', customerId: 'cust_4', customerName: 'Dubbo City Council',                contactName: 'Sandra Nguyen',    status: 'Sent', lineItems: [{ description: 'Dubbo Airport Generator Test - Labor', amount: 540 }, { description: 'Dubbo Airport Generator Test - Materials', amount: 180 }], subtotal: 720,  tax: 72.00,  total: 792.00,  invoiceType: 'Standard', issueDate: relativeDate(-14), dueDate: relativeDateString(0),   paidDate: null,              notes: 'Council invoice outstanding.' },
-  { id: 'inv_8', number: 'INV-00008', jobId: 'job_008', jobNumber: 'J-00008', customerId: 'cust_3', customerName: 'Cobar Mining Pty Ltd',              contactName: 'Phil Drummond',    status: 'Sent', lineItems: [{ description: 'Cobar Gen 1 Load Bank Test - Labor', amount: 1080 }, { description: 'Cobar Gen 1 Load Bank Test - Materials', amount: 280 }], subtotal: 1360, tax: 136.00, total: 1496.00, invoiceType: 'Standard', issueDate: relativeDate(-7),  dueDate: relativeDateString(7),   paidDate: null,              notes: 'Mining invoice outstanding.' }
-];
-
-// Schedule Seeding
-const schedules = [
-  // J-009
-  { id: 'sc_1', jobId: 'job_009', jobNumber: 'J-00009', title: 'Water Treatment Plant Quarterly Service', technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 0, startHour: 8,  endHour: 13, customerName: 'Dubbo City Council', siteAddress: 'Dubbo NSW 2830' },
-  // J-010
-  { id: 'sc_2', jobId: 'job_010', jobNumber: 'J-00010', title: 'Transgrid Substation UPS Inspection',    technicianId: 'tech_3', technicianName: 'Sandra Okafor', color: '#8B5CF6', dayOffset: 0, startHour: 10, endHour: 16, customerName: 'Transgrid', siteAddress: 'Sydney NSW 2000' },
-  // J-011
-  { id: 'sc_3', jobId: 'job_011', jobNumber: 'J-00011', title: 'Canopus Station 3 Monthly Service',     technicianId: 'tech_3', technicianName: 'Sandra Okafor', color: '#8B5CF6', dayOffset: 7, startHour: 8,  endHour: 12, customerName: 'Canopus Station', siteAddress: 'Bourke NSW 2840' },
-  // J-012
-  { id: 'sc_4', jobId: 'job_012', jobNumber: 'J-00012', title: 'Bourke Hospital Generator Service',      technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 14,startHour: 8,  endHour: 16, customerName: 'Western NSW Local Health District', siteAddress: 'Bourke NSW 2840' },
-  // J-013
-  { id: 'sc_5', jobId: 'job_013', jobNumber: 'J-00013', title: 'Optus Trangie Tower Service',            technicianId: 'tech_2', technicianName: 'Ryan Holt',    color: '#10B981', dayOffset: 21,startHour: 9,  endHour: 12, customerName: 'Optus Network Infrastructure', siteAddress: 'Trangie NSW 2823' },
-  // J-014
-  { id: 'sc_6', jobId: 'job_014', jobNumber: 'J-00014', title: 'Cobar Mine Gen 2 Inspection',            technicianId: 'tech_1', technicianName: 'Jake Morrow',  color: '#3B82F6', dayOffset: 28,startHour: 9,  endHour: 14, customerName: 'Cobar Mining Pty Ltd', siteAddress: 'Cobar NSW 2835' },
-  // J-015
-  { id: 'sc_7', jobId: 'job_015', jobNumber: 'J-00015', title: 'Essential Energy Annual Service',        technicianId: 'tech_2', technicianName: 'Ryan Holt',    color: '#10B981', dayOffset: 35,startHour: 8,  endHour: 14, customerName: 'Essential Energy', siteAddress: 'Bathurst NSW 2795' }
-];
-
-// Leads Seeding
-const leads = [
-  { id: 'lead_1', number: 'LD-00001', title: 'Solar/Battery/Generator Hybrid System Enquiry', customerId: 'cust_7', customerName: 'Canopus Station',                  contactName: 'Bruce Halliday',   status: 'New',          source: 'Email',   value: 45000,  description: 'Provide details for off-grid hybrid farm bank.', priority: 'High',   createdAt: relativeDate(-12), updatedAt: relativeDate(-12) },
-  { id: 'lead_2', number: 'LD-00002', title: 'Generator Maintenance Contract Tender',          customerId: 'cust_4', customerName: 'Dubbo City Council',                contactName: 'Sandra Nguyen',    status: 'Qualified',    source: 'Website', value: 28000,  description: 'Dubbo regional council annual maintenance contract tender.', priority: 'High', createdAt: relativeDate(-8),  updatedAt: relativeDate(-2) },
-  { id: 'lead_3', number: 'LD-00003', title: 'Backup Power Assessment',                        customerId: 'cust_1', customerName: 'Western NSW Local Health District', contactName: 'Margaret Ellison', status: 'Proposal',   source: 'Phone',   value: 12000,  description: 'Emergency assessment of clinical battery status.', priority: 'Medium', createdAt: relativeDate(-15), updatedAt: relativeDate(-5) },
-  { id: 'lead_4', number: 'LD-00004', title: 'Generator Fleet Maintenance',                    customerId: 'cust_8', customerName: 'Essential Energy',                  contactName: 'Darren Stubbs',    status: 'Negotiation',  source: 'Referral',value: 35000,  description: 'Annual service contract for depot generator fleets.', priority: 'High',   createdAt: relativeDate(-22), updatedAt: relativeDate(-2) },
-  { id: 'lead_5', number: 'LD-00005', title: 'Emergency Power System Upgrade',                 customerId: 'cust_3', customerName: 'Cobar Mining Pty Ltd',              contactName: 'Phil Drummond',    status: 'New',          source: 'Phone',   value: 180000, description: 'Underground mine generator ventilation upgrade proposal.', priority: 'Urgent', createdAt: relativeDate(-1),  updatedAt: relativeDate(-1) },
-  { id: 'lead_6', number: 'LD-00006', title: 'Regional Tower Maintenance Contract',            customerId: 'cust_2', customerName: 'Optus Network Infrastructure',      contactName: 'Trevor Nash',      status: 'Lost',         source: 'Email',   value: 95000,  description: 'Telecom network maintenance. Competitor undercut on base travel rates.', priority: 'Low', createdAt: relativeDate(-45), updatedAt: relativeDate(-30) }
-];
-
-// Pre-populated Notifications
-const notifications = [
-  { id: 'notif_1', number: 'NT-00001', type: 'Maintenance', title: 'Maintenance Due — Cummins 150kVA', description: 'Maintenance Due — Cummins 150kVA Water Treatment Plant Quarterly Service', priority: 'High',   status: 'Pending', createdAt: relativeDate(-1), assetId: 'asset_11' },
-  { id: 'notif_2', number: 'NT-00002', type: 'Maintenance', title: 'Maintenance Due — Kubota 15kVA',   description: 'Maintenance Due — Kubota 15kVA Canopus Station 3 Monthly Service',          priority: 'Standard', status: 'Pending', createdAt: relativeDate(0),  assetId: 'asset_16' },
-  { id: 'notif_3', number: 'NT-00003', type: 'Low Stock',   title: 'Low Stock Alert — Service Kit',   description: 'Low Stock Alert — Generator Service Kit Cummins 150kVA (1 left)',           priority: 'High',   status: 'Pending', createdAt: relativeDate(-2) },
-  { id: 'notif_4', number: 'NT-00004', type: 'Job Update',  title: 'Job Completed — J-00008',           description: 'Job Update — J-00008 Cobar Mine Completed by Jake Morrow (Awaiting Invoice)',  priority: 'High',   status: 'Pending', createdAt: relativeDate(0),  jobId: 'job_008' }
-];
-
-// Contractors List
-const contractors = [
-  {
-    id: 'cont_1',
-    businessName: 'EcoVolt Electrical Services',
-    contactName: 'Elena Rostova',
-    email: 'elena@ecovoltelectrical.com.au',
-    phone: '0498 765 432',
-    licenseNumber: 'LIC-EL-88390',
-    active: true,
-    hourlyRate: 95.00,
-    afterHoursRate: 142.50,
-    calloutFee: 85.00,
-    specialties: ['Solar PV Installation', 'Battery Systems', 'Switchboard Upgrades'],
-    notes: 'Subcontractor based in NSW. Highly reliable.',
-    portalToken: 'c_pt_ecovolt',
-    complianceDocs: [
-      { id: 'doc_1', type: 'Public Liability Insurance', number: 'PL-992110-A', expiryDate: '2026-10-15', verified: true, notes: 'Cover up to $20M' }
-    ]
-  }
-];
-
-// Suppliers List
-const suppliers = [
-  {
-    id: 'sup_1',
-    name: 'ElectraTrade',
-    contactName: 'Robert Vance',
-    email: 'sales@electratrade.com.au',
-    phone: '03 9822 1045',
-    address: '22 Industrial Parkway, South Melbourne, VIC 3205',
-    category: 'Electrical',
-    accountNumber: 'FF-ET-10291',
-    paymentTerms: '30 Days',
-    active: true,
-    notes: 'Primary generator supplier.',
-    attachments: []
-  }
-];
-
 // Seeding main execution
 export async function seedData(force = false) {
   if (!force && store.isSeeded()) {
@@ -1148,11 +171,11 @@ export async function seedData(force = false) {
   const settings = {
     name: 'Apex Power Services',
     abn: '12 345 678 901',
-    phone: '02 6801 4000',
-    email: 'admin@apexpowerservices.com.au',
-    domain: 'apexpowerservices.com.au',
-    address: 'Civic Administration Building, Dubbo NSW 2830',
-    website: 'www.apexpowerservices.com.au',
+    phone: '02 5550 0000',
+    email: 'admin@apexpowerservices.local',
+    domain: 'apexpowerservices.local',
+    address: '100 Fictional Plaza, Dubbo NSW 2830',
+    website: 'www.apexpowerservices.local',
     logo: null,
     logoSmall: null,
     materialMarkup: {
@@ -1177,11 +200,11 @@ export async function seedData(force = false) {
 
   // Generate 5 of everything (Procedural Generator)
   const techniciansList = [
-    { id: 'tech_1', name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: 'ut_admin',   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445' },
-    { id: 'tech_2', name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: 'ut_manager', payRate: 85.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556' },
-    { id: 'tech_3', name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: 'ut_tech',    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667' },
-    { id: 'tech_4', name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: 'ut_office',  payRate: 50.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778' },
-    { id: 'tech_5', name: 'Liam Vance',    role: 'Electrician Apprentice', color: '#EC4899', userTypeId: 'ut_tech', payRate: 40.00,  email: 'liam@apexpowerservices.com.au',  phone: '0456 677 889' }
+    { id: 'tech_1', name: 'Adam West',      role: 'Senior Electrician',     color: '#3B82F6', userTypeId: 'ut_admin',   payRate: 95.00,  email: 'adam.west@apexpowerservices.local',     phone: '0491 570 001' },
+    { id: 'tech_2', name: 'Burt Ward',      role: 'Service Manager',        color: '#10B981', userTypeId: 'ut_manager', payRate: 85.00,  email: 'burt.ward@apexpowerservices.local',     phone: '0491 570 002' },
+    { id: 'tech_3', name: 'Diana Prince',   role: 'Electrician',            color: '#8B5CF6', userTypeId: 'ut_tech',    payRate: 80.00,  email: 'diana.prince@apexpowerservices.local',  phone: '0491 570 003' },
+    { id: 'tech_4', name: 'Clark Kent',     role: 'Office Administrator',   color: '#F59E0B', userTypeId: 'ut_office',  payRate: 50.00,  email: 'clark.kent@apexpowerservices.local',    phone: '0491 570 004' },
+    { id: 'tech_5', name: 'Liam Vance',     role: 'Electrician Apprentice', color: '#EC4899', userTypeId: 'ut_tech',    payRate: 40.00,  email: 'liam.vance@apexpowerservices.local',    phone: '0491 570 005' }
   ];
 
   const stockList = [
@@ -1193,11 +216,304 @@ export async function seedData(force = false) {
   ];
 
   const customerNames = [
-    { company: 'Western NSW Health', first: 'Margaret', last: 'Ellison', email: 'facilities@wnswhealth.gov.au', phone: '02 6809 8888', address: '42 Bultje Street, Dubbo NSW 2830' },
-    { company: 'Optus Regional', first: 'Trevor', last: 'Nash', email: 't.nash@optus.com.au', phone: '0418 772 334', address: 'Level 3, 201 Elizabeth Street, Sydney NSW 2000' },
-    { company: 'Cobar Mining', first: 'Phil', last: 'Drummond', email: 'p.drummond@cobarmining.com.au', phone: '0427 883 221', address: 'Mine Site, Peak Hill Road, Cobar NSW 2835' },
-    { company: 'Dubbo City Council', first: 'Sandra', last: 'Nguyen', email: 's.nguyen@dubbo.nsw.gov.au', phone: '02 6801 4000', address: 'Civic Building, Dubbo NSW 2830' },
-    { company: 'Canopus Station', first: 'Bruce', last: 'Halliday', email: 'bruce@canopusstation.com.au', phone: '0428 991 003', address: 'Bourke Road, Bourke NSW 2840' }
+    {
+      company: 'Starlight Logistics Pty Ltd',
+      first: 'Daniel',
+      last: 'Carter',
+      email: 'd.carter@starlight-logistics.example.com',
+      phone: '02 5550 0110',
+      address: '14 Industrial Lane, Dubbo NSW 2830',
+      contacts: [
+        { name: 'Amy Vance', role: 'Operations Manager', email: 'a.vance@starlight-logistics.example.com', phone: '0491 570 156' },
+        { name: 'Gary Thorne', role: 'Warehouse Supervisor', email: 'g.thorne@starlight-logistics.example.com', phone: '0491 570 157' },
+        { name: 'Jessica Miller', role: 'Facilities Coordinator', email: 'j.miller@starlight-logistics.example.com', phone: '0491 570 158' },
+        { name: 'Marcus Brody', role: 'Safety Inspector', email: 'm.brody@starlight-logistics.example.com', phone: '0491 570 159' },
+        { name: 'Helen Hunt', role: 'Procurement Specialist', email: 'h.hunt@starlight-logistics.example.com', phone: '0491 570 160' }
+      ],
+      sites: [
+        { name: 'Primary Distribution Hub', address: '14 Industrial Lane, Dubbo NSW 2830', notes: 'Main warehouse with double-loading dock.' },
+        { name: 'Cold Storage Facility', address: '45 Depot Road, Dubbo NSW 2830', notes: 'Access via back gate PIN 4910#.' },
+        { name: 'Overflow Storage Yard', address: '12 Boundary Road, Brocklehurst NSW 2830', notes: 'Key inside lockbox near main fence.' },
+        { name: 'Dubbo Office Suites', address: '100 Macquarie Street, Dubbo NSW 2830', notes: 'Level 1 reception.' },
+        { name: 'Wellington Logistics Yard', address: '7 Railway Siding, Wellington NSW 2820', notes: 'Watch for moving vehicles.' }
+      ]
+    },
+    {
+      company: 'Beacon Manufacturing Group',
+      first: 'Sarah',
+      last: 'Jenkins',
+      email: 's.jenkins@beacon-mfg.example.com',
+      phone: '02 5550 0120',
+      address: '88 Factory Road, Orange NSW 2800',
+      contacts: [
+        { name: 'Arthur Pendelton', role: 'Factory Manager', email: 'a.pendelton@beacon-mfg.example.com', phone: '0491 570 171' },
+        { name: 'Clara Oswald', role: 'Maintenance Electrician', email: 'c.oswald@beacon-mfg.example.com', phone: '0491 570 172' },
+        { name: 'Danny Pink', role: 'Safety Coordinator', email: 'd.pink@beacon-mfg.example.com', phone: '0491 570 173' },
+        { name: 'Kate Stewart', role: 'Engineering Director', email: 'k.stewart@beacon-mfg.example.com', phone: '0491 570 174' },
+        { name: 'Rory Williams', role: 'Dispatch Lead', email: 'r.williams@beacon-mfg.example.com', phone: '0491 570 175' }
+      ],
+      sites: [
+        { name: 'Main Fabrication Factory', address: '88 Factory Road, Orange NSW 2800', notes: 'High voltage area. Wear PPE.' },
+        { name: 'Assembly Plant 2', address: '90 Factory Road, Orange NSW 2800', notes: 'Service elevator access only.' },
+        { name: 'Research & Development Lab', address: '12 Science Drive, Orange NSW 2800', notes: 'Biometric security on entrance.' },
+        { name: 'Orange Logistics Depot', address: '20 Industry Way, Orange NSW 2800', notes: 'No parking in delivery bays.' },
+        { name: 'Sydney Distribution Point', address: '22 Huntley Street, Alexandria NSW 2015', notes: 'Call coordinator on arrival.' }
+      ]
+    },
+    {
+      company: 'Vanguard Property Management',
+      first: 'Michael',
+      last: 'Chang',
+      email: 'm.chang@vanguard-properties.example.com',
+      phone: '02 5550 0130',
+      address: '101 Corporate Avenue, Sydney NSW 2000',
+      contacts: [
+        { name: 'Alice Smith', role: 'Property Portfolio Manager', email: 'a.smith@vanguard-properties.example.com', phone: '0491 570 181' },
+        { name: 'Bob Jones', role: 'Senior Building Manager', email: 'b.jones@vanguard-properties.example.com', phone: '0491 570 182' },
+        { name: 'Charlie Brown', role: 'Facilities Admin', email: 'c.brown@vanguard-properties.example.com', phone: '0491 570 183' },
+        { name: 'Diana Prince', role: 'Commercial Leasing Agent', email: 'd.prince@vanguard-properties.example.com', phone: '0491 570 184' },
+        { name: 'Evan Wright', role: 'Operations Assistant', email: 'e.wright@vanguard-properties.example.com', phone: '0491 570 185' }
+      ],
+      sites: [
+        { name: 'Dubbo Commercial Complex', address: '80 Wingewarra Street, Dubbo NSW 2830', notes: 'Multiple retail tenants.' },
+        { name: 'Orange Medical Centre', address: '150 Anson Street, Orange NSW 2800', notes: 'Requires clean room protocol.' },
+        { name: 'Bathurst Business Park', address: '12 Research Drive, Bathurst NSW 2795', notes: 'Secure key safe on site.' },
+        { name: 'Alexandria Office Hub', address: '44 O\'Riordan Street, Alexandria NSW 2015', notes: 'Intercom 4B.' },
+        { name: 'North Sydney Retail Plaza', address: '100 Miller Street, North Sydney NSW 2060', notes: 'Loading dock via side street.' }
+      ]
+    },
+    {
+      company: 'Pinnacle Retail Solutions',
+      first: 'Emily',
+      last: 'Watson',
+      email: 'e.watson@pinnacle-retail.example.com',
+      phone: '02 5550 0140',
+      address: '55 High Street, Mudgee NSW 2850',
+      contacts: [
+        { name: 'Frank Miller', role: 'Centre Manager', email: 'f.miller@pinnacle-retail.example.com', phone: '0491 570 191' },
+        { name: 'Grace Kelly', role: 'Assistant Centre Manager', email: 'g.kelly@pinnacle-retail.example.com', phone: '0491 570 192' },
+        { name: 'Henry Higgins', role: 'Operations Lead', email: 'h.higgins@pinnacle-retail.example.com', phone: '0491 570 193' },
+        { name: 'Iris West', role: 'Marketing Director', email: 'i.west@pinnacle-retail.example.com', phone: '0491 570 194' },
+        { name: 'John Stewart', role: 'Night Operations Supervisor', email: 'j.stewart@pinnacle-retail.example.com', phone: '0491 570 195' }
+      ],
+      sites: [
+        { name: 'Mudgee Shopping Mall', address: '55 High Street, Mudgee NSW 2850', notes: 'Access outside retail hours via rear door.' },
+        { name: 'Dubbo Retail Strip', address: '210 Cobra Street, Dubbo NSW 2830', notes: 'Front of house maintenance.' },
+        { name: 'Orange Homemaker Centre', address: '10 Industry Rd, Orange NSW 2800', notes: 'Loading dock clearance 4.5m.' },
+        { name: 'Lithgow Shopping Centre', address: '80 Main Street, Lithgow NSW 2790', notes: 'Keys at main office.' },
+        { name: 'Parkes Retail Outlet', address: '33 Clarinda Street, Parkes NSW 2870', notes: 'Contact centre manager on arrival.' }
+      ]
+    },
+    {
+      company: 'Summit Agri-Business Pty Ltd',
+      first: 'Robert',
+      last: 'O\'Connor',
+      email: 'r.oconnor@summit-agri.example.com',
+      phone: '02 5550 0150',
+      address: 'Rural Route 4, Narromine NSW 2821',
+      contacts: [
+        { name: 'Kevin Flynn', role: 'Farm Operations Lead', email: 'k.flynn@summit-agri.example.com', phone: '0491 570 211' },
+        { name: 'Lois Lane', role: 'Logistics Coordinator', email: 'l.lane@summit-agri.example.com', phone: '0491 570 212' },
+        { name: 'Clark Kent', role: 'Field Supervisor', email: 'c.kent@summit-agri.example.com', phone: '0491 570 213' },
+        { name: 'Bruce Banner', role: 'Equipment Technician', email: 'b.banner@summit-agri.example.com', phone: '0491 570 214' },
+        { name: 'Selina Kyle', role: 'Safety Compliance Officer', email: 's.kyle@summit-agri.example.com', phone: '0491 570 215' }
+      ],
+      sites: [
+        { name: 'Main Homestead Office', address: 'Rural Route 4, Narromine NSW 2821', notes: 'Check in at reception first.' },
+        { name: 'Irrigation Pump Station 1', address: 'River Road, Narromine NSW 2821', notes: 'Pump shed keycode: 1212#.' },
+        { name: 'Irrigation Pump Station 2', address: 'Back Creek Road, Narromine NSW 2821', notes: 'Key in box next to electrical cabinet.' },
+        { name: 'Grain Storage Silos', address: 'Silo Siding Road, Narromine NSW 2821', notes: 'Watch out for heavy farm machinery.' },
+        { name: 'Wellington Processing Plant', address: '12 Factory Lane, Wellington NSW 2820', notes: 'High noise area.' }
+      ]
+    }
+  ];
+
+  // 25 unique quote/job scenarios
+  const uniqueWorkTemplates = [
+    // Starlight Logistics (cust_1)
+    {
+      title: 'Solar PV Inverter Diagnostics & Repair',
+      desc: 'Investigate solar inverter fault codes, perform safety isolation checks, and install a brand-new hybrid inverter unit.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 1, cost: 420, price: 680 }],
+      tasks: ['Isolate solar DC inputs and AC outputs', 'Run insulation resistance tests on solar strings', 'Mount new hybrid inverter and configure telemetry'],
+      hours: 4, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Emergency DB Board Switch Replacement',
+      desc: 'Emergency callout for main distribution board fault causing warehouse lighting circuit to trip under load. Replace faulty switch.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 1, cost: 420, price: 680 }],
+      tasks: ['Isolate distribution board sub-circuits', 'Locate and verify faulty switchgear terminals', 'Replace switchgear, re-tension busbars, and restore power'],
+      hours: 3, priority: 'Urgent', status: 'Invoiced'
+    },
+    {
+      title: 'Warehouse LED Highbay Retrofit',
+      desc: 'Dismantle old mercury vapor lights in bay 3 and install 12 high-efficiency 150W LED highbay units.',
+      materials: [{ stockId: 'st_4', name: 'Battery 12V 100Ah AGM', qty: 2, cost: 185, price: 280 }],
+      tasks: ['Set up scissor lift inside warehouse bay 3', 'Disconnect and lower old heavy fixtures', 'Install new LED highbays and perform illuminance readings'],
+      hours: 8, priority: 'Medium', status: 'Invoiced'
+    },
+    {
+      title: 'New GPO Outlets for Office Partition',
+      desc: 'Run additional power drops and install 6 double general-purpose outlets for new office workstations.',
+      materials: [{ stockId: 'st_5', name: 'Coolant Concentrate 5L', qty: 1, cost: 55, price: 85 }],
+      tasks: ['Map existing circuit loading capacity', 'Route TPS cable down wall cavities', 'Fit wall brackets, mount double GPOs, and verify polarity'],
+      hours: 5, priority: 'Low', status: 'Invoiced'
+    },
+    {
+      title: 'Switchboard RCD Compliance Testing',
+      desc: 'Mandatory 6-monthly testing of all residual current devices (RCDs) on main and auxiliary electrical panels.',
+      materials: [],
+      tasks: ['Locate and catalog all safety switches', 'Perform trip time measurements using RCD tester', 'Apply tags and document test compliance logs'],
+      hours: 2, priority: 'Medium', status: 'In Progress'
+    },
+
+    // Beacon Manufacturing (cust_2)
+    {
+      title: 'CNC Machine 3-Phase Outlet Install',
+      desc: 'Run dedicated 3-phase circular cable from main factory board and install a 32A industrial socket.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 1, cost: 420, price: 680 }],
+      tasks: ['Route orange circular cable along overhead cable trays', 'Terminate 3-phase outlet and test phase rotation', 'Commission machine connection with maintenance manager'],
+      hours: 6, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Office Split System Aircon Install',
+      desc: 'Install a 7.1kW reverse-cycle split system air conditioning system in the main office suite.',
+      materials: [{ stockId: 'st_5', name: 'Coolant Concentrate 5L', qty: 2, cost: 55, price: 85 }],
+      tasks: ['Core wall for refrigeration line sets', 'Mount indoor unit and place outdoor compressor on bracket', 'Run nitrogen leak test, vacuum lines, and charge refrigerant'],
+      hours: 7, priority: 'Medium', status: 'Invoiced'
+    },
+    {
+      title: 'Factory Switchboard Thermal Audit',
+      desc: 'Perform full thermographic imaging scan under load on factory distribution switchboards.',
+      materials: [],
+      tasks: ['Perform infrared scan of switchboard panels under normal factory load', 'Document loose connections or hot spots', 'Produce thermographic inspection report'],
+      hours: 4, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Assembly Line Overhead Cable Drops',
+      desc: 'Extend ceiling cable drops and wire flexible conduits down to relocated workbenches on the assembly line.',
+      materials: [{ stockId: 'st_4', name: 'Battery 12V 100Ah AGM', qty: 1, cost: 185, price: 280 }],
+      tasks: ['Isolate overhead sub-board circuits', 'Relocate overhead junction box positions', 'Hang new cable drops with strain reliefs and test outlets'],
+      hours: 8, priority: 'Medium', status: 'Invoiced'
+    },
+    {
+      title: 'Air Compressor Starter Relay Repair',
+      desc: 'Diagnose industrial compressor failure. Replace burnt contactor switch and starter relay coils.',
+      materials: [{ stockId: 'st_2', name: 'Oil Filter — Cat 3306', qty: 1, cost: 45, price: 75 }],
+      tasks: ['Trace control circuit fault within starter panel', 'Dismantle faulty contactor assembly', 'Install new starter relay coil and verify compressor start cycle'],
+      hours: 3, priority: 'Urgent', status: 'In Progress'
+    },
+
+    // Vanguard Property Management (cust_3)
+    {
+      title: 'Tenancy Sub-metering System Install',
+      desc: 'Retrofit smart sub-metering devices inside main commercial riser to monitor individual tenant power.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 2, cost: 420, price: 680 }],
+      tasks: ['Mount DIN-rail sub-meters in corridor risers', 'Connect current transformers to tenancy feeders', 'Test wireless gateway communication with central billing'],
+      hours: 10, priority: 'Medium', status: 'Invoiced'
+    },
+    {
+      title: 'Medical Suite Clean Room Power Feed',
+      desc: 'Provide isolated-earth clean power circuits and medical-grade red GPOs for diagnostics equipment.',
+      materials: [{ stockId: 'st_4', name: 'Battery 12V 100Ah AGM', qty: 4, cost: 185, price: 280 }],
+      tasks: ['Run dedicated clean earth wire to distribution board', 'Pull shielded cable through sterile wall cavities', 'Terminate medical GPOs and test earth leakage thresholds'],
+      hours: 9, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Car Park Motion Sensor LED Upgrade',
+      desc: 'Install energy-efficient LED batten fixtures with built-in occupancy sensors in basement parking.',
+      materials: [],
+      tasks: ['Dismantle old fluorescent fittings', 'Wire in new sensor LED batten units', 'Adjust timer and sensitivity settings for optimal savings'],
+      hours: 12, priority: 'Low', status: 'Invoiced'
+    },
+    {
+      title: 'Substation UPS Battery Bank Health Test',
+      desc: 'Run load testing and internal cell resistance checks on emergency backup battery systems.',
+      materials: [{ stockId: 'st_4', name: 'Battery 12V 100Ah AGM', qty: 2, cost: 185, price: 280 }],
+      tasks: ['Check terminal torque on battery strings', 'Log cell internal impedance readings', 'Run controlled load discharge test to verify battery health'],
+      hours: 5, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Emergency Lighting statutory Discharge Test',
+      desc: 'Mandatory 2-hour discharge test and logbook update for building exit signs and backup lighting.',
+      materials: [],
+      tasks: ['Trigger manual test switch for emergency lighting circuits', 'Locate and list exit signs that fail to remain illuminated', 'Replace exit sign batteries and sign off compliance logs'],
+      hours: 4, priority: 'Medium', status: 'In Progress'
+    },
+
+    // Pinnacle Retail Solutions (cust_4)
+    {
+      title: 'Shopping Mall Auto-Door Power Supply',
+      desc: 'Run a new dedicated circuit from distribution board B to the new automatic sliding entrance doors.',
+      materials: [{ stockId: 'st_1', name: 'Engine Oil 15W-40 20L', qty: 1, cost: 85, price: 120 }],
+      tasks: ['Install dedicated circuit breaker in distribution panel', 'Run overhead steel wire armored cable', 'Wire auto-door control board terminals and verify power supply'],
+      hours: 5, priority: 'Medium', status: 'Invoiced'
+    },
+    {
+      title: 'Facade LED Signage Power & Timer',
+      desc: 'Install external power feeds and outdoor-rated time clocks to schedule storefront illumination.',
+      materials: [],
+      tasks: ['Mount IP66 enclosures on storefront facade', 'Route cable from main retail panel', 'Install and program astronomical time clock controller'],
+      hours: 4, priority: 'Low', status: 'Invoiced'
+    },
+    {
+      title: 'Retail Switchboard Main Breaker Test',
+      desc: 'Conduct secondary current injection testing on the primary 400A circuit breaker.',
+      materials: [],
+      tasks: ['Perform isolation and lock-out tag-out of main panel', 'Connect secondary injection test kit to breaker terminals', 'Measure breaker trip curves and contact resistance'],
+      hours: 6, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Store Room T8 Fluorescent to LED Retrofit',
+      desc: 'Dismantle ballast wiring in stock room fluorescent fittings and wire directly for LED tubes.',
+      materials: [],
+      tasks: ['Isolate lighting circuit and open fixtures', 'Bypass old ballasts and starter terminals', 'Wire sockets directly, install LED tubes, and verify operation'],
+      hours: 5, priority: 'Low', status: 'Invoiced'
+    },
+    {
+      title: 'Loading Dock Door Safety Interlocks',
+      desc: 'Install emergency-stop buttons and interlock sensors on the main commercial loading dock doors.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 1, cost: 420, price: 680 }],
+      tasks: ['Mount emergency stop buttons next to door controls', 'Wire interlock circuits into roller door motors', 'Perform safety sequence tests to confirm immediate cutoff on button press'],
+      hours: 6, priority: 'High', status: 'In Progress'
+    },
+
+    // Summit Agri-Business (cust_5)
+    {
+      title: 'Homestead Solar Inverter Swap',
+      desc: 'Replace storm-damaged external inverter with a new weather-sealed smart hybrid solar inverter.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 1, cost: 420, price: 680 }],
+      tasks: ['Isolate AC solar feed and DC solar string arrays', 'Remove damaged unit and mount new IP65 hybrid inverter', 'Reconnect inputs, seal cable entries, and commission system'],
+      hours: 5, priority: 'Medium', status: 'Invoiced'
+    },
+    {
+      title: 'Irrigation Pump 1 Controller Troubleshooting',
+      desc: 'Diagnose main river pump failing to start. Investigate pump control circuit and contactor coils.',
+      materials: [{ stockId: 'st_5', name: 'Coolant Concentrate 5L', qty: 1, cost: 55, price: 85 }],
+      tasks: ['Perform safety checks and open pump control panel', 'Diagnose starter coil failure with insulation tester', 'Replace burnt pump contactor switch and verify pump start'],
+      hours: 3, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Irrigation Pump 2 Telemetry Control Cabinet',
+      desc: 'Retrofit pump starter box with smart controller and cellular telemetry for remote irrigation management.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 1, cost: 420, price: 680 }],
+      tasks: ['Dismantle old manual pump control circuit', 'Install smart controller board and high-gain external antenna', 'Configure control parameters and test remote control via mobile web app'],
+      hours: 8, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Grain Silo Overhead Supply Repair',
+      desc: 'Replace storm-damaged overhead sub-feed cabling with new heavy-duty XLPE circular wiring.',
+      materials: [],
+      tasks: ['Isolate silo supply line and secure work area', 'Remove old damaged aerial cable drop', 'Wire new XLPE cable on overhead support cable and test insulation'],
+      hours: 7, priority: 'High', status: 'Invoiced'
+    },
+    {
+      title: 'Processing Plant Ventilation Exhaust Fan',
+      desc: 'Install power feed and motor isolator switch for a new three-phase exhaust fan in the packaging area.',
+      materials: [{ stockId: 'st_3', name: 'ATS Control Board', qty: 1, cost: 420, price: 680 }],
+      tasks: ['Install dedicated circuit breaker in plant sub-board', 'Mount motor isolator near fan roof mounting', 'Terminate three-phase connections and verify correct fan rotation direction'],
+      hours: 8, priority: 'Medium', status: 'In Progress'
+    }
   ];
 
   const generatedCustomers = [];
@@ -1223,19 +539,22 @@ export async function seedData(force = false) {
       status: 'Active',
       type: 'Commercial',
       portalToken: `c_pt_${custId}`,
+      contacts: cData.contacts,
+      sites: cData.sites,
       createdAt: relativeDate(-120),
       updatedAt: relativeDate(-1)
     });
 
     // 5 assets per customer
+    const assetTypes = ['Generator', 'ATS Panel', 'UPS System', 'Solar System', 'Switchboard'];
     for (let aIdx = 1; aIdx <= 5; aIdx++) {
       const assetId = `asset_${cIdx + 1}_${aIdx}`;
-      const assetName = `${cData.company} GenSet ${aIdx * 100}kVA`;
-      const serial = `SN-GEN-${cIdx + 1}-${aIdx}`;
+      const assetName = `${cData.company} ${assetTypes[aIdx - 1]} System`;
+      const serial = `SN-SYS-${cIdx + 1}-${aIdx}`;
       generatedAssets.push({
         id: assetId,
         name: assetName,
-        type: 'Generator',
+        type: assetTypes[aIdx - 1],
         serial: serial,
         ownerType: 'Customer',
         customerId: custId,
@@ -1265,18 +584,18 @@ export async function seedData(force = false) {
     // 5 quotes, jobs, invoices, and schedule blocks per customer
     for (let jIdx = 1; jIdx <= 5; jIdx++) {
       const indexNum = (cIdx * 5) + jIdx;
-      const indexStr = String(indexNum).padStart(5, '0');
+      const indexStr = String(indexNum).padStart(3, '0');
       
       const quoteId = `q_${indexStr}`;
       const jobId = `job_${indexStr}`;
       const invoiceId = `inv_${indexStr}`;
 
-      const title = `Generator Maintenance ${jIdx}`;
-      const laborHours = 2 + jIdx;
-      const materialQty = 1 + jIdx;
-      const materialRate = 120;
+      const template = uniqueWorkTemplates[indexNum - 1];
+      const title = template.title;
+      const laborHours = template.hours;
       const laborRate = 145;
-      const subtotal = (materialQty * materialRate) + (laborHours * laborRate);
+      const materialCost = template.materials.reduce((sum, m) => sum + (m.qty * m.price), 0);
+      const subtotal = materialCost + (laborHours * laborRate);
       const tax = parseFloat((subtotal * 0.1).toFixed(2));
       const total = parseFloat((subtotal + tax).toFixed(2));
 
@@ -1290,14 +609,14 @@ export async function seedData(force = false) {
         title: `${title} - Estimate`,
         status: 'Accepted',
         lineItems: [
-          { description: 'Engine Oil 15W-40 20L', type: 'material', qty: materialQty, rate: materialRate, total: materialQty * materialRate },
+          ...template.materials.map(m => ({ description: m.name, type: 'material', qty: m.qty, rate: m.price, total: m.qty * m.price })),
           { description: 'Qualified Service Labor', type: 'labor', qty: laborHours, rate: laborRate, total: laborHours * laborRate }
         ],
         subtotal: subtotal,
         tax: tax,
         total: total,
         validUntil: relativeDateString(30),
-        notes: 'Seeded estimate.',
+        notes: 'Seeded estimate for customer review.',
         createdAt: relativeDate(-45),
         updatedAt: relativeDate(-43)
       });
@@ -1308,22 +627,30 @@ export async function seedData(force = false) {
       
       generatedJobs.push({
         id: jobId,
-        number: `J-${indexStr}`,
+        number: `JOB-${indexStr}`,
         quoteId: quoteId,
         customerId: custId,
         customerName: cData.company,
         contactName: `${cData.first} ${cData.last}`,
-        title: `${title} - Action`,
-        description: `Scheduled maintenance check for generator system.`,
-        status: jIdx === 5 ? 'In Progress' : 'Invoiced',
-        priority: jIdx === 3 ? 'High' : 'Medium',
-        tasks: [
-          { id: 'tsk_1', name: 'Inspect battery terminals', status: 'Completed', completeDate: relativeDate(-5) },
-          { id: 'tsk_2', name: 'Replace engine oil & filters', status: jIdx === 5 ? 'In Progress' : 'Completed', completeDate: jIdx === 5 ? null : relativeDate(-5) }
-        ],
-        materials: [
-          { id: 'mat_1', stockId: 'st_1', name: 'Engine Oil 15W-40 20L', qty: materialQty, cost: 85, price: materialRate, total: materialQty * materialRate }
-        ],
+        title: title,
+        description: template.desc,
+        status: template.status,
+        priority: template.priority,
+        tasks: template.tasks.map((tName, tIdx) => ({
+          id: `tsk_${tIdx + 1}`,
+          name: tName,
+          status: template.status === 'In Progress' ? (tIdx === 0 ? 'Completed' : 'In Progress') : 'Completed',
+          completeDate: template.status === 'In Progress' ? null : relativeDate(-5)
+        })),
+        materials: template.materials.map((m, mIdx) => ({
+          id: `mat_${mIdx + 1}`,
+          stockId: m.stockId,
+          name: m.name,
+          qty: m.qty,
+          cost: m.cost,
+          price: m.price,
+          total: m.qty * m.price
+        })),
         labor: [
           { id: 'lab_1', rateId: 'rate_1', name: 'Standard Rate', rate: laborRate, hours: laborHours, total: laborHours * laborRate }
         ],
@@ -1336,8 +663,8 @@ export async function seedData(force = false) {
         updatedAt: relativeDate(-5)
       });
 
-      // 3. Invoice (for the first 4 jobs of each customer)
-      if (jIdx < 5) {
+      // 3. Invoice (for the first 4 jobs of each customer, making 20 total)
+      if (template.status === 'Invoiced') {
         generatedInvoices.push({
           id: invoiceId,
           number: `INV-${indexStr}`,
@@ -1347,7 +674,7 @@ export async function seedData(force = false) {
           title: `Invoice for ${title}`,
           status: 'Paid',
           lineItems: [
-            { description: 'Engine Oil 15W-40 20L', type: 'material', qty: materialQty, rate: materialRate, total: materialQty * materialRate },
+            ...template.materials.map(m => ({ description: m.name, type: 'material', qty: m.qty, rate: m.price, total: m.qty * m.price })),
             { description: 'Qualified Service Labor', type: 'labor', qty: laborHours, rate: laborRate, total: laborHours * laborRate }
           ],
           subtotal: subtotal,
@@ -1367,7 +694,7 @@ export async function seedData(force = false) {
       generatedSchedule.push({
         id: `sch_${indexStr}`,
         jobId: jobId,
-        jobTitle: `${title} - Action`,
+        jobTitle: title,
         technicianId: assignTech.id,
         technicianName: assignTech.name,
         technicianColor: assignTech.color,
@@ -1381,17 +708,32 @@ export async function seedData(force = false) {
     }
 
     // 5. Leads (5 leads total, 1 per customer)
-    const leadIndexStr = String(cIdx + 1).padStart(5, '0');
+    const leadIndexStr = String(cIdx + 1).padStart(3, '0');
+    const leadTitles = [
+      'Electric Vehicle Charger Installation',
+      'Factory Power Factor Correction Unit',
+      'Commercial Office Sub-metering Upgrade',
+      'Dedicated Main entrance Auto-door Power Circuit',
+      'Irrigation Pump Control Box Retrofit'
+    ];
+    const leadDescriptions = [
+      'Customer requested a proposal to install 4x fast EV chargers in the warehouse staff car park.',
+      'Enquiry regarding power factor correction capacitors to reduce high peak demand electricity fees.',
+      'Quote required to retro-fit separate sub-meters for commercial property subdivisions.',
+      'Run separate feed from the sub-board to the shopping mall lobby doors.',
+      'Retrofit existing agricultural irrigation pumps with automated smart controls.'
+    ];
+
     generatedLeads.push({
       id: `lead_${leadIndexStr}`,
       companyName: `${cData.company} Extension`,
       contactName: `${cData.first} ${cData.last}`,
       email: cData.email,
       phone: cData.phone,
-      title: 'Upgrade standby system capacity',
-      description: 'Customer requested a quote to replace their backup generator with a larger 1MVA unit.',
+      title: leadTitles[cIdx],
+      description: leadDescriptions[cIdx],
       status: cIdx === 4 ? 'New' : 'Converted',
-      value: 12000,
+      value: 2500 + cIdx * 3000,
       createdAt: relativeDate(-60),
       updatedAt: relativeDate(-1)
     });
@@ -1415,7 +757,7 @@ export async function seedData(force = false) {
         endTime: `${String(endHour).padStart(2, '0')}:00`,
         breakDuration: 30, // 30 mins
         hours: hours,
-        description: `Serviced generator assets and completed site inspections.`,
+        description: `Serviced key distribution assets and finished routine maintenance checks.`,
         status: 'Approved',
         createdAt: relativeDate(-1),
         updatedAt: relativeDate(-1)
@@ -1426,28 +768,50 @@ export async function seedData(force = false) {
   // 7. Contractors and Suppliers (5 each)
   const generatedContractors = [];
   const generatedSuppliers = [];
+  const contractorBusinessNames = [
+    'VoltTech Subcontracting',
+    'Dubbo Solar Installers',
+    'CoolBreeze HVAC Service Group',
+    'CablePullers Subcontractors',
+    'Smart Automation Integrators'
+  ];
+  const contractorTrade = [
+    'Subcontractor Electrician',
+    'Solar Installer',
+    'HVAC Technician',
+    'Cable Installer',
+    'System Integrator'
+  ];
+  const supplierNames = [
+    'Apex Electrical Wholesalers',
+    'OzCable Distributors',
+    'Switchgear Direct',
+    'Climate Control Parts Depot',
+    'Industrial Automation Supplies'
+  ];
+
   for (let i = 1; i <= 5; i++) {
     generatedContractors.push({
       id: `con_${i}`,
-      name: `Contractor Services Pty Ltd ${i}`,
-      contactName: `Contractor John ${i}`,
-      email: `john.con${i}@contractorservices.com.au`,
-      phone: `0499 000 00${i}`,
-      trade: i % 2 === 0 ? 'HVAC Technician' : 'Subcontractor Electrician',
+      name: contractorBusinessNames[i - 1],
+      contactName: `Contractor Contact ${i}`,
+      email: `contact@${contractorBusinessNames[i - 1].toLowerCase().replace(/\s+/g, '')}.example.com`,
+      phone: `0491 570 30${i}`,
+      trade: contractorTrade[i - 1],
       status: 'Active',
-      rate: 90.00
+      rate: 90.00 + i * 5
     });
 
     generatedSuppliers.push({
       id: `sup_${i}`,
-      name: `Global Electrical Supplies ${i}`,
-      contactName: `Supplier Alice ${i}`,
-      email: `sales@globalsupplies${i}.com.au`,
-      phone: `0488 000 00${i}`,
-      address: `Industrial Area, Dubbo NSW 2830`,
+      name: supplierNames[i - 1],
+      contactName: `Supplier Partner ${i}`,
+      email: `sales@${supplierNames[i - 1].toLowerCase().replace(/\s+/g, '')}.example.com`,
+      phone: `0491 570 40${i}`,
+      address: `10${i} Industrial Boulevard, Dubbo NSW 2830`,
       paymentTerms: '30 Days',
       active: true,
-      notes: `Reliable supply partner ${i}.`
+      notes: `Supplier account partner ${i}.`
     });
   }
 
@@ -1456,7 +820,7 @@ export async function seedData(force = false) {
     generatedNotifications.push({
       id: `notif_${i}`,
       title: `System Alert - Service Due ${i}`,
-      message: `Asset SN-GEN-1-${i} has a service scheduled soon.`,
+      message: `Asset SN-SYS-1-${i} has a service scheduled soon.`,
       read: i > 2,
       createdAt: relativeDate(-1)
     });
@@ -1478,6 +842,7 @@ export async function seedData(force = false) {
   await store.save('notifications', generatedNotifications);
   await store.save('contractors', generatedContractors);
   await store.save('suppliers', generatedSuppliers);
+  await store.save('timesheets', generatedTimesheets);
 
   // Form templates seeding
   store.seedFormTemplates();
@@ -1496,6 +861,53 @@ export async function seedData(force = false) {
       ],
       totalCost: 130, totalPrice: 195, itemCount: 2, active: true,
       createdAt: relativeDate(-30), updatedAt: relativeDate(-5)
+    },
+    {
+      id: 'kit_2',
+      name: 'Generator Standard Service Kit (500hr)',
+      description: 'Comprehensive mid-interval service kit with all filters, fluids, and labour',
+      category: 'Service Kits',
+      items: [
+        { type: 'material', stockId: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', qty: 2, costPrice: 85, unitPrice: 120, unit: 'Each' },
+        { type: 'material', stockId: 'st_2', name: 'Oil Filter — Cat 3306', sku: 'SKU-ST2', qty: 1, costPrice: 45, unitPrice: 75, unit: 'Each' },
+        { type: 'material', stockId: 'st_5', name: 'Coolant Concentrate 5L', sku: 'SKU-ST5', qty: 1, costPrice: 55, unitPrice: 85, unit: 'Each' }
+      ],
+      totalCost: 185, totalPrice: 280, itemCount: 3, active: true,
+      createdAt: relativeDate(-30), updatedAt: relativeDate(-3)
+    },
+    {
+      id: 'kit_3',
+      name: 'ATS Panel Commissioning Kit',
+      description: 'Items needed for commissioning an automatic transfer switch panel',
+      category: 'Commissioning Kits',
+      items: [
+        { type: 'material', stockId: 'st_3', name: 'ATS Control Board', sku: 'SKU-ST3', qty: 1, costPrice: 420, unitPrice: 680, unit: 'Each' }
+      ],
+      totalCost: 420, totalPrice: 680, itemCount: 1, active: true,
+      createdAt: relativeDate(-25), updatedAt: relativeDate(-2)
+    },
+    {
+      id: 'kit_4',
+      name: 'Vehicle Loadout — Service Tech',
+      description: 'Standard consumables and parts for a service technician vehicle restock',
+      category: 'Vehicle Loadouts',
+      items: [
+        { type: 'material', stockId: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', qty: 2, costPrice: 85, unitPrice: 120, unit: 'Each' },
+        { type: 'material', stockId: 'st_5', name: 'Coolant Concentrate 5L', sku: 'SKU-ST5', qty: 2, costPrice: 55, unitPrice: 85, unit: 'Each' }
+      ],
+      totalCost: 280, totalPrice: 410, itemCount: 2, active: true,
+      createdAt: relativeDate(-20), updatedAt: relativeDate(-1)
+    },
+    {
+      id: 'kit_5',
+      name: 'Battery Replacement Kit',
+      description: 'Complete battery swap kit including batteries, connectors, and installation labour',
+      category: 'Installation Kits',
+      items: [
+        { type: 'material', stockId: 'st_4', name: 'Battery 12V 100Ah AGM', sku: 'SKU-ST4', qty: 2, costPrice: 185, unitPrice: 280, unit: 'Each' }
+      ],
+      totalCost: 370, totalPrice: 560, itemCount: 1, active: true,
+      createdAt: relativeDate(-15), updatedAt: relativeDate(-1)
     }
   ];
 
@@ -1509,5 +921,3 @@ export async function seedData(force = false) {
 export async function seedMinimalData() {
   await seedData(true);
 }
-
-export { technicians };

@@ -51,7 +51,6 @@ export function enhanceSelect(select) {
   container.appendChild(select);
   container.appendChild(input);
   container.appendChild(arrow);
-  container.appendChild(dropdown);
 
   // Hide the original select but keep it focusable and validatable
   select.classList.add('searchable-select-original');
@@ -120,16 +119,32 @@ export function enhanceSelect(select) {
     refreshDisplay();
   }
 
+  function positionDropdown() {
+    if (!container.classList.contains('searchable-select-open')) return;
+    const rect = input.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = `${rect.bottom}px`;
+    dropdown.style.left = `${rect.left}px`;
+    dropdown.style.width = `${rect.width}px`;
+    dropdown.style.zIndex = '99999';
+  }
+
   function openDropdown() {
     if (container.classList.contains('searchable-select-open') || select.disabled) return;
     
     // Close other dropdowns first
     document.querySelectorAll('.searchable-select-container.searchable-select-open').forEach(c => {
-      c.classList.remove('searchable-select-open');
+      if (c.__closeSearchableSelect) c.__closeSearchableSelect();
     });
 
     container.classList.add('searchable-select-open');
+    document.body.appendChild(dropdown);
     rebuildDropdown('');
+    positionDropdown();
+    
+    // Listen to scroll and resize to update position
+    window.addEventListener('scroll', positionDropdown, { capture: true, passive: true });
+    window.addEventListener('resize', positionDropdown);
     
     // If text field matches the selected option, select it all so typing overwrites it easily
     input.select();
@@ -138,8 +153,16 @@ export function enhanceSelect(select) {
   function closeDropdown() {
     if (!container.classList.contains('searchable-select-open')) return;
     container.classList.remove('searchable-select-open');
+    dropdown.remove();
+    
+    window.removeEventListener('scroll', positionDropdown, { capture: true });
+    window.removeEventListener('resize', positionDropdown);
+    
     refreshDisplay();
   }
+
+  // Attach close reference to container
+  container.__closeSearchableSelect = closeDropdown;
 
   function updateActiveItem(items) {
     items.forEach((item, idx) => {
@@ -157,7 +180,6 @@ export function enhanceSelect(select) {
   input.addEventListener('click', openDropdown);
 
   arrow.addEventListener('click', (e) => {
-    // Let event bubble up to document so other dropdowns are closed via clickOutsideHandler
     if (container.classList.contains('searchable-select-open')) {
       closeDropdown();
     } else {
@@ -171,6 +193,7 @@ export function enhanceSelect(select) {
       openDropdown();
     }
     rebuildDropdown(input.value);
+    positionDropdown();
   });
 
   // Keyboard navigation
@@ -208,7 +231,7 @@ export function enhanceSelect(select) {
 
   // Close dropdown on clicking outside
   const clickOutsideHandler = (e) => {
-    if (!container.contains(e.target)) {
+    if (!container.contains(e.target) && !dropdown.contains(e.target)) {
       closeDropdown();
     }
   };
@@ -221,6 +244,7 @@ export function enhanceSelect(select) {
         refreshDisplay();
         if (container.classList.contains('searchable-select-open')) {
           rebuildDropdown(input.value);
+          positionDropdown();
         }
       } else if (m.type === 'attributes' && m.attributeName === 'disabled') {
         input.disabled = select.disabled;
@@ -236,6 +260,7 @@ export function enhanceSelect(select) {
   select._searchableCleanup = () => {
     document.removeEventListener('click', clickOutsideHandler);
     selectObserver.disconnect();
+    dropdown.remove();
   };
 }
 
