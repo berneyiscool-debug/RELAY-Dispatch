@@ -331,11 +331,11 @@ export function renderProfile(container) {
               </div>
             ` : ''}
 
-            <!-- Card 3: AI Co-Pilot Memory & Factsheet -->
+            <!-- Card 3: AI Co-Pilot Memory (Learned Profile) -->
             <div class="profile-card">
-              <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">AI Co-Pilot Memory & Factsheet</h3>
+              <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">AI Co-Pilot Memory (Learned Profile)</h3>
               <p style="margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;">
-                Manage the factsheet Relay stores about you to personalize your co-pilot interactions.
+                This factsheet is maintained automatically by Relay during your conversations to customize its interactions around your work patterns and preferences.
               </p>
               
               <div class="form-group">
@@ -346,12 +346,12 @@ export function renderProfile(container) {
               </div>
 
               <div class="form-group" id="profile-factsheet-group" style="margin-top: 8px; display: ${optoutVal ? 'none' : 'block'};">
-                <label class="form-label" style="font-weight: 600;">Personal Factsheet Context</label>
-                <textarea class="form-input" id="profile-ai-factsheet" rows="5" style="font-family:inherit; resize:vertical; font-size:12.5px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe').">${escapeHTML(factsheetVal)}</textarea>
+                <label class="form-label" style="font-weight: 600;">What Relay has learned about you:</label>
+                <textarea class="form-input" id="profile-ai-factsheet" rows="5" readonly style="font-family:inherit; resize:none; font-size:12.5px; background: rgba(0, 0, 0, 0.02); color: var(--text-secondary); cursor: default;" placeholder="No preferences recorded yet. Relay will start remembering facts as you interact in the chat.">${escapeHTML(factsheetVal)}</textarea>
               </div>
 
               <button class="btn btn-primary" id="btn-save-profile-factsheet" style="margin-top: 4px; justify-content: center;">
-                Save AI Preferences
+                Save Privacy Settings
               </button>
             </div>
 
@@ -601,16 +601,20 @@ export function renderProfile(container) {
     if (btnSaveFactsheet) {
       btnSaveFactsheet.addEventListener('click', () => {
         const optout = optoutCheckbox.checked;
-        const factsheet = factsheetTextarea.value.trim();
 
         const factsheetKey = `relay_factsheet_${currentUser.id || 'default'}`;
         const optoutKey = `relay_factsheet_optout_${currentUser.id || 'default'}`;
 
         localStorage.setItem(optoutKey, String(optout));
-        localStorage.setItem(factsheetKey, factsheet);
+        if (optout) {
+          localStorage.removeItem(factsheetKey);
+          if (factsheetTextarea) {
+            factsheetTextarea.value = '';
+          }
+        }
 
         window.dispatchEvent(new Event('storage'));
-        showToast('AI memory preferences saved successfully', 'success');
+        showToast('AI memory privacy settings saved successfully.', 'success');
       });
     }
   };
