@@ -123,9 +123,9 @@ export function renderProfile(container) {
     }
 
     const factsheetKey = `relay_factsheet_${currentUser.id || 'default'}`;
-    const optoutKey = `relay_factsheet_optout_${currentUser.id || 'default'}`;
+    const enabledKey = `relay_factsheet_enabled_${currentUser.id || 'default'}`;
     const factsheetVal = localStorage.getItem(factsheetKey) || '';
-    const optoutVal = localStorage.getItem(optoutKey) === 'true';
+    const memoryEnabled = localStorage.getItem(enabledKey) !== 'false';
 
     container.innerHTML = `
       <style>
@@ -340,12 +340,15 @@ export function renderProfile(container) {
               
               <div class="form-group">
                 <label class="switch-container" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
-                  <input type="checkbox" id="profile-ai-optout" ${optoutVal ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
-                  <span>Opt out of AI Personal Memory (Do not remember preferences)</span>
+                  <input type="checkbox" id="profile-ai-enabled" ${memoryEnabled ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
+                  <strong>Make my day easier</strong>
                 </label>
+                <div class="text-tertiary" style="font-size:11.5px; margin-top:2px; margin-left:24px; line-height:1.3; color: var(--text-secondary);">
+                  Allows Relay to automatically learn your preferences, default assignees, and work patterns during chats to customize the co-pilot around your day.
+                </div>
               </div>
 
-              <div class="form-group" id="profile-factsheet-group" style="margin-top: 8px; display: ${optoutVal ? 'none' : 'block'};">
+              <div class="form-group" id="profile-factsheet-group" style="margin-top: 12px; display: ${memoryEnabled ? 'block' : 'none'};">
                 <label class="form-label" style="font-weight: 600;">What Relay has learned about you:</label>
                 <textarea class="form-input" id="profile-ai-factsheet" rows="5" readonly style="font-family:inherit; resize:none; font-size:12.5px; background: rgba(0, 0, 0, 0.02); color: var(--text-secondary); cursor: default;" placeholder="No preferences recorded yet. Relay will start remembering facts as you interact in the chat.">${escapeHTML(factsheetVal)}</textarea>
               </div>
@@ -586,27 +589,27 @@ export function renderProfile(container) {
       });
     }
 
-    // 6. Save AI Profile Factsheet & Opt-out
-    const optoutCheckbox = container.querySelector('#profile-ai-optout');
+    // 6. Save AI Profile Factsheet & Enabled settings
+    const enabledCheckbox = container.querySelector('#profile-ai-enabled');
     const factsheetGroup = container.querySelector('#profile-factsheet-group');
     const factsheetTextarea = container.querySelector('#profile-ai-factsheet');
     const btnSaveFactsheet = container.querySelector('#btn-save-profile-factsheet');
 
-    if (optoutCheckbox && factsheetGroup) {
-      optoutCheckbox.addEventListener('change', (e) => {
-        factsheetGroup.style.display = e.target.checked ? 'none' : 'block';
+    if (enabledCheckbox && factsheetGroup) {
+      enabledCheckbox.addEventListener('change', (e) => {
+        factsheetGroup.style.display = e.target.checked ? 'block' : 'none';
       });
     }
 
     if (btnSaveFactsheet) {
       btnSaveFactsheet.addEventListener('click', () => {
-        const optout = optoutCheckbox.checked;
+        const enabled = enabledCheckbox.checked;
 
         const factsheetKey = `relay_factsheet_${currentUser.id || 'default'}`;
-        const optoutKey = `relay_factsheet_optout_${currentUser.id || 'default'}`;
+        const enabledKey = `relay_factsheet_enabled_${currentUser.id || 'default'}`;
 
-        localStorage.setItem(optoutKey, String(optout));
-        if (optout) {
+        localStorage.setItem(enabledKey, String(enabled));
+        if (!enabled) {
           localStorage.removeItem(factsheetKey);
           if (factsheetTextarea) {
             factsheetTextarea.value = '';
