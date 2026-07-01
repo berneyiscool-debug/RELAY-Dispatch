@@ -4487,57 +4487,74 @@ export function renderSettings(container) {
     function render() {
       tc.innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 340px; gap:var(--space-lg); max-width:1100px; align-items:start;">
-          <div class="card">
-            <div class="card-header"><h4>AI Assistant Configuration</h4></div>
-            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-              
-              <div class="form-group">
-                <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
-                  <input type="checkbox" id="ai-enabled" ${ai.enabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;" />
-                  <div>
-                    <span style="font-weight:600;">Enable AI Assistant (DeepSeek)</span>
-                    <div class="text-tertiary" style="font-size:12px; margin-top:2px;">Replaces the basic rule-based Relay co-pilot with a smart conversational LLM.</div>
-                  </div>
-                </label>
-              </div>
-
-              <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
+          <div style="display:flex; flex-direction:column; gap:var(--space-lg);">
+            <div class="card">
+              <div class="card-header"><h4>AI Assistant Configuration</h4></div>
+              <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+                
                 <div class="form-group">
-                  <label class="form-label" style="font-weight:600;">DeepSeek API Key</label>
-                  <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="sk-..." />
-                  <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Your API key is stored locally in your browser/sync directory and never sent to any third party other than the configured API endpoint.</div>
+                  <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                    <input type="checkbox" id="ai-enabled" ${ai.enabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;" />
+                    <div>
+                      <span style="font-weight:600;">Enable AI Assistant (DeepSeek)</span>
+                      <div class="text-tertiary" style="font-size:12px; margin-top:2px;">Replaces the basic rule-based Relay co-pilot with a smart conversational LLM.</div>
+                    </div>
+                  </label>
                 </div>
 
-                <div class="form-row">
+                <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
                   <div class="form-group">
-                    <label class="form-label" style="font-weight:600;">API Endpoint</label>
-                    <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
+                    <label class="form-label" style="font-weight:600;">DeepSeek API Key</label>
+                    <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="sk-..." />
+                    <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Your API key is stored locally in your browser/sync directory and never sent to any third party other than the configured API endpoint.</div>
                   </div>
+
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label" style="font-weight:600;">API Endpoint</label>
+                      <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label" style="font-weight:600;">Model Name</label>
+                      <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
+                    </div>
+                  </div>
+
                   <div class="form-group">
-                    <label class="form-label" style="font-weight:600;">Model Name</label>
-                    <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
+                    <label class="form-label" style="font-weight:600;">Base System Prompt</label>
+                    <textarea class="form-input" id="ai-systemprompt" rows="4" style="font-family:inherit; resize:vertical;">${ai.systemPrompt || ''}</textarea>
+                    <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Defines the persona and basic rules for Relay. Active system records (jobs, quotes, technicians) are appended dynamically in the conversation background.</div>
                   </div>
+
+                  <div style="display:flex; gap:12px; align-items:center; margin-top:8px;">
+                    <button class="btn btn-secondary" id="btn-test-ai" style="display:flex; align-items:center; gap:6px;">
+                      <span class="material-icons-outlined" style="font-size:18px;">bolt</span> Test Connection
+                    </button>
+                    <span id="test-status" style="font-size:13px; font-weight:500;"></span>
+                  </div>
+                  <div id="test-error-details" style="display:none; margin-top:8px; font-size:12px; color:var(--color-danger); background:var(--color-danger-bg); border-left:3px solid var(--color-danger); padding:8px; border-radius:4px; line-height:1.4;"></div>
                 </div>
 
-                <div class="form-group">
-                  <label class="form-label" style="font-weight:600;">Base System Prompt</label>
-                  <textarea class="form-input" id="ai-systemprompt" rows="4" style="font-family:inherit; resize:vertical;">${ai.systemPrompt || ''}</textarea>
-                  <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Defines the persona and basic rules for Relay. Active system records (jobs, quotes, technicians) are appended dynamically in the conversation background.</div>
+                <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
+                  <button class="btn btn-primary" id="btn-save-ai">Save AI Config</button>
                 </div>
 
-                <div style="display:flex; gap:12px; align-items:center; margin-top:8px;">
-                  <button class="btn btn-secondary" id="btn-test-ai" style="display:flex; align-items:center; gap:6px;">
-                    <span class="material-icons-outlined" style="font-size:18px;">bolt</span> Test Connection
-                  </button>
-                  <span id="test-status" style="font-size:13px; font-weight:500;"></span>
-                </div>
-                <div id="test-error-details" style="display:none; margin-top:8px; font-size:12px; color:var(--color-danger); background:var(--color-danger-bg); border-left:3px solid var(--color-danger); padding:8px; border-radius:4px; line-height:1.4;"></div>
               </div>
+            </div>
 
-              <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
-                <button class="btn btn-primary" id="btn-save-ai">Save AI Config</button>
+            <div class="card">
+              <div class="card-header"><h4>Your Personal Co-Pilot Factsheet (User Memory)</h4></div>
+              <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
+                <div class="text-tertiary" style="font-size:12px; line-height:1.4;">
+                  This factsheet stores preferences, custom habits, and patterns specific to your user profile (e.g. how you write notes, your default technicians, or the types of jobs you handle). Relay loads this context dynamically. You can edit it manually below, or tell Relay to remember facts in the chat.
+                </div>
+                <div class="form-group" style="margin-top:4px;">
+                  <textarea class="form-input" id="ai-factsheet" rows="6" style="font-family:inherit; resize:vertical; font-size:13px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe on Mondays' or 'I like writing job notes in bullet points')."></textarea>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:12px; display:flex; justify-content:flex-end;">
+                  <button class="btn btn-secondary" id="btn-save-factsheet">Save Factsheet</button>
+                </div>
               </div>
-
             </div>
           </div>
 
@@ -4572,6 +4589,21 @@ export function renderSettings(container) {
       const fieldsContainer = tc.querySelector('#ai-fields');
       enabledCheckbox.addEventListener('change', (e) => {
         fieldsContainer.style.display = e.target.checked ? 'flex' : 'none';
+      });
+
+      // Load factsheet
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      const userId = currentUser ? currentUser.id : 'default';
+      const factsheetKey = `relay_factsheet_${userId}`;
+      const factsheetTextarea = tc.querySelector('#ai-factsheet');
+      if (factsheetTextarea) {
+        factsheetTextarea.value = localStorage.getItem(factsheetKey) || '';
+      }
+
+      tc.querySelector('#btn-save-factsheet').addEventListener('click', () => {
+        const val = factsheetTextarea.value.trim();
+        localStorage.setItem(factsheetKey, val);
+        showToast('Personal factsheet saved successfully', 'success');
       });
 
       // Save handler

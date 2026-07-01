@@ -310,6 +310,11 @@ function getSystemContext() {
   const overdueInvoicesList = overdueInvoices.slice(0, 8).map(i => `Invoice #${i.number || i.id}: ${i.title} - Total: $${i.total} - Due: ${i.dueDate || 'TBD'}`).join('\n');
   const techsList = technicians.map(t => `${t.name} (${t.role || 'Tech'}) - Username: ${t.username}`).join(', ');
 
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const userId = currentUser ? currentUser.id : 'default';
+  const factsheetKey = `relay_factsheet_${userId}`;
+  const userFactsheet = localStorage.getItem(factsheetKey) || '';
+
   return `Current Live CRM Data Context (updated real-time):
 - Active Technicians: ${techsList || 'None'}
 - Total Registered Customers: ${customers.length}
@@ -318,6 +323,12 @@ ${jobsList || 'None'}
 - Overdue Invoices (${overdueInvoices.length}):
 ${overdueInvoicesList || 'None'}
 - Pending Quotes: ${pendingQuotes.length}
+
+Currently Logged-in User Profile:
+- Name: ${currentUser ? currentUser.name : 'Unknown User'}
+- Role: ${currentUser ? currentUser.role : 'Unknown Role'}
+- User Personal Factsheet (Memory of user's work preferences/patterns):
+${userFactsheet ? userFactsheet.split('\n').map(line => `  ${line}`).join('\n') : '  No specific preferences recorded yet.'}
 
 You can perform actions on the user interface and CRM database by appending action tags to the end of your response.
 Action tags MUST follow these exact formats:
@@ -354,6 +365,9 @@ Action tags MUST follow these exact formats:
   - Collection: jobs, customers, quotes, or invoices.
   - ID or Number: The record's ID, or its job/quote/invoice number (e.g. 1002).
   (Example: [ACTION: DELETE_RECORD, jobs | 1002])
+
+- To add/save a concise fact or preference to your personal factsheet memory: [ACTION: UPDATE_FACTSHEET, Single concise fact to remember]
+  (Example: [ACTION: UPDATE_FACTSHEET, User prefers to schedule HVAC jobs to John Doe on Mondays])
 
 Always perform the requested action when asked (e.g. if the user says "add customer Barry Buttons", reply confirming you will do it and append the CREATE_CUSTOMER tag). Do not say you are unable to do it.`;
 }
@@ -607,6 +621,15 @@ function parseAndExecuteActions(reply) {
         } else {
           showToast(`Could not find ${collection.slice(0, -1)} "${identifier}".`, 'error');
         }
+      } else if (action === 'UPDATE_FACTSHEET' && param) {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        const userId = currentUser ? currentUser.id : 'default';
+        const factsheetKey = `relay_factsheet_${userId}`;
+        const existing = localStorage.getItem(factsheetKey) || '';
+        const updated = (existing.trim() ? existing.trim() + '\n- ' : '- ') + param;
+        localStorage.setItem(factsheetKey, updated);
+        window.dispatchEvent(new Event('storage'));
+        showToast('Relay updated your personal factsheet.', 'success');
       }
     } catch (e) {
       console.error(`AI action failed: ${action}`, e);
