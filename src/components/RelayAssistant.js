@@ -336,6 +336,9 @@ Action tags MUST follow these exact formats:
 - To add a dashboard widget: [ACTION: ADD_WIDGET, WidgetID] (e.g. page-jobs, page-quotes, cash-flow, tech-map, today-schedule, recent-activity, recent-leads)
 - To fit canvas: [ACTION: FIT_CANVAS]
 - To lock/unlock canvas: [ACTION: LOCK_CANVAS, true] or [ACTION: LOCK_CANVAS, false]
+- To navigate/jump to a specific page or section in the app: [ACTION: NAVIGATE, PageName]
+  - PageName must be one of: jobs, quotes, invoices, customers, contractors, suppliers, schedule, timesheets, stock, assets, purchase-orders, settings, dashboard.
+  (Example: [ACTION: NAVIGATE, jobs])
 
 - To create a new customer: [ACTION: CREATE_CUSTOMER, Type | First Name | Last Name | Company Name | Email | Phone | Address]
   - Type: Must be 'Commercial' (for companies/businesses) or 'Residential' (for individual people).
@@ -403,6 +406,39 @@ function parseAndExecuteActions(reply) {
         if (label) {
           showToast(`Relay jumped to saved view "${label}".`, 'info');
         }
+      } else if (action === 'NAVIGATE' && param) {
+        const route = param.toLowerCase().trim();
+        let targetHash = `#/${route}`;
+        if (route === 'dashboard' || route === 'home') {
+          targetHash = '#/';
+        }
+
+        const permissionMapping = {
+          jobs: 'Jobs',
+          customers: 'Customers',
+          quotes: 'Quotes',
+          invoices: 'Invoices',
+          schedule: 'Schedule',
+          timesheets: 'Timesheets',
+          stock: 'Stock',
+          assets: 'Assets',
+          settings: 'Settings',
+          suppliers: 'Suppliers',
+          contractors: 'Contractors',
+          'purchase-orders': 'Purchase Orders'
+        };
+
+        const moduleName = permissionMapping[route];
+        if (moduleName) {
+          const allowed = hasPermission(moduleName, 'view') || hasPermission(moduleName, 'view_own');
+          if (!allowed) {
+            showToast(`Permission Denied: You do not have permission to view ${moduleName}.`, 'error');
+            return;
+          }
+        }
+
+        window.location.hash = targetHash;
+        showToast(`Navigated to ${route} page.`, 'info');
       } else if (action === 'CREATE_CUSTOMER' && param) {
         if (!checkCollectionPermission('customers', 'create')) return;
         const parts = param.split('|').map(p => p.trim());
