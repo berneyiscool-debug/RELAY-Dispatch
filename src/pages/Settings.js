@@ -222,6 +222,11 @@ export function renderSettings(container) {
   if (isFolderSyncDisabled && activeTab === 'folder_sync') {
     activeTab = 'company';
   }
+  
+  const isAIAssistantDisabled = isLocalMode;
+  if (isAIAssistantDisabled && activeTab === 'ai_assistant') {
+    activeTab = 'company';
+  }
 
   const openMigrationModal = () => {
     const modalContent = document.createElement('div');
@@ -424,6 +429,7 @@ export function renderSettings(container) {
         <button class="tab ${activeTab === 'portal' ? 'active' : ''} ${isPortalDisabled ? 'disabled-local' : ''}" data-tab="portal" ${isPortalDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Customer Portal</button>
         <button class="tab ${activeTab === 'invoices_quotes' ? 'active' : ''}" data-tab="invoices_quotes">Quotes &amp; Invoices</button>
         <button class="tab ${activeTab === 'folder_sync' ? 'active' : ''} ${isFolderSyncDisabled ? 'disabled-local' : ''}" data-tab="folder_sync" ${isFolderSyncDisabled ? 'data-tooltip="Requires Local Folder Storage" data-tooltip-pos="top"' : ''}>Folder Sync</button>
+        <button class="tab ${activeTab === 'ai_assistant' ? 'active' : ''} ${isAIAssistantDisabled ? 'disabled-local' : ''}" data-tab="ai_assistant" ${isAIAssistantDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>AI Assistant</button>
         <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
       </div>
       <div id="settings-content" style="padding-top:var(--space-lg)"></div>
@@ -447,6 +453,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'folder_sync') {
       renderFolderSyncTab(tc);
+      return;
+    }
+
+    if (activeTab === 'ai_assistant') {
+      renderAIAssistantTab(tc);
       return;
     }
 
@@ -4456,6 +4467,210 @@ export function renderSettings(container) {
           showToast('Folder sync failed: ' + err.message, 'error');
         } finally {
           btn.disabled = false;
+        }
+      });
+    }
+
+    render();
+  }
+
+  function renderAIAssistantTab(tc) {
+    const s = store.getSettings();
+    const ai = s.ai || {
+      enabled: false,
+      apiKey: '',
+      endpoint: 'https://api.deepseek.com/chat/completions',
+      model: 'deepseek-chat',
+      systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
+    };
+
+    function render() {
+      tc.innerHTML = `
+        <div style="display:grid; grid-template-columns:1fr 340px; gap:var(--space-lg); max-width:1100px; align-items:start;">
+          <div class="card">
+            <div class="card-header"><h4>AI Assistant Configuration</h4></div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+              
+              <div class="form-group">
+                <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                  <input type="checkbox" id="ai-enabled" ${ai.enabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;" />
+                  <div>
+                    <span style="font-weight:600;">Enable AI Assistant (DeepSeek)</span>
+                    <div class="text-tertiary" style="font-size:12px; margin-top:2px;">Replaces the basic rule-based Relay co-pilot with a smart conversational LLM.</div>
+                  </div>
+                </label>
+              </div>
+
+              <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
+                <div class="form-group">
+                  <label class="form-label" style="font-weight:600;">DeepSeek API Key</label>
+                  <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="sk-..." />
+                  <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Your API key is stored locally in your browser/sync directory and never sent to any third party other than the configured API endpoint.</div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label" style="font-weight:600;">API Endpoint</label>
+                    <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" style="font-weight:600;">Model Name</label>
+                    <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" style="font-weight:600;">Base System Prompt</label>
+                  <textarea class="form-input" id="ai-systemprompt" rows="4" style="font-family:inherit; resize:vertical;">${ai.systemPrompt || ''}</textarea>
+                  <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Defines the persona and basic rules for Relay. Active system records (jobs, quotes, technicians) are appended dynamically in the conversation background.</div>
+                </div>
+
+                <div style="display:flex; gap:12px; align-items:center; margin-top:8px;">
+                  <button class="btn btn-secondary" id="btn-test-ai" style="display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons-outlined" style="font-size:18px;">bolt</span> Test Connection
+                  </button>
+                  <span id="test-status" style="font-size:13px; font-weight:500;"></span>
+                </div>
+                <div id="test-error-details" style="display:none; margin-top:8px; font-size:12px; color:var(--color-danger); background:var(--color-danger-bg); border-left:3px solid var(--color-danger); padding:8px; border-radius:4px; line-height:1.4;"></div>
+              </div>
+
+              <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
+                <button class="btn btn-primary" id="btn-save-ai">Save AI Config</button>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Helper instructions card -->
+          <div class="card" style="background:var(--content-bg);">
+            <div class="card-header"><h4>Cheapest Smart AI</h4></div>
+            <div class="card-body" style="font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
+              <p>
+                <strong>DeepSeek</strong> is one of the most cost-efficient and high-performance language models currently available, making it perfect for lightweight co-pilot tasks.
+              </p>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">key</span>
+                <span><strong>API Key:</strong> Get your key from <a href="https://platform.deepseek.com/" target="_blank" style="color:var(--color-primary); text-decoration:underline;">platform.deepseek.com</a>. New accounts typically receive free trial credits.</span>
+              </div>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">security</span>
+                <span><strong>CORS Restrictions:</strong> Due to browser security, direct API calls to DeepSeek may be blocked. To bypass this:
+                  <ul style="margin:4px 0 0 16px; padding:0; list-style:disc; font-size:12px;">
+                    <li>Route via a CORS proxy (e.g. <code>https://cors-anywhere.herokuapp.com/</code> prefix).</li>
+                    <li>Connect via an aggregator like <strong>OpenRouter</strong> (API Endpoint: <code>https://openrouter.ai/api/v1/chat/completions</code>).</li>
+                    <li>Use a local LLM runner like <strong>Ollama</strong> (API Endpoint: <code>http://localhost:11434/v1/chat/completions</code>).</li>
+                  </ul>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Toggle display of fields based on enabled checkbox
+      const enabledCheckbox = tc.querySelector('#ai-enabled');
+      const fieldsContainer = tc.querySelector('#ai-fields');
+      enabledCheckbox.addEventListener('change', (e) => {
+        fieldsContainer.style.display = e.target.checked ? 'flex' : 'none';
+      });
+
+      // Save handler
+      tc.querySelector('#btn-save-ai').addEventListener('click', () => {
+        const enabled = tc.querySelector('#ai-enabled').checked;
+        const apiKey = tc.querySelector('#ai-apikey').value.trim();
+        const endpoint = tc.querySelector('#ai-endpoint').value.trim();
+        const model = tc.querySelector('#ai-model').value.trim();
+        const systemPrompt = tc.querySelector('#ai-systemprompt').value.trim();
+
+        if (enabled && !apiKey) {
+          showToast('API Key is required when enabling the AI assistant.', 'error');
+          return;
+        }
+
+        const settings = store.getSettings();
+        settings.ai = {
+          enabled,
+          apiKey,
+          endpoint,
+          model,
+          systemPrompt
+        };
+
+        store.saveSettings(settings);
+        showToast('AI settings saved successfully', 'success');
+      });
+
+      // Test handler
+      tc.querySelector('#btn-test-ai').addEventListener('click', async () => {
+        const apiKey = tc.querySelector('#ai-apikey').value.trim();
+        const endpoint = tc.querySelector('#ai-endpoint').value.trim();
+        const model = tc.querySelector('#ai-model').value.trim();
+        const statusEl = tc.querySelector('#test-status');
+        const errEl = tc.querySelector('#test-error-details');
+
+        const inElectron = !!(window.electronAPI && window.electronAPI.callDeepSeek);
+        const hasEnvKey = !!(import.meta.env.VITE_DEEPSEEK_API_KEY);
+
+        if (!apiKey && !inElectron && !hasEnvKey) {
+          showToast('Enter an API key to test.', 'error');
+          return;
+        }
+
+        statusEl.style.color = 'var(--text-secondary)';
+        statusEl.textContent = 'Testing connection...';
+        errEl.style.display = 'none';
+
+        const startTime = Date.now();
+        try {
+          if (inElectron) {
+            const data = await window.electronAPI.callDeepSeek({
+              messages: [{ role: 'user', content: 'respond only with the word OK' }],
+              endpoint,
+              model,
+              apiKey // Pass typed key if any
+            });
+            const latency = Date.now() - startTime;
+            const reply = data.choices?.[0]?.message?.content || 'No reply';
+            statusEl.style.color = 'var(--color-success)';
+            statusEl.textContent = `Success (via Electron IPC)! Latency: ${latency}ms (Reply: "${reply}")`;
+          } else {
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey || import.meta.env.VITE_DEEPSEEK_API_KEY}`
+              },
+              body: JSON.stringify({
+                model: model || 'deepseek-chat',
+                messages: [
+                  { role: 'user', content: 'respond only with the word OK' }
+                ],
+                max_tokens: 5
+              })
+            });
+
+            if (!res.ok) {
+              const body = await res.text();
+              throw new Error(`HTTP ${res.status}: ${body}`);
+            }
+
+            const data = await res.json();
+            const latency = Date.now() - startTime;
+            const reply = data.choices?.[0]?.message?.content || 'No reply';
+            statusEl.style.color = 'var(--color-success)';
+            statusEl.textContent = `Success! Latency: ${latency}ms (Reply: "${reply}")`;
+          }
+        } catch (err) {
+          console.error('AI test connection failed:', err);
+          statusEl.style.color = 'var(--color-danger)';
+          statusEl.textContent = 'Test failed';
+          errEl.style.display = 'block';
+
+          let errMsg = err.message;
+          if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
+            errMsg = 'CORS Blocked or Offline. The browser blocked this cross-origin request. Please use a CORS proxy, an API gateway like OpenRouter, or check your internet connection.';
+          }
+          errEl.textContent = errMsg;
         }
       });
     }

@@ -2126,6 +2126,13 @@ class DataStore {
         quoteSignature: true,
         hideCompanyName: false,
         footerNote: 'Thank you for your business!'
+      },
+      ai: {
+        enabled: !!(import.meta.env.VITE_DEEPSEEK_API_KEY),
+        apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY || '',
+        endpoint: 'https://api.deepseek.com/chat/completions',
+        model: 'deepseek-chat',
+        systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
       }
     };
 
@@ -2136,6 +2143,7 @@ class DataStore {
       if (!merged.logoSmall) merged.logoSmall = defaultLogoSmall;
       // Ensure sub-objects merge safely
       merged.documentTheme = { ...defaultSettings.documentTheme, ...this.companySettings.documentTheme };
+      merged.ai = { ...defaultSettings.ai, ...this.companySettings.ai };
       return merged;
     }
 

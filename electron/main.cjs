@@ -13,7 +13,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
@@ -111,4 +112,55 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Simple .env parser to read keys on startup
+try {
+  const fs = require('fs');
+  const dotenvPath = path.join(__dirname, '../.env');
+  if (fs.existsSync(dotenvPath)) {
+    const dotenvContent = fs.readFileSync(dotenvPath, 'utf8');
+    dotenvContent.split('\n').forEach(line => {
+      const parts = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (parts) {
+        const key = parts[1];
+        let val = parts[2] || '';
+        // Remove surrounding quotes if any
+        if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+        if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+        process.env[key] = val;
+      }
+    });
+  }
+} catch (e) {
+  console.warn('Failed to load local .env file in Electron main process:', e);
+}
+
+// IPC handler for DeepSeek API calls
+const { ipcMain } = require('electron');
+ipcMain.handle('call-deepseek', async (event, { messages, endpoint, model, apiKey }) => {
+  const key = apiKey || process.env.VITE_DEEPSEEK_API_KEY;
+  if (!key) {
+    throw new Error('VITE_DEEPSEEK_API_KEY is not configured in environment, and no custom key was supplied.');
+  }
+
+  const response = await fetch(endpoint || 'https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`
+    },
+    body: JSON.stringify({
+      model: model || 'deepseek-chat',
+      messages: messages,
+      temperature: 0.3
+    })
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`DeepSeek API error: ${response.status} - ${text}`);
+  }
+
+  return await response.json();
 });

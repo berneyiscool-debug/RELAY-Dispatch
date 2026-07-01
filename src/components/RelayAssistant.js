@@ -7,10 +7,13 @@
 // function for full natural-language understanding. The UI here won't need to change.
 // ============================================
 import { store } from '../data/store.js';
+import { showToast } from './Notifications.js';
+import { supabase } from '../utils/supabase.js';
 import relayIcon from '../assets/relay-icon.svg?raw';
 
 let panel = null;
 let onStateChange = null;
+let chatHistory = [];
 
 export function isRelayOpen() { return !!panel; }
 export function onRelayToggle(cb) { onStateChange = cb; }
@@ -52,17 +55,35 @@ export function openRelay() {
 
   addMessage(thread, 'relay', "Hi, I'm Relay. I can add page widgets, jump to your saved views, and fit or lock the canvas. Try “add a schedule widget” or ask “how many overdue invoices?”");
 
-  const submit = () => {
+  const submit = async () => {
     const text = input.value.trim();
     if (!text) return;
     addMessage(thread, 'user', text);
     input.value = '';
     autoGrow(input);
     const typing = addTyping(thread);
-    setTimeout(() => {
+
+    try {
+      const isCloud = store.companyId && !store.companyId.startsWith('acct_');
+      const s = store.getSettings();
+      const ai = s.ai || {};
+      
+      if (isCloud && ai.enabled && ai.apiKey) {
+        const response = await callAIEngine(text);
+        typing.remove();
+        addMessage(thread, 'relay', response);
+      } else {
+        // Fallback to rule-based local assistant
+        setTimeout(() => {
+          typing.remove();
+          addMessage(thread, 'relay', runLocalCommand(text));
+        }, 380);
+      }
+    } catch (err) {
+      console.error('AI assistant failed, falling back to local commands:', err);
       typing.remove();
-      addMessage(thread, 'relay', runLocalCommand(text));
-    }, 380);
+      addMessage(thread, 'relay', `[Error: ${err.message || err}]. Falling back to local assistant:\n\n` + runLocalCommand(text));
+    }
   };
 
   send.addEventListener('click', submit);
@@ -185,4 +206,144 @@ function runLocalCommand(raw) {
 
 function countMsg(label, n) {
   return `You have ${n} ${label}.`;
+}
+
+// ── AI Engine completions call (DeepSeek) ───────────────────────────────────
+
+async function callAIEngine(text) {
+  chatHistory.push({ role: 'user', content: text });
+  if (chatHistory.length > 20) {
+    chatHistory = chatHistory.slice(-20); // Keep last 20 messages for context
+  }
+
+  const s = store.getSettings();
+  const ai = s.ai || {};
+  const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
+  const systemPrompt = `${basePrompt}\n\n${getSystemContext()}`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...chatHistory
+  ];
+
+  let reply = '';
+  const isCloud = store.companyId && !store.companyId.startsWith('acct_');
+
+  if (isCloud) {
+    // Call the secure Supabase Edge Function proxy
+    const { data, error } = await supabase.functions.invoke('relay-copilot', {
+      body: {
+        messages,
+        endpoint: ai.endpoint,
+        model: ai.model
+      }
+    });
+
+    if (error) {
+      throw new Error(`Supabase Edge Function error: ${error.message || JSON.stringify(error)}`);
+    }
+
+    reply = data.choices?.[0]?.message?.content || '';
+  } else {
+    // Check if running inside Electron and secure API handler is exposed
+    if (window.electronAPI && window.electronAPI.callDeepSeek) {
+      const data = await window.electronAPI.callDeepSeek({
+        messages,
+        endpoint: ai.endpoint,
+        model: ai.model
+      });
+      reply = data.choices?.[0]?.message?.content || '';
+    } else {
+      // Browser fetch fallback (direct connection)
+      const res = await fetch(ai.endpoint || 'https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ai.apiKey}`
+        },
+        body: JSON.stringify({
+          model: ai.model || 'deepseek-chat',
+          messages: messages,
+          temperature: 0.3
+        })
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`HTTP ${res.status}: ${body}`);
+      }
+
+      const data = await res.json();
+      reply = data.choices?.[0]?.message?.content || '';
+    }
+  }
+
+  chatHistory.push({ role: 'assistant', content: reply });
+  return parseAndExecuteActions(reply);
+}
+
+function getSystemContext() {
+  const jobs = store.getAll('jobs') || [];
+  const invoices = store.getAll('invoices') || [];
+  const quotes = store.getAll('quotes') || [];
+  const customers = store.getAll('customers') || [];
+  const technicians = store.getAll('technicians') || [];
+
+  const activeJobs = jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled');
+  const overdueInvoices = invoices.filter(i => i.status === 'Overdue');
+  const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Draft');
+
+  const jobsList = activeJobs.slice(0, 8).map(j => `Job #${j.number || j.id}: ${j.title} (${j.status}) - Cust: ${j.customerName || 'None'} - Tech: ${j.technicianName || 'Unassigned'} - Date: ${j.scheduledDate || 'TBD'}`).join('\n');
+  const overdueInvoicesList = overdueInvoices.slice(0, 8).map(i => `Invoice #${i.number || i.id}: ${i.title} - Total: $${i.total} - Due: ${i.dueDate || 'TBD'}`).join('\n');
+  const techsList = technicians.map(t => `${t.name} (${t.role || 'Tech'}) - Username: ${t.username}`).join(', ');
+
+  return `Current Live CRM Data Context (updated real-time):
+- Active Technicians: ${techsList || 'None'}
+- Total Registered Customers: ${customers.length}
+- Active/Scheduled Jobs (${activeJobs.length}):
+${jobsList || 'None'}
+- Overdue Invoices (${overdueInvoices.length}):
+${overdueInvoicesList || 'None'}
+- Pending Quotes: ${pendingQuotes.length}`;
+}
+
+function parseAndExecuteActions(reply) {
+  const actionRegex = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;
+  let match;
+  let cleanReply = reply;
+
+  const ff = window.__fieldForge || {};
+
+  while ((match = actionRegex.exec(reply)) !== null) {
+    const action = match[1].toUpperCase().trim();
+    const param = match[2] ? match[2].trim() : null;
+
+    console.log(`Executing AI action: ${action} with param: ${param}`);
+
+    try {
+      if (action === 'ADD_WIDGET' && param) {
+        const title = ff.addWidgetById?.(param);
+        if (title) {
+          showToast(`Relay added the "${title}" widget.`, 'success');
+        }
+      } else if (action === 'FIT_CANVAS') {
+        ff.fitAll?.();
+        showToast('Relay fitted the dashboard canvas.', 'info');
+      } else if (action === 'LOCK_CANVAS') {
+        const lock = param === 'true';
+        ff.setLock?.(lock);
+        showToast(`Relay ${lock ? 'locked' : 'unlocked'} the canvas.`, 'info');
+      } else if (action === 'JUMP_VIEW' && param) {
+        const label = ff.flyToViewByName?.(param);
+        if (label) {
+          showToast(`Relay jumped to saved view "${label}".`, 'info');
+        }
+      }
+    } catch (e) {
+      console.error(`AI action failed: ${action}`, e);
+    }
+  }
+
+  cleanReply = cleanReply.replace(actionRegex, '').trim();
+  return cleanReply;
 }
