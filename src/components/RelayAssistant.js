@@ -304,7 +304,25 @@ function getSystemContext() {
 ${jobsList || 'None'}
 - Overdue Invoices (${overdueInvoices.length}):
 ${overdueInvoicesList || 'None'}
-- Pending Quotes: ${pendingQuotes.length}`;
+- Pending Quotes: ${pendingQuotes.length}
+
+You can perform actions on the user interface and CRM database by appending action tags to the end of your response.
+Action tags MUST follow these exact formats:
+- To jump to a view: [ACTION: JUMP_VIEW, SavedViewName]
+- To add a dashboard widget: [ACTION: ADD_WIDGET, WidgetID] (e.g. page-jobs, page-quotes, cash-flow, tech-map, today-schedule, recent-activity, recent-leads)
+- To fit canvas: [ACTION: FIT_CANVAS]
+- To lock/unlock canvas: [ACTION: LOCK_CANVAS, true] or [ACTION: LOCK_CANVAS, false]
+
+- To create a new customer: [ACTION: CREATE_CUSTOMER, Name | Email | Phone | Address]
+  (Example: [ACTION: CREATE_CUSTOMER, Barry Buttons | barry@buttons.com | 0412345678 | 12 Spring St, Sydney])
+- To create a job: [ACTION: CREATE_JOB, Title | Status | Customer Name | Technician Name | Scheduled Date | Est Hours | Notes]
+  (Example: [ACTION: CREATE_JOB, Fix Leaking Tap | Scheduled | Barry Buttons | John Doe | 2026-07-05 | 2 | Please bring parts])
+- To create a quote: [ACTION: CREATE_QUOTE, Title | Status | Customer Name | Subtotal | Tax | Total | Valid Until | Notes]
+  (Example: [ACTION: CREATE_QUOTE, Rewiring Proposal | Sent | Barry Buttons | 1000 | 100 | 1100 | 2026-08-01 | Standard terms apply])
+- To create an invoice: [ACTION: CREATE_INVOICE, Title | Status | Job Number | Customer Name | Subtotal | Tax | Total | Due Date | Notes]
+  (Example: [ACTION: CREATE_INVOICE, Invoice for Tap Repair | Sent | 1005 | Barry Buttons | 150 | 15 | 165 | 2026-07-12 | Thank you])
+
+Always perform the requested action when asked (e.g. if the user says "add customer Barry Buttons", reply confirming you will do it and append the CREATE_CUSTOMER tag). Do not say you are unable to do it.`;
 }
 
 function parseAndExecuteActions(reply) {
@@ -338,6 +356,149 @@ function parseAndExecuteActions(reply) {
         if (label) {
           showToast(`Relay jumped to saved view "${label}".`, 'info');
         }
+      } else if (action === 'CREATE_CUSTOMER' && param) {
+        const parts = param.split('|').map(p => p.trim());
+        const name = parts[0] || '';
+        const email = parts[1] || '';
+        const phone = parts[2] || '';
+        const address = parts[3] || '';
+
+        const nameParts = name.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+
+        const list = store.getAll('customers') || [];
+        const newItem = {
+          id: store.generateId(),
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          phone,
+          address,
+          status: 'Active',
+          type: 'Commercial'
+        };
+        list.push(newItem);
+        store.save('customers', list);
+        showToast(`Created customer "${name}" successfully.`, 'success');
+
+      } else if (action === 'CREATE_JOB' && param) {
+        const parts = param.split('|').map(p => p.trim());
+        const title = parts[0] || 'New Job';
+        const status = parts[1] || 'Scheduled';
+        const customerName = parts[2] || '';
+        const techName = parts[3] || '';
+        const scheduledDate = parts[4] || '';
+        const estHours = Number(parts[5]) || 0;
+        const notes = parts[6] || '';
+
+        const list = store.getAll('jobs') || [];
+        const nextNum = list.reduce((max, j) => {
+          const num = parseInt(j.number) || 0;
+          return num > max ? num : max;
+        }, 1000) + 1;
+
+        const customers = store.getAll('customers') || [];
+        const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase() || c.company?.toLowerCase() === customerName.toLowerCase());
+
+        const technicians = store.getAll('technicians') || [];
+        const tech = technicians.find(t => t.name.toLowerCase() === techName.toLowerCase());
+
+        const newItem = {
+          id: store.generateId(),
+          number: String(nextNum),
+          title,
+          status,
+          customer_id: customer ? customer.id : null,
+          customerName: customer ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim() : customerName,
+          technician_id: tech ? tech.id : null,
+          technicianName: tech ? tech.name : techName,
+          scheduledDate,
+          estimated_hours: estHours,
+          notes,
+          tasks: []
+        };
+        list.push(newItem);
+        store.save('jobs', list);
+        showToast(`Created Job #${nextNum} "${title}" successfully.`, 'success');
+
+      } else if (action === 'CREATE_QUOTE' && param) {
+        const parts = param.split('|').map(p => p.trim());
+        const title = parts[0] || 'New Quote';
+        const status = parts[1] || 'Draft';
+        const customerName = parts[2] || '';
+        const subtotal = Number(parts[3]) || 0;
+        const tax = Number(parts[4]) || 0;
+        const total = Number(parts[5]) || 0;
+        const validUntil = parts[6] || '';
+        const notes = parts[7] || '';
+
+        const list = store.getAll('quotes') || [];
+        const nextNum = list.reduce((max, q) => {
+          const num = parseInt(q.number) || 0;
+          return num > max ? num : max;
+        }, 1000) + 1;
+
+        const customers = store.getAll('customers') || [];
+        const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
+
+        const newItem = {
+          id: store.generateId(),
+          number: String(nextNum),
+          title,
+          status,
+          customer_id: customer ? customer.id : null,
+          customerName: customer ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim() : customerName,
+          subtotal,
+          tax,
+          total,
+          valid_until: validUntil,
+          notes,
+          line_items: []
+        };
+        list.push(newItem);
+        store.save('quotes', list);
+        showToast(`Created Quote #${nextNum} successfully.`, 'success');
+
+      } else if (action === 'CREATE_INVOICE' && param) {
+        const parts = param.split('|').map(p => p.trim());
+        const title = parts[0] || 'New Invoice';
+        const status = parts[1] || 'Sent';
+        const jobNum = parts[2] || '';
+        const customerName = parts[3] || '';
+        const subtotal = Number(parts[4]) || 0;
+        const tax = Number(parts[5]) || 0;
+        const total = Number(parts[6]) || 0;
+        const dueDate = parts[7] || '';
+        const notes = parts[8] || '';
+
+        const list = store.getAll('invoices') || [];
+        const nextNum = list.reduce((max, i) => {
+          const num = parseInt(i.number) || 0;
+          return num > max ? num : max;
+        }, 1000) + 1;
+
+        const customers = store.getAll('customers') || [];
+        const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
+
+        const newItem = {
+          id: store.generateId(),
+          number: String(nextNum),
+          title,
+          status,
+          job_id: jobNum,
+          customer_id: customer ? customer.id : null,
+          customerName: customer ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim() : customerName,
+          subtotal,
+          tax,
+          total,
+          due_date: dueDate,
+          notes,
+          line_items: []
+        };
+        list.push(newItem);
+        store.save('invoices', list);
+        showToast(`Created Invoice #${nextNum} successfully.`, 'success');
       }
     } catch (e) {
       console.error(`AI action failed: ${action}`, e);
