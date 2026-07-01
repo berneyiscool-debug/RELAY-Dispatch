@@ -16,6 +16,17 @@ let panel = null;
 let onStateChange = null;
 let chatHistory = [];
 
+const GREETINGS = [
+  "Hi, I'm Relay. I can add page widgets, jump to your saved views, and fit or lock the canvas. Try “add a schedule widget” or ask “how many overdue invoices?”",
+  "Hi, I'm Relay. How can I help you manage your dispatch and jobs today?",
+  "Hello! Relay here. Try asking me to “add a schedule widget” or “show me the today view”. What's on your mind?",
+  "Greetings! I'm your co-pilot Relay. I can help you create customers, assign jobs, or quickly look up metrics. What do you need?",
+  "Hey! Relay is ready to assist. Need to check on overdue invoices, add a new job, or fit the canvas? Just let me know!",
+  "Welcome back! I'm Relay, your dispatch assistant. How can I assist you with your operations today?",
+  "Hi there! Relay here. I can help you manage your dispatch layout, check on jobs, and look up details. Try: “how many active jobs do we have?”",
+  "Hello! Ready to dispatch? I can create quotes, jobs, and invoices for you. What can I do for you today?"
+];
+
 export function isRelayOpen() { return !!panel; }
 export function onRelayToggle(cb) { onStateChange = cb; }
 
@@ -54,7 +65,8 @@ export function openRelay() {
   const input = panel.querySelector('#relay-input');
   const send = panel.querySelector('#relay-send');
 
-  addMessage(thread, 'relay', "Hi, I'm Relay. I can add page widgets, jump to your saved views, and fit or lock the canvas. Try “add a schedule widget” or ask “how many overdue invoices?”");
+  const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+  addMessage(thread, 'relay', randomGreeting);
 
   const submit = async () => {
     const text = input.value.trim();
