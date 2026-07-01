@@ -376,7 +376,9 @@ function parseAndExecuteActions(reply) {
           phone,
           address,
           status: 'Active',
-          type: 'Commercial'
+          type: 'Commercial',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
         list.push(newItem);
         store.save('customers', list);
@@ -416,7 +418,9 @@ function parseAndExecuteActions(reply) {
           scheduledDate,
           estimated_hours: estHours,
           notes,
-          tasks: []
+          tasks: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
         list.push(newItem);
         store.save('jobs', list);
@@ -454,7 +458,9 @@ function parseAndExecuteActions(reply) {
           total,
           valid_until: validUntil,
           notes,
-          line_items: []
+          line_items: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
         list.push(newItem);
         store.save('quotes', list);
@@ -494,7 +500,9 @@ function parseAndExecuteActions(reply) {
           total,
           due_date: dueDate,
           notes,
-          line_items: []
+          line_items: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
         list.push(newItem);
         store.save('invoices', list);
