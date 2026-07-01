@@ -9,6 +9,7 @@
 import { store } from '../data/store.js';
 import { showToast } from './Notifications.js';
 import { supabase } from '../utils/supabase.js';
+import { hasPermission } from '../utils/permissions.js';
 import relayIcon from '../assets/relay-icon.svg?raw';
 
 let panel = null;
@@ -329,6 +330,19 @@ Action tags MUST follow these exact formats:
 - To create an invoice: [ACTION: CREATE_INVOICE, Title | Status | Job Number | Customer Name | Subtotal | Tax | Total | Due Date | Notes]
   (Example: [ACTION: CREATE_INVOICE, Invoice for Tap Repair | Sent | 1005 | Barry Buttons | 150 | 15 | 165 | 2026-07-12 | Thank you])
 
+- To update/modify an existing record: [ACTION: UPDATE_RECORD, Collection | ID or Number | Field | New Value]
+  - Collection: jobs, customers, quotes, or invoices.
+  - ID or Number: The record's ID, or its job/quote/invoice number (e.g. 1002).
+  - Field: The field to update (e.g. status, scheduledDate, technicianName, notes, email, phone, address).
+  - New Value: The new value to set.
+  (Example: [ACTION: UPDATE_RECORD, jobs | 1002 | status | In Progress])
+  (Example: [ACTION: UPDATE_RECORD, jobs | 1002 | technicianName | John Doe])
+
+- To delete an existing record: [ACTION: DELETE_RECORD, Collection | ID or Number]
+  - Collection: jobs, customers, quotes, or invoices.
+  - ID or Number: The record's ID, or its job/quote/invoice number (e.g. 1002).
+  (Example: [ACTION: DELETE_RECORD, jobs | 1002])
+
 Always perform the requested action when asked (e.g. if the user says "add customer Barry Buttons", reply confirming you will do it and append the CREATE_CUSTOMER tag). Do not say you are unable to do it.`;
 }
 
@@ -364,6 +378,7 @@ function parseAndExecuteActions(reply) {
           showToast(`Relay jumped to saved view "${label}".`, 'info');
         }
       } else if (action === 'CREATE_CUSTOMER' && param) {
+        if (!checkCollectionPermission('customers', 'create')) return;
         const parts = param.split('|').map(p => p.trim());
         const type = parts[0] || 'Residential';
         const firstName = parts[1] || '';
@@ -393,6 +408,7 @@ function parseAndExecuteActions(reply) {
         showToast(`Created customer "${displayName}" successfully.`, 'success');
 
       } else if (action === 'CREATE_JOB' && param) {
+        if (!checkCollectionPermission('jobs', 'create')) return;
         const parts = param.split('|').map(p => p.trim());
         const title = parts[0] || 'New Job';
         const status = parts[1] || 'Scheduled';
@@ -435,6 +451,7 @@ function parseAndExecuteActions(reply) {
         showToast(`Created Job #${nextNum} "${title}" successfully.`, 'success');
 
       } else if (action === 'CREATE_QUOTE' && param) {
+        if (!checkCollectionPermission('quotes', 'create')) return;
         const parts = param.split('|').map(p => p.trim());
         const title = parts[0] || 'New Quote';
         const status = parts[1] || 'Draft';
@@ -475,6 +492,7 @@ function parseAndExecuteActions(reply) {
         showToast(`Created Quote #${nextNum} successfully.`, 'success');
 
       } else if (action === 'CREATE_INVOICE' && param) {
+        if (!checkCollectionPermission('invoices', 'create')) return;
         const parts = param.split('|').map(p => p.trim());
         const title = parts[0] || 'New Invoice';
         const status = parts[1] || 'Sent';
@@ -515,6 +533,68 @@ function parseAndExecuteActions(reply) {
         list.push(newItem);
         store.save('invoices', list);
         showToast(`Created Invoice #${nextNum} successfully.`, 'success');
+      } else if (action === 'UPDATE_RECORD' && param) {
+        const parts = param.split('|').map(p => p.trim());
+        const collection = parts[0];
+        const identifier = parts[1];
+        const fieldName = parts[2];
+        const newValue = parts[3];
+
+        if (!checkCollectionPermission(collection, 'edit')) return;
+
+        const list = store.getAll(collection) || [];
+        const item = list.find(it => it.id === identifier || String(it.number) === identifier || (it.first_name && `${it.first_name || ''} ${it.last_name || ''}`.trim().toLowerCase() === identifier.toLowerCase()));
+        if (item) {
+          let targetField = fieldName;
+          if (fieldName === 'scheduled_date') targetField = 'scheduledDate';
+          if (fieldName === 'technician_name') targetField = 'technicianName';
+          if (fieldName === 'technician_id') targetField = 'technician_id';
+          if (fieldName === 'estimated_hours') targetField = 'estimated_hours';
+          if (fieldName === 'due_date') targetField = 'due_date';
+          if (fieldName === 'valid_until') targetField = 'valid_until';
+
+          let val = newValue;
+          if (newValue === 'true') val = true;
+          if (newValue === 'false') val = false;
+          if (newValue === 'null') val = null;
+          if (!isNaN(newValue) && newValue !== '') val = Number(newValue);
+
+          item[targetField] = val;
+          item.updatedAt = new Date().toISOString();
+
+          // Try to link technician_id if tech name is updated
+          if (targetField === 'technicianName') {
+            const technicians = store.getAll('technicians') || [];
+            const tech = technicians.find(t => t.name.toLowerCase() === val.toLowerCase());
+            if (tech) {
+              item.technician_id = tech.id;
+            }
+          }
+
+          store.save(collection, list);
+          const displayLabel = item.number ? `#${item.number}` : (item.name || item.title || `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.id);
+          showToast(`Updated "${targetField}" to "${newValue}" for ${collection.slice(0, -1)} "${displayLabel}".`, 'success');
+        } else {
+          showToast(`Could not find ${collection.slice(0, -1)} "${identifier}".`, 'error');
+        }
+
+      } else if (action === 'DELETE_RECORD' && param) {
+        const parts = param.split('|').map(p => p.trim());
+        const collection = parts[0];
+        const identifier = parts[1];
+
+        if (!checkCollectionPermission(collection, 'delete')) return;
+
+        const list = store.getAll(collection) || [];
+        const index = list.findIndex(it => it.id === identifier || String(it.number) === identifier || (it.first_name && `${it.first_name || ''} ${it.last_name || ''}`.trim().toLowerCase() === identifier.toLowerCase()));
+        if (index !== -1) {
+          const removed = list.splice(index, 1)[0];
+          store.save(collection, list);
+          const displayLabel = removed.number ? `#${removed.number}` : (removed.name || removed.title || `${removed.first_name || ''} ${removed.last_name || ''}`.trim() || removed.id);
+          showToast(`Deleted ${collection.slice(0, -1)} "${displayLabel}" successfully.`, 'success');
+        } else {
+          showToast(`Could not find ${collection.slice(0, -1)} "${identifier}".`, 'error');
+        }
       }
     } catch (e) {
       console.error(`AI action failed: ${action}`, e);
@@ -523,4 +603,28 @@ function parseAndExecuteActions(reply) {
 
   cleanReply = cleanReply.replace(actionRegex, '').trim();
   return cleanReply;
+}
+
+function checkCollectionPermission(collection, action) {
+  const mapping = {
+    jobs: 'Jobs',
+    customers: 'Customers',
+    quotes: 'Quotes',
+    invoices: 'Invoices'
+  };
+
+  const moduleName = mapping[collection];
+  if (!moduleName) return true;
+
+  let key = action;
+  if (action === 'delete' && moduleName === 'Invoices') {
+    key = 'void';
+  }
+
+  const allowed = hasPermission(moduleName, key);
+  if (!allowed) {
+    showToast(`Permission Denied: You do not have permission to ${action} ${collection}.`, 'error');
+    return false;
+  }
+  return true;
 }
