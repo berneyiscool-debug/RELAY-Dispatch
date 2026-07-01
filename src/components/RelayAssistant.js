@@ -371,6 +371,13 @@ Action tags MUST follow these exact formats:
   - ID or Number: The record's ID, or its job/quote/invoice number (e.g. 1002).
   (Example: [ACTION: DELETE_RECORD, jobs | 1002])
 
+- To create a new record in any collection: [ACTION: CREATE_RECORD, CollectionName | Field1: Value1 | Field2: Value2 | ...]
+  - CollectionName: jobs, quotes, invoices, customers, purchaseOrders, contractors, suppliers, stock, assets, timesheets, or leads.
+  - Field: Value pairs: Specify the fields to populate.
+  - Generates IDs, numbers, and dates automatically.
+  (Example to create a purchase order: [ACTION: CREATE_RECORD, purchaseOrders | title: PO for parts | supplierName: Rexel | total: 450 | status: Pending])
+  (Example to create a lead: [ACTION: CREATE_RECORD, leads | title: Kitchen Renovation | customerName: John Smith | status: New])
+
 - To add/save a concise fact or preference to your personal factsheet memory: [ACTION: UPDATE_FACTSHEET, Single concise fact to remember]
   (Example: [ACTION: UPDATE_FACTSHEET, User prefers to schedule HVAC jobs to John Doe on Mondays])
 
@@ -674,6 +681,52 @@ function parseAndExecuteActions(reply) {
         localStorage.setItem(factsheetKey, updated);
         window.dispatchEvent(new Event('storage'));
         showToast('Relay updated your personal factsheet.', 'success');
+      } else if (action === 'CREATE_RECORD' && param) {
+        const parts = param.split('|').map(p => p.trim());
+        const collection = parts[0];
+        if (!checkCollectionPermission(collection, 'create')) return;
+
+        const fields = {};
+        for (let i = 1; i < parts.length; i++) {
+          const fieldPart = parts[i];
+          const colonIdx = fieldPart.indexOf(':');
+          if (colonIdx !== -1) {
+            const fieldName = fieldPart.slice(0, colonIdx).trim();
+            const valueStr = fieldPart.slice(colonIdx + 1).trim();
+
+            let val = valueStr;
+            if (valueStr === 'true') val = true;
+            if (valueStr === 'false') val = false;
+            if (valueStr === 'null') val = null;
+            if (!isNaN(valueStr) && valueStr !== '') val = Number(valueStr);
+
+            fields[fieldName] = val;
+          }
+        }
+
+        const list = store.getAll(collection) || [];
+        const newItem = {
+          id: store.generateId(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...fields
+        };
+
+        if (['jobs', 'quotes', 'invoices', 'purchaseOrders', 'leads'].includes(collection)) {
+          if (!newItem.number) {
+            const nextNum = list.reduce((max, item) => {
+              const num = parseInt(item.number) || 0;
+              return num > max ? num : max;
+            }, 1000) + 1;
+            newItem.number = String(nextNum);
+          }
+        }
+
+        list.push(newItem);
+        store.save(collection, list);
+
+        const displayLabel = newItem.number ? `#${newItem.number}` : (newItem.name || newItem.title || newItem.id);
+        showToast(`Created new ${collection.slice(0, -1)} "${displayLabel}" successfully.`, 'success');
       }
     } catch (e) {
       console.error(`AI action failed: ${action}`, e);
@@ -689,7 +742,14 @@ function checkCollectionPermission(collection, action) {
     jobs: 'Jobs',
     customers: 'Customers',
     quotes: 'Quotes',
-    invoices: 'Invoices'
+    invoices: 'Invoices',
+    purchaseOrders: 'Purchase Orders',
+    suppliers: 'Suppliers',
+    contractors: 'Contractors',
+    leads: 'Leads',
+    assets: 'Assets',
+    stock: 'Stock',
+    timesheets: 'Timesheets'
   };
 
   const moduleName = mapping[collection];
