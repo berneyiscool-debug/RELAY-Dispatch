@@ -1,7 +1,7 @@
 {
   "name": "relay",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Offline-first field service management platform",
   "author": "RELAY Team",
   "type": "module",
@@ -33,7 +33,7 @@
       {
         "provider": "github",
         "owner": "berneyiscool-debug",
-        "repo": "simproclone"
+        "repo": "RELAY-Dispatch"
       }
     ],
     "files": [
