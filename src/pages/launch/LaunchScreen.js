@@ -588,12 +588,37 @@ export function renderLaunchScreen(container, onComplete) {
   document.head.appendChild(styleEl);
 
   const init = async () => {
-    // One-time deletion of local companies that exist so far
-    if (typeof localStorage !== 'undefined' && !localStorage.getItem('relay_accounts_deleted_v1')) {
-      localStorage.setItem('relay_accounts', '[]');
-      localStorage.setItem('relay_accounts_deleted_v1', 'true');
-    }
     accounts = await storageGet('relay_accounts') || [];
+
+    // Self-heal: if the local account index was lost (e.g. localStorage was cleared
+    // during an app update) but per-account data still lives in IndexedDB, rebuild the
+    // account list from the surviving databases so local businesses are never orphaned.
+    if (accounts.length === 0 && typeof indexedDB !== 'undefined' && indexedDB.databases) {
+      try {
+        const dbs = await indexedDB.databases();
+        const recovered = [];
+        (dbs || []).forEach((info) => {
+          const match = info && info.name && info.name.match(/^RelayDispatchDB_(acct_[A-Za-z0-9]+)$/);
+          if (!match) return;
+          recovered.push({
+            id: match[1],
+            businessName: 'Recovered Business',
+            avatarColor: AVATAR_COLORS[recovered.length % AVATAR_COLORS.length],
+            createdAt: new Date().toISOString(),
+            lastAccessedAt: new Date().toISOString(),
+            hasPassword: false,
+            passwordHash: null
+          });
+        });
+        if (recovered.length > 0) {
+          accounts = recovered;
+          await storageSet('relay_accounts', accounts);
+          console.warn(`RELAY: recovered ${recovered.length} local business account(s) from IndexedDB.`);
+        }
+      } catch (e) {
+        console.error('RELAY: account recovery failed:', e);
+      }
+    }
     // Sort accounts: lastAccessedAt descending, then createdAt descending
     accounts.sort((a, b) => {
       const timeA = new Date(a.lastAccessedAt || a.createdAt).getTime();
