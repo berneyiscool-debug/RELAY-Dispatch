@@ -278,6 +278,11 @@ function makeHomeView(widgets) {
 async function loadLayout() {
   let widgets = null, view = null, pins = null, home = null, stored = false;
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  // For a logged-in cloud account, Supabase is the source of truth. Track whether it
+  // actually answered so a stale per-origin localStorage copy can't mask the cloud
+  // layout — that per-origin drift is what made dashboards differ between the browser
+  // and the desktop app.
+  let cloudAuthoritative = false;
   // Try Supabase first if user is logged in
   if (currentUser && currentUser.id) {
     try {
@@ -286,8 +291,10 @@ async function loadLayout() {
         .select('dashboard_layout')
         .eq('id', currentUser.id)
         .single();
-      if (!error && data && data.dashboard_layout) {
-        const parsed = data.dashboard_layout;
+      if (!error) {
+        // Supabase reached and answered → its copy wins, even if the layout is unset.
+        cloudAuthoritative = true;
+        const parsed = data && data.dashboard_layout;
         if (parsed && Array.isArray(parsed.widgets)) {
           stored = true;
           widgets = parsed.widgets;
@@ -300,8 +307,10 @@ async function loadLayout() {
       console.warn('Failed to load dashboard layout from Supabase:', e);
     }
   }
-  // Fallback to localStorage if not stored in Supabase or fetch failed
-  if (!stored) {
+  // Fall back to localStorage only when Supabase is NOT authoritative — i.e. a local
+  // (offline) account, or the cloud fetch failed / the user is offline. This preserves
+  // offline resilience while stopping cross-origin drift for cloud accounts.
+  if (!stored && !cloudAuthoritative) {
     try {
       const s = localStorage.getItem(getLayoutKey());
       if (s) {
