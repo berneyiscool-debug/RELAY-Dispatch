@@ -11,10 +11,29 @@ import { showToast } from './Notifications.js';
 import { supabase } from '../utils/supabase.js';
 import { hasPermission } from '../utils/permissions.js';
 import relayIcon from '../assets/relay-icon.svg?raw';
+import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
 
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
+// Files the user has attached to the next message (not yet sent). Raw File
+// objects — converted to image data URLs at send time so previews stay cheap.
+let pendingAttachments = [];
+// When true, per-record success toasts are suppressed so a bulk import shows one
+// summary toast instead of dozens.
+let suppressActionToasts = false;
+
+// Cloud (paid) users get vision attachments; local/offline users don't, since it
+// hits a paid API. Mirrors the inline check used elsewhere in this file.
+function isCloudUser() {
+  return !!(store.companyId && !store.companyId.startsWith('acct_'));
+}
+
+// Whether the AI backend is usable right now. Cloud users go through the secure
+// edge function (no client key needed); local users must enable AI + supply a key.
+function canUseAI(ai) {
+  return isCloudUser() ? (ai.enabled !== false) : !!(ai.enabled && ai.apiKey);
+}
 
 function getUserId() {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -60,8 +79,12 @@ export function toggleRelay() { panel ? closeRelay() : openRelay(); }
 export function openRelay() {
   if (panel) return;
 
+  if (!hasPermission('AI Assistant', 'use')) return;
+
   const draftKey = `relay_draft_message_${getUserId()}`;
   const draftVal = localStorage.getItem(draftKey) || '';
+  const cloud = isCloudUser();
+  pendingAttachments = [];
 
   panel = document.createElement('div');
   panel.className = 'relay-panel';
@@ -80,14 +103,17 @@ export function openRelay() {
       </div>
     </div>
     <div class="relay-thread" id="relay-thread"></div>
+    <div class="relay-attach-row" id="relay-attach-row"></div>
     <div class="relay-input-wrap">
-      <button class="relay-attach" title="Image support is coming soon" disabled><span class="material-icons-outlined">image</span></button>
+      <button class="relay-attach" id="relay-attach" title="${cloud ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a cloud feature'}" ${cloud ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
+      <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
       <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Relay…  (try “add a jobs widget”)">${escapeHtml(draftVal)}</textarea>
       <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
     </div>
     <div class="relay-foot">Early mode — local actions only. Full chat arrives with the backend.</div>
   `;
   document.body.appendChild(panel);
+  document.body.classList.add('relay-assistant-open');
   // Force a reflow so the slide-in transition triggers reliably (rAF is paused in
   // background/headless tabs, which would leave the panel stuck off-screen).
   void panel.offsetWidth;
@@ -119,14 +145,50 @@ export function openRelay() {
 
   const submit = async () => {
     const text = input.value.trim();
-    if (!text) return;
+    const hasFiles = pendingAttachments.length > 0;
+    if (!text && !hasFiles) return;
 
     localStorage.removeItem(draftKey);
+
+    // ── Attachment turn (vision extraction, cloud only) ──
+    if (hasFiles) {
+      const files = pendingAttachments.slice();
+      clearAttachments();
+
+      const displayText = text ? `${text}\n\n${attachmentLabel(files)}` : attachmentLabel(files);
+      chatHistory = loadChatHistory();
+      chatHistory.push({ role: 'user', content: displayText });
+      trimHistory();
+      saveChatHistory(chatHistory);
+      addMessage(thread, 'user', displayText);
+      input.value = '';
+      autoGrow(input);
+
+      const ai = (store.getSettings() || {}).ai || {};
+      if (!isCloudUser() || !canUseAI(ai)) {
+        const reply = "Attachments need the cloud AI assistant enabled. An admin can turn it on in Settings → AI.";
+        pushAssistant(reply);
+        addMessage(thread, 'relay', reply);
+        return;
+      }
+
+      const typing = addTyping(thread);
+      try {
+        await runVisionExtraction(text, files, thread, typing);
+      } catch (err) {
+        console.error('Relay vision extraction failed:', err);
+        typing.remove();
+        const reply = `I couldn't read that attachment. (${err.message || err})`;
+        pushAssistant(reply);
+        addMessage(thread, 'relay', reply);
+      }
+      return;
+    }
+
+    // ── Plain text turn ──
     chatHistory = loadChatHistory();
     chatHistory.push({ role: 'user', content: text });
-    if (chatHistory.length > 20) {
-      chatHistory = chatHistory.slice(-20);
-    }
+    trimHistory();
     saveChatHistory(chatHistory);
 
     addMessage(thread, 'user', text);
@@ -135,11 +197,10 @@ export function openRelay() {
     const typing = addTyping(thread);
 
     try {
-      const isCloud = store.companyId && !store.companyId.startsWith('acct_');
       const s = store.getSettings();
       const ai = s.ai || {};
-      
-      if (isCloud && ai.enabled && ai.apiKey) {
+
+      if (canUseAI(ai)) {
         const response = await callAIEngine();
         typing.remove();
         addMessage(thread, 'relay', response);
@@ -148,11 +209,7 @@ export function openRelay() {
         setTimeout(() => {
           typing.remove();
           const reply = runLocalCommand(text);
-          chatHistory.push({ role: 'assistant', content: reply });
-          if (chatHistory.length > 20) {
-            chatHistory = chatHistory.slice(-20);
-          }
-          saveChatHistory(chatHistory);
+          pushAssistant(reply);
           addMessage(thread, 'relay', reply);
         }, 380);
       }
@@ -160,11 +217,7 @@ export function openRelay() {
       console.error('AI assistant failed, falling back to local commands:', err);
       typing.remove();
       const reply = `[Error: ${err.message || err}]. Falling back to local assistant:\n\n` + runLocalCommand(text);
-      chatHistory.push({ role: 'assistant', content: reply });
-      if (chatHistory.length > 20) {
-        chatHistory = chatHistory.slice(-20);
-      }
-      saveChatHistory(chatHistory);
+      pushAssistant(reply);
       addMessage(thread, 'relay', reply);
     }
   };
@@ -177,6 +230,38 @@ export function openRelay() {
     autoGrow(input);
     localStorage.setItem(draftKey, input.value);
   });
+  input.addEventListener('focus', () => {
+    input.classList.add('focused');
+    autoGrow(input);
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      input.classList.remove('focused');
+      autoGrow(input);
+    }, 150);
+  });
+
+  // Attachment picker (cloud users only)
+  const attachBtn = panel.querySelector('#relay-attach');
+  const fileInput = panel.querySelector('#relay-file-input');
+  if (cloud && attachBtn && fileInput) {
+    attachBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const picked = Array.from(fileInput.files || []);
+      let skipped = 0;
+      picked.forEach(file => {
+        if (isSupportedAttachment(file)) {
+          pendingAttachments.push({ file, name: file.name, kind: fileKind(file) });
+        } else {
+          skipped++;
+        }
+      });
+      fileInput.value = '';
+      renderAttachmentChips();
+      if (skipped) showToast(`${skipped} file(s) skipped — only images and PDFs are supported.`, 'info');
+    });
+  }
+
   panel.querySelector('.relay-close').addEventListener('click', closeRelay);
   
   const btnClearChat = panel.querySelector('.relay-clear-chat');
@@ -209,13 +294,19 @@ export function closeRelay() {
   const p = panel;
   panel = null;
   p.classList.remove('open');
+  document.body.classList.remove('relay-assistant-open');
   setTimeout(() => p.remove(), 220);
   if (onStateChange) onStateChange(false);
 }
 
 function escClose(e) { if (e.key === 'Escape') closeRelay(); }
 
-function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
+function autoGrow(el) {
+  el.style.height = 'auto';
+  const isFocused = el.classList.contains('focused');
+  const minH = isFocused ? 108 : 38;
+  el.style.height = Math.min(Math.max(el.scrollHeight, minH), 120) + 'px';
+}
 
 function addMessage(thread, role, text) {
   const m = document.createElement('div');
@@ -237,6 +328,216 @@ function addTyping(thread) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ── History helpers ────────────────────────────────────────────────────────────
+function trimHistory() {
+  if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+}
+
+function pushAssistant(reply) {
+  chatHistory.push({ role: 'assistant', content: reply });
+  trimHistory();
+  saveChatHistory(chatHistory);
+}
+
+// ── Attachment chips (pending files, shown above the input) ─────────────────────
+function attachmentLabel(files) {
+  return `📎 ${files.map(f => f.name).join(', ')}`;
+}
+
+function clearAttachments() {
+  pendingAttachments = [];
+  renderAttachmentChips();
+}
+
+function renderAttachmentChips() {
+  if (!panel) return;
+  const row = panel.querySelector('#relay-attach-row');
+  if (!row) return;
+  if (!pendingAttachments.length) {
+    row.innerHTML = '';
+    row.classList.remove('has-items');
+    return;
+  }
+  row.classList.add('has-items');
+  row.innerHTML = pendingAttachments.map((f, i) => `
+    <span class="relay-chip">
+      <span class="material-icons-outlined">${f.kind === 'pdf' ? 'picture_as_pdf' : 'image'}</span>
+      <span class="relay-chip-name">${escapeHtml(f.name)}</span>
+      <button class="relay-chip-x" data-idx="${i}" title="Remove">&times;</button>
+    </span>`).join('');
+  row.querySelectorAll('.relay-chip-x').forEach(btn => {
+    btn.addEventListener('click', () => {
+      pendingAttachments.splice(Number(btn.dataset.idx), 1);
+      renderAttachmentChips();
+    });
+  });
+}
+
+// Replace the animated typing dots with a live status line.
+function setTypingStatus(typingEl, text) {
+  const bubble = typingEl && typingEl.querySelector('.relay-bubble');
+  if (bubble) {
+    bubble.classList.remove('relay-typing');
+    bubble.innerHTML = '';
+    bubble.textContent = text;
+  }
+}
+
+// ── Vision extraction (image / PDF → records) ───────────────────────────────────
+async function runVisionExtraction(userText, files, thread, typing) {
+  setTypingStatus(typing, 'Reading your attachment…');
+  const { images, truncated } = await prepareAttachments(files.map(a => a.file), {
+    onProgress: ({ page, pageCount }) => setTypingStatus(typing, `Rendering page ${page} of ${pageCount}…`)
+  });
+
+  if (!images.length) {
+    typing.remove();
+    const reply = "I couldn't get any readable pages out of that file.";
+    pushAssistant(reply);
+    addMessage(thread, 'relay', reply);
+    return;
+  }
+
+  // Send page-images in batches so no single request carries the whole catalogue.
+  const batches = chunk(images, VISION_BATCH_SIZE);
+  const allActions = [];
+  const proseParts = [];
+  for (let b = 0; b < batches.length; b++) {
+    setTypingStatus(typing, batches.length > 1
+      ? `Extracting… batch ${b + 1} of ${batches.length}`
+      : 'Extracting details…');
+    const reply = await callVisionEngine(userText, batches[b], b, batches.length);
+    const { actions, cleanReply } = extractActions(reply);
+    allActions.push(...actions);
+    if (cleanReply) proseParts.push(cleanReply);
+  }
+
+  typing.remove();
+
+  let summary = proseParts.join('\n\n').trim();
+  if (truncated) {
+    summary += `${summary ? '\n\n' : ''}⚠️ That document was longer than ${MAX_PDF_PAGES} pages — I only read the first ${MAX_PDF_PAGES}. Send the rest as a second file to continue.`;
+  }
+  if (!summary) {
+    summary = allActions.length
+      ? `I found ${allActions.length} item${allActions.length === 1 ? '' : 's'} in that attachment.`
+      : "I read the attachment but couldn't find anything to add.";
+  }
+  pushAssistant(summary);
+  addMessage(thread, 'relay', summary);
+
+  // Confirm before creating — a misread scan shouldn't silently flood the CRM.
+  if (allActions.length) {
+    renderActionConfirmation(thread, allActions);
+  }
+}
+
+async function callVisionEngine(userText, images, batchIndex, batchCount) {
+  const ai = (store.getSettings() || {}).ai || {};
+  const model = ai.visionModel || 'deepseek-v4-flash';
+  const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant.';
+  const systemPrompt = `${basePrompt}\n\n${getVisionContext()}`;
+
+  const instruction = batchCount > 1
+    ? `${userText || 'Extract every record from this document.'}\n\n(Batch ${batchIndex + 1} of ${batchCount} — extract only what appears in the images below.)`
+    : (userText || 'Extract every record from this attachment.');
+
+  const content = [
+    { type: 'text', text: instruction },
+    ...images.map(url => ({ type: 'image_url', image_url: { url } }))
+  ];
+
+  return dispatchChat([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content }
+  ], ai, model);
+}
+
+function getVisionContext() {
+  return `The user has attached one or more images (photos, scans, or rendered PDF pages). Read them carefully and extract structured records to add to the CRM.
+
+Likely cases:
+- A SUPPLIER CATALOGUE / price list → extract EVERY product line item. One action per item:
+  [ACTION: CREATE_RECORD, stock | name: <product name> | sku: <code if shown> | costPrice: <trade/buy price> | unitPrice: <list/RRP if shown> | unit: Each | category: <category if shown>]
+- A BUSINESS CARD / contact → emit:
+  [ACTION: CREATE_RECORD, contractors | name: <business name> | contactName: <person> | email: <email> | phone: <phone> | trade: <trade or role>]
+  If it is clearly a MATERIALS SUPPLIER rather than a labour contractor, use: [ACTION: CREATE_RECORD, suppliers | name: <company> | contactName: <person> | email: <email> | phone: <phone> | address: <address>]
+
+Rules:
+- Emit one [ACTION: CREATE_RECORD, ...] tag per record. Include only fields you can actually read; omit the rest.
+- Numbers must be plain, no currency symbols (85 not $85.00).
+- First write ONE short sentence summarising what you found (e.g. "I found 42 products across 3 pages."), THEN the action tags. The app asks the user to confirm before saving, so always include the tags — do not ask the user for confirmation yourself.
+- If the images are unreadable or contain no records, say so plainly and emit no tags.`;
+}
+
+// Confirmation card shown before bulk-creating extracted records.
+function renderActionConfirmation(thread, actions) {
+  const n = actions.length;
+  const m = document.createElement('div');
+  m.className = 'relay-msg relay-msg-relay';
+  m.innerHTML = `<div class="relay-bubble relay-confirm">
+    <div class="relay-confirm-title">Add ${n} record${n === 1 ? '' : 's'} to your CRM?</div>
+    <div class="relay-confirm-list">${summariseActions(actions)}</div>
+    <div class="relay-confirm-actions">
+      <button class="relay-confirm-yes">${n === 1 ? 'Add it' : `Add all ${n}`}</button>
+      <button class="relay-confirm-no">Cancel</button>
+    </div>
+  </div>`;
+  thread.appendChild(m);
+  thread.scrollTop = thread.scrollHeight;
+
+  const actionsBar = m.querySelector('.relay-confirm-actions');
+  m.querySelector('.relay-confirm-yes').addEventListener('click', () => {
+    let ok = 0;
+    suppressActionToasts = true;
+    try {
+      actions.forEach(({ action, param }) => {
+        try { executeAction(action, param); ok++; } catch (e) { console.error(e); }
+      });
+    } finally {
+      suppressActionToasts = false;
+    }
+    actionsBar.innerHTML = `<span class="relay-confirm-done">✓ Added ${ok} record${ok === 1 ? '' : 's'}.</span>`;
+    const doneMsg = `Added ${ok} record${ok === 1 ? '' : 's'} to your CRM.`;
+    pushAssistant(doneMsg);
+    showToast(doneMsg, 'success');
+  });
+  m.querySelector('.relay-confirm-no').addEventListener('click', () => {
+    actionsBar.innerHTML = `<span class="relay-confirm-done">Cancelled — nothing was added.</span>`;
+    pushAssistant('Cancelled — nothing was added.');
+  });
+}
+
+function summariseActions(actions) {
+  const groups = {};
+  actions.forEach(({ action, param }) => {
+    const parts = (param || '').split('|').map(p => p.trim());
+    const coll = action === 'CREATE_RECORD' ? (parts[0] || 'record') : action.replace('CREATE_', '').toLowerCase();
+    const name = fieldFromParts(parts, 'name') || firstPipeValue(parts) || '(unnamed)';
+    (groups[coll] = groups[coll] || []).push(name);
+  });
+  return Object.entries(groups).map(([coll, names]) => {
+    const preview = names.slice(0, 6).map(escapeHtml).join(', ');
+    const more = names.length > 6 ? ` +${names.length - 6} more` : '';
+    const label = coll.charAt(0).toUpperCase() + coll.slice(1);
+    return `<div><strong>${escapeHtml(label)} (${names.length}):</strong> ${preview}${more}</div>`;
+  }).join('');
+}
+
+function fieldFromParts(parts, key) {
+  for (let i = 1; i < parts.length; i++) {
+    const idx = parts[i].indexOf(':');
+    if (idx !== -1 && parts[i].slice(0, idx).trim().toLowerCase() === key) {
+      return parts[i].slice(idx + 1).trim();
+    }
+  }
+  return '';
+}
+
+function firstPipeValue(parts) {
+  return parts.length > 1 ? parts[1] : '';
 }
 
 // ── Local (no-LLM) command handler — performs real dashboard/data actions ──────────
@@ -313,7 +614,7 @@ function countMsg(label, n) {
   return `You have ${n} ${label}.`;
 }
 
-// ── AI Engine completions call (DeepSeek) ───────────────────────────────────
+// ── AI Engine completions call ───────────────────────────────────
 
 async function callAIEngine() {
   const s = store.getSettings();
@@ -326,64 +627,60 @@ async function callAIEngine() {
     ...chatHistory
   ];
 
-  let reply = '';
-  const isCloud = store.companyId && !store.companyId.startsWith('acct_');
-
-  if (isCloud) {
-    // Call secure Supabase Edge Function proxy
-    const { data, error } = await supabase.functions.invoke('relay-copilot', {
-      body: {
-        messages,
-        endpoint: ai.endpoint,
-        model: ai.model
-      }
-    });
-
-    if (error) {
-      throw new Error(`Supabase Edge Function error: ${error.message || JSON.stringify(error)}`);
-    }
-
-    reply = data.choices?.[0]?.message?.content || '';
-  } else {
-    // Check Electron secure handler
-    if (window.electronAPI && window.electronAPI.callDeepSeek) {
-      const data = await window.electronAPI.callDeepSeek({
-        messages,
-        endpoint: ai.endpoint,
-        model: ai.model
-      });
-      reply = data.choices?.[0]?.message?.content || '';
-    } else {
-      // Direct connection
-      const res = await fetch(ai.endpoint || 'https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ai.apiKey}`
-        },
-        body: JSON.stringify({
-          model: ai.model || 'deepseek-chat',
-          messages: messages,
-          temperature: 0.3
-        })
-      });
-
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`HTTP ${res.status}: ${body}`);
-      }
-
-      const data = await res.json();
-      reply = data.choices?.[0]?.message?.content || '';
-    }
-  }
-
-  chatHistory.push({ role: 'assistant', content: reply });
-  if (chatHistory.length > 20) {
-    chatHistory = chatHistory.slice(-20);
-  }
-  saveChatHistory(chatHistory);
+  const reply = await dispatchChat(messages, ai, ai.model || 'deepseek-chat');
+  pushAssistant(reply);
   return parseAndExecuteActions(reply);
+}
+
+// Low-level completions transport, shared by text and vision paths. Routes through
+// the Supabase edge proxy (cloud), the Electron secure handler (desktop), or a
+// direct fetch. `messages` may contain multimodal content arrays for vision.
+async function dispatchChat(messages, ai, model) {
+  if (isCloudUser()) {
+    const { data, error } = await supabase.functions.invoke('relay-copilot', {
+      body: { messages, endpoint: ai.endpoint, model }
+    });
+    if (error) {
+      // supabase-js hides the real upstream message on non-2xx; the actual body
+      // (e.g. the OpenAI error) is on error.context (a Response). Surface it.
+      let detail = error.message || String(error);
+      try {
+        if (error.context && typeof error.context.text === 'function') {
+          const body = await error.context.text();
+          if (body) {
+            try { detail = JSON.parse(body).error || body; } catch { detail = body; }
+          }
+        }
+      } catch (_) { /* keep generic message */ }
+      throw new Error(`AI backend error: ${detail}`);
+    }
+    if (data && data.error) {
+      throw new Error(data.error);
+    }
+    return data.choices?.[0]?.message?.content || '';
+  }
+
+  if (window.electronAPI && window.electronAPI.callAIAssistant) {
+    const data = await window.electronAPI.callAIAssistant({ messages, endpoint: ai.endpoint, model });
+    return data.choices?.[0]?.message?.content || '';
+  }
+
+  const res = await fetch(ai.endpoint || 'https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${ai.apiKey}`
+    },
+    body: JSON.stringify({ model: model || 'deepseek-chat', messages, temperature: 0.3 })
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`HTTP ${res.status}: ${body}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 
 function getSystemContext() {
@@ -464,8 +761,9 @@ Action tags MUST follow these exact formats:
 
 - To create a new record in any collection: [ACTION: CREATE_RECORD, CollectionName | Field1: Value1 | Field2: Value2 | ...]
   - CollectionName: jobs, quotes, invoices, customers, purchaseOrders, contractors, suppliers, stock, assets, timesheets, or leads.
-  - Field: Value pairs: Specify the fields to populate.
+  - Field: Value pairs: Specify the fields to populate. Values can be primitives, JSON objects (e.g. {"freq":"Weekly","start":"2026-07-09","end":"2026-10-09","daysOfWeek":[1]}) or JSON arrays.
   - Generates IDs, numbers, and dates automatically.
+  (Example to create a weekly recurring job: [ACTION: CREATE_RECORD, jobs | title: Weekly HVAC Service | isRecurring: true | recurringConfig: {"freq":"Weekly","start":"2026-07-09","end":"2026-10-09","daysOfWeek":[1]} | status: Scheduled])
   (Example to create a purchase order: [ACTION: CREATE_RECORD, purchaseOrders | title: PO for parts | supplierName: Rexel | total: 450 | status: Pending])
   (Example to create a lead: [ACTION: CREATE_RECORD, leads | title: Kitchen Renovation | customerName: John Smith | status: New])
 
@@ -475,19 +773,28 @@ Action tags MUST follow these exact formats:
 Always perform the requested action when asked (e.g. if the user says "add customer Barry Buttons", reply confirming you will do it and append the CREATE_CUSTOMER tag). Do not say you are unable to do it.`;
 }
 
-function parseAndExecuteActions(reply) {
-  const actionRegex = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;
+const ACTION_REGEX = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;
+
+// Parse [ACTION: ...] tags out of a reply WITHOUT executing them.
+// Returns { actions: [{ action, param }], cleanReply }. The attachment flow uses
+// this to hold extracted records for user confirmation before creating them.
+function extractActions(reply) {
+  const regex = new RegExp(ACTION_REGEX.source, 'gi');
+  const actions = [];
   let match;
-  let cleanReply = reply;
+  while ((match = regex.exec(reply)) !== null) {
+    actions.push({
+      action: match[1].toUpperCase().trim(),
+      param: match[2] ? match[2].trim() : null
+    });
+  }
+  const cleanReply = reply.replace(regex, '').trim();
+  return { actions, cleanReply };
+}
 
+// Execute a single parsed action against the store / dashboard.
+function executeAction(action, param) {
   const ff = window.__fieldForge || {};
-
-  while ((match = actionRegex.exec(reply)) !== null) {
-    const action = match[1].toUpperCase().trim();
-    const param = match[2] ? match[2].trim() : null;
-
-    console.log(`Executing AI action: ${action} with param: ${param}`);
-
     try {
       if (action === 'ADD_WIDGET' && param) {
         const title = ff.addWidgetById?.(param);
@@ -786,10 +1093,18 @@ function parseAndExecuteActions(reply) {
             const valueStr = fieldPart.slice(colonIdx + 1).trim();
 
             let val = valueStr;
-            if (valueStr === 'true') val = true;
-            if (valueStr === 'false') val = false;
-            if (valueStr === 'null') val = null;
-            if (!isNaN(valueStr) && valueStr !== '') val = Number(valueStr);
+            if ((valueStr.startsWith('{') && valueStr.endsWith('}')) || (valueStr.startsWith('[') && valueStr.endsWith(']'))) {
+              try {
+                val = JSON.parse(valueStr);
+              } catch (e) {
+                console.error('Failed to parse JSON field value', e);
+              }
+            } else {
+              if (valueStr === 'true') val = true;
+              if (valueStr === 'false') val = false;
+              if (valueStr === 'null') val = null;
+              if (!isNaN(valueStr) && valueStr !== '') val = Number(valueStr);
+            }
 
             fields[fieldName] = val;
           }
@@ -817,14 +1132,22 @@ function parseAndExecuteActions(reply) {
         store.save(collection, list);
 
         const displayLabel = newItem.number ? `#${newItem.number}` : (newItem.name || newItem.title || newItem.id);
-        showToast(`Created new ${collection.slice(0, -1)} "${displayLabel}" successfully.`, 'success');
+        if (!suppressActionToasts) {
+          showToast(`Created new ${collection.slice(0, -1)} "${displayLabel}" successfully.`, 'success');
+        }
       }
     } catch (e) {
       console.error(`AI action failed: ${action}`, e);
     }
-  }
+}
 
-  cleanReply = cleanReply.replace(actionRegex, '').trim();
+// Text-chat path: execute every action in a reply and return the cleaned prose.
+function parseAndExecuteActions(reply) {
+  const { actions, cleanReply } = extractActions(reply);
+  actions.forEach(({ action, param }) => {
+    console.log(`Executing AI action: ${action} with param: ${param}`);
+    executeAction(action, param);
+  });
   return cleanReply;
 }
 
