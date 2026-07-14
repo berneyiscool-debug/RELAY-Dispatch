@@ -617,6 +617,53 @@ function getStatsSummaryText(reportId, d) {
     summary += `Labor Utilization: ${utilization.toFixed(1)}%\n`;
     summary += `Approved Hours: ${approvedHrs.toFixed(2)} hrs\n`;
     summary += `Pending Hours: ${pendingHrs.toFixed(2)} hrs\n`;
+  } else if (reportId === 'technicians') {
+    summary += `Total Technicians: ${d.technicians.length}\n`;
+    const totalJobs = d.jobs.length;
+    const completedJobs = d.jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
+    summary += `Total Filtered Jobs: ${totalJobs}\n`;
+    summary += `Completed Jobs: ${completedJobs}\n`;
+    
+    const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
+    const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
+    const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
+    summary += `Total Logged Hours: ${totalHrs.toFixed(1)} hrs\n`;
+    summary += `Total Billable Job Hours: ${billableHrs.toFixed(1)} hrs\n`;
+    summary += `Overall Utilization Rate: ${utilization.toFixed(1)}%\n`;
+    
+    // Group stats by role to keep them aggregate (avoiding individual blame)
+    const statsByRole = {};
+    d.techStats.forEach(ts => {
+      const role = ts.role || 'Field Technician';
+      if (!statsByRole[role]) {
+        statsByRole[role] = { count: 0, jobs: 0, completed: 0, revenue: 0 };
+      }
+      statsByRole[role].count++;
+      statsByRole[role].jobs += ts.totalJobs;
+      statsByRole[role].completed += ts.completed;
+      statsByRole[role].revenue += ts.revenue;
+    });
+    Object.entries(statsByRole).forEach(([role, stats]) => {
+      summary += `Role Group: ${role} (Group Size: ${stats.count}) -> Jobs Assigned: ${stats.jobs}, Completed: ${stats.completed}, Total Assigned Labor Revenue: $${stats.revenue.toFixed(2)}\n`;
+    });
+  } else if (reportId === 'customers') {
+    summary += `Total Customers Registered: ${d.customers.length}\n`;
+    summary += `Active Status Customers: ${d.customers.filter(c => c.status === 'Active').length}\n`;
+    summary += `Total Leads Received: ${d.leads.length}\n`;
+    summary += `Lead Conversion Rate: ${d.leadConvRate.toFixed(1)}%\n`;
+    summary += `Quote Win Rate: ${d.quoteWinRate.toFixed(1)}%\n`;
+    
+    // Calculate repeat customer rate
+    const customerJobCounts = {};
+    d.jobs.forEach(j => {
+      if (j.customerName) {
+        customerJobCounts[j.customerName] = (customerJobCounts[j.customerName] || 0) + 1;
+      }
+    });
+    const repeatCustomers = Object.values(customerJobCounts).filter(c => c > 1).length;
+    const singleJobCustomers = Object.values(customerJobCounts).filter(c => c === 1).length;
+    summary += `Customers with Repeat Bookings: ${repeatCustomers}\n`;
+    summary += `Customers with Single Booking: ${singleJobCustomers}\n`;
   } else if (reportId === 'assets_maintenance') {
     summary += `Total Assets Matching: ${d.assets.length}\n`;
     summary += `Active Service Plans: ${d.maintenancePlans.filter(p => p.status === 'Active').length}\n`;
