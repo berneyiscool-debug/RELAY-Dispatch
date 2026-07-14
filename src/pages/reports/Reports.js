@@ -5,6 +5,8 @@
 import { store } from '../../data/store.js';
 import { escapeHTML } from '../../utils/security.js';
 
+let reportViewMode = 'detailed'; // Simple vs. Detailed report toggle
+
 export function renderReports(container) {
   let activeReport = 'overview';
 
@@ -14,7 +16,6 @@ export function renderReports(container) {
   let filterTechId = 'All';
   let filterAssetType = 'All';
   let filterCustomerId = 'All';
-  let reportViewMode = 'detailed'; // Simple vs. Detailed report toggle
 
   const reports = [
     { id: 'overview', label: 'Business Overview', icon: 'dashboard' },
@@ -456,7 +457,7 @@ const cachedAIInsights = {};
 
 function renderAIInsightsPanel(reportId, filteredData) {
   const containerId = `ai-insights-${reportId}`;
-  const cacheKey = `${reportId}_${filteredData.timesheets.length}_${filteredData.jobs.length}_${filteredData.invoices.length}`;
+  const cacheKey = `${reportId}_${filteredData.timesheets.length}_${filteredData.jobs.length}_${filteredData.invoices.length}_${reportViewMode}`;
   
   if (cachedAIInsights[cacheKey]) {
     return cachedAIInsights[cacheKey];
@@ -500,50 +501,37 @@ async function fetchAIInsights(reportId, d, cacheKey) {
   const hasKey = ai.apiKey || import.meta.env.VITE_DEEPSEEK_API_KEY;
 
   let insightsHTML = '';
+  const isSimpleMode = cacheKey.endsWith('_simple');
+  const mode = isSimpleMode ? 'simple' : 'detailed';
 
   if (ai.enabled && hasKey) {
     try {
       const statsSummary = getStatsSummaryText(reportId, d);
-      const messages = [
-        {
-          role: 'system',
-          content: `You are an expert business analyst and operational co-pilot for a field service management agency.
-Analyze the provided summary report metrics and generate exactly 3 to 5 grounded, specific, non-generic observations tied to real numbers in the dataset.
-Never write generic platitudes ("business is doing well!"), never fabricate benchmarks, and never present advice as certain facts.
+      let messages = [];
 
-Follow these Global Rules:
-1. Every insight format: headline (short, specific, numbers-first), detail (pattern pattern and why it matters -> what -> so what), action (one concrete next step -> now what).
-2. Ground in real data only. Never invent benchmarks, percentages, or comparisons. If there is not enough data (<5 jobs or <2 weeks of history), state so explicitly instead of guessing.
-3. Confidence scales with sample size. Set confidence to "high", "medium", or "low" based on data density.
-4. No individual blame. Frame staffing/productivity at a team/role level or growth-framed, never negative individual callouts.
-5. No authoritative compliance, legal, or tax advice. Use soft disclaimers ("worth checking against Fair Work obligations").
-6. No customer profiling on protected characteristics. Churn/risk signals must be behavior-only (payment latency, cadence drop-offs).
-7. Balanced, surface both wins and risks.
-8. Use plain, specific, non-corporate language.
-
-Per-Report Specifications:
-- overview: Flag the single biggest positive/negative movement vs last period. Limit to 3-4 insights.
-- revenue: Analyze margin trend by job type/service, pricing consistency, seasonal patterns, upsell opportunities. Never suggest a specific price increase number.
-- jobs: On-time start/completion rate trend, first-time fix rate, actual vs estimated duration, cancellation rate. Distinguish estimate vs mismanagement.
-- job_costing: Est vs actual cost variance (split materials vs labor), consistently over-budget job types, markup effectiveness, quote-to-invoice drift.
-- technicians: Jobs completed, utilization rate, travel-to-job ratio. Team/role aggregates. Coach, don't blame or rank.
-- timesheets_labor: Overtime trend, labor cost as % of revenue, rostering mismatches, soft disclaimers.
-- assets_maintenance: Overdue maintenance ranked by downtime cost risk, assets approaching replace-vs-repair, warranty expiry, utilization.
-- customers: Customer lifetime value distribution, behavior-only churn risk, repeat business rate correlation.
-- inventory: Stock turnover rate, reorder points showing math (usage * lead time + buffer) inline, stockouts, supplier cost trend.
-
-Output Format:
-You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks). Each object has exactly these keys:
-- "headline" (string, short, specific, numbers-first)
-- "detail" (string, what -> so what)
-- "action" (string, now what - one concrete next step)
-- "confidence" (string, "high" | "medium" | "low")`
-        },
-        {
-          role: 'user',
-          content: `Active Report: ${reportId}\nFiltered Metrics:\n${statsSummary}`
-        }
-      ];
+      if (isSimpleMode) {
+        messages = [
+          {
+            role: 'system',
+            content: 'You are a friendly, encouraging operational co-pilot for a field service company. Analyze the provided metrics and write exactly 3 to 5 simple, friendly, easy-to-understand operational tips or encouraging updates in a JSON array of strings. The output MUST be a valid JSON array of strings, e.g., ["Tip 1", "Tip 2", "Tip 3"]. Avoid complex business jargon or threatening financial metrics. Focus on team efforts, customer service, or helpful reminders (e.g., "Keep up the great work on service schedules!", "Order parts soon to keep jobs running smoothly"). Do not output any markdown formatting, asterisks (*), code blocks (like ```json), or explanatory text. Return ONLY the raw JSON string.'
+          },
+          {
+            role: 'user',
+            content: `Active Report: ${reportId}\nFiltered Metrics:\n${statsSummary}`
+          }
+        ];
+      } else {
+        messages = [
+          {
+            role: 'system',
+            content: 'You are an expert business analyst and operational co-pilot for a field service management agency. Analyze the provided summary report metrics and write exactly 3 to 5 high-value, highly specific, and actionable business insights or operational warnings in JSON format. The output MUST be a valid JSON array of objects, where each object has exactly these keys: "headline" (string, short, specific, numbers-first), "detail" (string, what -> so what), "action" (string, now what - one concrete next step), and "confidence" (string, "high" | "medium" | "low"). Rank the objects in the array by operational impact (highest impact first). Do not output any markdown formatting, code blocks (like ```json), or explanatory text. Return ONLY the raw JSON string.'
+          },
+          {
+            role: 'user',
+            content: `Active Report: ${reportId}\nFiltered Metrics:\n${statsSummary}`
+          }
+        ];
+      }
 
       const endpoint = ai.endpoint || 'https://api.deepseek.com/chat/completions';
       const model = ai.model || 'deepseek-chat';
@@ -574,15 +562,15 @@ You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks).
       }
       
       const insights = JSON.parse(reply);
-      insightsHTML = renderInsightsListHTML(reportId, insights, false);
+      insightsHTML = renderInsightsListHTML(reportId, insights, false, mode);
     } catch (err) {
       console.error('AI Insights parsing or fetch error:', err);
-      const localInsights = getLocalInsightsJSON(reportId, d);
-      insightsHTML = renderInsightsListHTML(reportId, localInsights, true);
+      const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
+      insightsHTML = renderInsightsListHTML(reportId, localInsights, true, mode);
     }
   } else {
-    const localInsights = getLocalInsightsJSON(reportId, d);
-    insightsHTML = renderInsightsListHTML(reportId, localInsights, false);
+    const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
+    insightsHTML = renderInsightsListHTML(reportId, localInsights, false, mode);
   }
 
   cachedAIInsights[cacheKey] = insightsHTML;
@@ -659,7 +647,7 @@ function cleanString(str) {
   return formatted;
 }
 
-function renderInsightsListHTML(reportId, insights, isOfflineWarning) {
+function renderInsightsListHTML(reportId, insights, isOfflineWarning, mode) {
   const badgeLabel = isOfflineWarning ? 'RELAY Offline' : 'RELAY Live';
   const badgeClass = isOfflineWarning ? 'badge-danger' : 'badge-success';
   const borderStyle = isOfflineWarning ? 'border: 1px solid var(--color-danger-bg)' : 'border: 1px solid var(--color-primary-light)';
@@ -667,12 +655,35 @@ function renderInsightsListHTML(reportId, insights, isOfflineWarning) {
   const items = (Array.isArray(insights) ? insights : []).slice(0, 5);
 
   if (items.length === 0) {
-    items.push({
+    items.push(mode === 'simple' ? "Operational check completed: everything is running smoothly." : {
       headline: "Operational Metrics: Stable",
       detail: "All filtered business metrics are within normal operating parameters.",
       action: "Continue monitoring scheduled maintenance and jobs.",
       confidence: "high"
     });
+  }
+
+  if (mode === 'simple') {
+    return `
+      <div class="card-body" style="padding:16px 20px; ${borderStyle}">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <span class="material-icons-outlined" style="color:var(--color-primary)">psychology</span>
+          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">RELAY AI Insights</h5>
+          <span class="badge ${badgeClass}" style="font-size:10px; margin-left:auto;">${badgeLabel}</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; color:var(--text-secondary); line-height:1.6; font-family:var(--font-family);">
+          ${items.map(item => {
+            const text = typeof item === 'string' ? item : (item.detail || item.headline || '');
+            return `
+              <div style="display:flex; align-items:flex-start; gap:8px;">
+                <span style="color:var(--color-primary); font-size:16px; line-height:1.2;">•</span>
+                <span>${cleanString(text)}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
   }
 
   const confidenceColors = {
@@ -717,6 +728,62 @@ function renderInsightsListHTML(reportId, insights, isOfflineWarning) {
       </div>
     </div>
   `;
+}
+
+function getLocalSimpleInsights(reportId, d) {
+  const tips = [];
+  if (reportId === 'overview' || reportId === 'revenue') {
+    if (d.totalOutstanding > d.totalRevenue * 0.3) {
+      tips.push("We have a few outstanding invoices. Sending a friendly follow-up note to clients will help keep our cash flow running smoothly.");
+    } else {
+      tips.push("Our collections are in great shape! Keep up the excellent work sending invoices promptly.");
+    }
+    if (d.quoteWinRate < 45) {
+      tips.push("Let's try to follow up on open quotes within 2 days. A quick check-in can make a big difference in winning more jobs.");
+    } else {
+      tips.push("Great job on proposals! Our quote acceptance rate is looking very strong.");
+    }
+    if (d.leadConvRate < 35) {
+      tips.push("We have some new leads waiting. Reaching out quickly helps build trust with new customers.");
+    }
+  } else if (reportId === 'jobs' || reportId === 'job_costing') {
+    tips.push("Keep estimating as accurately as possible so we can maintain healthy margins on completed service calls.");
+    const overrunJobs = d.jobs.filter(j => {
+      const actualH = d.hoursByJob[j.id] || 0;
+      return actualH > (j.estimatedHours || 0) * 1.1;
+    });
+    if (overrunJobs.length > 0) {
+      tips.push("A few complex jobs took a bit longer than expected. Checking in on site challenges helps us prepare better next time.");
+    }
+  } else if (reportId === 'timesheets_labor') {
+    const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
+    const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
+    const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
+    if (utilization < 70) {
+      tips.push("Let's look for ways to optimize travel and setup time, helping our team spend more of their active hours helping clients on site.");
+    } else {
+      tips.push("Awesome job on team efficiency! The crew is spending a solid amount of their logged time on actual jobs.");
+    }
+    const pending = d.timesheets.filter(t => t.status === 'Pending').reduce((s, t) => s + (t.hours || 0), 0);
+    if (pending > 10) {
+      tips.push("Remember to review and approve pending timesheets regularly so our job costings stay completely up-to-date.");
+    }
+  } else if (reportId === 'assets_maintenance') {
+    tips.push("Preventative check-ups are the best way to avoid emergency breakdowns. Let's keep those scheduled visits on track!");
+    tips.push("Keep a close eye on maintenance agreements to ensure we are always meeting customer expectations.");
+  } else if (reportId === 'inventory') {
+    if (d.lowStockItems.length > 0) {
+      tips.push("We have a few items running low in the warehouse. Let's place a supplier order soon to avoid any job delays.");
+    } else {
+      tips.push("Warehouse stock is in great shape! All parts are above their minimum levels.");
+    }
+    tips.push("Reviewing slow-moving stock helps keep our warehouse organized and frees up resources for active projects.");
+  }
+
+  if (tips.length === 0) {
+    tips.push("Operational check completed: All metrics are within normal parameters. Keep up the excellent work!");
+  }
+  return tips.slice(0, 5);
 }
 
 function getLocalInsightsJSON(reportId, d) {
