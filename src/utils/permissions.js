@@ -28,6 +28,7 @@ export function hasPermission(module, key) {
     if (module === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
     if (module === 'Settings') return ['view', 'edit_company'].includes(key);
     if (module === 'Documents') return ['view', 'upload'].includes(key);
+    if (module === 'Projects') return ['view', 'create', 'edit'].includes(key);
     return false;
   }
 
@@ -55,6 +56,7 @@ export function hasPermission(module, key) {
     if (module === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
     if (module === 'Settings') return ['view', 'edit_company'].includes(key);
     if (module === 'Documents') return ['view', 'upload'].includes(key);
+    if (module === 'Projects') return ['view', 'create', 'edit'].includes(key);
     return false;
   }
 
@@ -168,5 +170,11 @@ export const MODULE_PERMS = {
     { key: 'edit_company', label: 'Edit Company Profile' },
     { key: 'manage_users', label: 'Manage Users & Permissions' },
     { key: 'manage_tax', label: 'Manage Tax & Finance' },
+  ],
+  'Projects': [
+    { key: 'view', label: 'View Projects' },
+    { key: 'create', label: 'Create Projects' },
+    { key: 'edit', label: 'Edit Projects' },
+    { key: 'delete', label: 'Delete Projects' }
   ]
 };

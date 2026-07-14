@@ -113,6 +113,14 @@ export function renderNotificationsList(container, params) {
               </span>
             </div>
           ` : ''}
+          ${n.type === 'Recurring Job Created' ? `
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:11px">
+              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--color-primary-dark);background:var(--color-primary-light);padding:2px 6px;border-radius:4px;font-weight:600">
+                <span class="material-icons-outlined" style="font-size:12px">build</span>
+                Job Spawned: Due ${n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-AU') : '—'}
+              </span>
+            </div>
+          ` : ''}
         `;
       }
     },
@@ -536,14 +544,17 @@ export function renderNotificationsList(container, params) {
           ${referencesHtml}
         </div>
       `,
-      actions: n.status !== 'Converted' ? [
+      actions: n.type === 'Recurring Job Created' ? [
+        { label: 'Close', className: 'btn-secondary', onClick: close => close() },
+        { label: 'View Job', className: 'btn-primary', onClick: close => { close(); router.navigate(`/jobs/${n.jobId}`); } }
+      ] : (n.status !== 'Converted' ? [
         { label: 'Close', className: 'btn-secondary', onClick: close => close() },
         { label: 'Edit', className: 'btn-secondary', onClick: close => { close(); openNotificationFormDrawer(n); } },
         { label: 'Convert to Quote', className: 'btn-secondary', onClick: close => { close(); convertToQuote(n.id); } },
         { label: 'Convert to Job', className: 'btn-primary', onClick: close => { close(); convertToJob(n.id); } }
       ] : [
         { label: 'Close', className: 'btn-secondary', onClick: close => close() }
-      ],
+      ]),
       onMount: (drawerEl) => {
         drawerEl.querySelector('.drawer-link-quote')?.addEventListener('click', () => {
           drawerEl.querySelector('.drawer-close-btn')?.click();

@@ -13,9 +13,12 @@ export function initClockPicker(inputEl) {
   inputEl.parentNode.insertBefore(container, inputEl);
 
   const dateInput = document.createElement('input');
-  dateInput.type = 'date';
+  dateInput.type = 'text';
   dateInput.className = 'form-input';
   dateInput.style.flex = '1';
+  dateInput.readOnly = true;
+  dateInput.style.cursor = 'pointer';
+  dateInput.placeholder = 'Select date';
 
   const timeInput = document.createElement('input');
   timeInput.type = 'text';
@@ -58,9 +61,16 @@ export function initClockPicker(inputEl) {
     }
   };
 
-  dateInput.addEventListener('change', updateSource);
+  // Toggle dropdown / popup for Date
+  dateInput.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openDatePickerPopup(dateInput, (selectedDate) => {
+      dateInput.value = selectedDate;
+      updateSource();
+    });
+  });
 
-  // Toggle dropdown / popup
+  // Toggle dropdown / popup for Time
   timeInput.addEventListener('click', (e) => {
     e.stopPropagation();
     openClockPopup(timeInput, (selectedTime) => {
@@ -92,6 +102,7 @@ function formatTo24H(t12) {
 
 function openClockPopup(anchorEl, onSelect) {
   closeAllClockPickers();
+  closeAllDatePickerPickers();
 
   const popup = document.createElement('div');
   popup.className = 'clock-picker-popup';
@@ -289,6 +300,189 @@ function openClockPopup(anchorEl, onSelect) {
 
 export function closeAllClockPickers() {
   document.querySelectorAll('.clock-picker-popup').forEach(p => {
+    if (p._cleanup) p._cleanup();
+    p.remove();
+  });
+}
+
+export function openDatePickerPopup(anchorEl, onSelect) {
+  closeAllDatePickerPickers();
+  closeAllClockPickers();
+
+  const popup = document.createElement('div');
+  popup.className = 'date-picker-popup';
+  document.body.appendChild(popup);
+
+  // Position popup directly below input
+  const rect = anchorEl.getBoundingClientRect();
+  const top = rect.bottom + window.scrollY;
+  const left = rect.left + window.scrollX;
+  popup.style.top = `${top + 4}px`;
+  popup.style.left = `${left}px`;
+
+  // Parse initial date
+  let currentDate = new Date();
+  if (anchorEl.value) {
+    const parsed = new Date(anchorEl.value);
+    if (!isNaN(parsed.getTime())) {
+      currentDate = parsed;
+    }
+  }
+
+  let selectedYear = currentDate.getFullYear();
+  let selectedMonth = currentDate.getMonth(); // 0-indexed
+  let selectedDay = currentDate.getDate();
+
+  let viewYear = selectedYear;
+  let viewMonth = selectedMonth;
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const renderCalendar = () => {
+    // Header
+    popup.innerHTML = `
+      <div class="date-picker-header">
+        <button type="button" class="btn-prev-month">
+          <span class="material-icons-outlined" style="font-size:18px">chevron_left</span>
+        </button>
+        <span class="date-picker-month-year">${monthNames[viewMonth]} ${viewYear}</span>
+        <button type="button" class="btn-next-month">
+          <span class="material-icons-outlined" style="font-size:18px">chevron_right</span>
+        </button>
+      </div>
+      <div class="date-picker-grid">
+        <div class="date-picker-weekday">Su</div>
+        <div class="date-picker-weekday">Mo</div>
+        <div class="date-picker-weekday">Tu</div>
+        <div class="date-picker-weekday">We</div>
+        <div class="date-picker-weekday">Th</div>
+        <div class="date-picker-weekday">Fr</div>
+        <div class="date-picker-weekday">Sa</div>
+      </div>
+    `;
+
+    const grid = popup.querySelector('.date-picker-grid');
+
+    // Calendar Calculations
+    const firstDayIndex = new Date(viewYear, viewMonth, 1).getDay();
+    const daysInCurrentMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const daysInPrevMonth = new Date(viewYear, viewMonth, 0).getDate();
+
+    // Previous month padding days
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      const dayCell = document.createElement('div');
+      dayCell.className = 'date-picker-day other-month';
+      dayCell.textContent = dayNum;
+      grid.appendChild(dayCell);
+
+      dayCell.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (viewMonth === 0) {
+          viewMonth = 11;
+          viewYear--;
+        } else {
+          viewMonth--;
+        }
+        selectedYear = viewYear;
+        selectedMonth = viewMonth;
+        selectedDay = dayNum;
+        finishSelection();
+      });
+    }
+
+    // Current month days
+    for (let i = 1; i <= daysInCurrentMonth; i++) {
+      const dayCell = document.createElement('div');
+      const isActive = i === selectedDay && viewMonth === selectedMonth && viewYear === selectedYear;
+      dayCell.className = `date-picker-day ${isActive ? 'active' : ''}`;
+      dayCell.textContent = i;
+      grid.appendChild(dayCell);
+
+      dayCell.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        selectedYear = viewYear;
+        selectedMonth = viewMonth;
+        selectedDay = i;
+        finishSelection();
+      });
+    }
+
+    // Next month padding days to fill 42 cells (6 rows)
+    const totalCells = grid.children.length - 7; // subtract weekday label row
+    const nextMonthDaysNeeded = 42 - totalCells;
+    for (let i = 1; i <= nextMonthDaysNeeded; i++) {
+      const dayCell = document.createElement('div');
+      dayCell.className = 'date-picker-day other-month';
+      dayCell.textContent = i;
+      grid.appendChild(dayCell);
+
+      dayCell.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (viewMonth === 11) {
+          viewMonth = 0;
+          viewYear++;
+        } else {
+          viewMonth++;
+        }
+        selectedYear = viewYear;
+        selectedMonth = viewMonth;
+        selectedDay = i;
+        finishSelection();
+      });
+    }
+
+    // Bind navigation buttons
+    popup.querySelector('.btn-prev-month').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (viewMonth === 0) {
+        viewMonth = 11;
+        viewYear--;
+      } else {
+        viewMonth--;
+      }
+      renderCalendar();
+    });
+
+    popup.querySelector('.btn-next-month').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (viewMonth === 11) {
+        viewMonth = 0;
+        viewYear++;
+      } else {
+        viewMonth++;
+      }
+      renderCalendar();
+    });
+  };
+
+  const finishSelection = () => {
+    const y = selectedYear;
+    const m = (selectedMonth + 1).toString().padStart(2, '0');
+    const d = selectedDay.toString().padStart(2, '0');
+    onSelect(`${y}-${m}-${d}`);
+    closeAllDatePickerPickers();
+  };
+
+  renderCalendar();
+
+  const onOutsideClick = (event) => {
+    if (!popup.contains(event.target) && event.target !== anchorEl) {
+      closeAllDatePickerPickers();
+    }
+  };
+
+  document.addEventListener('click', onOutsideClick);
+  popup._cleanup = () => {
+    document.removeEventListener('click', onOutsideClick);
+  };
+}
+
+export function closeAllDatePickerPickers() {
+  document.querySelectorAll('.date-picker-popup').forEach(p => {
     if (p._cleanup) p._cleanup();
     p.remove();
   });

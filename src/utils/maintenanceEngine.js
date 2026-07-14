@@ -518,27 +518,96 @@ export function checkRecurringJobs() {
       const occurrenceDate = new Date(yr, mo - 1, dy);
       
       if (occurrenceDate >= today && occurrenceDate <= next7Days) {
-        // Check if there is already a notification or a spawned job for this occurrence
-        const hasNotif = newNotifications.some(n => 
-          n.jobId === job.id && n.dueDate === dateStr
-        );
+        // Check if there is already a spawned job for this occurrence
         const hasJob = jobs.some(j => 
           j.parentJobId === job.id && j.scheduledDate === dateStr
         );
 
-        if (!hasNotif && !hasJob) {
+        if (!hasJob) {
+          // 1. Auto-spawn the child job
+          const jobMaterials = job.materials ? JSON.parse(JSON.stringify(job.materials)) : [];
+          const jobTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [];
+          
+          jobTasks.forEach(task => {
+            task.id = store.generateId ? store.generateId() : 'task_' + Math.random().toString(36).substr(2, 9);
+            task.status = 'Not Started';
+            task.progress = 0;
+            task.startDate = new Date().toISOString();
+            task.technicians = [];
+            if (task.subTasks) {
+              task.subTasks.forEach(st => {
+                st.id = store.generateId ? store.generateId() : 'sub_' + Math.random().toString(36).substr(2, 9);
+                st.status = 'Not Started';
+                st.progress = 0;
+                st.startDate = new Date().toISOString();
+                st.technicians = [];
+              });
+            }
+          });
+
+          // Determine next sub-number J-XXX.Y
+          const latestJobs = store.getAll('jobs') || [];
+          const siblingJobs = latestJobs.filter(j => j.parentJobId === job.id);
+          let maxSuffix = 0;
+          const prefix = `${job.number}.`;
+          siblingJobs.forEach(sj => {
+            if (sj.number && sj.number.startsWith(prefix)) {
+              const suffixStr = sj.number.substring(prefix.length);
+              const suffixNum = parseInt(suffixStr, 10);
+              if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
+                maxSuffix = suffixNum;
+              }
+            }
+          });
+          const childNumber = `${job.number}.${maxSuffix + 1}`;
+
+          // Format title to Australian standard date format (DD/MM/YYYY)
+          const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
+          const childTitle = `${job.title || job.number} — Recurring (${formattedDate})`;
+
+          const childJob = {
+            parentJobId: job.id,
+            scheduledDate: dateStr,
+            status: 'Pending',
+            number: childNumber,
+            title: childTitle,
+            description: job.description || '',
+            priority: job.priority || 'Normal',
+            notes: `Generated from template job ${job.number}`,
+            createdAt: new Date().toISOString(),
+            customerId: job.customerId || '',
+            customerName: job.customerName || '',
+            contactName: job.contactName || '',
+            siteAddress: job.siteAddress || '',
+            siteName: job.siteName || '',
+            assetId: job.assetId || undefined,
+            materials: jobMaterials,
+            laborCost: job.laborCost || 0,
+            materialCost: job.materialCost || 0,
+            estimatedLaborCost: job.estimatedLaborCost || 0,
+            estimatedMaterialCost: job.estimatedMaterialCost || 0,
+            isRecurring: false,
+            recurringConfig: null,
+            tasks: jobTasks
+          };
+
+          const spawnedJob = store.create('jobs', childJob);
+          jobs.push(spawnedJob);
+          
+          // 2. Create read-only "Recurring Job Created" notification
           const notifId = 'notif_recurring_' + Date.now() + Math.random().toString(36).substr(2, 5);
-          const description = `Upcoming recurring service for ${job.title || job.number} due on ${dateStr}`;
+          const description = `Job ${spawnedJob.number} has been created and is ready to be scheduled for customer ${job.customerName || 'Internal'} due on ${formattedDate}`;
           
           const notif = {
             id: notifId,
-            type: 'Recurring Job Due',
-            jobId: job.id,
-            title: `Recurring: ${job.title || job.number}`,
+            type: 'Recurring Job Created',
+            jobId: spawnedJob.id,
+            parentJobId: job.id,
+            title: `Recurring Job Created`,
             description: description,
             message: description,
             dueDate: dateStr,
-            status: 'Pending',
+            status: 'Info',
             priority: job.priority || 'Normal',
             createdAt: new Date().toISOString(),
             createdBy: 'System Engine'
@@ -554,5 +623,47 @@ export function checkRecurringJobs() {
   if (storeUpdated) {
     store.save('notifications', newNotifications);
   }
+}
+
+export function scheduleEngineChecks() {
+  function getMsUntilNextTarget() {
+    const now = new Date();
+    const targets = [];
+    
+    // Today 12pm
+    const today12PM = new Date(now);
+    today12PM.setHours(12, 0, 0, 0);
+    if (today12PM > now) targets.push(today12PM);
+    
+    // Tomorrow 12pm
+    const tomorrow12PM = new Date(now);
+    tomorrow12PM.setDate(tomorrow12PM.getDate() + 1);
+    tomorrow12PM.setHours(12, 0, 0, 0);
+    targets.push(tomorrow12PM);
+    
+    // Tomorrow 12am (Midnight tonight)
+    const tomorrow12AM = new Date(now);
+    tomorrow12AM.setDate(tomorrow12AM.getDate() + 1);
+    tomorrow12AM.setHours(0, 0, 0, 0);
+    targets.push(tomorrow12AM);
+    
+    targets.sort((a, b) => a - b);
+    const nextTarget = targets[0];
+    
+    return nextTarget.getTime() - now.getTime();
+  }
+
+  function runCheckAndReschedule() {
+    try {
+      checkMaintenancePlans();
+    } catch (err) {
+      console.error('[Maintenance Engine] Scheduled check failed:', err);
+    }
+    const ms = getMsUntilNextTarget();
+    setTimeout(runCheckAndReschedule, ms);
+  }
+
+  const ms = getMsUntilNextTarget();
+  setTimeout(runCheckAndReschedule, ms);
 }
 

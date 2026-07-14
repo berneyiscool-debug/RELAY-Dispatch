@@ -138,6 +138,7 @@ export function enhanceSelect(select) {
     });
 
     container.classList.add('searchable-select-open');
+    dropdown.style.display = 'block';
     document.body.appendChild(dropdown);
     rebuildDropdown('');
     positionDropdown();
@@ -153,6 +154,7 @@ export function enhanceSelect(select) {
   function closeDropdown() {
     if (!container.classList.contains('searchable-select-open')) return;
     container.classList.remove('searchable-select-open');
+    dropdown.style.display = 'none';
     dropdown.remove();
     
     window.removeEventListener('scroll', positionDropdown, { capture: true });

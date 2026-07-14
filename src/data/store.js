@@ -32,7 +32,9 @@ const TABLE_MAP = {
   kits: 'kits',
   documents: 'documents',
   leads: 'leads',
-  schedule: 'schedule'
+  schedule: 'schedule',
+  projects: 'projects',
+  costCenters: 'cost_centers'
 };
 
 const TABLE_COLUMNS = {
@@ -169,6 +171,32 @@ const TABLE_COLUMNS = {
     "material_cost",
     "tasks",
     "notes",
+    "project_id",
+    "cost_center_id",
+    "created_at",
+    "updated_at"
+  ],
+  projects: [
+    "id",
+    "company_id",
+    "number",
+    "name",
+    "customer_id",
+    "customer_name",
+    "site_address",
+    "status",
+    "description",
+    "start_date",
+    "end_date",
+    "created_at",
+    "updated_at"
+  ],
+  costCenters: [
+    "id",
+    "company_id",
+    "name",
+    "code",
+    "active",
     "created_at",
     "updated_at"
   ],
@@ -557,7 +585,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 2);
+      const request = window.indexedDB.open(dbName, 3);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1301,6 +1329,22 @@ class DataStore {
       record.customerName = record.customer_name;
       delete record.customer_name;
     }
+    if (record.project_id !== undefined) {
+      record.projectId = record.project_id;
+      delete record.project_id;
+    }
+    if (record.cost_center_id !== undefined) {
+      record.costCenterId = record.cost_center_id;
+      delete record.cost_center_id;
+    }
+    if (record.start_date !== undefined) {
+      record.startDate = record.start_date;
+      delete record.start_date;
+    }
+    if (record.end_date !== undefined) {
+      record.endDate = record.end_date;
+      delete record.end_date;
+    }
     if (record.current_meter !== undefined) {
       record.currentMeter = parseFloat(record.current_meter);
       delete record.current_meter;
@@ -1438,6 +1482,18 @@ class DataStore {
     if (record.start_hour !== undefined) { record.startHour = parseFloat(record.start_hour); delete record.start_hour; }
     if (record.end_hour !== undefined) { record.endHour = parseFloat(record.end_hour); delete record.end_hour; }
 
+    if (record.color && record.color.startsWith('__meta__:')) {
+      try {
+        const parsed = JSON.parse(record.color.substring(9));
+        record.taskId = parsed.taskId;
+        record.taskPath = parsed.taskId;
+        record.taskName = parsed.taskName;
+        record.color = parsed.color;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     return record;
   }
 
@@ -1502,6 +1558,22 @@ class DataStore {
     if (record.customerName !== undefined) {
       record.customer_name = record.customerName;
       delete record.customerName;
+    }
+    if (record.projectId !== undefined) {
+      record.project_id = record.projectId;
+      delete record.projectId;
+    }
+    if (record.costCenterId !== undefined) {
+      record.cost_center_id = record.costCenterId;
+      delete record.costCenterId;
+    }
+    if (record.startDate !== undefined) {
+      record.start_date = record.startDate;
+      delete record.startDate;
+    }
+    if (record.endDate !== undefined) {
+      record.end_date = record.endDate;
+      delete record.endDate;
     }
     if (record.currentMeter !== undefined) {
       record.current_meter = record.currentMeter;
@@ -1640,6 +1712,15 @@ class DataStore {
     if (record.startHour !== undefined) { record.start_hour = record.startHour; delete record.startHour; }
     if (record.endHour !== undefined) { record.end_hour = record.endHour; delete record.endHour; }
 
+    if (collection === 'schedule') {
+      const meta = {
+        taskId: record.taskId || record.taskPath || null,
+        taskName: record.taskName || null,
+        color: record.color || null
+      };
+      record.color = '__meta__:' + JSON.stringify(meta);
+    }
+
     // Filter out columns not in schema to prevent 400 Bad Request
     const table = TABLE_MAP[collection];
     if (table && TABLE_COLUMNS[table]) {
@@ -1724,6 +1805,9 @@ class DataStore {
     if (collection === 'purchaseOrders' && !item.number) {
       item.number = this.getNextNumber('PO-', 'purchaseOrders');
     }
+    if (collection === 'projects' && !item.number) {
+      item.number = this.getNextNumber('PRJ-', 'projects');
+    }
     item.createdAt = item.createdAt || new Date().toISOString();
     item.updatedAt = new Date().toISOString();
     if (this.companyId) {
@@ -1766,16 +1850,11 @@ class DataStore {
           if (!session) throw new Error('Authentication session expired. Please log in again.');
 
           const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const email = `${item.username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
+          const email = `${item.username.toLowerCase().trim()}@${companySlug}.relay.internal`;
           item.email = email;
 
-          const res = await fetch('/.netlify/functions/invite-user', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify({
+          const { data, error: invokeError } = await supabase.functions.invoke('invite-user', {
+            body: {
               action: 'create',
               email: item.email,
               username: item.username,
@@ -1785,18 +1864,14 @@ class DataStore {
               userTypeId: item.userTypeId,
               color: item.color,
               payRate: item.payRate
-            })
+            }
           });
 
-          let data;
-          const text = await res.text();
-          try {
-            data = text ? JSON.parse(text) : {};
-          } catch (e) {
-            throw new Error(`Server returned status ${res.status}. Response: ${text.substring(0, 150) || '[Empty]'}`);
+          if (invokeError) {
+            throw new Error(invokeError.message || JSON.stringify(invokeError));
           }
-          if (!res.ok || !data.success) {
-            throw new Error(data.error || `Failed to create user (Status ${res.status}).`);
+          if (!data || !data.success) {
+            throw new Error(data?.error || 'Failed to create user.');
           }
 
           // Update local item ID with the real auth user UUID returned from database
@@ -1871,20 +1946,15 @@ class DataStore {
 
           const companySlug = this.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
           const username = updates.username || previous.username;
-          const email = `${username.toLowerCase().trim()}@${companySlug}.fieldforge.internal`;
+          const email = `${username.toLowerCase().trim()}@${companySlug}.relay.internal`;
           updates.email = email;
 
           if (updates.password) {
             updates.forcePasswordChange = true;
           }
 
-          const res = await fetch('/.netlify/functions/invite-user', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify({
+          const { data, error: invokeError } = await supabase.functions.invoke('invite-user', {
+            body: {
               action: 'update',
               userId: id,
               email: email,
@@ -1895,18 +1965,14 @@ class DataStore {
               color: updates.color || previous.color,
               payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
               password: updates.password
-            })
+            }
           });
 
-          let data;
-          const text = await res.text();
-          try {
-            data = text ? JSON.parse(text) : {};
-          } catch (e) {
-            throw new Error(`Server returned status ${res.status}. Response: ${text.substring(0, 150) || '[Empty]'}`);
+          if (invokeError) {
+            throw new Error(invokeError.message || JSON.stringify(invokeError));
           }
-          if (!res.ok || !data.success) {
-            throw new Error(data.error || `Failed to update user (Status ${res.status}).`);
+          if (!data || !data.success) {
+            throw new Error(data?.error || 'Failed to update user.');
           }
 
           const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
@@ -2053,9 +2119,25 @@ class DataStore {
    * Scans existing records, finds the highest numeric suffix, and returns prefix + (max+1) zero-padded to 5 digits.
    * e.g. getNextNumber('INV-', 'invoices') → 'INV-00001', 'INV-00002', ...
    */
-  getNextNumber(prefix, collection) {
+  getNextNumber(defaultPrefix, collection) {
+    const settings = this.getSettings();
+    const dt = settings.documentTheme || {};
+    
+    let prefix = defaultPrefix;
+    let startingNum = 1;
+
+    if (collection === 'invoices') {
+      prefix = dt.invoicePrefix !== undefined ? dt.invoicePrefix : 'INV-';
+      startingNum = dt.invoiceStartingNumber !== undefined ? parseInt(dt.invoiceStartingNumber, 10) : 1;
+      if (isNaN(startingNum)) startingNum = 1;
+    } else if (collection === 'quotes') {
+      prefix = dt.quotePrefix !== undefined ? dt.quotePrefix : 'Q-';
+      startingNum = dt.quoteStartingNumber !== undefined ? parseInt(dt.quoteStartingNumber, 10) : 1;
+      if (isNaN(startingNum)) startingNum = 1;
+    }
+
     const items = this.getAll(collection) || [];
-    let maxNum = 0;
+    let maxNum = startingNum - 1;
 
     items.forEach(item => {
       if (item.number && typeof item.number === 'string' && item.number.startsWith(prefix)) {
@@ -2098,6 +2180,7 @@ class DataStore {
         ]
       },
       materialCategories: ['Consumables', 'Electrical', 'Plumbing', 'HVAC Parts', 'Fixings', 'General'],
+      jobTypes: ['Electrical', 'Plumbing', 'HVAC', 'Fire Protection', 'Security', 'General Maintenance', 'Service', 'Project', 'Maintenance', 'Quote'],
       laborRates: [
         { id: 'rate_1', name: 'Standard Rate',    rate: 85.00,  description: 'Normal business hours Mon–Fri', overtimeMultiplier: 1.0,  minCallOutFee: 0, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33], isDefault: true  },
         { id: 'rate_2', name: 'After Hours Rate', rate: 127.50, description: 'Evenings and early mornings',      overtimeMultiplier: 1.5,  minCallOutFee: 45, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,34,35,36,37,38,39,40,41,42,43,44,45,46,47], isDefault: false },
@@ -2125,13 +2208,17 @@ class DataStore {
         paymentCash: false,
         quoteSignature: true,
         hideCompanyName: false,
-        footerNote: 'Thank you for your business!'
+        footerNote: 'Thank you for your business!',
+        invoicePrefix: 'INV-',
+        invoiceStartingNumber: 1,
+        quotePrefix: 'Q-',
+        quoteStartingNumber: 1
       },
       ai: {
-        enabled: !!(import.meta.env.VITE_DEEPSEEK_API_KEY),
-        apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY || '',
-        endpoint: 'https://api.deepseek.com/chat/completions',
-        model: 'deepseek-chat',
+        enabled: (this.companyId && !this.companyId.startsWith('acct_')) ? !!(typeof import.meta.env !== 'undefined' && (import.meta.env?.VITE_AI_API_KEY || import.meta.env?.VITE_DEEPSEEK_API_KEY)) : false,
+        apiKey: (this.companyId && !this.companyId.startsWith('acct_')) ? (typeof import.meta.env !== 'undefined' ? (import.meta.env?.VITE_AI_API_KEY || import.meta.env?.VITE_DEEPSEEK_API_KEY || '') : '') : '',
+        endpoint: 'https://api.openai.com/v1/chat/completions',
+        model: 'gpt-4o-mini',
         systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
       }
     };
@@ -2141,6 +2228,7 @@ class DataStore {
       // Fallback to default logos if user has not uploaded custom ones
       if (!merged.logo || merged.logo.includes('logo-large.png')) merged.logo = defaultLogoLarge;
       if (!merged.logoSmall) merged.logoSmall = defaultLogoSmall;
+      if (!merged.jobTypes) merged.jobTypes = [...defaultSettings.jobTypes];
       // Ensure sub-objects merge safely
       merged.documentTheme = { ...defaultSettings.documentTheme, ...this.companySettings.documentTheme };
       merged.ai = { ...defaultSettings.ai, ...this.companySettings.ai };

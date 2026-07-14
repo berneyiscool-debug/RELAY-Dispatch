@@ -624,6 +624,26 @@ export async function seedData(force = false) {
       // 2. Job
       const assignTechId = `tech_${(jIdx % 5) + 1}`;
       const assignTech = techniciansList.find(t => t.id === assignTechId);
+
+      const titleLower = title.toLowerCase();
+      let costCenterId = 'cc_electrical';
+      if (titleLower.includes('solar')) {
+        costCenterId = 'cc_solar';
+      } else if (titleLower.includes('hvac') || titleLower.includes('chiller') || titleLower.includes('ducting') || titleLower.includes('compressor')) {
+        costCenterId = 'cc_hvac';
+      } else if (titleLower.includes('switch') || titleLower.includes('gpo') || titleLower.includes('led') || titleLower.includes('electrical')) {
+        costCenterId = 'cc_electrical';
+      } else {
+        const fallbacks = ['cc_electrical', 'cc_solar', 'cc_hvac'];
+        costCenterId = fallbacks[jIdx % 3];
+      }
+
+      let projectId = null;
+      if (cIdx === 0 && jIdx <= 3) {
+        projectId = 'proj_1';
+      } else if (cIdx === 1 && jIdx <= 3) {
+        projectId = 'proj_2';
+      }
       
       generatedJobs.push({
         id: jobId,
@@ -633,6 +653,8 @@ export async function seedData(force = false) {
         customerName: cData.company,
         contactName: `${cData.first} ${cData.last}`,
         title: title,
+        projectId: projectId,
+        costCenterId: costCenterId,
         description: template.desc,
         status: template.status,
         priority: template.priority,
@@ -827,6 +849,46 @@ export async function seedData(force = false) {
   }
 
   // Save Collections
+  const costCentersList = [
+    { id: 'cc_electrical', name: 'Electrical Services', code: 'ELEC', active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: 'cc_solar', name: 'Solar Installations', code: 'SOLAR', active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: 'cc_hvac', name: 'HVAC Services', code: 'HVAC', active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+  ];
+
+  const projectsList = [
+    {
+      id: 'proj_1',
+      number: 'PRJ-00001',
+      name: 'Starlight HQ Solar Power Project',
+      customerId: 'cust_1',
+      customerName: 'Starlight Logistics Pty Ltd',
+      siteAddress: '14 Industrial Lane, Dubbo NSW 2830',
+      status: 'In Progress',
+      description: 'Major solar and electrical integration at the main hub.',
+      startDate: '2026-07-01',
+      endDate: '2026-08-30',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'proj_2',
+      number: 'PRJ-00002',
+      name: 'Beacon Factory HVAC Refurbishment',
+      customerId: 'cust_2',
+      customerName: 'Beacon Manufacturing Group',
+      siteAddress: '88 Factory Road, Orange NSW 2800',
+      status: 'In Progress',
+      description: 'Replacing commercial ducting systems and chiller units.',
+      startDate: '2026-07-05',
+      endDate: '2026-09-15',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
+  await store.save('costCenters', costCentersList);
+  await store.save('projects', projectsList);
+
   await store.save('userTypes', userTypes);
   await store.save('technicians', techniciansList);
   await store.save('stock', stockList);

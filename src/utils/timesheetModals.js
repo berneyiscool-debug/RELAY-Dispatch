@@ -195,13 +195,18 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
     }
 
     const job = activeJobs.find(j => j.id === jobId);
-    if (!job || !job.tasks || job.tasks.length === 0) {
+    if (!job) {
       taskTrigger.innerHTML = '<span>No tasks available</span><span class="material-icons-outlined" style="font-size:18px; color:var(--text-secondary)">keyboard_arrow_down</span>';
       taskTrigger.disabled = true;
       taskDropdown.style.display = 'none';
       taskHidden.value = '';
       taskNameHidden.value = '';
       return;
+    }
+
+    if (!job.tasks || job.tasks.length === 0) {
+      job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
+      store.update('jobs', jobId, { tasks: job.tasks });
     }
 
     // Populate breadcrumbs dictionary

@@ -18,6 +18,10 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
   const collection = isTemplate ? 'quoteTemplates' : 'quotes';
   const isNew = id === 'new';
   
+  const settings = store.getSettings();
+  const defaultLaborRate = settings.laborRates.find(r => r.isDefault);
+  const defaultLaborRateId = defaultLaborRate ? defaultLaborRate.id : '';
+
   let quote;
   if (isNew) {
     if (isTemplate) {
@@ -26,7 +30,8 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         name: 'New Quote Template',
         description: '',
         sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }],
-        subtotal: 0, tax: 0, total: 0
+        subtotal: 0, tax: 0, total: 0,
+        laborProfileId: defaultLaborRateId
       };
     } else {
       quote = { 
@@ -36,7 +41,8 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         sections: [{ id: store.generateId(), name: 'Main Phase', lineItems: [] }], 
         subtotal: 0, tax: 0, total: 0, 
         number: store.getNextNumber('Q-', 'quotes'), 
-        customerId: customerId || '' 
+        customerId: customerId || '',
+        laborProfileId: defaultLaborRateId
       };
     }
   } else {
@@ -83,7 +89,6 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
 
   const customers = store.getAll('customers');
   const stockItems = store.getAll('stock');
-  const settings = store.getSettings();
   const sb = { 'Draft': 'badge-draft', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger', 'Archived': 'badge-neutral' };
 
   function render() {
@@ -130,7 +135,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
               <input class="form-input" id="quote-desc" value="${escapeHTML(quote.description || '')}" placeholder="Template Description..." />
             </div>
             <div class="form-group">
-              <label class="form-label">Labor Profile</label>
+              <label class="form-label">Labour Rate</label>
               <select class="form-select" id="quote-labor-profile">
                 <option value="">-- Custom / Manual Rates --</option>
                 ${settings.laborRates.map(r => `<option value="${r.id}" ${quote.laborProfileId === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
@@ -165,7 +170,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Labor Profile</label>
+              <label class="form-label">Labour Rate</label>
               <select class="form-select" id="quote-labor-profile" ${quote.status === 'Archived' ? 'disabled' : ''}>
                 <option value="">-- Custom / Manual Rates --</option>
                 ${settings.laborRates.map(r => `<option value="${r.id}" ${quote.laborProfileId === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}

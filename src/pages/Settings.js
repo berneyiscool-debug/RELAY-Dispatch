@@ -428,6 +428,7 @@ export function renderSettings(container) {
         <button class="tab ${activeTab === 'tax' ? 'active' : ''}" data-tab="tax">Tax &amp; Rates</button>
         <button class="tab ${activeTab === 'portal' ? 'active' : ''} ${isPortalDisabled ? 'disabled-local' : ''}" data-tab="portal" ${isPortalDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Customer Portal</button>
         <button class="tab ${activeTab === 'invoices_quotes' ? 'active' : ''}" data-tab="invoices_quotes">Quotes &amp; Invoices</button>
+        <button class="tab ${activeTab === 'cost_centers' ? 'active' : ''}" data-tab="cost_centers">Cost Centers</button>
         <button class="tab ${activeTab === 'folder_sync' ? 'active' : ''} ${isFolderSyncDisabled ? 'disabled-local' : ''}" data-tab="folder_sync" ${isFolderSyncDisabled ? 'data-tooltip="Requires Local Folder Storage" data-tooltip-pos="top"' : ''}>Folder Sync</button>
         <button class="tab ${activeTab === 'ai_assistant' ? 'active' : ''} ${isAIAssistantDisabled ? 'disabled-local' : ''}" data-tab="ai_assistant" ${isAIAssistantDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>AI Assistant</button>
         <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
@@ -468,6 +469,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'invoices_quotes') {
       renderInvoicesQuotesTab(tc);
+      return;
+    }
+
+    if (activeTab === 'cost_centers') {
+      renderCostCentersTab(tc);
       return;
     }
 
@@ -1093,22 +1099,47 @@ export function renderSettings(container) {
       renderMaterialsSettings(tc);
     } else if (activeTab === 'tax') {
       const settings = store.getSettings();
+      let currentJobTypes = settings.jobTypes ? [...settings.jobTypes] : ['Electrical', 'Plumbing', 'HVAC', 'Fire Protection', 'Security', 'General Maintenance', 'Service', 'Project', 'Maintenance', 'Quote'];
       tc.innerHTML = `
         <div class="grid-2">
-          <div class="card">
-            <div class="card-header"><h4>Tax Rates</h4></div>
-            <div class="card-body">
-              <div class="form-group" style="display:flex; flex-direction:column; gap:8px">
-                <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0">
-                  <input type="checkbox" id="tax-enabled" style="width:16px; height:16px; margin:0" ${settings.taxEnabled !== false ? 'checked' : ''} />
-                  Enable GST / Sales Tax
-                </label>
-                <div style="display:${settings.taxEnabled !== false ? 'flex' : 'none'}; align-items:center; gap:8px; margin-top:4px" id="tax-rate-container">
-                  <input class="form-input" id="tax-rate" type="number" value="${settings.taxRate !== undefined ? settings.taxRate : 10}" style="width:100px" min="0" max="100" step="0.1" /> <span class="text-secondary">%</span>
+          <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+            <div class="card">
+              <div class="card-header"><h4>Tax Rates</h4></div>
+              <div class="card-body">
+                <div class="form-group" style="display:flex; flex-direction:column; gap:8px">
+                  <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0">
+                    <input type="checkbox" id="tax-enabled" style="width:16px; height:16px; margin:0" ${settings.taxEnabled !== false ? 'checked' : ''} />
+                    Enable GST / Sales Tax
+                  </label>
+                  <div style="display:${settings.taxEnabled !== false ? 'flex' : 'none'}; align-items:center; gap:8px; margin-top:4px" id="tax-rate-container">
+                    <input class="form-input" id="tax-rate" type="number" value="${settings.taxRate !== undefined ? settings.taxRate : 10}" style="width:100px" min="0" max="100" step="0.1" /> <span class="text-secondary">%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" id="job-types-card">
+              <div class="card-header"><h4>Job Types</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="font-size:var(--font-size-sm);margin-bottom:12px">Define the types of jobs your team performs (e.g. Electrical, Plumbing). These appear in job forms and rate mapping.</p>
+                <div id="job-types-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
+                  ${currentJobTypes.map(type => `
+                    <span class="tag-pill tag-pill-active" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:100px; font-weight:500; font-size:13px; background:var(--color-primary-light); color:var(--color-primary-dark)">
+                      <span>${escapeHTML(type)}</span>
+                      <span class="material-icons-outlined delete-job-type-btn" data-type="${escapeHTML(type)}" style="font-size:16px; cursor:pointer; opacity:0.7; transition:opacity 0.2s">close</span>
+                    </span>
+                  `).join('')}
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <input class="form-input" id="new-job-type-input" type="text" placeholder="e.g. Renovation" style="flex:1" />
+                  <button class="btn btn-secondary" id="add-job-type-btn" style="display:flex; align-items:center; gap:4px">
+                    <span class="material-icons-outlined" style="font-size:16px">add</span> Add
+                  </button>
                 </div>
               </div>
             </div>
           </div>
+
           <div class="card">
             <div class="card-header"><h4>Labor Rounding Rules</h4></div>
             <div class="card-body">
@@ -1149,7 +1180,7 @@ export function renderSettings(container) {
                   <div style="padding:12px 16px; background:${rate.isDefault ? 'var(--color-primary-light)' : 'var(--bg-color)'}; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border-color);">
                     <div style="display:flex;align-items:center;gap:10px;flex:1">
                       <span class="material-icons-outlined" style="color:${rate.isDefault ? 'var(--color-primary)' : 'var(--text-tertiary)'}; font-size:20px">sell</span>
-                      <input class="rate-name" value="${rate.name}" style="background:transparent;border:none;outline:none;font-weight:600;font-size:15px;color:var(--text-primary);width:200px;" placeholder="Rate Profile Name" />
+                      <input class="rate-name" value="${escapeHTML(rate.name)}" style="background:transparent;border:none;outline:none;font-weight:600;font-size:15px;color:var(--text-primary);width:200px;" placeholder="Rate Profile Name" />
                       ${rate.isDefault ? '<span class="badge" style="background:var(--color-primary);color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">DEFAULT</span>' : ''}
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
@@ -1181,21 +1212,23 @@ export function renderSettings(container) {
                       </div>
                     </div>
                     <!-- Description (hidden) & Active Hours Timeline -->
-                    <input type="hidden" class="rate-desc" value="${rate.description || ''}" />
+                    <input type="hidden" class="rate-desc" value="${escapeHTML(rate.description || '')}" />
                     ${renderTimelineHtml(rate.activeHours || [])}
 
                     <!-- Applicable Days -->
                     <div class="form-group" style="margin:0;grid-column:1/-1">
                       <label class="form-label">Applicable Days</label>
                       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-                        ${allDays.map(day => `
+                        ${allDays.map(day => {
+                          const active = applicable.includes(day);
+                          return `
                           <label style="cursor:pointer">
-                            <input type="checkbox" class="rate-day" data-day="${day}" ${applicable.includes(day) ? 'checked' : ''} style="display:none" />
-                            <span class="rate-day-pill" data-day="${day}" style="display:inline-block;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid ${applicable.includes(day) ? 'var(--color-primary)' : 'var(--border-color)'};background:${applicable.includes(day) ? 'var(--color-primary-light)' : 'transparent'};color:${applicable.includes(day) ? 'var(--color-primary)' : 'var(--text-secondary)'}">
+                            <input type="checkbox" class="rate-day" data-day="${day}" ${active ? 'checked' : ''} style="display:none" />
+                            <span class="rate-day-pill" data-day="${day}" style="display:inline-block;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid ${active ? 'var(--color-primary)' : 'var(--border-color)'};background:${active ? 'var(--color-primary-light)' : 'transparent'};color:${active ? 'var(--color-primary)' : 'var(--text-secondary)'}">
                               ${dayLabels[day]}
                             </span>
                           </label>
-                        `).join('')}
+                        `}).join('')}
                       </div>
                     </div>
                   </div>
@@ -1207,24 +1240,6 @@ export function renderSettings(container) {
             <button class="btn btn-primary" id="save-tax-settings" data-tooltip="Save tax rates, markup, rounding and profiles" data-tooltip-pos="top">
               <span class="material-icons-outlined">save</span> Save All Settings
             </button>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:var(--space-lg)">
-          <div class="card-header"><h4>Job Type Rate Mapping</h4></div>
-          <div class="card-body">
-            <p class="text-secondary" style="font-size:var(--font-size-sm);margin-bottom:16px">Automatically assign a labor profile when a job of a specific type is created.</p>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px">
-              ${['Service', 'Project', 'Maintenance', 'Quote'].map(type => `
-                <div class="form-group" style="margin:0">
-                  <label class="form-label">${type} Default Rate</label>
-                  <select class="form-select rate-mapping" data-type="${type}">
-                    <option value="">-- Use Default --</option>
-                    ${settings.laborRates.map(r => `<option value="${r.id}" ${(settings.rateMappings?.[type] === r.id) ? 'selected' : ''}>${r.name}</option>`).join('')}
-                  </select>
-                </div>
-              `).join('')}
-            </div>
           </div>
         </div>
       `;
@@ -1387,6 +1402,44 @@ export function renderSettings(container) {
         });
       }
 
+      // ---- Job Types Management Event Listeners ----
+      const addJobTypeBtn = tc.querySelector('#add-job-type-btn');
+      const newJobTypeInput = tc.querySelector('#new-job-type-input');
+      const jobTypesList = tc.querySelector('#job-types-list');
+
+      function updateJobTypesUI() {
+        jobTypesList.innerHTML = currentJobTypes.map(type => `
+          <span class="tag-pill tag-pill-active" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:100px; font-weight:500; font-size:13px; background:var(--color-primary-light); color:var(--color-primary-dark)">
+            <span>${escapeHTML(type)}</span>
+            <span class="material-icons-outlined delete-job-type-btn" data-type="${escapeHTML(type)}" style="font-size:16px; cursor:pointer; opacity:0.7; transition:opacity 0.2s">close</span>
+          </span>
+        `).join('');
+      }
+
+      addJobTypeBtn?.addEventListener('click', () => {
+        const val = newJobTypeInput.value.trim();
+        if (!val) {
+          showToast('Please enter a job type name', 'warning');
+          return;
+        }
+        if (currentJobTypes.includes(val)) {
+          showToast('This job type already exists', 'warning');
+          return;
+        }
+        currentJobTypes.push(val);
+        newJobTypeInput.value = '';
+        updateJobTypesUI();
+      });
+
+      tc.querySelector('#job-types-card')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.delete-job-type-btn');
+        if (btn) {
+          const typeToDelete = btn.dataset.type;
+          currentJobTypes = currentJobTypes.filter(t => t !== typeToDelete);
+          updateJobTypesUI();
+        }
+      });
+
       // ---- Save ----
       tc.querySelector('#save-tax-settings').addEventListener('click', async () => {
         const btn = tc.querySelector('#save-tax-settings');
@@ -1404,12 +1457,7 @@ export function renderSettings(container) {
           settings.taxRate = taxRate;
           settings.laborRounding = laborRounding;
           settings.laborRates = laborRates;
-          
-          // Save rate mappings
-          settings.rateMappings = {};
-          tc.querySelectorAll('.rate-mapping').forEach(sel => {
-            if (sel.value) settings.rateMappings[sel.dataset.type] = sel.value;
-          });
+          settings.jobTypes = currentJobTypes;
 
           await store.saveSettings(settings);
           showToast('Financial and Rate settings saved successfully', 'success');
@@ -3663,6 +3711,16 @@ export function renderSettings(container) {
                   <label class="form-label">Invoice Legal Terms / Footer Memo</label>
                   <textarea class="form-input text-copy-input" data-prop="invoiceTerms" rows="2" placeholder="Payment is due...">${escapeHTML(dt.invoiceTerms || '')}</textarea>
                 </div>
+                <div class="form-row" style="display:flex; gap:12px">
+                  <div class="form-group" style="flex:1">
+                    <label class="form-label">Invoice Prefix</label>
+                    <input type="text" class="form-input text-copy-input" data-prop="invoicePrefix" value="${escapeHTML(dt.invoicePrefix || 'INV-')}" placeholder="INV-" />
+                  </div>
+                  <div class="form-group" style="flex:1">
+                    <label class="form-label">Invoice Starting Number</label>
+                    <input type="number" class="form-input text-copy-input" data-prop="invoiceStartingNumber" value="${dt.invoiceStartingNumber !== undefined ? dt.invoiceStartingNumber : 1}" min="1" placeholder="1" />
+                  </div>
+                </div>
 
                 <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px">Quote Options</div>
                 <div class="form-group">
@@ -3672,6 +3730,16 @@ export function renderSettings(container) {
                 <div class="form-group">
                   <label class="form-label">Quote Validity / General Terms</label>
                   <textarea class="form-input text-copy-input" data-prop="quoteTerms" rows="2" placeholder="Quote valid for...">${escapeHTML(dt.quoteTerms || '')}</textarea>
+                </div>
+                <div class="form-row" style="display:flex; gap:12px">
+                  <div class="form-group" style="flex:1">
+                    <label class="form-label">Quote Prefix</label>
+                    <input type="text" class="form-input text-copy-input" data-prop="quotePrefix" value="${escapeHTML(dt.quotePrefix || 'Q-')}" placeholder="Q-" />
+                  </div>
+                  <div class="form-group" style="flex:1">
+                    <label class="form-label">Quote Starting Number</label>
+                    <input type="number" class="form-input text-copy-input" data-prop="quoteStartingNumber" value="${dt.quoteStartingNumber !== undefined ? dt.quoteStartingNumber : 1}" min="1" placeholder="1" />
+                  </div>
                 </div>
 
                 <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px">Global Options</div>
@@ -3931,7 +3999,11 @@ export function renderSettings(container) {
             paymentDirectTransfer: true,
             paymentCash: false,
             quoteSignature: true,
-            footerNote: 'Thank you for your business!'
+            footerNote: 'Thank you for your business!',
+            invoicePrefix: 'INV-',
+            invoiceStartingNumber: 1,
+            quotePrefix: 'Q-',
+            quoteStartingNumber: 1
           };
           syncControlsFromState();
           updatePreview();
@@ -4014,6 +4086,12 @@ export function renderSettings(container) {
       const invoiceTitleInp = tc.querySelector('[data-prop="invoiceTitle"]');
       if (invoiceTitleInp) invoiceTitleInp.value = dt.invoiceTitle || '';
 
+      const invoicePrefixInp = tc.querySelector('[data-prop="invoicePrefix"]');
+      if (invoicePrefixInp) invoicePrefixInp.value = dt.invoicePrefix || '';
+
+      const invoiceStartingNumberInp = tc.querySelector('[data-prop="invoiceStartingNumber"]');
+      if (invoiceStartingNumberInp) invoiceStartingNumberInp.value = dt.invoiceStartingNumber !== undefined ? dt.invoiceStartingNumber : 1;
+
       const invoicePaymentTermsInp = tc.querySelector('[data-prop="invoicePaymentTerms"]');
       if (invoicePaymentTermsInp) invoicePaymentTermsInp.value = dt.invoicePaymentTerms || '';
 
@@ -4025,6 +4103,12 @@ export function renderSettings(container) {
 
       const quoteTermsInp = tc.querySelector('[data-prop="quoteTerms"]');
       if (quoteTermsInp) quoteTermsInp.value = dt.quoteTerms || '';
+
+      const quotePrefixInp = tc.querySelector('[data-prop="quotePrefix"]');
+      if (quotePrefixInp) quotePrefixInp.value = dt.quotePrefix || '';
+
+      const quoteStartingNumberInp = tc.querySelector('[data-prop="quoteStartingNumber"]');
+      if (quoteStartingNumberInp) quoteStartingNumberInp.value = dt.quoteStartingNumber !== undefined ? dt.quoteStartingNumber : 1;
 
       const footerNoteInp = tc.querySelector('[data-prop="footerNote"]');
       if (footerNoteInp) footerNoteInp.value = dt.footerNote || '';
@@ -4476,13 +4560,21 @@ export function renderSettings(container) {
 
   function renderAIAssistantTab(tc) {
     const s = store.getSettings();
+    const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
     const ai = s.ai || {
       enabled: false,
       apiKey: '',
-      endpoint: 'https://api.deepseek.com/chat/completions',
-      model: 'deepseek-chat',
+      endpoint: 'https://api.openai.com/v1/chat/completions',
+      model: 'gpt-4o-mini',
       systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
     };
+
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null') || { id: 'default' };
+    const userId = currentUser.id || 'default';
+    const factsheetKey = `relay_factsheet_${userId}`;
+    const enabledKey = `relay_factsheet_enabled_${userId}`;
+    const factsheetVal = localStorage.getItem(factsheetKey) || '';
+    const memoryEnabled = localStorage.getItem(enabledKey) !== 'false';
 
     function render() {
       tc.innerHTML = `
@@ -4496,7 +4588,7 @@ export function renderSettings(container) {
                   <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
                     <input type="checkbox" id="ai-enabled" ${ai.enabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;" />
                     <div>
-                      <span style="font-weight:600;">Enable AI Assistant (DeepSeek)</span>
+                      <span style="font-weight:600;">Enable AI Assistant</span>
                       <div class="text-tertiary" style="font-size:12px; margin-top:2px;">Replaces the basic rule-based Relay co-pilot with a smart conversational LLM.</div>
                     </div>
                   </label>
@@ -4504,19 +4596,19 @@ export function renderSettings(container) {
 
                 <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
                   <div class="form-group">
-                    <label class="form-label" style="font-weight:600;">DeepSeek API Key</label>
-                    <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="sk-..." />
-                    <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Your API key is stored locally in your browser/sync directory and never sent to any third party other than the configured API endpoint.</div>
+                    <label class="form-label" style="font-weight:600;">API Key</label>
+                    <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="${isLocalMode ? 'sk-...' : 'Optional — Defaults to secure cloud API key'}" />
+                    <div class="text-tertiary" style="font-size:11px; margin-top:4px;">${isLocalMode ? 'Your API key is stored locally in your browser/sync directory and shared amongst employees.' : 'Your API key is optional. If left blank, cloud operations will securely route through Supabase Edge Functions.'}</div>
                   </div>
 
                   <div class="form-row">
                     <div class="form-group">
                       <label class="form-label" style="font-weight:600;">API Endpoint</label>
-                      <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
+                      <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.openai.com/v1/chat/completions'}" placeholder="https://api.openai.com/v1/chat/completions" />
                     </div>
                     <div class="form-group">
                       <label class="form-label" style="font-weight:600;">Model Name</label>
-                      <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
+                      <input type="text" class="form-input" id="ai-model" value="${ai.model || 'gpt-4o-mini'}" placeholder="gpt-4o-mini" />
                     </div>
                   </div>
 
@@ -4542,7 +4634,61 @@ export function renderSettings(container) {
               </div>
             </div>
 
+            <!-- AI Co-Pilot Memory & Factsheet -->
+            <div class="card" id="ai-memory-card" style="display: ${ai.enabled ? 'block' : 'none'};">
+              <div class="card-header"><h4>Your Personal Co-Pilot Factsheet (User Memory)</h4></div>
+              <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
+                <div class="text-tertiary" style="font-size:12.5px; line-height:1.4; color: var(--text-secondary);">
+                  This factsheet stores preferences, custom habits, and patterns specific to your user profile (e.g. how you write notes, your default technicians, or the types of jobs you handle). Relay loads this context dynamically. You can edit it manually below, or tell Relay to remember facts in the chat.
+                </div>
+                
+                <div class="form-group" style="margin-top:4px;">
+                  <label class="switch-container" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+                    <input type="checkbox" id="settings-ai-memory-enabled" ${memoryEnabled ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
+                    <strong>Make my day easier</strong>
+                  </label>
+                  <div class="text-tertiary" style="font-size:11.5px; margin-top:2px; margin-left:24px; line-height:1.3; color: var(--text-secondary);">
+                    Allows Relay to automatically learn your preferences, default assignees, and work patterns during chats to customize the co-pilot around your day.
+                  </div>
+                </div>
+
+                <div class="form-group" id="settings-factsheet-group" style="margin-top: 8px; display: ${memoryEnabled ? 'block' : 'none'};">
+                  <label class="form-label" style="font-weight: 600;">Personal Factsheet Context</label>
+                  <textarea class="form-input" id="settings-ai-factsheet" rows="5" style="font-family:inherit; resize:vertical; font-size:12.5px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe on Mondays' or 'I like writing job notes in bullet points').">${escapeHTML(factsheetVal)}</textarea>
+                </div>
+                
+                <div style="border-top:1px solid var(--border-color); padding-top:12px; display:flex; justify-content:flex-end; gap:8px;">
+                  <button class="btn btn-secondary" id="btn-save-factsheet">Save Memory Settings</button>
+                </div>
+              </div>
+            </div>
+
           </div>
+
+          <!-- Cheapest Smart AI Card -->
+          <div class="card" style="background:var(--content-bg);">
+            <div class="card-header"><h4>Cheapest Smart AI Guide</h4></div>
+            <div class="card-body" style="font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
+              <p style="margin:0;">
+                <strong>DeepSeek</strong> is one of the most cost-efficient and high-performance language models currently available, making it perfect for lightweight co-pilot tasks.
+              </p>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">key</span>
+                <span><strong>API Key:</strong> Get your key from <a href="https://platform.deepseek.com/" target="_blank" style="color:var(--color-primary); text-decoration:underline;">platform.deepseek.com</a>. New accounts typically receive free trial credits.</span>
+              </div>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">security</span>
+                <span><strong>CORS Restrictions:</strong> Due to browser security, direct API calls to DeepSeek may be blocked. To bypass this:
+                  <ul style="margin:4px 0 0 16px; padding:0; list-style:disc; font-size:12px;">
+                    <li>Route via a CORS proxy (e.g. <code>https://cors-anywhere.herokuapp.com/</code> prefix).</li>
+                    <li>Connect via an aggregator like <strong>OpenRouter</strong> (API Endpoint: <code>https://openrouter.ai/api/v1/chat/completions</code>).</li>
+                    <li>Use a local LLM runner like <strong>Ollama</strong> (API Endpoint: <code>http://localhost:11434/v1/chat/completions</code>).</li>
+                  </ul>
+                </span>
+              </div>
+            </div>
+          </div>
+
         </div>
       `;
 
@@ -4551,17 +4697,51 @@ export function renderSettings(container) {
       const fieldsContainer = tc.querySelector('#ai-fields');
       enabledCheckbox.addEventListener('change', (e) => {
         fieldsContainer.style.display = e.target.checked ? 'flex' : 'none';
+        const memoryCard = tc.querySelector('#ai-memory-card');
+        if (memoryCard) memoryCard.style.display = e.target.checked ? 'block' : 'none';
       });
+
+      // Toggle display of factsheet text area based on memory enabled checkbox
+      const memoryEnabledCheckbox = tc.querySelector('#settings-ai-memory-enabled');
+      const factsheetGroup = tc.querySelector('#settings-factsheet-group');
+      if (memoryEnabledCheckbox && factsheetGroup) {
+        memoryEnabledCheckbox.addEventListener('change', (e) => {
+          factsheetGroup.style.display = e.target.checked ? 'block' : 'none';
+        });
+      }
+
+      // Save Factsheet handler
+      const btnSaveFactsheet = tc.querySelector('#btn-save-factsheet');
+      if (btnSaveFactsheet) {
+        btnSaveFactsheet.addEventListener('click', () => {
+          const enabled = memoryEnabledCheckbox.checked;
+          const factsheetTextarea = tc.querySelector('#settings-ai-factsheet');
+          const factsheet = factsheetTextarea ? factsheetTextarea.value.trim() : '';
+
+          localStorage.setItem(enabledKey, String(enabled));
+          if (enabled) {
+            localStorage.setItem(factsheetKey, factsheet);
+          } else {
+            localStorage.removeItem(factsheetKey);
+            if (factsheetTextarea) {
+              factsheetTextarea.value = '';
+            }
+          }
+
+          window.dispatchEvent(new Event('storage'));
+          showToast('AI memory preferences saved successfully', 'success');
+        });
+      }
 
       // Save handler
       tc.querySelector('#btn-save-ai').addEventListener('click', () => {
-        const enabled = tc.querySelector('#ai-enabled').checked;
+        const enabled = enabledCheckbox.checked;
         const apiKey = tc.querySelector('#ai-apikey').value.trim();
         const endpoint = tc.querySelector('#ai-endpoint').value.trim();
         const model = tc.querySelector('#ai-model').value.trim();
         const systemPrompt = tc.querySelector('#ai-systemprompt').value.trim();
 
-        if (enabled && !apiKey) {
+        if (isLocalMode && enabled && !apiKey) {
           showToast('API Key is required when enabling the AI assistant.', 'error');
           return;
         }
@@ -4651,6 +4831,133 @@ export function renderSettings(container) {
           }
           errEl.textContent = errMsg;
         }
+      });
+    }
+
+    function renderCostCentersTab(tc) {
+      const list = store.getAll('costCenters') || [];
+
+      const renderTab = () => {
+        tc.innerHTML = `
+          <div class="card" style="max-width:900px">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+              <h4 style="margin:0">Cost Centers</h4>
+              <button class="btn btn-primary btn-sm" id="btn-add-cost-center" style="display:flex; align-items:center; gap:6px">
+                <span class="material-icons-outlined" style="font-size:18px">add</span> Add Cost Center
+              </button>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="padding-left:16px; width:120px">Code</th>
+                    <th>Name</th>
+                    <th style="width:120px">Status</th>
+                    <th style="text-align:right; padding-right:16px; width:180px">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${list.length === 0 ? `
+                    <tr>
+                      <td colspan="4" style="text-align:center; padding:32px 16px; color:var(--text-secondary)">
+                        No Cost Centers configured. Click "Add Cost Center" to create one.
+                      </td>
+                    </tr>
+                  ` : list.map(cc => `
+                    <tr>
+                      <td style="padding-left:16px; font-weight:600">${escapeHTML(cc.code)}</td>
+                      <td>${escapeHTML(cc.name)}</td>
+                      <td>
+                        <span class="badge ${cc.active ? 'badge-success' : 'badge-neutral'}">
+                          ${cc.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td style="text-align:right; padding-right:16px">
+                        <button class="btn btn-secondary btn-sm btn-edit-cc" data-id="${cc.id}" style="margin-right:6px">Edit</button>
+                        <button class="btn btn-outline btn-sm btn-toggle-cc" data-id="${cc.id}">
+                          ${cc.active ? 'Disable' : 'Enable'}
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        tc.querySelector('#btn-add-cost-center')?.addEventListener('click', () => openCostCenterModal());
+        tc.querySelectorAll('.btn-edit-cc').forEach(btn => {
+          btn.addEventListener('click', (e) => openCostCenterModal(e.target.dataset.id));
+        });
+        tc.querySelectorAll('.btn-toggle-cc').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const id = e.target.dataset.id;
+            const cc = store.getById('costCenters', id);
+            if (cc) {
+              const newActive = !cc.active;
+              await store.update('costCenters', id, { active: newActive });
+              showToast(`Cost center ${cc.name} has been ${newActive ? 'enabled' : 'disabled'}.`, 'success');
+              renderCostCentersTab(tc);
+            }
+          });
+        });
+      };
+
+      renderTab();
+    }
+
+    function openCostCenterModal(editId = null) {
+      let cc = editId ? store.getById('costCenters', editId) : { code: '', name: '', active: true };
+      const contentDiv = document.createElement('div');
+      contentDiv.innerHTML = `
+        <div class="form-group" style="margin-bottom:16px">
+          <label class="form-label" style="display:block; margin-bottom:6px">Cost Center Code</label>
+          <input class="form-input" id="cc-code" value="${escapeHTML(cc.code)}" placeholder="e.g. ELEC" style="width:100%" />
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <label class="form-label" style="display:block; margin-bottom:6px">Cost Center Name</label>
+          <input class="form-input" id="cc-name" value="${escapeHTML(cc.name)}" placeholder="e.g. Electrical Services" style="width:100%" />
+        </div>
+        <div class="form-group">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+            <input type="checkbox" id="cc-active" ${cc.active ? 'checked' : ''} style="width:16px; height:16px; margin:0" />
+            <span>Active</span>
+          </label>
+        </div>
+      `;
+
+      showModal({
+        title: editId ? 'Edit Cost Center' : 'Add Cost Center',
+        content: contentDiv,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+          { label: 'Save', className: 'btn-primary btn-save-cc', onClick: async (c) => {
+            const code = document.getElementById('cc-code').value.trim().toUpperCase();
+            const name = document.getElementById('cc-name').value.trim();
+            const active = document.getElementById('cc-active').checked;
+
+            if (!code) { showToast('Code required', 'error'); return; }
+            if (!name) { showToast('Name required', 'error'); return; }
+
+            try {
+              const updates = { code, name, active };
+              if (editId) {
+                await store.update('costCenters', editId, updates);
+                showToast('Cost Center updated successfully', 'success');
+              } else {
+                await store.create('costCenters', updates);
+                showToast('Cost Center created successfully', 'success');
+              }
+              c();
+              const tc = container.querySelector('#settings-content');
+              renderCostCentersTab(tc);
+            } catch (err) {
+              console.error('Error saving cost center:', err);
+              showToast('Failed to save cost center: ' + err.message, 'error');
+            }
+          }}
+        ]
       });
     }
 

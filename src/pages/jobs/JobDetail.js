@@ -34,10 +34,45 @@ export function renderJobDetail(container, { id }) {
   let stagedFiles = [];
   let activeActivitySubTab = 'staff';
 
-  function createDraftInvoice(type, sections, subtotal) {
+  function getJobTasklistHours(tasks) {
+    if (!tasks || tasks.length === 0) return 0;
+    
+    function calculateNodeHours(node) {
+      if (!node.subTasks || node.subTasks.length === 0) {
+        return (parseFloat(node.estimatedHours) || 0) * (parseInt(node.people) || 1);
+      }
+      return node.subTasks.reduce((sum, sp) => sum + calculateNodeHours(sp), 0);
+    }
+    
+    return tasks.reduce((sum, t) => sum + calculateNodeHours(t), 0);
+  }
+
+  function generateWorksDoneDescription(tasks) {
+    if (!tasks || tasks.length === 0) return 'General maintenance and service work completed.';
+    
+    const descriptions = [];
+    function collectNames(node) {
+      if (!node.subTasks || node.subTasks.length === 0) {
+        descriptions.push(node.name);
+      } else {
+        node.subTasks.forEach(collectNames);
+      }
+    }
+    
+    tasks.forEach(collectNames);
+    
+    if (descriptions.length === 0) return 'General maintenance and service work completed.';
+    return 'Works Done:\n' + descriptions.map(d => `• ${d}`).join('\n');
+  }
+
+  function createDraftInvoice(type, sections, subtotal, selectedQuote, worksDescription) {
     let originalQuoteNumber = '';
     let originalQuoteId = '';
-    if (job.quoteId) {
+    
+    if (selectedQuote) {
+      originalQuoteNumber = selectedQuote.number;
+      originalQuoteId = selectedQuote.id;
+    } else if (job.quoteId) {
       const quote = store.getById('quotes', job.quoteId);
       if (quote) {
         originalQuoteNumber = quote.number;
@@ -57,35 +92,55 @@ export function renderJobDetail(container, { id }) {
       originalSubtotal: subtotal,
       subtotal: subtotal, tax: subtotal * store.getTaxRate(), total: subtotal * (1 + store.getTaxRate()),
       issueDate: new Date().toISOString(), dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+      notes: worksDescription || ''
     });
     store.update('jobs', id, { status: 'Invoiced' });
     showToast(`${type} Invoice created`, 'success');
     router.navigate(`/invoices/${inv.id}`);
   }
 
-  function getJobInvoiceData() {
+  function getJobInvoiceData(selectedQuote) {
     let sections = [];
     let subtotal = 0;
+    let worksDescription = '';
 
-    // 1. Try to pull from Quote Sections first
-    if (job.quoteId) {
-      const quote = store.getById('quotes', job.quoteId);
-      if (quote && quote.sections && quote.sections.length > 0) {
-        sections = JSON.parse(JSON.stringify(quote.sections));
-        subtotal = quote.subtotal || 0;
-      } else if (quote && quote.lineItems) {
-        // Legacy quote fallback
-        sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(quote.lineItems)) }];
-        subtotal = quote.subtotal || 0;
+    // 1. Try to pull from Quote Sections first (using passed selectedQuote or fallback quoteId)
+    const quoteToUse = selectedQuote || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+    if (quoteToUse) {
+      if (quoteToUse.sections && quoteToUse.sections.length > 0) {
+        sections = JSON.parse(JSON.stringify(quoteToUse.sections));
+        subtotal = quoteToUse.subtotal || 0;
+      } else if (quoteToUse.lineItems) {
+        sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(quoteToUse.lineItems)) }];
+        subtotal = quoteToUse.subtotal || 0;
       }
     }
 
-    // 2. If no quote or no items, use Job Tasks / Timesheets / Materials
+    // 2. If no quote, use Job Tasks / Timesheets / Materials (tasklist fallback)
     if (sections.length === 0) {
       const settings = store.getSettings();
-      const timesheets = store.getAll('timesheets').filter(t => t.jobId === job.id);
-      
       const lineItems = [];
+
+      // Calculate tasklist hours
+      const tasks = job.tasks || [];
+      const totalHours = getJobTasklistHours(tasks);
+      worksDescription = generateWorksDoneDescription(tasks);
+
+      // Multiply hours by the default labor rate (or first rate) from settings
+      const defaultLaborRateObj = settings.laborRates.find(r => r.isDefault) || settings.laborRates[0];
+      const rate = defaultLaborRateObj ? defaultLaborRateObj.rate : 85;
+      const rateName = defaultLaborRateObj ? defaultLaborRateObj.name : 'Labour';
+
+      if (totalHours > 0) {
+        lineItems.push({
+          id: store.generateId(),
+          description: `${rateName} (${totalHours.toFixed(2)} hrs)`,
+          type: 'labor',
+          qty: totalHours,
+          rate: rate,
+          total: totalHours * rate
+        });
+      }
 
       // Determine material cost (Billable)
       const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
@@ -93,36 +148,7 @@ export function renderJobDetail(container, { id }) {
       const billableAdditional = calculateBillableMaterialPrice(additionalMatCost, settings);
       const totalBillableMat = billableMatTotal + (additionalMatCost > 0 ? billableAdditional - additionalMatCost : 0) + additionalMatCost;
 
-      // Handle labor from timesheets if they exist
-      if (timesheets.length > 0) {
-        const dynamicLabor = calculateDynamicLabor(timesheets, settings);
-        
-        dynamicLabor.forEach(alloc => {
-          lineItems.push({
-            id: store.generateId(),
-            description: `${alloc.technicianName} - ${alloc.rateProfileName} (${alloc.hours.toFixed(2)} hrs)`,
-            type: 'labor',
-            qty: alloc.hours,
-            rate: alloc.rate,
-            total: alloc.total
-          });
-        });
-      } else {
-        // Fallback to estimated labor
-        const lCost = job.laborCost || 0;
-        if (lCost > 0) {
-          lineItems.push({
-            id: store.generateId(),
-            description: 'Estimated Job Labor',
-            type: 'labor',
-            qty: 1,
-            rate: lCost,
-            total: lCost
-          });
-        }
-      }
-
-      // Handle materials: if job has detailed materials, list them or fallback to total
+      // Handle materials
       if (job.materials && job.materials.length > 0) {
         job.materials.forEach(m => {
           const unitPrice = calculateBillableMaterialPrice(m.unitCost || 0, settings);
@@ -146,7 +172,6 @@ export function renderJobDetail(container, { id }) {
           });
         }
       } else {
-        // Fallback to estimated billable materials
         const mCost = totalBillableMat || job.materialCost || 0;
         if (mCost > 0) {
           lineItems.push({
@@ -171,7 +196,92 @@ export function renderJobDetail(container, { id }) {
       subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
     }
 
-    return { sections, subtotal };
+    return { sections, subtotal, worksDescription };
+  }
+
+  function triggerInvoiceGenerationFlow(type) {
+    const acceptedQuotes = store.getAll('quotes').filter(q => 
+      (q.jobId === job.id || q.id === job.quoteId) && 
+      q.status === 'Accepted'
+    );
+
+    if (acceptedQuotes.length > 1) {
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div style="margin-bottom:var(--space-md); font-size:14px; color:var(--text-secondary)">
+          This job has multiple accepted quotes. Select which quote's line items and pricing to use for this invoice, or fall back to the tasklist.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Select Accepted Quote</label>
+          <select class="form-select" id="invoice-quote-selector">
+            ${acceptedQuotes.map(q => `<option value="${q.id}">${escapeHTML(q.number)} — ${escapeHTML(q.title || 'Untitled')} ($${(q.total || 0).toFixed(2)})</option>`).join('')}
+            <option value="tasklist">-- Use Tasklist & Hours --</option>
+          </select>
+        </div>
+      `;
+      showModal({
+        title: 'Select Quote for Invoice',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          {
+            label: 'Proceed', className: 'btn-primary', onClick: (close) => {
+              const selectedVal = document.getElementById('invoice-quote-selector').value;
+              let selectedQuote = null;
+              if (selectedVal !== 'tasklist') {
+                selectedQuote = acceptedQuotes.find(q => q.id === selectedVal);
+              }
+              generateInvoiceWithSelectedQuote(type, selectedQuote);
+              close();
+            }
+          }
+        ]
+      });
+    } else {
+      const selectedQuote = acceptedQuotes.length === 1 ? acceptedQuotes[0] : null;
+      generateInvoiceWithSelectedQuote(type, selectedQuote);
+    }
+  }
+
+  function generateInvoiceWithSelectedQuote(type, selectedQuote) {
+    if (type === 'Deposit') {
+      const { sections } = getJobInvoiceData(selectedQuote);
+      createDraftInvoice('Deposit', sections, 0, selectedQuote);
+    } else if (type === 'Progress') {
+      const content = document.createElement('div');
+      content.innerHTML = `
+          <div class="form-group">
+            <label class="form-label">Percentage Complete (%)</label>
+            <input type="number" id="progress-percent" class="form-input" min="1" max="100" value="50" />
+          </div>
+        `;
+      showModal({
+        title: 'Create Progress Invoice',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          {
+            label: 'Create', className: 'btn-primary', onClick: (close) => {
+              const pct = parseFloat(document.getElementById('progress-percent').value) || 0;
+              if (pct <= 0 || pct > 100) { showToast('Enter a valid percentage (1-100)', 'error'); return; }
+              const { subtotal } = getJobInvoiceData(selectedQuote);
+              const partialAmount = subtotal * (pct / 100);
+              const sections = [{
+                id: store.generateId(),
+                name: `Progress Payment (${pct}%)`,
+                lineItems: [{ description: `Progress Payment (${pct}% of job)`, type: 'other', qty: 1, rate: partialAmount, total: partialAmount }],
+                subtotal: partialAmount
+              }];
+              createDraftInvoice('Progress', sections, partialAmount, selectedQuote);
+              close();
+            }
+          }
+        ]
+      });
+    } else {
+      const { sections, subtotal, worksDescription } = getJobInvoiceData(selectedQuote);
+      createDraftInvoice('Standard', sections, subtotal, selectedQuote, worksDescription);
+    }
   }
 
   function getStockOptionsHtml() {
@@ -199,6 +309,9 @@ export function renderJobDetail(container, { id }) {
     const invoicesList = store.getAll('invoices').filter(i => i.jobId === job.id);
     const hasInvoice = invoicesList.length > 0;
 
+    const cc = job.costCenterId ? store.getById('costCenters', job.costCenterId) : null;
+    const proj = job.projectId ? store.getById('projects', job.projectId) : null;
+
     container.innerHTML = `
       <div class="detail-header">
         <div class="detail-header-info">
@@ -218,11 +331,27 @@ export function renderJobDetail(container, { id }) {
                 ` : '';
               })() : ''}
             </div>
-            <div class="detail-header-meta" style="margin-top:6px">
+            <div class="detail-header-meta" style="margin-top:6px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
               <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(job.customerName)}</span>
               <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
-              <span class="badge ${sb[job.status] || 'badge-neutral'}">${escapeHTML(job.status)}</span>
+              <select id="header-job-status-select" class="badge ${sb[job.status] || 'badge-neutral'}">
+                ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
+                  <option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>
+                `).join('')}
+              </select>
               <span class="badge ${pb[job.priority] || 'badge-neutral'}">${escapeHTML(job.priority)}</span>
+              ${cc ? `
+                <span class="badge badge-purple" style="display:inline-flex; align-items:center; gap:4px; font-weight:600">
+                  <span class="material-icons-outlined" style="font-size:12px">category</span>
+                  ${escapeHTML(cc.code)}
+                </span>
+              ` : ''}
+              ${proj ? `
+                <span style="font-weight:700; display:inline-flex; align-items:center; gap:4px">
+                  <span class="material-icons-outlined" style="font-size:14px; color:var(--color-primary)">folder_copy</span>
+                  Project: <a href="#/projects/${proj.id}" style="color:var(--color-primary); text-decoration:none">${escapeHTML(proj.number)}</a>
+                </span>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -449,6 +578,12 @@ export function renderJobDetail(container, { id }) {
         // Build the modal content element
         const content = document.createElement('div');
 
+        // Ensure job tasks are initialized
+        if (!job.tasks || job.tasks.length === 0) {
+          job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
+          store.update('jobs', id, { tasks: job.tasks });
+        }
+
         function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
           let result = [];
           if (!tasks) return result;
@@ -462,7 +597,7 @@ export function renderJobDetail(container, { id }) {
           });
           return result;
         }
-        const flatTasks = getFlatTasks(job.tasks || []);
+        const flatTasks = getFlatTasks(job.tasks);
 
         function renderEntries(entries) {
           let html = '';
@@ -595,19 +730,21 @@ export function renderJobDetail(container, { id }) {
           // Remove entry buttons
           content.querySelectorAll('.btn-remove-entry').forEach(btn => {
             btn.addEventListener('click', () => {
-              entries.splice(parseInt(btn.dataset.index), 1);
-              renderModal(entries);
+              const current = readCurrentEntries();
+              current.splice(parseInt(btn.dataset.index), 1);
+              renderModal(current);
             });
           });
 
           // Add another entry
           content.querySelector('#btn-add-entry').addEventListener('click', () => {
+            const current = readCurrentEntries();
             const p = n => n.toString().padStart(2, '0');
             const d = new Date();
             d.setDate(d.getDate() + 1);
             const ds = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-            entries.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
-            renderModal(entries);
+            current.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
+            renderModal(current);
           });
         }
 
@@ -749,16 +886,7 @@ export function renderJobDetail(container, { id }) {
 
     } else if (activeTab === 'tasks') {
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      let canEditTasks = true;
-      if (currentUser.userTypeId) {
-        const ut = store.getById('userTypes', currentUser.userTypeId);
-        if (ut && ut.permissions) {
-          const p = ut.permissions.find(p => p.module === 'Jobs');
-          if (p) canEditTasks = p.edit;
-        }
-      } else if (currentUser.role === 'customer' || currentUser.role === 'technician') {
-        canEditTasks = false;
-      }
+      let canEditTasks = false;
 
       if (!job.tasks) {
         job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
@@ -893,7 +1021,7 @@ export function renderJobDetail(container, { id }) {
                             })()}
                             ${p.subTasks && p.subTasks.length > 0 
                               ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` 
-                              : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />`
+                              : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} ${!canEditTasks ? 'disabled style="width:18px; height:18px; cursor:not-allowed;"' : 'style="width:18px; height:18px; cursor:pointer;"'} />`
                             }
                           </div>
                         </div>
@@ -2836,7 +2964,12 @@ export function renderJobDetail(container, { id }) {
           });
           return result;
         }
-        const flatTasks = getFlatTasks(job.tasks || []);
+        // Ensure job tasks are initialized
+        if (!job.tasks || job.tasks.length === 0) {
+          job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
+          store.update('jobs', id, { tasks: job.tasks });
+        }
+        const flatTasks = getFlatTasks(job.tasks);
         const leafTasks = flatTasks.filter(t => t.isLeaf);
 
         const content = document.createElement('div');
@@ -3144,51 +3277,15 @@ export function renderJobDetail(container, { id }) {
 
 
       tc.querySelector('#btn-create-standard-invoice')?.addEventListener('click', () => {
-        const { sections, subtotal } = getJobInvoiceData();
-        createDraftInvoice('Standard', sections, subtotal);
+        triggerInvoiceGenerationFlow('Standard');
       });
 
       tc.querySelector('#btn-create-deposit-invoice')?.addEventListener('click', () => {
-        const sections = [{
-          id: store.generateId(),
-          name: 'Deposit',
-          lineItems: [{ description: `Deposit for Job ${job.number}`, type: 'other', qty: 1, rate: 0, total: 0 }],
-          subtotal: 0
-        }];
-        createDraftInvoice('Deposit', sections, 0);
+        triggerInvoiceGenerationFlow('Deposit');
       });
 
       tc.querySelector('#btn-create-progress-invoice')?.addEventListener('click', () => {
-        const content = document.createElement('div');
-        content.innerHTML = `
-            <div class="form-group">
-              <label class="form-label">Percentage Complete (%)</label>
-              <input type="number" id="progress-percent" class="form-input" min="1" max="100" value="50" />
-            </div>
-          `;
-        showModal({
-          title: 'Create Progress Invoice',
-          content,
-          actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            {
-              label: 'Create', className: 'btn-primary', onClick: (close) => {
-                const pct = parseFloat(document.getElementById('progress-percent').value) || 0;
-                if (pct <= 0 || pct > 100) { showToast('Enter a valid percentage (1-100)', 'error'); return; }
-                const { subtotal } = getJobInvoiceData();
-                const partialAmount = subtotal * (pct / 100);
-                const sections = [{
-                  id: store.generateId(),
-                  name: `Progress Payment (${pct}%)`,
-                  lineItems: [{ description: `Progress Payment (${pct}% of job)`, type: 'other', qty: 1, rate: partialAmount, total: partialAmount }],
-                  subtotal: partialAmount
-                }];
-                createDraftInvoice('Progress', sections, partialAmount);
-                close();
-              }
-            }
-          ]
-        });
+        triggerInvoiceGenerationFlow('Progress');
       });
     }
   }
@@ -3205,9 +3302,16 @@ export function renderJobDetail(container, { id }) {
 
     container.querySelector('#btn-edit-job')?.addEventListener('click', () => router.navigate(`/jobs/${id}/edit`));
 
+    container.querySelector('#header-job-status-select')?.addEventListener('change', (e) => {
+      const newStatus = e.target.value;
+      store.update('jobs', id, { status: newStatus });
+      job.status = newStatus;
+      showToast(`Job status updated to ${newStatus}`, 'success');
+      render();
+    });
+
     container.querySelector('#btn-header-generate-invoice')?.addEventListener('click', () => {
-      const { sections, subtotal } = getJobInvoiceData();
-      createDraftInvoice('Standard', sections, subtotal);
+      triggerInvoiceGenerationFlow('Standard');
     });
 
     // Field Technician Log Board submit handler was removed as techs can log travel/labor to a subtask named Travel under timesheets

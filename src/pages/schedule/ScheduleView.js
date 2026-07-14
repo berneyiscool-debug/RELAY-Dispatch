@@ -745,6 +745,12 @@ export function renderScheduleView(container) {
             </select>
           </div>
           <div class="form-group">
+            <label class="form-label">Task <span style="color:var(--color-danger)">*</span></label>
+            <select class="form-select" name="taskId" required>
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">Technician <span style="color:var(--color-danger)">*</span></label>
             <select class="form-select" name="technicianId" required>
               ${technicians.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
@@ -781,6 +787,7 @@ export function renderScheduleView(container) {
             const dateStr = fd.get('date');
             const timeStr = fd.get('startTime');
             const duration = parseFloat(fd.get('duration'));
+            const taskPath = fd.get('taskId');
 
             const job = store.getById('jobs', jobId);
             if (!job) {
@@ -788,6 +795,24 @@ export function renderScheduleView(container) {
               return;
             }
             const tech = store.getById('technicians', techId);
+
+            function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
+              let result = [];
+              if (!tasks) return result;
+              tasks.forEach((p, i) => {
+                const path = [...currentPath, i].join('-');
+                const namePath = [...currentNamePath, p.name].join(' > ');
+                result.push({ path, name: namePath });
+                if (p.subTasks) {
+                  result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
+                }
+              });
+              return result;
+            }
+
+            const flatTasks = getFlatTasks(job.tasks || []);
+            const selectedTask = flatTasks.find(t => t.path === taskPath);
+            const taskName = selectedTask ? selectedTask.name.split(' > ').pop() : '';
 
             const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
             const endHour = startHour + duration;
@@ -805,7 +830,9 @@ export function renderScheduleView(container) {
               date: dateStr,
               startTime: startTimeISO,
               finishTime: finishTimeISO,
-              hours: duration
+              hours: duration,
+              taskId: taskPath || null,
+              taskName: taskName || null
             });
 
             store.update('jobs', job.id, {
@@ -822,6 +849,46 @@ export function renderScheduleView(container) {
         }
       ]
     });
+
+    const form = document.getElementById('drawer-add-job-form');
+    if (form) {
+      const jobSelect = form.querySelector('select[name="jobId"]');
+      const taskSelect = form.querySelector('select[name="taskId"]');
+
+      function updateTasksForJob(jobId) {
+        const job = store.getById('jobs', jobId);
+        if (!job) return;
+
+        if (!job.tasks || job.tasks.length === 0) {
+          job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
+          store.update('jobs', jobId, { tasks: job.tasks });
+        }
+
+        function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
+          let result = [];
+          if (!tasks) return result;
+          tasks.forEach((p, i) => {
+            const path = [...currentPath, i].join('-');
+            const namePath = [...currentNamePath, p.name].join(' > ');
+            result.push({ path, name: namePath });
+            if (p.subTasks) {
+              result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
+            }
+          });
+          return result;
+        }
+
+        const flatTasks = getFlatTasks(job.tasks);
+        taskSelect.innerHTML = flatTasks.map(t => `<option value="${t.path}">${escapeHTML(t.name)}</option>`).join('');
+      }
+
+      if (jobSelect && taskSelect) {
+        jobSelect.addEventListener('change', (e) => {
+          updateTasksForJob(e.target.value);
+        });
+        updateTasksForJob(jobSelect.value);
+      }
+    }
   }
 
   function handleAddLeave() {

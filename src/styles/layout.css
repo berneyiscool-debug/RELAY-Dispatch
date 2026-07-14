@@ -14,7 +14,7 @@
   #app {
     transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .relay-panel.open ~ #app {
+  body.relay-assistant-open #app {
     width: calc(100vw - 360px);
   }
 }
@@ -438,7 +438,31 @@
   color: var(--sidebar-active-text) !important;
 }
 
+.sidebar-nav-item.confirm-logout {
+  background: var(--color-danger, #e5484d) !important;
+  color: #fff !important;
+  border-color: var(--color-danger, #e5484d) !important;
+  box-shadow: 0 0 14px rgba(229, 72, 77, 0.65) !important;
+  animation: pulse-danger-glow 1.4s infinite ease-in-out;
+}
+.sidebar-nav-item.confirm-logout:hover {
+  background: #c1383d !important;
+  color: #fff !important;
+  box-shadow: 0 0 20px rgba(229, 72, 77, 0.85) !important;
+}
 
+@keyframes pulse-danger-glow {
+  0% {
+    box-shadow: 0 0 8px rgba(229, 72, 77, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(229, 72, 77, 0.85);
+    transform: scale(0.98);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(229, 72, 77, 0.45);
+  }
+}
 
 .sidebar-toggle {
   display: flex;
@@ -1591,7 +1615,9 @@
   color: var(--text-primary);
   background: var(--card-bg);
   outline: none;
+  height: 38px;
   max-height: 120px;
+  transition: height 0.18s ease-in-out, border-color 0.18s ease-in-out;
 }
 .relay-input:focus { border-color: var(--color-primary); }
 .relay-send, .relay-attach {

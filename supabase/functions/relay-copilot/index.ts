@@ -12,16 +12,25 @@ serve(async (req) => {
 
   try {
     const { messages, endpoint, model } = await req.json()
-    const apiKey = Deno.env.get('DEEPSEEK_API_KEY')
+    const targetEndpoint = endpoint || 'https://api.deepseek.com/chat/completions'
+
+    // Pick the server-side key that matches the target provider. Text chat runs on
+    // DeepSeek; image/PDF (vision) requests target Gemini's OpenAI-compatible endpoint,
+    // which needs the Gemini key instead.
+    const isGemini = targetEndpoint.includes('generativelanguage.googleapis.com')
+    const apiKey = isGemini
+      ? Deno.env.get('GEMINI_API_KEY')
+      : Deno.env.get('DEEPSEEK_API_KEY')
 
     if (!apiKey) {
+      const which = isGemini ? 'GEMINI_API_KEY' : 'DEEPSEEK_API_KEY'
       return new Response(
-        JSON.stringify({ error: 'DEEPSEEK_API_KEY environment variable is not set on Supabase.' }),
+        JSON.stringify({ error: `${which} is not set on Supabase.` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const response = await fetch(endpoint || 'https://api.deepseek.com/chat/completions', {
+    const response = await fetch(targetEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -29,7 +38,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: model || 'deepseek-chat',
-        messages: messages,
+        messages,
         temperature: 0.3
       })
     })
@@ -37,7 +46,7 @@ serve(async (req) => {
     if (!response.ok) {
       const text = await response.text()
       return new Response(
-        JSON.stringify({ error: `DeepSeek API error: ${response.status} - ${text}` }),
+        JSON.stringify({ error: `AI API error (model ${model}): ${response.status} - ${text}` }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }

@@ -14,7 +14,7 @@ import { applyTheme } from './utils/theme.js';
 const initialTheme = localStorage.getItem('simpro_theme') || 'light';
 applyTheme(initialTheme);
 import { seedData } from './data/seed.js';
-import { checkMaintenancePlans } from './utils/maintenanceEngine.js';
+import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenanceEngine.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
@@ -69,9 +69,12 @@ import { renderAssetDetail } from './pages/assets/AssetDetail.js';
 import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
 import { renderDocumentViewer } from './pages/documents/DocumentViewer.js';
 import { renderProfile } from './pages/Profile.js';
+import { renderProjectsList } from './pages/projects/ProjectsList.js';
+import { renderProjectDetail } from './pages/projects/ProjectDetail.js';
 
 // ---- Initialize ----
 checkMaintenancePlans();
+scheduleEngineChecks();
 initSearchableSelects();
 
 // Expose app globals for cross-component access
@@ -515,6 +518,10 @@ router.register('/jobs', renderPage(renderJobsList));
 router.register('/jobs/new', renderPage((c, p) => renderJobForm(c, { id: 'new', ...p })));
 router.register('/jobs/:id', renderPage(renderJobDetail));
 router.register('/jobs/:id/edit', renderPage((c, p) => renderJobForm(c, p)));
+
+// Projects
+router.register('/projects', renderPage(renderProjectsList));
+router.register('/projects/:id', renderPage(renderProjectDetail));
 
 // Timesheets
 router.register('/timesheets', renderPage(renderTimesheetsList));

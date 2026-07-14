@@ -229,6 +229,34 @@ describe('DataStore', () => {
       assert.strictEqual(result.email, 'electric@sol.com');
       assert.strictEqual(result.name, 'Electric Solutions');
     });
+
+    test('schedules tasks metadata serialization and deserialization via color column works', () => {
+      const schedulePayload = {
+        id: 's1',
+        jobId: 'j1',
+        jobNumber: 'JOB-1001',
+        taskId: 't1',
+        taskName: 'First task',
+        color: '#ff9900'
+      };
+
+      const denorm = store.denormalizeRecord(schedulePayload, 'schedule');
+
+      // The raw task keys should be stripped but serialized into color
+      assert.strictEqual(denorm.taskId, undefined);
+      assert.strictEqual(denorm.taskName, undefined);
+      assert.ok(denorm.color.startsWith('__meta__:'));
+
+      // Re-normalize
+      const norm = store.normalizeRecord(denorm, 'schedule');
+
+      assert.strictEqual(norm.id, 's1');
+      assert.strictEqual(norm.jobId, 'j1');
+      assert.strictEqual(norm.jobNumber, 'JOB-1001');
+      assert.strictEqual(norm.taskId, 't1');
+      assert.strictEqual(norm.taskName, 'First task');
+      assert.strictEqual(norm.color, '#ff9900');
+    });
   });
 });
 

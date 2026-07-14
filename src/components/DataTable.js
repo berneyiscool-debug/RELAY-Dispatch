@@ -134,6 +134,7 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
       wrapper.querySelectorAll('tbody tr[data-id]').forEach(tr => {
         tr.addEventListener('click', (e) => {
           if (e.target.closest('.dt-select-cell')) return;
+          if (e.target.closest('select') || e.target.closest('button') || e.target.closest('a') || e.target.closest('input')) return;
           onRowClick(tr.dataset.id);
         });
       });

@@ -16,6 +16,11 @@ import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
   const newInvoiceNumber = store.getNextNumber('INV-', 'invoices');
+  
+  const settings = store.getSettings();
+  const defaultLaborRate = settings.laborRates.find(r => r.isDefault);
+  const defaultLaborRateId = defaultLaborRate ? defaultLaborRate.id : '';
+
   let invoice = isNew ? {
     id: store.generateId(),
     number: newInvoiceNumber,
@@ -25,7 +30,8 @@ export function renderInvoiceDetail(container, { id }) {
     subtotal: 0, tax: 0, total: 0,
     issueDate: new Date().toISOString(), 
     dueDate: new Date(Date.now() + 30*86400000).toISOString(),
-    invoiceType: 'Standard'
+    invoiceType: 'Standard',
+    laborProfileId: defaultLaborRateId
   } : store.getById('invoices', id);
 
   if (!invoice) {
@@ -68,7 +74,6 @@ export function renderInvoiceDetail(container, { id }) {
   
   const customers = store.getAll('customers');
   const stockItems = store.getAll('stock');
-  const settings = store.getSettings();
   const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
   function render() {
@@ -130,7 +135,7 @@ export function renderInvoiceDetail(container, { id }) {
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Labor Profile</label>
+              <label class="form-label">Labour Rate</label>
               <select class="form-select" id="inv-labor-profile">
                 <option value="">-- Custom / Manual Rates --</option>
                 ${settings.laborRates.map(r => `<option value="${r.id}" ${invoice.laborProfileId === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
@@ -158,6 +163,15 @@ export function renderInvoiceDetail(container, { id }) {
                 ${['Draft','Sent','Paid','Overdue','Void'].map(s => `<option ${invoice.status === s ? 'selected' : ''}>${s}</option>`).join('')}
               </select>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:var(--space-lg)">
+        <div class="card-header"><h4>Description of Works Done</h4></div>
+        <div class="card-body">
+          <div class="form-group" style="margin:0">
+            <textarea class="form-input" id="inv-notes" style="width:100%; min-height:80px; font-family:inherit" placeholder="Describe the work completed...">${escapeHTML(invoice.notes || '')}</textarea>
           </div>
         </div>
       </div>
@@ -634,6 +648,7 @@ export function renderInvoiceDetail(container, { id }) {
       invoice.issueDate = container.querySelector('#inv-issue').value;
       invoice.dueDate = container.querySelector('#inv-due').value;
       invoice.invoiceType = container.querySelector('#inv-type').value;
+      invoice.notes = container.querySelector('#inv-notes')?.value || '';
       
       // Compute final values before saving
       let originalSectionsSum = 0;

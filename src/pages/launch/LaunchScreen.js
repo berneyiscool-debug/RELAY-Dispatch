@@ -1251,14 +1251,25 @@ export function renderLaunchScreen(container, onComplete) {
       const parts = authEmail.split('@');
       const domain = parts[1];
       if (domain && !domain.includes('.')) {
-        authEmail = `${parts[0].toLowerCase()}@${domain.toLowerCase()}.fieldforge.internal`;
+        authEmail = `${parts[0].toLowerCase()}@${domain.toLowerCase()}.relay.internal`;
       }
     }
 
     try {
       // Sign in with password via Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password });
-      if (error) throw error;
+      let signInResult = await supabase.auth.signInWithPassword({ email: authEmail, password });
+      
+      // Fallback for legacy .fieldforge.internal users if new domain fails
+      if (signInResult.error && authEmail.endsWith('.relay.internal')) {
+        const legacyEmail = authEmail.replace('.relay.internal', '.fieldforge.internal');
+        const fallbackResult = await supabase.auth.signInWithPassword({ email: legacyEmail, password });
+        if (!fallbackResult.error) {
+          signInResult = fallbackResult;
+        }
+      }
+      
+      if (signInResult.error) throw signInResult.error;
+      const { data } = signInResult;
 
       // Call parent onComplete with cloud parameters
       onComplete({ mode: 'cloud', userId: data.user.id });

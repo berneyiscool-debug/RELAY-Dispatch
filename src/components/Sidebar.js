@@ -21,6 +21,7 @@ const navItems = [
       { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
       { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
       { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
+      { id: 'projects', icon: 'folder_copy', label: 'Projects', path: '/projects' },
       { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
       { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' }
     ]
@@ -243,9 +244,42 @@ export function createSidebar() {
 
   const logoutBtn = sidebar.querySelector('#btn-logout');
   if (logoutBtn) {
+    let confirmState = false;
+    let resetTimeout = null;
+
+    function resetLogoutBtn() {
+      confirmState = false;
+      logoutBtn.classList.remove('confirm-logout');
+      const icon = logoutBtn.querySelector('.nav-icon .material-icons-outlined');
+      if (icon) icon.textContent = 'logout';
+      const label = logoutBtn.querySelector('.nav-label');
+      if (label) label.textContent = 'Logout';
+    }
+
     logoutBtn.addEventListener('click', (e) => {
       e.stopPropagation(); // Prevent sidebar click handler
-      window.dispatchEvent(new CustomEvent('fieldforge-logout'));
+      if (!confirmState) {
+        confirmState = true;
+        logoutBtn.classList.add('confirm-logout');
+        const icon = logoutBtn.querySelector('.nav-icon .material-icons-outlined');
+        if (icon) icon.textContent = 'warning';
+        const label = logoutBtn.querySelector('.nav-label');
+        if (label) label.textContent = 'Confirm';
+        
+        if (resetTimeout) clearTimeout(resetTimeout);
+        resetTimeout = setTimeout(resetLogoutBtn, 3000);
+      } else {
+        if (resetTimeout) clearTimeout(resetTimeout);
+        resetLogoutBtn();
+        window.dispatchEvent(new CustomEvent('fieldforge-logout'));
+      }
+    });
+
+    logoutBtn.addEventListener('mouseleave', () => {
+      if (confirmState) {
+        if (resetTimeout) clearTimeout(resetTimeout);
+        resetLogoutBtn();
+      }
     });
   }
 

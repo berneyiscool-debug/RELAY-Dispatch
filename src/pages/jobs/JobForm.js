@@ -15,25 +15,44 @@ const AVAILABLE_TAGS = [
 
 export function renderJobForm(container, params) {
   const id = params.id;
-  const customerId = params.customerId;
   const isEdit = id && id !== 'new';
   const job = isEdit ? store.getById('jobs', id) : {};
-  if (!isEdit && customerId) {
-    job.customerId = customerId;
-    const cust = store.getById('customers', customerId);
-    if (cust) {
-      job.customerName = cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim();
-      if (cust.sites && cust.sites.length > 0) {
-        job.siteId = cust.sites[0].name;
-        job.siteAddress = cust.sites[0].address;
+  
+  if (!isEdit) {
+    if (params.projectId) {
+      job.projectId = params.projectId;
+      const proj = store.getById('projects', params.projectId);
+      if (proj && proj.customerId) {
+        job.customerId = proj.customerId;
       }
-      if (cust.contacts && cust.contacts.length > 0) {
-        job.primaryContactId = cust.contacts[0].name;
+    } else if (params.customerId) {
+      job.customerId = params.customerId;
+    }
+    if (params.costCenterId) {
+      job.costCenterId = params.costCenterId;
+    }
+    
+    if (job.customerId) {
+      const cust = store.getById('customers', job.customerId);
+      if (cust) {
+        job.customerName = cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim();
+        if (cust.sites && cust.sites.length > 0) {
+          job.siteId = cust.sites[0].name;
+          job.siteAddress = cust.sites[0].address;
+        }
+        if (cust.contacts && cust.contacts.length > 0) {
+          job.primaryContactId = cust.contacts[0].name;
+        }
       }
     }
   }
-  const customers = store.getAll('customers');
-  const contractors = store.getAll('contractors').filter(c => c.active);
+
+  const customers = store.getAll('customers') || [];
+  const contractors = store.getAll('contractors') || [];
+  const projectsList = store.getAll('projects') || [];
+  const costCentersList = (store.getAll('costCenters') || []).filter(cc => cc.active || cc.id === job.costCenterId);
+  const settings = store.getSettings() || {};
+  const jobTypes = settings.jobTypes || ['Electrical','Plumbing','HVAC','Fire Protection','Security','General Maintenance'];
 
   // Selected tags state
   let selectedTags = job.tags ? [...job.tags] : [];
@@ -48,22 +67,36 @@ export function renderJobForm(container, params) {
 
   function buildSiteOptions(custId, selectedSiteName) {
     const cust = getCustomer(custId);
-    if (!cust || !cust.sites || cust.sites.length === 0) {
-      return `<option value="">— No sites for this customer —</option>`;
+    if (!cust) {
+      return `<option value="">— Select customer first —</option>`;
+    }
+    const sites = cust.sites || [];
+    if (sites.length === 0) {
+      const mainAddress = cust.address || '';
+      const mainName = 'Primary';
+      if (!mainAddress) {
+        return `<option value="">— No sites for this customer —</option>`;
+      }
+      return `<option value="primary" data-address="${escapeHTML(mainAddress)}" data-name="${escapeHTML(mainName)}" selected>Primary — ${escapeHTML(mainAddress)}</option>`;
     }
     return `<option value="">Select jobsite...</option>` +
-      cust.sites.map((s, i) =>
+      sites.map((s, i) =>
         `<option value="${i}" data-address="${escapeHTML(s.address)}" data-name="${escapeHTML(s.name)}" ${selectedSiteName === s.name ? 'selected' : ''}>${escapeHTML(s.name)} — ${escapeHTML(s.address)}</option>`
       ).join('');
   }
 
   function buildContactOptions(custId, selectedContactName, placeholder) {
     const cust = getCustomer(custId);
-    if (!cust || !cust.contacts || cust.contacts.length === 0) {
+    if (!cust) {
       return `<option value="">— Select customer first —</option>`;
     }
+    const contacts = cust.contacts || [];
+    if (contacts.length === 0) {
+      const mainName = `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || cust.company || 'Primary Contact';
+      return `<option value="primary" selected>${escapeHTML(mainName)} (Primary)</option>`;
+    }
     return `<option value="">${placeholder}</option>` +
-      cust.contacts.map((c, i) =>
+      contacts.map((c, i) =>
         `<option value="${i}" ${selectedContactName === c.name ? 'selected' : ''}>${escapeHTML(c.name)} (${escapeHTML(c.role || '')})</option>`
       ).join('');
   }
@@ -181,7 +214,7 @@ export function renderJobForm(container, params) {
             <div class="form-group">
               <label class="form-label">Type</label>
               <select class="form-select" name="type">
-                ${['Electrical','Plumbing','HVAC','Fire Protection','Security','General Maintenance'].map(t => `<option ${job.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+                ${jobTypes.map(t => `<option ${job.type === t ? 'selected' : ''}>${escapeHTML(t)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -190,7 +223,7 @@ export function renderJobForm(container, params) {
           <div class="form-group">
             <label class="form-label">Jobsite</label>
             <select class="form-select" id="jf-site" name="siteId" ${!initCustId ? 'disabled' : ''}>
-              ${buildSiteOptions(initCustId, job.siteId)}
+              ${buildSiteOptions(initCustId, job.siteName || job.siteId)}
             </select>
             <div class="site-address-hint" id="jf-site-hint">${job.siteAddress ? escapeHTML(job.siteAddress) : 'Select a customer to enable jobsite selection'}</div>
           </div>
@@ -200,13 +233,13 @@ export function renderJobForm(container, params) {
             <div class="form-group">
               <label class="form-label">Primary Contact</label>
               <select class="form-select" id="jf-primary-contact" name="primaryContactId" ${!initCustId ? 'disabled' : ''}>
-                ${buildContactOptions(initCustId, job.primaryContactId, 'Select primary contact...')}
+                ${buildContactOptions(initCustId, job.primaryContactName || job.primaryContactId, 'Select primary contact...')}
               </select>
             </div>
             <div class="form-group">
               <label class="form-label">Additional Contact</label>
               <select class="form-select" id="jf-additional-contact" name="additionalContactId" ${!initCustId ? 'disabled' : ''}>
-                ${buildContactOptions(initCustId, job.additionalContactId, 'None')}
+                ${buildContactOptions(initCustId, job.additionalContactName || job.additionalContactId, 'None')}
               </select>
             </div>
           </div>
@@ -223,6 +256,23 @@ export function renderJobForm(container, params) {
               <label class="form-label">Priority</label>
               <select class="form-select" name="priority" id="job-priority">
                 ${['Low','Medium','High','Urgent'].map(p => `<option ${job.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
+              </select>
+          </div>
+          
+          <!-- Project & Cost Center -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Project (Stage Container)</label>
+              <select class="form-select" name="projectId">
+                <option value="">-- None / Standalone Job --</option>
+                ${projectsList.map(p => `<option value="${p.id}" ${job.projectId === p.id ? 'selected' : ''}>${escapeHTML(p.number)} — ${escapeHTML(p.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Cost Center</label>
+              <select class="form-select" name="costCenterId">
+                <option value="">-- Select Cost Center --</option>
+                ${costCentersList.map(cc => `<option value="${cc.id}" ${job.costCenterId === cc.id ? 'selected' : ''}>${escapeHTML(cc.code)} — ${escapeHTML(cc.name)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -358,7 +408,15 @@ export function renderJobForm(container, params) {
     primaryContactSel.disabled = disabled;
     additionalContactSel.innerHTML = buildContactOptions(custId, '', 'None');
     additionalContactSel.disabled = disabled;
-    siteHint.textContent = disabled ? 'Select a customer to enable jobsite selection' : 'Select a jobsite above';
+    
+    const opt = siteSelect.selectedOptions[0];
+    siteHint.textContent = opt?.dataset.address || (disabled ? 'Select a customer to enable jobsite selection' : 'Select a jobsite above');
+  }
+
+  // Set initial site hint if already selected
+  const initialOpt = siteSelect.selectedOptions[0];
+  if (initialOpt && initialOpt.dataset.address) {
+    siteHint.textContent = initialOpt.dataset.address;
   }
 
   custSelect.addEventListener('change', e => refreshCustomerDependents(e.target.value));
@@ -1159,13 +1217,22 @@ export function renderJobForm(container, params) {
 
     const priIdx = parseInt(data.primaryContactId);
     const addIdx = parseInt(data.additionalContactId);
+    const isPrimaryContactFallback = data.primaryContactId === 'primary';
+    const isAdditionalContactFallback = data.additionalContactId === 'primary';
+
+    const customerFullName = cust ? (`${cust.firstName || ''} ${cust.lastName || ''}`.trim() || cust.company || '') : '';
+
     const primaryContact = !isNaN(priIdx) ? cust?.contacts?.[priIdx] : null;
     const additionalContact = !isNaN(addIdx) ? cust?.contacts?.[addIdx] : null;
-    data.contactName = primaryContact?.name || (cust ? `${cust.firstName} ${cust.lastName}` : '');
-    data.primaryContactName = primaryContact?.name || '';
-    data.additionalContactName = additionalContact?.name || '';
+
+    data.contactName = primaryContact?.name || (isPrimaryContactFallback ? customerFullName : (cust ? customerFullName : ''));
+    data.primaryContactName = primaryContact?.name || (isPrimaryContactFallback ? customerFullName : '');
+    data.additionalContactName = additionalContact?.name || (isAdditionalContactFallback ? customerFullName : '');
     delete data.primaryContactId;
     delete data.additionalContactId;
+
+    if (data.projectId === '') data.projectId = null;
+    if (data.costCenterId === '') data.costCenterId = null;
 
     data.tags = selectedTags;
     data.description = editor.innerHTML;
@@ -1216,6 +1283,12 @@ export function renderJobForm(container, params) {
     // Save Job
     const finalJob = isEdit ? store.update('jobs', id, data) : store.create('jobs', data);
     const jobId = finalJob.id;
+
+    if (finalJob.isRecurring) {
+      import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs }) => {
+        checkRecurringJobs();
+      });
+    }
 
     // Update Form Instances
     const allInstances = store.getAll('formInstances') || [];
