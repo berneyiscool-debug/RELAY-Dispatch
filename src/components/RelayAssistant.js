@@ -315,13 +315,64 @@ function autoGrow(el) {
 }
 
 function addMessage(thread, role, text) {
-  // Strip any raw [ACTION: ...] tags from the visible text in the bubble
-  const cleanedText = text.replace(/\[ACTION:\s*[A-Z_]+(?:\s*,\s*[^\]]+)?\]/gi, '').trim();
+  // 1. Strip any raw [ACTION: ...] tags from the visible text in the bubble
+  let cleanedText = text.replace(/\[ACTION:\s*[A-Z_]+(?:\s*,\s*[^\]]+)?\]/gi, '').trim();
+
+  // 2. Parse any [QUESTION: ...] tag
+  let questionText = '';
+  let options = [];
+  const qMatch = cleanedText.match(/\[QUESTION:\s*([^\]|]+)(?:\|([^\]]+))?\]/i);
+  if (qMatch) {
+    questionText = qMatch[1].trim();
+    if (qMatch[2]) {
+      options = qMatch[2].split('|').map(o => o.trim()).filter(Boolean);
+    }
+    // Remove the [QUESTION: ...] tag from the visible bubble text
+    cleanedText = cleanedText.replace(/\[QUESTION:\s*[^\]]+\]/gi, '').trim();
+  }
 
   const m = document.createElement('div');
   m.className = `relay-msg relay-msg-${role}`;
   m.innerHTML = `<div class="relay-bubble">${escapeHtml(cleanedText)}</div>`;
   thread.appendChild(m);
+
+  // 3. Render the interactive multiple-choice card if present
+  if (options.length > 0) {
+    const card = document.createElement('div');
+    card.className = 'relay-question-card';
+    card.innerHTML = `
+      <div class="relay-question-title">${escapeHtml(questionText)}</div>
+      <div class="relay-question-options">
+        ${options.map(opt => `
+          <button class="relay-question-opt-btn" data-value="${escapeHtml(opt)}">${escapeHtml(opt)}</button>
+        `).join('')}
+      </div>
+    `;
+
+    card.querySelectorAll('.relay-question-opt-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const val = e.target.getAttribute('data-value');
+        // Disable buttons and visually select
+        card.querySelectorAll('.relay-question-opt-btn').forEach(b => {
+          b.disabled = true;
+          b.classList.remove('selected');
+        });
+        e.target.classList.add('selected');
+
+        // Submit the selected option automatically
+        const panel = thread.closest('#relay-panel');
+        const input = panel ? panel.querySelector('#relay-input') : null;
+        const sendBtn = panel ? panel.querySelector('#relay-send') : null;
+        if (input && sendBtn) {
+          input.value = val;
+          sendBtn.click();
+        }
+      });
+    });
+
+    thread.appendChild(card);
+  }
+
   thread.scrollTop = thread.scrollHeight;
   return m;
 }
@@ -792,6 +843,10 @@ Action tags MUST follow these exact formats:
 
 - To add/save a concise fact or preference to your personal factsheet memory: [ACTION: UPDATE_FACTSHEET, Single concise fact to remember]
   (Example: [ACTION: UPDATE_FACTSHEET, User prefers to schedule HVAC jobs to John Doe on Mondays])
+
+- To prompt the user with a multiple-choice question: [QUESTION: Question text? | Option 1 | Option 2 | Option 3]
+  - Use this whenever you need to clarify user intent, ask for confirmation, or let the user choose between multiple actions/options.
+  (Example: [QUESTION: What would you like to do next? | Create an invoice | Check quotes | Cancel])
 
 Always perform the requested action when asked (e.g. if the user says "add customer Barry Buttons", reply confirming you will do it and append the CREATE_CUSTOMER tag). Do not say you are unable to do it.`;
 }
