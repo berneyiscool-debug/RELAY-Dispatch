@@ -499,14 +499,6 @@ async function fetchAIInsights(reportId, d, cacheKey) {
   const isSimpleMode = cacheKey.endsWith('_simple');
   const mode = isSimpleMode ? 'simple' : 'detailed';
 
-  if (!d.jobs || d.jobs.length < 5) {
-    const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
-    const insightsHTML = renderInsightsListHTML(reportId, localInsights, false, mode);
-    cachedAIInsights[cacheKey] = insightsHTML;
-    panel.innerHTML = insightsHTML;
-    return;
-  }
-
   const s = store.getSettings();
   const ai = s.ai || {};
   const hasKey = ai.apiKey || import.meta.env.VITE_DEEPSEEK_API_KEY;
@@ -533,7 +525,37 @@ async function fetchAIInsights(reportId, d, cacheKey) {
         messages = [
           {
             role: 'system',
-            content: 'You are an expert business analyst and operational co-pilot for a field service management agency. Analyze the provided summary report metrics and write exactly 3 to 5 high-value, highly specific, and actionable business insights or operational warnings in JSON format. The output MUST be a valid JSON array of objects, where each object has exactly these keys: "headline" (string, short, specific, numbers-first), "detail" (string, what -> so what), "action" (string, now what - one concrete next step), and "confidence" (string, "high" | "medium" | "low"). Rank the objects in the array by operational impact (highest impact first). Do not output any markdown formatting, code blocks (like ```json), or explanatory text. Return ONLY the raw JSON string.'
+            content: `You are an expert business analyst and operational co-pilot for a field service management agency.
+Analyze the provided summary report metrics and generate exactly 3 to 5 grounded, specific, non-generic observations tied to real numbers in the dataset.
+Never write generic platitudes ("business is doing well!"), never fabricate benchmarks, and never present advice as certain facts.
+
+Follow these Global Rules:
+1. Every insight format: headline (short, specific, numbers-first), detail (pattern pattern and why it matters -> what -> so what), action (one concrete next step -> now what).
+2. Ground in real data only. Never invent benchmarks, percentages, or comparisons. If there is not enough historical job data (e.g. <5 jobs), do NOT output generic placeholders like "not enough data". Instead, celebrate their early setup progress (e.g. company profile creation, first technician registrations, customers added, or first quote/job logs), highlight what they have accomplished so far, and give positive, encouraging operational guidance to help them build business momentum!
+3. Confidence scales with sample size. Set confidence to "high", "medium", or "low" based on data density.
+4. No individual blame. Frame staffing/productivity at a team/role level or growth-framed, never negative individual callouts.
+5. No authoritative compliance, legal, or tax advice. Use soft disclaimers ("worth checking against Fair Work obligations").
+6. No customer profiling on protected characteristics. Churn/risk signals must be behavior-only (payment latency, cadence drop-offs).
+7. Balanced, surface both wins and risks.
+8. Use plain, specific, non-corporate language.
+
+Per-Report Specifications:
+- overview: Flag the single biggest positive/negative movement vs last period. Limit to 3-4 insights.
+- revenue: Analyze margin trend by job type/service, pricing consistency, seasonal patterns, upsell opportunities. Never suggest a specific price increase number.
+- jobs: On-time start/completion rate trend, first-time fix rate, actual vs estimated duration, cancellation rate. Distinguish estimate vs mismanagement.
+- job_costing: Est vs actual cost variance (split materials vs labor), consistently over-budget job types, markup effectiveness, quote-to-invoice drift.
+- technicians: Jobs completed, utilization rate, travel-to-job ratio. Team/role aggregates. Coach, don't blame or rank.
+- timesheets_labor: Overtime trend, labor cost as % of revenue, rostering mismatches, soft disclaimers.
+- assets_maintenance: Overdue maintenance ranked by downtime cost risk, assets approaching replace-vs-repair, warranty expiry, utilization.
+- customers: Customer lifetime value distribution, behavior-only churn risk, repeat business rate correlation.
+- inventory: Stock turnover rate, reorder points showing math (usage * lead time + buffer) inline, stockouts, supplier cost trend.
+
+Output Format:
+You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks). Each object has exactly these keys:
+- "headline" (string, short, specific, numbers-first)
+- "detail" (string, what -> so what)
+- "action" (string, now what - one concrete next step)
+- "confidence" (string, "high" | "medium" | "low")`
           },
           {
             role: 'user',
@@ -587,7 +609,16 @@ async function fetchAIInsights(reportId, d, cacheKey) {
 }
 
 function getStatsSummaryText(reportId, d) {
-  let summary = '';
+  const settings = store.getSettings();
+  let summary = `Workspace / Company Profile Name: ${settings.name || 'Company Name'}\n`;
+  summary += `Total Registered Technicians: ${d.technicians.length}\n`;
+  summary += `Total Registered Customers: ${d.customers.length}\n`;
+  summary += `Total Registered Assets: ${d.assets.length}\n`;
+  summary += `Total Registered Quotes: ${d.quotes.length}\n`;
+  summary += `Total Registered Jobs: ${d.jobs.length}\n`;
+  summary += `Total Registered Invoices: ${d.invoices.length}\n`;
+  summary += `Total Registered Leads: ${d.leads.length}\n\n`;
+
   if (reportId === 'overview' || reportId === 'revenue') {
     summary += `Gross Revenue: $${d.totalRevenue.toFixed(2)}\n`;
     summary += `Outstanding Bills: $${d.totalOutstanding.toFixed(2)}\n`;
@@ -788,7 +819,33 @@ function renderInsightsListHTML(reportId, insights, isOfflineWarning, mode) {
 
 function getLocalSimpleInsights(reportId, d) {
   if (!d.jobs || d.jobs.length < 5) {
-    return ["We need a bit more job history to highlight trends for you. Once you log 5 or more jobs, personalized tips will appear here!"];
+    const settings = store.getSettings();
+    const companyName = settings.name || 'your company';
+    const techCount = d.technicians.length;
+    const custCount = d.customers.length;
+    const jobCount = d.jobs.length;
+    const quoteCount = d.quotes.length;
+
+    const tips = [
+      `Welcome to RELAY! We are thrilled to help support operations at ${companyName}.`,
+    ];
+    if (techCount > 0) {
+      tips.push(`Great job setting up your team! You have ${techCount} technicians ready to go.`);
+    } else {
+      tips.push("Next step: add a technician under ADMIN -> People so you can start scheduling jobs on the calendar.");
+    }
+    if (custCount > 0) {
+      tips.push(`Awesome! You have successfully registered ${custCount} customers in your database.`);
+    } else {
+      tips.push("Try adding a customer profile to start building your client base.");
+    }
+    if (quoteCount > 0) {
+      tips.push(`You have prepared your first quote! Follow up with them to win the job.`);
+    }
+    if (jobCount > 0) {
+      tips.push(`You've logged your first job! Assign it to a technician to start tracking timesheets.`);
+    }
+    return tips.slice(0, 5);
   }
   const tips = [];
   if (reportId === 'overview' || reportId === 'revenue') {
@@ -847,12 +904,75 @@ function getLocalSimpleInsights(reportId, d) {
 
 function getLocalInsightsJSON(reportId, d) {
   if (!d.jobs || d.jobs.length < 5) {
-    return [{
-      headline: "Insufficient Data for Reliable Insights",
-      detail: "Operational check requires a baseline of at least 5 completed or scheduled jobs to establish reliable trend averages.",
-      action: "Log more service jobs, timesheet records, or quotes to activate automatic insights.",
-      confidence: "low"
-    }];
+    const settings = store.getSettings();
+    const companyName = settings.name || 'your company';
+    const techCount = d.technicians.length;
+    const custCount = d.customers.length;
+    const jobCount = d.jobs.length;
+    const quoteCount = d.quotes.length;
+    const invCount = d.invoices.length;
+
+    const insights = [];
+
+    // Always include a welcome setup milestone
+    insights.push({
+      headline: `Welcome to RELAY, ${companyName}!`,
+      detail: `You have successfully configured your workspace settings and are ready to run dispatch operations.`,
+      action: "Head to Settings to customize your labor rates and material markups.",
+      confidence: "high"
+    });
+
+    if (techCount > 0) {
+      insights.push({
+        headline: `${techCount} Technicians Registered`,
+        detail: `Your field team is added and ready for scheduling.`,
+        action: "Assign a job to your team from the Jobs page or calendar.",
+        confidence: "high"
+      });
+    } else {
+      insights.push({
+        headline: "Add Your First Technician",
+        detail: "Having no technicians registered means you can't assign job cards or track timesheets yet.",
+        action: "Go to ADMIN -> People to register your field team.",
+        confidence: "high"
+      });
+    }
+
+    if (custCount > 0) {
+      insights.push({
+        headline: `${custCount} Customers Added`,
+        detail: `Your client database is starting to grow!`,
+        action: "Create a quote or job directly for one of your registered customers.",
+        confidence: "high"
+      });
+    } else {
+      insights.push({
+        headline: "Add Your First Customer",
+        detail: "Build your customer list to start scheduling jobs and preparing bids.",
+        action: "Go to PEOPLE -> Customers -> Add Customer to register your first client.",
+        confidence: "high"
+      });
+    }
+
+    if (quoteCount > 0) {
+      insights.push({
+        headline: `${quoteCount} Quotes Prepared`,
+        detail: `Excellent progress on bidding for new work!`,
+        action: "Follow up with clients on sent quotes to win approval.",
+        confidence: "high"
+      });
+    }
+
+    if (jobCount > 0) {
+      insights.push({
+        headline: `${jobCount} Jobs Logged`,
+        detail: `You have created your first job cards in the system.`,
+        action: "Move your active jobs to 'Scheduled' or 'In Progress' as work begins.",
+        confidence: "high"
+      });
+    }
+
+    return insights;
   }
   const insights = [];
 
