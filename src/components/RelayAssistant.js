@@ -107,10 +107,10 @@ export function openRelay() {
     <div class="relay-input-wrap">
       <button class="relay-attach" id="relay-attach" title="${cloud ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a cloud feature'}" ${cloud ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
       <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
-      <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Relay…  (try “add a jobs widget”)">${escapeHtml(draftVal)}</textarea>
+      <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Relay">${escapeHtml(draftVal)}</textarea>
       <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
     </div>
-    <div class="relay-foot">Early mode — local actions only. Full chat arrives with the backend.</div>
+    <div class="relay-foot">This is an early version. You may need to be patient</div>
   `;
   document.body.appendChild(panel);
   document.body.classList.add('relay-assistant-open');
@@ -284,7 +284,6 @@ export function openRelay() {
 
   document.addEventListener('keydown', escClose, true);
 
-  setTimeout(() => input.focus(), 250);
   if (onStateChange) onStateChange(true);
 }
 
@@ -302,16 +301,26 @@ export function closeRelay() {
 function escClose(e) { if (e.key === 'Escape') closeRelay(); }
 
 function autoGrow(el) {
+  const prevHeight = el.style.height;
   el.style.height = 'auto';
+  const contentHeight = el.scrollHeight;
+  el.style.height = prevHeight;
+  
+  // Force a reflow so the browser registers the previous height for the transition
+  void el.offsetHeight;
+
   const isFocused = el.classList.contains('focused');
   const minH = isFocused ? 108 : 38;
-  el.style.height = Math.min(Math.max(el.scrollHeight, minH), 120) + 'px';
+  el.style.height = Math.min(Math.max(contentHeight, minH), 120) + 'px';
 }
 
 function addMessage(thread, role, text) {
+  // Strip any raw [ACTION: ...] tags from the visible text in the bubble
+  const cleanedText = text.replace(/\[ACTION:\s*[A-Z_]+(?:\s*,\s*[^\]]+)?\]/gi, '').trim();
+
   const m = document.createElement('div');
   m.className = `relay-msg relay-msg-${role}`;
-  m.innerHTML = `<div class="relay-bubble">${escapeHtml(text)}</div>`;
+  m.innerHTML = `<div class="relay-bubble">${escapeHtml(cleanedText)}</div>`;
   thread.appendChild(m);
   thread.scrollTop = thread.scrollHeight;
   return m;
@@ -436,7 +445,7 @@ async function runVisionExtraction(userText, files, thread, typing) {
 
 async function callVisionEngine(userText, images, batchIndex, batchCount) {
   const ai = (store.getSettings() || {}).ai || {};
-  const model = ai.visionModel || 'deepseek-v4-flash';
+  const model = ai.visionModel || 'gemini-2.0-flash';
   const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant.';
   const systemPrompt = `${basePrompt}\n\n${getVisionContext()}`;
 
@@ -452,7 +461,7 @@ async function callVisionEngine(userText, images, batchIndex, batchCount) {
   return dispatchChat([
     { role: 'system', content: systemPrompt },
     { role: 'user', content }
-  ], ai, model);
+  ], ai, model, ai.visionEndpoint);
 }
 
 function getVisionContext() {
@@ -635,10 +644,13 @@ async function callAIEngine() {
 // Low-level completions transport, shared by text and vision paths. Routes through
 // the Supabase edge proxy (cloud), the Electron secure handler (desktop), or a
 // direct fetch. `messages` may contain multimodal content arrays for vision.
-async function dispatchChat(messages, ai, model) {
+async function dispatchChat(messages, ai, model, endpoint) {
+  // Vision requests pass a different endpoint (e.g. Gemini) than text chat; the
+  // edge function picks the matching server-side key based on this endpoint.
+  const ep = endpoint || ai.endpoint;
   if (isCloudUser()) {
     const { data, error } = await supabase.functions.invoke('relay-copilot', {
-      body: { messages, endpoint: ai.endpoint, model }
+      body: { messages, endpoint: ep, model }
     });
     if (error) {
       // supabase-js hides the real upstream message on non-2xx; the actual body
@@ -661,11 +673,11 @@ async function dispatchChat(messages, ai, model) {
   }
 
   if (window.electronAPI && window.electronAPI.callAIAssistant) {
-    const data = await window.electronAPI.callAIAssistant({ messages, endpoint: ai.endpoint, model });
+    const data = await window.electronAPI.callAIAssistant({ messages, endpoint: ep, model });
     return data.choices?.[0]?.message?.content || '';
   }
 
-  const res = await fetch(ai.endpoint || 'https://api.deepseek.com/chat/completions', {
+  const res = await fetch(ep || 'https://api.deepseek.com/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -705,7 +717,13 @@ function getSystemContext() {
   const isEnabled = localStorage.getItem(enabledKey) !== 'false';
   const userFactsheet = isEnabled ? (localStorage.getItem(factsheetKey) || '') : 'User has disabled AI Personal Memory tracking.';
 
-  return `Current Live CRM Data Context (updated real-time):
+  return `Assistant Tone & Formatting Guidelines:
+- You are a professional dispatch co-pilot. Keep your tone helpful, direct, concise, and business-focused.
+- DO NOT use overly familiar pet names (e.g. "gorgeous", "darling") or sassy/flamboyant language.
+- Use emojis sparingly and only to highlight key structural items (e.g. checkmarks, warnings). Avoid emotional, decorative, or dramatic emojis.
+- Keep your answers clean, direct, and scans-friendly. Do not write verbose diagnostics for simple empty states.
+
+Current Live CRM Data Context (updated real-time):
 - Active Technicians: ${techsList || 'None'}
 - Total Registered Customers: ${customers.length}
 - Active/Scheduled Jobs (${activeJobs.length}):
