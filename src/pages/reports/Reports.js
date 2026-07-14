@@ -325,20 +325,7 @@ export function renderReports(container) {
       render();
     });
 
-    container.querySelector('#global-filter-tech')?.addEventListener('change', (e) => {
-      filterTechId = e.target.value;
-      render();
-    });
 
-    container.querySelector('#global-filter-asset-type')?.addEventListener('change', (e) => {
-      filterAssetType = e.target.value;
-      render();
-    });
-
-    container.querySelector('#global-filter-customer')?.addEventListener('change', (e) => {
-      filterCustomerId = e.target.value;
-      render();
-    });
 
     // View mode toggle elements
     container.querySelectorAll('.btn-view-mode').forEach(btn => {
