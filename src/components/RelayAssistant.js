@@ -368,7 +368,7 @@ function addMessage(thread, role, text) {
 
       optBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
-          e.target.classList.toggle('selected');
+          btn.classList.toggle('selected');
           const hasSelected = Array.from(optBtns).some(b => b.classList.contains('selected'));
           submitBtn.disabled = !hasSelected;
         });
@@ -395,12 +395,12 @@ function addMessage(thread, role, text) {
       // Single-select mode: click auto-submits
       card.querySelectorAll('.relay-question-opt-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
-          const val = e.target.getAttribute('data-value');
+          const val = btn.getAttribute('data-value');
           card.querySelectorAll('.relay-question-opt-btn').forEach(b => {
             b.disabled = true;
             b.classList.remove('selected');
           });
-          e.target.classList.add('selected');
+          btn.classList.add('selected');
 
           const panel = thread.closest('#relay-panel');
           const input = panel ? panel.querySelector('#relay-input') : null;
