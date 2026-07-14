@@ -318,17 +318,25 @@ function addMessage(thread, role, text) {
   // 1. Strip any raw [ACTION: ...] tags from the visible text in the bubble
   let cleanedText = text.replace(/\[ACTION:\s*[A-Z_]+(?:\s*,\s*[^\]]+)?\]/gi, '').trim();
 
-  // 2. Parse any [QUESTION: ...] tag
+  // 2. Parse any [QUESTION: ...] or [QUESTION_MULTI: ...] tag
   let questionText = '';
   let options = [];
-  const qMatch = cleanedText.match(/\[QUESTION:\s*([^\]|]+)(?:\|([^\]]+))?\]/i);
+  let isMulti = false;
+
+  let qMatch = cleanedText.match(/\[QUESTION_MULTI:\s*([^\]|]+)(?:\|([^\]]+))?\]/i);
+  if (qMatch) {
+    isMulti = true;
+  } else {
+    qMatch = cleanedText.match(/\[QUESTION:\s*([^\]|]+)(?:\|([^\]]+))?\]/i);
+  }
+
   if (qMatch) {
     questionText = qMatch[1].trim();
     if (qMatch[2]) {
       options = qMatch[2].split('|').map(o => o.trim()).filter(Boolean);
     }
-    // Remove the [QUESTION: ...] tag from the visible bubble text
-    cleanedText = cleanedText.replace(/\[QUESTION:\s*[^\]]+\]/gi, '').trim();
+    // Remove the question tag from the visible bubble text
+    cleanedText = cleanedText.replace(/\[QUESTION(?:_MULTI)?:\s*[^\]]+\]/gi, '').trim();
   }
 
   const m = document.createElement('div');
@@ -336,7 +344,7 @@ function addMessage(thread, role, text) {
   m.innerHTML = `<div class="relay-bubble">${escapeHtml(cleanedText)}</div>`;
   thread.appendChild(m);
 
-  // 3. Render the interactive multiple-choice card if present
+  // 3. Render the interactive question card if present
   if (options.length > 0) {
     const card = document.createElement('div');
     card.className = 'relay-question-card';
@@ -347,19 +355,34 @@ function addMessage(thread, role, text) {
           <button class="relay-question-opt-btn" data-value="${escapeHtml(opt)}">${escapeHtml(opt)}</button>
         `).join('')}
       </div>
+      ${isMulti ? `
+        <div class="relay-question-actions">
+          <button class="relay-question-submit-btn" disabled>Submit</button>
+        </div>
+      ` : ''}
     `;
 
-    card.querySelectorAll('.relay-question-opt-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const val = e.target.getAttribute('data-value');
-        // Disable buttons and visually select
-        card.querySelectorAll('.relay-question-opt-btn').forEach(b => {
-          b.disabled = true;
-          b.classList.remove('selected');
-        });
-        e.target.classList.add('selected');
+    if (isMulti) {
+      const submitBtn = card.querySelector('.relay-question-submit-btn');
+      const optBtns = card.querySelectorAll('.relay-question-opt-btn');
 
-        // Submit the selected option automatically
+      optBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.target.classList.toggle('selected');
+          const hasSelected = Array.from(optBtns).some(b => b.classList.contains('selected'));
+          submitBtn.disabled = !hasSelected;
+        });
+      });
+
+      submitBtn.addEventListener('click', () => {
+        const selectedVals = Array.from(optBtns)
+          .filter(b => b.classList.contains('selected'))
+          .map(b => b.getAttribute('data-value'));
+
+        optBtns.forEach(b => b.disabled = true);
+        submitBtn.disabled = true;
+
+        const val = selectedVals.join(', ');
         const panel = thread.closest('#relay-panel');
         const input = panel ? panel.querySelector('#relay-input') : null;
         const sendBtn = panel ? panel.querySelector('#relay-send') : null;
@@ -368,7 +391,27 @@ function addMessage(thread, role, text) {
           sendBtn.click();
         }
       });
-    });
+    } else {
+      // Single-select mode: click auto-submits
+      card.querySelectorAll('.relay-question-opt-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const val = e.target.getAttribute('data-value');
+          card.querySelectorAll('.relay-question-opt-btn').forEach(b => {
+            b.disabled = true;
+            b.classList.remove('selected');
+          });
+          e.target.classList.add('selected');
+
+          const panel = thread.closest('#relay-panel');
+          const input = panel ? panel.querySelector('#relay-input') : null;
+          const sendBtn = panel ? panel.querySelector('#relay-send') : null;
+          if (input && sendBtn) {
+            input.value = val;
+            sendBtn.click();
+          }
+        });
+      });
+    }
 
     thread.appendChild(card);
   }
@@ -844,9 +887,13 @@ Action tags MUST follow these exact formats:
 - To add/save a concise fact or preference to your personal factsheet memory: [ACTION: UPDATE_FACTSHEET, Single concise fact to remember]
   (Example: [ACTION: UPDATE_FACTSHEET, User prefers to schedule HVAC jobs to John Doe on Mondays])
 
-- To prompt the user with a multiple-choice question: [QUESTION: Question text? | Option 1 | Option 2 | Option 3]
-  - Use this whenever you need to clarify user intent, ask for confirmation, or let the user choose between multiple actions/options.
+- To prompt the user with a single-choice question (clicking an option auto-submits it): [QUESTION: Question text? | Option 1 | Option 2 | Option 3]
+  - Use this when only one choice is expected or appropriate.
   (Example: [QUESTION: What would you like to do next? | Create an invoice | Check quotes | Cancel])
+
+- To prompt the user with a multiple-choice question (user toggles multiple choices and clicks a Submit button): [QUESTION_MULTI: Question text? | Option 1 | Option 2 | Option 3]
+  - Use this when the user can select more than one answer (e.g. choosing multiple technicians or multiple actions).
+  (Example: [QUESTION_MULTI: Select technicians to assign to this job: | Adam West | Burt Ward | Diana Prince])
 
 Always perform the requested action when asked (e.g. if the user says "add customer Barry Buttons", reply confirming you will do it and append the CREATE_CUSTOMER tag). Do not say you are unable to do it.`;
 }

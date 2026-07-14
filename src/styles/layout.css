@@ -1686,6 +1686,33 @@
   color: #fff !important;
   font-weight: 600;
 }
+.relay-question-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.relay-question-submit-btn {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  outline: none;
+}
+.relay-question-submit-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  transform: translateY(-0.5px);
+}
+.relay-question-submit-btn:disabled {
+  background: var(--border-color);
+  color: var(--text-tertiary) !important;
+  cursor: not-allowed;
+  transform: none;
+}
 
 /* Zoom controls */
 .dash-zoom-controls {
