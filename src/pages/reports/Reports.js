@@ -496,13 +496,22 @@ async function fetchAIInsights(reportId, d, cacheKey) {
   const panel = document.getElementById(`ai-insights-${reportId}`);
   if (!panel) return;
 
+  const isSimpleMode = cacheKey.endsWith('_simple');
+  const mode = isSimpleMode ? 'simple' : 'detailed';
+
+  if (!d.jobs || d.jobs.length < 5) {
+    const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
+    const insightsHTML = renderInsightsListHTML(reportId, localInsights, false, mode);
+    cachedAIInsights[cacheKey] = insightsHTML;
+    panel.innerHTML = insightsHTML;
+    return;
+  }
+
   const s = store.getSettings();
   const ai = s.ai || {};
   const hasKey = ai.apiKey || import.meta.env.VITE_DEEPSEEK_API_KEY;
 
   let insightsHTML = '';
-  const isSimpleMode = cacheKey.endsWith('_simple');
-  const mode = isSimpleMode ? 'simple' : 'detailed';
 
   if (ai.enabled && hasKey) {
     try {
@@ -778,6 +787,9 @@ function renderInsightsListHTML(reportId, insights, isOfflineWarning, mode) {
 }
 
 function getLocalSimpleInsights(reportId, d) {
+  if (!d.jobs || d.jobs.length < 5) {
+    return ["We need a bit more job history to highlight trends for you. Once you log 5 or more jobs, personalized tips will appear here!"];
+  }
   const tips = [];
   if (reportId === 'overview' || reportId === 'revenue') {
     if (d.totalOutstanding > d.totalRevenue * 0.3) {
@@ -834,6 +846,14 @@ function getLocalSimpleInsights(reportId, d) {
 }
 
 function getLocalInsightsJSON(reportId, d) {
+  if (!d.jobs || d.jobs.length < 5) {
+    return [{
+      headline: "Insufficient Data for Reliable Insights",
+      detail: "Operational check requires a baseline of at least 5 completed or scheduled jobs to establish reliable trend averages.",
+      action: "Log more service jobs, timesheet records, or quotes to activate automatic insights.",
+      confidence: "low"
+    }];
+  }
   const insights = [];
 
   if (reportId === 'overview' || reportId === 'revenue') {
