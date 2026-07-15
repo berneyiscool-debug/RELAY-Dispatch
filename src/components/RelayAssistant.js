@@ -10,7 +10,7 @@ import { store } from '../data/store.js';
 import { showToast } from './Notifications.js';
 import { supabase } from '../utils/supabase.js';
 import { hasPermission } from '../utils/permissions.js';
-import relayIcon from '../assets/relay-icon.svg?raw';
+import relayIcon from '../assets/deputy-icon.svg?raw';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
 
 let panel = null;
@@ -61,13 +61,13 @@ function saveChatHistory(history) {
 }
 
 const GREETINGS = [
-  "Hi, I'm Relay. I can add page widgets, jump to your saved views, and fit or lock the canvas. Try “add a schedule widget” or ask “how many overdue invoices?”",
-  "Hi, I'm Relay. How can I help you manage your dispatch and jobs today?",
-  "Hello! Relay here. Try asking me to “add a schedule widget” or “show me the today view”. What's on your mind?",
-  "Greetings! I'm your co-pilot Relay. I can help you create customers, assign jobs, or quickly look up metrics. What do you need?",
-  "Hey! Relay is ready to assist. Need to check on overdue invoices, add a new job, or fit the canvas? Just let me know!",
-  "Welcome back! I'm Relay, your dispatch assistant. How can I assist you with your operations today?",
-  "Hi there! Relay here. I can help you manage your dispatch layout, check on jobs, and look up details. Try: “how many active jobs do we have?”",
+  "Hi, I'm Deputy. I can add page widgets, jump to your saved views, and fit or lock the canvas. Try “add a schedule widget” or ask “how many overdue invoices?”",
+  "Hi, I'm Deputy. How can I help you manage your dispatch and jobs today?",
+  "Hello! Deputy here. Try asking me to “add a schedule widget” or “show me the today view”. What's on your mind?",
+  "Greetings! I'm your co-pilot Deputy. I can help you create customers, assign jobs, or quickly look up metrics. What do you need?",
+  "Hey! Deputy is ready to assist. Need to check on overdue invoices, add a new job, or fit the canvas? Just let me know!",
+  "Welcome back! I'm Deputy, your dispatch assistant. How can I assist you with your operations today?",
+  "Hi there! Deputy here. I can help you manage your dispatch layout, check on jobs, and look up details. Try: “how many active jobs do we have?”",
   "Hello! Ready to dispatch? I can create quotes, jobs, and invoices for you. What can I do for you today?"
 ];
 
@@ -93,7 +93,7 @@ export function openRelay() {
       <div class="relay-head-id">
         <span class="relay-avatar">${relayIcon}</span>
         <div>
-          <div class="relay-name">Relay</div>
+          <div class="relay-name">Deputy</div>
           <div class="relay-sub">Your co-pilot</div>
         </div>
       </div>
@@ -107,7 +107,7 @@ export function openRelay() {
     <div class="relay-input-wrap">
       <button class="relay-attach" id="relay-attach" title="${cloud ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a cloud feature'}" ${cloud ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
       <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
-      <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Relay">${escapeHtml(draftVal)}</textarea>
+      <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Deputy">${escapeHtml(draftVal)}</textarea>
       <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
     </div>
     <div class="relay-foot">This is an early version. You may need to be patient</div>
@@ -130,11 +130,10 @@ export function openRelay() {
   // Load persisted history
   chatHistory = loadChatHistory();
 
-  // If no history exists, generate and save the random greeting as the first message
+  // If no history exists, generate a random greeting on the fly (do not persist until first user message)
+  let startGreeting = '';
   if (chatHistory.length === 0) {
-    const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
-    chatHistory.push({ role: 'assistant', content: randomGreeting });
-    saveChatHistory(chatHistory);
+    startGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
   }
 
   // Render all messages from history
@@ -142,6 +141,11 @@ export function openRelay() {
     const uiRole = msg.role === 'assistant' ? 'relay' : msg.role;
     addMessage(thread, uiRole, msg.content);
   });
+
+  // Render the random greeting if history was empty
+  if (startGreeting) {
+    addMessage(thread, 'relay', startGreeting);
+  }
 
   const submit = async () => {
     const text = input.value.trim();
@@ -274,8 +278,6 @@ export function openRelay() {
         localStorage.removeItem(draftKey);
         thread.innerHTML = '';
         const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
-        chatHistory.push({ role: 'assistant', content: randomGreeting });
-        saveChatHistory(chatHistory);
         addMessage(thread, 'relay', randomGreeting);
         showToast('Chat history cleared.', 'success');
       }
@@ -802,7 +804,7 @@ function getSystemContext() {
 
   const jobsList = activeJobs.slice(0, 8).map(j => `Job #${j.number || j.id}: ${j.title} (${j.status}) - Cust: ${j.customerName || 'None'} - Tech: ${j.technicianName || 'Unassigned'} - Date: ${j.scheduledDate || 'TBD'}`).join('\n');
   const overdueInvoicesList = overdueInvoices.slice(0, 8).map(i => `Invoice #${i.number || i.id}: ${i.title} - Total: $${i.total} - Due: ${i.dueDate || 'TBD'}`).join('\n');
-  const techsList = technicians.map(t => `${t.name} (${t.role || 'Tech'}) - Username: ${t.username}`).join(', ');
+  const techsList = technicians.map(t => `${t.name} (${t.role || 'Tech'}${t.deactivated ? ', deactivated' : ''}) - Username: ${t.username}`).join(', ');
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const userId = currentUser ? currentUser.id : 'default';
@@ -1021,7 +1023,7 @@ function executeAction(action, param) {
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase() || c.company?.toLowerCase() === customerName.toLowerCase());
 
-        const technicians = store.getAll('technicians') || [];
+        const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
         const tech = technicians.find(t => t.name.toLowerCase() === techName.toLowerCase());
 
         const newItem = {
@@ -1158,7 +1160,7 @@ function executeAction(action, param) {
 
           // Try to link technician_id if tech name is updated
           if (targetField === 'technicianName') {
-            const technicians = store.getAll('technicians') || [];
+            const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
             const tech = technicians.find(t => t.name.toLowerCase() === val.toLowerCase());
             if (tech) {
               item.technician_id = tech.id;
