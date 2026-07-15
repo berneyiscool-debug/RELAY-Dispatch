@@ -130,21 +130,34 @@ export function openRelay() {
   // Load persisted history
   chatHistory = loadChatHistory();
 
-  // If no history exists, generate a random greeting on the fly (do not persist until first user message)
-  let startGreeting = '';
-  if (chatHistory.length === 0) {
-    startGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
-  }
-
   // Render all messages from history
   chatHistory.forEach(msg => {
     const uiRole = msg.role === 'assistant' ? 'relay' : msg.role;
     addMessage(thread, uiRole, msg.content);
   });
 
-  // Render the random greeting if history was empty
-  if (startGreeting) {
-    addMessage(thread, 'relay', startGreeting);
+  // If no history exists, generate a dynamic context-aware greeting
+  if (chatHistory.length === 0) {
+    const typing = addTyping(thread);
+    (async () => {
+      try {
+        const s = store.getSettings();
+        const ai = s.ai || {};
+        if (canUseAI(ai)) {
+          const greeting = await callAIEngineGreeting();
+          typing.remove();
+          addMessage(thread, 'relay', greeting);
+        } else {
+          throw new Error('AI not enabled');
+        }
+      } catch (err) {
+        console.warn('AI welcome greeting failed, falling back to static greetings:', err);
+        typing.remove();
+        const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+        addMessage(thread, 'relay', randomGreeting);
+      }
+      thread.scrollTop = thread.scrollHeight;
+    })();
   }
 
   const submit = async () => {
@@ -735,6 +748,52 @@ async function callAIEngine() {
   const reply = await dispatchChat(messages, ai, ai.model || 'deepseek-chat');
   pushAssistant(reply);
   return parseAndExecuteActions(reply);
+}
+
+function getAssistantWelcomeContext() {
+  const settings = store.getSettings();
+  const technicians = store.getAll('technicians') || [];
+  const customers = store.getAll('customers') || [];
+  const jobs = store.getAll('jobs') || [];
+  const quotes = store.getAll('quotes') || [];
+  const invoices = store.getAll('invoices') || [];
+  const leads = store.getAll('leads') || [];
+
+  const activeJobs = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress').length;
+  const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending').length;
+  const overdueInvoices = invoices.filter(i => i.status === 'Overdue').length;
+  const unscheduledJobs = jobs.filter(j => j.status === 'Pending').length;
+
+  return `Company/Workspace Name: ${settings.name}
+Total Registered Technicians: ${technicians.length}
+Total Customers: ${customers.length}
+Active Jobs (Scheduled/In Progress): ${activeJobs}
+Unscheduled Jobs (Pending): ${unscheduledJobs}
+Quotes Awaiting Client Approval: ${pendingQuotes}
+Overdue Invoices: ${overdueInvoices}
+New Leads: ${leads.filter(l => l.status === 'New').length}`;
+}
+
+async function callAIEngineGreeting() {
+  const s = store.getSettings();
+  const ai = s.ai || {};
+  const welcomeContext = getAssistantWelcomeContext();
+  
+  const systemPrompt = `You are Deputy, the intelligent field service co-pilot assistant for ${s.name || 'this company'}.
+You are greeting the user as they open the assistant panel.
+Generate a friendly, concise, and helpful 1 to 2 sentence greeting message based on the current workspace context.
+Focus on introducing yourself, highlighting 1-2 interesting current stats, and asking how you can help.
+Keep it casual, highly helpful, and conversational.
+Do not use markdown formatting, do not write a long paragraph. Return ONLY the welcome greeting text.
+
+Current Workspace Context:
+${welcomeContext}`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt }
+  ];
+
+  return dispatchChat(messages, ai, ai.model || 'deepseek-chat');
 }
 
 // Low-level completions transport, shared by text and vision paths. Routes through
