@@ -9,8 +9,10 @@ import { escapeHTML } from '../../utils/security.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showModal } from '../../components/Modal.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
+import { parsePreferredTime } from '../../utils/dateUtils.js';
 
 export function renderScheduleView(container) {
+  document.querySelectorAll('.schedule-tooltip-popover').forEach(t => t.remove());
   container.style.height = '100%';
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
@@ -31,14 +33,25 @@ export function renderScheduleView(container) {
         userTypeId: currentUser.userTypeId
       }];
     }
-    return allTechs;
+    const techs = allTechs.filter(t => !t.deactivated);
+    const hasCurrentUser = techs.some(t => t.id === currentUser.id || t.name === currentUser.name);
+    if (!hasCurrentUser && currentUser.id) {
+      techs.push({
+        id: currentUser.id,
+        name: currentUser.name || 'Staff User',
+        role: currentUser.role === 'admin' ? 'Administrator' : (currentUser.role === 'manager' ? 'Manager' : 'Staff'),
+        color: currentUser.color || '#FF5C00',
+        userTypeId: currentUser.userTypeId || 'ut_admin'
+      });
+    }
+    return techs;
   }
 
-  const technicians = getTechnicians();
+  let technicians = getTechnicians();
   // jobs read fresh each render — do NOT cache here
 
   // Role-based access: read who is logged in
-  const isTechnician = currentUser.role === 'technician';
+  const isTechnician = currentUser.role === 'technician' || (loginMode === 'local' && localStorage.getItem('uiMode') === 'technician');
   const hasTechRecord = technicians.some(t => t.id === currentUser.id);
   const isLocalAdminTechView = isTechnician && !hasTechRecord;
 
@@ -96,6 +109,12 @@ export function renderScheduleView(container) {
     }
   }
 
+  // Remove the PREVIOUS visit's listener (a fresh function each render, so a plain
+  // removeEventListener(closeContextMenu) is a no-op and stale closures pile up —
+  // their render() calls then snap the calendar back to the old week, breaking the
+  // prev/next arrows). Track the live handler globally instead.
+  if (window.__schedCtxListener) document.removeEventListener('click', window.__schedCtxListener);
+  window.__schedCtxListener = closeContextMenu;
   document.addEventListener('click', closeContextMenu);
 
   function syncJobWithSchedules(jobId) {
@@ -183,6 +202,10 @@ export function renderScheduleView(container) {
       }
     }
   }
+  // Same stale-listener guard as closeContextMenu above — the arrow buttons broke
+  // because prior visits' handleDocumentClick closures kept re-rendering old state.
+  if (window.__schedDocListener) document.removeEventListener('click', window.__schedDocListener);
+  window.__schedDocListener = handleDocumentClick;
   document.addEventListener('click', handleDocumentClick);
 
   function getWeekDays() {
@@ -244,7 +267,7 @@ export function renderScheduleView(container) {
       }
 
       const job = jobs.find(j => j.id === s.jobId);
-      if (!job || job.status === 'Completed' || job.status === 'Invoiced') return;
+      if (!job || job.isRecurring === true) return;
 
       // Handle both seeded dayOffset and absolute date!
       let sDate = null;
@@ -299,7 +322,7 @@ export function renderScheduleView(container) {
 
     // 2. Legacy fallback for jobs without schedules
     const jobIdsWithSchedules = new Set(schedules.map(s => s.jobId));
-    jobs.filter(j => j.scheduledDate && !jobIdsWithSchedules.has(j.id) && j.status !== 'Completed' && j.status !== 'Invoiced')
+    jobs.filter(j => j.scheduledDate && j.isRecurring !== true && !jobIdsWithSchedules.has(j.id) && j.status !== 'Completed' && j.status !== 'Invoiced')
       .forEach(job => {
         const jobDate = new Date(job.scheduledDate);
         days.forEach((day, dayIdx) => {
@@ -499,10 +522,24 @@ export function renderScheduleView(container) {
   }
 
   function render() {
-    saveScroll();
-    const days = getWeekDays();
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    try {
+      saveScroll();
+      technicians = getTechnicians();
+
+      // Clean up visibleTechIds to only include active/real technicians
+      const activeTechIds = new Set(technicians.map(t => t.id));
+      for (const id of visibleTechIds) {
+        if (!activeTechIds.has(id)) {
+          visibleTechIds.delete(id);
+        }
+      }
+      if (visibleTechIds.size === 0 && technicians.length > 0) {
+        technicians.forEach(t => visibleTechIds.add(t.id));
+      }
+
+      const days = getWeekDays();
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     if (calendarType === 'activity') {
       renderActivityCalendar();
@@ -511,6 +548,8 @@ export function renderScheduleView(container) {
 
     const blocks = getScheduleBlocks();
     const visibleTechs = technicians.filter(t => visibleTechIds.has(t.id));
+
+    // SUCCESSFUL RENDER LOG HOOK
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const menuBg = isDark ? '#1e293b' : '#ffffff';
 
@@ -519,9 +558,9 @@ export function renderScheduleView(container) {
         <h1>Schedule</h1>
         <div class="page-header-actions">
           <div class="flex gap-sm items-center">
-            <button class="btn btn-secondary btn-sm" id="btn-prev"><span class="material-icons-outlined">chevron_left</span></button>
+            <button class="btn btn-secondary btn-sm" id="btn-prev"><span class="material-icons-outlined" style="pointer-events: none;">chevron_left</span></button>
             <button class="btn btn-secondary btn-sm" id="btn-today">Today</button>
-            <button class="btn btn-secondary btn-sm" id="btn-next"><span class="material-icons-outlined">chevron_right</span></button>
+            <button class="btn btn-secondary btn-sm" id="btn-next"><span class="material-icons-outlined" style="pointer-events: none;">chevron_right</span></button>
             <span style="font-weight:600;font-size:var(--font-size-md);margin:0 8px">
               ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}
             </span>
@@ -718,6 +757,9 @@ export function renderScheduleView(container) {
     bindResize();
     restoreScroll();
     renderSearchResultsList();
+    } catch (err) {
+      console.error("RENDER ERROR:", err);
+    }
   }
 
   function getUnscheduledJobs() {
@@ -745,8 +787,8 @@ export function renderScheduleView(container) {
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Task <span style="color:var(--color-danger)">*</span></label>
-            <select class="form-select" name="taskId" required>
+            <label class="form-label">Task (Optional)</label>
+            <select class="form-select" name="taskId">
               <!-- Populated dynamically -->
             </select>
           </div>
@@ -812,7 +854,7 @@ export function renderScheduleView(container) {
 
             const flatTasks = getFlatTasks(job.tasks || []);
             const selectedTask = flatTasks.find(t => t.path === taskPath);
-            const taskName = selectedTask ? selectedTask.name.split(' > ').pop() : '';
+            const taskName = selectedTask ? selectedTask.name.split(' > ').pop() : 'Whole Job';
 
             const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
             const endHour = startHour + duration;
@@ -864,6 +906,21 @@ export function renderScheduleView(container) {
           store.update('jobs', jobId, { tasks: job.tasks });
         }
 
+        if (job.preferredTime) {
+          const parsed = parsePreferredTime(job.preferredTime);
+          if (parsed) {
+            const timeInput = form.querySelector('input[name="startTime"]');
+            if (timeInput) {
+              timeInput.value = `${parsed.hours.toString().padStart(2, '0')}:${parsed.minutes.toString().padStart(2, '0')}`;
+            }
+          }
+        } else {
+          const timeInput = form.querySelector('input[name="startTime"]');
+          if (timeInput) {
+            timeInput.value = "08:00";
+          }
+        }
+
         function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
           let result = [];
           if (!tasks) return result;
@@ -879,7 +936,7 @@ export function renderScheduleView(container) {
         }
 
         const flatTasks = getFlatTasks(job.tasks);
-        taskSelect.innerHTML = flatTasks.map(t => `<option value="${t.path}">${escapeHTML(t.name)}</option>`).join('');
+        taskSelect.innerHTML = `<option value="">-- Whole Job / General --</option>` + flatTasks.map(t => `<option value="${t.path}">${escapeHTML(t.name)}</option>`).join('');
       }
 
       if (jobSelect && taskSelect) {
@@ -1134,11 +1191,50 @@ export function renderScheduleView(container) {
 
   function renderBlocks(techBlocks, dayIdx, color) {
     const priorityBorders = { 'Urgent': '#EF4444', 'High': '#F59E0B' };
+    const isDark = document.documentElement.getAttribute('data-theme-mode') === 'dark';
     return techBlocks
       .filter(b => b.dayIdx === dayIdx)
       .map(b => {
         const top = b.startHour * PX_PER_HOUR;
         const height = Math.max((b.endHour - b.startHour) * PX_PER_HOUR - 2, PX_PER_QUARTER);
+        const statusColors = {
+          'Pending': {
+            border: 'var(--color-warning, #F59E0B)',
+            bg: 'var(--color-warning-bg, rgba(245, 158, 11, 0.08))',
+            text: 'var(--color-warning, #D97706)'
+          },
+          'Scheduled': {
+            border: 'var(--color-info, #3B82F6)',
+            bg: 'var(--color-info-bg, rgba(59, 130, 246, 0.08))',
+            text: 'var(--color-info, #2563EB)'
+          },
+          'In Progress': {
+            border: 'var(--color-primary, #6366F1)',
+            bg: 'var(--color-primary-light, rgba(99, 102, 241, 0.08))',
+            text: 'var(--color-primary, #4F46E5)'
+          },
+          'On Hold': {
+            border: 'var(--text-secondary, #6B7280)',
+            bg: 'var(--content-bg, rgba(107, 114, 128, 0.08))',
+            text: 'var(--text-secondary, #4B5563)'
+          },
+          'Completed': {
+            border: 'var(--color-success, #10B981)',
+            bg: 'var(--color-success-bg, rgba(16, 185, 129, 0.08))',
+            text: 'var(--color-success, #059669)'
+          },
+          'Invoiced': {
+            border: '#9CA3AF',
+            bg: isDark ? 'rgba(55, 65, 81, 0.3)' : 'rgba(243, 244, 246, 0.7)',
+            text: isDark ? '#D1D5DB' : '#6B7280'
+          },
+          'Recurring Template': {
+            border: '#9333ea',
+            bg: 'rgba(147, 51, 234, 0.08)',
+            text: '#9333ea'
+          }
+        };
+
         let borderColor = priorityBorders[b.priority] || color;
         let background = `${color}12`;
         let textColor = color;
@@ -1156,9 +1252,18 @@ export function renderScheduleView(container) {
           borderColor = '#3B82F6'; // Blue for meetings
           background = 'rgba(59, 130, 246, 0.1)';
           textColor = '#2563EB';
+        } else {
+          // Standard jobs: use status colors!
+          const colors = statusColors[b.status];
+          if (colors) {
+            borderColor = priorityBorders[b.priority] || colors.border;
+            background = colors.bg;
+            textColor = colors.text;
+          }
         }
 
         const timeLabel = `${formatHour(b.startHour)} — ${formatHour(b.endHour)}`;
+        const tooltipTitle = b.type === 'leave' ? 'LEAVE' : (b.type === 'blockout' ? 'BLOCKOUT' : (b.type === 'meeting' ? 'MEETING' : b.title));
         return `
           <div class="schedule-block" draggable="true"
             data-block-job-id="${b.jobId || ''}"
@@ -1166,6 +1271,10 @@ export function renderScheduleView(container) {
             data-block-type="${b.type}"
             data-start="${b.startHour}"
             data-end="${b.endHour}"
+            data-tooltip-title="${escapeHTML(tooltipTitle || '')}"
+            data-tooltip-customer="${escapeHTML(b.customerName || '')}"
+            data-tooltip-time="${escapeHTML(timeLabel)}"
+            data-tooltip-jobnum="${escapeHTML(b.jobNumber || '')}"
             style="
               top:${top}px;
               height:${height}px;
@@ -1184,23 +1293,101 @@ export function renderScheduleView(container) {
   }
 
   function bindEvents() {
-    container.querySelector('#btn-prev')?.addEventListener('click', () => {
+    // Custom Hover Tooltips for Schedule Blocks
+    container.querySelectorAll('.schedule-block').forEach(block => {
+      block.addEventListener('mouseenter', (e) => {
+        removeTooltip();
+
+        const title = block.dataset.tooltipTitle;
+        const customer = block.dataset.tooltipCustomer;
+        const time = block.dataset.tooltipTime;
+        const jobNum = block.dataset.tooltipJobnum;
+        const blockType = block.dataset.blockType;
+
+        if (!title && !customer && !time) return;
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'schedule-tooltip-popover';
+        
+        let contentHtml = '';
+        if (blockType === 'leave' || blockType === 'blockout' || blockType === 'meeting') {
+          contentHtml = `
+            <div style="font-weight:700; font-size:12px; margin-bottom:4px; color:var(--text-primary); text-transform:uppercase;">${title}</div>
+            <div style="font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:4px;">
+              <span class="material-icons-outlined" style="font-size:12px">schedule</span> ${time}
+            </div>
+          `;
+        } else {
+          contentHtml = `
+            <div style="font-weight:700; font-size:12px; margin-bottom:2px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+              <span style="background:var(--color-primary-light); color:var(--color-primary); padding:1px 4px; border-radius:3px; font-size:9px; font-weight:800;">${jobNum || 'JOB'}</span>
+              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${title}</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-secondary); margin-bottom:2px; display:flex; align-items:center; gap:4px;">
+              <span class="material-icons-outlined" style="font-size:12px; opacity:0.7;">person</span> ${customer || 'Unknown Customer'}
+            </div>
+            <div style="font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:4px;">
+              <span class="material-icons-outlined" style="font-size:12px; opacity:0.7;">schedule</span> ${time}
+            </div>
+          `;
+        }
+
+        tooltip.innerHTML = contentHtml;
+        document.body.appendChild(tooltip);
+
+        const rect = block.getBoundingClientRect();
+        const tooltipWidth = tooltip.offsetWidth || 230;
+        const tooltipHeight = tooltip.offsetHeight || 60;
+        
+        let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+        let top = rect.top - tooltipHeight - 8;
+
+        if (left < 10) left = 10;
+        if (left + tooltipWidth > window.innerWidth - 10) {
+          left = window.innerWidth - tooltipWidth - 10;
+        }
+        if (top < 10) {
+          top = rect.bottom + 8;
+        }
+
+        tooltip.style.left = `${left + window.scrollX}px`;
+        tooltip.style.top = `${top + window.scrollY}px`;
+        
+        setTimeout(() => tooltip.classList.add('active'), 10);
+      });
+
+      block.addEventListener('mouseleave', removeTooltip);
+      block.addEventListener('click', removeTooltip);
+      block.addEventListener('dragstart', removeTooltip);
+    });
+
+    function removeTooltip() {
+      document.querySelectorAll('.schedule-tooltip-popover').forEach(t => t.remove());
+    }
+
+    // Ensure tooltips are cleared when navigating away
+    const origCleanup = window.addEventListener ? window.removeEventListener : null;
+    
+    container.querySelector('#btn-prev')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       currentDate.setDate(currentDate.getDate() - (viewMode === 'week' ? 7 : 1));
       render();
     });
-    container.querySelector('#btn-next')?.addEventListener('click', () => {
+    container.querySelector('#btn-next')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       currentDate.setDate(currentDate.getDate() + (viewMode === 'week' ? 7 : 1));
       render();
     });
-    container.querySelector('#btn-today')?.addEventListener('click', () => {
+    container.querySelector('#btn-today')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       currentDate = new Date();
       render();
     });
     container.querySelectorAll('[data-view]').forEach(btn => {
-      btn.addEventListener('click', () => { viewMode = btn.dataset.view; render(); });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); viewMode = btn.dataset.view; render(); });
     });
     container.querySelectorAll('[data-cal]').forEach(btn => {
-      btn.addEventListener('click', () => { calendarType = btn.dataset.cal; render(); });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); calendarType = btn.dataset.cal; render(); });
     });
 
     container.querySelectorAll('.tech-visibility-checkbox').forEach(cb => {
@@ -2022,6 +2209,20 @@ export function renderScheduleView(container) {
       onCalType: (c) => { calendarType = c; render(); },
     });
   }
+
+  // Listen to store updates to keep schedule in sync with background cloud sync
+  const handleStoreChange = () => {
+    if (!document.getElementById('calendar-scroll')) {
+      store.off('technicians', handleStoreChange);
+      store.off('jobs', handleStoreChange);
+      store.off('schedule', handleStoreChange);
+      return;
+    }
+    render();
+  };
+  store.on('technicians', handleStoreChange);
+  store.on('jobs', handleStoreChange);
+  store.on('schedule', handleStoreChange);
 
   render();
 }
