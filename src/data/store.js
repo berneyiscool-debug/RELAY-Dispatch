@@ -62,6 +62,8 @@ const TABLE_COLUMNS = {
     "color",
     "pay_rate",
     "force_password_change",
+    "deactivated",
+    "deactivated_at",
     "created_at",
     "updated_at"
   ],
@@ -197,6 +199,10 @@ const TABLE_COLUMNS = {
     "name",
     "code",
     "active",
+    "xero_sales_account_code",
+    "xero_expense_account_code",
+    "xero_tracking_category_name",
+    "xero_tracking_option_name",
     "created_at",
     "updated_at"
   ],
@@ -1176,6 +1182,7 @@ class DataStore {
         if (!error && data) {
           // Normalize snake_case column names back to camelCase for the frontend
           this.cache[col] = this.normalizeData(data, col);
+          await this.writeAllToIndexedDB(col, this.cache[col]);
         }
       });
 
@@ -1337,6 +1344,26 @@ class DataStore {
       record.costCenterId = record.cost_center_id;
       delete record.cost_center_id;
     }
+    if (record.xero_sales_account_code !== undefined) {
+      record.xeroSalesAccountCode = record.xero_sales_account_code;
+      delete record.xero_sales_account_code;
+    }
+    if (record.xero_expense_account_code !== undefined) {
+      record.xeroExpenseAccountCode = record.xero_expense_account_code;
+      delete record.xero_expense_account_code;
+    }
+    if (record.xero_tracking_category_name !== undefined) {
+      record.xeroTrackingCategoryName = record.xero_tracking_category_name;
+      delete record.xero_tracking_category_name;
+    }
+    if (record.xero_tracking_option_name !== undefined) {
+      record.xeroTrackingOptionName = record.xero_tracking_option_name;
+      delete record.xero_tracking_option_name;
+    }
+    if (record.deactivated_at !== undefined) {
+      record.deactivatedAt = record.deactivated_at;
+      delete record.deactivated_at;
+    }
     if (record.start_date !== undefined) {
       record.startDate = record.start_date;
       delete record.start_date;
@@ -1489,8 +1516,78 @@ class DataStore {
         record.taskPath = parsed.taskId;
         record.taskName = parsed.taskName;
         record.color = parsed.color;
+        if (parsed.date !== undefined) record.date = parsed.date;
+        if (parsed.startTime !== undefined) record.startTime = parsed.startTime;
+        if (parsed.finishTime !== undefined) record.finishTime = parsed.finishTime;
+        if (parsed.hours !== undefined) record.hours = parsed.hours;
+        if (parsed.startHour !== undefined && parsed.startHour !== null) record.startHour = parsed.startHour;
+        if (parsed.endHour !== undefined && parsed.endHour !== null) record.endHour = parsed.endHour;
+        if (parsed.dayOffset !== undefined && parsed.dayOffset !== null) record.dayOffset = parsed.dayOffset;
       } catch (e) {
         console.error(e);
+      }
+    }
+    if (collection === 'invoices') {
+      let meta = record.lineItems || record.line_items;
+      if (typeof meta === 'string') {
+        try { meta = JSON.parse(meta); } catch (e) {}
+      }
+      if (Array.isArray(meta)) {
+        record.sections = [{ id: this.generateId(), name: 'Main Phase', lineItems: meta }];
+        record.invoiceType = 'Standard';
+        record.laborProfileId = '';
+        record.issueDate = '';
+        record.originalQuoteId = '';
+        record.originalQuoteNumber = '';
+        record.originalSubtotal = 0;
+        record.approvedVariationsSum = 0;
+        record.pendingVariationsSum = 0;
+        record.totalInternalCost = 0;
+      } else if (meta && typeof meta === 'object') {
+        record.sections = meta.sections || [];
+        record.invoiceType = meta.invoiceType || 'Standard';
+        record.laborProfileId = meta.laborProfileId || '';
+        record.issueDate = meta.issueDate || '';
+        record.originalQuoteId = meta.originalQuoteId || '';
+        record.originalQuoteNumber = meta.originalQuoteNumber || '';
+        record.originalSubtotal = meta.originalSubtotal || 0;
+        record.approvedVariationsSum = meta.approvedVariationsSum || 0;
+        record.pendingVariationsSum = meta.pendingVariationsSum || 0;
+        record.totalInternalCost = meta.totalInternalCost || 0;
+      }
+    }
+    if (collection === 'quotes') {
+      let meta = record.lineItems || record.line_items;
+      if (typeof meta === 'string') {
+        try { meta = JSON.parse(meta); } catch (e) {}
+      }
+      if (Array.isArray(meta)) {
+        record.sections = [{ id: this.generateId(), name: 'Main Phase', lineItems: meta }];
+        record.laborProfileId = '';
+        record.description = '';
+        record.isTemplate = false;
+        record.templateId = '';
+      } else if (meta && typeof meta === 'object') {
+        record.sections = meta.sections || [];
+        record.laborProfileId = meta.laborProfileId || '';
+        record.description = meta.description || '';
+        record.isTemplate = meta.isTemplate || false;
+        record.templateId = meta.templateId || '';
+      }
+    }
+    if (collection === 'jobs') {
+      if (record.notes && record.notes.startsWith('__meta__:')) {
+        try {
+          const meta = JSON.parse(record.notes.substring(9));
+          record.isRecurring = meta.isRecurring || false;
+          record.recurringConfig = meta.recurringConfig || null;
+          record.preferredTime = meta.preferredTime || '';
+          record.description = meta.description || '';
+          record.parentJobId = meta.parentJobId || null;
+          record.notes = meta.notes || '';
+        } catch (e) {
+          console.error('Error parsing jobs meta:', e);
+        }
       }
     }
 
@@ -1522,6 +1619,26 @@ class DataStore {
     if (record.companyId !== undefined) {
       record.company_id = record.companyId;
       delete record.companyId;
+    }
+    if (record.xeroSalesAccountCode !== undefined) {
+      record.xero_sales_account_code = record.xeroSalesAccountCode;
+      delete record.xeroSalesAccountCode;
+    }
+    if (record.xeroExpenseAccountCode !== undefined) {
+      record.xero_expense_account_code = record.xeroExpenseAccountCode;
+      delete record.xeroExpenseAccountCode;
+    }
+    if (record.xeroTrackingCategoryName !== undefined) {
+      record.xero_tracking_category_name = record.xeroTrackingCategoryName;
+      delete record.xeroTrackingCategoryName;
+    }
+    if (record.xeroTrackingOptionName !== undefined) {
+      record.xero_tracking_option_name = record.xeroTrackingOptionName;
+      delete record.xeroTrackingOptionName;
+    }
+    if (record.deactivatedAt !== undefined) {
+      record.deactivated_at = record.deactivatedAt;
+      delete record.deactivatedAt;
     }
     if (record.userTypeId !== undefined) {
       record.user_type_id = record.userTypeId;
@@ -1716,9 +1833,57 @@ class DataStore {
       const meta = {
         taskId: record.taskId || record.taskPath || null,
         taskName: record.taskName || null,
-        color: record.color || null
+        color: record.color || null,
+        date: record.date || null,
+        startTime: record.startTime || null,
+        finishTime: record.finishTime || null,
+        hours: record.hours || null,
+        startHour: record.startHour !== undefined ? record.startHour : null,
+        endHour: record.endHour !== undefined ? record.endHour : null,
+        dayOffset: record.dayOffset !== undefined ? record.dayOffset : null
       };
       record.color = '__meta__:' + JSON.stringify(meta);
+    }
+
+    if (collection === 'jobs') {
+      const meta = {
+        isRecurring: record.isRecurring || false,
+        recurringConfig: record.recurringConfig || null,
+        preferredTime: record.preferredTime || '',
+        description: record.description || '',
+        parentJobId: record.parentJobId || null,
+        notes: record.notes || ''
+      };
+      record.notes = '__meta__:' + JSON.stringify(meta);
+    }
+
+    if (collection === 'invoices') {
+      const meta = {
+        sections: record.sections || [],
+        invoiceType: record.invoiceType || 'Standard',
+        laborProfileId: record.laborProfileId || '',
+        issueDate: record.issueDate || '',
+        originalQuoteId: record.originalQuoteId || '',
+        originalQuoteNumber: record.originalQuoteNumber || '',
+        originalSubtotal: record.originalSubtotal || 0,
+        approvedVariationsSum: record.approvedVariationsSum || 0,
+        pendingVariationsSum: record.pendingVariationsSum || 0,
+        totalInternalCost: record.totalInternalCost || 0
+      };
+      record.line_items = meta;
+      delete record.lineItems;
+    }
+
+    if (collection === 'quotes') {
+      const meta = {
+        sections: record.sections || [],
+        laborProfileId: record.laborProfileId || '',
+        description: record.description || '',
+        isTemplate: record.isTemplate || false,
+        templateId: record.templateId || ''
+      };
+      record.line_items = meta;
+      delete record.lineItems;
     }
 
     // Filter out columns not in schema to prevent 400 Bad Request
@@ -1953,29 +2118,51 @@ class DataStore {
             updates.forcePasswordChange = true;
           }
 
-          const { data, error: invokeError } = await supabase.functions.invoke('invite-user', {
-            body: {
-              action: 'update',
-              userId: id,
-              email: email,
-              username: username,
-              name: updates.name || previous.name,
-              role: updates.role || previous.role,
-              userTypeId: updates.userTypeId || previous.userTypeId,
-              color: updates.color || previous.color,
-              payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
-              password: updates.password
-            }
-          });
+          const isAuthUpdate = updates.username !== undefined ||
+                               updates.email !== undefined ||
+                               updates.password !== undefined ||
+                               updates.name !== undefined ||
+                               updates.role !== undefined ||
+                               updates.userTypeId !== undefined ||
+                               updates.color !== undefined ||
+                               updates.payRate !== undefined;
 
-          if (invokeError) {
-            throw new Error(invokeError.message || JSON.stringify(invokeError));
-          }
-          if (!data || !data.success) {
-            throw new Error(data?.error || 'Failed to update user.');
+          if (isAuthUpdate) {
+            const { data, error: invokeError } = await supabase.functions.invoke('invite-user', {
+              body: {
+                action: 'update',
+                userId: id,
+                email: email,
+                username: username,
+                name: updates.name || previous.name,
+                role: updates.role || previous.role,
+                userTypeId: updates.userTypeId || previous.userTypeId,
+                color: updates.color || previous.color,
+                payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
+                password: updates.password
+              }
+            });
+
+            if (invokeError) {
+              throw new Error(invokeError.message || JSON.stringify(invokeError));
+            }
+            if (!data || !data.success) {
+              throw new Error(data?.error || 'Failed to update user.');
+            }
           }
 
           const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
+          
+          const dbPayload = this.denormalizeRecord(updated, 'technicians');
+          const { error: dbError } = await supabase
+            .from('profiles')
+            .update(dbPayload)
+            .eq('id', id);
+
+          if (dbError) {
+            throw dbError;
+          }
+
           const cachedItems = [...this.cache.technicians];
           const idx = cachedItems.findIndex(x => x.id === id);
           if (idx !== -1) {
@@ -2024,7 +2211,24 @@ class DataStore {
     return updated;
   }
 
+  // Child records that must not outlive their parent. Deleting a parent cascades to
+  // these (scheduling/alert artifacts). Financial/labor records (invoices, timesheets)
+  // are deliberately KEPT — they're history and carry their own denormalised numbers.
+  _cascadeDelete(collection, id) {
+    const CASCADES = {
+      jobs:   [ ['schedule', 'jobId'], ['formInstances', 'jobId'], ['notifications', 'jobId'] ],
+      assets: [ ['maintenancePlans', 'assetId'], ['notifications', 'assetId'] ],
+      formTemplates: [ ['formInstances', 'templateId'] ],
+    };
+    (CASCADES[collection] || []).forEach(([childCol, fk]) => {
+      (this.cache[childCol] || []).filter(c => c[fk] === id).forEach(c => this.delete(childCol, c.id));
+    });
+  }
+
   delete(collection, id) {
+    // 0. Cascade-remove dependent child records BEFORE the parent leaves the cache
+    this._cascadeDelete(collection, id);
+
     // 1. Update memory cache (keep a copy of the removed row for rollback)
     const removed = (this.cache[collection] || []).find(item => item.id === id);
     const items = (this.cache[collection] || []).filter(item => item.id !== id);
@@ -2181,6 +2385,7 @@ class DataStore {
       },
       materialCategories: ['Consumables', 'Electrical', 'Plumbing', 'HVAC Parts', 'Fixings', 'General'],
       jobTypes: ['Electrical', 'Plumbing', 'HVAC', 'Fire Protection', 'Security', 'General Maintenance', 'Service', 'Project', 'Maintenance', 'Quote'],
+      supplierCategories: ['Electrical', 'Plumbing', 'HVAC', 'Fire Safety', 'Security', 'General'],
       laborRates: [
         { id: 'rate_1', name: 'Standard Rate',    rate: 85.00,  description: 'Normal business hours Mon–Fri', overtimeMultiplier: 1.0,  minCallOutFee: 0, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33], isDefault: true  },
         { id: 'rate_2', name: 'After Hours Rate', rate: 127.50, description: 'Evenings and early mornings',      overtimeMultiplier: 1.5,  minCallOutFee: 45, applicableDays: ['Mon','Tue','Wed','Thu','Fri'], activeHours: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,34,35,36,37,38,39,40,41,42,43,44,45,46,47], isDefault: false },
