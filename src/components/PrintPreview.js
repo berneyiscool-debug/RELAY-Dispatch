@@ -49,7 +49,16 @@ export function showPrintPreview({ type, data }) {
   
   const settings = store.getSettings();
   const scopedStyle = document.createElement('style');
-  scopedStyle.innerHTML = getPrintStyles(settings).replace(/body\s*{/g, '.print-document {');
+  // Scope the themed styles under the #print-document ID via CSS nesting. The ID
+  // out-ranks the static `.print-document .pdf-*` fallback rules in components.css,
+  // which otherwise override the user's documentTheme colours with the default blue.
+  // (@import must stay top-level — nesting it is invalid CSS.)
+  // NB: font URLs contain ';' inside url(…), so match through the closing paren.
+  const IMPORT_RE = /@import\s+url\([^)]*\)[^;]*;/g;
+  const rawStyles = getPrintStyles(settings);
+  const styleImports = (rawStyles.match(IMPORT_RE) || []).join('\n');
+  const styleRules = rawStyles.replace(IMPORT_RE, '').replace(/body\s*\{/g, '& {');
+  scopedStyle.innerHTML = `${styleImports}\n#print-document {\n${styleRules}\n}`;
   doc.appendChild(scopedStyle);
 
   const innerDoc = document.createElement('div');
