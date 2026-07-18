@@ -196,7 +196,7 @@ export function renderJobsList(container, params) {
                     dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
                     notes: worksDescription || ''
                   });
-                  store.update('jobs', job.id, { status: 'Invoiced' });
+                  // Jobs flip to "Invoiced" automatically when their draft is sent (store hook)
                 });
                 table.clearSelection();
                 renderJobsList(container);
@@ -257,7 +257,7 @@ export function renderJobsList(container, params) {
                 import('../../components/Modal.js').then(({ showModal }) => {
                   showModal({
                     title: 'Confirm Bulk Invoicing',
-                    content: `<p>Are you sure you want to generate draft invoices for all ${ids.length} selected jobs? This will set their statuses to 'Invoiced'.</p>`,
+                    content: `<p>Are you sure you want to generate draft invoices for all ${ids.length} selected jobs? Their statuses will change to 'Invoiced' once each invoice is sent.</p>`,
                     actions: [
                       { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
                       {
@@ -344,11 +344,8 @@ export function renderJobsList(container, params) {
                   total: subtotal * (1 + taxRate),
                   issueDate: new Date().toISOString(),
                   dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-                  notes: worksDoneNotes.join('\n\n')
-                });
-
-                jobs.forEach(job => {
-                  store.update('jobs', job.id, { status: 'Invoiced' });
+                  notes: worksDoneNotes.join('\n\n'),
+                  jobIds: jobs.map(j => j.id) // jobs flip to "Invoiced" when this draft is sent
                 });
 
                 table.clearSelection();

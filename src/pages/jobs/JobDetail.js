@@ -95,7 +95,7 @@ export function renderJobDetail(container, { id }) {
       issueDate: new Date().toISOString(), dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
       notes: worksDescription || ''
     });
-    store.update('jobs', id, { status: 'Invoiced' });
+    // Job flips to "Invoiced" automatically when this draft is sent (store hook)
     showToast(`${type} Invoice created`, 'success');
     router.navigate(`/invoices/${inv.id}`);
   }

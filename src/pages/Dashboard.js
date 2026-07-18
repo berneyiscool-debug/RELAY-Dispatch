@@ -1719,7 +1719,7 @@ function wireWidgetControls(grid, data) {
         notes: ''
       });
 
-      store.update('jobs', job.id, { status: 'Invoiced' });
+      // Job flips to "Invoiced" automatically when this draft is sent (store hook)
 
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast(`Standard Invoice Created for #${job.number}`, 'success');

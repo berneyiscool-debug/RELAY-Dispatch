@@ -616,13 +616,9 @@ export function renderProjectDetail(container, params) {
           total: invoiceSubtotal * (1 + store.getTaxRate()),
           issueDate: new Date().toISOString(),
           dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-          notes: `Consolidated milestone billing for Project ${project.number} stages: ${selectedJobs.map(j => j.number).join(', ')}.`
+          notes: `Consolidated milestone billing for Project ${project.number} stages: ${selectedJobs.map(j => j.number).join(', ')}.`,
+          jobIds: selectedJobs.map(j => j.id) // jobs flip to "Invoiced" when this draft is sent
         });
-
-        // Update selected jobs status to Invoiced
-        for (const job of selectedJobs) {
-          await store.update('jobs', job.id, { status: 'Invoiced' });
-        }
 
         showToast('Consolidated Invoice generated successfully', 'success');
         router.navigate(`/invoices/${inv.id}`);

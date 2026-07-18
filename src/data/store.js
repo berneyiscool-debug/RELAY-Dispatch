@@ -1554,6 +1554,7 @@ class DataStore {
         record.approvedVariationsSum = meta.approvedVariationsSum || 0;
         record.pendingVariationsSum = meta.pendingVariationsSum || 0;
         record.totalInternalCost = meta.totalInternalCost || 0;
+        record.jobIds = meta.jobIds || []; // consolidated invoices link multiple jobs
       }
     }
     if (collection === 'quotes') {
@@ -1868,7 +1869,8 @@ class DataStore {
         originalSubtotal: record.originalSubtotal || 0,
         approvedVariationsSum: record.approvedVariationsSum || 0,
         pendingVariationsSum: record.pendingVariationsSum || 0,
-        totalInternalCost: record.totalInternalCost || 0
+        totalInternalCost: record.totalInternalCost || 0,
+        jobIds: record.jobIds || [] // consolidated invoices link multiple jobs
       };
       record.line_items = meta;
       delete record.lineItems;
@@ -1949,6 +1951,33 @@ class DataStore {
     } catch (e) {}
   }
 
+  // All jobs an invoice bills: single jobId and/or consolidated jobIds
+  _invoiceJobIds(inv) {
+    return [inv?.jobId, ...(inv?.jobIds || [])].filter(Boolean);
+  }
+
+  // Invoice lifecycle → job status sync. Jobs are only marked "Invoiced" when their
+  // invoice actually leaves Draft (Sent/Paid/etc.) — NOT when a draft is created, so
+  // abandoning/deleting a draft never strands jobs in the wrong status.
+  _markJobsInvoiced(inv) {
+    this._invoiceJobIds(inv).forEach(jid => {
+      const job = this.getById('jobs', jid);
+      if (job && job.status !== 'Invoiced') this.update('jobs', jid, { status: 'Invoiced' });
+    });
+  }
+
+  // When an invoice is deleted, revert any of its jobs still marked "Invoiced" —
+  // unless another invoice also bills that job.
+  _revertJobsOnInvoiceDelete(inv) {
+    this._invoiceJobIds(inv).forEach(jid => {
+      const job = this.getById('jobs', jid);
+      if (!job || job.status !== 'Invoiced') return;
+      const billedElsewhere = (this.cache.invoices || []).some(other =>
+        other.id !== inv.id && this._invoiceJobIds(other).includes(jid));
+      if (!billedElsewhere) this.update('jobs', jid, { status: 'Completed' });
+    });
+  }
+
   // Pushes write changes asynchronously to Supabase while updating local cache synchronously
   create(collection, item) {
     item.id = item.id || this.generateId();
@@ -1984,6 +2013,11 @@ class DataStore {
     items.push(item);
     this.cache[collection] = items;
     this.emit(collection, items);
+
+    // Rare path: an invoice created already past Draft marks its jobs immediately
+    if (collection === 'invoices' && item.status && item.status !== 'Draft' && item.status !== 'Void') {
+      this._markJobsInvoiced(item);
+    }
 
     // If not running in cloud mode, fall back to IndexedDB / Local Folder Sync
     if (!this.companyId || this.companyId.startsWith('acct_')) {
@@ -2093,6 +2127,11 @@ class DataStore {
       if (collection === 'jobs' && updates.status === 'Completed' && previous.status !== 'Completed') {
         this.handleJobCompletionSideEffects(updated, previous);
       }
+      // Invoice leaves Draft → now (and only now) its jobs become "Invoiced"
+      if (collection === 'invoices' && updates.status && previous.status === 'Draft'
+          && updates.status !== 'Draft' && updates.status !== 'Void') {
+        this._markJobsInvoiced(updated);
+      }
       this.writeRecordToIndexedDB(collection, updated).catch(err => {
         console.error(`Error saving updated ${collection} to IndexedDB:`, err);
       });
@@ -2189,6 +2228,12 @@ class DataStore {
       this.handleJobCompletionSideEffects(updated, previous);
     }
 
+    // 2b. Invoice leaves Draft → now (and only now) its jobs become "Invoiced"
+    if (collection === 'invoices' && updates.status && previous.status === 'Draft'
+        && updates.status !== 'Draft' && updates.status !== 'Void') {
+      this._markJobsInvoiced(updated);
+    }
+
     // 3. Write updates asynchronously to Supabase
     const dbPayload = this.denormalizeRecord(updated, collection);
     const table = TABLE_MAP[collection];
@@ -2234,6 +2279,11 @@ class DataStore {
     const items = (this.cache[collection] || []).filter(item => item.id !== id);
     this.cache[collection] = items;
     this.emit(collection, items);
+
+    // Deleting an invoice frees any jobs it (alone) had marked "Invoiced"
+    if (collection === 'invoices' && removed) {
+      this._revertJobsOnInvoiceDelete(removed);
+    }
 
     // If not running in cloud mode, fall back to IndexedDB / Folder Sync
     if (!this.companyId || this.companyId.startsWith('acct_')) {
