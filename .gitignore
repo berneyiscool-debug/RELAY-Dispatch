@@ -19,3 +19,7 @@ dist-electron
 # Editor / OS noise
 .DS_Store
 *.log
+
+# Debug / scratch experiments — never commit
+scratch/
+scratch_*

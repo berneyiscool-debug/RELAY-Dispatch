@@ -22,9 +22,14 @@ export function renderJobsList(container, params) {
         <button class="btn btn-primary" id="btn-new-job" data-tooltip="Create a new project or service job record" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Job</button>
       </div>` : ''}
     </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center;">
-      <div id="jobs-filters-carousel-container" style="flex: 0 0 50%; max-width: 50%; overflow:hidden"></div>
-      <div class="toolbar-search">
+    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
+      <div id="jobs-filters-carousel-container" style="flex: 1 1 auto; overflow:hidden"></div>
+      <div style="display:flex; align-items:center; gap:8px; flex: 0 0 auto;">
+        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+        <span style="font-size:12px; color:var(--text-secondary)">to</span>
+        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+      </div>
+      <div class="toolbar-search" style="flex: 0 0 auto;">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search jobs..." id="jobs-search" />
       </div>
@@ -33,7 +38,7 @@ export function renderJobsList(container, params) {
   `;
 
   let filteredData = [...jobs];
-  const sb = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary' };
+  const sb = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary','Recurring Template':'badge-purple' };
   const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
 
   const columns = [
@@ -49,7 +54,9 @@ export function renderJobsList(container, params) {
         return `<span class="text-secondary truncate" style="max-width:150px;display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary)">person</span> ${names}</span>`;
       }
     },
-    { key: 'status', label: 'Status', render: (r) => `
+    { key: 'status', label: 'Status', render: (r) => r.isRecurring ? `
+      <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
+    ` : `
       <select class="badge ${sb[r.status] || 'badge-neutral'} job-list-status-select" data-id="${r.id}">
         ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
           <option value="${s}" ${r.status === s ? 'selected' : ''}>${s}</option>
@@ -312,13 +319,13 @@ export function renderJobsList(container, params) {
                   sections.forEach(sec => {
                     combinedSections.push({
                       ...sec,
-                      name: `Job #${job.number} — ${sec.name}`
+                      name: `${job.title || 'Untitled Job'} — ${sec.name}`
                     });
                   });
                   
                   subtotal += jobSub;
                   if (worksDescription) {
-                    worksDoneNotes.push(`Job #${job.number}:\n${worksDescription}`);
+                    worksDoneNotes.push(`${job.title || 'Untitled Job'}:\n${worksDescription}`);
                   }
                 });
 
@@ -514,19 +521,35 @@ export function renderJobsList(container, params) {
 
   let tagFilteredData = [...jobs];
   let searchQuery = '';
+  let filterStartDate = '';
+  let filterEndDate = '';
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
     const filtered = tagFilteredData.filter(j => {
-      if (!q) return true;
-      const num = j.number || '';
-      const title = j.title || '';
-      const custName = j.customerName || '';
-      const techName = j.technicianName || '';
-      return num.toLowerCase().includes(q) || 
-             title.toLowerCase().includes(q) || 
-             custName.toLowerCase().includes(q) || 
-             techName.toLowerCase().includes(q);
+      if (q) {
+        const num = j.number || '';
+        const title = j.title || '';
+        const custName = j.customerName || '';
+        const techName = j.technicianName || '';
+        if (!num.toLowerCase().includes(q) && 
+            !title.toLowerCase().includes(q) && 
+            !custName.toLowerCase().includes(q) && 
+            !techName.toLowerCase().includes(q)) {
+          return false;
+        }
+      }
+
+      const dateVal = j.scheduledDate || j.createdAt || '';
+      const jDateStr = dateVal ? dateVal.split('T')[0] : '';
+      if (filterStartDate && jDateStr < filterStartDate) {
+        return false;
+      }
+      if (filterEndDate && jDateStr > filterEndDate) {
+        return false;
+      }
+
+      return true;
     });
     table.updateData(filtered);
   }
@@ -543,6 +566,16 @@ export function renderJobsList(container, params) {
 
   container.querySelector('#jobs-search').addEventListener('input', (e) => {
     searchQuery = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
+    filterStartDate = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
+    filterEndDate = e.target.value;
     applyFilters();
   });
 

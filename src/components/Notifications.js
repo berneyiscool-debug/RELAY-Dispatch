@@ -33,7 +33,8 @@ export function showToast(message, type = 'info', options = {}) {
       title,
       message,
       link,
-      read: false
+      read: false,
+      createdBy: 'System'
     });
   }
 
@@ -81,7 +82,8 @@ export function showToast(message, type = 'info', options = {}) {
 
 export function addSystemNotification(title, message, link) {
   store.create('notifications', {
-    title, message, link, read: false
+    title, message, link, read: false,
+    createdBy: 'System'
   });
   showToast(`${title}: ${message}`, 'info', { link, skipBell: true });
 }

@@ -12,11 +12,96 @@ import { supabase } from '../utils/supabase.js';
 import { hasPermission } from '../utils/permissions.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
+import { loadUserMemory, saveUserMemory, clearStaleMemory } from '../utils/userMemory.js';
 
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
-// Files the user has attached to the next message (not yet sent). Raw File
+// Files the user has attached to the next message (not yet sent).
+function renderIntroDashboard(thread, memory) {
+  // Get user details
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const userName = currentUser ? (currentUser.name || 'Admin') : 'Admin';
+  const firstName = userName.split(' ')[0];
+
+  // Get current time greeting
+  const hours = new Date().getHours();
+  let timeGreeting = 'Good day';
+  if (hours < 12) timeGreeting = 'Good morning';
+  else if (hours < 18) timeGreeting = 'Good afternoon';
+  else timeGreeting = 'Good evening';
+
+  // Retrieve metrics
+  const jobs = store.getAll('jobs') || [];
+  const quotes = store.getAll('quotes') || [];
+  const invoices = store.getAll('invoices') || [];
+  
+  const activeJobs = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress').length;
+  const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending' || q.status === 'Draft').length;
+  const overdueInvoices = invoices.filter(i => i.status === 'Overdue').length;
+
+  const count = memory.interactionCount || 0;
+  const welcomeText = count > 0 
+    ? `Welcome back! You've checked in with Deputy ${count} ${count === 1 ? 'time' : 'times'} recently.` 
+    : `Welcome to Deputy! I'm here to help you coordinate your dispatch and jobs today.`;
+
+  const card = document.createElement('div');
+  card.className = 'relay-intro-card assistant-intro';
+  card.innerHTML = `
+    <div class="relay-intro-banner">
+      <div class="relay-intro-emoji">👋</div>
+      <div class="relay-intro-welcome">
+        <h3>${timeGreeting}, ${escapeHtml(firstName)}!</h3>
+        <p>${welcomeText}</p>
+      </div>
+    </div>
+    
+    <div class="relay-intro-stats-grid">
+      <div class="relay-stat-item" data-cmd="how many overdue invoices">
+        <span class="relay-stat-num">${overdueInvoices}</span>
+        <span class="relay-stat-label">Overdue Invoices</span>
+      </div>
+      <div class="relay-stat-item" data-cmd="how many active jobs">
+        <span class="relay-stat-num">${activeJobs}</span>
+        <span class="relay-stat-label">Active Jobs</span>
+      </div>
+      <div class="relay-stat-item" data-cmd="how many pending quotes">
+        <span class="relay-stat-num">${pendingQuotes}</span>
+        <span class="relay-stat-label">Pending Quotes</span>
+      </div>
+    </div>
+
+    <div class="relay-intro-suggestions">
+      <div class="relay-suggestions-title">Quick Commands</div>
+      <div class="relay-suggestion-chips">
+        <button class="relay-chip-btn" data-cmd="add a schedule widget">📅 Add Schedule Widget</button>
+        <button class="relay-chip-btn" data-cmd="fit the canvas">🔍 Zoom Canvas to Fit</button>
+        <button class="relay-chip-btn" data-cmd="lock the canvas">🔒 Lock Canvas Layout</button>
+        <button class="relay-chip-btn" data-cmd="how many active jobs do we have?">🛠️ Count Active Jobs</button>
+      </div>
+    </div>
+  `;
+
+  // Attach click listeners to all items that submit a command
+  const submitCmd = (cmd) => {
+    const panelEl = thread.closest('.relay-panel');
+    const inputEl = panelEl ? panelEl.querySelector('#relay-input') : null;
+    const sendBtn = panelEl ? panelEl.querySelector('#relay-send') : null;
+    if (inputEl && sendBtn) {
+      inputEl.value = cmd;
+      sendBtn.click();
+    }
+  };
+
+  card.querySelectorAll('[data-cmd]').forEach(el => {
+    el.addEventListener('click', () => {
+      submitCmd(el.getAttribute('data-cmd'));
+    });
+  });
+
+  thread.appendChild(card);
+  return card;
+}
 // objects — converted to image data URLs at send time so previews stay cheap.
 let pendingAttachments = [];
 // When true, per-record success toasts are suppressed so a bulk import shows one
@@ -60,23 +145,25 @@ function saveChatHistory(history) {
   }
 }
 
-const GREETINGS = [
-  "Hi, I'm Deputy. I can add page widgets, jump to your saved views, and fit or lock the canvas. Try “add a schedule widget” or ask “how many overdue invoices?”",
-  "Hi, I'm Deputy. How can I help you manage your dispatch and jobs today?",
-  "Hello! Deputy here. Try asking me to “add a schedule widget” or “show me the today view”. What's on your mind?",
-  "Greetings! I'm your co-pilot Deputy. I can help you create customers, assign jobs, or quickly look up metrics. What do you need?",
-  "Hey! Deputy is ready to assist. Need to check on overdue invoices, add a new job, or fit the canvas? Just let me know!",
-  "Welcome back! I'm Deputy, your dispatch assistant. How can I assist you with your operations today?",
-  "Hi there! Deputy here. I can help you manage your dispatch layout, check on jobs, and look up details. Try: “how many active jobs do we have?”",
-  "Hello! Ready to dispatch? I can create quotes, jobs, and invoices for you. What can I do for you today?"
-];
+
 
 export function isRelayOpen() { return !!panel; }
 export function onRelayToggle(cb) { onStateChange = cb; }
 
 export function toggleRelay() { panel ? closeRelay() : openRelay(); }
 
-export function openRelay() {
+export async function openDeputyWithPrompt(promptText) {
+  if (!panel) {
+    await openRelay();
+  }
+  const input = panel.querySelector('#relay-input');
+  if (input) {
+    input.value = promptText;
+    input.focus();
+  }
+}
+
+export async function openRelay() {
   if (panel) return;
 
   if (!hasPermission('AI Assistant', 'use')) return;
@@ -99,7 +186,7 @@ export function openRelay() {
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
         <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
-        <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button>
+        <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button><button class="assistant-reset-memory" title="Reset Assistant Memory"><span class="material-icons-outlined">refresh</span></button>
       </div>
     </div>
     <div class="relay-thread" id="relay-thread"></div>
@@ -130,34 +217,38 @@ export function openRelay() {
   // Load persisted history
   chatHistory = loadChatHistory();
 
-  // Render all messages from history
+  // Remove any previous intro message (in case the panel was reopened without full reload)
+  const existingIntro = thread.querySelector('.assistant-intro');
+  if (existingIntro) existingIntro.remove();
+
+  // Render all persisted messages from history first (so they are above the greeting)
   chatHistory.forEach(msg => {
     const uiRole = msg.role === 'assistant' ? 'relay' : msg.role;
     addMessage(thread, uiRole, msg.content);
   });
 
-  // If no history exists, generate a dynamic context-aware greeting
-  if (chatHistory.length === 0) {
-    const typing = addTyping(thread);
-    (async () => {
-      try {
-        const s = store.getSettings();
-        const ai = s.ai || {};
-        if (canUseAI(ai)) {
-          const greeting = await callAIEngineGreeting();
-          typing.remove();
-          addMessage(thread, 'relay', greeting);
-        } else {
-          throw new Error('AI not enabled');
-        }
-      } catch (err) {
-        console.warn('AI welcome greeting failed, falling back to static greetings:', err);
-        typing.remove();
-        const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
-        addMessage(thread, 'relay', randomGreeting);
-      }
-      thread.scrollTop = thread.scrollHeight;
-    })();
+  // Load and possibly clear stale user memory
+  let memory = await loadUserMemory();
+  memory = clearStaleMemory(memory);
+  const card = renderIntroDashboard(thread, memory);
+
+  // Update interaction count and timestamp
+  const updatedMemory = {
+    ...memory,
+    interactionCount: (memory.interactionCount || 0) + 1,
+    lastUpdated: Date.now(),
+  };
+  await saveUserMemory(updatedMemory);
+
+  // Scroll so the intro card starts at the top of the viewport
+  if (chatHistory.length > 0) {
+    thread.classList.add('relay-thread-has-history');
+    setTimeout(() => {
+      thread.scrollTop = card.offsetTop;
+    }, 50);
+  } else {
+    thread.classList.remove('relay-thread-has-history');
+    thread.scrollTop = 0;
   }
 
   const submit = async () => {
@@ -280,6 +371,10 @@ export function openRelay() {
   }
 
   panel.querySelector('.relay-close').addEventListener('click', closeRelay);
+panel.querySelector('.assistant-reset-memory')?.addEventListener('click', async () => {
+  await saveUserMemory({});
+  location.reload();
+});
   
   const btnClearChat = panel.querySelector('.relay-clear-chat');
   if (btnClearChat) {
@@ -290,8 +385,7 @@ export function openRelay() {
         localStorage.removeItem(key);
         localStorage.removeItem(draftKey);
         thread.innerHTML = '';
-        const randomGreeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
-        addMessage(thread, 'relay', randomGreeting);
+        renderIntroDashboard(thread, {});
         showToast('Chat history cleared.', 'success');
       }
     });
@@ -398,7 +492,7 @@ function addMessage(thread, role, text) {
         submitBtn.disabled = true;
 
         const val = selectedVals.join(', ');
-        const panel = thread.closest('#relay-panel');
+        const panel = thread.closest('.relay-panel');
         const input = panel ? panel.querySelector('#relay-input') : null;
         const sendBtn = panel ? panel.querySelector('#relay-send') : null;
         if (input && sendBtn) {
@@ -417,7 +511,7 @@ function addMessage(thread, role, text) {
           });
           btn.classList.add('selected');
 
-          const panel = thread.closest('#relay-panel');
+          const panel = thread.closest('.relay-panel');
           const input = panel ? panel.querySelector('#relay-input') : null;
           const sendBtn = panel ? panel.querySelector('#relay-send') : null;
           if (input && sendBtn) {
@@ -750,34 +844,12 @@ async function callAIEngine() {
   return parseAndExecuteActions(reply);
 }
 
-function getAssistantWelcomeContext() {
-  const settings = store.getSettings();
-  const technicians = store.getAll('technicians') || [];
-  const customers = store.getAll('customers') || [];
-  const jobs = store.getAll('jobs') || [];
-  const quotes = store.getAll('quotes') || [];
-  const invoices = store.getAll('invoices') || [];
-  const leads = store.getAll('leads') || [];
-
-  const activeJobs = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress').length;
-  const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending').length;
-  const overdueInvoices = invoices.filter(i => i.status === 'Overdue').length;
-  const unscheduledJobs = jobs.filter(j => j.status === 'Pending').length;
-
-  return `Company/Workspace Name: ${settings.name}
-Total Registered Technicians: ${technicians.length}
-Total Customers: ${customers.length}
-Active Jobs (Scheduled/In Progress): ${activeJobs}
-Unscheduled Jobs (Pending): ${unscheduledJobs}
-Quotes Awaiting Client Approval: ${pendingQuotes}
-Overdue Invoices: ${overdueInvoices}
-New Leads: ${leads.filter(l => l.status === 'New').length}`;
-}
 
 async function callAIEngineGreeting() {
   const s = store.getSettings();
   const ai = s.ai || {};
   const welcomeContext = getAssistantWelcomeContext();
+  const userMemory = getUserMemory();
   
   const systemPrompt = `You are Deputy, the intelligent field service co-pilot assistant for ${s.name || 'this company'}.
 You are greeting the user as they open the assistant panel.
@@ -855,15 +927,24 @@ function getSystemContext() {
   const invoices = store.getAll('invoices') || [];
   const quotes = store.getAll('quotes') || [];
   const customers = store.getAll('customers') || [];
-  const technicians = store.getAll('technicians') || [];
+  const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
 
   const activeJobs = jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled');
+  const completedJobs = jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
+  const pendingJobs = jobs.filter(j => j.status === 'Pending');
   const overdueInvoices = invoices.filter(i => i.status === 'Overdue');
   const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Draft');
 
-  const jobsList = activeJobs.slice(0, 8).map(j => `Job #${j.number || j.id}: ${j.title} (${j.status}) - Cust: ${j.customerName || 'None'} - Tech: ${j.technicianName || 'Unassigned'} - Date: ${j.scheduledDate || 'TBD'}`).join('\n');
+  const allTechs = store.getAll('technicians') || [];
+  const deactivatedTechNames = new Set(allTechs.filter(t => t.deactivated).map(t => t.name.toLowerCase()));
+  const jobsList = activeJobs.slice(0, 8).map(j => {
+    const techName = j.technicianName || 'Unassigned';
+    const isDeactivated = techName && deactivatedTechNames.has(techName.toLowerCase());
+    const techDisplay = isDeactivated ? `${techName} (DEACTIVATED)` : techName;
+    return `Job #${j.number || j.id}: ${j.title} (${j.status}) - Cust: ${j.customerName || 'None'} - Tech: ${techDisplay} - Date: ${j.scheduledDate || 'TBD'}`;
+  }).join('\n');
   const overdueInvoicesList = overdueInvoices.slice(0, 8).map(i => `Invoice #${i.number || i.id}: ${i.title} - Total: $${i.total} - Due: ${i.dueDate || 'TBD'}`).join('\n');
-  const techsList = technicians.map(t => `${t.name} (${t.role || 'Tech'}${t.deactivated ? ', deactivated' : ''}) - Username: ${t.username}`).join(', ');
+  const techsList = technicians.map(t => `${t.name} (${t.role || 'Tech'}) - Username: ${t.username}`).join(', ');
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const userId = currentUser ? currentUser.id : 'default';
@@ -875,6 +956,7 @@ function getSystemContext() {
   return `Assistant Role & Core Competencies:
 - You are the central dispatch co-pilot and operations coordinator. You do NOT just answer questions passively; you proactively manage task allocation, schedule jobs to the best-suited technicians, resolve scheduling conflicts, and coordinate field operations.
 - Always check the list of active technicians and their roles. When a job is mentioned, match it to the technician with the corresponding role/skills. Suggest the best candidates based on workload, and proactively allocate the job using the appropriate action tags.
+- You must ONLY use, suggest, or assign jobs to technicians who are currently listed in the "Active Technicians" list below. Do NOT reference, suggest, or assign jobs to any other technicians (including those from older chat history, memory, or previous job assignments) as they are deactivated.
 - Be highly analytical and helpful. When answering user questions about CRM metrics, synthesize a clear, structural summary from the live data context (e.g., outlining workload distribution, quote conversion states, or timesheet approvals).
 
 Assistant Tone & Formatting Guidelines:
@@ -886,6 +968,7 @@ Assistant Tone & Formatting Guidelines:
 Current Live CRM Data Context (updated real-time):
 - Active Technicians: ${techsList || 'None'}
 - Total Registered Customers: ${customers.length}
+- Jobs Summary: Total: ${jobs.length}, Active/Scheduled: ${activeJobs.length}, Completed/Invoiced: ${completedJobs.length}, Pending: ${pendingJobs.length}
 - Active/Scheduled Jobs (${activeJobs.length}):
 ${jobsList || 'None'}
 - Overdue Invoices (${overdueInvoices.length}):
@@ -1082,7 +1165,15 @@ function executeAction(action, param) {
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase() || c.company?.toLowerCase() === customerName.toLowerCase());
 
-        const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
+        const allTechs = store.getAll('technicians') || [];
+        if (techName) {
+          const isDeactivated = allTechs.some(t => t.name.toLowerCase() === techName.toLowerCase() && t.deactivated);
+          if (isDeactivated) {
+            showToast(`Cannot create job: ${techName} is a deactivated technician.`, 'error');
+            return;
+          }
+        }
+        const technicians = allTechs.filter(t => !t.deactivated);
         const tech = technicians.find(t => t.name.toLowerCase() === techName.toLowerCase());
 
         const newItem = {
@@ -1214,15 +1305,26 @@ function executeAction(action, param) {
           if (newValue === 'null') val = null;
           if (!isNaN(newValue) && newValue !== '') val = Number(newValue);
 
+          if (targetField === 'technicianName' && val) {
+            const allTechs = store.getAll('technicians') || [];
+            const isDeactivated = allTechs.some(t => t.name.toLowerCase() === val.toLowerCase() && t.deactivated);
+            if (isDeactivated) {
+              showToast(`Cannot assign job: ${val} is a deactivated technician.`, 'error');
+              return;
+            }
+          }
+
           item[targetField] = val;
           item.updatedAt = new Date().toISOString();
 
           // Try to link technician_id if tech name is updated
           if (targetField === 'technicianName') {
-            const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
-            const tech = technicians.find(t => t.name.toLowerCase() === val.toLowerCase());
+            const allTechs = store.getAll('technicians') || [];
+            const tech = allTechs.filter(t => !t.deactivated).find(t => t.name.toLowerCase() === (val || '').toLowerCase());
             if (tech) {
               item.technician_id = tech.id;
+            } else {
+              item.technician_id = null;
             }
           }
 

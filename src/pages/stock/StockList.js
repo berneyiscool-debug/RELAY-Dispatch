@@ -546,7 +546,7 @@ export function renderStockList(container, params) {
   // --- DRAWERS & MODALS BACKPORT ---
 
   function openNewStockDrawer() {
-    const technicians = store.getAll('technicians');
+    const technicians = store.getAll('technicians').filter(t => !t.deactivated);
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="form-group">
@@ -624,7 +624,7 @@ export function renderStockList(container, params) {
 
   function openTransferDrawer() {
     const stockItems = store.getAll('stock');
-    const technicians = store.getAll('technicians');
+    const technicians = store.getAll('technicians').filter(t => !t.deactivated);
     
     if (stockItems.length === 0) {
       showToast('No stock items available to transfer', 'error');

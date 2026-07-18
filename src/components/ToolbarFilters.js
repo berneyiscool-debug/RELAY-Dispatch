@@ -16,7 +16,7 @@ export function createToolbarFilters({ container, originalData, filterType, onFi
     const tags = [{ key: 'all', label: `All (${originalData.length})` }];
 
     if (filterType === 'jobs') {
-      const statuses = ['Pending', 'Scheduled', 'In Progress', 'Completed', 'On Hold', 'Invoiced'];
+      const statuses = ['Pending', 'Scheduled', 'In Progress', 'Completed', 'On Hold', 'Invoiced', 'Recurring Template'];
       statuses.forEach(status => {
         const count = originalData.filter(j => j.status === status).length;
         if (count > 0) tags.push({ key: `status:${status}`, label: `${status} (${count})` });

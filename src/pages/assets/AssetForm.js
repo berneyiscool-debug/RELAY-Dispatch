@@ -19,7 +19,7 @@ export function renderAssetForm(container, params) {
     return;
   }
 
-  const staff = store.getAll('technicians');
+  const staff = store.getAll('technicians').filter(s => !s.deactivated || asset.assignedToId === s.id);
   const customers = store.getAll('customers');
 
   // Find sites for selected customer, if any

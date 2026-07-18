@@ -10,7 +10,7 @@ import { escapeHTML } from '../../utils/security.js';
 export function renderStockForm(container, { id }) {
   const isEdit = id && id !== 'new';
   const item = isEdit ? store.getById('stock', id) : {};
-  const technicians = store.getAll('technicians');
+  const technicians = store.getAll('technicians').filter(t => !t.deactivated || item.location === `Vehicle - ${t.name}`);
   const assets = store.getAll('assets');
   const activeSuppliers = store.getAll('suppliers').filter(s => s.active !== false);
 

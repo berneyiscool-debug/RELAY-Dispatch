@@ -30,6 +30,23 @@ export function renderContractorPortal(container, params) {
 
   const settings = store.getSettings();
 
+  if (settings.enableContractorPortal === false) {
+    container.innerHTML = `
+      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border-color);">
+        <span class="material-icons-outlined text-warning" style="font-size: 64px; margin-bottom: 20px;">lock_clock</span>
+        <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Subcontractor Portal Offline</h2>
+        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">
+          The secure subcontractor portal is currently offline. Please contact our main operations team for work orders or timesheet submittals:
+        </p>
+        <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
+          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
+          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
+        </div>
+      </div>
+    `;
+    return;
+  }
+
   // --- Magic Link PIN/Passcode Security Layer ---
   // If passcode is not configured, show First-Time Setup
   if (!contractor.portalPasscode) {

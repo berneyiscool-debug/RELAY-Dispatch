@@ -20,8 +20,8 @@ export function renderQuotesList(container, params) {
         <button class="btn btn-primary" id="btn-new-quote" data-tooltip="Draft a new pricing proposal or project estimation for a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Quote</button>
       </div>` : ''}
     </div>
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
+    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
+      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
         <button class="toolbar-filter active" data-filter="all">All (${quotes.length})</button>
         <button class="toolbar-filter" data-filter="Draft">Draft</button>
         <button class="toolbar-filter" data-filter="Finalised">Finalised</button>
@@ -29,7 +29,12 @@ export function renderQuotesList(container, params) {
         <button class="toolbar-filter" data-filter="Accepted">Accepted</button>
         <button class="toolbar-filter" data-filter="Declined">Declined</button>
       </div>
-      <div class="toolbar-search">
+      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
+        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+        <span style="font-size:12px; color:var(--text-secondary)">to</span>
+        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+      </div>
+      <div class="toolbar-search" style="flex:0 0 auto;">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search quotes..." id="quotes-search" />
       </div>
@@ -95,7 +100,7 @@ export function renderQuotesList(container, params) {
                   actions: [
                     { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
                     { label: 'Convert to Jobs', className: 'btn-primary', onClick: c => {
-                      const techs = store.getAll('technicians') || [];
+                      const techs = (store.getAll('technicians') || []).filter(t => !t.deactivated);
                       ids.forEach(id => {
                         const quote = store.getById('quotes', id);
                         if (quote) {
@@ -263,26 +268,60 @@ export function renderQuotesList(container, params) {
     btnNewQuote.addEventListener('click', () => router.navigate('/quotes/new'));
   }
 
+  let activeStatusFilter = 'all';
+  let searchQuery = '';
+  let filterStartDate = '';
+  let filterEndDate = '';
+
+  function applyFilters() {
+    let filtered = [...quotes];
+    if (activeStatusFilter !== 'all') {
+      filtered = filtered.filter(q => q.status === activeStatusFilter);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(qt => {
+        const num = qt.number || '';
+        const custName = qt.customerName || '';
+        const title = qt.title || '';
+        return num.toLowerCase().includes(q) || 
+               custName.toLowerCase().includes(q) || 
+               title.toLowerCase().includes(q);
+      });
+    }
+    if (filterStartDate || filterEndDate) {
+      filtered = filtered.filter(q => {
+        const dateVal = q.createdAt || '';
+        const qDateStr = dateVal ? dateVal.split('T')[0] : '';
+        if (filterStartDate && qDateStr < filterStartDate) return false;
+        if (filterEndDate && qDateStr > filterEndDate) return false;
+        return true;
+      });
+    }
+    table.updateData(filtered);
+  }
+
   container.querySelectorAll('.toolbar-filter').forEach(btn => {
     btn.addEventListener('click', () => {
       container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const f = btn.dataset.filter;
-      filteredData = f === 'all' ? [...quotes] : quotes.filter(q => q.status === f);
-      table.updateData(filteredData);
+      activeStatusFilter = btn.dataset.filter;
+      applyFilters();
     });
   });
 
   container.querySelector('#quotes-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = quotes.filter(qt => {
-      const num = qt.number || '';
-      const custName = qt.customerName || '';
-      const title = qt.title || '';
-      return num.toLowerCase().includes(q) || 
-             custName.toLowerCase().includes(q) || 
-             title.toLowerCase().includes(q);
-    });
-    table.updateData(filteredData);
+    searchQuery = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
+    filterStartDate = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
+    filterEndDate = e.target.value;
+    applyFilters();
   });
 }

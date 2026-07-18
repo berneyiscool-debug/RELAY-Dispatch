@@ -408,7 +408,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
   }
 
   function convertQuoteToJob() {
-    const techs = store.getAll('technicians') || [];
+    const techs = (store.getAll('technicians') || []).filter(t => !t.deactivated);
     const tech = techs[Math.floor(Math.random() * techs.length)];
     
     // Calculate costs from all sections
@@ -664,7 +664,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     container.querySelectorAll('.btn-add-line').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const sIdx = parseInt(btn.dataset.sidx);
-        quote.sections[sIdx].lineItems.push({ description: '', type: 'labor', qty: 1, rate: 0, total: 0 });
+        quote.sections[sIdx].lineItems.push({ description: '', type: 'material', qty: 1, rate: 0, total: 0 });
         render();
       });
     });

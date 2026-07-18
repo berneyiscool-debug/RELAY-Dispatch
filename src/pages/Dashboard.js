@@ -2095,7 +2095,7 @@ function renderJobStatusChart(data, item) {
 }
 
 function renderTechMap(data, item) {
-  const techs = store.getAll('technicians').slice(0, 4);
+  const techs = store.getAll('technicians').filter(t => !t.deactivated).slice(0, 4);
   const markers = techs.map((t, i) => {
     const firstName = t.name ? t.name.split(' ')[0] : 'Tech';
     const top = 15 + i * 22 + Math.sin(i) * 12, left = 15 + i * 18 + Math.cos(i) * 18;
@@ -2145,17 +2145,62 @@ function renderRecentLeads(data, item) {
 }
 
 function renderTodaySchedule(data, item) {
-  const jobs = data.jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress').slice(0, 8);
-  if (!jobs.length) return `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:13px;">No jobs scheduled today</div>`;
-  return jobs.map(j => `
-    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="window.location.hash='/jobs/${j.id}'">
-      <div style="width:3px;height:30px;border-radius:2px;flex-shrink:0;background:${j.status==='In Progress'?'var(--color-primary)':'var(--color-warning)'};"></div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${j.title}</div>
-        <div style="font-size:11px;color:var(--text-tertiary);">${j.technicianName} · ${j.customerName}</div>
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  
+  // Get today's date in local YYYY-MM-DD format
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+
+  // Get all schedule blocks for today
+  let scheduleBlocks = store.getAll('schedule') || [];
+  
+  // Filter by date = today
+  scheduleBlocks = scheduleBlocks.filter(s => s.date === todayStr);
+
+  // If user is a technician (i.e. doesn't have full schedule view permission), filter by their technicianId
+  const canViewAllSchedule = hasPermission('Schedule', 'view');
+  if (!canViewAllSchedule && currentUser && currentUser.id) {
+    scheduleBlocks = scheduleBlocks.filter(s => s.technicianId === currentUser.id);
+  }
+
+  // Sort schedule blocks by startHour and startMinute
+  scheduleBlocks.sort((a, b) => {
+    if (a.startHour !== b.startHour) return a.startHour - b.startHour;
+    return (a.startMinute || 0) - (b.startMinute || 0);
+  });
+
+  if (!scheduleBlocks.length) {
+    return `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:13px;">No jobs scheduled today</div>`;
+  }
+
+  return scheduleBlocks.map(s => {
+    const j = store.getById('jobs', s.jobId);
+    const status = j ? j.status : 'Scheduled';
+    const customerName = j ? j.customerName : '';
+    const title = s.jobTitle || (j ? j.title : 'Scheduled Job');
+    
+    const timeStr = `${String(s.startHour).padStart(2, '0')}:${String(s.startMinute || 0).padStart(2, '0')}`;
+    const techNameHtml = canViewAllSchedule ? `<span style="opacity: 0.8;"> · ${s.technicianName || 'Unassigned'}</span>` : '';
+
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="window.location.hash='/jobs/${s.jobId}'">
+        <div style="width:3px;height:35px;border-radius:2px;flex-shrink:0;background:${status==='In Progress'?'var(--color-primary)':'var(--color-warning)'};"></div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;color:var(--text-tertiary);background:var(--border-color);padding:1px 4px;border-radius:3px;font-weight:600;">${timeStr}</span>
+            ${title}
+          </div>
+          <div style="font-size:11px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${customerName}${techNameHtml}
+          </div>
+        </div>
+        <span class="badge ${status==='In Progress'?'badge-primary':'badge-warning'}">${status}</span>
       </div>
-      <span class="badge ${j.status==='In Progress'?'badge-primary':'badge-warning'}">${j.status}</span>
-    </div>`).join('');
+    `;
+  }).join('');
 }
 
 function fmtAgo(d) {
@@ -2315,7 +2360,7 @@ function renderUnassignedJobs(data, item) {
   const unassigned = data.jobs.filter(j => !j.technicianId || j.status === 'Pending');
   if (!unassigned.length) return renderPlaceholder('assignment_late', 'No unassigned jobs');
 
-  const techs = store.getAll('technicians');
+  const techs = store.getAll('technicians').filter(t => !t.deactivated);
 
   return `
     <div style="display:flex; flex-direction:column; gap:10px; padding:4px 0;">
@@ -2401,7 +2446,7 @@ function renderLowStock(data, item) {
 }
 
 function renderStaffAvailability(data, item) {
-  const techs = store.getAll('technicians') || [];
+  const techs = (store.getAll('technicians') || []).filter(t => !t.deactivated);
   const activeJobs = data.jobs.filter(j => j.status === 'In Progress');
 
   return `

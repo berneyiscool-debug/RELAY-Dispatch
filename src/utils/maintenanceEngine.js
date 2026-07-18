@@ -1,4 +1,5 @@
 import { store } from '../data/store.js';
+import { parsePreferredTime } from './dateUtils.js';
 
 export function checkMaintenancePlans() {
   const plans = store.getAll('maintenancePlans') || [];
@@ -520,7 +521,8 @@ export function checkRecurringJobs() {
       if (occurrenceDate >= today && occurrenceDate <= next7Days) {
         // Check if there is already a spawned job for this occurrence
         const hasJob = jobs.some(j => 
-          j.parentJobId === job.id && j.scheduledDate === dateStr
+          (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) && 
+          j.scheduledDate === dateStr
         );
 
         if (!hasJob) {
@@ -565,10 +567,24 @@ export function checkRecurringJobs() {
           const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
           const childTitle = `${job.title || job.number} — Recurring (${formattedDate})`;
 
+          let defaultTechName = '';
+          let defaultTechId = '';
+          let childStatus = 'Pending';
+          if (job.recurringConfig && job.recurringConfig.defaultTechnicianId) {
+            const tech = store.getAll('technicians').find(t => t.id === job.recurringConfig.defaultTechnicianId);
+            if (tech) {
+              defaultTechId = tech.id;
+              defaultTechName = tech.name;
+              childStatus = 'Scheduled';
+            }
+          }
+
           const childJob = {
             parentJobId: job.id,
             scheduledDate: dateStr,
-            status: 'Pending',
+            status: childStatus,
+            technicianId: defaultTechId || undefined,
+            technicianName: defaultTechName || '',
             number: childNumber,
             title: childTitle,
             description: job.description || '',
@@ -581,6 +597,7 @@ export function checkRecurringJobs() {
             siteAddress: job.siteAddress || '',
             siteName: job.siteName || '',
             assetId: job.assetId || undefined,
+            preferredTime: job.preferredTime || '',
             materials: jobMaterials,
             laborCost: job.laborCost || 0,
             materialCost: job.materialCost || 0,
@@ -593,6 +610,42 @@ export function checkRecurringJobs() {
 
           const spawnedJob = store.create('jobs', childJob);
           jobs.push(spawnedJob);
+
+          if (defaultTechId) {
+            let startHour = 8;
+            let startMin = 0;
+            if (job.preferredTime) {
+              const parsed = parsePreferredTime(job.preferredTime);
+              if (parsed) {
+                startHour = parsed.hours;
+                startMin = parsed.minutes;
+              }
+            }
+            const startTimeISO = `${dateStr}T${startHour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
+            const tasklistHours = getJobTasklistHours(job.tasks || []);
+            const duration = tasklistHours > 0 ? tasklistHours : (job.estimatedHours || 2);
+            const endHour = startHour + duration;
+            const endHourH = Math.floor(endHour);
+            const endHourM = Math.round((endHour - endHourH) * 60) + startMin;
+            const finalHour = endHourH + Math.floor(endHourM / 60);
+            const finalMin = endHourM % 60;
+            const finishTimeISO = `${dateStr}T${finalHour.toString().padStart(2, '0')}:${finalMin.toString().padStart(2, '0')}`;
+
+            store.create('schedule', {
+              jobId: spawnedJob.id,
+              jobNumber: spawnedJob.number,
+              technicianId: defaultTechId,
+              technicianName: defaultTechName,
+              date: dateStr,
+              startTime: startTimeISO,
+              finishTime: finishTimeISO,
+              hours: duration,
+              startHour: startHour + (startMin / 60),
+              endHour: startHour + (startMin / 60) + duration,
+              taskId: null,
+              taskName: 'Whole Job'
+            });
+          }
           
           // 2. Create read-only "Recurring Job Created" notification
           const notifId = 'notif_recurring_' + Date.now() + Math.random().toString(36).substr(2, 5);
@@ -665,5 +718,18 @@ export function scheduleEngineChecks() {
 
   const ms = getMsUntilNextTarget();
   setTimeout(runCheckAndReschedule, ms);
+}
+
+function getJobTasklistHours(tasks) {
+  if (!tasks || !Array.isArray(tasks) || tasks.length === 0) return 0;
+  
+  function calculateNodeHours(node) {
+    if (!node.subTasks || node.subTasks.length === 0) {
+      return parseFloat(node.estimatedHours || 0);
+    }
+    return node.subTasks.reduce((sum, t) => sum + calculateNodeHours(t), 0);
+  }
+  
+  return tasks.reduce((sum, t) => sum + calculateNodeHours(t), 0);
 }
 

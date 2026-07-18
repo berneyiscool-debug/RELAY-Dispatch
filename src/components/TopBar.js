@@ -5,8 +5,9 @@
 import { store } from '../data/store.js';
 import { router } from '../router.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
-import { toggleRelay, onRelayToggle } from './RelayAssistant.js';
-import relayIcon from '../assets/relay-icon.svg?raw';
+import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssistant.js';
+import { showModal } from './Modal.js';
+import relayIcon from '../assets/deputy-icon.svg?raw';
 
 export function createTopBar() {
   const topbar = document.createElement('header');
@@ -19,7 +20,7 @@ export function createTopBar() {
       <input type="text" id="global-search" placeholder="Search customers, jobs, quotes..." autocomplete="off" />
     </div>
     <div class="topbar-actions">
-      <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Relay — your assistant" aria-label="Open Relay assistant">
+      <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant">
         ${relayIcon}
       </button>
       <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
@@ -135,6 +136,13 @@ export function createTopBar() {
     e.stopPropagation();
     toggleNotificationsDropdown(notifBtn);
   });
+
+  const helpBtn = topbar.querySelector('#btn-help');
+  if (helpBtn) {
+    helpBtn.addEventListener('click', () => {
+      openHelpModal();
+    });
+  }
 
   // Relay assistant button — available on every page
   const relayBtn = topbar.querySelector('#btn-relay-assistant');
@@ -445,4 +453,257 @@ function getStoredTheme() {
 function applyStoredTheme() {
   const theme = getStoredTheme();
   applyTheme(theme);
+}
+
+function openHelpModal() {
+  const content = document.createElement('div');
+  content.innerHTML = `
+    <div class="help-dashboard">
+      <style>
+        .help-dashboard {
+          display: flex;
+          gap: 24px;
+          min-height: 420px;
+          color: var(--text-primary);
+          font-family: inherit;
+        }
+        .help-sidebar {
+          flex: 0 0 200px;
+          border-right: 1px solid var(--border-color);
+          padding-right: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .help-nav-item {
+          padding: 8px 12px;
+          border-radius: 6px;
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--text-secondary);
+          text-align: left;
+          font-size: 13.5px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .help-nav-item:hover {
+          background: var(--bg-color);
+          color: var(--text-primary);
+        }
+        .help-nav-item.active {
+          background: var(--color-primary-light);
+          color: var(--color-primary);
+          border-color: var(--color-primary-light);
+          font-weight: 600;
+        }
+        .help-content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .help-guide-panel {
+          display: none;
+        }
+        .help-guide-panel.active {
+          display: block;
+        }
+        .help-guide-panel h4 {
+          margin: 0 0 10px 0;
+          font-size: 16px;
+          font-weight: 600;
+        }
+        .help-guide-panel p {
+          margin: 0 0 12px 0;
+          font-size: 13px;
+          line-height: 1.6;
+          color: var(--text-secondary);
+        }
+        .help-guide-panel ul {
+          margin: 0 0 12px 0;
+          padding-left: 20px;
+          font-size: 13px;
+          color: var(--text-secondary);
+          line-height: 1.6;
+        }
+        .help-right-col {
+          flex: 0 0 260px;
+          border-left: 1px solid var(--border-color);
+          padding-left: 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .help-section-title {
+          font-size: 12px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
+          color: var(--text-tertiary);
+          margin-bottom: 10px;
+        }
+        .help-shortcut-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+          font-size: 13px;
+        }
+        .help-shortcut-row kbd {
+          background: var(--bg-color);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-size: 11px;
+          font-weight: 600;
+          box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+        }
+        .help-action-card {
+          padding: 10px 12px;
+          border-radius: 8px;
+          background: var(--bg-color);
+          border: 1px solid var(--border-color);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          transition: all 0.15s ease;
+          text-align: left;
+          width: 100%;
+        }
+        .help-action-card:hover {
+          border-color: var(--color-primary);
+          transform: translateY(-1px);
+          box-shadow: var(--shadow-sm);
+        }
+        .help-action-card span.material-icons-outlined {
+          color: var(--color-primary);
+          font-size: 18px;
+        }
+        .help-action-info {
+          display: flex;
+          flex-direction: column;
+        }
+        .help-action-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        .help-action-prompt {
+          font-size: 10px;
+          color: var(--text-tertiary);
+          font-style: italic;
+        }
+      </style>
+
+      <div class="help-sidebar">
+        <button class="help-nav-item active" data-target="canvas">Infinite Canvas</button>
+        <button class="help-nav-item" data-target="jobs">Jobs & Scheduling</button>
+        <button class="help-nav-item" data-target="deputy">Deputy AI Assistant</button>
+      </div>
+
+      <div class="help-content">
+        <div class="help-guide-panel active" id="guide-canvas">
+          <h4>Mastering the Infinite Canvas</h4>
+          <p>The core dashboard of Relay Dispatch functions as a dynamic, zoomable infinite workspace. You are not confined to a single page or layout grid.</p>
+          <ul>
+            <li><strong>Panning & Zooming:</strong> Click and drag the empty background to pan around the canvas. Use the scroll wheel to zoom in and out.</li>
+            <li><strong>Quick Controls:</strong> Click the controls in the bottom-right corner to zoom to fit, zoom to 100%, or lock widgets to prevent accidental dragging.</li>
+            <li><strong>Adding Quick Notes:</strong> Double-click any empty space on the background canvas to spawn a new, sticky Todo/Note widget.</li>
+          </ul>
+        </div>
+        <div class="help-guide-panel" id="guide-jobs">
+          <h4>Jobs & Smart Scheduling</h4>
+          <p>Manage and dispatch technicians quickly and accurately with Relay's cohesive task lists and compliance forms.</p>
+          <ul>
+            <li><strong>Standard Jobs:</strong> Create one-off service or emergency repair tickets, assign jobsites, primary contacts, and custom tag pills.</li>
+            <li><strong>Recurring Maintenance:</strong> Toggle "Recurring Job" during creation to generate repeating schedules (Weekly, Monthly, or Daily) over a specified date range.</li>
+            <li><strong>Task Lists & Forms:</strong> Set up sub-tasks and expected values (such as pressure range readings) that technicians must log in the field.</li>
+          </ul>
+        </div>
+        <div class="help-guide-panel" id="guide-deputy">
+          <h4>Deputy Assistant co-pilot</h4>
+          <p>Deputy is your automated assistant that can perform commands, aggregate metrics, and manage canvas layouts.</p>
+          <ul>
+            <li><strong>Opening Deputy:</strong> Click the Star icon in the top right bar or press <kbd>Shift</kbd> + <kbd>D</kbd> to open the co-pilot.</li>
+            <li><strong>Direct Commands:</strong> Type in plain English to manage your screen. Try saying: <em>"add a schedule widget"</em> or <em>"zoom canvas to fit"</em>.</li>
+            <li><strong>Overview Queries:</strong> Ask questions like: <em>"how many active jobs do we have?"</em> or <em>"show me overdue invoices"</em> to get immediate operational updates.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="help-right-col">
+        <div>
+          <div class="help-section-title">Keyboard Shortcuts</div>
+          <div class="help-shortcut-row">
+            <span>Focus search bar</span>
+            <kbd>/</kbd>
+          </div>
+          <div class="help-shortcut-row">
+            <span>Toggle Deputy assistant</span>
+            <kbd>Shift</kbd> + <kbd>D</kbd>
+          </div>
+          <div class="help-shortcut-row">
+            <span>Close modal / panel</span>
+            <kbd>Esc</kbd>
+          </div>
+        </div>
+
+        <div>
+          <div class="help-section-title">Ask Deputy AI</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button class="help-action-card" data-prompt="add a schedule widget">
+              <span class="material-icons-outlined">calendar_today</span>
+              <div class="help-action-info">
+                <span class="help-action-label">Add Schedule Widget</span>
+                <span class="help-action-prompt">"add a schedule widget"</span>
+              </div>
+            </button>
+            <button class="help-action-card" data-prompt="show me active jobs">
+              <span class="material-icons-outlined">construction</span>
+              <div class="help-action-info">
+                <span class="help-action-label">View Active Jobs</span>
+                <span class="help-action-prompt">"show me active jobs"</span>
+              </div>
+            </button>
+            <button class="help-action-card" data-prompt="show me the today view">
+              <span class="material-icons-outlined">today</span>
+              <div class="help-action-info">
+                <span class="help-action-label">Show Today View</span>
+                <span class="help-action-prompt">"show me today view"</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach tab navigation listeners
+  content.querySelectorAll('.help-nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      content.querySelectorAll('.help-nav-item').forEach(btn => btn.classList.remove('active'));
+      content.querySelectorAll('.help-guide-panel').forEach(panel => panel.classList.remove('active'));
+      
+      item.classList.add('active');
+      const target = item.dataset.target;
+      content.querySelector(`#guide-${target}`).classList.add('active');
+    });
+  });
+
+  const { close } = showModal({
+    title: 'Help Center & Deputy Shortcuts',
+    content,
+    size: 'modal-lg'
+  });
+
+  // Attach interactive quick action triggers
+  content.querySelectorAll('.help-action-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const prompt = card.dataset.prompt;
+      close();
+      openDeputyWithPrompt(prompt);
+    });
+  });
 }

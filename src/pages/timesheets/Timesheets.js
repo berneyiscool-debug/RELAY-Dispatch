@@ -38,7 +38,7 @@ export function renderTimesheetsList(container) {
   function render() {
     const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
     const allTimesheets = store.getAll('timesheets').sort((a, b) => new Date(b.date) - new Date(a.date));
-    const technicians = store.getAll('technicians');
+    const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id || allTimesheets.some(ts => ts.technicianId === t.id));
     
     // Enforce permissions: Admin, Manager, and Office Staff can view all timesheets
     let visibleTimesheets = [...allTimesheets];
@@ -95,17 +95,17 @@ export function renderTimesheetsList(container) {
         <h1>Timesheets & Approval</h1>
         <div class="page-header-actions">
           ${hasPermission('Timesheets', 'export') ? `
-            <button class="btn btn-secondary" id="btn-export-approved" data-tooltip="Export approved timesheets in date range to a payroll-ready CSV spreadsheet" data-tooltip-pos="left" style="margin-right:8px">
-              <span class="material-icons-outlined">download</span> Export Approved
+            <button class="btn btn-sm ${selectedIds.length > 0 ? 'btn-primary' : 'btn-secondary'}" id="btn-export-selected" ${selectedIds.length === 0 ? 'disabled' : ''} data-tooltip="Export selected timesheets to a payroll-ready CSV spreadsheet" data-tooltip-pos="left" style="margin-right:8px">
+              <span class="material-icons-outlined">download</span> Export
             </button>
           ` : ''}
           ${hasPermission('Timesheets', 'create') ? `
-            <button class="btn ${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'btn-primary' : 'btn-secondary'}" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="margin-right:8px">
-              <span class="material-icons-outlined">add</span> ${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log Time' : 'Log Time on Behalf'}
+            <button class="btn btn-sm ${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'btn-primary' : 'btn-secondary'}" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="margin-right:8px">
+              <span class="material-icons-outlined">add</span> Log Time
             </button>
           ` : ''}
           ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
-            <button class="btn btn-primary" id="btn-approve-all-pending" data-tooltip="Instantly approve all pending timesheets in the active filtered view" data-tooltip-pos="left" ${!visibleTimesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
+            <button class="btn btn-sm btn-primary" id="btn-approve-all-pending" data-tooltip="Instantly approve all pending timesheets in the active filtered view" data-tooltip-pos="left" ${!visibleTimesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
               <span class="material-icons-outlined">done_all</span> Approve All Pending
             </button>
           ` : ''}
@@ -356,7 +356,7 @@ export function renderTimesheetsList(container) {
       render();
     });
 
-    container.querySelector('#btn-bulk-export')?.addEventListener('click', () => {
+    const triggerExportSelected = () => {
       if (selectedIds.length === 0) return;
 
       const allTimesheets = store.getAll('timesheets');
@@ -405,7 +405,10 @@ export function renderTimesheetsList(container) {
       showToast(`Exported ${selectedEntries.length} selected timesheets to CSV!`, 'success');
       selectedIds = [];
       render();
-    });
+    };
+
+    container.querySelector('#btn-bulk-export')?.addEventListener('click', triggerExportSelected);
+    container.querySelector('#btn-export-selected')?.addEventListener('click', triggerExportSelected);
 
     // Bulk Approve All Pending
     container.querySelector('#btn-approve-all-pending')?.addEventListener('click', () => {
@@ -462,72 +465,7 @@ export function renderTimesheetsList(container) {
       });
     });
 
-    // Export Approved to CSV
-    container.querySelector('#btn-export-approved')?.addEventListener('click', () => {
-      const allTimesheets = store.getAll('timesheets');
-      const isOfficeStaff = ['admin', 'manager', 'office'].includes(currentUser.role);
-
-      let approvedEntries = allTimesheets.filter(t => t.status === 'Approved');
-
-      // Filter by date range
-      if (filterStartDate) {
-        approvedEntries = approvedEntries.filter(t => t.date >= filterStartDate);
-      }
-      if (filterEndDate) {
-        approvedEntries = approvedEntries.filter(t => t.date <= filterEndDate);
-      }
-
-      // Restrict by permissions
-      if (!isOfficeStaff) {
-        const techs = store.getAll('technicians');
-        const currentTech = techs.find(t => t.name === currentUser.name);
-        const techId = currentTech ? currentTech.id : null;
-        approvedEntries = approvedEntries.filter(t => t.technicianId === techId || t.technicianName === currentUser.name);
-      } else if (filterTechId && filterTechId !== 'All') {
-        approvedEntries = approvedEntries.filter(t => t.technicianId === filterTechId);
-      }
-
-      if (approvedEntries.length === 0) {
-        showToast('No approved timesheets found to export', 'error');
-        return;
-      }
-
-      // Generate CSV
-      const headers = ['Date', 'Technician', 'Job Number', 'Task Name', 'Start Time', 'Finish Time', 'Hours', 'Description'];
-      const csvRows = [headers.join(',')];
-
-      approvedEntries.forEach(entry => {
-        const start = entry.startTime ? new Date(entry.startTime).toLocaleString() : '';
-        const finish = entry.finishTime ? new Date(entry.finishTime).toLocaleString() : '';
-        
-        const row = [
-          entry.date || '',
-          `"${(entry.technicianName || '').replace(/"/g, '""')}"`,
-          `"${(entry.jobNumber || '').replace(/"/g, '""')}"`,
-          `"${(entry.taskName || '').replace(/"/g, '""')}"`,
-          `"${start}"`,
-          `"${finish}"`,
-          entry.hours || 0,
-          `"${(entry.description || '').replace(/"/g, '""')}"`
-        ];
-        csvRows.push(row.join(','));
-      });
-
-      const csvContent = csvRows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      const dateLabel = new Date().toISOString().split('T')[0];
-      link.setAttribute('download', `FieldForge_Approved_Timesheets_${dateLabel}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      showToast(`Exported ${approvedEntries.length} approved timesheets to CSV!`, 'success');
-    });
+    // Export button actions are handled by the shared triggerExportSelected listener above.
 
     // Log Time on Behalf
     container.querySelector('#btn-log-time')?.addEventListener('click', () => {
@@ -594,7 +532,7 @@ export function renderTimesheetsList(container) {
     const dateStr = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())}`;
     const startStr = `${dateStr}T09:00`;
     const finishStr = `${dateStr}T10:00`;
-    const technicians = store.getAll('technicians');
+    const technicians = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
     const activeJobs = store.getAll('jobs').filter(j => j.status !== 'Completed' && j.status !== 'Invoiced');
 
     const content = document.createElement('div');

@@ -3329,6 +3329,16 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   filter: invert(1) grayscale(100%) brightness(0.9);
 }
 
+.date-picker-initialized {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='18px' viewBox='0 -960 960 960' width='18px' fill='%2364748b'%3E%3Cpath d='M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0-33-23.5-56.5T800-80H200Zm0-80h600v-360H200v360Zm0-440h600v-120H200v120Zm0 0v-120 120Z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px !important;
+}
+[data-theme-mode="dark"] .date-picker-initialized {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='18px' viewBox='0 -960 960 960' width='18px' fill='%2394a3b8'%3E%3Cpath d='M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0-33-23.5-56.5T800-80H200Zm0-80h600v-360H200v360Zm0-440h600v-120H200v120Zm0 0v-120 120Z'/%3E%3C/svg%3E");
+}
+
 /* Specific heights and alignment within the clock picker container */
 .clock-picker-container input {
   height: 38px !important;
@@ -3340,19 +3350,22 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 .date-picker-popup {
   position: absolute;
   z-index: 10000;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  box-shadow: var(--shadow-xl);
   width: 250px;
   padding: 12px;
   user-select: none;
   font-family: var(--font-family, inherit);
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 [data-theme-mode="dark"] .date-picker-popup {
-  background: #18181b;
-  border-color: #27272a;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  background: rgba(24, 24, 27, 0.88);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.4);
 }
 .date-picker-header {
   display: flex;
@@ -3364,18 +3377,20 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   border: none;
   background: none;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 6px;
+  border-radius: 50%;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.12s, color 0.12s;
 }
 .date-picker-header button:hover {
-  background: #f1f5f9;
+  background: var(--color-primary-light, rgba(255, 92, 0, 0.1));
+  color: var(--color-primary, #ff5c00);
 }
 [data-theme-mode="dark"] .date-picker-header button:hover {
-  background: #27272a;
+  background: rgba(255, 92, 0, 0.15);
 }
 .date-picker-month-year {
   font-size: 13px;
@@ -3390,32 +3405,40 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 }
 .date-picker-weekday {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   padding-bottom: 4px;
 }
 .date-picker-day {
   font-size: 12px;
   font-weight: 500;
-  height: 26px;
+  height: 28px;
+  width: 28px;
+  margin: auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 50%;
   cursor: pointer;
   color: var(--text-primary);
+  transition: all 0.12s ease;
 }
 .date-picker-day.other-month {
   color: var(--text-tertiary);
-  opacity: 0.4;
+  opacity: 0.35;
 }
 .date-picker-day:hover {
   background: var(--color-primary-light, rgba(255, 92, 0, 0.1));
   color: var(--color-primary, #ff5c00);
+  transform: scale(1.08);
 }
 .date-picker-day.active {
   background: var(--color-primary, #ff5c00) !important;
   color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(255, 92, 0, 0.35);
 }
 
 [data-theme-mode="dark"] .date-picker-month-year {
@@ -3429,6 +3452,33 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 }
 [data-theme-mode="dark"] .date-picker-header button {
   color: #a1a1aa;
+}
+
+/* ---- Schedule Hover Tooltip Popover ---- */
+.schedule-tooltip-popover {
+  position: absolute;
+  z-index: 10100;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  padding: 8px 12px;
+  pointer-events: none;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.schedule-tooltip-popover.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+[data-theme-mode="dark"] .schedule-tooltip-popover {
+  background: #18181b;
+  border-color: #27272a;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 

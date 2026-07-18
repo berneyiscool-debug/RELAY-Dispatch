@@ -13,6 +13,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
+import { parsePreferredTime } from '../../utils/dateUtils.js';
 
 export function renderJobDetail(container, { id }) {
   const job = store.getById('jobs', id);
@@ -23,7 +24,7 @@ export function renderJobDetail(container, { id }) {
 
   updateBreadcrumbDetail(job.number);
 
-  const sb = { 'Pending': 'badge-warning', 'Scheduled': 'badge-info', 'In Progress': 'badge-primary', 'On Hold': 'badge-neutral', 'Completed': 'badge-success', 'Invoiced': 'badge-primary' };
+  const sb = { 'Pending': 'badge-warning', 'Scheduled': 'badge-info', 'In Progress': 'badge-primary', 'On Hold': 'badge-neutral', 'Completed': 'badge-success', 'Invoiced': 'badge-primary', 'Recurring Template': 'badge-purple' };
   const pb = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger', 'Urgent': 'badge-danger' };
   let activeTab = 'overview';
   let taskExpandedPath = [0];
@@ -334,11 +335,15 @@ export function renderJobDetail(container, { id }) {
             <div class="detail-header-meta" style="margin-top:6px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
               <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(job.customerName)}</span>
               <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
-              <select id="header-job-status-select" class="badge ${sb[job.status] || 'badge-neutral'}">
-                ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
-                  <option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>
-                `).join('')}
-              </select>
+              ${job.isRecurring ? `
+                <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
+              ` : `
+                <select id="header-job-status-select" class="badge ${sb[job.status] || 'badge-neutral'}">
+                  ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
+                    <option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>
+                  `).join('')}
+                </select>
+              `}
               <span class="badge ${pb[job.priority] || 'badge-neutral'}">${escapeHTML(job.priority)}</span>
               ${cc ? `
                 <span class="badge badge-purple" style="display:inline-flex; align-items:center; gap:4px; font-weight:600">
@@ -439,6 +444,7 @@ export function renderJobDetail(container, { id }) {
                   ${r('Priority', escapeHTML(job.priority))}
                   ${r('Customer', escapeHTML(job.customerName))}
                   ${r('Contact', escapeHTML(job.contactName || '—'))}
+                  ${job.preferredTime ? r('Preferred Time', escapeHTML(job.preferredTime)) : ''}
                 </div>
               </div>
             </div>
@@ -449,9 +455,6 @@ export function renderJobDetail(container, { id }) {
                   <span class="material-icons-outlined" style="color:var(--color-primary)">event_repeat</span>
                   Recurring Service Plan (Master)
                 </h4>
-                <button class="btn btn-outline btn-sm" id="btn-sync-recurring" style="font-size:12px;padding:4px 8px">
-                  <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">sync</span> Check for Due Occurrences
-                </button>
               </div>
               <div class="card-body">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border-color)">
@@ -487,13 +490,25 @@ export function renderJobDetail(container, { id }) {
                   </div>
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Total Occurrences</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id).length} spawned</div>
+                    <div style="font-size:14px;font-weight:600;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))).length} spawned</div>
+                  </div>
+                  <div style="grid-column: span 2">
+                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Default Technician</div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                      <select class="form-select" id="view-recurring-tech" style="padding:4px 12px;font-size:13px;width:240px;height:34px;background-color:var(--card-bg)">
+                        <option value="">-- No Default (Unassigned) --</option>
+                        ${store.getAll('technicians').filter(t => !t.deactivated || job.recurringConfig?.defaultTechnicianId === t.id).map(t => `<option value="${t.id}" ${job.recurringConfig?.defaultTechnicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+                      </select>
+                      <button class="btn btn-sm btn-primary" id="btn-save-recurring-tech" style="font-size:12px;padding:6px 12px;height:34px">
+                        Save Assignment
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 <div style="font-weight:600;font-size:13px;color:var(--text-secondary);margin-bottom:8px">Generated Job Tickets</div>
                 ${(() => {
-                  const genJobs = (store.getAll('jobs') || []).filter(j => j.parentJobId === job.id);
+                  const genJobs = (store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.')));
                   if (genJobs.length === 0) {
                     return `
                       <div style="font-size:12px;color:var(--text-tertiary);font-style:italic;padding:12px;background:var(--bg-color);border:1px dashed var(--border-color);border-radius:6px;text-align:center">
@@ -572,7 +587,7 @@ export function renderJobDetail(container, { id }) {
       `;
 
       tc.querySelector('#btn-add-schedule')?.addEventListener('click', () => {
-        const techs = store.getAll('technicians');
+        const techs = store.getAll('technicians').filter(t => !t.deactivated || job.technicianId === t.id || existingSchedules.some(s => s.techIds?.includes(t.id)));
         const existingSchedules = store.getAll('schedule').filter(t => t.jobId === id);
 
         // Build the modal content element
@@ -610,9 +625,9 @@ export function renderJobDetail(container, { id }) {
             }
             html += '</div>';
             html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
-            html += '<div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">Task <span class="text-danger">*</span></label>';
+            html += '<div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">Task (Optional)</label>';
             html += '<select class="form-select sched-task" style="width:100%">';
-            html += '<option value="">-- Select a Task --</option>';
+            html += '<option value="">-- Whole Job / General --</option>';
             flatTasks.forEach(t => {
               html += `<option value="${t.path}" ${e.taskPath === t.path ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
             });
@@ -748,12 +763,22 @@ export function renderJobDetail(container, { id }) {
           });
         }
 
-        // Default first entry: today 8am-4pm, pre-select job's assigned tech if any
+        // Default first entry: today 8am-4pm, pre-select job's assigned tech if any, and fall back to preferred time
         const p = n => n.toString().padStart(2, '0');
         const now2 = new Date();
         const ds = `${now2.getFullYear()}-${p(now2.getMonth() + 1)}-${p(now2.getDate())}`;
         const defaultTechIds = job.technicianId ? [job.technicianId] : [];
-        const entries = [{ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: defaultTechIds, assetIds: [] }];
+        let startTime = "08:00";
+        let finishTime = "16:00";
+        if (job.preferredTime) {
+          const parsed = parsePreferredTime(job.preferredTime);
+          if (parsed) {
+            startTime = `${p(parsed.hours)}:${p(parsed.minutes)}`;
+            const fh = (parsed.hours + 2) % 24;
+            finishTime = `${p(fh)}:${p(parsed.minutes)}`;
+          }
+        }
+        const entries = [{ taskPath: '', start: `${ds}T${startTime}`, finish: `${ds}T${finishTime}`, techIds: defaultTechIds, assetIds: [] }];
         renderModal(entries);
 
         function readCurrentEntries() {
@@ -782,7 +807,6 @@ export function renderJobDetail(container, { id }) {
                 let errors = [];
 
                 currentEntries.forEach((e, i) => {
-                  if (!e.taskPath) { errors.push(`Entry ${i + 1}: please select a task`); return; }
                   if (!e.start || !e.finish) { errors.push(`Entry ${i + 1}: missing start or finish`); return; }
                   const startDate = new Date(e.start);
                   const finishDate = new Date(e.finish);
@@ -799,7 +823,8 @@ export function renderJobDetail(container, { id }) {
                   const startDate = new Date(e.start);
                   const finishDate = new Date(e.finish);
                   const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-                  const taskName = flatTasks.find(t => t.path === e.taskPath)?.name || 'Unknown Task';
+                  const selectedTask = flatTasks.find(t => t.path === e.taskPath);
+                  const taskName = selectedTask ? selectedTask.name : 'Whole Job';
 
                   e.techIds.forEach(techId => {
                     const tech = techs.find(t => t.id === techId);
@@ -807,7 +832,7 @@ export function renderJobDetail(container, { id }) {
                     store.create('schedule', {
                       jobId: id,
                       jobNumber: job.number,
-                      taskPath: e.taskPath,
+                      taskPath: e.taskPath || null,
                       taskName: taskName,
                       technicianId: techId,
                       technicianName: tech.name,
@@ -876,12 +901,13 @@ export function renderJobDetail(container, { id }) {
         });
       });
 
-      tc.querySelector('#btn-sync-recurring')?.addEventListener('click', () => {
-        import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs }) => {
-          checkRecurringJobs();
-          showToast('Checked for due occurrences. Check Notifications list.', 'success');
-          renderJobDetail(container, { id });
-        });
+      tc.querySelector('#btn-save-recurring-tech')?.addEventListener('click', () => {
+        const newTechId = tc.querySelector('#view-recurring-tech').value || null;
+        const currentConfig = job.recurringConfig || {};
+        const updatedConfig = { ...currentConfig, defaultTechnicianId: newTechId };
+        store.update('jobs', id, { recurringConfig: updatedConfig });
+        showToast('Default technician updated successfully', 'success');
+        renderJobDetail(container, { id });
       });
 
     } else if (activeTab === 'tasks') {
@@ -1886,7 +1912,7 @@ export function renderJobDetail(container, { id }) {
           const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
 
           const allTimesheets = store.getAll('timesheets').filter(t => t.jobId === id);
-          const techs = store.getAll('technicians');
+          const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
 
           const now = new Date();
           const p = n => n.toString().padStart(2, '0');
@@ -2866,7 +2892,7 @@ export function renderJobDetail(container, { id }) {
     } else if (activeTab === 'timesheets') {
       const timesheets = store.getAll('timesheets').filter(t => t.jobId === id);
       const totalHours = timesheets.reduce((sum, t) => sum + (t.hours || 0), 0);
-      const techs = store.getAll('technicians');
+      const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
 
       tc.innerHTML = `

@@ -349,12 +349,13 @@ export function renderProfile(container) {
               </div>
 
               <div class="form-group" id="profile-factsheet-group" style="margin-top: 12px; display: ${memoryEnabled ? 'block' : 'none'};">
-                <label class="form-label" style="font-weight: 600;">What Relay has learned about you:</label>
-                <textarea class="form-input" id="profile-ai-factsheet" rows="5" readonly style="font-family:inherit; resize:none; font-size:12.5px; background: rgba(0, 0, 0, 0.02); color: var(--text-secondary); cursor: default;" placeholder="No preferences recorded yet. Relay will start remembering facts as you interact in the chat.">${escapeHTML(factsheetVal)}</textarea>
+                <label class="form-label" style="font-weight: 600;">Personal Factsheet Context</label>
+                <textarea class="form-input" id="profile-ai-factsheet" rows="5" style="font-family:inherit; resize:vertical; font-size:12.5px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe on Mondays' or 'I like writing job notes in bullet points').">${escapeHTML(factsheetVal)}</textarea>
+                <p class="text-tertiary" style="font-size:11px; margin-top:4px; color: var(--text-secondary);">You can edit this factsheet manually here, or tell Relay to remember facts during your chats.</p>
               </div>
 
               <button class="btn btn-primary" id="btn-save-profile-factsheet" style="margin-top: 4px; justify-content: center;">
-                Save Privacy Settings
+                Save Memory Settings
               </button>
             </div>
 
@@ -614,10 +615,14 @@ export function renderProfile(container) {
           if (factsheetTextarea) {
             factsheetTextarea.value = '';
           }
+        } else {
+          if (factsheetTextarea) {
+            localStorage.setItem(factsheetKey, factsheetTextarea.value.trim());
+          }
         }
 
         window.dispatchEvent(new Event('storage'));
-        showToast('AI memory privacy settings saved successfully.', 'success');
+        showToast('AI memory settings saved successfully.', 'success');
       });
     }
   };

@@ -37,7 +37,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
   const days = getWeekDays();
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-  const technicians = store.getAll('technicians');
+  const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id);
 
   // Filter state
   let filterStatus = 'active'; // 'all' | 'active' | 'completed' | 'overdue'
@@ -274,7 +274,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
       <div class="form-group" style="margin-bottom:12px">
         <label class="form-label">Assign To</label>
         <select class="form-select" id="act-assignee" style="width:100%">
-          ${technicians.map(t => `<option value="${t.id}" ${a.assignedToId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+          ${store.getAll('technicians').filter(t => !t.deactivated || a.assignedToId === t.id).map(t => `<option value="${t.id}" ${a.assignedToId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
         </select>
       </div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">

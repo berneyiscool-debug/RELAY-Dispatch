@@ -14,7 +14,7 @@ export function initClockPicker(inputEl) {
 
   const dateInput = document.createElement('input');
   dateInput.type = 'text';
-  dateInput.className = 'form-input';
+  dateInput.className = 'form-input date-picker-initialized';
   dateInput.style.flex = '1';
   dateInput.readOnly = true;
   dateInput.style.cursor = 'pointer';
@@ -76,6 +76,27 @@ export function initClockPicker(inputEl) {
     openClockPopup(timeInput, (selectedTime) => {
       timeInput.value = selectedTime;
       updateSource();
+    });
+  });
+}
+
+export function initDatePicker(inputEl) {
+  if (!inputEl || inputEl.classList.contains('date-picker-initialized')) return;
+  inputEl.classList.add('date-picker-initialized');
+
+  if (inputEl.type === 'date') {
+    inputEl.type = 'text';
+  }
+  inputEl.readOnly = true;
+  inputEl.style.cursor = 'pointer';
+
+  inputEl.addEventListener('click', (e) => {
+    if (inputEl.disabled || inputEl.hasAttribute('disabled')) return;
+    e.stopPropagation();
+    openDatePickerPopup(inputEl, (selectedDate) => {
+      inputEl.value = selectedDate;
+      inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
     });
   });
 }
@@ -323,9 +344,20 @@ export function openDatePickerPopup(anchorEl, onSelect) {
   // Parse initial date
   let currentDate = new Date();
   if (anchorEl.value) {
-    const parsed = new Date(anchorEl.value);
-    if (!isNaN(parsed.getTime())) {
-      currentDate = parsed;
+    const parts = anchorEl.value.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      const parsed = new Date(y, m, d);
+      if (!isNaN(parsed.getTime())) {
+        currentDate = parsed;
+      }
+    } else {
+      const parsed = new Date(anchorEl.value);
+      if (!isNaN(parsed.getTime())) {
+        currentDate = parsed;
+      }
     }
   }
 
@@ -485,5 +517,30 @@ export function closeAllDatePickerPickers() {
   document.querySelectorAll('.date-picker-popup').forEach(p => {
     if (p._cleanup) p._cleanup();
     p.remove();
+  });
+}
+
+export function initTimeOnlyClockPicker(inputEl) {
+  if (!inputEl || inputEl.classList.contains('time-only-clock-picker-initialized')) return;
+  inputEl.classList.add('time-only-clock-picker-initialized');
+
+  inputEl.readOnly = true;
+  inputEl.style.cursor = 'pointer';
+  inputEl.placeholder = 'Select preferred time';
+
+  const updateFromSource = () => {
+    const val = inputEl.value || '';
+    if (val && !val.includes('AM') && !val.includes('PM')) {
+      inputEl.value = formatTo12H(val);
+    }
+  };
+  updateFromSource();
+
+  inputEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openClockPopup(inputEl, (selectedTime) => {
+      inputEl.value = selectedTime;
+      inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   });
 }

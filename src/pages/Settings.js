@@ -219,6 +219,9 @@ export function renderSettings(container) {
   if (isPortalDisabled && activeTab === 'portal') {
     activeTab = 'company';
   }
+  if (isPortalDisabled && activeTab === 'portal_contractor') {
+    activeTab = 'company';
+  }
   if (isFolderSyncDisabled && activeTab === 'folder_sync') {
     activeTab = 'company';
   }
@@ -227,6 +230,16 @@ export function renderSettings(container) {
   if (isAIAssistantDisabled && activeTab === 'ai_assistant') {
     activeTab = 'company';
   }
+
+  function getCategoryForTab(tab) {
+    if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
+    if (['templates_forms', 'invoices_quotes'].includes(tab)) return 'workflow';
+    if (['users', 'suppliers'].includes(tab)) return 'people';
+    if (['materials', 'cost_centers', 'tax'].includes(tab)) return 'resources';
+    return 'general';
+  }
+
+  let activeCategory = getCategoryForTab(activeTab);
 
   const openMigrationModal = () => {
     const modalContent = document.createElement('div');
@@ -416,41 +429,218 @@ export function renderSettings(container) {
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
+  const categories = [
+    {
+      id: 'general',
+      label: 'General',
+      icon: 'settings',
+      tabs: [
+        { id: 'company', label: 'Company Profile' },
+        { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
+        { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
+        { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
+        { id: 'ai_assistant', label: 'AI Assistant', disabled: isAIAssistantDisabled, tooltip: 'Requires Cloud Account' },
+        { id: 'system', label: 'System Options' }
+      ]
+    },
+    {
+      id: 'workflow',
+      label: 'Workflow',
+      icon: 'account_tree',
+      tabs: [
+        { id: 'templates_forms', label: 'Templates & Forms' },
+        { id: 'invoices_quotes', label: 'Quotes & Invoices' }
+      ]
+    },
+    {
+      id: 'people',
+      label: 'People',
+      icon: 'groups',
+      tabs: [
+        { id: 'users', label: 'Users & Permissions', disabled: isUsersDisabled, tooltip: 'Requires Cloud Account or Local Server' },
+        { id: 'suppliers', label: 'Suppliers Configuration' }
+      ]
+    },
+    {
+      id: 'resources',
+      label: 'Resources',
+      icon: 'widgets',
+      tabs: [
+        { id: 'materials', label: 'Materials & Kits' },
+        { id: 'cost_centers', label: 'Cost Centers & Xero' },
+        { id: 'tax', label: 'Tax & Labor Rates' }
+      ]
+    }
+  ];
+
   function render() {
+    const categoryTabsHtml = categories.map(cat => {
+      const isActive = activeCategory === cat.id;
+      return `
+        <button class="settings-category-btn ${isActive ? 'active' : ''}" data-category="${cat.id}">
+          <span class="material-icons-outlined">${cat.icon}</span>
+          <span>${cat.label}</span>
+        </button>
+      `;
+    }).join('');
+
+    const activeCatData = categories.find(cat => cat.id === activeCategory) || categories[0];
+    const subTabsHtml = activeCatData.tabs.map(tab => {
+      const isActive = activeTab === tab.id;
+      const isDisabled = tab.disabled;
+      const tooltipAttr = isDisabled ? `data-tooltip="${tab.tooltip}" data-tooltip-pos="top"` : '';
+      return `
+        <button class="settings-tab-btn ${isActive ? 'active' : ''} ${isDisabled ? 'disabled-local' : ''}" data-tab="${tab.id}" ${tooltipAttr}>
+          ${tab.label}
+        </button>
+      `;
+    }).join('');
+
     container.innerHTML = `
+      <style>
+        .settings-nav-categories {
+          display: flex;
+          gap: 8px;
+          border-bottom: 2px solid var(--border-color);
+          padding-bottom: 12px;
+          margin-bottom: 20px;
+        }
+        .settings-category-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 20px;
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          background: transparent;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .settings-category-btn .material-icons-outlined {
+          font-size: 20px;
+          transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .settings-category-btn:hover {
+          color: var(--text-primary);
+          background: var(--bg-color);
+        }
+        .settings-category-btn:hover .material-icons-outlined {
+          transform: scale(1.08);
+        }
+        .settings-category-btn.active {
+          color: white;
+          background: var(--color-primary);
+          box-shadow: 0 4px 14px rgba(255, 92, 0, 0.25);
+          transform: translateY(-1px);
+        }
+        
+        .settings-nav-tabs {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 24px;
+          background: var(--bg-color);
+          padding: 6px;
+          border-radius: 10px;
+          border: 1px solid var(--border-color);
+          animation: subtabs-slide-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes subtabs-slide-in {
+          from {
+            opacity: 0;
+            transform: translateX(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        .settings-tab-btn {
+          padding: 8px 16px;
+          font-size: var(--font-size-sm);
+          font-weight: 500;
+          color: var(--text-secondary);
+          background: transparent;
+          border: none;
+          border-radius: 20px;
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .settings-tab-btn:hover:not(.disabled-local) {
+          color: var(--text-primary);
+          background: rgba(128, 128, 128, 0.08);
+        }
+        .settings-tab-btn.active {
+          color: var(--color-primary);
+          background: var(--content-bg);
+          font-weight: 600;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+          transform: scale(1.02);
+        }
+        
+        #settings-content {
+          animation: settings-fade-in 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes settings-fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(6px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      </style>
+
       <div class="page-header"><h1>Settings</h1></div>
 
-      <div class="tabs" style="margin-bottom:0">
-        <button class="tab ${activeTab === 'company' ? 'active' : ''}" data-tab="company">Company</button>
-        <button class="tab ${activeTab === 'users' ? 'active' : ''} ${isUsersDisabled ? 'disabled-local' : ''}" data-tab="users" ${isUsersDisabled ? 'data-tooltip="Requires Cloud Account or Local Server" data-tooltip-pos="top"' : ''}>Users & Permissions</button>
-        <button class="tab ${activeTab === 'materials' ? 'active' : ''}" data-tab="materials">Materials</button>
-        <button class="tab ${activeTab === 'templates_forms' ? 'active' : ''}" data-tab="templates_forms">Templates &amp; Forms</button>
-        <button class="tab ${activeTab === 'tax' ? 'active' : ''}" data-tab="tax">Tax &amp; Rates</button>
-        <button class="tab ${activeTab === 'portal' ? 'active' : ''} ${isPortalDisabled ? 'disabled-local' : ''}" data-tab="portal" ${isPortalDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>Customer Portal</button>
-        <button class="tab ${activeTab === 'invoices_quotes' ? 'active' : ''}" data-tab="invoices_quotes">Quotes &amp; Invoices</button>
-        <button class="tab ${activeTab === 'cost_centers' ? 'active' : ''}" data-tab="cost_centers">Cost Centers</button>
-        <button class="tab ${activeTab === 'folder_sync' ? 'active' : ''} ${isFolderSyncDisabled ? 'disabled-local' : ''}" data-tab="folder_sync" ${isFolderSyncDisabled ? 'data-tooltip="Requires Local Folder Storage" data-tooltip-pos="top"' : ''}>Folder Sync</button>
-        <button class="tab ${activeTab === 'ai_assistant' ? 'active' : ''} ${isAIAssistantDisabled ? 'disabled-local' : ''}" data-tab="ai_assistant" ${isAIAssistantDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''}>AI Assistant</button>
-        <button class="tab ${activeTab === 'system' ? 'active' : ''}" data-tab="system">System</button>
+      <div class="settings-nav-categories">
+        ${categoryTabsHtml}
       </div>
-      <div id="settings-content" style="padding-top:var(--space-lg)"></div>
+
+      <div class="settings-nav-tabs">
+        ${subTabsHtml}
+      </div>
+
+      <div id="settings-content" style="padding-top:var(--space-sm)"></div>
     `;
 
     renderContent();
 
-    container.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        if (tab.classList.contains('disabled-local')) return;
-        activeTab = tab.dataset.tab;
-        container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        renderContent();
+    container.querySelectorAll('.settings-category-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const catId = btn.dataset.category;
+        if (activeCategory === catId) return;
+
+        activeCategory = catId;
+        const catData = categories.find(c => c.id === catId);
+        const firstActiveTab = catData.tabs.find(t => !t.disabled) || catData.tabs[0];
+        activeTab = firstActiveTab.id;
+
+        render();
+      });
+    });
+
+    container.querySelectorAll('.settings-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('disabled-local')) return;
+        activeTab = btn.dataset.tab;
+        render();
       });
     });
   }
 
   function renderContent() {
     const tc = container.querySelector('#settings-content');
+
+    if (activeTab === 'suppliers') {
+      renderSuppliersSettings(tc);
+      return;
+    }
 
     if (activeTab === 'folder_sync') {
       renderFolderSyncTab(tc);
@@ -1534,7 +1724,53 @@ export function renderSettings(container) {
         }
       });
 
+    } else if (activeTab === 'portal_contractor') {
+      const s = store.getSettings();
+      const portalEnabled = s.enableContractorPortal !== false;
+
+      tc.innerHTML = `
+        <div class="card" style="max-width:800px">
+          <div class="card-header"><h4>Contractor Portal Settings</h4></div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:20px;">
+            <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
+              <input type="checkbox" id="contractor-portal-enable" class="form-checkbox" style="width:20px; height:20px; cursor:pointer;" ${portalEnabled ? 'checked' : ''} />
+              <div style="cursor:pointer;" onclick="document.getElementById('contractor-portal-enable').click()">
+                <strong style="display:block; font-size:14px; color:var(--text-primary);">Enable Contractor Portal Link Access</strong>
+                <span style="font-size:12px; color:var(--text-secondary);">When disabled, any subcontractor attempting to load their portal token will see an access deactivated notice.</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer" style="display:flex; justify-content:flex-end">
+            <button class="btn btn-primary" id="btn-save-contractor-settings" data-tooltip="Save subcontractor portal access rules" data-tooltip-pos="top">
+              <span class="material-icons-outlined">save</span> Save Contractor Settings
+            </button>
+          </div>
+        </div>
+      `;
+
+      tc.querySelector('#btn-save-contractor-settings').addEventListener('click', async () => {
+        const btn = tc.querySelector('#btn-save-contractor-settings');
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
+
+        try {
+          const settings = store.getSettings();
+          settings.enableContractorPortal = tc.querySelector('#contractor-portal-enable').checked;
+
+          await store.saveSettings(settings);
+          showToast('Contractor portal settings saved successfully', 'success');
+        } catch (err) {
+          console.error('Error saving contractor portal settings:', err);
+          showToast('Failed to save settings: ' + (err.message || err), 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+        }
+      });
+
     } else if (activeTab === 'system') {
+
       const s = store.getSettings();
       const currentPref = s.tooltipPreference || 'full';
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -4634,34 +4870,7 @@ export function renderSettings(container) {
               </div>
             </div>
 
-            <!-- AI Co-Pilot Memory & Factsheet -->
-            <div class="card" id="ai-memory-card" style="display: ${ai.enabled ? 'block' : 'none'};">
-              <div class="card-header"><h4>Your Personal Co-Pilot Factsheet (User Memory)</h4></div>
-              <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
-                <div class="text-tertiary" style="font-size:12.5px; line-height:1.4; color: var(--text-secondary);">
-                  This factsheet stores preferences, custom habits, and patterns specific to your user profile (e.g. how you write notes, your default technicians, or the types of jobs you handle). Relay loads this context dynamically. You can edit it manually below, or tell Relay to remember facts in the chat.
-                </div>
-                
-                <div class="form-group" style="margin-top:4px;">
-                  <label class="switch-container" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
-                    <input type="checkbox" id="settings-ai-memory-enabled" ${memoryEnabled ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
-                    <strong>Make my day easier</strong>
-                  </label>
-                  <div class="text-tertiary" style="font-size:11.5px; margin-top:2px; margin-left:24px; line-height:1.3; color: var(--text-secondary);">
-                    Allows Relay to automatically learn your preferences, default assignees, and work patterns during chats to customize the co-pilot around your day.
-                  </div>
-                </div>
 
-                <div class="form-group" id="settings-factsheet-group" style="margin-top: 8px; display: ${memoryEnabled ? 'block' : 'none'};">
-                  <label class="form-label" style="font-weight: 600;">Personal Factsheet Context</label>
-                  <textarea class="form-input" id="settings-ai-factsheet" rows="5" style="font-family:inherit; resize:vertical; font-size:12.5px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe on Mondays' or 'I like writing job notes in bullet points').">${escapeHTML(factsheetVal)}</textarea>
-                </div>
-                
-                <div style="border-top:1px solid var(--border-color); padding-top:12px; display:flex; justify-content:flex-end; gap:8px;">
-                  <button class="btn btn-secondary" id="btn-save-factsheet">Save Memory Settings</button>
-                </div>
-              </div>
-            </div>
 
           </div>
 
@@ -4697,41 +4906,10 @@ export function renderSettings(container) {
       const fieldsContainer = tc.querySelector('#ai-fields');
       enabledCheckbox.addEventListener('change', (e) => {
         fieldsContainer.style.display = e.target.checked ? 'flex' : 'none';
-        const memoryCard = tc.querySelector('#ai-memory-card');
-        if (memoryCard) memoryCard.style.display = e.target.checked ? 'block' : 'none';
+
       });
 
-      // Toggle display of factsheet text area based on memory enabled checkbox
-      const memoryEnabledCheckbox = tc.querySelector('#settings-ai-memory-enabled');
-      const factsheetGroup = tc.querySelector('#settings-factsheet-group');
-      if (memoryEnabledCheckbox && factsheetGroup) {
-        memoryEnabledCheckbox.addEventListener('change', (e) => {
-          factsheetGroup.style.display = e.target.checked ? 'block' : 'none';
-        });
-      }
 
-      // Save Factsheet handler
-      const btnSaveFactsheet = tc.querySelector('#btn-save-factsheet');
-      if (btnSaveFactsheet) {
-        btnSaveFactsheet.addEventListener('click', () => {
-          const enabled = memoryEnabledCheckbox.checked;
-          const factsheetTextarea = tc.querySelector('#settings-ai-factsheet');
-          const factsheet = factsheetTextarea ? factsheetTextarea.value.trim() : '';
-
-          localStorage.setItem(enabledKey, String(enabled));
-          if (enabled) {
-            localStorage.setItem(factsheetKey, factsheet);
-          } else {
-            localStorage.removeItem(factsheetKey);
-            if (factsheetTextarea) {
-              factsheetTextarea.value = '';
-            }
-          }
-
-          window.dispatchEvent(new Event('storage'));
-          showToast('AI memory preferences saved successfully', 'success');
-        });
-      }
 
       // Save handler
       tc.querySelector('#btn-save-ai').addEventListener('click', () => {
@@ -4834,7 +5012,10 @@ export function renderSettings(container) {
       });
     }
 
-    function renderCostCentersTab(tc) {
+    render();
+  }
+
+  function renderCostCentersTab(tc) {
       const list = store.getAll('costCenters') || [];
 
       const renderTab = () => {
@@ -4852,6 +5033,7 @@ export function renderSettings(container) {
                   <tr>
                     <th style="padding-left:16px; width:120px">Code</th>
                     <th>Name</th>
+                    <th>Xero Mapping</th>
                     <th style="width:120px">Status</th>
                     <th style="text-align:right; padding-right:16px; width:180px">Actions</th>
                   </tr>
@@ -4859,7 +5041,7 @@ export function renderSettings(container) {
                 <tbody>
                   ${list.length === 0 ? `
                     <tr>
-                      <td colspan="4" style="text-align:center; padding:32px 16px; color:var(--text-secondary)">
+                      <td colspan="5" style="text-align:center; padding:32px 16px; color:var(--text-secondary)">
                         No Cost Centers configured. Click "Add Cost Center" to create one.
                       </td>
                     </tr>
@@ -4867,6 +5049,15 @@ export function renderSettings(container) {
                     <tr>
                       <td style="padding-left:16px; font-weight:600">${escapeHTML(cc.code)}</td>
                       <td>${escapeHTML(cc.name)}</td>
+                      <td>
+                        ${cc.xeroSalesAccountCode || cc.xeroTrackingOptionName ? `
+                          <div style="font-size:11px; line-height:1.4">
+                            ${cc.xeroSalesAccountCode ? `<div><span class="text-tertiary">Sales Code:</span> <strong>${escapeHTML(cc.xeroSalesAccountCode)}</strong></div>` : ''}
+                            ${cc.xeroExpenseAccountCode ? `<div><span class="text-tertiary">Expense Code:</span> <strong>${escapeHTML(cc.xeroExpenseAccountCode)}</strong></div>` : ''}
+                            ${cc.xeroTrackingOptionName ? `<div><span class="text-tertiary">Tracking:</span> <strong>${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}:${escapeHTML(cc.xeroTrackingOptionName)}</strong></div>` : ''}
+                          </div>
+                        ` : '<span class="text-tertiary" style="font-size:11px">— Unmapped —</span>'}
+                      </td>
                       <td>
                         <span class="badge ${cc.active ? 'badge-success' : 'badge-neutral'}">
                           ${cc.active ? 'Active' : 'Inactive'}
@@ -4908,7 +5099,15 @@ export function renderSettings(container) {
     }
 
     function openCostCenterModal(editId = null) {
-      let cc = editId ? store.getById('costCenters', editId) : { code: '', name: '', active: true };
+      let cc = editId ? store.getById('costCenters', editId) : { 
+        code: '', 
+        name: '', 
+        active: true,
+        xeroSalesAccountCode: '',
+        xeroExpenseAccountCode: '',
+        xeroTrackingCategoryName: 'Department',
+        xeroTrackingOptionName: ''
+      };
       const contentDiv = document.createElement('div');
       contentDiv.innerHTML = `
         <div class="form-group" style="margin-bottom:16px">
@@ -4919,6 +5118,33 @@ export function renderSettings(container) {
           <label class="form-label" style="display:block; margin-bottom:6px">Cost Center Name</label>
           <input class="form-input" id="cc-name" value="${escapeHTML(cc.name)}" placeholder="e.g. Electrical Services" style="width:100%" />
         </div>
+        
+        <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; margin-bottom: 16px; background:var(--card-bg)">
+          <legend style="padding: 0 6px; font-size: 11px; font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 4px; margin: 0">
+            <span class="material-icons-outlined" style="font-size:15px">sync</span> Xero Integration (Optional)
+          </legend>
+          <div class="form-row" style="margin-bottom:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="form-group">
+              <label class="form-label" style="font-size:11px; margin-bottom:4px">Sales Account Code</label>
+              <input class="form-input" id="cc-xero-sales" value="${escapeHTML(cc.xeroSalesAccountCode || '')}" placeholder="e.g. 200" style="width:100%" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size:11px; margin-bottom:4px">Expense Account Code</label>
+              <input class="form-input" id="cc-xero-expense" value="${escapeHTML(cc.xeroExpenseAccountCode || '')}" placeholder="e.g. 300" style="width:100%" />
+            </div>
+          </div>
+          <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="form-group">
+              <label class="form-label" style="font-size:11px; margin-bottom:4px">Tracking Category</label>
+              <input class="form-input" id="cc-xero-category" value="${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}" placeholder="e.g. Department" style="width:100%" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size:11px; margin-bottom:4px">Tracking Option</label>
+              <input class="form-input" id="cc-xero-option" value="${escapeHTML(cc.xeroTrackingOptionName || '')}" placeholder="e.g. Electrical" style="width:100%" />
+            </div>
+          </div>
+        </fieldset>
+
         <div class="form-group">
           <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
             <input type="checkbox" id="cc-active" ${cc.active ? 'checked' : ''} style="width:16px; height:16px; margin:0" />
@@ -4936,12 +5162,24 @@ export function renderSettings(container) {
             const code = document.getElementById('cc-code').value.trim().toUpperCase();
             const name = document.getElementById('cc-name').value.trim();
             const active = document.getElementById('cc-active').checked;
+            const xeroSalesAccountCode = document.getElementById('cc-xero-sales').value.trim();
+            const xeroExpenseAccountCode = document.getElementById('cc-xero-expense').value.trim();
+            const xeroTrackingCategoryName = document.getElementById('cc-xero-category').value.trim();
+            const xeroTrackingOptionName = document.getElementById('cc-xero-option').value.trim();
 
             if (!code) { showToast('Code required', 'error'); return; }
             if (!name) { showToast('Name required', 'error'); return; }
 
             try {
-              const updates = { code, name, active };
+              const updates = { 
+                code, 
+                name, 
+                active,
+                xeroSalesAccountCode: xeroSalesAccountCode || null,
+                xeroExpenseAccountCode: xeroExpenseAccountCode || null,
+                xeroTrackingCategoryName: xeroTrackingCategoryName || null,
+                xeroTrackingOptionName: xeroTrackingOptionName || null
+              };
               if (editId) {
                 await store.update('costCenters', editId, updates);
                 showToast('Cost Center updated successfully', 'success');
@@ -4950,7 +5188,7 @@ export function renderSettings(container) {
                 showToast('Cost Center created successfully', 'success');
               }
               c();
-              const tc = container.querySelector('#settings-content');
+              const tc = document.querySelector('#settings-content');
               renderCostCentersTab(tc);
             } catch (err) {
               console.error('Error saving cost center:', err);
@@ -4961,8 +5199,83 @@ export function renderSettings(container) {
       });
     }
 
-    render();
+  function renderSuppliersSettings(tc) {
+    const settings = store.getSettings();
+    const categories = settings.supplierCategories || ['Electrical', 'Plumbing', 'HVAC', 'Fire Safety', 'Security', 'General'];
+
+    tc.innerHTML = `
+      <div style="max-width:900px">
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header"><h4 style="margin:0">Supplier Categories</h4></div>
+          <div class="card-body">
+            <p class="text-secondary" style="font-size:13px;margin-bottom:16px">Define classifications/categories for your suppliers (e.g. Electrical, Plumbing, HVAC). These categories are used to group suppliers in the Suppliers directory.</p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px" id="supplier-categories-container">
+              ${categories.map(c => `
+                <div class="badge badge-neutral" style="padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px">
+                  ${escapeHTML(c)}
+                  <span class="material-icons-outlined btn-remove-supplier-cat" data-name="${escapeHTML(c)}" style="font-size:14px;cursor:pointer">close</span>
+                </div>
+              `).join('')}
+              <button class="btn btn-outline btn-sm" id="btn-add-supplier-category" style="border-style:dashed">
+                <span class="material-icons-outlined" style="font-size:16px">add</span> New Category
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:24px;display:flex;justify-content:flex-end">
+          <button class="btn btn-primary" id="btn-save-suppliers" data-tooltip="Save supplier categories settings" data-tooltip-pos="top">Save Supplier Settings</button>
+        </div>
+      </div>
+    `;
+
+    tc.querySelector('#btn-add-supplier-category').addEventListener('click', () => {
+      const name = prompt('Enter supplier category name:');
+      if (name) {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        const exists = Array.from(tc.querySelectorAll('.btn-remove-supplier-cat')).some(span => span.dataset.name.toLowerCase() === trimmed.toLowerCase());
+        if (exists) {
+          showToast('Category already exists', 'error');
+          return;
+        }
+
+        const btn = document.createElement('div');
+        btn.className = 'badge badge-neutral';
+        btn.style.cssText = 'padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px';
+        btn.innerHTML = `
+          ${escapeHTML(trimmed)}
+          <span class="material-icons-outlined btn-remove-supplier-cat" data-name="${escapeHTML(trimmed)}" style="font-size:14px;cursor:pointer">close</span>
+        `;
+        tc.querySelector('#supplier-categories-container').insertBefore(btn, tc.querySelector('#btn-add-supplier-category'));
+        btn.querySelector('.btn-remove-supplier-cat').addEventListener('click', () => btn.remove());
+      }
+    });
+
+    tc.querySelectorAll('.btn-remove-supplier-cat').forEach(btn => {
+      btn.addEventListener('click', () => btn.closest('.badge').remove());
+    });
+
+    tc.querySelector('#btn-save-suppliers').addEventListener('click', async () => {
+      const btn = tc.querySelector('#btn-save-suppliers');
+      const origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
+
+      try {
+        const supplierCategories = Array.from(tc.querySelectorAll('.btn-remove-supplier-cat')).map(span => span.dataset.name);
+        const updatedSettings = {
+          ...settings,
+          supplierCategories
+        };
+        await store.saveSettings(updatedSettings);
+        showToast('Supplier settings saved successfully', 'success');
+      } catch (err) {
+        console.error('Error saving supplier settings:', err);
+        showToast('Failed to save supplier settings: ' + (err.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    });
   }
-
-
-

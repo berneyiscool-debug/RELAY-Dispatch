@@ -86,8 +86,8 @@ export function renderLeadsList(container) {
       </div>
     </div>
 
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
+    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
+      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
         <button class="toolbar-filter active" data-filter="all">All (${leads.length})</button>
         <button class="toolbar-filter" data-filter="New">New</button>
         <button class="toolbar-filter" data-filter="Contacted">Contacted</button>
@@ -95,7 +95,12 @@ export function renderLeadsList(container) {
         <button class="toolbar-filter" data-filter="Won">Won</button>
         <button class="toolbar-filter" data-filter="Lost">Lost</button>
       </div>
-      <div class="toolbar-search">
+      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
+        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+        <span style="font-size:12px; color:var(--text-secondary)">to</span>
+        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+      </div>
+      <div class="toolbar-search" style="flex:0 0 auto;">
         <span class="material-icons-outlined">search</span>
         <input type="text" placeholder="Search leads..." id="leads-search" />
       </div>
@@ -290,24 +295,58 @@ export function renderLeadsList(container) {
   container.querySelector('#leads-table-container').appendChild(table);
   container.querySelector('#btn-new-lead').addEventListener('click', () => router.navigate('/leads/new'));
 
+  let activeStatusFilter = 'all';
+  let searchQuery = '';
+  let filterStartDate = '';
+  let filterEndDate = '';
+
+  function applyFilters() {
+    let filtered = [...leads];
+    if (activeStatusFilter !== 'all') {
+      filtered = filtered.filter(l => l.status === activeStatusFilter);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(l => {
+        const title = l.title || '';
+        const custName = l.customerName || '';
+        return title.toLowerCase().includes(q) || 
+               custName.toLowerCase().includes(q);
+      });
+    }
+    if (filterStartDate || filterEndDate) {
+      filtered = filtered.filter(l => {
+        const dateVal = l.createdAt || '';
+        const lDateStr = dateVal ? dateVal.split('T')[0] : '';
+        if (filterStartDate && lDateStr < filterStartDate) return false;
+        if (filterEndDate && lDateStr > filterEndDate) return false;
+        return true;
+      });
+    }
+    table.updateData(filtered);
+  }
+
   container.querySelectorAll('.toolbar-filter').forEach(btn => {
     btn.addEventListener('click', () => {
       container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const f = btn.dataset.filter;
-      filteredData = f === 'all' ? [...leads] : leads.filter(l => l.status === f);
-      table.updateData(filteredData);
+      activeStatusFilter = btn.dataset.filter;
+      applyFilters();
     });
   });
 
   container.querySelector('#leads-search').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    filteredData = leads.filter(l => {
-      const title = l.title || '';
-      const custName = l.customerName || '';
-      return title.toLowerCase().includes(q) || 
-             custName.toLowerCase().includes(q);
-    });
-    table.updateData(filteredData);
+    searchQuery = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
+    filterStartDate = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
+    filterEndDate = e.target.value;
+    applyFilters();
   });
 }

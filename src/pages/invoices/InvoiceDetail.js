@@ -466,7 +466,7 @@ export function renderInvoiceDetail(container, { id }) {
     container.querySelectorAll('.btn-add-line').forEach(btn => {
       btn.addEventListener('click', () => {
         const sIdx = parseInt(btn.dataset.sidx);
-        invoice.sections[sIdx].lineItems.push({ description: '', type: 'labor', qty: 1, rate: 0, total: 0 });
+        invoice.sections[sIdx].lineItems.push({ description: '', type: 'material', qty: 1, rate: 0, total: 0 });
         render();
       });
     });

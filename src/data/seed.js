@@ -850,9 +850,42 @@ export async function seedData(force = false) {
 
   // Save Collections
   const costCentersList = [
-    { id: 'cc_electrical', name: 'Electrical Services', code: 'ELEC', active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    { id: 'cc_solar', name: 'Solar Installations', code: 'SOLAR', active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    { id: 'cc_hvac', name: 'HVAC Services', code: 'HVAC', active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    { 
+      id: 'cc_electrical', 
+      name: 'Electrical Services', 
+      code: 'ELEC', 
+      active: true, 
+      xeroSalesAccountCode: '200',
+      xeroExpenseAccountCode: '300',
+      xeroTrackingCategoryName: 'Department',
+      xeroTrackingOptionName: 'Electrical',
+      createdAt: new Date().toISOString(), 
+      updatedAt: new Date().toISOString() 
+    },
+    { 
+      id: 'cc_solar', 
+      name: 'Solar Installations', 
+      code: 'SOLAR', 
+      active: true, 
+      xeroSalesAccountCode: '210',
+      xeroExpenseAccountCode: '310',
+      xeroTrackingCategoryName: 'Department',
+      xeroTrackingOptionName: 'Solar',
+      createdAt: new Date().toISOString(), 
+      updatedAt: new Date().toISOString() 
+    },
+    { 
+      id: 'cc_hvac', 
+      name: 'HVAC Services', 
+      code: 'HVAC', 
+      active: true, 
+      xeroSalesAccountCode: '220',
+      xeroExpenseAccountCode: '320',
+      xeroTrackingCategoryName: 'Department',
+      xeroTrackingOptionName: 'HVAC',
+      createdAt: new Date().toISOString(), 
+      updatedAt: new Date().toISOString() 
+    }
   ];
 
   const projectsList = [

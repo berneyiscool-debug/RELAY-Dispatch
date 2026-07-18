@@ -1832,6 +1832,7 @@ export function renderCustomerPortal(container, params) {
             link: `/quotes/${quote.id}`,
             read: false,
             source: 'customer_portal',
+            createdBy: 'Customer (Portal)',
             createdAt: new Date().toISOString(),
             status: 'Pending'
           });
@@ -1883,6 +1884,7 @@ export function renderCustomerPortal(container, params) {
             link: `/quotes/${quote.id}`,
             read: false,
             source: 'customer_portal',
+            createdBy: 'Customer (Portal)',
             createdAt: new Date().toISOString(),
             status: 'Pending'
           });
@@ -1985,6 +1987,7 @@ export function renderCustomerPortal(container, params) {
           description: `Request Type: ${data.requestType}\nPriority: ${data.priority}\nSelected Site: ${selectedSite}\nLinked Asset: ${linkedAssetName}\nPreferred Contact Method: ${data.contactMethod}\n\nDescription:\n${data.description}`,
           read: false,
           source: 'customer_portal',
+          createdBy: 'Customer (Portal)',
           type: 'Client Request',
           priority: data.priority === 'Urgent' ? 'High' : data.priority,
           status: 'Pending',

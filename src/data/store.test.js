@@ -257,6 +257,95 @@ describe('DataStore', () => {
       assert.strictEqual(norm.taskName, 'First task');
       assert.strictEqual(norm.color, '#ff9900');
     });
+
+    test('invoices serialization and deserialization via line_items works correctly', () => {
+      const invoicePayload = {
+        id: 'inv_test_1',
+        number: 'INV-99999',
+        customerId: 'cust_abc',
+        status: 'Draft',
+        sections: [
+          {
+            id: 'sec_1',
+            name: 'Phase 1',
+            lineItems: [{ description: 'Test Labor', type: 'labor', qty: 2, rate: 85 }]
+          }
+        ],
+        invoiceType: 'Standard',
+        laborProfileId: 'rate_1',
+        originalQuoteNumber: 'Q-00001',
+        approvedVariationsSum: 150
+      };
+
+      const denorm = store.denormalizeRecord(invoicePayload, 'invoices');
+
+      // Check whitelisted fields remain on root
+      assert.strictEqual(denorm.id, 'inv_test_1');
+      assert.strictEqual(denorm.number, 'INV-99999');
+      assert.strictEqual(denorm.customer_id, 'cust_abc');
+      assert.strictEqual(denorm.status, 'Draft');
+
+      // Rich fields should be stripped from root
+      assert.strictEqual(denorm.sections, undefined);
+      assert.strictEqual(denorm.invoiceType, undefined);
+      assert.strictEqual(denorm.laborProfileId, undefined);
+
+      // And serialized into line_items
+      assert.ok(denorm.line_items);
+      assert.strictEqual(denorm.line_items.invoiceType, 'Standard');
+      assert.strictEqual(denorm.line_items.laborProfileId, 'rate_1');
+      assert.strictEqual(denorm.line_items.originalQuoteNumber, 'Q-00001');
+      assert.strictEqual(denorm.line_items.approvedVariationsSum, 150);
+      assert.strictEqual(denorm.line_items.sections[0].name, 'Phase 1');
+
+      // Re-normalize
+      const norm = store.normalizeRecord(denorm, 'invoices');
+
+      assert.strictEqual(norm.id, 'inv_test_1');
+      assert.strictEqual(norm.number, 'INV-99999');
+      assert.strictEqual(norm.customerId, 'cust_abc');
+      assert.strictEqual(norm.invoiceType, 'Standard');
+      assert.strictEqual(norm.laborProfileId, 'rate_1');
+      assert.strictEqual(norm.originalQuoteNumber, 'Q-00001');
+      assert.strictEqual(norm.approvedVariationsSum, 150);
+      assert.strictEqual(norm.sections[0].name, 'Phase 1');
+      assert.strictEqual(norm.sections[0].lineItems[0].description, 'Test Labor');
+    });
+
+    test('quotes serialization and deserialization via line_items works correctly', () => {
+      const quotePayload = {
+        id: 'q_test_1',
+        number: 'Q-99999',
+        customerId: 'cust_xyz',
+        sections: [
+          {
+            id: 'sec_2',
+            name: 'Phase 2',
+            lineItems: [{ description: 'Test Material', type: 'material', qty: 10, rate: 5 }]
+          }
+        ],
+        laborProfileId: 'rate_2',
+        isTemplate: true
+      };
+
+      const denorm = store.denormalizeRecord(quotePayload, 'quotes');
+
+      assert.strictEqual(denorm.id, 'q_test_1');
+      assert.strictEqual(denorm.sections, undefined);
+      assert.strictEqual(denorm.laborProfileId, undefined);
+      assert.ok(denorm.line_items);
+      assert.strictEqual(denorm.line_items.laborProfileId, 'rate_2');
+      assert.strictEqual(denorm.line_items.isTemplate, true);
+      assert.strictEqual(denorm.line_items.sections[0].name, 'Phase 2');
+
+      const norm = store.normalizeRecord(denorm, 'quotes');
+
+      assert.strictEqual(norm.id, 'q_test_1');
+      assert.strictEqual(norm.laborProfileId, 'rate_2');
+      assert.strictEqual(norm.isTemplate, true);
+      assert.strictEqual(norm.sections[0].name, 'Phase 2');
+      assert.strictEqual(norm.sections[0].lineItems[0].description, 'Test Material');
+    });
   });
 });
 

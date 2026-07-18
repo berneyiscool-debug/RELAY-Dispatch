@@ -18,6 +18,7 @@ import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenance
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
+import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 
@@ -87,6 +88,66 @@ document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPrefe
 window.addEventListener('simpro-settings-updated', () => {
   document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPreference || 'full');
 });
+
+// Global keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  const activeEl = document.activeElement;
+  const isInputField = activeEl && (
+    activeEl.tagName === 'INPUT' || 
+    activeEl.tagName === 'TEXTAREA' || 
+    activeEl.contentEditable === 'true' ||
+    activeEl.tagName === 'SELECT'
+  );
+
+  if (isInputField) {
+    if (e.key === 'Escape') {
+      activeEl.blur();
+    }
+    return;
+  }
+
+  // 1. Focus Search Bar: '/' key or Ctrl + '/'
+  if (e.key === '/' || (e.ctrlKey && e.key === '/')) {
+    e.preventDefault();
+    const searchInput = document.getElementById('global-search');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+  }
+
+  // 2. Toggle Deputy Assistant: Shift + D
+  if (e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+    e.preventDefault();
+    import('./components/RelayAssistant.js').then(({ toggleRelay }) => {
+      toggleRelay();
+    });
+  }
+});
+
+// Automatically intercept and replace all standard browser date inputs with our frosted-glass date picker
+function autoInitDatePickers(root = document) {
+  const inputs = root.querySelectorAll('input[type="date"]');
+  inputs.forEach(input => initDatePicker(input));
+}
+
+// Initial sweep
+autoInitDatePickers();
+
+// Monitor DOM updates to auto-upgrade future dynamically rendered date inputs
+const dateObserver = new MutationObserver((mutations) => {
+  let hasAdded = false;
+  for (const m of mutations) {
+    if (m.addedNodes && m.addedNodes.length > 0) {
+      hasAdded = true;
+      break;
+    }
+  }
+  if (hasAdded) {
+    autoInitDatePickers(document.body);
+  }
+});
+dateObserver.observe(document.body, { childList: true, subtree: true });
 
 // Lazy-classify tooltips into 'partial' vs 'full' based on action keywords on hover
 document.addEventListener('mouseover', (e) => {

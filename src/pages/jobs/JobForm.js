@@ -248,7 +248,8 @@ export function renderJobForm(container, params) {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Status</label>
-              <select class="form-select" name="status">
+              <select class="form-select" name="status" ${job.isRecurring ? 'disabled' : ''}>
+                ${job.isRecurring ? `<option value="Recurring Template" selected>Recurring Template</option>` : ''}
                 ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `<option ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
               </select>
             </div>
@@ -257,6 +258,7 @@ export function renderJobForm(container, params) {
               <select class="form-select" name="priority" id="job-priority">
                 ${['Low','Medium','High','Urgent'].map(p => `<option ${job.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
               </select>
+            </div>
           </div>
           
           <!-- Project & Cost Center -->
@@ -284,6 +286,12 @@ export function renderJobForm(container, params) {
               <option value="">None (Internal Techs)</option>
               ${contractors.map(c => `<option value="${c.id}" ${job.contractorId === c.id ? 'selected' : ''}>${escapeHTML(c.businessName)}</option>`).join('')}
             </select>
+          </div>
+
+          <!-- Preferred Time -->
+          <div class="form-group">
+            <label class="form-label">Preferred Time (Optional)</label>
+            <input type="text" class="form-input" name="preferredTime" placeholder="e.g. 2:00 PM, 2pm everyday, Morning" value="${escapeHTML(job.preferredTime || '')}" />
           </div>
 
           <!-- Tags -->
@@ -331,6 +339,13 @@ export function renderJobForm(container, params) {
                 <label class="form-label">End Date (Max 50 occurrences)</label>
                 <input type="date" class="form-input" id="recurring-end" />
               </div>
+              <div class="form-group">
+                <label class="form-label">Default Technician</label>
+                <select class="form-select" id="recurring-tech">
+                  <option value="">-- No Default (Unassigned) --</option>
+                  ${store.getAll('technicians').filter(t => !t.deactivated || job.recurringConfig?.defaultTechnicianId === t.id).map(t => `<option value="${t.id}" ${job.recurringConfig?.defaultTechnicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+                </select>
+              </div>
             </div>
             
             <div id="recurring-days-selection" style="display:none; flex-direction:column; gap:8px;">
@@ -363,8 +378,6 @@ export function renderJobForm(container, params) {
             <div id="job-description-editor" contenteditable="true" spellcheck="true">${job.description || job.notes || ''}</div>
           </div>
 
-        </form>
-      </div>
         </form>
       </div>
     </div>
@@ -482,7 +495,7 @@ export function renderJobForm(container, params) {
     if (isEmg) {
       prioritySelect.value = 'Urgent';
       suggestionBox.style.display = 'block';
-      const techs = store.getAll('technicians');
+      const techs = store.getAll('technicians').filter(t => !t.deactivated);
       if (techs.length > 0) {
         const t = techs[Math.floor(Math.random() * techs.length)];
         const mins = Math.floor(Math.random() * 15) + 5;
@@ -498,6 +511,13 @@ export function renderJobForm(container, params) {
 
   emergencyToggle?.addEventListener('change', e => updateEmergencyUI(e.target.checked));
   if (job.isEmergency) updateEmergencyUI(true);
+
+  const preferredTimeInput = container.querySelector('input[name="preferredTime"]');
+  if (preferredTimeInput) {
+    import('../../utils/clockPicker.js').then(({ initTimeOnlyClockPicker }) => {
+      initTimeOnlyClockPicker(preferredTimeInput);
+    });
+  }
 
   // ---- Recurring ----
   function updateRecurringDaysSelector() {
@@ -581,6 +601,30 @@ export function renderJobForm(container, params) {
     
     isRecurring?.addEventListener('change', e => {
       recurringOptions.style.display = e.target.checked ? 'flex' : 'none';
+      
+      const statusSelect = container.querySelector('select[name="status"]');
+      if (statusSelect) {
+        if (e.target.checked) {
+          if (!statusSelect.dataset.prevStatus) {
+            statusSelect.dataset.prevStatus = statusSelect.value;
+          }
+          let opt = statusSelect.querySelector('option[value="Recurring Template"]');
+          if (!opt) {
+            opt = document.createElement('option');
+            opt.value = 'Recurring Template';
+            opt.textContent = 'Recurring Template';
+            statusSelect.appendChild(opt);
+          }
+          statusSelect.value = 'Recurring Template';
+          statusSelect.disabled = true;
+        } else {
+          statusSelect.disabled = false;
+          statusSelect.value = statusSelect.dataset.prevStatus || 'Pending';
+          const opt = statusSelect.querySelector('option[value="Recurring Template"]');
+          if (opt) opt.remove();
+        }
+      }
+
       if (e.target.checked) {
         updateRecurringDaysSelector();
       }
@@ -1266,10 +1310,12 @@ export function renderJobForm(container, params) {
         showToast('Recurring dates required', 'error'); return;
       }
       data.isRecurring = true;
+      data.status = 'Recurring Template';
       data.recurringConfig = { 
         freq, 
         start: startInput, 
         end: endInput,
+        defaultTechnicianId: container.querySelector('#recurring-tech')?.value || null,
         daysOfWeek: selectedDaysOfWeek,
         daysOfMonth: selectedDaysOfMonth
       };

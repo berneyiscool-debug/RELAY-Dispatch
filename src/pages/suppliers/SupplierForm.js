@@ -17,7 +17,8 @@ export function renderSupplierForm(container, params) {
     return;
   }
 
-  const categories = ['Electrical', 'Plumbing', 'HVAC', 'Fire Safety', 'Security', 'General'];
+  const settings = store.getSettings();
+  const categories = settings.supplierCategories || ['Electrical', 'Plumbing', 'HVAC', 'Fire Safety', 'Security', 'General'];
   const terms = ['COD', '7 Days', '14 Days', '30 Days'];
 
   container.innerHTML = `

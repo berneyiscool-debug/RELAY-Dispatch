@@ -58,7 +58,7 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
 
   const startStr = ts.startTime || `${ts.date}T09:00`;
   const finishStr = ts.finishTime || `${ts.date}T10:00`;
-  const technicians = store.getAll('technicians');
+  const technicians = store.getAll('technicians').filter(t => !t.deactivated || ts.technicianId === t.id);
   const activeJobs = store.getAll('jobs').filter(j => j.status !== 'Completed' && j.status !== 'Invoiced' || j.id === ts.jobId);
 
   const content = document.createElement('div');

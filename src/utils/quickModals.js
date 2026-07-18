@@ -563,7 +563,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
        label: 'Mark as Received',
        className: 'btn-success',
        onClick: (close) => {
-         const technicians = store.getAll('technicians');
+         const technicians = store.getAll('technicians').filter(t => !t.deactivated);
          const assets = store.getAll('assets');
 
          const modalContent = document.createElement('div');

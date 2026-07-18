@@ -142,5 +142,108 @@ describe('Job Recurring Scheduling Integrations', () => {
     const relevantNotifsSecondRun = notificationsAfterSecondRun.filter(n => n.parentJobId === parentJob.id);
     assert.strictEqual(relevantNotifsSecondRun.length, 1);
   });
+
+  test('Auto-scheduling of recurring child jobs with defaultTechnicianId', () => {
+    const localDateStr = (date) => {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const todayStr = localDateStr(new Date());
+
+    // 1. Create a technician
+    const tech = store.create('technicians', {
+      name: 'Bob the Builder'
+    });
+
+    // 2. Create a parent recurring job template with defaultTechnicianId
+    const parentJob = store.create('jobs', {
+      number: 'J-002',
+      title: 'Weekly Servicing Template',
+      customerId: 'cust_1',
+      customerName: 'ACME Corp',
+      priority: 'Normal',
+      preferredTime: '14:00',
+      estimatedHours: 3,
+      isRecurring: true,
+      recurringConfig: {
+        freq: 'Weekly',
+        start: todayStr,
+        end: todayStr,
+        defaultTechnicianId: tech.id,
+        daysOfWeek: []
+      }
+    });
+
+    // 3. Run recurring check
+    checkRecurringJobs();
+
+    // 4. Assert that child job was spawned as Scheduled
+    const childJobs = store.getAll('jobs').filter(j => j.parentJobId === parentJob.id);
+    assert.strictEqual(childJobs.length, 1);
+    assert.strictEqual(childJobs[0].status, 'Scheduled');
+    assert.strictEqual(childJobs[0].technicianId, tech.id);
+    assert.strictEqual(childJobs[0].technicianName, 'Bob the Builder');
+
+    // 5. Assert that a schedule record was created for the child job
+    const schedules = store.getAll('schedule').filter(s => s.jobId === childJobs[0].id);
+    assert.strictEqual(schedules.length, 1);
+    assert.strictEqual(schedules[0].technicianId, tech.id);
+    assert.strictEqual(schedules[0].technicianName, 'Bob the Builder');
+    assert.strictEqual(schedules[0].date, todayStr);
+    assert.strictEqual(schedules[0].startTime, `${todayStr}T14:00`);
+    assert.strictEqual(schedules[0].finishTime, `${todayStr}T17:00`);
+    assert.strictEqual(schedules[0].hours, 3);
+  });
+
+  test('Auto-scheduling uses parent tasklist hours for duration', () => {
+    const localDateStr = (date) => {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const todayStr = localDateStr(new Date());
+
+    const tech = store.create('technicians', {
+      name: 'Alice Cooper'
+    });
+
+    const parentJob = store.create('jobs', {
+      number: 'J-003',
+      title: 'Tasklist Servicing Template',
+      customerId: 'cust_1',
+      customerName: 'ACME Corp',
+      priority: 'Normal',
+      preferredTime: '10:30',
+      isRecurring: true,
+      tasks: [
+        { id: 't1', name: 'Task 1', estimatedHours: 0.5, subTasks: [] },
+        { id: 't2', name: 'Task 2', estimatedHours: 0, subTasks: [
+          { id: 'st1', name: 'Subtask 1', estimatedHours: 1.5 }
+        ]}
+      ],
+      recurringConfig: {
+        freq: 'Weekly',
+        start: todayStr,
+        end: todayStr,
+        defaultTechnicianId: tech.id,
+        daysOfWeek: []
+      }
+    });
+
+    checkRecurringJobs();
+
+    const childJobs = store.getAll('jobs').filter(j => j.parentJobId === parentJob.id);
+    assert.strictEqual(childJobs.length, 1);
+
+    const schedules = store.getAll('schedule').filter(s => s.jobId === childJobs[0].id);
+    assert.strictEqual(schedules.length, 1);
+    // Total tasklist hours = 0.5 + 1.5 = 2.0 hours
+    assert.strictEqual(schedules[0].hours, 2.0);
+    assert.strictEqual(schedules[0].startTime, `${todayStr}T10:30`);
+    assert.strictEqual(schedules[0].finishTime, `${todayStr}T12:30`);
+  });
 });
 
