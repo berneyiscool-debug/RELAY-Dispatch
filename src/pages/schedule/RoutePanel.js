@@ -207,7 +207,8 @@ export function mountRoutePanel(container, ctx) {
 
   const panel = document.createElement('div');
   panel.id = PANEL_ID;
-  panel.style.cssText = 'position:fixed;top:0;right:-380px;width:360px;height:100vh;background:var(--card-bg);border-left:1px solid var(--border-color);box-shadow:-8px 0 30px rgba(0,0,0,0.15);z-index:450;transition:right 0.28s cubic-bezier(0.16,1,0.3,1);display:flex;flex-direction:column;';
+  // background: var(--bg-color) — solid in every theme (var(--card-bg) is translucent glass)
+  panel.style.cssText = 'position:fixed;top:0;right:-380px;width:360px;height:100vh;background:var(--bg-color);border-left:1px solid var(--border-color);box-shadow:-8px 0 30px rgba(0,0,0,0.25);z-index:450;transition:right 0.28s cubic-bezier(0.16,1,0.3,1);display:flex;flex-direction:column;';
   panel.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-color);">
       <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;">
@@ -216,7 +217,8 @@ export function mountRoutePanel(container, ctx) {
       </div>
       <button class="btn btn-ghost btn-icon btn-sm" id="rp-close"><span class="material-icons-outlined">close</span></button>
     </div>
-    <div id="rp-days" style="display:none;gap:4px;padding:10px 14px;border-bottom:1px solid var(--border-color);"></div>
+    <div id="rp-week" style="display:none;padding:10px 18px 0;font-size:12px;font-weight:600;color:var(--text-secondary);"></div>
+    <div id="rp-days" style="display:none;gap:4px;padding:8px 14px 10px;border-bottom:1px solid var(--border-color);"></div>
     <div id="rp-body" style="flex:1;overflow-y:auto;"></div>`;
   document.body.appendChild(panel);
 
@@ -232,6 +234,7 @@ export function mountRoutePanel(container, ctx) {
 
     // Week view: pick a day of the viewed week (dots mark days with allocations).
     // Defaults to today when it's inside the week, else the first day with jobs.
+    const weekRow = panel.querySelector('#rp-week');
     if (ctx.getViewMode?.() === 'week') {
       const monday = new Date(date);
       const dow = monday.getDay();
@@ -241,11 +244,18 @@ export function mountRoutePanel(container, ctx) {
       const todayStr = dstr(new Date());
       const selected = days.find(d => dstr(d) === todayStr) || days.find(hasBlocks) || days[0];
 
+      // Week label above the day buttons, e.g. "Week of 20 – 26 July"
+      const sunday = days[6];
+      const sameMonth = monday.getMonth() === sunday.getMonth();
+      weekRow.style.display = 'block';
+      weekRow.textContent = `Week of ${monday.getDate()}${sameMonth ? '' : ' ' + monday.toLocaleDateString('en-AU', { month: 'long' })} – ${sunday.getDate()} ${sunday.toLocaleDateString('en-AU', { month: 'long' })}`;
+
       daysRow.style.display = 'flex';
       daysRow.innerHTML = days.map(d => `
         <button class="rp-day toolbar-filter ${dstr(d) === dstr(selected) ? 'active' : ''}" data-date="${dstr(d)}"
-          style="flex:1;padding:5px 0;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px;">
-          <span>${d.toLocaleDateString('en-AU', { weekday: 'narrow' })} ${d.getDate()}</span>
+          title="${d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}"
+          style="flex:1;padding:6px 0;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
+          <span>${d.toLocaleDateString('en-AU', { weekday: 'narrow' })}</span>
           <span style="width:5px;height:5px;border-radius:50%;background:${hasBlocks(d) ? 'var(--color-primary)' : 'transparent'};"></span>
         </button>`).join('');
       daysRow.querySelectorAll('.rp-day').forEach(b => b.addEventListener('click', () => {
@@ -255,6 +265,7 @@ export function mountRoutePanel(container, ctx) {
       }));
       showDay(selected);
     } else {
+      weekRow.style.display = 'none';
       daysRow.style.display = 'none';
       showDay(date);
     }
