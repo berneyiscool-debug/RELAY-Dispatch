@@ -2096,6 +2096,14 @@ function renderJobStatusChart(data, item) {
 }
 
 function renderTechMap(data, item) {
+  // v1.3 maps (flag-gated): real Google map with today's job locations per tech
+  if (FLAGS.maps) {
+    setTimeout(enhanceTechMaps, 0);
+    return `<div class="techmap-real" style="position:relative;width:100%;height:100%;min-height:120px;">
+      <div class="techmap-canvas" style="position:absolute;inset:0;border-radius:6px;overflow:hidden;"></div>
+      <div class="techmap-note" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:12px;">Loading map…</div>
+    </div>`;
+  }
   const techs = store.getAll('technicians').filter(t => !t.deactivated).slice(0, 4);
   const markers = techs.map((t, i) => {
     const firstName = t.name ? t.name.split(' ')[0] : 'Tech';
@@ -2111,6 +2119,86 @@ function renderTechMap(data, item) {
     ${markers || '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;font-size:13px;">No technicians</div>'}
     <div style="position:absolute;bottom:8px;right:8px;background:rgba(255,255,255,.85);padding:4px 8px;font-size:10px;border-radius:4px;">Mock Map</div>
   </div>`;
+}
+
+// Real technician map (v1.3 maps): plots today's job sites per technician on a
+// live Google map, base marker at the dispatch start location. Fails soft into
+// a text note (missing key, offline, no geo) — never breaks the widget.
+async function enhanceTechMaps() {
+  const containers = [...document.querySelectorAll('.dash-widget[data-id="tech-map"] .techmap-real')]
+    .filter(c => !c.dataset.mapMounted);
+  if (!containers.length) return;
+
+  const setNote = (msg) => containers.forEach(c => {
+    const n = c.querySelector('.techmap-note');
+    if (n) { n.textContent = msg; n.style.display = msg ? 'flex' : 'none'; }
+  });
+
+  try {
+    const { loadGoogleMapsSdk } = await import('../utils/googleMapsLoader.js');
+    const { getStartLocation } = await import('../utils/routing.js');
+    const { getCachedGeo, geocodeAddress } = await import('../utils/geocode.js');
+
+    const base = await getStartLocation();
+    if (!base) { setNote('Set a company address in Settings to enable the map'); return; }
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const blocks = (store.getAll('schedule') || []).filter(s => s.date === todayStr);
+
+    // Resolve today's stops: one marker per block with a geocodable job address
+    const stops = [];
+    for (const s of blocks) {
+      const job = store.getById('jobs', s.jobId);
+      const addr = job?.siteAddress;
+      if (!addr) continue;
+      const geo = job.geo || getCachedGeo(addr) || await geocodeAddress(addr).catch(() => null);
+      if (!geo) continue;
+      const tech = store.getById('technicians', s.technicianId);
+      stops.push({
+        lat: geo.lat, lng: geo.lng,
+        color: tech?.color || '#FF5C00',
+        initial: (s.technicianName || '?').charAt(0).toUpperCase(),
+        title: `${s.technicianName || 'Unassigned'} — ${job.number || ''} ${job.title || ''}`.trim(),
+      });
+    }
+
+    const google = await loadGoogleMapsSdk();
+    const { Map } = await google.maps.importLibrary('maps');
+    const { Marker } = await google.maps.importLibrary('marker');
+
+    const pinSvg = (color, text) => 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"><circle cx="15" cy="15" r="12" fill="${color}" stroke="white" stroke-width="2.5"/><text x="15" y="19.5" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold" fill="white">${text}</text></svg>`);
+
+    containers.forEach(c => {
+      c.dataset.mapMounted = '1';
+      const canvas = c.querySelector('.techmap-canvas');
+      const note = c.querySelector('.techmap-note');
+      const map = new Map(canvas, {
+        center: { lat: base.lat, lng: base.lng }, zoom: 12,
+        disableDefaultUI: true, zoomControl: true, clickableIcons: false,
+      });
+      const bounds = new google.maps.LatLngBounds();
+      new Marker({ map, position: { lat: base.lat, lng: base.lng }, title: base.source === 'user' ? 'My start location' : 'Office', icon: pinSvg('#1E2A3A', '🏠') });
+      bounds.extend({ lat: base.lat, lng: base.lng });
+      stops.forEach(s => {
+        new Marker({ map, position: { lat: s.lat, lng: s.lng }, title: s.title, icon: pinSvg(s.color, s.initial) });
+        bounds.extend({ lat: s.lat, lng: s.lng });
+      });
+      if (stops.length) map.fitBounds(bounds, 40);
+      if (note) {
+        if (!stops.length) {
+          note.textContent = 'No jobs scheduled today';
+          note.style.cssText = 'position:absolute;left:8px;bottom:8px;background:var(--card-bg);padding:3px 8px;border-radius:4px;font-size:11px;color:var(--text-tertiary);box-shadow:0 1px 4px rgba(0,0,0,0.15);';
+        } else {
+          note.style.display = 'none';
+        }
+      }
+    });
+  } catch (e) {
+    console.warn('Tech map unavailable:', e);
+    setNote('Map unavailable — check the Google Maps browser key');
+  }
 }
 
 function renderRecentActivity(data, item) {

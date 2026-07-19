@@ -75,6 +75,16 @@ function applyOrder(dateStr, orderedStops, legs, refresh) {
 }
 
 async function renderPanelContent(body, date, technicians, refresh) {
+  try {
+    await renderPanelContentInner(body, date, technicians, refresh);
+  } catch (e) {
+    console.warn('Route panel error:', e);
+    body.innerHTML = `<div style="padding:24px;font-size:13px;color:var(--color-danger);">
+      Route calculation failed.<br><span style="color:var(--text-tertiary);font-size:12px;">${escapeHTML(String(e?.message || e))}</span></div>`;
+  }
+}
+
+async function renderPanelContentInner(body, date, technicians, refresh) {
   const dateStr = dstr(date);
   body.innerHTML = `<div style="padding:24px;color:var(--text-tertiary);font-size:13px;">Calculating routes…</div>`;
 
@@ -134,7 +144,15 @@ async function renderPanelContent(body, date, technicians, refresh) {
       .rp-muted { font-size: 12px; color: var(--text-tertiary); }
       .rp-suggestion { margin-top: 6px; }
     </style>
-    ${sections.length ? sections.join('') : `<div style="padding:24px;color:var(--text-tertiary);font-size:13px;">No allocations on this day.</div>`}`;
+    ${sections.length ? sections.join('') : `
+      <div style="padding:28px 24px;text-align:center;">
+        <span class="material-icons-outlined" style="font-size:34px;color:var(--text-tertiary);opacity:0.5;">event_busy</span>
+        <div style="font-size:13px;font-weight:600;margin-top:8px;">Nothing scheduled on ${escapeHTML(date.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-top:6px;line-height:1.5;">
+          The planner routes the day you're viewing on the schedule.<br>
+          Use the ‹ › arrows to move to a day with jobs, then reopen Route.
+        </div>
+      </div>`}`;
 
   // Wire "suggest best order" per tech
   body.querySelectorAll('.rp-optimize').forEach(btn => {
