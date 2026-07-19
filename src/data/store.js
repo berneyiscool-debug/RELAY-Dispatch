@@ -64,6 +64,7 @@ const TABLE_COLUMNS = {
     "force_password_change",
     "deactivated",
     "deactivated_at",
+    "start_location",
     "created_at",
     "updated_at"
   ],
@@ -1505,6 +1506,7 @@ class DataStore {
     if (record.account_number !== undefined) { record.accountNumber = record.account_number; delete record.account_number; }
     if (record.payment_terms !== undefined) { record.paymentTerms = record.payment_terms; delete record.payment_terms; }
     if (record.job_number !== undefined) { record.jobNumber = record.job_number; delete record.job_number; }
+    if (record.start_location !== undefined) { record.startLocation = record.start_location; delete record.start_location; }
     if (record.day_offset !== undefined) { record.dayOffset = parseInt(record.day_offset); delete record.day_offset; }
     if (record.start_hour !== undefined) { record.startHour = parseFloat(record.start_hour); delete record.start_hour; }
     if (record.end_hour !== undefined) { record.endHour = parseFloat(record.end_hour); delete record.end_hour; }
@@ -1826,6 +1828,7 @@ class DataStore {
     if (record.accountNumber !== undefined) { record.account_number = record.accountNumber; delete record.accountNumber; }
     if (record.paymentTerms !== undefined) { record.payment_terms = record.paymentTerms; delete record.paymentTerms; }
     if (record.jobNumber !== undefined) { record.job_number = record.jobNumber; delete record.jobNumber; }
+    if (record.startLocation !== undefined) { record.start_location = record.startLocation; delete record.startLocation; }
     if (record.dayOffset !== undefined) { record.day_offset = record.dayOffset; delete record.dayOffset; }
     if (record.startHour !== undefined) { record.start_hour = record.startHour; delete record.startHour; }
     if (record.endHour !== undefined) { record.end_hour = record.endHour; delete record.endHour; }

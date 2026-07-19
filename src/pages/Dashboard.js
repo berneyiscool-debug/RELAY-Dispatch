@@ -14,6 +14,7 @@ import { store } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
 import { calculateTotalBillableMaterials } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
+import { FLAGS } from '../utils/flags.js';
 import { showDrawer } from '../components/Drawer.js';
 
 function getHeaderActionsHtml() {
@@ -2176,7 +2177,13 @@ function renderTodaySchedule(data, item) {
     return `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:13px;">No jobs scheduled today</div>`;
   }
 
-  return scheduleBlocks.map(s => {
+  // v1.3 maps (flag-gated): drive-time chips between jobs + per-tech totals,
+  // filled in asynchronously after paint by enhanceTodayScheduleRoutes().
+  const techIds = [...new Set(scheduleBlocks.map(s => s.technicianId).filter(Boolean))];
+  const singleTech = techIds.length <= 1;
+  if (FLAGS.maps) setTimeout(enhanceTodayScheduleRoutes, 0);
+
+  const rowsHtml = scheduleBlocks.map(s => {
     const j = store.getById('jobs', s.jobId);
     const status = j ? j.status : 'Scheduled';
     const customerName = j ? j.customerName : '';
@@ -2199,8 +2206,93 @@ function renderTodaySchedule(data, item) {
         </div>
         <span class="badge ${status==='In Progress'?'badge-primary':'badge-warning'}">${status}</span>
       </div>
+      ${FLAGS.maps && singleTech ? `<div class="ts-drive-slot" data-to-job="${s.jobId}" style="display:none;font-size:11px;color:var(--text-tertiary);padding:2px 0 2px 13px;"></div>` : ''}
     `;
   }).join('');
+
+  if (!FLAGS.maps) return rowsHtml;
+  // Slot ABOVE the first row = office → first job; footer = totals + navigate link
+  const firstSlot = singleTech
+    ? `<div class="ts-drive-slot" data-to-job="__first" style="display:none;font-size:11px;color:var(--text-tertiary);padding:2px 0 2px 13px;"></div>` : '';
+  return `${firstSlot}${rowsHtml}
+    <div class="ts-route-summary" data-ts-date="${todayStr}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border-color);font-size:11px;color:var(--text-secondary);"></div>`;
+}
+
+// Fill the Today's Schedule drive-time slots: office → job 1 → … → office per
+// technician. Fails soft — if geocodes/route are unavailable everything stays hidden.
+async function enhanceTodayScheduleRoutes() {
+  const bodies = [...document.querySelectorAll('.dash-widget[data-id="today-schedule"] .card-body')]
+    .filter(b => b.querySelector('.ts-route-summary'));
+  if (!bodies.length) return;
+
+  const { computeRoute, getStartLocation, navigateUrl, fmtDuration } = await import('../utils/routing.js');
+  const { getCachedGeo, geocodeAddress } = await import('../utils/geocode.js');
+
+  const start = await getStartLocation();
+  if (!start) return;
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const blocks = (store.getAll('schedule') || [])
+    .filter(s => s.date === todayStr)
+    .sort((a, b) => (a.startHour - b.startHour) || ((a.startMinute || 0) - (b.startMinute || 0)));
+  if (!blocks.length) return;
+
+  // Resolve each block's job to a geocoded stop (skip un-geocodable ones)
+  const stopFor = async (s) => {
+    const job = store.getById('jobs', s.jobId);
+    const addr = job?.siteAddress;
+    if (!addr) return null;
+    const geo = job.geo || getCachedGeo(addr) || await geocodeAddress(addr);
+    return geo ? { id: s.jobId, lat: geo.lat, lng: geo.lng, address: addr } : null;
+  };
+
+  const byTech = new Map();
+  for (const s of blocks) {
+    const key = s.technicianId || 'unassigned';
+    if (!byTech.has(key)) byTech.set(key, { name: s.technicianName || 'Unassigned', blocks: [] });
+    byTech.get(key).blocks.push(s);
+  }
+
+  const summaries = [];
+  let singleChainLegs = null, singleChainStops = null;
+  for (const [, tech] of byTech) {
+    const stops = (await Promise.all(tech.blocks.map(stopFor))).filter(Boolean);
+    if (!stops.length) continue;
+    const route = await computeRoute({ origin: { lat: start.lat, lng: start.lng }, stops, roundTrip: true });
+    if (!route) continue;
+    summaries.push({ name: tech.name, route, stops });
+    if (byTech.size === 1) { singleChainLegs = route.legs; singleChainStops = stops; }
+  }
+  if (!summaries.length) return;
+
+  bodies.forEach(body => {
+    // Per-leg chips (single-tech days only)
+    if (singleChainLegs) {
+      singleChainLegs.forEach(leg => {
+        const slot = leg.toId === 'origin'
+          ? null // return leg shows in the summary, not as a chip
+          : body.querySelector(`.ts-drive-slot[data-to-job="${leg.fromId === 'origin' ? '__first' : leg.toId}"]`);
+        if (slot) {
+          slot.innerHTML = `<span class="material-icons-outlined" style="font-size:12px;vertical-align:-2px;">directions_car</span> ${fmtDuration(leg.durationSec)} drive`;
+          slot.style.display = 'block';
+        }
+      });
+    }
+    // Summary footer (always)
+    const sum = body.querySelector('.ts-route-summary');
+    if (sum) {
+      sum.innerHTML = summaries.map(({ name, route, stops }) => {
+        const nav = navigateUrl([...stops.map(x => x.address), start.label]);
+        return `<div style="display:flex;align-items:center;gap:6px;">
+          <span class="material-icons-outlined" style="font-size:13px;color:var(--color-primary);">route</span>
+          <span style="flex:1;"><strong>${name}</strong>: ${fmtDuration(route.totalDurationSec)} driving · ${(route.totalDistanceMeters / 1000).toFixed(0)} km (incl. return)</span>
+          ${nav ? `<a href="${nav}" target="_blank" rel="noopener" title="Open in Google Maps" style="color:var(--color-primary);display:flex;" onclick="event.stopPropagation()"><span class="material-icons-outlined" style="font-size:14px;">open_in_new</span></a>` : ''}
+        </div>`;
+      }).join('');
+      sum.style.display = 'block';
+    }
+  });
 }
 
 function fmtAgo(d) {
