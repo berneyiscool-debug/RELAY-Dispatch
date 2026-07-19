@@ -2232,6 +2232,7 @@ export function renderScheduleView(container) {
     import('./RoutePanel.js').then(({ mountRoutePanel }) => {
       mountRoutePanel(container, {
         getDate: () => new Date(currentDate),
+        getViewMode: () => viewMode,
         getTechnicians: () => technicians.filter(t => visibleTechIds.has(t.id)),
         refresh: () => render(),
       });

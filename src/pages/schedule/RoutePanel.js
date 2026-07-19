@@ -216,14 +216,48 @@ export function mountRoutePanel(container, ctx) {
       </div>
       <button class="btn btn-ghost btn-icon btn-sm" id="rp-close"><span class="material-icons-outlined">close</span></button>
     </div>
+    <div id="rp-days" style="display:none;gap:4px;padding:10px 14px;border-bottom:1px solid var(--border-color);"></div>
     <div id="rp-body" style="flex:1;overflow-y:auto;"></div>`;
   document.body.appendChild(panel);
+
+  const showDay = (date) => {
+    panel.querySelector('#rp-date').textContent = date.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+    renderPanelContent(panel.querySelector('#rp-body'), date, ctx.getTechnicians(), ctx.refresh);
+  };
 
   const open = () => {
     panel.style.right = '0';
     const date = ctx.getDate();
-    panel.querySelector('#rp-date').textContent = date.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
-    renderPanelContent(panel.querySelector('#rp-body'), date, ctx.getTechnicians(), ctx.refresh);
+    const daysRow = panel.querySelector('#rp-days');
+
+    // Week view: pick a day of the viewed week (dots mark days with allocations).
+    // Defaults to today when it's inside the week, else the first day with jobs.
+    if (ctx.getViewMode?.() === 'week') {
+      const monday = new Date(date);
+      const dow = monday.getDay();
+      monday.setDate(monday.getDate() - dow + (dow === 0 ? -6 : 1));
+      const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(d.getDate() + i); return d; });
+      const hasBlocks = (d) => (store.getAll('schedule') || []).some(s => s.date === dstr(d));
+      const todayStr = dstr(new Date());
+      const selected = days.find(d => dstr(d) === todayStr) || days.find(hasBlocks) || days[0];
+
+      daysRow.style.display = 'flex';
+      daysRow.innerHTML = days.map(d => `
+        <button class="rp-day toolbar-filter ${dstr(d) === dstr(selected) ? 'active' : ''}" data-date="${dstr(d)}"
+          style="flex:1;padding:5px 0;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px;">
+          <span>${d.toLocaleDateString('en-AU', { weekday: 'narrow' })} ${d.getDate()}</span>
+          <span style="width:5px;height:5px;border-radius:50%;background:${hasBlocks(d) ? 'var(--color-primary)' : 'transparent'};"></span>
+        </button>`).join('');
+      daysRow.querySelectorAll('.rp-day').forEach(b => b.addEventListener('click', () => {
+        daysRow.querySelectorAll('.rp-day').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        showDay(new Date(b.dataset.date + 'T12:00:00'));
+      }));
+      showDay(selected);
+    } else {
+      daysRow.style.display = 'none';
+      showDay(date);
+    }
   };
   const close = () => { panel.style.right = '-380px'; };
   btn.addEventListener('click', () => (panel.style.right === '0px' ? close() : open()));
