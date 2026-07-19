@@ -2527,6 +2527,39 @@ class DataStore {
       });
   }
 
+  // ── v1.3 Maps: per-user dispatch start location ────────────────────────────
+  // Writes profiles.start_location directly (the technicians update() path goes
+  // through the invite-user edge function, which doesn't carry this field).
+  // Pass null to clear the override (falls back to the company office).
+  async setStartLocation(startLocation) {
+    const currentUser = typeof localStorage !== 'undefined'
+      ? JSON.parse(localStorage.getItem('currentUser') || 'null') : null;
+    if (!currentUser?.id) throw new Error('Not signed in');
+
+    // Update cache first so getStartLocation() sees it immediately
+    const techs = [...(this.cache.technicians || [])];
+    const i = techs.findIndex(t => t.id === currentUser.id);
+    if (i !== -1) {
+      techs[i] = { ...techs[i], startLocation };
+      this.cache.technicians = techs;
+      this.emit('technicians', techs);
+    }
+
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
+      // Local mode: persist with the rest of the technician record
+      await this.writeRecordToIndexedDB?.('technicians', techs[i]).catch?.(() => {});
+      return;
+    }
+    const { error } = await supabase
+      .from('profiles')
+      .update({ start_location: startLocation })
+      .eq('id', currentUser.id);
+    if (error) {
+      this._notifyWriteError('update', 'start location', error);
+      throw error;
+    }
+  }
+
   // ── In-Memory Event Emitter ────────────────────────────────────────────────
 
   on(event, callback) {

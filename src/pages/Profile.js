@@ -8,6 +8,7 @@ import { showToast } from '../components/Notifications.js';
 import { escapeHTML } from '../utils/security.js';
 import { supabase } from '../utils/supabase.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
+import { FLAGS } from '../utils/flags.js';
 
 // Helper to hash password using SHA-256 Web Crypto API
 async function hashPassword(password) {
@@ -73,6 +74,7 @@ export function renderProfile(container) {
   let activeAccountObj = null;
   let accounts = [];
   let uploadedAvatarUrl = currentUser.avatarUrl || null;
+  const myStartLocation = FLAGS.maps ? (store.getById('technicians', currentUser.id)?.startLocation || null) : null;
 
   const loadProfileAvatar = async () => {
     if (loginMode === 'local') {
@@ -296,6 +298,26 @@ export function renderProfile(container) {
               </button>
             </div>
 
+            <!-- Card: Dispatch start location (v1.3 maps, flag-gated) -->
+            ${FLAGS.maps ? `
+              <div class="profile-card">
+                <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">Dispatch Start Location</h3>
+                <p style="margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;">
+                  Where your day's driving starts and ends for route planning. Leave blank to use the company office.
+                </p>
+                <div class="form-group">
+                  <label class="form-label">Start Address</label>
+                  <input type="text" id="profile-start-location" class="form-input"
+                    placeholder="Company office (default)" value="${escapeHTML(myStartLocation?.address || '')}" />
+                  <div id="profile-start-location-hint" style="font-size: 11.5px; color: var(--text-tertiary); margin-top: 6px;">
+                    ${myStartLocation?.address ? 'Custom start location set.' : 'Currently using the company office address.'}
+                  </div>
+                </div>
+                <button class="btn btn-primary" id="btn-save-start-location" style="margin-top: 8px; justify-content: center;">
+                  Save Start Location
+                </button>
+              </div>` : ''}
+
             <!-- Card 2: Local Recovery (Local Admin Only) -->
             ${isLocalAdmin ? `
               <div class="profile-card">
@@ -511,6 +533,36 @@ export function renderProfile(container) {
     });
 
     // 4. Update Password / PIN
+    // v1.3 maps: save per-user dispatch start location (element only exists when flag is on)
+    container.querySelector('#btn-save-start-location')?.addEventListener('click', async () => {
+      const btn = container.querySelector('#btn-save-start-location');
+      const hint = container.querySelector('#profile-start-location-hint');
+      const address = container.querySelector('#profile-start-location').value.trim();
+      btn.disabled = true;
+      try {
+        if (!address) {
+          await store.setStartLocation(null);
+          if (hint) hint.textContent = 'Currently using the company office address.';
+          showToast('Start location cleared — using company office', 'success');
+          return;
+        }
+        const { geocodeAddress } = await import('../utils/geocode.js');
+        const geo = await geocodeAddress(address);
+        if (!geo) {
+          showToast('Could not find that address — check it and try again', 'error');
+          return;
+        }
+        await store.setStartLocation({ address: geo.formattedAddress || address, geo: { lat: geo.lat, lng: geo.lng, formattedAddress: geo.formattedAddress, placeId: geo.placeId } });
+        container.querySelector('#profile-start-location').value = geo.formattedAddress || address;
+        if (hint) hint.textContent = 'Custom start location set.';
+        showToast('Start location saved', 'success');
+      } catch (e) {
+        // setStartLocation already toasts DB errors
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     container.querySelector('#btn-update-profile-password').addEventListener('click', async () => {
       const newPwd = container.querySelector('#profile-new-pwd').value;
       const confirmPwd = container.querySelector('#profile-confirm-pwd').value;

@@ -10,6 +10,7 @@ import { showDrawer } from '../../components/Drawer.js';
 import { showModal } from '../../components/Modal.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
 import { parsePreferredTime } from '../../utils/dateUtils.js';
+import { FLAGS } from '../../utils/flags.js';
 
 export function renderScheduleView(container) {
   document.querySelectorAll('.schedule-tooltip-popover').forEach(t => t.remove());
@@ -2225,4 +2226,15 @@ export function renderScheduleView(container) {
   store.on('schedule', handleStoreChange);
 
   render();
+
+  // v1.3 maps (flag-gated): route planner panel for the viewed day
+  if (FLAGS.maps) {
+    import('./RoutePanel.js').then(({ mountRoutePanel }) => {
+      mountRoutePanel(container, {
+        getDate: () => new Date(currentDate),
+        getTechnicians: () => technicians.filter(t => visibleTechIds.has(t.id)),
+        refresh: () => render(),
+      });
+    }).catch(() => {});
+  }
 }
