@@ -62,6 +62,8 @@ export function renderScheduleView(container) {
   const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00–23:00
   let dragState = null;
   let resizeState = null;
+  let selectedScheduleIds = new Set(); // marquee multi-select of schedule blocks
+  let marqueeState = null;
   // Technicians are locked to their own view; admins/managers can toggle multiple
   // If in technician view but has no technician record (local admin toggled), show all.
   let visibleTechIds = new Set((isTechnician && hasTechRecord) ? [currentUser.id] : technicians.map(t => t.id));
@@ -756,10 +758,152 @@ export function renderScheduleView(container) {
     bindEvents();
     bindDragAndDrop(days);
     bindResize();
+    bindMarquee(days);
+    applySelectionStyles();
+    updateSelectionBar();
     restoreScroll();
     renderSearchResultsList();
     } catch (err) {
       console.error("RENDER ERROR:", err);
+    }
+  }
+
+  // ── Marquee multi-select ────────────────────────────────────────────────────
+  function applySelectionStyles() {
+    // Drop ids that no longer exist on the calendar (e.g. after a delete)
+    const live = new Set([...container.querySelectorAll('.schedule-block[data-block-type="schedule"]')].map(b => b.dataset.scheduleId));
+    [...selectedScheduleIds].forEach(id => { if (!live.has(id)) selectedScheduleIds.delete(id); });
+    container.querySelectorAll('.schedule-block').forEach(b => {
+      b.classList.toggle('sched-selected', selectedScheduleIds.has(b.dataset.scheduleId));
+    });
+  }
+
+  function clearSelection() {
+    selectedScheduleIds.clear();
+    applySelectionStyles();
+    updateSelectionBar();
+  }
+
+  function updateSelectionBar() {
+    let bar = document.getElementById('sched-selection-bar');
+    const n = selectedScheduleIds.size;
+    if (n < 1) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'sched-selection-bar';
+      bar.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:445;display:flex;align-items:center;gap:12px;background:var(--sidebar-bg,#1E2A3A);color:#fff;padding:8px 14px;border-radius:22px;box-shadow:0 6px 20px rgba(0,0,0,0.28);font-size:13px;';
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = `
+      <span style="font-weight:600;">${n} selected</span>
+      <button class="sb-book" style="background:rgba(255,255,255,0.14);border:none;color:#fff;border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;"><span class="material-icons-outlined" style="font-size:15px;">timer</span> Book time</button>
+      <button class="sb-unsched" style="background:rgba(255,255,255,0.14);border:none;color:#fff;border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;"><span class="material-icons-outlined" style="font-size:15px;">event_busy</span> Unschedule</button>
+      <button class="sb-clear" title="Clear selection" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;display:flex;"><span class="material-icons-outlined" style="font-size:18px;">close</span></button>`;
+    bar.querySelector('.sb-book').onclick = () => bulkBookTime();
+    bar.querySelector('.sb-unsched').onclick = () => bulkUnschedule();
+    bar.querySelector('.sb-clear').onclick = () => clearSelection();
+  }
+
+  function selectedSchedules() {
+    return [...selectedScheduleIds].map(id => store.getById('schedule', id)).filter(Boolean);
+  }
+
+  function bulkUnschedule() {
+    const scheds = selectedSchedules();
+    if (!scheds.length) return;
+    if (!window.confirm(`Unschedule ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}?`)) return;
+    const jobIds = new Set();
+    scheds.forEach(s => { jobIds.add(s.jobId); store.delete('schedule', s.id); });
+    jobIds.forEach(jid => syncJobWithSchedules(jid));
+    showToast(`Unscheduled ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}`, 'success');
+    clearSelection();
+    render();
+  }
+
+  function bulkBookTime() {
+    const scheds = selectedSchedules();
+    if (!scheds.length) return;
+    // Book each allocation's slot straight through (uses the same estimate-weighted
+    // split as single Book Time in Place, but no per-job modal — one confirmation).
+    let totalHrs = 0, totalEntries = 0;
+    scheds.forEach(s => { const j = store.getById('jobs', s.jobId); if (j) totalHrs += Math.max(0, ((new Date(s.finishTime || `${s.date}T${String(s.endHour||10).padStart(2,'0')}:00`) - new Date(s.startTime || `${s.date}T${String(s.startHour||9).padStart(2,'0')}:00`)) / 36e5)); });
+    if (!window.confirm(`Book ${totalHrs.toFixed(2)} hrs across ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}? Whole-job allocations split across their tasklists.`)) return;
+    scheds.forEach(s => {
+      const job = store.getById('jobs', s.jobId);
+      if (job) totalEntries += bookTimeInPlaceSilent(s, job);
+    });
+    showToast(`Booked time — ${totalEntries} timesheet ${totalEntries === 1 ? 'entry' : 'entries'} created`, 'success');
+    clearSelection();
+    render();
+  }
+
+  function bindMarquee(days) {
+    const scroll = document.getElementById('calendar-scroll');
+    if (!scroll || scroll.dataset.marqueeBound) return;
+    scroll.dataset.marqueeBound = '1';
+
+    scroll.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      // Only start on empty grid space — never on a block, resize handle, or its own bar
+      if (e.target.closest('.schedule-block') || e.target.closest('.schedule-resize-handle')) return;
+      if (!e.target.closest('.schedule-day-col')) return;
+
+      const startX = e.clientX, startY = e.clientY;
+      const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+      const baseSelection = additive ? new Set(selectedScheduleIds) : new Set();
+      let box = null, moved = false;
+
+      const onMove = (mv) => {
+        const dx = Math.abs(mv.clientX - startX), dy = Math.abs(mv.clientY - startY);
+        if (!moved && dx < 4 && dy < 4) return;
+        moved = true;
+        if (!box) {
+          box = document.createElement('div');
+          box.className = 'sched-marquee';
+          box.style.cssText = 'position:fixed;z-index:400;border:1.5px solid var(--color-primary);background:rgba(27,109,224,0.12);pointer-events:none;border-radius:2px;';
+          document.body.appendChild(box);
+          document.body.style.userSelect = 'none';
+        }
+        const x = Math.min(startX, mv.clientX), y = Math.min(startY, mv.clientY);
+        const w = Math.abs(mv.clientX - startX), h = Math.abs(mv.clientY - startY);
+        Object.assign(box.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+
+        const mRect = { left: x, top: y, right: x + w, bottom: y + h };
+        const next = new Set(baseSelection);
+        container.querySelectorAll('.schedule-block[data-block-type="schedule"]').forEach(bl => {
+          const r = bl.getBoundingClientRect();
+          const hit = r.left < mRect.right && r.right > mRect.left && r.top < mRect.bottom && r.bottom > mRect.top;
+          if (hit) next.add(bl.dataset.scheduleId);
+        });
+        selectedScheduleIds = next;
+        applySelectionStyles();
+      };
+
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.userSelect = '';
+        if (box) box.remove();
+        if (!moved && !additive) clearSelection(); // plain click on empty space clears
+        updateSelectionBar();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Esc clears selection; leaving the schedule page tears down the floating bar
+    if (!scroll.dataset.escBound) {
+      scroll.dataset.escBound = '1';
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && selectedScheduleIds.size && location.hash.startsWith('#/schedule')) clearSelection();
+      });
+      window.addEventListener('hashchange', () => {
+        if (!location.hash.startsWith('#/schedule')) {
+          selectedScheduleIds.clear();
+          document.getElementById('sched-selection-bar')?.remove();
+          document.querySelector('.sched-marquee')?.remove();
+        }
+      });
     }
   }
 
@@ -1564,6 +1708,23 @@ export function renderScheduleView(container) {
         const blockType = block.dataset.blockType;
         const isJobBlock = blockType === 'schedule' || blockType === 'legacy';
 
+        // Bulk menu: right-clicking a block that's part of a multi-selection acts on
+        // the whole selection instead of the single block.
+        if (blockType === 'schedule' && selectedScheduleIds.has(scheduleId) && selectedScheduleIds.size > 1) {
+          const n = selectedScheduleIds.size;
+          contextMenu = document.createElement('div');
+          contextMenu.className = 'dropdown-menu';
+          contextMenu.style.cssText = `position:fixed;top:${e.clientY}px;left:${e.clientX}px;z-index:1000;background:var(--card-bg);box-shadow:var(--shadow-md);border:1px solid var(--border-color);border-radius:var(--border-radius);padding:4px 0;min-width:180px;`;
+          contextMenu.innerHTML = `
+            <div style="padding:4px 12px;font-size:11px;color:var(--text-tertiary);font-weight:600;">${n} allocations selected</div>
+            <button class="dropdown-item" id="ctx-bulk-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time (${n})</button>
+            <button class="dropdown-item text-danger" id="ctx-bulk-unsched"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${n})</button>`;
+          document.body.appendChild(contextMenu);
+          contextMenu.querySelector('#ctx-bulk-book').addEventListener('click', () => { closeContextMenu(); bulkBookTime(); });
+          contextMenu.querySelector('#ctx-bulk-unsched').addEventListener('click', () => { closeContextMenu(); bulkUnschedule(); });
+          return;
+        }
+
         contextMenu = document.createElement('div');
         contextMenu.className = 'dropdown-menu';
         contextMenu.style.position = 'fixed';
@@ -1919,21 +2080,34 @@ export function renderScheduleView(container) {
     container.querySelectorAll('.schedule-block[draggable]').forEach(el => {
       el.addEventListener('dragstart', (e) => {
         e.stopPropagation();
+        const id = el.dataset.scheduleId;
+        // Dragging a block that isn't part of the selection drops to a single move
+        if (!selectedScheduleIds.has(id)) clearSelection();
         const rect = el.getBoundingClientRect();
         dragState = {
           type: 'existing',
           blockType: el.dataset.blockType,
-          scheduleId: el.dataset.scheduleId,
+          scheduleId: id,
           jobId: el.dataset.blockJobId,
           startHour: parseFloat(el.dataset.start),
           endHour: parseFloat(el.dataset.end),
           offsetY: e.clientY - rect.top,
         };
+        // Group move: capture every other selected allocation's current position so
+        // the drop can shift them all by the same day + time delta (techs preserved).
+        if (el.dataset.blockType === 'schedule' && selectedScheduleIds.size > 1 && selectedScheduleIds.has(id)) {
+          dragState.group = [...selectedScheduleIds]
+            .map(sid => store.getById('schedule', sid))
+            .filter(s => s && s.id !== id)
+            .map(s => ({ id: s.id, date: s.date, startHour: s.startHour, endHour: s.endHour, technicianId: s.technicianId, technicianName: s.technicianName }));
+        }
         e.dataTransfer.effectAllowed = 'move';
         el.style.opacity = '0.4';
+        if (dragState.group) container.querySelectorAll('.sched-selected').forEach(b => b.style.opacity = '0.4');
       });
       el.addEventListener('dragend', () => {
         el.style.opacity = '1';
+        container.querySelectorAll('.sched-selected').forEach(b => b.style.opacity = '');
         dragState = null;
         document.querySelectorAll('.schedule-drag-preview').forEach(p => p.remove());
       });
@@ -2043,6 +2217,16 @@ export function renderScheduleView(container) {
           const finishTimeStr = `${localDateStr}T${pad(endH)}:${pad(endM)}`;
 
           if (dragState.type === 'existing' && dragState.blockType === 'schedule') {
+            // Group move: work out the day + time shift from the primary block BEFORE
+            // it moves, then apply the same delta to every other selected allocation
+            // (each keeps its own technician and duration).
+            const group = dragState.group;
+            let primaryOrig = null;
+            if (group && group.length) {
+              const rec = store.getById('schedule', dragState.scheduleId);
+              primaryOrig = rec ? { date: rec.date, startHour: rec.startHour } : null;
+            }
+
             store.update('schedule', dragState.scheduleId, {
               technicianId: targetTechId,
               technicianName: tech?.name || '',
@@ -2052,7 +2236,28 @@ export function renderScheduleView(container) {
               hours: duration
             });
             syncJobWithSchedules(job.id);
-            showToast(`Moved ${job.number} for ${tech?.name} to ${localDateStr}`, 'success');
+
+            if (group && group.length && primaryOrig) {
+              const dayMs = 86400000;
+              const deltaDays = Math.round((new Date(localDateStr + 'T12:00:00') - new Date(primaryOrig.date + 'T12:00:00')) / dayMs);
+              const deltaHour = dropHour - (primaryOrig.startHour ?? 0);
+              group.forEach(g => {
+                const nd = new Date(g.date + 'T12:00:00'); nd.setDate(nd.getDate() + deltaDays);
+                const ndStr = `${nd.getFullYear()}-${pad(nd.getMonth() + 1)}-${pad(nd.getDate())}`;
+                const dur = (g.endHour ?? (g.startHour + 1)) - g.startHour;
+                let ns = Math.min(23.75, Math.max(0, snapToQuarter((g.startHour ?? 0) + deltaHour)));
+                const ne = ns + dur;
+                store.update('schedule', g.id, {
+                  date: ndStr,
+                  startTime: `${ndStr}T${pad(Math.floor(ns))}:${pad(Math.round((ns - Math.floor(ns)) * 60))}`,
+                  finishTime: `${ndStr}T${pad(Math.floor(ne))}:${pad(Math.round((ne - Math.floor(ne)) * 60))}`,
+                });
+                if (g.id !== dragState.scheduleId) { const gj = store.getById('schedule', g.id); if (gj) syncJobWithSchedules(gj.jobId); }
+              });
+              showToast(`Moved ${group.length + 1} allocations`, 'success');
+            } else {
+              showToast(`Moved ${job.number} for ${tech?.name} to ${localDateStr}`, 'success');
+            }
           } else {
             // New schedule booking for unscheduled or legacy blocks
             store.create('schedule', {
@@ -2228,6 +2433,7 @@ export function renderScheduleView(container) {
       store.off('technicians', handleStoreChange);
       store.off('jobs', handleStoreChange);
       store.off('schedule', handleStoreChange);
+      document.getElementById('sched-selection-bar')?.remove();
       return;
     }
     render();
@@ -2276,16 +2482,18 @@ function btipLeafTasks(tasks, path = [], out = []) {
   return out;
 }
 
-function openBookTimeInPlace(sched, job) {
+// Compute the estimate-weighted split of an allocation's slot into timesheet
+// slices with consecutive time windows. Returns { totalHours, startISO, finishISO, slices }
+// or null if the slot has no valid span. Shared by single + bulk booking.
+function computeBtipSlices(sched, job) {
   const pad = n => String(n).padStart(2, '0');
   const hourToStr = h => `${pad(Math.floor(h))}:${pad(Math.round((h - Math.floor(h)) * 60))}`;
   const startISO = sched.startTime || `${sched.date}T${hourToStr(sched.startHour ?? 9)}`;
   const finishISO = sched.finishTime || `${sched.date}T${hourToStr(sched.endHour ?? ((sched.startHour ?? 9) + 1))}`;
   const totalHours = Math.round(((new Date(finishISO) - new Date(startISO)) / 36e5) * 100) / 100;
-  if (!(totalHours > 0)) { showToast('This allocation has no valid time span', 'error'); return; }
+  if (!(totalHours > 0)) return null;
 
-  // Build the split plan
-  let slices; // [{ node|null, path|null, hours }]
+  let slices;
   if (sched.taskId) {
     const path = String(sched.taskId).split('-').map(Number);
     const node = btipTaskByPath(job.tasks, path);
@@ -2297,9 +2505,8 @@ function openBookTimeInPlace(sched, job) {
     if (!pool.length) {
       slices = [{ node: null, path: null, hours: totalHours }];
     } else {
-      // Split proportionally to each task's estimatedHours, quantised to 0.25h
-      // (largest-remainder method so the total always matches the slot exactly).
-      // Tasks without an estimate get the average of the known ones (or 1).
+      // Proportional to each task's estimatedHours, quantised to 0.25h via
+      // largest-remainder so the pieces always sum to the slot exactly.
       const est = pool.map(l => parseFloat(l.node.estimatedHours) || 0);
       const known = est.filter(v => v > 0);
       const fallback = known.length ? known.reduce((a, b) => a + b, 0) / known.length : 1;
@@ -2323,7 +2530,6 @@ function openBookTimeInPlace(sched, job) {
     }
   }
 
-  // Consecutive time windows across the slot
   let cursor = new Date(startISO);
   const fmtLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   slices.forEach(s => {
@@ -2331,6 +2537,43 @@ function openBookTimeInPlace(sched, job) {
     cursor = new Date(cursor.getTime() + s.hours * 36e5);
     s.finish = fmtLocal(cursor);
   });
+  return { totalHours, startISO, finishISO, slices };
+}
+
+function createBtipTimesheets(sched, job, slices) {
+  slices.forEach(s => {
+    store.create('timesheets', {
+      jobId: job.id,
+      jobNumber: job.number,
+      taskId: s.node ? s.node.id : null,
+      taskPath: s.path ? s.path.join('-') : null,
+      taskName: s.node ? s.node.name : 'General',
+      phaseId: s.node ? s.node.id : null,
+      phaseName: s.node ? s.node.name : 'General',
+      technicianId: sched.technicianId || null,
+      technicianName: sched.technicianName || 'Unassigned',
+      date: s.start.split('T')[0],
+      startTime: s.start,
+      finishTime: s.finish,
+      description: s.node ? s.node.name : `Scheduled time — ${job.title || job.number}`,
+      hours: s.hours,
+      status: 'Pending',
+    });
+  });
+  return slices.length;
+}
+
+// Book an allocation with no modal (used by bulk book). Returns entries created.
+function bookTimeInPlaceSilent(sched, job) {
+  const plan = computeBtipSlices(sched, job);
+  if (!plan) return 0;
+  return createBtipTimesheets(sched, job, plan.slices);
+}
+
+function openBookTimeInPlace(sched, job) {
+  const plan = computeBtipSlices(sched, job);
+  if (!plan) { showToast('This allocation has no valid time span', 'error'); return; }
+  const { totalHours, startISO, finishISO, slices } = plan;
 
   const content = document.createElement('div');
   content.innerHTML = `
@@ -2362,25 +2605,7 @@ function openBookTimeInPlace(sched, job) {
       { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
       {
         label: `Book ${totalHours.toFixed(2)} hrs`, className: 'btn-primary', onClick: c => {
-          slices.forEach(s => {
-            store.create('timesheets', {
-              jobId: job.id,
-              jobNumber: job.number,
-              taskId: s.node ? s.node.id : null,
-              taskPath: s.path ? s.path.join('-') : null,
-              taskName: s.node ? s.node.name : 'General',
-              phaseId: s.node ? s.node.id : null,
-              phaseName: s.node ? s.node.name : 'General',
-              technicianId: sched.technicianId || null,
-              technicianName: sched.technicianName || 'Unassigned',
-              date: s.start.split('T')[0],
-              startTime: s.start,
-              finishTime: s.finish,
-              description: s.node ? s.node.name : `Scheduled time — ${job.title || job.number}`,
-              hours: s.hours,
-              status: 'Pending',
-            });
-          });
+          createBtipTimesheets(sched, job, slices);
           showToast(`Booked ${totalHours.toFixed(2)} hrs across ${slices.length} ${slices.length === 1 ? 'entry' : 'entries'}`, 'success');
           c();
         }

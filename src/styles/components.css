@@ -818,6 +818,13 @@ select.badge option {
 .schedule-block:hover {
   box-shadow: var(--shadow-md);
 }
+/* Marquee multi-select highlight */
+.schedule-block.sched-selected {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px rgba(27, 109, 224, 0.18), var(--shadow-md);
+  z-index: 3;
+}
 
 /* Resize grip at the bottom of each block */
 .schedule-resize-handle {
@@ -2126,6 +2133,83 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   text-align: left;
   margin-bottom: 20px;
   line-height: 1.4;
+}
+
+/* Remember Me checkbox row */
+.auth-remember-row {
+  display: flex;
+  align-items: center;
+  margin-top: -4px;
+}
+
+.auth-remember-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: color 0.2s ease;
+}
+
+.auth-remember-label:hover {
+  color: var(--text-primary);
+}
+
+.auth-remember-label:hover .auth-remember-check {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.auth-remember-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.auth-remember-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme-mode="dark"] .auth-remember-check {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.auth-remember-tick {
+  font-size: 14px;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-remember-checkbox:checked ~ .auth-remember-check {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.auth-remember-checkbox:checked ~ .auth-remember-check .auth-remember-tick {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.auth-remember-text {
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
 
 /* Theme Toggle button in Login screen */
