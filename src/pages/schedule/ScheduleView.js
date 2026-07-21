@@ -1583,6 +1583,7 @@ export function renderScheduleView(container) {
             <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
             ${isRealSchedule ? `
               <button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">assignment</span> Change Task</button>
+              <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
             ` : ''}
             <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
           `;
@@ -1751,6 +1752,16 @@ export function renderScheduleView(container) {
               });
             });
           }
+
+          // Book Time in Place — turn this allocation's slot into logged time
+          // against the job's tasklist without opening the job page.
+          contextMenu.querySelector('#ctx-book-time')?.addEventListener('click', () => {
+            closeContextMenu();
+            const sched = store.getById('schedule', scheduleId);
+            const job = sched && store.getById('jobs', sched.jobId);
+            if (!sched || !job) { showToast('Could not find this allocation', 'error'); return; }
+            openBookTimeInPlace(sched, job);
+          });
 
           contextMenu.querySelector('#ctx-unschedule').addEventListener('click', () => {
             closeContextMenu();
@@ -2238,4 +2249,127 @@ export function renderScheduleView(container) {
       });
     }).catch(() => {});
   }
+}
+
+// ── Book Time in Place ───────────────────────────────────────────────────────
+// Converts a schedule allocation's time slot directly into logged timesheet
+// entries. A task-specific allocation books everything against that task; a
+// whole-job allocation splits the slot evenly across the job's incomplete
+// leaf tasks (falling back to all tasks, then to a single general entry).
+function btipTaskByPath(tasks, path) {
+  let node = null, list = tasks || [];
+  for (const i of path) {
+    node = list[i];
+    if (!node) return null;
+    list = node.subTasks || node.subPhases || [];
+  }
+  return node;
+}
+
+function btipLeafTasks(tasks, path = [], out = []) {
+  (tasks || []).forEach((t, i) => {
+    const kids = t.subTasks || t.subPhases || [];
+    const p = [...path, i];
+    if (kids.length) btipLeafTasks(kids, p, out);
+    else out.push({ node: t, path: p });
+  });
+  return out;
+}
+
+function openBookTimeInPlace(sched, job) {
+  const pad = n => String(n).padStart(2, '0');
+  const hourToStr = h => `${pad(Math.floor(h))}:${pad(Math.round((h - Math.floor(h)) * 60))}`;
+  const startISO = sched.startTime || `${sched.date}T${hourToStr(sched.startHour ?? 9)}`;
+  const finishISO = sched.finishTime || `${sched.date}T${hourToStr(sched.endHour ?? ((sched.startHour ?? 9) + 1))}`;
+  const totalHours = Math.round(((new Date(finishISO) - new Date(startISO)) / 36e5) * 100) / 100;
+  if (!(totalHours > 0)) { showToast('This allocation has no valid time span', 'error'); return; }
+
+  // Build the split plan
+  let slices; // [{ node|null, path|null, hours }]
+  if (sched.taskId) {
+    const path = String(sched.taskId).split('-').map(Number);
+    const node = btipTaskByPath(job.tasks, path);
+    slices = [{ node, path: node ? path : null, hours: totalHours }];
+  } else {
+    const leaves = btipLeafTasks(job.tasks);
+    const active = leaves.filter(l => (l.node.progress || 0) < 100 && l.node.status !== 'Completed');
+    const pool = active.length ? active : leaves;
+    if (!pool.length) {
+      slices = [{ node: null, path: null, hours: totalHours }];
+    } else {
+      // Even split in 0.25h steps; the remainder tops up the first tasks
+      const q = 0.25;
+      const totalQ = Math.round(totalHours / q);
+      const baseQ = Math.floor(totalQ / pool.length);
+      let extraQ = totalQ - baseQ * pool.length;
+      slices = pool.map(l => {
+        const units = baseQ + (extraQ-- > 0 ? 1 : 0);
+        return { node: l.node, path: l.path, hours: Math.round(units * q * 100) / 100 };
+      }).filter(s => s.hours > 0);
+    }
+  }
+
+  // Consecutive time windows across the slot
+  let cursor = new Date(startISO);
+  const fmtLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  slices.forEach(s => {
+    s.start = fmtLocal(cursor);
+    cursor = new Date(cursor.getTime() + s.hours * 36e5);
+    s.finish = fmtLocal(cursor);
+  });
+
+  const content = document.createElement('div');
+  content.innerHTML = `
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+      Books <strong>${totalHours.toFixed(2)} hrs</strong>
+      (${startISO.slice(11, 16)}–${finishISO.slice(11, 16)}) for
+      <strong>${escapeHTML(sched.technicianName || 'Unassigned')}</strong> against
+      <strong>${escapeHTML(job.number || '')}</strong>${sched.taskId ? '' : ', split across the tasklist'}:
+    </p>
+    <table class="data-table" style="font-size:13px;width:100%;">
+      <thead><tr><th>Task</th><th>Window</th><th style="text-align:right;">Hours</th></tr></thead>
+      <tbody>
+        ${slices.map(s => `<tr>
+          <td>${escapeHTML(s.node ? s.node.name : 'General (whole job)')}</td>
+          <td style="color:var(--text-tertiary);">${s.start.slice(11, 16)}–${s.finish.slice(11, 16)}</td>
+          <td style="text-align:right;font-weight:600;">${s.hours.toFixed(2)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="font-size:11.5px;color:var(--text-tertiary);margin-top:10px;">
+      Entries are created as Pending timesheets — adjust or delete them from the job's tasklist or Timesheets.
+    </p>`;
+
+  showModal({
+    title: 'Book Time in Place',
+    content,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      {
+        label: `Book ${totalHours.toFixed(2)} hrs`, className: 'btn-primary', onClick: c => {
+          slices.forEach(s => {
+            store.create('timesheets', {
+              jobId: job.id,
+              jobNumber: job.number,
+              taskId: s.node ? s.node.id : null,
+              taskPath: s.path ? s.path.join('-') : null,
+              taskName: s.node ? s.node.name : 'General',
+              phaseId: s.node ? s.node.id : null,
+              phaseName: s.node ? s.node.name : 'General',
+              technicianId: sched.technicianId || null,
+              technicianName: sched.technicianName || 'Unassigned',
+              date: s.start.split('T')[0],
+              startTime: s.start,
+              finishTime: s.finish,
+              description: s.node ? s.node.name : `Scheduled time — ${job.title || job.number}`,
+              hours: s.hours,
+              status: 'Pending',
+            });
+          });
+          showToast(`Booked ${totalHours.toFixed(2)} hrs across ${slices.length} ${slices.length === 1 ? 'entry' : 'entries'}`, 'success');
+          c();
+        }
+      },
+    ],
+  });
 }

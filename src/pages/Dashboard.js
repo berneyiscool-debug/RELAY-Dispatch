@@ -2160,14 +2160,38 @@ async function enhanceTechMaps() {
         lat: geo.lat, lng: geo.lng,
         color: tech?.color || '#FF5C00',
         techName: s.technicianName || 'Unassigned',
-        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;max-width:220px;">
-          <div style="font-weight:700;margin-bottom:2px;">${job.number || ''} — ${(job.title || '').replace(/\s*—\s*Recurring.*$/i, '')}</div>
+        address: addr,
+        startTime: s.startTime || '',
+        jobHtml: `<div style="padding:4px 0;border-bottom:1px solid #E4E9F0;">
+          <div style="font-weight:700;">${job.number || ''} — ${(job.title || '').replace(/\s*—\s*Recurring.*$/i, '')}</div>
           <div>${job.customerName || ''}</div>
           <div style="color:#5A6B7F;">${s.technicianName || 'Unassigned'}${timeStr ? ' · ' + timeStr : ''}</div>
-          <div style="color:#5A6B7F;">${addr}</div>
         </div>`,
       });
     }
+
+    // Merge jobs that share a location into ONE marker whose popup lists them all
+    const siteMap = new Map();
+    stops.forEach(s => {
+      const key = `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`;
+      if (!siteMap.has(key)) siteMap.set(key, { lat: s.lat, lng: s.lng, address: s.address, jobs: [], colors: new Set() });
+      const site = siteMap.get(key);
+      site.jobs.push(s);
+      site.colors.add(s.color);
+    });
+    const sites = [...siteMap.values()].map(site => {
+      site.jobs.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      return {
+        lat: site.lat, lng: site.lng,
+        color: site.colors.size === 1 ? [...site.colors][0] : '#FF5C00',
+        count: site.jobs.length,
+        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;max-width:240px;">
+          ${site.jobs.length > 1 ? `<div style="font-weight:700;color:#FF5C00;margin-bottom:2px;">${site.jobs.length} jobs at this address</div>` : ''}
+          ${site.jobs.map(j => j.jobHtml).join('')}
+          <div style="color:#5A6B7F;padding-top:4px;">${site.address}</div>
+        </div>`,
+      };
+    });
 
     // Customers with already-known coordinates (persisted or cached — no new
     // geocode calls for the sweep, so this never bills a whole database).
@@ -2233,12 +2257,22 @@ async function enhanceTechMaps() {
         hover(m, p.info);
       });
 
-      stops.forEach(s => {
-        const m = new Marker({ map, position: { lat: s.lat, lng: s.lng }, icon: pinSvg(s.color, 'build'), zIndex: 20 });
+      sites.forEach(s => {
+        // Multi-job sites get a small count badge on the wrench marker
+        const badge = s.count > 1
+          ? `<circle cx="27" cy="7" r="6.5" fill="white" stroke="${s.color}" stroke-width="1.5"/><text x="27" y="10" text-anchor="middle" font-family="Arial" font-size="9" font-weight="bold" fill="${s.color}">${s.count}</text>`
+          : '';
+        const icon = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
+             <circle cx="17" cy="17" r="14" fill="${s.color}" stroke="white" stroke-width="2.5"/>
+             <g transform="translate(9,9) scale(0.667)"><path d="${GLYPHS.build}" fill="white"/></g>
+             ${badge}
+           </svg>`);
+        const m = new Marker({ map, position: { lat: s.lat, lng: s.lng }, icon, zIndex: 20 });
         hover(m, s.info);
         bounds.extend({ lat: s.lat, lng: s.lng });
       });
-      if (stops.length) map.fitBounds(bounds, 40);
+      if (sites.length) map.fitBounds(bounds, 40);
       if (note) {
         if (!stops.length) {
           note.textContent = 'No jobs scheduled today';
