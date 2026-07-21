@@ -2155,20 +2155,56 @@ async function enhanceTechMaps() {
       const geo = job.geo || getCachedGeo(addr) || await geocodeAddress(addr).catch(() => null);
       if (!geo) continue;
       const tech = store.getById('technicians', s.technicianId);
+      const timeStr = s.startTime ? s.startTime.slice(11, 16) : '';
       stops.push({
         lat: geo.lat, lng: geo.lng,
         color: tech?.color || '#FF5C00',
-        initial: (s.technicianName || '?').charAt(0).toUpperCase(),
-        title: `${s.technicianName || 'Unassigned'} — ${job.number || ''} ${job.title || ''}`.trim(),
+        techName: s.technicianName || 'Unassigned',
+        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;max-width:220px;">
+          <div style="font-weight:700;margin-bottom:2px;">${job.number || ''} — ${(job.title || '').replace(/\s*—\s*Recurring.*$/i, '')}</div>
+          <div>${job.customerName || ''}</div>
+          <div style="color:#5A6B7F;">${s.technicianName || 'Unassigned'}${timeStr ? ' · ' + timeStr : ''}</div>
+          <div style="color:#5A6B7F;">${addr}</div>
+        </div>`,
       });
     }
+
+    // Customers with already-known coordinates (persisted or cached — no new
+    // geocode calls for the sweep, so this never bills a whole database).
+    const customerPins = (store.getAll('customers') || []).map(cu => {
+      const addr = cu.address;
+      if (!addr) return null;
+      const geo = cu.geo || getCachedGeo(addr);
+      if (!geo) return null;
+      const name = cu.company || `${cu.firstName || ''} ${cu.lastName || ''}`.trim() || 'Customer';
+      return {
+        lat: geo.lat, lng: geo.lng,
+        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;max-width:220px;">
+          <div style="font-weight:700;margin-bottom:2px;">${name}</div>
+          ${cu.phone ? `<div>${cu.phone}</div>` : ''}
+          <div style="color:#5A6B7F;">${addr}</div>
+          <div style="color:#5A6B7F;font-size:11px;">Customer</div>
+        </div>`,
+      };
+    }).filter(Boolean);
 
     const google = await loadGoogleMapsSdk();
     const { Map } = await google.maps.importLibrary('maps');
     const { Marker } = await google.maps.importLibrary('marker');
+    const { InfoWindow } = await google.maps.importLibrary('maps');
 
-    const pinSvg = (color, text) => 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"><circle cx="15" cy="15" r="12" fill="${color}" stroke="white" stroke-width="2.5"/><text x="15" y="19.5" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold" fill="white">${text}</text></svg>`);
+    // Markers use the same Material glyphs as the rest of the app:
+    // home = office/start · build (wrench) = today's jobs · person = customers
+    const GLYPHS = {
+      home:   'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+      build:  'M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z',
+      person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+    };
+    const pinSvg = (color, glyph, size = 32) => 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 34 34">
+         <circle cx="17" cy="17" r="14" fill="${color}" stroke="white" stroke-width="2.5"/>
+         <g transform="translate(9,9) scale(0.667)"><path d="${GLYPHS[glyph]}" fill="white"/></g>
+       </svg>`);
 
     containers.forEach(c => {
       c.dataset.mapMounted = '1';
@@ -2178,11 +2214,28 @@ async function enhanceTechMaps() {
         center: { lat: base.lat, lng: base.lng }, zoom: 12,
         disableDefaultUI: true, zoomControl: true, clickableIcons: false,
       });
+      const popup = new InfoWindow({ disableAutoPan: true });
+      const hover = (marker, html) => {
+        marker.addListener('mouseover', () => { popup.setContent(html); popup.open({ map, anchor: marker }); });
+        marker.addListener('mouseout', () => popup.close());
+      };
       const bounds = new google.maps.LatLngBounds();
-      new Marker({ map, position: { lat: base.lat, lng: base.lng }, title: base.source === 'user' ? 'My start location' : 'Office', icon: pinSvg('#1E2A3A', '🏠') });
+
+      const baseMarker = new Marker({ map, position: { lat: base.lat, lng: base.lng }, icon: pinSvg('#1E2A3A', 'home'), zIndex: 30 });
+      hover(baseMarker, `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;">
+        <div style="font-weight:700;">${base.source === 'user' ? 'My start location' : (store.getSettings().name || 'Office')}</div>
+        <div style="color:#5A6B7F;">${base.label}</div>
+        <div style="color:#5A6B7F;font-size:11px;">${base.source === 'user' ? 'Dispatch start' : 'Office · dispatch start'}</div></div>`);
       bounds.extend({ lat: base.lat, lng: base.lng });
+
+      customerPins.forEach(p => {
+        const m = new Marker({ map, position: { lat: p.lat, lng: p.lng }, icon: pinSvg('#64748B', 'person', 24), zIndex: 10 });
+        hover(m, p.info);
+      });
+
       stops.forEach(s => {
-        new Marker({ map, position: { lat: s.lat, lng: s.lng }, title: s.title, icon: pinSvg(s.color, s.initial) });
+        const m = new Marker({ map, position: { lat: s.lat, lng: s.lng }, icon: pinSvg(s.color, 'build'), zIndex: 20 });
+        hover(m, s.info);
         bounds.extend({ lat: s.lat, lng: s.lng });
       });
       if (stops.length) map.fitBounds(bounds, 40);

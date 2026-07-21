@@ -18,9 +18,12 @@ const BTN_ID = 'btn-schedule-route';
 const dstr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 function blocksFor(dateStr, techId) {
+  // startTime is the authoritative time; startHour can sit at its column default
+  const t = (s) => s.startTime ? new Date(s.startTime).getTime()
+    : ((s.startHour || 0) * 3600 + (s.startMinute || 0) * 60) * 1000;
   return (store.getAll('schedule') || [])
     .filter(s => s.date === dateStr && (s.technicianId || 'unassigned') === techId)
-    .sort((a, b) => (a.startHour - b.startHour) || ((a.startMinute || 0) - (b.startMinute || 0)));
+    .sort((a, b) => t(a) - t(b));
 }
 
 async function stopForBlock(s) {
@@ -28,7 +31,16 @@ async function stopForBlock(s) {
   const addr = job?.siteAddress;
   if (!addr) return null;
   const geo = job.geo || getCachedGeo(addr) || await geocodeAddress(addr);
-  return geo ? { id: s.id, blockId: s.id, jobId: s.jobId, label: `${job.number || ''} ${job.title || addr}`.trim(), address: addr, lat: geo.lat, lng: geo.lng } : null;
+  if (!geo) return null;
+  // Trim generated suffixes ("… — Recurring (21/07/2026)") for display
+  const title = (job.title || addr).replace(/\s*—\s*Recurring.*$/i, '').trim();
+  return {
+    id: s.id, blockId: s.id, jobId: s.jobId,
+    number: job.number || '', title,
+    label: `${job.number || ''} ${title}`.trim(),
+    time: s.startTime ? s.startTime.slice(11, 16) : '',
+    address: addr, lat: geo.lat, lng: geo.lng,
+  };
 }
 
 function blockDurationMin(s) {
@@ -111,12 +123,30 @@ async function renderPanelContentInner(body, date, technicians, refresh) {
       continue;
     }
     const nav = navigateUrl([...stops.map(s => s.address), start.label]);
-    const legRows = route.legs.map(leg => {
-      const from = leg.fromId === 'origin' ? `<em>${escapeHTML(start.source === 'user' ? 'My start' : 'Office')}</em>` : escapeHTML(stops.find(s => s.id === leg.fromId)?.label || '');
-      const to = leg.toId === 'origin' ? `<em>${escapeHTML(start.source === 'user' ? 'My start' : 'Office')}</em>` : escapeHTML(stops.find(s => s.id === leg.toId)?.label || '');
-      return `<div class="rp-leg"><span class="material-icons-outlined" style="font-size:13px;">directions_car</span>
-        <span class="rp-leg-path">${from} → ${to}</span>
-        <span class="rp-leg-time">${fmtDuration(leg.durationSec)}</span></div>`;
+
+    // Vertical timeline: origin → each stop (in route order) → origin, with the
+    // drive time chip sitting on the connector between nodes.
+    const baseName = start.source === 'user' ? 'My start' : 'Office';
+    const orderedStops = route.order.map(id => stops.find(s => s.id === id)).filter(Boolean);
+    const nodes = [
+      { type: 'base', name: baseName },
+      ...orderedStops.map(s => ({ type: 'job', ...s })),
+      { type: 'base', name: baseName },
+    ];
+    const legRows = nodes.map((n, i) => {
+      const nodeHtml = n.type === 'base'
+        ? `<div class="rp-node"><span class="rp-node-ic material-icons-outlined">home</span>
+             <div class="rp-node-txt"><span class="rp-node-title rp-node-base">${escapeHTML(n.name)}</span></div></div>`
+        : `<div class="rp-node"><span class="rp-node-dot"></span>
+             <div class="rp-node-txt">
+               <span class="rp-node-title">${n.time ? `<span class="rp-node-time">${n.time}</span>` : ''}<strong>${escapeHTML(n.number)}</strong> ${escapeHTML(n.title)}</span>
+               <span class="rp-node-addr">${escapeHTML(n.address)}</span>
+             </div></div>`;
+      const leg = route.legs[i]; // leg i connects node i → node i+1
+      const connector = i < nodes.length - 1 && leg
+        ? `<div class="rp-connector"><span class="rp-drive-chip"><span class="material-icons-outlined" style="font-size:12px;">directions_car</span>${fmtDuration(leg.durationSec)}</span></div>`
+        : '';
+      return nodeHtml + connector;
     }).join('');
 
     sections.push(`<div class="rp-section" data-tech="${tech.id}">
@@ -138,9 +168,17 @@ async function renderPanelContentInner(body, date, technicians, refresh) {
       .rp-tech { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
       .rp-total { font-weight: 500; font-size: 12px; color: var(--color-primary); margin-left: auto; }
       .rp-nav { color: var(--color-primary); display: flex; }
-      .rp-leg { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); padding: 3px 0; }
-      .rp-leg-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .rp-leg-time { font-weight: 600; color: var(--text-primary); }
+      .rp-node { display: flex; align-items: flex-start; gap: 10px; }
+      .rp-node-ic { font-size: 17px; color: var(--text-secondary); width: 18px; text-align: center; flex-shrink: 0; margin-top: 1px; }
+      .rp-node-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--color-primary); border: 2px solid var(--bg-color); box-shadow: 0 0 0 2px var(--color-primary); flex-shrink: 0; margin: 4px 4px 0; }
+      .rp-node-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+      .rp-node-title { font-size: 12.5px; color: var(--text-primary); line-height: 1.35; overflow-wrap: break-word; }
+      .rp-node-title strong { font-weight: 700; }
+      .rp-node-base { font-weight: 600; color: var(--text-secondary); }
+      .rp-node-time { display: inline-block; font-size: 10.5px; font-weight: 700; color: var(--text-tertiary); background: var(--border-color); border-radius: 3px; padding: 0 4px; margin-right: 6px; vertical-align: 1px; }
+      .rp-node-addr { font-size: 11px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .rp-connector { border-left: 2px solid var(--border-color); margin-left: 12px; padding: 5px 0 5px 14px; }
+      .rp-drive-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 10%, transparent); border-radius: 10px; padding: 2px 8px; }
       .rp-muted { font-size: 12px; color: var(--text-tertiary); }
       .rp-suggestion { margin-top: 6px; }
     </style>
@@ -173,7 +211,7 @@ async function renderPanelContentInner(body, date, technicians, refresh) {
         slot.innerHTML = sameOrder
           ? `<div class="rp-muted" style="padding:6px 0;">✓ Current order is already optimal.</div>`
           : `<div style="font-size:12px;padding:6px 0;">
-               <div style="font-weight:600;margin-bottom:4px;">Suggested: ${orderedStops.map(s => escapeHTML(s.label.split(' ')[0])).join(' → ')}
+               <div style="font-weight:600;margin-bottom:4px;">Suggested: ${orderedStops.map(s => escapeHTML(s.number || s.title.split(' ')[0])).join(' → ')}
                  <span style="color:var(--color-success);">${savedSec > 60 ? `saves ${fmtDuration(savedSec)}` : ''}</span></div>
                <button class="btn btn-primary btn-sm rp-apply">Apply order & re-time day</button>
              </div>`;
@@ -251,13 +289,16 @@ export function mountRoutePanel(container, ctx) {
       weekRow.textContent = `Week of ${monday.getDate()}${sameMonth ? '' : ' ' + monday.toLocaleDateString('en-AU', { month: 'long' })} – ${sunday.getDate()} ${sunday.toLocaleDateString('en-AU', { month: 'long' })}`;
 
       daysRow.style.display = 'flex';
+      daysRow.style.justifyContent = 'space-between';
       daysRow.innerHTML = days.map(d => `
-        <button class="rp-day toolbar-filter ${dstr(d) === dstr(selected) ? 'active' : ''}" data-date="${dstr(d)}"
-          title="${d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}"
-          style="flex:1;padding:6px 0;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
-          <span>${d.toLocaleDateString('en-AU', { weekday: 'narrow' })}</span>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+          <button class="rp-day toolbar-filter ${dstr(d) === dstr(selected) ? 'active' : ''}" data-date="${dstr(d)}"
+            title="${d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}"
+            style="width:34px;height:34px;border-radius:50%;padding:0;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;">
+            ${d.toLocaleDateString('en-AU', { weekday: 'narrow' })}
+          </button>
           <span style="width:5px;height:5px;border-radius:50%;background:${hasBlocks(d) ? 'var(--color-primary)' : 'transparent'};"></span>
-        </button>`).join('');
+        </div>`).join('');
       daysRow.querySelectorAll('.rp-day').forEach(b => b.addEventListener('click', () => {
         daysRow.querySelectorAll('.rp-day').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
