@@ -2297,15 +2297,29 @@ function openBookTimeInPlace(sched, job) {
     if (!pool.length) {
       slices = [{ node: null, path: null, hours: totalHours }];
     } else {
-      // Even split in 0.25h steps; the remainder tops up the first tasks
+      // Split proportionally to each task's estimatedHours, quantised to 0.25h
+      // (largest-remainder method so the total always matches the slot exactly).
+      // Tasks without an estimate get the average of the known ones (or 1).
+      const est = pool.map(l => parseFloat(l.node.estimatedHours) || 0);
+      const known = est.filter(v => v > 0);
+      const fallback = known.length ? known.reduce((a, b) => a + b, 0) / known.length : 1;
+      const weights = est.map(v => v > 0 ? v : fallback);
+      const wSum = weights.reduce((a, b) => a + b, 0);
+
       const q = 0.25;
       const totalQ = Math.round(totalHours / q);
-      const baseQ = Math.floor(totalQ / pool.length);
-      let extraQ = totalQ - baseQ * pool.length;
-      slices = pool.map(l => {
-        const units = baseQ + (extraQ-- > 0 ? 1 : 0);
-        return { node: l.node, path: l.path, hours: Math.round(units * q * 100) / 100 };
-      }).filter(s => s.hours > 0);
+      const exact = weights.map(w => totalQ * w / wSum);
+      const units = exact.map(Math.floor);
+      let left = totalQ - units.reduce((a, b) => a + b, 0);
+      exact.map((e, i) => ({ i, frac: e - Math.floor(e) }))
+        .sort((a, b) => b.frac - a.frac)
+        .forEach(({ i }) => { if (left > 0) { units[i]++; left--; } });
+
+      slices = pool.map((l, i) => ({
+        node: l.node, path: l.path,
+        est: est[i] > 0 ? est[i] : null,
+        hours: Math.round(units[i] * q * 100) / 100,
+      })).filter(s => s.hours > 0);
     }
   }
 
@@ -2327,11 +2341,12 @@ function openBookTimeInPlace(sched, job) {
       <strong>${escapeHTML(job.number || '')}</strong>${sched.taskId ? '' : ', split across the tasklist'}:
     </p>
     <table class="data-table" style="font-size:13px;width:100%;">
-      <thead><tr><th>Task</th><th>Window</th><th style="text-align:right;">Hours</th></tr></thead>
+      <thead><tr><th>Task</th><th>Window</th><th style="text-align:right;">Est.</th><th style="text-align:right;">Booked</th></tr></thead>
       <tbody>
         ${slices.map(s => `<tr>
           <td>${escapeHTML(s.node ? s.node.name : 'General (whole job)')}</td>
           <td style="color:var(--text-tertiary);">${s.start.slice(11, 16)}–${s.finish.slice(11, 16)}</td>
+          <td style="text-align:right;color:var(--text-tertiary);">${s.est ? s.est.toFixed(2) : '—'}</td>
           <td style="text-align:right;font-weight:600;">${s.hours.toFixed(2)}</td>
         </tr>`).join('')}
       </tbody>
