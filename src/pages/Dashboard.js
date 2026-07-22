@@ -100,6 +100,10 @@ const MODULES = {
   'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', render: renderPendingApprovals },
   'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', render: renderCustomerNPS },
   'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', render: renderCashFlow },
+  'revenue-comparison':   { title: 'Revenue vs Last Month',       defaultW: 'S',  defaultH: 'standard', render: renderRevenueComparison },
+  'invoice-aging':        { title: 'Invoice Aging',               defaultW: 'M',  defaultH: 'standard', render: renderInvoiceAging },
+  'quote-winrate':        { title: 'Quote Win Rate',              defaultW: 'S',  defaultH: 'standard', render: renderQuoteWinRate },
+  'route-summary':        { title: "Today's Routes",              defaultW: 'M',  defaultH: 'tall',     render: renderRouteSummary },
   'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', render: renderWeatherForecast },
   'notifications-widget': { title: 'Notifications',             defaultW: 'M',  defaultH: 'tall',     render: renderNotificationsWidget },
   'deputy-asks-widget':   { title: 'Deputy Proposals',          defaultW: 'M',  defaultH: 'tall',     render: renderDeputyAsksWidget },
@@ -202,6 +206,9 @@ const MODULES = {
 // Module → permission required to even offer/show it. Absent = always allowed.
 const WIDGET_PERMS = {
   'cash-flow':            ['Invoices', 'view'],
+  'revenue-comparison':   ['Invoices', 'view'],
+  'invoice-aging':        ['Invoices', 'view'],
+  'quote-winrate':        ['Quotes', 'view'],
   'uninvoiced-completed': ['Invoices', 'view'],
   'profitability-chart':  ['Invoices', 'view'],
   'top-customers':        ['Invoices', 'view'],
@@ -2008,19 +2015,36 @@ function showEditHeader(container, viewport, world, guides, data) {
 // Reusable Add-Widget picker (used by the edit header, the context menu and double-click)
 function openAddWidgetModal(container, viewport, world, guides, data) {
   const available = Object.entries(MODULES).filter(([id]) => widgetAllowed(id));
+  const dataWidgets = available.filter(([, mod]) => !mod.page);
+  const pageWidgets = available.filter(([, mod]) => mod.page);
+
+  const card = ([id, mod]) => `
+    <div data-id="${id}" style="padding:12px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;"
+      onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
+      onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
+      <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">${mod.page ? 'web_asset' : 'widgets'}</span>
+      <div>
+        <div style="font-weight:600;font-size:13px;">${mod.title}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">${mod.page ? 'Live page' : mod.defaultW + ' · ' + mod.defaultH}</div>
+      </div>
+    </div>`;
+
+  const grid = (items) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">${items.map(card).join('')}</div>`;
+
   const content = document.createElement('div');
-  content.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:420px;overflow-y:auto;">
-        ${available.map(([id, mod]) => `
-          <div data-id="${id}" style="padding:12px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;"
-            onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
-            onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
-            <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">${mod.page ? 'web_asset' : 'widgets'}</span>
-            <div>
-              <div style="font-weight:600;font-size:13px;">${mod.title}</div>
-              <div style="font-size:11px;color:var(--text-tertiary);">${mod.page ? 'Live page' : mod.defaultW + ' · ' + mod.defaultH}</div>
-            </div>
-          </div>`).join('')}
-      </div>`;
+  content.innerHTML = `
+    <div style="max-height:440px;overflow-y:auto;">
+      ${grid(dataWidgets)}
+      ${pageWidgets.length ? `
+        <details style="margin-top:14px;">
+          <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary);padding:6px 2px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px;">
+            <span class="material-icons-outlined" style="font-size:16px;">web_asset</span>
+            Advanced — Full Pages (${pageWidgets.length})
+            <span style="font-weight:400;color:var(--text-tertiary);font-size:11px;">embed a whole page as a widget</span>
+          </summary>
+          <div style="margin-top:10px;">${grid(pageWidgets)}</div>
+        </details>` : ''}
+    </div>`;
 
   import('../components/Modal.js').then(({ showModal }) => {
     showModal({ title: 'Add Widget', content, actions: [{ label: 'Close', className: 'btn-secondary', onClick: c => c() }] });
@@ -2964,6 +2988,199 @@ function renderCashFlow(data, item) {
       </div>
     </div>
   `;
+}
+
+// ── v1.3 #2 Dashboard widgets ────────────────────────────────────────────────────
+const fmtMoney0 = (n) => '$' + Math.round(n || 0).toLocaleString('en-AU');
+
+// Revenue this calendar month vs last, from Paid invoices (by paidDate, falling
+// back to issue/updated dates). Two bars + a delta chip.
+function renderRevenueComparison(data, item) {
+  const paid = (data.invoices || []).filter(i => i.status === 'Paid');
+  const now = new Date();
+  const key = (d) => `${d.getFullYear()}-${d.getMonth()}`;
+  const thisKey = key(now);
+  const lastKey = key(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  let thisSum = 0, lastSum = 0;
+  paid.forEach(i => {
+    const ds = i.paidDate || i.issueDate || i.updatedAt || i.createdAt;
+    if (!ds) return;
+    const d = new Date(ds); if (isNaN(d)) return;
+    const k = key(d);
+    if (k === thisKey) thisSum += (i.total || 0);
+    else if (k === lastKey) lastSum += (i.total || 0);
+  });
+  const delta = lastSum ? ((thisSum - lastSum) / lastSum * 100) : (thisSum > 0 ? 100 : 0);
+  const up = delta >= 0;
+  const max = Math.max(thisSum, lastSum, 1);
+  const bar = (label, val, primary) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="width:64px;font-size:11px;color:var(--text-secondary);flex-shrink:0;">${label}</span>
+      <div style="flex:1;height:22px;background:var(--content-bg);border-radius:5px;overflow:hidden;position:relative;">
+        <div style="width:${(val / max * 100).toFixed(1)}%;height:100%;background:${primary ? 'linear-gradient(90deg,var(--color-primary),#FF7A2E)' : 'var(--text-tertiary)'};border-radius:5px;min-width:${val > 0 ? '4px' : '0'};transition:width .5s;"></div>
+      </div>
+      <span style="width:78px;text-align:right;font-size:12px;font-weight:700;">${fmtMoney0(val)}</span>
+    </div>`;
+  return `
+    <div style="display:flex;flex-direction:column;justify-content:center;height:100%;padding:6px 4px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">This month</div>
+          <div style="font-size:24px;font-weight:800;color:var(--text-primary);">${fmtMoney0(thisSum)}</div>
+        </div>
+        <span style="display:inline-flex;align-items:center;gap:2px;font-size:12px;font-weight:700;padding:3px 8px;border-radius:20px;background:${up ? 'rgba(5,150,105,.12)' : 'rgba(239,68,68,.12)'};color:${up ? 'var(--color-success)' : 'var(--color-danger)'};">
+          <span class="material-icons-outlined" style="font-size:14px;">${up ? 'trending_up' : 'trending_down'}</span>${Math.abs(delta).toFixed(0)}%
+        </span>
+      </div>
+      ${bar('This', thisSum, true)}
+      ${bar('Last', lastSum, false)}
+    </div>`;
+}
+
+// Outstanding receivables (Sent + Overdue) bucketed by days past due date.
+function renderInvoiceAging(data, item) {
+  const outstanding = (data.invoices || []).filter(i => i.status === 'Sent' || i.status === 'Overdue');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const buckets = [
+    { label: 'Current', min: -Infinity, max: 0, color: 'var(--color-success)', sum: 0, n: 0 },
+    { label: '1–30 days', min: 1, max: 30, color: 'var(--color-warning)', sum: 0, n: 0 },
+    { label: '31–60 days', min: 31, max: 60, color: '#D97706', sum: 0, n: 0 },
+    { label: '60+ days', min: 61, max: Infinity, color: 'var(--color-danger)', sum: 0, n: 0 },
+  ];
+  outstanding.forEach(i => {
+    const dd = i.dueDate || i.due_date;
+    let days = 0;
+    if (dd) { const d = new Date(dd); if (!isNaN(d)) { d.setHours(0, 0, 0, 0); days = Math.round((today - d) / 86400000); } }
+    const b = buckets.find(b => days >= b.min && days <= b.max) || buckets[0];
+    b.sum += (i.total || 0); b.n++;
+  });
+  const total = buckets.reduce((s, b) => s + b.sum, 0);
+  if (!total) return renderPlaceholder('check_circle', 'No outstanding invoices');
+  return `
+    <div style="display:flex;flex-direction:column;height:100%;padding:6px 4px;gap:4px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;">Outstanding</span>
+        <span style="font-size:18px;font-weight:800;">${fmtMoney0(total)}</span>
+      </div>
+      ${buckets.map(b => `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="width:74px;font-size:11px;color:var(--text-secondary);flex-shrink:0;">${b.label}</span>
+          <div style="flex:1;height:16px;background:var(--content-bg);border-radius:4px;overflow:hidden;">
+            <div style="width:${(b.sum / total * 100).toFixed(1)}%;height:100%;background:${b.color};border-radius:4px;min-width:${b.sum > 0 ? '4px' : '0'};transition:width .5s;"></div>
+          </div>
+          <span style="width:72px;text-align:right;font-size:11px;font-weight:700;">${fmtMoney0(b.sum)}</span>
+          <span style="width:18px;text-align:right;font-size:10px;color:var(--text-tertiary);">${b.n}</span>
+        </div>`).join('')}
+    </div>`;
+}
+
+// Quote win rate: Accepted vs Declined (decided quotes), with open pipeline noted.
+function renderQuoteWinRate(data, item) {
+  const quotes = data.quotes || [];
+  const accepted = quotes.filter(q => q.status === 'Accepted');
+  const declined = quotes.filter(q => q.status === 'Declined');
+  const open = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending' || q.status === 'Draft');
+  const decided = accepted.length + declined.length;
+  const rate = decided ? (accepted.length / decided * 100) : 0;
+  const acceptedVal = accepted.reduce((s, q) => s + (q.total || 0), 0);
+  const openVal = open.reduce((s, q) => s + (q.total || 0), 0);
+  // Conic donut of the win rate
+  const deg = Math.round(rate * 3.6);
+  return `
+    <div style="display:flex;align-items:center;gap:16px;height:100%;padding:6px 4px;">
+      <div style="position:relative;width:96px;height:96px;flex-shrink:0;">
+        <div style="width:100%;height:100%;border-radius:50%;background:conic-gradient(var(--color-success) 0deg ${deg}deg, var(--content-bg) ${deg}deg 360deg);"></div>
+        <div style="position:absolute;inset:12px;border-radius:50%;background:var(--card-bg,var(--content-bg));display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <span style="font-size:20px;font-weight:800;line-height:1;">${rate.toFixed(0)}%</span>
+          <span style="font-size:9px;color:var(--text-tertiary);text-transform:uppercase;">win rate</span>
+        </div>
+      </div>
+      <div style="flex:1;font-size:12px;display:flex;flex-direction:column;gap:7px;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-success);">● Accepted</span><strong>${accepted.length} · ${fmtMoney0(acceptedVal)}</strong></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-danger);">● Declined</span><strong>${declined.length}</strong></div>
+        <div style="display:flex;justify-content:space-between;color:var(--text-secondary);"><span>○ Open</span><strong>${open.length} · ${fmtMoney0(openVal)}</strong></div>
+      </div>
+    </div>`;
+}
+
+// Today's driving per technician (v1.3 maps). Renders a synchronous placeholder,
+// then fills in real drive totals from the routing service after paint.
+function renderRouteSummary(data, item) {
+  if (!FLAGS.maps) return renderPlaceholder('route', 'Routing is not enabled');
+  setTimeout(enhanceRouteSummaryWidget, 0);
+  return `<div class="route-summary-real" style="height:100%;display:flex;flex-direction:column;padding:4px;">
+    <div class="rs-note" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:12px;">Calculating drive times…</div>
+  </div>`;
+}
+
+async function enhanceRouteSummaryWidget() {
+  const hosts = [...document.querySelectorAll('.dash-widget[data-id="route-summary"] .route-summary-real')]
+    .filter(h => !h.dataset.rsMounted);
+  if (!hosts.length) return;
+  hosts.forEach(h => h.dataset.rsMounted = '1');
+
+  const { computeRoute, getStartLocation, navigateUrl, fmtDuration } = await import('../utils/routing.js');
+  const { getCachedGeo, geocodeAddress } = await import('../utils/geocode.js');
+
+  const fail = (msg) => hosts.forEach(h => { h.querySelector('.rs-note').textContent = msg; });
+
+  const start = await getStartLocation();
+  if (!start) return fail('Set a company office address to see drive times.');
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const blocks = (store.getAll('schedule') || [])
+    .filter(s => s.date === todayStr)
+    .sort((a, b) => (a.startHour - b.startHour) || ((a.startMinute || 0) - (b.startMinute || 0)));
+  if (!blocks.length) return fail('No jobs scheduled today.');
+
+  const byTech = new Map();
+  for (const s of blocks) {
+    const k = s.technicianId || s.technicianName || 'unassigned';
+    if (!byTech.has(k)) byTech.set(k, { name: s.technicianName || 'Unassigned', blocks: [] });
+    byTech.get(k).blocks.push(s);
+  }
+
+  const stopFor = async (s) => {
+    const job = store.getById('jobs', s.jobId);
+    const addr = job?.siteAddress;
+    if (!addr) return null;
+    const geo = job.geo || getCachedGeo(addr) || await geocodeAddress(addr).catch(() => null);
+    return geo ? { id: s.jobId, lat: geo.lat, lng: geo.lng, address: addr } : null;
+  };
+
+  const rows = [];
+  for (const [, tech] of byTech) {
+    const stops = (await Promise.all(tech.blocks.map(stopFor))).filter(Boolean);
+    if (!stops.length) continue;
+    const route = await computeRoute({ origin: { lat: start.lat, lng: start.lng }, stops, roundTrip: true });
+    if (!route) continue;
+    rows.push({ name: tech.name, stops: stops.length, route, nav: navigateUrl([...stops.map(x => x.address), start.label]) });
+  }
+  if (!rows.length) return fail('Couldn\'t geocode today\'s job sites.');
+
+  rows.sort((a, b) => b.route.totalDurationSec - a.route.totalDurationSec);
+  const grandSec = rows.reduce((s, r) => s + r.route.totalDurationSec, 0);
+  const grandKm = rows.reduce((s, r) => s + r.route.totalDistanceMeters, 0) / 1000;
+
+  const html = `
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;padding:0 2px;">
+      <span style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;">Today · ${rows.length} run${rows.length === 1 ? '' : 's'}</span>
+      <span style="font-size:13px;font-weight:800;">${fmtDuration(grandSec)} · ${grandKm.toFixed(0)} km</span>
+    </div>
+    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
+      ${rows.map(r => `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;background:var(--content-bg);border-radius:7px;">
+          <span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary);">directions_car</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}</div>
+            <div style="font-size:10px;color:var(--text-tertiary);">${r.stops} stop${r.stops === 1 ? '' : 's'} · incl. return</div>
+          </div>
+          <span style="font-size:12px;font-weight:700;">${fmtDuration(r.route.totalDurationSec)}</span>
+          ${r.nav ? `<a href="${r.nav}" target="_blank" rel="noopener" title="Open in Google Maps" style="color:var(--color-primary);display:flex;" onclick="event.stopPropagation()"><span class="material-icons-outlined" style="font-size:15px;">open_in_new</span></a>` : ''}
+        </div>`).join('')}
+    </div>`;
+  hosts.forEach(h => { h.innerHTML = html; });
 }
 
 function renderWeatherForecast(data, item) {
