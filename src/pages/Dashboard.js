@@ -95,6 +95,7 @@ const MODULES = {
   'timesheet-exceptions': { title: 'Timesheet Exceptions',        defaultW: 'M',  defaultH: 'standard', render: renderTimesheetExceptions },
   'asset-status':         { title: 'Asset Status',                defaultW: 'M',  defaultH: 'standard', render: renderAssetStatus },
   'overdue-maintenance':  { title: 'Overdue Maintenance',         defaultW: 'M',  defaultH: 'standard', render: renderOverdueMaintenance },
+  'upcoming-maintenance': { title: 'Upcoming Maintenance (7d)',    defaultW: 'M',  defaultH: 'standard', render: renderUpcomingMaintenance },
   'top-customers':        { title: 'Top Customers',               defaultW: 'M',  defaultH: 'tall',     render: renderTopCustomers },
   'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     render: renderDailyTodo },
   'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', render: renderPendingApprovals },
@@ -218,6 +219,7 @@ const WIDGET_PERMS = {
   'unassigned-jobs':      ['Jobs', 'view'],
   'asset-status':         ['Assets', 'view'],
   'overdue-maintenance':  ['Assets', 'view'],
+  'upcoming-maintenance': ['Assets', 'view'],
   'timesheet-exceptions': ['Timesheets', 'approve'],
   'deputy-asks-widget':   ['Dashboard', 'view'],
   // Live page widgets — gated by their page's view permission
@@ -239,6 +241,90 @@ function widgetAllowed(id) {
   const perm = WIDGET_PERMS[id];
   if (!perm) return true;
   return hasPermission(perm[0], perm[1]);
+}
+
+// Which store collections each data widget reads. Drives targeted widget-level
+// refresh: when a collection changes we re-render just the widgets that depend on
+// it, instead of tearing down the whole canvas. Async / self-mounting widgets
+// (tech-map, route-summary, today-schedule) are intentionally omitted — they own
+// their refresh lifecycle and re-running them would re-hit geocode/route services.
+const WIDGET_DEPS = {
+  'kpi-cards':            ['jobs', 'quotes', 'invoices'],
+  'job-status-chart':     ['jobs'],
+  'recent-activity':      ['jobs', 'quotes', 'invoices'],
+  'recent-leads':         ['leads'],
+  'unassigned-jobs':      ['jobs'],
+  'uninvoiced-completed': ['jobs', 'invoices'],
+  'low-stock':            ['stock'],
+  'profitability-chart':  ['jobs', 'invoices'],
+  'staff-availability':   ['jobs', 'technicians'],
+  'timesheet-exceptions': ['timesheets'],
+  'asset-status':         ['assets'],
+  'overdue-maintenance':  ['maintenancePlans'],
+  'upcoming-maintenance': ['maintenancePlans'],
+  'top-customers':        ['invoices'],
+  'pending-approvals':    ['quotes', 'timesheets'],
+  'cash-flow':            ['invoices'],
+  'revenue-comparison':   ['invoices'],
+  'invoice-aging':        ['invoices'],
+  'quote-winrate':        ['quotes'],
+  'notifications-widget': ['notifications'],
+};
+
+// live.data only mirrors a few collections; map a store collection to its key.
+function dataKeyForCollection(coll) {
+  if (coll === 'technicians') return 'people';
+  return ['jobs', 'quotes', 'invoices', 'leads'].includes(coll) ? coll : null;
+}
+
+let _dashRefreshSubs = [];
+let _dashRefreshPending = new Set();
+let _dashRefreshTimer = null;
+
+// Re-render only the mounted data widgets that depend on any of `collections`.
+function refreshWidgetsForCollections(collections) {
+  const world = document.querySelector('#dash-world');
+  if (!world || !live || !live.widgets) return;
+  // Refresh the live.data snapshots the render fns read from
+  collections.forEach(coll => {
+    const key = dataKeyForCollection(coll);
+    if (key && live.data) live.data[key] = store.getAll(coll);
+  });
+  const data = live.data || {};
+  live.widgets.forEach(item => {
+    const mod = MODULES[item.id];
+    if (!mod || mod.page || !mod.render) return;
+    const deps = WIDGET_DEPS[item.id];
+    if (!deps || !deps.some(d => collections.has(d))) return;
+    const el = world.querySelector(`.dash-widget[data-instance-id="${item.instanceId}"]`);
+    if (!el || el.dataset.pwPending) return; // not yet mounted → renders fresh when scrolled into view
+    const body = el.querySelector('.card-body');
+    if (!body) return;
+    try {
+      body.innerHTML = mod.render(data, item);
+      wireWidgetControls(body, data); // scoped re-wire of this widget's body actions only
+    } catch (e) { /* keep prior content on error */ }
+  });
+}
+
+// Subscribe once (per dashboard mount) to the collections any widget depends on.
+// Debounced + batched so a burst of writes triggers a single targeted refresh.
+function subscribeWidgetRefresh() {
+  _dashRefreshSubs.forEach(({ event, cb }) => store.off(event, cb));
+  _dashRefreshSubs = [];
+  const collections = [...new Set(Object.values(WIDGET_DEPS).flat())];
+  collections.forEach(coll => {
+    const cb = () => {
+      _dashRefreshPending.add(coll);
+      clearTimeout(_dashRefreshTimer);
+      _dashRefreshTimer = setTimeout(() => {
+        const pend = _dashRefreshPending; _dashRefreshPending = new Set();
+        if (document.querySelector('#dash-world')) refreshWidgetsForCollections(pend);
+      }, 400);
+    };
+    store.on(coll, cb);
+    _dashRefreshSubs.push({ event: coll, cb });
+  });
 }
 
 // ── Role-based default layouts (world px coordinates) ────────────────────────────
@@ -510,6 +596,7 @@ export async function renderDashboard(container) {
   applyTransform(viewport, world, guides);
   updateContextActions(viewport, true);
   updateGlueAffordance(viewport);
+  subscribeWidgetRefresh();
 }
 
 function enterEditMode(container, viewport, world, guides, data) {
@@ -2856,6 +2943,38 @@ function renderOverdueMaintenance(data, item) {
       `).join('')}
     </div>
   `;
+}
+
+// Active maintenance plans due within the next 7 days (not yet overdue).
+function renderUpcomingMaintenance(data, item) {
+  const plans = (store.getAll('maintenancePlans') || []).filter(p => p.status === 'Active');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const horizon = new Date(today); horizon.setDate(horizon.getDate() + 7);
+  const toDate = (s) => { const d = new Date(s); return isNaN(d) ? null : (d.setHours(0, 0, 0, 0), d); };
+
+  const upcoming = plans
+    .map(p => ({ p, d: p.nextServiceDate ? toDate(p.nextServiceDate) : null }))
+    .filter(x => x.d && x.d > today && x.d <= horizon)
+    .sort((a, b) => a.d - b.d);
+
+  if (!upcoming.length) return renderPlaceholder('event_available', 'Nothing due in the next 7 days');
+
+  const dayLabel = (d) => {
+    const diff = Math.round((d - today) / 86400000);
+    if (diff === 1) return 'Tomorrow';
+    return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  };
+  return `
+    <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0;">
+      ${upcoming.map(({ p, d }) => `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:11px;margin-bottom:2px;color:var(--color-primary);">${dayLabel(d)}</div>
+            <div style="font-weight:500;font-size:13px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;color:var(--text-primary);">${p.name}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm btn-maint-dispatch" data-plan-id="${p.id}" style="padding:4px 10px;font-size:12px;height:28px;">Dispatch</button>
+        </div>`).join('')}
+    </div>`;
 }
 
 function renderTopCustomers(data, item) {
