@@ -10,6 +10,7 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
+import { FLAGS } from '../utils/flags.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
 
@@ -233,7 +234,7 @@ export function renderSettings(container) {
 
   function getCategoryForTab(tab) {
     if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
-    if (['templates_forms', 'invoices_quotes'].includes(tab)) return 'workflow';
+    if (['templates_forms', 'invoices_quotes', 'payments'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
     if (['materials', 'cost_centers', 'tax'].includes(tab)) return 'resources';
     return 'general';
@@ -449,7 +450,9 @@ export function renderSettings(container) {
       icon: 'account_tree',
       tabs: [
         { id: 'templates_forms', label: 'Templates & Forms' },
-        { id: 'invoices_quotes', label: 'Quotes & Invoices' }
+        { id: 'invoices_quotes', label: 'Quotes & Invoices' },
+        // v1.3 #3 — dark until FLAGS.payments flips on for launch
+        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : [])
       ]
     },
     {
@@ -659,6 +662,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'invoices_quotes') {
       renderInvoicesQuotesTab(tc);
+      return;
+    }
+
+    if (activeTab === 'payments') {
+      renderPaymentsTab(tc);
       return;
     }
 
@@ -3756,6 +3764,94 @@ export function renderSettings(container) {
           renderFormsTab(tc);
         }
       });
+    });
+  }
+
+  function renderPaymentsTab(tc) {
+    const settings = store.getSettings() || {};
+    const pay = settings.payments || {};
+    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+
+    if (!isCloud) {
+      tc.innerHTML = `
+        <div class="card" style="max-width:760px">
+          <div class="card-header"><h4>Online Payments (Stripe)</h4></div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);">Online card payments are a cloud feature. Upgrade to a cloud account to let customers pay invoices online by card.</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const enabledFor = pay.enabledFor || {};
+    const currencies = ['AUD', 'USD', 'NZD', 'GBP', 'EUR'];
+    const cur = (pay.currency || 'AUD').toUpperCase();
+
+    tc.innerHTML = `
+      <div class="card" style="max-width:820px">
+        <div class="card-header"><h4>Online Payments (Stripe)</h4></div>
+        <div class="card-body">
+          <p style="color:var(--text-secondary);margin-top:0;">
+            Let customers pay invoices by card via a secure Stripe checkout link. Generate a link from any sent invoice; it's marked Paid automatically once payment clears.
+          </p>
+
+          <div style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin:14px 0;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px;">One-time setup</div>
+            <ol style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
+              <li>Create a <strong>Stripe</strong> account and copy your <strong>Secret key</strong>.</li>
+              <li>In Supabase → Edge Functions → Secrets, add <code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code>.</li>
+              <li>Deploy the <code>relay-create-payment</code> and <code>relay-stripe-webhook</code> functions.</li>
+              <li>In Stripe → Developers → Webhooks, add an endpoint pointing at <code>relay-stripe-webhook</code> and subscribe it to <code>checkout.session.completed</code>.</li>
+            </ol>
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+            <label class="switch" style="margin:0;">
+              <input type="checkbox" id="pay-connected" ${pay.connected ? 'checked' : ''} />
+            </label>
+            <div>
+              <div style="font-weight:600;font-size:13px;">Payments configured &amp; live</div>
+              <div style="font-size:11px;color:var(--text-tertiary);">Tick once the setup above is done. Controls whether the Pay Link button appears on invoices.</div>
+            </div>
+          </div>
+
+          <div class="form-group" style="max-width:220px;">
+            <label class="form-label">Currency</label>
+            <select class="form-input" id="pay-currency">
+              ${currencies.map(c => `<option value="${c}" ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" id="pay-enable-invoice" style="width:16px;height:16px;" ${enabledFor.invoice !== false ? 'checked' : ''} />
+            <label for="pay-enable-invoice" style="margin:0;font-size:13px;">Show a "Pay Link" action on sent invoices</label>
+          </div>
+
+          <div style="margin-top:16px;">
+            <button class="btn btn-primary" id="pay-save"><span class="material-icons-outlined">save</span> Save Payment Settings</button>
+          </div>
+        </div>
+      </div>`;
+
+    tc.querySelector('#pay-save')?.addEventListener('click', async () => {
+      try {
+        const s = store.getSettings() || {};
+        s.payments = {
+          ...(s.payments || {}),
+          connected: tc.querySelector('#pay-connected').checked,
+          currency: tc.querySelector('#pay-currency').value,
+          enabledFor: {
+            ...((s.payments || {}).enabledFor || {}),
+            invoice: tc.querySelector('#pay-enable-invoice').checked,
+          },
+        };
+        await store.saveSettings(s);
+        showToast('Payment settings saved', 'success');
+        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+      } catch (err) {
+        console.error('Error saving payment settings:', err);
+        showToast('Could not save payment settings', 'error');
+      }
     });
   }
 

@@ -12,6 +12,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
+import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
@@ -95,6 +96,7 @@ export function renderInvoiceDetail(container, { id }) {
           <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
           ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice" data-tooltip="Email this invoice PDF directly to the primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder" data-tooltip="Send an automated friendly payment reminder email to the client" data-tooltip-pos="left"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
+          ${!isNew && paymentsEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-pay-link" data-tooltip="Create a secure Stripe card-payment link for this invoice and copy it" data-tooltip-pos="left"><span class="material-icons-outlined">link</span> Pay Link</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid" data-tooltip="Record a bank transfer, cheque, cash, or card payment against this invoice" data-tooltip-pos="left"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
@@ -694,6 +696,25 @@ export function renderInvoiceDetail(container, { id }) {
       invoice.status = 'Sent';
       showToast('Invoice sent to customer', 'success');
       render();
+    });
+
+    container.querySelector('#btn-pay-link')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Creating…`;
+      try {
+        const { url } = await createInvoicePaymentLink(invoice);
+        let copied = false;
+        try { await navigator.clipboard.writeText(url); copied = true; } catch (_) { /* clipboard blocked */ }
+        window.open(url, '_blank', 'noopener');
+        showToast(copied ? 'Payment link copied and opened' : 'Payment link opened', 'success');
+      } catch (err) {
+        showToast(err.message || 'Could not create payment link', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
     });
 
     container.querySelector('#btn-mark-paid')?.addEventListener('click', () => {
