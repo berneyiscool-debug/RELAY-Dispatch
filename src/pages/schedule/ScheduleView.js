@@ -784,24 +784,10 @@ export function renderScheduleView(container) {
     updateSelectionBar();
   }
 
+  // Selection has no floating bar — the right-click bulk menu is the action surface.
+  // Kept as a cleanup no-op so any stray bar (from an older render) is removed.
   function updateSelectionBar() {
-    let bar = document.getElementById('sched-selection-bar');
-    const n = selectedScheduleIds.size;
-    if (n < 1) { if (bar) bar.remove(); return; }
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'sched-selection-bar';
-      bar.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:445;display:flex;align-items:center;gap:12px;background:var(--sidebar-bg,#1E2A3A);color:#fff;padding:8px 14px;border-radius:22px;box-shadow:0 6px 20px rgba(0,0,0,0.28);font-size:13px;';
-      document.body.appendChild(bar);
-    }
-    bar.innerHTML = `
-      <span style="font-weight:600;">${n} selected</span>
-      <button class="sb-book" style="background:rgba(255,255,255,0.14);border:none;color:#fff;border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;"><span class="material-icons-outlined" style="font-size:15px;">timer</span> Book time</button>
-      <button class="sb-unsched" style="background:rgba(255,255,255,0.14);border:none;color:#fff;border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;"><span class="material-icons-outlined" style="font-size:15px;">event_busy</span> Unschedule</button>
-      <button class="sb-clear" title="Clear selection" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;display:flex;"><span class="material-icons-outlined" style="font-size:18px;">close</span></button>`;
-    bar.querySelector('.sb-book').onclick = () => bulkBookTime();
-    bar.querySelector('.sb-unsched').onclick = () => bulkUnschedule();
-    bar.querySelector('.sb-clear').onclick = () => clearSelection();
+    document.getElementById('sched-selection-bar')?.remove();
   }
 
   function selectedSchedules() {
@@ -860,7 +846,7 @@ export function renderScheduleView(container) {
         if (!box) {
           box = document.createElement('div');
           box.className = 'sched-marquee';
-          box.style.cssText = 'position:fixed;z-index:400;border:1.5px solid var(--color-primary);background:rgba(27,109,224,0.12);pointer-events:none;border-radius:2px;';
+          box.style.cssText = 'position:fixed;z-index:400;border:1.5px dashed rgba(100,116,139,0.85);background:rgba(148,163,184,0.14);pointer-events:none;border-radius:3px;';
           document.body.appendChild(box);
           document.body.style.userSelect = 'none';
         }
