@@ -780,7 +780,9 @@ export function getVirtualRecurringOccurrences(startDateStr, endDateStr) {
           j.scheduledDate === dateStr
         );
 
-        if (!hasJob) {
+        const isSkipped = parentJob.recurringConfig?.skippedDates?.includes(dateStr);
+
+        if (!hasJob && !isSkipped) {
           const tasklistHrs = getJobTasklistHours(parentJob.tasks || []);
           const calculatedHours = tasklistHrs > 0 ? tasklistHrs : (parseFloat(parentJob.estimatedHours) || 2);
 

@@ -28,10 +28,7 @@ export function renderProjectDetail(container, params) {
   const customers = store.getAll('customers') || [];
   const costCenters = store.getAll('costCenters') || [];
 
-  // Filter jobs that belong to this project
   const projectJobs = jobs.filter(j => j.projectId === project.id);
-
-  // Track checkbox selections for billing/invoicing
   let selectedJobIds = [];
 
   const calculateProjectMetrics = () => {
@@ -43,21 +40,16 @@ export function renderProjectDetail(container, params) {
     const costCenterSplit = {};
 
     projectJobs.forEach(job => {
-      // Job value
       const matsTotal = (job.materials || []).reduce((s, m) => s + (m.total || 0), 0);
       const laborTotal = (job.labor || []).reduce((s, l) => s + (l.total || 0), 0);
       const jobValue = matsTotal + laborTotal;
       totalValue += jobValue;
 
-      // Job cost (Materials cost + labor cost based on technician pay rate)
       const matsCost = (job.materials || []).reduce((s, m) => s + (m.cost * (m.qty || 1) || 0), 0);
-      
-      // Calculate actual labor cost
       let jobLaborCost = 0;
       if (job.labor && job.labor.length > 0) {
         job.labor.forEach(l => {
-          // Fallback to tech payRate if available, else standard rate
-          let techPayRate = 50; // default cost rate
+          let techPayRate = 50; 
           if (job.technicians && job.technicians.length > 0) {
             const firstTech = store.getById('technicians', job.technicians[0].id);
             if (firstTech && firstTech.payRate) {
@@ -70,7 +62,6 @@ export function renderProjectDetail(container, params) {
       const jobCost = matsCost + jobLaborCost;
       totalCost += jobCost;
 
-      // Cost Center Split
       const ccId = job.costCenterId || 'unassigned';
       if (!costCenterSplit[ccId]) {
         costCenterSplit[ccId] = { value: 0, cost: 0 };
@@ -78,7 +69,6 @@ export function renderProjectDetail(container, params) {
       costCenterSplit[ccId].value += jobValue;
       costCenterSplit[ccId].cost += jobCost;
 
-      // Job invoices
       const jobInvs = invoices.filter(inv => inv.jobId === job.id && inv.status !== 'Void');
       jobInvs.forEach(inv => {
         totalBilled += (inv.total || 0);
@@ -92,6 +82,10 @@ export function renderProjectDetail(container, params) {
     const margin = totalValue > 0 ? (profit / totalValue) * 100 : 0;
     const unpaid = totalBilled - totalPaid;
 
+    const stagesCount = projectJobs.length;
+    const completedStages = projectJobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
+    const progressPct = stagesCount === 0 ? 0 : Math.round((completedStages / stagesCount) * 100);
+
     return {
       totalValue,
       totalCost,
@@ -100,7 +94,10 @@ export function renderProjectDetail(container, params) {
       totalBilled,
       totalPaid,
       unpaid,
-      costCenterSplit
+      costCenterSplit,
+      stagesCount,
+      completedStages,
+      progressPct
     };
   };
 
@@ -113,13 +110,39 @@ export function renderProjectDetail(container, params) {
     if (project.status === 'Cancelled') statusClass = 'badge-danger';
 
     container.innerHTML = `
+      <style>
+        .proj-tabs {
+          display: flex; gap: 8px; margin-bottom: 24px;
+          border-bottom: 1px solid var(--border-color); padding-bottom: 8px;
+        }
+        .proj-tab {
+          padding: 8px 16px; border-radius: 6px; cursor: pointer;
+          font-weight: 600; font-size: 14px; color: var(--text-secondary);
+          transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+        }
+        .proj-tab:hover { background: var(--bg-color); color: var(--text-primary); }
+        .proj-tab.active { background: var(--color-primary-light); color: var(--color-primary); }
+        
+        .progress-indicator {
+          display: flex; align-items: center; gap: 16px; margin-top: 16px;
+        }
+        .progress-bar-container {
+          flex: 1; height: 12px; background-color: var(--border-color);
+          border-radius: 6px; overflow: hidden;
+        }
+        .progress-bar-fill {
+          height: 100%; background-color: var(--color-primary);
+          transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+      </style>
+
       <div style="margin-bottom:16px">
         <a href="#/projects" style="display:inline-flex; align-items:center; gap:4px; font-weight:700; color:var(--text-secondary); text-decoration:none">
           <span class="material-icons-outlined" style="font-size:16px">arrow_back</span> Back to Projects
         </a>
       </div>
 
-      <div class="page-header" style="margin-bottom:24px">
+      <div class="page-header" style="margin-bottom:16px">
         <div>
           <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px">
             <span style="font-size:13px; font-weight:700; color:var(--text-tertiary); letter-spacing:0.5px">${escapeHTML(project.number)}</span>
@@ -133,19 +156,91 @@ export function renderProjectDetail(container, params) {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary" id="btn-edit-project" style="display:flex; align-items:center; gap:6px">
-            <span class="material-icons-outlined" style="font-size:18px">edit</span> Edit Details
+            <span class="material-icons-outlined" style="font-size:18px">edit</span> Edit
           </button>
           <button class="btn btn-danger-outline" id="btn-delete-project" style="display:flex; align-items:center; gap:6px">
-            <span class="material-icons-outlined" style="font-size:18px">delete</span> Delete
+            <span class="material-icons-outlined" style="font-size:18px">delete</span>
           </button>
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px">
-        <!-- LEFT COLUMN: Stages and Scope -->
-        <div style="display:flex; flex-direction:column; gap:24px">
-          <!-- STAGES CARD -->
+      <!-- TABS -->
+      <div class="proj-tabs" id="project-tabs">
+        <div class="proj-tab active" data-tab="overview">
+          <span class="material-icons-outlined" style="font-size:18px">dashboard</span> Overview
+        </div>
+        <div class="proj-tab" data-tab="stages">
+          <span class="material-icons-outlined" style="font-size:18px">view_list</span> Stages (${metrics.stagesCount})
+        </div>
+        <div class="proj-tab" data-tab="financials">
+          <span class="material-icons-outlined" style="font-size:18px">payments</span> Financials
+        </div>
+      </div>
+
+      <!-- TAB CONTENT: OVERVIEW -->
+      <div id="tab-overview" class="tab-content" style="display:block;">
+        
+        <div class="card" style="margin-bottom:24px; border-top:4px solid var(--color-primary); box-shadow:var(--shadow-sm);">
+          <div class="card-body">
+            <h4 style="margin:0 0 8px 0;">Project Progress</h4>
+            <div class="progress-indicator">
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width:${metrics.progressPct}%; background-color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--color-primary)'};"></div>
+              </div>
+              <div style="font-weight:700; font-size:18px; color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--text-primary)'}">
+                ${metrics.progressPct}%
+              </div>
+            </div>
+            <div style="font-size:13px; color:var(--text-secondary); margin-top:8px;">
+              ${metrics.completedStages} out of ${metrics.stagesCount} stages completed.
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px">
           <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+            <div class="card-header"><h4>Description &amp; Scope</h4></div>
+            <div class="card-body">
+              <div style="font-size:14px; line-height:1.6; color:var(--text-primary); white-space:pre-wrap">${escapeHTML(project.description || 'No description provided.')}</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; padding-top:20px; border-top:1px solid var(--border-color)">
+                <div>
+                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Start Date</div>
+                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.startDate ? project.startDate : 'Not scheduled'}</div>
+                </div>
+                <div>
+                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Target Completion</div>
+                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.endDate ? project.endDate : 'Not scheduled'}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+            <div class="card-header"><h4>Quick Financials</h4></div>
+            <div class="card-body">
+               <div style="margin-bottom:16px;">
+                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
+                  <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+               </div>
+               <div style="margin-bottom:16px;">
+                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Invoiced to Date</div>
+                  <div style="font-size:18px; font-weight:800; color:var(--color-success-dark); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+               </div>
+               <div>
+                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
+                  <div style="font-size:18px; font-weight:800; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+               </div>
+               <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-color); text-align:center;">
+                 <button class="btn btn-secondary btn-sm" id="btn-goto-financials">View Detailed Financials</button>
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB CONTENT: STAGES -->
+      <div id="tab-stages" class="tab-content" style="display:none;">
+        <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
               <h4 style="margin:0">Project Stages (Jobs)</h4>
               <div style="display:flex; gap:10px">
@@ -158,7 +253,7 @@ export function renderProjectDetail(container, params) {
               </div>
             </div>
             <div class="card-body" style="padding:0">
-              <table class="data-table">
+              <table class="data-table table-hover">
                 <thead>
                   <tr>
                     <th style="width:40px; padding-left:16px">
@@ -176,7 +271,8 @@ export function renderProjectDetail(container, params) {
                 <tbody>
                   ${projectJobs.length === 0 ? `
                     <tr>
-                      <td colspan="8" style="text-align:center; padding:48px 16px; color:var(--text-secondary)">
+                      <td colspan="8" style="text-align:center; padding:64px 16px; color:var(--text-secondary)">
+                        <span class="material-icons-outlined" style="font-size:48px; color:var(--border-color); display:block; margin-bottom:12px;">account_tree</span>
                         No stages configured yet. Link an existing job or create a new stage above.
                       </td>
                     </tr>
@@ -184,7 +280,6 @@ export function renderProjectDetail(container, params) {
                     const isSelected = selectedJobIds.includes(job.id);
                     const cc = costCenters.find(c => c.id === job.costCenterId);
                     
-                    // Sum stage totals
                     const mSum = (job.materials || []).reduce((s, m) => s + (m.total || 0), 0);
                     const lSum = (job.labor || []).reduce((s, l) => s + (l.total || 0), 0);
                     const stageVal = mSum + lSum;
@@ -240,29 +335,12 @@ export function renderProjectDetail(container, params) {
               </div>
             ` : ''}
           </div>
+      </div>
 
-          <!-- DESCRIPTION CARD -->
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
-            <div class="card-header"><h4>Description &amp; Scope</h4></div>
-            <div class="card-body">
-              <div style="font-size:14px; line-height:1.6; color:var(--text-primary); white-space:pre-wrap">${escapeHTML(project.description || 'No description provided.')}</div>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; padding-top:20px; border-top:1px solid var(--border-color)">
-                <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Start Date</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.startDate ? project.startDate : 'Not scheduled'}</div>
-                </div>
-                <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Target Completion</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.endDate ? project.endDate : 'Not scheduled'}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- RIGHT COLUMN: Metrics and Cost Centers -->
-        <div style="display:flex; flex-direction:column; gap:24px">
-          <!-- METRICS SUMMARY CARD -->
+      <!-- TAB CONTENT: FINANCIALS -->
+      <div id="tab-financials" class="tab-content" style="display:none;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-bottom:24px;">
+          <!-- SUMMARY -->
           <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
             <div class="card-header"><h4>Financial Summary</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
@@ -283,24 +361,35 @@ export function renderProjectDetail(container, params) {
                   <span style="font-size:11px; color:var(--text-secondary)">Margin: ${metrics.margin.toFixed(1)}%</span>
                 </div>
               </div>
+            </div>
+          </div>
+          
+          <!-- BILLING -->
+          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+            <div class="card-header"><h4>Billing & Invoicing</h4></div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
+              <div>
+                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Invoiced</div>
+                <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+              </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding-top:12px; border-top:1px solid var(--border-color)">
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Invoiced</div>
-                  <div style="font-size:16px; font-weight:700; color:var(--text-primary); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Amount Paid</div>
+                  <div style="font-size:16px; font-weight:700; color:var(--color-success-dark); margin-top:4px">$${metrics.totalPaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding</div>
+                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
                   <div style="font-size:16px; font-weight:700; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- COST CENTER BREAKDOWN CARD -->
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+        <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
             <div class="card-header"><h4>Cost Center Split</h4></div>
             <div class="card-body" style="padding:0">
-              <table class="data-table" style="font-size:13px">
+              <table class="data-table table-hover" style="font-size:13px">
                 <thead>
                   <tr>
                     <th style="padding-left:16px">Center</th>
@@ -311,7 +400,7 @@ export function renderProjectDetail(container, params) {
                 <tbody>
                   ${Object.keys(metrics.costCenterSplit).length === 0 ? `
                     <tr>
-                      <td colspan="3" style="text-align:center; padding:16px; color:var(--text-secondary)">No split details.</td>
+                      <td colspan="3" style="text-align:center; padding:32px 16px; color:var(--text-secondary)">No split details available.</td>
                     </tr>
                   ` : Object.entries(metrics.costCenterSplit).map(([ccId, ccM]) => {
                     const cc = costCenters.find(c => c.id === ccId);
@@ -332,10 +421,28 @@ export function renderProjectDetail(container, params) {
                 </tbody>
               </table>
             </div>
-          </div>
         </div>
       </div>
     `;
+
+    // Tabs logic
+    const tabs = container.querySelectorAll('.proj-tab');
+    const contents = container.querySelectorAll('.tab-content');
+    
+    tabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        tabs.forEach(t => t.classList.remove('active'));
+        contents.forEach(c => c.style.display = 'none');
+        
+        const target = e.currentTarget;
+        target.classList.add('active');
+        container.querySelector(`#tab-${target.dataset.tab}`).style.display = 'block';
+      });
+    });
+
+    container.querySelector('#btn-goto-financials')?.addEventListener('click', () => {
+      container.querySelector('.proj-tab[data-tab="financials"]').click();
+    });
 
     // Hook general actions
     container.querySelector('#btn-edit-project')?.addEventListener('click', () => openEditProjectModal());
@@ -355,6 +462,7 @@ export function renderProjectDetail(container, params) {
         selectedJobIds = [];
       }
       render();
+      container.querySelector('.proj-tab[data-tab="stages"]').click();
     });
 
     container.querySelectorAll('.select-stage-checkbox').forEach(chk => {
@@ -366,6 +474,7 @@ export function renderProjectDetail(container, params) {
           selectedJobIds = selectedJobIds.filter(id => id !== jobId);
         }
         render();
+        container.querySelector('.proj-tab[data-tab="stages"]').click();
       });
     });
 
@@ -378,6 +487,7 @@ export function renderProjectDetail(container, params) {
             await store.update('jobs', jobId, { projectId: null });
             showToast('Stage unlinked successfully', 'success');
             renderProjectDetail(container, params);
+            container.querySelector('.proj-tab[data-tab="stages"]').click();
           }
         }
       });
@@ -403,7 +513,7 @@ export function renderProjectDetail(container, params) {
         </select>
       </div>
       <div class="form-group" style="margin-bottom:16px">
-        <label class="form-label" style="display:block; margin-bottom:6px">Description</label>
+        <label class="form-label" style="display:block; margin-bottom:6px">Description & Scope</label>
         <textarea class="form-textarea" id="p-desc" rows="3" style="width:100%">${escapeHTML(project.description || '')}</textarea>
       </div>
       <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px">
@@ -449,7 +559,6 @@ export function renderProjectDetail(container, params) {
   const handleDeleteProject = () => {
     if (confirm(`Are you sure you want to delete Project "${project.name}"?\nAssociated stages (jobs) will NOT be deleted, but they will be unlinked.`)) {
       try {
-        // Unlink all jobs first
         projectJobs.forEach(async (job) => {
           await store.update('jobs', job.id, { projectId: null });
         });
@@ -464,7 +573,6 @@ export function renderProjectDetail(container, params) {
   };
 
   const openLinkStageModal = () => {
-    // Find jobs for this customer that don't have a projectId
     const unlinkedJobs = jobs.filter(j => j.customerId === project.customerId && !j.projectId);
 
     const modalContent = document.createElement('div');
@@ -497,6 +605,7 @@ export function renderProjectDetail(container, params) {
             showToast('Job linked to project successfully', 'success');
             c();
             renderProjectDetail(container, params);
+            container.querySelector('.proj-tab[data-tab="stages"]').click();
           } catch (err) {
             console.error('Error linking job:', err);
             showToast('Failed to link job', 'error');
@@ -516,18 +625,13 @@ export function renderProjectDetail(container, params) {
     const sections = [];
     let invoiceSubtotal = 0;
 
-    // Get selected jobs
     const selectedJobs = jobs.filter(j => selectedJobIds.includes(j.id));
-    
-    // Check if there is anything billable
     let hasBillableItems = false;
 
     selectedJobs.forEach(job => {
       const lineItems = [];
       
-      // Calculate stage tasks labor
       const totalHours = (job.tasks || []).reduce((sum, t) => {
-        // If task has bookings/timesheets, sum hours, otherwise 0
         const bookings = store.getAll('timesheets') || [];
         const taskBookings = bookings.filter(b => b.jobId === job.id && b.taskId === t.id);
         const bookedHrs = taskBookings.reduce((s, b) => s + parseFloat(b.hours || 0), 0);
@@ -548,8 +652,6 @@ export function renderProjectDetail(container, params) {
           total: totalHours * rate
         });
       } else {
-        // If no booked timesheet hours, check if there's a budgeted/estimated labor hours in the job form
-        // Or if we can find default job labor
         if (job.labor && job.labor.length > 0) {
           job.labor.forEach(l => {
             lineItems.push({
@@ -564,10 +666,8 @@ export function renderProjectDetail(container, params) {
         }
       }
 
-      // Add materials
       if (job.materials && job.materials.length > 0) {
         job.materials.forEach(m => {
-          // calculate billable price based on cost + default settings markup
           const defaultPercent = settings.materialMarkup?.defaultPercent || 30;
           const unitPrice = m.price || m.unitCost * (1 + defaultPercent / 100);
           lineItems.push({
@@ -588,9 +688,10 @@ export function renderProjectDetail(container, params) {
         
         sections.push({
           id: store.generateId(),
-          name: `${job.number} — ${job.title}`,
+          name: `${job.title || job.number}`,
           lineItems: lineItems,
-          subtotal: sectionSubtotal
+          subtotal: sectionSubtotal,
+          worksDescription: `Works completed for stage ${job.title || job.number}`
         });
       }
     });
@@ -602,7 +703,6 @@ export function renderProjectDetail(container, params) {
 
     try {
       if (confirm(`Generate a single consolidated invoice of $${invoiceSubtotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })} for ${selectedJobs.length} selected stages?`)) {
-        // Create consolidated invoice
         const inv = await store.create('invoices', {
           number: store.getNextNumber('INV-', 'invoices'),
           invoiceType: 'Consolidated',
@@ -616,8 +716,8 @@ export function renderProjectDetail(container, params) {
           total: invoiceSubtotal * (1 + store.getTaxRate()),
           issueDate: new Date().toISOString(),
           dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-          notes: `Consolidated milestone billing for Project ${project.number} stages: ${selectedJobs.map(j => j.number).join(', ')}.`,
-          jobIds: selectedJobs.map(j => j.id) // jobs flip to "Invoiced" when this draft is sent
+          notes: `Consolidated milestone billing for Project ${project.number} stages: ${selectedJobs.map(j => j.title || j.number).join(', ')}.`,
+          jobIds: selectedJobs.map(j => j.id) 
         });
 
         showToast('Consolidated Invoice generated successfully', 'success');

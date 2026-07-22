@@ -9,6 +9,7 @@ import { showModal } from '../../components/Modal.js';
 import { showTimesheetEditModal } from '../../utils/timesheetModals.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 
 export function renderTimesheetsList(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
@@ -35,9 +36,37 @@ export function renderTimesheetsList(container) {
 
   let selectedIds = [];
 
+  function getCombinedTimesheets() {
+    const rawTimesheets = store.getAll('timesheets') || [];
+    const schedules = store.getAll('schedule') || [];
+    
+    // Inject booked leave
+    const leaveBlocks = schedules.filter(s => s.type === 'leave').map(s => {
+      const startD = new Date(s.date + 'T' + String(Math.floor(s.startHour)).padStart(2, '0') + ':00');
+      const endD = new Date(s.date + 'T' + String(Math.floor(s.endHour)).padStart(2, '0') + ':00');
+      
+      return {
+        id: `leave_${s.id}`, // Prefix to intercept actions
+        isLeave: true,
+        originalScheduleId: s.id,
+        technicianId: s.technicianId,
+        date: s.date,
+        startTime: startD.toISOString(),
+        finishTime: endD.toISOString(),
+        hours: s.endHour - s.startHour,
+        jobNumber: 'LEAVE',
+        taskName: 'Leave / Time Off',
+        description: s.notes || 'Booked Leave',
+        status: s.status || 'Pending' // default to Pending
+      };
+    });
+
+    return [...rawTimesheets, ...leaveBlocks].sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
   function render() {
     const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
-    const allTimesheets = store.getAll('timesheets').sort((a, b) => new Date(b.date) - new Date(a.date));
+    const allTimesheets = getCombinedTimesheets();
     const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id || allTimesheets.some(ts => ts.technicianId === t.id));
     
     // Enforce permissions: Admin, Manager, and Office Staff can view all timesheets
@@ -120,76 +149,38 @@ export function renderTimesheetsList(container) {
           <div class="stat-value" style="color:var(--color-warning)">${totalPending.toFixed(2)} <span style="font-size:14px;color:var(--text-secondary)">hrs</span></div>
         </div>
       </div>
-
       <!-- Filters & Controls -->
-      <div class="card" style="margin-bottom:12px; padding:12px 16px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-          <!-- Status Segmented Controls -->
-          <div class="segmented-control" style="margin:0;">
-            <button class="btn btn-sm ${filterStatus === 'All' ? 'active' : ''}" data-status="All">All</button>
-            <button class="btn btn-sm ${filterStatus === 'Pending' ? 'active' : ''}" data-status="Pending">Pending</button>
-            <button class="btn btn-sm ${filterStatus === 'Approved' ? 'active' : ''}" data-status="Approved">Approved</button>
-            <button class="btn btn-sm ${filterStatus === 'Rejected' ? 'active' : ''}" data-status="Rejected">Rejected</button>
-          </div>
-
-          <!-- Date Navigation & Quick Presets -->
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div style="display:flex; align-items:center; gap:6px;">
-              <input type="date" class="form-input" id="filter-date-start" value="${filterStartDate}" style="padding:4px 8px; font-size:13px; width:auto;" />
-              <span style="font-size:12px; color:var(--text-tertiary);">to</span>
-              <input type="date" class="form-input" id="filter-date-end" value="${filterEndDate}" style="padding:4px 8px; font-size:13px; width:auto;" />
+      <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
+        <div id="timesheets-filters-carousel-container" style="flex: 1 1 auto; overflow:hidden">
+          <div class="filters-carousel-container">
+            <div class="filters-carousel" style="margin:0;">
+              <button class="pill-tab ${filterStatus === 'All' ? 'active' : ''} toolbar-filter" data-status="All">All (${visibleTimesheets.length})</button>
+              <button class="pill-tab ${filterStatus === 'Pending' ? 'active' : ''} toolbar-filter" data-status="Pending">Pending (${visibleTimesheets.filter(t => t.status === 'Pending').length})</button>
+              <button class="pill-tab ${filterStatus === 'Approved' ? 'active' : ''} toolbar-filter" data-status="Approved">Approved (${visibleTimesheets.filter(t => t.status === 'Approved').length})</button>
+              <button class="pill-tab ${filterStatus === 'Rejected' ? 'active' : ''} toolbar-filter" data-status="Rejected">Rejected (${visibleTimesheets.filter(t => t.status === 'Rejected').length})</button>
             </div>
           </div>
         </div>
-
-        <!-- Technician Dropdown Filter (Admin/Manager or multi-tech view) -->
+        <div style="display:flex; align-items:center; gap:8px; flex: 0 0 auto;">
+          <input type="date" class="form-input" id="filter-date-start" value="${filterStartDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+          <span style="font-size:12px; color:var(--text-secondary)">to</span>
+          <input type="date" class="form-input" id="filter-date-end" value="${filterEndDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+        </div>
         ${(currentUser.role === 'admin' || currentUser.role === 'manager' || isLocalAdmin) ? `
-          <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span class="text-secondary" style="font-size:13px; font-weight:500;">Filter Technician:</span>
-              <button class="btn btn-ghost btn-sm btn-icon" id="btn-tech-prev" title="Previous technician" style="padding:0; height:32px; width:32px; min-width:32px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); border-radius:var(--border-radius); background:var(--card-bg);">
-                <span class="material-icons-outlined" style="font-size:18px">chevron_left</span>
-              </button>
-              <select class="form-select" id="filter-tech" style="width:auto; min-width:180px; padding:4px 8px; font-size:13px;">
-                <option value="All" ${filterTechId === 'All' ? 'selected' : ''}>All Technicians</option>
-                ${(() => {
-                  const hasCurrentUser = technicians.some(t => t.id === currentUser.id);
-                  let html = '';
-                  if (!hasCurrentUser) {
-                    html += `<option value="${currentUser.id}" ${filterTechId === currentUser.id ? 'selected' : ''}>${currentUser.name} (You)</option>`;
-                  }
-                  html += technicians.map(t => `<option value="${t.id}" ${filterTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('');
-                  return html;
-                })()}
-              </select>
-              <button class="btn btn-ghost btn-sm btn-icon" id="btn-tech-next" title="Next technician" style="padding:0; height:32px; width:32px; min-width:32px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); border-radius:var(--border-radius); background:var(--card-bg);">
-                <span class="material-icons-outlined" style="font-size:18px">chevron_right</span>
-              </button>
-            </div>
-          </div>
-        ` : ''}
-      </div>
-
-      <div id="bulk-actions-bar" style="display:${showBulk ? 'flex' : 'none'}; align-items:center; justify-content:space-between; background:var(--color-primary-light); border:1px solid var(--color-primary); padding:10px 16px; border-radius:var(--border-radius); margin-bottom:12px; transition: all 0.2s ease;">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <span style="font-weight:600; color:var(--color-primary); font-size:14px;"><span id="selected-count">${selectedIds.length}</span> items selected</span>
-          <button class="btn btn-ghost btn-sm" id="btn-bulk-deselect" style="color:var(--color-primary); padding:2px 8px; font-weight:600;">Deselect All</button>
-        </div>
-        <div style="display:flex; gap:8px;">
-          ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
-            <button class="btn btn-sm btn-success" id="btn-bulk-approve" style="display:flex; align-items:center; gap:4px; padding:6px 12px; font-size:13px; color:var(--color-success); border-color:var(--color-success); background:rgba(46, 204, 113, 0.1);">
-              <span class="material-icons-outlined" style="font-size:16px">done</span> Approve Selected
-            </button>
-            <button class="btn btn-sm btn-danger" id="btn-bulk-reject" style="display:flex; align-items:center; gap:4px; padding:6px 12px; font-size:13px; color:var(--color-danger); border-color:var(--color-danger); background:rgba(231, 76, 60, 0.1);">
-              <span class="material-icons-outlined" style="font-size:16px">close</span> Reject Selected
-            </button>
-          ` : ''}
-          ${hasPermission('Timesheets', 'delete') || ['admin', 'manager', 'office'].includes(currentUser.role) ? `
-            <button class="btn btn-sm btn-danger" id="btn-bulk-delete" style="display:flex; align-items:center; gap:4px; padding:6px 12px; font-size:13px; color:#ef4444; border-color:#ef4444; background:rgba(239, 68, 68, 0.1);">
-              <span class="material-icons-outlined" style="font-size:16px">delete</span> Delete Selected
-            </button>
-          ` : ''}
-        </div>
+        <div style="display:flex; align-items:center; gap:4px; flex: 0 0 auto;">
+          <select class="form-select" id="filter-tech" style="width:auto; min-width:180px; height:32px; padding:0 8px; font-size:13px;">
+            <option value="All" ${filterTechId === 'All' ? 'selected' : ''}>All Technicians</option>
+            ${(() => {
+              const hasCurrentUser = technicians.some(t => t.id === currentUser.id);
+              let html = '';
+              if (!hasCurrentUser) {
+                html += '<option value="' + currentUser.id + '" ' + (filterTechId === currentUser.id ? 'selected' : '') + '>' + currentUser.name + ' (You)</option>';
+              }
+              html += technicians.map(t => '<option value="' + t.id + '" ' + (filterTechId === t.id ? 'selected' : '') + '>' + t.name + '</option>').join('');
+              return html;
+            })()}
+          </select>
+        </div>` : ''}
       </div>
 
       <div class="data-table-wrapper">
@@ -347,61 +338,94 @@ export function renderTimesheetsList(container) {
         render();
       });
     });
-
-    container.querySelector('#btn-bulk-deselect')?.addEventListener('click', () => {
-      selectedIds = [];
-      render();
-    });
-
-    container.querySelector('#btn-bulk-approve')?.addEventListener('click', () => {
-      if (selectedIds.length === 0) return;
-      selectedIds.forEach(id => {
-        store.update('timesheets', id, { status: 'Approved' });
-      });
-      showToast(`Approved ${selectedIds.length} timesheets successfully`, 'success');
-      selectedIds = [];
-      render();
-    });
-
-    container.querySelector('#btn-bulk-reject')?.addEventListener('click', () => {
-      if (selectedIds.length === 0) return;
-      selectedIds.forEach(id => {
-        store.update('timesheets', id, { status: 'Rejected' });
-      });
-      showToast(`Rejected ${selectedIds.length} timesheets`, 'error');
-      selectedIds = [];
-      render();
-    });
-
-    container.querySelector('#btn-bulk-delete')?.addEventListener('click', () => {
-      if (selectedIds.length === 0) return;
-      const count = selectedIds.length;
-      showModal({
-        title: 'Confirm Bulk Delete',
-        content: `<p>Are you sure you want to delete <strong>${count}</strong> selected timesheet ${count === 1 ? 'entry' : 'entries'}? This action cannot be undone.</p>`,
-        actions: [
-          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-          {
-            label: `Delete (${count})`,
-            className: 'btn-danger',
-            onClick: (close) => {
-              selectedIds.forEach(id => {
-                store.delete('timesheets', id);
-              });
-              showToast(`Deleted ${count} timesheet ${count === 1 ? 'entry' : 'entries'} successfully`, 'success');
-              selectedIds = [];
-              close();
-              render();
-            }
+    if (selectedIds.length > 0) {
+      const actions = [];
+      if (currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) {
+        actions.push({
+          label: 'Approve',
+          icon: 'done',
+          className: 'btn-success',
+          onClick: (ids) => {
+            ids.forEach(id => {
+              if (id.startsWith('leave_')) {
+                store.update('schedule', id.replace('leave_', ''), { status: 'Approved' });
+              } else {
+                store.update('timesheets', id, { status: 'Approved' });
+              }
+            });
+            showToast(`Approved ${ids.length} timesheets successfully`, 'success');
+            selectedIds = [];
+            render();
           }
-        ]
+        });
+        actions.push({
+          label: 'Reject',
+          icon: 'close',
+          className: 'btn-danger',
+          onClick: (ids) => {
+            ids.forEach(id => {
+              if (id.startsWith('leave_')) {
+                store.update('schedule', id.replace('leave_', ''), { status: 'Rejected' });
+              } else {
+                store.update('timesheets', id, { status: 'Rejected' });
+              }
+            });
+            showToast(`Rejected ${ids.length} timesheets`, 'error');
+            selectedIds = [];
+            render();
+          }
+        });
+      }
+      if (hasPermission('Timesheets', 'delete') || ['admin', 'manager', 'office'].includes(currentUser.role)) {
+        actions.push({
+          label: 'Delete',
+          icon: 'delete',
+          className: 'btn-danger',
+          onClick: (ids) => {
+            const count = ids.length;
+            showModal({
+              title: 'Confirm Bulk Delete',
+              content: `<p>Are you sure you want to delete <strong>${count}</strong> selected timesheet ${count === 1 ? 'entry' : 'entries'}? This action cannot be undone.</p>`,
+              actions: [
+                { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+                {
+                  label: `Delete (${count})`,
+                  className: 'btn-danger',
+                  onClick: (close) => {
+                    ids.forEach(id => {
+                      if (id.startsWith('leave_')) {
+                        store.delete('schedule', id.replace('leave_', ''));
+                      } else {
+                        store.delete('timesheets', id);
+                      }
+                    });
+                    showToast(`Deleted ${count} timesheet ${count === 1 ? 'entry' : 'entries'} successfully`, 'success');
+                    selectedIds = [];
+                    close();
+                    render();
+                  }
+                }
+              ]
+            });
+          }
+        });
+      }
+
+      createBulkActionBar({
+        container,
+        selectedIds,
+        actions,
+        onClear: () => {
+          selectedIds = [];
+          render();
+        }
       });
-    });
+    }
 
     const triggerExportSelected = () => {
       if (selectedIds.length === 0) return;
 
-      const allTimesheets = store.getAll('timesheets');
+      const allTimesheets = getCombinedTimesheets();
       const selectedEntries = allTimesheets.filter(t => selectedIds.includes(t.id));
 
       if (selectedEntries.length === 0) {
@@ -455,7 +479,13 @@ export function renderTimesheetsList(container) {
     // Bulk Approve All Pending
     container.querySelector('#btn-approve-all-pending')?.addEventListener('click', () => {
       const pending = visibleTimesheets.filter(t => t.status === 'Pending');
-      pending.forEach(ts => store.update('timesheets', ts.id, { status: 'Approved' }));
+      pending.forEach(ts => {
+        if (ts.isLeave) {
+          store.update('schedule', ts.originalScheduleId, { status: 'Approved' });
+        } else {
+          store.update('timesheets', ts.id, { status: 'Approved' });
+        }
+      });
       showToast(`Approved ${pending.length} pending timesheets`, 'success');
       render();
     });
@@ -463,7 +493,12 @@ export function renderTimesheetsList(container) {
     // Single approval/rejection events
     container.querySelectorAll('.btn-approve-single').forEach(btn => {
       btn.addEventListener('click', () => {
-        store.update('timesheets', btn.dataset.id, { status: 'Approved' });
+        const id = btn.dataset.id;
+        if (id.startsWith('leave_')) {
+          store.update('schedule', id.replace('leave_', ''), { status: 'Approved' });
+        } else {
+          store.update('timesheets', id, { status: 'Approved' });
+        }
         showToast('Timesheet entry approved', 'success');
         render();
       });
@@ -471,7 +506,12 @@ export function renderTimesheetsList(container) {
 
     container.querySelectorAll('.btn-reject-single').forEach(btn => {
       btn.addEventListener('click', () => {
-        store.update('timesheets', btn.dataset.id, { status: 'Rejected' });
+        const id = btn.dataset.id;
+        if (id.startsWith('leave_')) {
+          store.update('schedule', id.replace('leave_', ''), { status: 'Rejected' });
+        } else {
+          store.update('timesheets', id, { status: 'Rejected' });
+        }
         showToast('Timesheet entry rejected', 'error');
         render();
       });
@@ -480,6 +520,10 @@ export function renderTimesheetsList(container) {
     // Edit entry
     container.querySelectorAll('.btn-edit-timesheet').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (btn.dataset.id.startsWith('leave_')) {
+          showToast('Leave blocks cannot be edited from timesheets. Edit them from the schedule.', 'info');
+          return;
+        }
         openEditModal(btn.dataset.id);
       });
     });
@@ -488,17 +532,21 @@ export function renderTimesheetsList(container) {
     container.querySelectorAll('.btn-delete-timesheet').forEach(btn => {
       btn.addEventListener('click', () => {
         const tsId = btn.dataset.id;
-        const ts = store.getById('timesheets', tsId);
+        const ts = getCombinedTimesheets().find(t => t.id === tsId);
         if (!ts) return;
 
         showModal({
           title: 'Confirm Delete',
-          content: `<p>Are you sure you want to delete this timesheet entry for <strong>${ts.hours} hrs</strong> on <strong>${new Date(ts.date).toLocaleDateString()}</strong>?</p>`,
+          content: `<p>Are you sure you want to delete this ${ts.isLeave ? 'leave block' : 'timesheet entry'} for <strong>${ts.hours} hrs</strong> on <strong>${new Date(ts.date).toLocaleDateString()}</strong>?</p>`,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
             { label: 'Delete', className: 'btn-danger', onClick: (close) => {
-              store.delete('timesheets', tsId);
-              showToast('Timesheet entry deleted successfully', 'success');
+              if (ts.isLeave) {
+                store.delete('schedule', ts.originalScheduleId);
+              } else {
+                store.delete('timesheets', tsId);
+              }
+              showToast(`${ts.isLeave ? 'Leave block' : 'Timesheet entry'} deleted successfully`, 'success');
               close();
               render();
             }}

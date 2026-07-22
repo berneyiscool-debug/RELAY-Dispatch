@@ -119,6 +119,12 @@ export function createToolbarFilters({ container, originalData, filterType, onFi
         return margin >= 30;
       }).length;
       if (hiMarginCount > 0) tags.push({ key: 'smart:himargin', label: `High Margin (≥ 30%) (${hiMarginCount})` });
+    } else if (filterType === 'timesheets') {
+      const statuses = ['Pending', 'Approved', 'Rejected'];
+      statuses.forEach(status => {
+        const count = originalData.filter(t => t.status === status).length;
+        if (count > 0) tags.push({ key: `status:${status}`, label: `${status} (${count})` });
+      });
     }
 
     return tags;
@@ -176,7 +182,11 @@ export function createToolbarFilters({ container, originalData, filterType, onFi
           }
         }
 
-        return true;
+        if (filterType === 'timesheets') {
+          if (type === 'status') return item.status === value;
+        }
+
+        return false;
       });
     });
 

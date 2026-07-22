@@ -1145,7 +1145,7 @@ export function renderScheduleView(container) {
             const endHourM = Math.round((endHour - endHourH) * 60);
             const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
 
-            store.create('schedule', {
+            store.add('schedule', {
               jobId: job.id,
               jobNumber: job.number,
               technicianId: techId,
@@ -1267,8 +1267,13 @@ export function renderScheduleView(container) {
             <label class="form-label">Leave Type / Notes <span style="color:var(--color-danger)">*</span></label>
             <select class="form-select" name="notes" required>
               <option value="Annual Leave">Annual Leave</option>
-              <option value="Sick Leave">Sick Leave</option>
-              <option value="Personal Leave">Personal Leave</option>
+              <option value="Personal/Carer's Leave">Personal/Carer's Leave</option>
+              <option value="Parental Leave">Parental Leave</option>
+              <option value="Family and Domestic Violence Leave">Family and Domestic Violence Leave</option>
+              <option value="Compassionate Leave">Compassionate Leave</option>
+              <option value="Community Service Leave">Community Service Leave</option>
+              <option value="Long Service Leave">Long Service Leave</option>
+              <option value="Unpaid Leave">Unpaid Leave</option>
               <option value="Public Holiday">Public Holiday</option>
             </select>
           </div>
@@ -1314,7 +1319,7 @@ export function renderScheduleView(container) {
               const startTimeISO = `${dStr}T${timeStr}`;
               const finishTimeISO = `${dStr}T${pad(endHourH)}:${pad(endHourM)}`;
 
-              store.create('schedule', {
+              store.add('schedule', {
                 type: 'leave',
                 technicianId: techId,
                 technicianName: tech?.name || '',
@@ -1398,7 +1403,7 @@ export function renderScheduleView(container) {
             const endHourM = Math.round((endHour - endHourH) * 60);
             const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
 
-            store.create('schedule', {
+            store.add('schedule', {
               type: 'blockout',
               technicianId: techId,
               technicianName: tech?.name || '',
@@ -1476,7 +1481,7 @@ export function renderScheduleView(container) {
             const endHourM = Math.round((endHour - endHourH) * 60);
             const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
 
-            store.create('schedule', {
+            store.add('schedule', {
               type: 'meeting',
               technicianId: techId,
               technicianName: tech?.name || '',
@@ -1962,8 +1967,27 @@ export function renderScheduleView(container) {
           contextMenu.innerHTML = `
             <button class="dropdown-item text-primary" id="ctx-create-job"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">add_task</span> Create as Job</button>
             <button class="dropdown-item" id="ctx-view-parent"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Template Job</button>
+            <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
           `;
           document.body.appendChild(contextMenu);
+
+          contextMenu.querySelector('#ctx-skip-occurrence').addEventListener('click', () => {
+            closeContextMenu();
+            const parentJobId = block.dataset.parentJobId;
+            const dateStr = block.dataset.date;
+            const parentJob = store.get('jobs', parentJobId);
+            if (parentJob && parentJob.recurringConfig) {
+              if (!parentJob.recurringConfig.skippedDates) {
+                parentJob.recurringConfig.skippedDates = [];
+              }
+              if (!parentJob.recurringConfig.skippedDates.includes(dateStr)) {
+                parentJob.recurringConfig.skippedDates.push(dateStr);
+                store.update('jobs', parentJobId, { recurringConfig: parentJob.recurringConfig });
+                showToast(`Skipped occurrence on ${dateStr}`, 'success');
+                render();
+              }
+            }
+          });
 
           contextMenu.querySelector('#ctx-create-job').addEventListener('click', () => {
             closeContextMenu();
@@ -1992,6 +2016,11 @@ export function renderScheduleView(container) {
 
         if (isJobBlock) {
           const isRealSchedule = blockType === 'schedule';
+          const jobId = block.dataset.blockJobId;
+          const job = store.getById('jobs', jobId);
+          const parentJob = job?.parentJobId ? store.getById('jobs', job.parentJobId) : null;
+          const isRecurringChild = parentJob && parentJob.isRecurring === true;
+
           contextMenu.innerHTML = `
             <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
             ${isRealSchedule ? `
@@ -1999,8 +2028,31 @@ export function renderScheduleView(container) {
               <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
             ` : ''}
             <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
+            ${isRecurringChild ? `
+              <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
+            ` : ''}
           `;
           document.body.appendChild(contextMenu);
+
+          if (isRecurringChild) {
+            contextMenu.querySelector('#ctx-skip-occurrence').addEventListener('click', () => {
+              closeContextMenu();
+              const dateStr = job.scheduledDate;
+              if (dateStr) {
+                if (!parentJob.recurringConfig.skippedDates) {
+                  parentJob.recurringConfig.skippedDates = [];
+                }
+                if (!parentJob.recurringConfig.skippedDates.includes(dateStr)) {
+                  parentJob.recurringConfig.skippedDates.push(dateStr);
+                  store.update('jobs', parentJob.id, { recurringConfig: parentJob.recurringConfig });
+                }
+              }
+              // Also delete the job instance so it disappears
+              store.delete('jobs', jobId);
+              showToast('Occurrence skipped and removed from schedule', 'success');
+              render();
+            });
+          }
 
           contextMenu.querySelector('#ctx-view').addEventListener('click', () => {
             closeContextMenu();
@@ -2542,7 +2594,7 @@ export function renderScheduleView(container) {
             }
           } else {
             // New schedule booking for unscheduled or legacy blocks
-            store.create('schedule', {
+            store.add('schedule', {
               jobId: job.id,
               jobNumber: job.number,
               technicianId: targetTechId,
@@ -2671,7 +2723,7 @@ export function renderScheduleView(container) {
                 const endH = Math.floor(endHour);
                 const endM = Math.round((endHour - endH) * 60);
 
-                store.create('schedule', {
+                store.add('schedule', {
                   jobId: job.id,
                   jobNumber: job.number,
                   technicianId: job.technicianId || technicians[0]?.id || '',
@@ -2826,7 +2878,7 @@ function computeBtipSlices(sched, job) {
 
 function createBtipTimesheets(sched, job, slices) {
   slices.forEach(s => {
-    store.create('timesheets', {
+    store.add('timesheets', {
       jobId: job.id,
       jobNumber: job.number,
       taskId: s.node ? s.node.id : null,
