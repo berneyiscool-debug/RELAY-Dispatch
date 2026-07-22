@@ -12,7 +12,9 @@ import { supabase } from '../utils/supabase.js';
 import { hasPermission } from '../utils/permissions.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
-import { loadUserMemory, saveUserMemory, clearStaleMemory } from '../utils/userMemory.js';
+import { loadUserMemory, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
+import { FLAGS } from '../utils/flags.js';
+import { hasMapsAction, runMapsActions } from '../utils/deputyMaps.js';
 
 let panel = null;
 let onStateChange = null;
@@ -35,10 +37,31 @@ function renderIntroDashboard(thread, memory) {
   const jobs = store.getAll('jobs') || [];
   const quotes = store.getAll('quotes') || [];
   const invoices = store.getAll('invoices') || [];
+  const stock = store.getAll('stock') || [];
   
-  const activeJobs = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress').length;
+  const activeJobsList = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress');
+  const activeJobsCount = activeJobsList.length;
   const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending' || q.status === 'Draft').length;
   const overdueInvoices = invoices.filter(i => i.status === 'Overdue').length;
+  const unassignedJobs = jobs.filter(j => (j.status === 'Scheduled' || j.status === 'In Progress' || j.status === 'Pending') && (!j.technicianName || j.technicianName === 'Unassigned'));
+  const lowStock = stock.filter(s => (s.quantity || 0) <= (s.reorderPoint || 5));
+  
+  // Detect schedule conflicts (same tech, same date, multiple jobs)
+  const conflicts = [];
+  const assignedActiveJobs = activeJobsList.filter(j => j.technicianName && j.technicianName !== 'Unassigned' && j.scheduledDate);
+  const techDateMap = {};
+  assignedActiveJobs.forEach(j => {
+    const key = `${j.technicianName}_${j.scheduledDate}`;
+    if (!techDateMap[key]) techDateMap[key] = [];
+    techDateMap[key].push(j);
+  });
+  Object.values(techDateMap).forEach(group => {
+    if (group.length > 1) {
+      conflicts.push(...group);
+    }
+  });
+  // distinct conflicts count based on unique tech+date pairs
+  const conflictCount = Object.keys(techDateMap).filter(k => techDateMap[k].length > 1).length;
 
   const count = memory.interactionCount || 0;
   const welcomeText = count > 0 
@@ -62,7 +85,7 @@ function renderIntroDashboard(thread, memory) {
         <span class="relay-stat-label">Overdue Invoices</span>
       </div>
       <div class="relay-stat-item" data-cmd="how many active jobs">
-        <span class="relay-stat-num">${activeJobs}</span>
+        <span class="relay-stat-num">${activeJobsCount}</span>
         <span class="relay-stat-label">Active Jobs</span>
       </div>
       <div class="relay-stat-item" data-cmd="how many pending quotes">
@@ -72,12 +95,26 @@ function renderIntroDashboard(thread, memory) {
     </div>
 
     <div class="relay-intro-suggestions">
-      <div class="relay-suggestions-title">Quick Commands</div>
+      <div class="relay-suggestions-title">Quick Commands & Proactive Alerts</div>
       <div class="relay-suggestion-chips">
+        ${unassignedJobs.length > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="assign technicians to unassigned jobs">⚠️ ${unassignedJobs.length} Unassigned Job(s) — Auto Assign</button>` : ''}
+        ${conflictCount > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="optimize today's schedule and resolve conflicts">⚠️ ${conflictCount} Schedule Collision(s) — Optimize</button>` : ''}
+        ${lowStock.length > 0 ? `<button class="relay-chip-btn info-chip" data-cmd="show low stock items and reorder">📦 ${lowStock.length} Low Stock Item(s) — Reorder</button>` : ''}
+        ${FLAGS.maps ? `<button class="relay-chip-btn" data-cmd="What's the best order to run today's jobs, with drive times?">🗺️ Plan Today's Route</button>` : ''}
         <button class="relay-chip-btn" data-cmd="add a schedule widget">📅 Add Schedule Widget</button>
         <button class="relay-chip-btn" data-cmd="fit the canvas">🔍 Zoom Canvas to Fit</button>
         <button class="relay-chip-btn" data-cmd="lock the canvas">🔒 Lock Canvas Layout</button>
-        <button class="relay-chip-btn" data-cmd="how many active jobs do we have?">🛠️ Count Active Jobs</button>
+        ${(() => {
+            let topChip = { cmd: '', label: '' };
+            if (activeJobsCount >= overdueInvoices && activeJobsCount >= pendingQuotes) {
+              topChip = { cmd: 'create a new job', label: '🛠️ Create New Job' };
+            } else if (overdueInvoices >= activeJobsCount && overdueInvoices >= pendingQuotes) {
+              topChip = { cmd: `show ${overdueInvoices} overdue invoices`, label: `📄 Overdue Invoices (${overdueInvoices})` };
+            } else {
+              topChip = { cmd: `show ${pendingQuotes} pending quotes`, label: `📝 Pending Quotes (${pendingQuotes})` };
+            }
+            return '<button class="relay-chip-btn" data-cmd="' + topChip.cmd + '">' + topChip.label + '</button>';
+          })()}
       </div>
     </div>
   `;
@@ -424,8 +461,8 @@ function autoGrow(el) {
 }
 
 function addMessage(thread, role, text) {
-  // 1. Strip any raw [ACTION: ...] tags from the visible text in the bubble
-  let cleanedText = text.replace(/\[ACTION:\s*[A-Z_]+(?:\s*,\s*[^\]]+)?\]/gi, '').trim();
+  // 1. Strip any raw [ACTION: ...] tags from the visible text in the bubble using the robust parser
+  let cleanedText = extractActions(text).cleanReply;
 
   // 2. Parse any [QUESTION: ...] or [QUESTION_MULTI: ...] tag
   let questionText = '';
@@ -447,6 +484,9 @@ function addMessage(thread, role, text) {
     // Remove the question tag from the visible bubble text
     cleanedText = cleanedText.replace(/\[QUESTION(?:_MULTI)?:\s*[^\]]+\]/gi, '').trim();
   }
+
+  // 3. Strip Markdown asterisks since the UI doesn't render Markdown
+  cleanedText = cleanedText.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
 
   const m = document.createElement('div');
   m.className = `relay-msg relay-msg-${role}`;
@@ -610,6 +650,14 @@ async function runVisionExtraction(userText, files, thread, typing) {
     pushAssistant(reply);
     addMessage(thread, 'relay', reply);
     return;
+  }
+
+  const ai = (store.getSettings() || {}).ai || {};
+  const isDeepSeek = (ai.model || '').toLowerCase().includes('deepseek') || (ai.visionModel || '').toLowerCase().includes('deepseek');
+  if (isDeepSeek) {
+    const note = "⚠️ Note: The DeepSeek API does not currently support multimodal/image inputs natively. I'm passing this to the vision endpoint, but it may be ignored or fail until multimodal support is fully rolled out.";
+    pushAssistant(note);
+    addMessage(thread, 'relay', note);
   }
 
   // Send page-images in batches so no single request carries the whole catalogue.
@@ -840,6 +888,25 @@ async function callAIEngine() {
   ];
 
   const reply = await dispatchChat(messages, ai, ai.model || 'deepseek-chat');
+
+  // Maps actions can't be answered in one turn: they need real drive-time data
+  // from the routing service. Compute it, then feed the result back so Deputy
+  // phrases the final answer with actual numbers instead of an empty tag.
+  if (FLAGS.maps && hasMapsAction(reply)) {
+    const routeData = await runMapsActions(reply);
+    if (routeData) {
+      const followup = [
+        { role: 'system', content: systemPrompt },
+        ...chatHistory,
+        { role: 'assistant', content: reply },
+        { role: 'user', content: `[ROUTE SERVICE RESULTS]\n${routeData}\n\nUsing only these results, answer my previous question concisely and naturally. Report the stop order, drive times and totals as given. Do NOT emit any action tags.` }
+      ];
+      const finalReply = await dispatchChat(followup, ai, ai.model || 'deepseek-chat');
+      pushAssistant(finalReply);
+      return parseAndExecuteActions(finalReply);
+    }
+  }
+
   pushAssistant(reply);
   return parseAndExecuteActions(reply);
 }
@@ -871,7 +938,7 @@ ${welcomeContext}`;
 // Low-level completions transport, shared by text and vision paths. Routes through
 // the Supabase edge proxy (cloud), the Electron secure handler (desktop), or a
 // direct fetch. `messages` may contain multimodal content arrays for vision.
-async function dispatchChat(messages, ai, model, endpoint) {
+export async function dispatchChat(messages, ai, model, endpoint) {
   // Vision requests pass a different endpoint (e.g. Gemini) than text chat; the
   // edge function picks the matching server-side key based on this endpoint.
   const ep = endpoint || ai.endpoint;
@@ -922,124 +989,132 @@ async function dispatchChat(messages, ai, model, endpoint) {
   return data.choices?.[0]?.message?.content || '';
 }
 
-function getSystemContext() {
+export function getSystemContext() {
+  // Pull current DB state
   const jobs = store.getAll('jobs') || [];
   const invoices = store.getAll('invoices') || [];
   const quotes = store.getAll('quotes') || [];
   const customers = store.getAll('customers') || [];
+  const stock = store.getAll('stock') || [];
   const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
 
   const activeJobs = jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled');
   const completedJobs = jobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced');
   const pendingJobs = jobs.filter(j => j.status === 'Pending');
+  const unassignedJobs = jobs.filter(j => (j.status === 'Scheduled' || j.status === 'In Progress' || j.status === 'Pending') && (!j.technicianName || j.technicianName === 'Unassigned'));
   const overdueInvoices = invoices.filter(i => i.status === 'Overdue');
   const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Draft');
+  const lowStockItems = stock.filter(s => (s.quantity || 0) <= (s.reorderPoint || 5));
 
   const allTechs = store.getAll('technicians') || [];
   const deactivatedTechNames = new Set(allTechs.filter(t => t.deactivated).map(t => t.name.toLowerCase()));
-  const jobsList = activeJobs.slice(0, 8).map(j => {
+  
+  const jobsList = activeJobs.slice(0, 10).map(j => {
     const techName = j.technicianName || 'Unassigned';
     const isDeactivated = techName && deactivatedTechNames.has(techName.toLowerCase());
     const techDisplay = isDeactivated ? `${techName} (DEACTIVATED)` : techName;
     return `Job #${j.number || j.id}: ${j.title} (${j.status}) - Cust: ${j.customerName || 'None'} - Tech: ${techDisplay} - Date: ${j.scheduledDate || 'TBD'}`;
   }).join('\n');
+
+  const unassignedJobsList = unassignedJobs.map(j => `Job #${j.number || j.id}: ${j.title} (${j.status}) - Cust: ${j.customerName || 'None'} - Date: ${j.scheduledDate || 'TBD'}`).join('\n');
   const overdueInvoicesList = overdueInvoices.slice(0, 8).map(i => `Invoice #${i.number || i.id}: ${i.title} - Total: $${i.total} - Due: ${i.dueDate || 'TBD'}`).join('\n');
-  const techsList = technicians.map(t => `${t.name} (${t.role || 'Tech'}) - Username: ${t.username}`).join(', ');
+  const lowStockList = lowStockItems.map(s => `${s.name} (Qty: ${s.quantity || 0}, Reorder Point: ${s.reorderPoint || 5})`).join(', ');
+
+  const techWorkloadMap = technicians.map(t => {
+    const assignedCount = activeJobs.filter(j => j.technicianName === t.name || j.technician_id === t.id).length;
+    return `${t.name} (${t.role || 'Tech'}): ${assignedCount} active job(s)`;
+  }).join(' | ');
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const userId = currentUser ? currentUser.id : 'default';
   const factsheetKey = `relay_factsheet_${userId}`;
   const enabledKey = `relay_factsheet_enabled_${userId}`;
   const isEnabled = localStorage.getItem(enabledKey) !== 'false';
-  const userFactsheet = isEnabled ? (localStorage.getItem(factsheetKey) || '') : 'User has disabled AI Personal Memory tracking.';
+  const rawFactsheet = isEnabled ? (localStorage.getItem(factsheetKey) || '') : 'User has disabled AI Personal Memory tracking.';
+  
+  let formattedMemory = '  No specific preferences recorded yet.';
+  if (isEnabled && rawFactsheet) {
+    const memNodes = getStructuredMemory(rawFactsheet);
+    formattedMemory = [];
+    if (memNodes.dispatchRules.length) formattedMemory.push('  [Dispatch Rules]:\n' + memNodes.dispatchRules.map(l => `    - ${l}`).join('\n'));
+    if (memNodes.clientNotes.length) formattedMemory.push('  [Client Context]:\n' + memNodes.clientNotes.map(l => `    - ${l}`).join('\n'));
+    if (memNodes.preferences.length) formattedMemory.push('  [User Preferences]:\n' + memNodes.preferences.map(l => `    - ${l}`).join('\n'));
+    if (memNodes.general.length) formattedMemory.push('  [General Notes]:\n' + memNodes.general.map(l => `    - ${l}`).join('\n'));
+    formattedMemory = formattedMemory.join('\n');
+  }
+
+  const modules = ['Jobs', 'Quotes', 'Invoices', 'Customers', 'Schedule', 'Stock', 'Purchase Orders', 'Assets'];
+  const userPermissions = modules.map(m => {
+    const actions = [];
+    if (hasPermission(m, 'create')) actions.push('Create');
+    if (hasPermission(m, 'edit')) actions.push('Edit');
+    if (hasPermission(m, 'delete')) actions.push('Delete');
+    return `${m}: ${actions.length > 0 ? actions.join(', ') : 'Read-only'}`;
+  }).join(' | ');
 
   return `Assistant Role & Core Competencies:
 - You are the central dispatch co-pilot and operations coordinator. You do NOT just answer questions passively; you proactively manage task allocation, schedule jobs to the best-suited technicians, resolve scheduling conflicts, and coordinate field operations.
 - Always check the list of active technicians and their roles. When a job is mentioned, match it to the technician with the corresponding role/skills. Suggest the best candidates based on workload, and proactively allocate the job using the appropriate action tags.
 - You must ONLY use, suggest, or assign jobs to technicians who are currently listed in the "Active Technicians" list below. Do NOT reference, suggest, or assign jobs to any other technicians (including those from older chat history, memory, or previous job assignments) as they are deactivated.
 - Be highly analytical and helpful. When answering user questions about CRM metrics, synthesize a clear, structural summary from the live data context (e.g., outlining workload distribution, quote conversion states, or timesheet approvals).
+- CRITICAL RULE: You must strictly abide by the user's permissions listed below. If the user asks you to create, edit, or delete a record, but their permissions say "Read-only" for that module, you must gracefully refuse and explain they lack permission.
 
 Assistant Tone & Formatting Guidelines:
 - You are a professional dispatch co-pilot. Keep your tone helpful, direct, concise, and business-focused.
 - DO NOT use overly familiar pet names (e.g. "gorgeous", "darling") or sassy/flamboyant language.
 - Use emojis sparingly and only to highlight key structural items (e.g. checkmarks, warnings). Avoid emotional, decorative, or dramatic emojis.
 - Keep your answers clean, direct, and scans-friendly. Do not write verbose diagnostics for simple empty states.
+- CRITICAL FORMATTING RULE: DO NOT OUTPUT ANY ASTERISKS (*) WHATSOEVER IN YOUR RESPONSE. NO BOLDING (**), NO ITALICS (*). They are an eye sore. Instead, use standard dashes (-) for lists, and HTML tables or paragraphs to create structure and emphasis.
 
 Current Live CRM Data Context (updated real-time):
-- Active Technicians: ${techsList || 'None'}
+- Current Local Date & Time: ${new Date().toLocaleString()}
+- Active Technicians & Workloads: ${techWorkloadMap || 'None'}
 - Total Registered Customers: ${customers.length}
-- Jobs Summary: Total: ${jobs.length}, Active/Scheduled: ${activeJobs.length}, Completed/Invoiced: ${completedJobs.length}, Pending: ${pendingJobs.length}
+- Jobs Summary: Total: ${jobs.length}, Active/Scheduled: ${activeJobs.length}, Completed/Invoiced: ${completedJobs.length}, Pending: ${pendingJobs.length}, Unassigned: ${unassignedJobs.length}
 - Active/Scheduled Jobs (${activeJobs.length}):
 ${jobsList || 'None'}
+- Unassigned Jobs Needing Technician Assignment (${unassignedJobs.length}):
+${unassignedJobsList || 'None (All active jobs assigned)'}
 - Overdue Invoices (${overdueInvoices.length}):
 ${overdueInvoicesList || 'None'}
 - Pending Quotes: ${pendingQuotes.length}
+- Low Stock Items Needing Reorder: ${lowStockList || 'None (All stock levels adequate)'}
 
 Currently Logged-in User Profile:
 - Name: ${currentUser ? currentUser.name : 'Unknown User'}
 - Role: ${currentUser ? currentUser.role : 'Unknown Role'}
-- User Personal Factsheet (Memory of user's work preferences/patterns):
-${userFactsheet ? userFactsheet.split('\n').map(line => `  ${line}`).join('\n') : '  No specific preferences recorded yet.'}
+- Permissions: ${userPermissions}
+- Deep User Memory Graph (Structured Preferences/Rules):
+${formattedMemory}
 
-You can perform actions on the user interface and CRM database by appending action tags to the end of your response.
-Action tags MUST follow these exact formats:
+Action Execution Formats:
+Action parameters can be passed as structured JSON objects OR pipe-separated strings. JSON payloads are preferred for precision.
+- To assign a job to a technician: [ACTION: ASSIGN_TECH, {"jobId": "1002", "technicianName": "John Doe"}]
+- To resolve scheduling conflict: [ACTION: RESOLVE_CONFLICT, {"jobId": "1002", "scheduledDate": "2026-07-25", "technicianName": "Jane Smith"}]
+- To analyze schedule and suggest bulk optimizations: [ACTION: OPTIMIZE_SCHEDULE, {"date": "2026-07-25"}]
+- To bulk update status: [ACTION: BULK_UPDATE_STATUS, {"collection": "jobs", "identifiers": ["1001", "1002"], "status": "In Progress"}]
+- To reorder stock item: [ACTION: REORDER_STOCK, {"itemId": "stock_123", "supplierName": "Rexel", "quantity": 10}]
 - To jump to a view: [ACTION: JUMP_VIEW, SavedViewName]
-- To add a dashboard widget: [ACTION: ADD_WIDGET, WidgetID] (e.g. page-jobs, page-quotes, cash-flow, tech-map, today-schedule, recent-activity, recent-leads)
+- To add a dashboard widget: [ACTION: ADD_WIDGET, WidgetID]
 - To fit canvas: [ACTION: FIT_CANVAS]
 - To lock/unlock canvas: [ACTION: LOCK_CANVAS, true] or [ACTION: LOCK_CANVAS, false]
-- To navigate/jump to a specific page or section in the app: [ACTION: NAVIGATE, PageName]
-  - PageName must be one of: jobs, quotes, invoices, customers, contractors, suppliers, schedule, timesheets, stock, assets, purchase-orders, settings, dashboard.
-  (Example: [ACTION: NAVIGATE, jobs])
-
-- To create a new customer: [ACTION: CREATE_CUSTOMER, Type | First Name | Last Name | Company Name | Email | Phone | Address]
-  - Type: Must be 'Commercial' (for companies/businesses) or 'Residential' (for individual people).
-  - First Name: First name of the person.
-  - Last Name: Last name of the person.
-  - Company Name: Name of the company (leave empty for Residential).
-  - Email: Extrapolate if not provided (e.g. name@company.com or name@example.com).
-  - Phone: Extrapolate or leave empty.
-  - Address: Extrapolate or leave empty.
-  (Example: [ACTION: CREATE_CUSTOMER, Commercial | Barry | Buttons | Buttons Plumbing Pty Ltd | barry@buttonsplumbing.com | 0412345678 | 12 Spring St, Sydney])
-- To create a job: [ACTION: CREATE_JOB, Title | Status | Customer Name | Technician Name | Scheduled Date | Est Hours | Notes]
-  (Example: [ACTION: CREATE_JOB, Fix Leaking Tap | Scheduled | Barry Buttons | John Doe | 2026-07-05 | 2 | Please bring parts])
-- To create a quote: [ACTION: CREATE_QUOTE, Title | Status | Customer Name | Subtotal | Tax | Total | Valid Until | Notes]
-  (Example: [ACTION: CREATE_QUOTE, Rewiring Proposal | Sent | Barry Buttons | 1000 | 100 | 1100 | 2026-08-01 | Standard terms apply])
-- To create an invoice: [ACTION: CREATE_INVOICE, Title | Status | Job Number | Customer Name | Subtotal | Tax | Total | Due Date | Notes]
-  (Example: [ACTION: CREATE_INVOICE, Invoice for Tap Repair | Sent | 1005 | Barry Buttons | 150 | 15 | 165 | 2026-07-12 | Thank you])
-
-- To update/modify an existing record: [ACTION: UPDATE_RECORD, Collection | ID or Number | Field | New Value]
-  - Collection: jobs, customers, quotes, or invoices.
-  - ID or Number: The record's ID, or its job/quote/invoice number (e.g. 1002).
-  - Field: The field to update (e.g. status, scheduledDate, technicianName, notes, email, phone, address).
-  - New Value: The new value to set.
-  (Example: [ACTION: UPDATE_RECORD, jobs | 1002 | status | In Progress])
-  (Example: [ACTION: UPDATE_RECORD, jobs | 1002 | technicianName | John Doe])
-
-- To delete an existing record: [ACTION: DELETE_RECORD, Collection | ID or Number]
-  - Collection: jobs, customers, quotes, or invoices.
-  - ID or Number: The record's ID, or its job/quote/invoice number (e.g. 1002).
-  (Example: [ACTION: DELETE_RECORD, jobs | 1002])
-
-- To create a new record in any collection: [ACTION: CREATE_RECORD, CollectionName | Field1: Value1 | Field2: Value2 | ...]
-  - CollectionName: jobs, quotes, invoices, customers, purchaseOrders, contractors, suppliers, stock, assets, timesheets, or leads.
-  - Field: Value pairs: Specify the fields to populate. Values can be primitives, JSON objects (e.g. {"freq":"Weekly","start":"2026-07-09","end":"2026-10-09","daysOfWeek":[1]}) or JSON arrays.
-  - Generates IDs, numbers, and dates automatically.
-  (Example to create a weekly recurring job: [ACTION: CREATE_RECORD, jobs | title: Weekly HVAC Service | isRecurring: true | recurringConfig: {"freq":"Weekly","start":"2026-07-09","end":"2026-10-09","daysOfWeek":[1]} | status: Scheduled])
-  (Example to create a purchase order: [ACTION: CREATE_RECORD, purchaseOrders | title: PO for parts | supplierName: Rexel | total: 450 | status: Pending])
-  (Example to create a lead: [ACTION: CREATE_RECORD, leads | title: Kitchen Renovation | customerName: John Smith | status: New])
-
-- To add/save a concise fact or preference to your personal factsheet memory: [ACTION: UPDATE_FACTSHEET, Single concise fact to remember]
-  (Example: [ACTION: UPDATE_FACTSHEET, User prefers to schedule HVAC jobs to John Doe on Mondays])
-
-- To prompt the user with a single-choice question (clicking an option auto-submits it): [QUESTION: Question text? | Option 1 | Option 2 | Option 3]
-  - Use this when only one choice is expected or appropriate.
-  (Example: [QUESTION: What would you like to do next? | Create an invoice | Check quotes | Cancel])
-
-- To prompt the user with a multiple-choice question (user toggles multiple choices and clicks a Submit button): [QUESTION_MULTI: Question text? | Option 1 | Option 2 | Option 3]
-  - Use this when the user can select more than one answer (e.g. choosing multiple technicians or multiple actions).
-  (Example: [QUESTION_MULTI: Select technicians to assign to this job: | Adam West | Burt Ward | Diana Prince])
-
-Always perform the requested action when asked (e.g. if the user says "add customer Barry Buttons", reply confirming you will do it and append the CREATE_CUSTOMER tag). Do not say you are unable to do it.`;
+- To navigate: [ACTION: NAVIGATE, PageName] (e.g. jobs, quotes, invoices, customers, schedule, stock, etc.)
+- To create customer: [ACTION: CREATE_CUSTOMER, {"type": "Commercial", "firstName": "Barry", "lastName": "Buttons", "companyName": "Buttons Plumbing", "email": "barry@buttons.com"}]
+- To create job: [ACTION: CREATE_JOB, {"title": "Fix Tap", "status": "Scheduled", "customerName": "Barry Buttons", "technicianName": "John Doe", "scheduledDate": "2026-07-25"}]
+- To create quote: [ACTION: CREATE_QUOTE, {"title": "Proposal", "status": "Draft", "customerName": "Barry Buttons", "total": 1100, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 100}]}]
+- To create invoice: [ACTION: CREATE_INVOICE, {"title": "Invoice", "status": "Sent", "jobNum": "1005", "customerName": "Barry Buttons", "total": 165, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 150}]}]
+- To update a record's fields: [ACTION: UPDATE_RECORD, {"collection": "jobs", "id": "1002", "updates": {"status": "In Progress", "technicianName": "Jane Smith"}}]
+- To delete record: [ACTION: DELETE_RECORD, jobs | 1002]
+- To save memory fact: [ACTION: UPDATE_FACTSHEET, Single concise fact]
+- To ask single question: [QUESTION: Text? | Opt 1 | Opt 2]
+- To ask multi question: [QUESTION_MULTI: Text? | Opt 1 | Opt 2]
+${FLAGS.maps ? `
+Routing & Drive Times (live Google Maps data):
+- You have access to real driving distances, ETAs and route optimisation. When the user asks about the best order to visit jobs, a technician's route/run for a day, or the drive time between two places, emit ONE of these tags and STOP — the routing service will compute the real numbers and hand them back to you to phrase the final answer. Never invent drive times or distances yourself.
+- Best visit order + ETAs for a technician's day: [ACTION: ROUTE_PLAN, {"technicianName": "John Doe", "date": "2026-07-25"}] (technicianName optional = whole team; date accepts "today"/"tomorrow" or YYYY-MM-DD — resolve relative dates using the Current Local Date above).
+- Drive time between two points: [ACTION: DRIVE_TIME, {"from": "office", "to": "#1005"}] — each of from/to may be "office", a job number like "#1005", a customer name, or a literal address.
+` : ''}
+Always perform requested actions using action tags. Do not state you are unable to modify data.`;
 }
 
 const ACTION_REGEX = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;
@@ -1048,24 +1123,209 @@ const ACTION_REGEX = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;
 // Returns { actions: [{ action, param }], cleanReply }. The attachment flow uses
 // this to hold extracted records for user confirmation before creating them.
 function extractActions(reply) {
-  const regex = new RegExp(ACTION_REGEX.source, 'gi');
   const actions = [];
-  let match;
-  while ((match = regex.exec(reply)) !== null) {
-    actions.push({
-      action: match[1].toUpperCase().trim(),
-      param: match[2] ? match[2].trim() : null
-    });
+  let cleanReply = reply;
+  
+  const prefix = '[ACTION:';
+  let startIndex = 0;
+  
+  while ((startIndex = cleanReply.toUpperCase().indexOf(prefix, startIndex)) !== -1) {
+    let bracketCount = 0;
+    let endIndex = -1;
+    
+    for (let i = startIndex; i < cleanReply.length; i++) {
+      if (cleanReply[i] === '[') bracketCount++;
+      else if (cleanReply[i] === ']') bracketCount--;
+      
+      if (bracketCount === 0) {
+        endIndex = i;
+        break;
+      }
+    }
+    
+    if (endIndex !== -1) {
+      const fullTag = cleanReply.substring(startIndex, endIndex + 1);
+      const inner = fullTag.substring(prefix.length, fullTag.length - 1).trim();
+      
+      const firstComma = inner.indexOf(',');
+      let actionName, paramStr;
+      
+      if (firstComma !== -1) {
+        actionName = inner.substring(0, firstComma).trim().toUpperCase();
+        paramStr = inner.substring(firstComma + 1).trim();
+      } else {
+        actionName = inner.toUpperCase();
+        paramStr = null;
+      }
+      
+      actions.push({ action: actionName, param: paramStr });
+      cleanReply = cleanReply.substring(0, startIndex) + cleanReply.substring(endIndex + 1);
+    } else {
+      // Malformed tag, just skip past it
+      startIndex += prefix.length;
+    }
   }
-  const cleanReply = reply.replace(regex, '').trim();
+  
+  cleanReply = cleanReply.trim();
   return { actions, cleanReply };
+}
+
+function parseJsonParam(param) {
+  if (!param) return null;
+  const trimmed = param.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (e) {
+      console.warn('Failed to parse JSON action parameter:', param, e);
+      return null;
+    }
+  }
+  return null;
 }
 
 // Execute a single parsed action against the store / dashboard.
 function executeAction(action, param) {
   const ff = window.__fieldForge || {};
-    try {
-      if (action === 'ADD_WIDGET' && param) {
+  const json = parseJsonParam(param);
+
+  try {
+      if (action === 'ASSIGN_TECH' && param) {
+        if (!checkCollectionPermission('jobs', 'edit')) return;
+        let jobId = json?.jobId || json?.id;
+        let techName = json?.technicianName || json?.techName || json?.technicianId;
+        if (!json) {
+          const parts = param.split('|').map(p => p.trim());
+          jobId = parts[0];
+          techName = parts[1];
+        }
+
+        const list = store.getAll('jobs') || [];
+        const job = list.find(j => j.id === jobId || String(j.number) === String(jobId));
+        if (!job) {
+          showToast(`Could not find Job "${jobId}".`, 'error');
+          return;
+        }
+
+        const allTechs = store.getAll('technicians') || [];
+        if (techName) {
+          const isDeactivated = allTechs.some(t => t.name.toLowerCase() === techName.toLowerCase() && t.deactivated);
+          if (isDeactivated) {
+            showToast(`Cannot assign job: ${techName} is a deactivated technician.`, 'error');
+            return;
+          }
+        }
+
+        const technicians = allTechs.filter(t => !t.deactivated);
+        const tech = technicians.find(t => t.name.toLowerCase() === (techName || '').toLowerCase() || t.id === techName);
+        job.technicianName = tech ? tech.name : (techName || 'Unassigned');
+        job.technician_id = tech ? tech.id : null;
+        job.updatedAt = new Date().toISOString();
+        store.save('jobs', list);
+        showToast(`Assigned Job #${job.number || job.id} to ${job.technicianName}.`, 'success');
+
+      } else if (action === 'RESOLVE_CONFLICT' && param) {
+        if (!checkCollectionPermission('jobs', 'edit')) return;
+        let jobId = json?.jobId || json?.id;
+        let newDate = json?.scheduledDate || json?.newDate;
+        let newTech = json?.technicianName || json?.newTech;
+        if (!json) {
+          const parts = param.split('|').map(p => p.trim());
+          jobId = parts[0];
+          newDate = parts[1];
+          newTech = parts[2];
+        }
+
+        const list = store.getAll('jobs') || [];
+        const job = list.find(j => j.id === jobId || String(j.number) === String(jobId));
+        if (!job) {
+          showToast(`Could not find Job "${jobId}".`, 'error');
+          return;
+        }
+
+        if (newDate) job.scheduledDate = newDate;
+        if (newTech) {
+          const allTechs = store.getAll('technicians') || [];
+          const tech = allTechs.filter(t => !t.deactivated).find(t => t.name.toLowerCase() === newTech.toLowerCase());
+          job.technicianName = tech ? tech.name : newTech;
+          job.technician_id = tech ? tech.id : null;
+        }
+        job.updatedAt = new Date().toISOString();
+        store.save('jobs', list);
+        showToast(`Resolved schedule conflict for Job #${job.number || job.id}.`, 'success');
+
+      } else if (action === 'OPTIMIZE_SCHEDULE' && param) {
+        // Just acknowledging the command visually, the AI handles the actual text reasoning and emits RESOLVE_CONFLICTs
+        let date = json?.date;
+        if (!json) date = param.trim();
+        showToast(`Optimizing schedule conflicts for ${date || 'all dates'}...`, 'info');
+
+      } else if (action === 'BULK_UPDATE_STATUS' && param) {
+        let collection = json?.collection;
+        let identifiers = (json?.identifiers || json?.ids || []).map(String);
+        let status = json?.status;
+        if (!json) {
+          const parts = param.split('|').map(p => p.trim());
+          collection = parts[0];
+          status = parts[1];
+          identifiers = parts[2] ? parts[2].split(',').map(s => String(s.trim())) : [];
+        }
+
+        if (!collection || !status || !checkCollectionPermission(collection, 'edit')) return;
+        const list = store.getAll(collection) || [];
+        let count = 0;
+        list.forEach(item => {
+          if (identifiers.includes(item.id) || identifiers.includes(String(item.number))) {
+            item.status = status;
+            item.updatedAt = new Date().toISOString();
+            count++;
+          }
+        });
+        if (count > 0) {
+          store.save(collection, list);
+          showToast(`Updated status to "${status}" for ${count} item(s) in ${collection}.`, 'success');
+        } else {
+          showToast(`No matching items found in ${collection} to update status.`, 'error');
+        }
+
+      } else if (action === 'REORDER_STOCK' && param) {
+        if (!checkCollectionPermission('purchaseOrders', 'create')) return;
+        let itemId = json?.itemId || json?.id;
+        let supplierName = json?.supplierName || json?.supplier || 'Default Supplier';
+        let qty = Number(json?.quantity || json?.qty) || 10;
+        if (!json) {
+          const parts = param.split('|').map(p => p.trim());
+          itemId = parts[0];
+          qty = Number(parts[1]) || 10;
+          supplierName = parts[2] || 'Default Supplier';
+        }
+
+        const stockList = store.getAll('stock') || [];
+        const stockItem = stockList.find(s => s.id === itemId || s.name?.toLowerCase() === itemId?.toLowerCase());
+        const itemName = stockItem ? stockItem.name : (itemId || 'Stock Item');
+
+        const pos = store.getAll('purchaseOrders') || [];
+        const nextNum = pos.reduce((max, po) => {
+          const num = parseInt(po.number) || 0;
+          return num > max ? num : max;
+        }, 1000) + 1;
+
+        const newPo = {
+          id: store.generateId(),
+          number: String(nextNum),
+          title: `PO for Reorder: ${itemName}`,
+          supplierName: supplierName,
+          status: 'Pending',
+          total: (stockItem ? (stockItem.costPrice || 0) : 0) * qty,
+          items: [{ stockId: stockItem ? stockItem.id : null, name: itemName, quantity: qty }],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        pos.push(newPo);
+        store.save('purchaseOrders', pos);
+        showToast(`Created PO #${nextNum} to reorder ${qty}x "${itemName}".`, 'success');
+
+      } else if (action === 'ADD_WIDGET' && param) {
         const title = ff.addWidgetById?.(param);
         if (title) {
           showToast(`Relay added the "${title}" widget.`, 'success');
@@ -1083,7 +1343,7 @@ function executeAction(action, param) {
           showToast(`Relay jumped to saved view "${label}".`, 'info');
         }
       } else if (action === 'NAVIGATE' && param) {
-        const route = param.toLowerCase().trim();
+        const route = (json?.page || param).toLowerCase().trim();
         let targetHash = `#/${route}`;
         if (route === 'dashboard' || route === 'home') {
           targetHash = '#/';
@@ -1117,14 +1377,25 @@ function executeAction(action, param) {
         showToast(`Navigated to ${route} page.`, 'info');
       } else if (action === 'CREATE_CUSTOMER' && param) {
         if (!checkCollectionPermission('customers', 'create')) return;
-        const parts = param.split('|').map(p => p.trim());
-        const type = parts[0] || 'Residential';
-        const firstName = parts[1] || '';
-        const lastName = parts[2] || '';
-        const companyName = parts[3] || '';
-        const email = parts[4] || '';
-        const phone = parts[5] || '';
-        const address = parts[6] || '';
+        let type, firstName, lastName, companyName, email, phone, address;
+        if (json) {
+          type = json.type || 'Residential';
+          firstName = json.firstName || json.first_name || '';
+          lastName = json.lastName || json.last_name || '';
+          companyName = json.companyName || json.company || '';
+          email = json.email || '';
+          phone = json.phone || '';
+          address = json.address || '';
+        } else {
+          const parts = param.split('|').map(p => p.trim());
+          type = parts[0] || 'Residential';
+          firstName = parts[1] || '';
+          lastName = parts[2] || '';
+          companyName = parts[3] || '';
+          email = parts[4] || '';
+          phone = parts[5] || '';
+          address = parts[6] || '';
+        }
 
         const list = store.getAll('customers') || [];
         const newItem = {
@@ -1147,14 +1418,25 @@ function executeAction(action, param) {
 
       } else if (action === 'CREATE_JOB' && param) {
         if (!checkCollectionPermission('jobs', 'create')) return;
-        const parts = param.split('|').map(p => p.trim());
-        const title = parts[0] || 'New Job';
-        const status = parts[1] || 'Scheduled';
-        const customerName = parts[2] || '';
-        const techName = parts[3] || '';
-        const scheduledDate = parts[4] || '';
-        const estHours = Number(parts[5]) || 0;
-        const notes = parts[6] || '';
+        let title, status, customerName, techName, scheduledDate, estHours, notes;
+        if (json) {
+          title = json.title || 'New Job';
+          status = json.status || 'Scheduled';
+          customerName = json.customerName || json.customer || '';
+          techName = json.technicianName || json.techName || '';
+          scheduledDate = json.scheduledDate || json.date || '';
+          estHours = Number(json.estimated_hours || json.estHours || json.hours) || 0;
+          notes = json.notes || '';
+        } else {
+          const parts = param.split('|').map(p => p.trim());
+          title = parts[0] || 'New Job';
+          status = parts[1] || 'Scheduled';
+          customerName = parts[2] || '';
+          techName = parts[3] || '';
+          scheduledDate = parts[4] || '';
+          estHours = Number(parts[5]) || 0;
+          notes = parts[6] || '';
+        }
 
         const list = store.getAll('jobs') || [];
         const nextNum = list.reduce((max, j) => {
@@ -1198,15 +1480,27 @@ function executeAction(action, param) {
 
       } else if (action === 'CREATE_QUOTE' && param) {
         if (!checkCollectionPermission('quotes', 'create')) return;
-        const parts = param.split('|').map(p => p.trim());
-        const title = parts[0] || 'New Quote';
-        const status = parts[1] || 'Draft';
-        const customerName = parts[2] || '';
-        const subtotal = Number(parts[3]) || 0;
-        const tax = Number(parts[4]) || 0;
-        const total = Number(parts[5]) || 0;
-        const validUntil = parts[6] || '';
-        const notes = parts[7] || '';
+        let title, status, customerName, subtotal, tax, total, validUntil, notes;
+        if (json) {
+          title = json.title || 'New Quote';
+          status = json.status || 'Draft';
+          customerName = json.customerName || json.customer || '';
+          subtotal = Number(json.subtotal) || 0;
+          tax = Number(json.tax) || 0;
+          total = Number(json.total) || 0;
+          validUntil = json.valid_until || json.validUntil || '';
+          notes = json.notes || '';
+        } else {
+          const parts = param.split('|').map(p => p.trim());
+          title = parts[0] || 'New Quote';
+          status = parts[1] || 'Draft';
+          customerName = parts[2] || '';
+          subtotal = Number(parts[3]) || 0;
+          tax = Number(parts[4]) || 0;
+          total = Number(parts[5]) || 0;
+          validUntil = parts[6] || '';
+          notes = parts[7] || '';
+        }
 
         const list = store.getAll('quotes') || [];
         const nextNum = list.reduce((max, q) => {
@@ -1239,16 +1533,29 @@ function executeAction(action, param) {
 
       } else if (action === 'CREATE_INVOICE' && param) {
         if (!checkCollectionPermission('invoices', 'create')) return;
-        const parts = param.split('|').map(p => p.trim());
-        const title = parts[0] || 'New Invoice';
-        const status = parts[1] || 'Sent';
-        const jobNum = parts[2] || '';
-        const customerName = parts[3] || '';
-        const subtotal = Number(parts[4]) || 0;
-        const tax = Number(parts[5]) || 0;
-        const total = Number(parts[6]) || 0;
-        const dueDate = parts[7] || '';
-        const notes = parts[8] || '';
+        let title, status, jobNum, customerName, subtotal, tax, total, dueDate, notes;
+        if (json) {
+          title = json.title || 'New Invoice';
+          status = json.status || 'Sent';
+          jobNum = json.job_id || json.jobNum || '';
+          customerName = json.customerName || json.customer || '';
+          subtotal = Number(json.subtotal) || 0;
+          tax = Number(json.tax) || 0;
+          total = Number(json.total) || 0;
+          dueDate = json.due_date || json.dueDate || '';
+          notes = json.notes || '';
+        } else {
+          const parts = param.split('|').map(p => p.trim());
+          title = parts[0] || 'New Invoice';
+          status = parts[1] || 'Sent';
+          jobNum = parts[2] || '';
+          customerName = parts[3] || '';
+          subtotal = Number(parts[4]) || 0;
+          tax = Number(parts[5]) || 0;
+          total = Number(parts[6]) || 0;
+          dueDate = parts[7] || '';
+          notes = parts[8] || '';
+        }
 
         const list = store.getAll('invoices') || [];
         const nextNum = list.reduce((max, i) => {
@@ -1280,45 +1587,65 @@ function executeAction(action, param) {
         store.save('invoices', list);
         showToast(`Created Invoice #${nextNum} successfully.`, 'success');
       } else if (action === 'UPDATE_RECORD' && param) {
-        const parts = param.split('|').map(p => p.trim());
-        const collection = parts[0];
-        const identifier = parts[1];
-        const fieldName = parts[2];
-        const newValue = parts[3];
+        let collection, identifier, updates;
+        if (json) {
+          collection = json.collection;
+          let rawId = json.id || json.identifier || json.number;
+          identifier = rawId != null ? String(rawId) : '';
+          if (json.updates && typeof json.updates === 'object') {
+            updates = json.updates;
+          } else {
+            const fieldName = json.field || json.fieldName;
+            const newValue = json.value || json.newValue;
+            updates = {};
+            if (fieldName) updates[fieldName] = newValue;
+          }
+        } else {
+          const parts = param.split('|').map(p => p.trim());
+          collection = parts[0];
+          identifier = parts[1];
+          updates = {};
+          if (parts[2]) updates[parts[2]] = parts[3];
+        }
 
         if (!checkCollectionPermission(collection, 'edit')) return;
 
         const list = store.getAll(collection) || [];
         const item = list.find(it => it.id === identifier || String(it.number) === identifier || (it.first_name && `${it.first_name || ''} ${it.last_name || ''}`.trim().toLowerCase() === identifier.toLowerCase()));
         if (item) {
-          let targetField = fieldName;
-          if (fieldName === 'scheduled_date') targetField = 'scheduledDate';
-          if (fieldName === 'technician_name') targetField = 'technicianName';
-          if (fieldName === 'technician_id') targetField = 'technician_id';
-          if (fieldName === 'estimated_hours') targetField = 'estimated_hours';
-          if (fieldName === 'due_date') targetField = 'due_date';
-          if (fieldName === 'valid_until') targetField = 'valid_until';
+          let updatedCount = 0;
+          for (const [fieldName, newValue] of Object.entries(updates)) {
+            let targetField = fieldName;
+            if (fieldName === 'scheduled_date') targetField = 'scheduledDate';
+            if (fieldName === 'technician_name') targetField = 'technicianName';
+            if (fieldName === 'technician_id') targetField = 'technician_id';
+            if (fieldName === 'estimated_hours') targetField = 'estimated_hours';
+            if (fieldName === 'due_date') targetField = 'due_date';
+            if (fieldName === 'valid_until') targetField = 'valid_until';
 
-          let val = newValue;
-          if (newValue === 'true') val = true;
-          if (newValue === 'false') val = false;
-          if (newValue === 'null') val = null;
-          if (!isNaN(newValue) && newValue !== '') val = Number(newValue);
+            let val = newValue;
+            if (newValue === 'true') val = true;
+            if (newValue === 'false') val = false;
+            if (newValue === 'null') val = null;
+            if (typeof newValue === 'string' && !isNaN(newValue) && newValue !== '') val = Number(newValue);
 
-          if (targetField === 'technicianName' && val) {
-            const allTechs = store.getAll('technicians') || [];
-            const isDeactivated = allTechs.some(t => t.name.toLowerCase() === val.toLowerCase() && t.deactivated);
-            if (isDeactivated) {
-              showToast(`Cannot assign job: ${val} is a deactivated technician.`, 'error');
-              return;
+            if (targetField === 'technicianName' && val) {
+              const allTechs = store.getAll('technicians') || [];
+              const isDeactivated = allTechs.some(t => t.name.toLowerCase() === val.toLowerCase() && t.deactivated);
+              if (isDeactivated) {
+                showToast(`Cannot assign job: ${val} is a deactivated technician.`, 'error');
+                return;
+              }
             }
-          }
 
-          item[targetField] = val;
+            item[targetField] = val;
+            updatedCount++;
+          }
           item.updatedAt = new Date().toISOString();
 
-          // Try to link technician_id if tech name is updated
-          if (targetField === 'technicianName') {
+          // Try to link technician_id if tech name was updated
+          if (updates.technicianName || updates.technician_name) {
+            const val = updates.technicianName || updates.technician_name;
             const allTechs = store.getAll('technicians') || [];
             const tech = allTechs.filter(t => !t.deactivated).find(t => t.name.toLowerCase() === (val || '').toLowerCase());
             if (tech) {
@@ -1330,15 +1657,23 @@ function executeAction(action, param) {
 
           store.save(collection, list);
           const displayLabel = item.number ? `#${item.number}` : (item.name || item.title || `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.id);
-          showToast(`Updated "${targetField}" to "${newValue}" for ${collection.slice(0, -1)} "${displayLabel}".`, 'success');
+          const updatedFields = Object.keys(updates).join(', ');
+          showToast(`Updated [${updatedFields}] for ${collection.slice(0, -1)} "${displayLabel}".`, 'success');
         } else {
           showToast(`Could not find ${collection.slice(0, -1)} "${identifier}".`, 'error');
         }
 
       } else if (action === 'DELETE_RECORD' && param) {
-        const parts = param.split('|').map(p => p.trim());
-        const collection = parts[0];
-        const identifier = parts[1];
+        let collection, identifier;
+        if (json) {
+          collection = json.collection;
+          let rawId = json.id || json.identifier || json.number;
+          identifier = rawId != null ? String(rawId) : '';
+        } else {
+          const parts = param.split('|').map(p => p.trim());
+          collection = parts[0];
+          identifier = parts[1];
+        }
 
         if (!checkCollectionPermission(collection, 'delete')) return;
 
@@ -1430,7 +1765,7 @@ function executeAction(action, param) {
 }
 
 // Text-chat path: execute every action in a reply and return the cleaned prose.
-function parseAndExecuteActions(reply) {
+export async function parseAndExecuteActions(reply) {
   const { actions, cleanReply } = extractActions(reply);
   actions.forEach(({ action, param }) => {
     console.log(`Executing AI action: ${action} with param: ${param}`);

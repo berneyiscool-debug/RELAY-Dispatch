@@ -89,6 +89,8 @@ export function renderTimesheetsList(container) {
       group.items.push(t);
       group.total += (t.hours || 0);
     });
+    const allJobs = store.getAll('jobs') || [];
+    const jobMap = new Map(allJobs.map(j => [j.id, j]));
 
     container.innerHTML = `
       <div class="page-header">
@@ -119,30 +121,37 @@ export function renderTimesheetsList(container) {
         </div>
       </div>
 
-      <div class="page-toolbar" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px;">
-        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-          <div class="toolbar-filters" style="margin:0">
-            <button class="toolbar-filter ${filterStatus === 'All' ? 'active' : ''}" data-status="All">All</button>
-            <button class="toolbar-filter ${filterStatus === 'Pending' ? 'active' : ''}" data-status="Pending">Pending</button>
-            <button class="toolbar-filter ${filterStatus === 'Approved' ? 'active' : ''}" data-status="Approved">Approved</button>
-            <button class="toolbar-filter ${filterStatus === 'Rejected' ? 'active' : ''}" data-status="Rejected">Rejected</button>
+      <!-- Filters & Controls -->
+      <div class="card" style="margin-bottom:12px; padding:12px 16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <!-- Status Segmented Controls -->
+          <div class="segmented-control" style="margin:0;">
+            <button class="btn btn-sm ${filterStatus === 'All' ? 'active' : ''}" data-status="All">All</button>
+            <button class="btn btn-sm ${filterStatus === 'Pending' ? 'active' : ''}" data-status="Pending">Pending</button>
+            <button class="btn btn-sm ${filterStatus === 'Approved' ? 'active' : ''}" data-status="Approved">Approved</button>
+            <button class="btn btn-sm ${filterStatus === 'Rejected' ? 'active' : ''}" data-status="Rejected">Rejected</button>
           </div>
-          
+
+          <!-- Date Navigation & Quick Presets -->
           <div style="display:flex; align-items:center; gap:8px;">
-            <input type="date" class="form-input" id="filter-date-start" value="${filterStartDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-            <span style="font-size:12px; color:var(--text-secondary)">to</span>
-            <input type="date" class="form-input" id="filter-date-end" value="${filterEndDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
+            <div style="display:flex; align-items:center; gap:6px;">
+              <input type="date" class="form-input" id="filter-date-start" value="${filterStartDate}" style="padding:4px 8px; font-size:13px; width:auto;" />
+              <span style="font-size:12px; color:var(--text-tertiary);">to</span>
+              <input type="date" class="form-input" id="filter-date-end" value="${filterEndDate}" style="padding:4px 8px; font-size:13px; width:auto;" />
+            </div>
           </div>
         </div>
 
-        ${canViewAll && !isLocalAdmin ? `
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div style="display:flex; align-items:center; gap:4px;">
+        <!-- Technician Dropdown Filter (Admin/Manager or multi-tech view) -->
+        ${(currentUser.role === 'admin' || currentUser.role === 'manager' || isLocalAdmin) ? `
+          <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="text-secondary" style="font-size:13px; font-weight:500;">Filter Technician:</span>
               <button class="btn btn-ghost btn-sm btn-icon" id="btn-tech-prev" title="Previous technician" style="padding:0; height:32px; width:32px; min-width:32px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); border-radius:var(--border-radius); background:var(--card-bg);">
                 <span class="material-icons-outlined" style="font-size:18px">chevron_left</span>
               </button>
-              <select class="form-select" id="filter-tech" style="width:180px; height:32px; padding:0 8px; font-size:13px; margin:0;">
-                <option value="All">All Technicians</option>
+              <select class="form-select" id="filter-tech" style="width:auto; min-width:180px; padding:4px 8px; font-size:13px;">
+                <option value="All" ${filterTechId === 'All' ? 'selected' : ''}>All Technicians</option>
                 ${(() => {
                   const hasCurrentUser = technicians.some(t => t.id === currentUser.id);
                   let html = '';
@@ -175,17 +184,16 @@ export function renderTimesheetsList(container) {
               <span class="material-icons-outlined" style="font-size:16px">close</span> Reject Selected
             </button>
           ` : ''}
-          ${hasPermission('Timesheets', 'export') ? `
-            <button class="btn btn-sm btn-secondary" id="btn-bulk-export" style="display:flex; align-items:center; gap:4px; padding:6px 12px; font-size:13px;">
-              <span class="material-icons-outlined" style="font-size:16px">download</span> Export Selected
+          ${hasPermission('Timesheets', 'delete') || ['admin', 'manager', 'office'].includes(currentUser.role) ? `
+            <button class="btn btn-sm btn-danger" id="btn-bulk-delete" style="display:flex; align-items:center; gap:4px; padding:6px 12px; font-size:13px; color:#ef4444; border-color:#ef4444; background:rgba(239, 68, 68, 0.1);">
+              <span class="material-icons-outlined" style="font-size:16px">delete</span> Delete Selected
             </button>
           ` : ''}
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-body" style="padding:0">
-          <table class="data-table">
+      <div class="data-table-wrapper">
+        <table class="data-table">
             <thead>
               <tr>
                 <th style="width:40px; text-align:center;"><input type="checkbox" id="th-select-all" ${allSelected ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px; margin:0;" /></th>
@@ -217,6 +225,16 @@ export function renderTimesheetsList(container) {
                   const canDelete = ['admin', 'manager', 'office'].includes(currentUser.role) || (hasDeletePerm && t.status !== 'Approved');
                   const isRowChecked = selectedIds.includes(t.id);
 
+                  const job = jobMap.get(t.jobId);
+                  let jobLabel = t.jobNumber || t.jobId;
+                  if (job) {
+                    if (job.number && job.title) jobLabel = `${job.number} — ${job.title}`;
+                    else if (job.number) jobLabel = job.number;
+                    else if (job.title) jobLabel = job.title;
+                  } else if (t.jobTitle) {
+                    jobLabel = t.jobNumber ? `${t.jobNumber} — ${t.jobTitle}` : t.jobTitle;
+                  }
+
                   return `
                   <tr>
                     <td style="width:40px; text-align:center;">
@@ -224,10 +242,10 @@ export function renderTimesheetsList(container) {
                     </td>
                     <td class="text-secondary" style="font-size:12px">${new Date(t.date).toLocaleDateString()}</td>
                     <td><span class="font-medium">${escapeHTML(t.technicianName)}</span></td>
-                    <td><a href="#/jobs/${t.jobId}" class="cell-link">${escapeHTML(t.jobNumber || t.jobId)}</a></td>
-                    <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || '—')}</span></td>
+                    <td><a href="#/jobs/${t.jobId}" class="cell-link" title="${escapeHTML(jobLabel)}">${escapeHTML(jobLabel)}</a></td>
+                    <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || t.phaseName || t.task_name || '—')}</span></td>
                     <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.description || '—')}</span></td>
-                    <td style="text-align:right; font-weight:600">${t.hours.toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:600">${(t.hours ?? t.durationHours ?? t.duration_hours ?? 0).toFixed(2)}</td>
                     <td>
                       <span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">
                         ${escapeHTML(t.status)}
@@ -259,8 +277,7 @@ export function renderTimesheetsList(container) {
                 `;}).join('')}
               `).join('')}
             </tbody>
-          </table>
-        </div>
+        </table>
       </div>
     `;
 
@@ -354,6 +371,31 @@ export function renderTimesheetsList(container) {
       showToast(`Rejected ${selectedIds.length} timesheets`, 'error');
       selectedIds = [];
       render();
+    });
+
+    container.querySelector('#btn-bulk-delete')?.addEventListener('click', () => {
+      if (selectedIds.length === 0) return;
+      const count = selectedIds.length;
+      showModal({
+        title: 'Confirm Bulk Delete',
+        content: `<p>Are you sure you want to delete <strong>${count}</strong> selected timesheet ${count === 1 ? 'entry' : 'entries'}? This action cannot be undone.</p>`,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          {
+            label: `Delete (${count})`,
+            className: 'btn-danger',
+            onClick: (close) => {
+              selectedIds.forEach(id => {
+                store.delete('timesheets', id);
+              });
+              showToast(`Deleted ${count} timesheet ${count === 1 ? 'entry' : 'entries'} successfully`, 'success');
+              selectedIds = [];
+              close();
+              render();
+            }
+          }
+        ]
+      });
     });
 
     const triggerExportSelected = () => {
@@ -782,5 +824,15 @@ export function renderTimesheetsList(container) {
     });
   }
 
+  // Bind store listeners to auto-refresh data
+  const handleStoreChange = () => render();
+  store.on('timesheets', handleStoreChange);
+  store.on('jobs', handleStoreChange);
+  store.on('technicians', handleStoreChange);
+
+  // Initial render
   render();
+
+  // If a router cleanup mechanism exists, we should ideally unbind:
+  // store.off('timesheets', handleStoreChange) etc.
 }

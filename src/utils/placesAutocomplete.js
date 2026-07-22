@@ -13,53 +13,7 @@
 // by design and must be restricted to Places + Maps JS in Google Cloud.
 
 import { setCachedGeo } from './geocode.js';
-
-const BROWSER_KEY = (typeof import.meta !== 'undefined' && import.meta.env)
-  ? import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY
-  : undefined;
-
-let loadPromise = null;
-
-function loadMapsSdk() {
-  if (loadPromise) return loadPromise;
-  if (typeof window !== 'undefined' && window.google?.maps?.importLibrary) {
-    loadPromise = Promise.resolve(window.google);
-    return loadPromise;
-  }
-  loadPromise = new Promise((resolve, reject) => {
-    if (!BROWSER_KEY) return reject(new Error('VITE_GOOGLE_MAPS_BROWSER_KEY not set'));
-    try {
-      // Official Google Maps inline bootstrap loader — this is what defines
-      // google.maps.importLibrary (a plain <script> tag does not). Libraries
-      // are fetched on demand by the first importLibrary() call.
-      ((g) => {
-        let h, a, k, p = 'The Google Maps JavaScript API', c = 'google', l = 'importLibrary',
-          q = '__ib__', m = document, b = window;
-        b = b[c] || (b[c] = {});
-        const d = b.maps || (b.maps = {}), r = new Set(), e = new URLSearchParams(),
-          u = () => h || (h = new Promise(async (f, n) => {
-            a = m.createElement('script');
-            e.set('libraries', [...r] + '');
-            for (k in g) e.set(k.replace(/[A-Z]/g, (t) => '_' + t[0].toLowerCase()), g[k]);
-            e.set('callback', c + '.maps.' + q);
-            a.src = `https://maps.${c}apis.com/maps/api/js?` + e;
-            d[q] = f;
-            a.onerror = () => (h = n(Error(p + ' could not load.')));
-            a.nonce = m.querySelector('script[nonce]')?.nonce || '';
-            m.head.append(a);
-          }));
-        d[l] ? console.warn(p + ' only loads once. Ignoring:', g) : (d[l] = (f, ...n) => r.add(f) && u().then(() => d[l](f, ...n)));
-      })({ key: BROWSER_KEY, v: 'weekly' });
-
-      if (window.google?.maps?.importLibrary) resolve(window.google);
-      else reject(new Error('Google Maps bootstrap failed to initialise'));
-    } catch (err) {
-      loadPromise = null;
-      reject(err);
-    }
-  });
-  return loadPromise;
-}
+import { loadGoogleMapsSdk, getEffectiveGoogleMapsKey } from './googleMapsLoader.js';
 
 /**
  * Attach address autocomplete to an existing app input. Renders an app-styled
@@ -72,13 +26,14 @@ function loadMapsSdk() {
  */
 export async function attachAddressAutocomplete(targetInput, opts = {}) {
   const { enabled = true, onSelect } = opts;
-  if (!enabled || !BROWSER_KEY || !targetInput) return;
+  const activeKey = getEffectiveGoogleMapsKey();
+  if (!enabled || !activeKey || !targetInput) return;
   if (targetInput.dataset.pacMounted === '1') return;
   targetInput.dataset.pacMounted = '1';
 
   let AutocompleteSuggestion, AutocompleteSessionToken;
   try {
-    await loadMapsSdk();
+    await loadGoogleMapsSdk();
     ({ AutocompleteSuggestion, AutocompleteSessionToken } = await window.google.maps.importLibrary('places'));
     if (!AutocompleteSuggestion) throw new Error('Places Data API unavailable on this key');
   } catch (err) {

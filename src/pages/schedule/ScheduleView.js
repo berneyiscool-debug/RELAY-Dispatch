@@ -11,6 +11,7 @@ import { showModal } from '../../components/Modal.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
 import { parsePreferredTime } from '../../utils/dateUtils.js';
 import { FLAGS } from '../../utils/flags.js';
+import { getVirtualRecurringOccurrences, materializeVirtualOccurrence } from '../../utils/maintenanceEngine.js';
 
 export function renderScheduleView(container) {
   document.querySelectorAll('.schedule-tooltip-popover').forEach(t => t.remove());
@@ -370,6 +371,77 @@ export function renderScheduleView(container) {
           }
         });
       });
+
+    // 3. Virtual forecast blocks for active recurring job templates
+    if (days.length > 0) {
+      const firstDay = days[0];
+      const lastDay = days[days.length - 1];
+      const startDateStr = `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}-${String(firstDay.getDate()).padStart(2, '0')}`;
+      const endDateStr = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+      const virtualOccurrences = getVirtualRecurringOccurrences(startDateStr, endDateStr);
+
+      const technicians = getTechnicians();
+      virtualOccurrences.forEach(occ => {
+        const [y, m, d] = occ.scheduledDate.split('-').map(Number);
+        const occDate = new Date(y, m - 1, d);
+        days.forEach((day, dayIdx) => {
+          if (occDate.toDateString() === day.toDateString()) {
+            const techId = isLocalAdmin ? currentUser.id : (occ.technicianId || (technicians[0] ? technicians[0].id : ''));
+            const duration = parseFloat(occ.estimatedHours) || 2;
+
+            let startHour = 8;
+            if (occ.preferredTime) {
+              const parsed = parsePreferredTime(occ.preferredTime);
+              if (parsed) {
+                startHour = parsed.hours + (parsed.minutes / 60);
+              }
+            }
+            const endHour = startHour + duration;
+
+            // Detect collision with existing allocations for this technician and day
+            const existingIntervals = blocks
+              .filter(b => b.technicianId === techId && b.dayIdx === dayIdx)
+              .map(b => ({ start: b.startHour, end: b.endHour }));
+
+            const hasCollision = existingIntervals.some(inv => Math.max(startHour, inv.start) < Math.min(endHour, inv.end));
+
+            blocks.push({
+              id: occ.id,
+              type: 'virtual',
+              isVirtual: true,
+              hasCollision,
+              jobId: occ.parentJobId,
+              parentJobId: occ.parentJobId,
+              parentJobNumber: occ.parentJobNumber,
+              jobNumber: occ.parentJobNumber,
+              customerName: occ.customerName ? occ.customerName : 'Recurring Template',
+              title: occ.title,
+              technicianId: techId,
+              dayIdx,
+              startHour,
+              endHour,
+              status: hasCollision ? 'Collision' : 'Forecast',
+              priority: occ.priority || 'Normal',
+              dateStr: occ.scheduledDate
+            });
+          }
+        });
+      });
+    }
+
+    // Detect collisions among all blocks (real and virtual)
+    for (let i = 0; i < blocks.length; i++) {
+      for (let j = i + 1; j < blocks.length; j++) {
+        const b1 = blocks[i];
+        const b2 = blocks[j];
+        if (b1.technicianId === b2.technicianId && b1.dayIdx === b2.dayIdx) {
+          if (Math.max(b1.startHour, b2.startHour) < Math.min(b1.endHour, b2.endHour)) {
+            b1.hasCollision = true;
+            b2.hasCollision = true;
+          }
+        }
+      }
+    }
 
     return blocks;
   }
@@ -771,7 +843,7 @@ export function renderScheduleView(container) {
   // ── Marquee multi-select ────────────────────────────────────────────────────
   function applySelectionStyles() {
     // Drop ids that no longer exist on the calendar (e.g. after a delete)
-    const live = new Set([...container.querySelectorAll('.schedule-block[data-block-type="schedule"]')].map(b => b.dataset.scheduleId));
+    const live = new Set([...container.querySelectorAll('.schedule-block[data-schedule-id]')].map(b => b.dataset.scheduleId));
     [...selectedScheduleIds].forEach(id => { if (!live.has(id)) selectedScheduleIds.delete(id); });
     container.querySelectorAll('.schedule-block').forEach(b => {
       b.classList.toggle('sched-selected', selectedScheduleIds.has(b.dataset.scheduleId));
@@ -809,18 +881,96 @@ export function renderScheduleView(container) {
   function bulkBookTime() {
     const scheds = selectedSchedules();
     if (!scheds.length) return;
-    // Book each allocation's slot straight through (uses the same estimate-weighted
-    // split as single Book Time in Place, but no per-job modal — one confirmation).
-    let totalHrs = 0, totalEntries = 0;
-    scheds.forEach(s => { const j = store.getById('jobs', s.jobId); if (j) totalHrs += Math.max(0, ((new Date(s.finishTime || `${s.date}T${String(s.endHour||10).padStart(2,'0')}:00`) - new Date(s.startTime || `${s.date}T${String(s.startHour||9).padStart(2,'0')}:00`)) / 36e5)); });
-    if (!window.confirm(`Book ${totalHrs.toFixed(2)} hrs across ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}? Whole-job allocations split across their tasklists.`)) return;
+
+    const allAllocationPlans = [];
+    let overallHours = 0;
+
     scheds.forEach(s => {
       const job = store.getById('jobs', s.jobId);
-      if (job) totalEntries += bookTimeInPlaceSilent(s, job);
+      if (!job) return;
+      const plan = computeBtipSlices(s, job);
+      if (!plan) return;
+      allAllocationPlans.push({
+        sched: s,
+        job,
+        slices: plan.slices,
+        totalHours: plan.totalHours,
+        date: s.date,
+        techName: s.technicianName || 'Unassigned'
+      });
+      overallHours += plan.totalHours;
     });
-    showToast(`Booked time — ${totalEntries} timesheet ${totalEntries === 1 ? 'entry' : 'entries'} created`, 'success');
-    clearSelection();
-    render();
+
+    if (!allAllocationPlans.length) {
+      showToast('No valid allocations selected for booking', 'error');
+      return;
+    }
+
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+        Booking <strong>${overallHours.toFixed(2)} hrs</strong> across <strong>${allAllocationPlans.length} allocation${allAllocationPlans.length > 1 ? 's' : ''}</strong>:
+      </p>
+      <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px;margin-bottom:10px;">
+        <table class="data-table" style="font-size:13px;width:100%;">
+          <thead>
+            <tr>
+              <th>Date / Tech</th>
+              <th>Job</th>
+              <th>Task / Window</th>
+              <th style="text-align:right;">Booked</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${allAllocationPlans.map(planItem => {
+              return planItem.slices.map(s => `
+                <tr>
+                  <td>
+                    <div style="font-weight:500;">${planItem.date}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);">${escapeHTML(planItem.techName)}</div>
+                  </td>
+                  <td>
+                    <div style="font-weight:500;">${escapeHTML(planItem.job.number || '')}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);">${escapeHTML(planItem.job.title || '')}</div>
+                  </td>
+                  <td>
+                    <div>${escapeHTML(s.node ? s.node.name : 'General (whole job)')}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);">${s.start.slice(11, 16)}–${s.finish.slice(11, 16)}</div>
+                  </td>
+                  <td style="text-align:right;font-weight:600;">${s.hours.toFixed(2)} hrs</td>
+                </tr>
+              `).join('');
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:11.5px;color:var(--text-tertiary);margin-top:8px;">
+        Entries will be created as Pending timesheets — adjust or delete them from the job's tasklist or Timesheets.
+      </p>`;
+
+    showModal({
+      title: `Book Time in Place (${allAllocationPlans.length} Allocations)`,
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        {
+          label: `Book ${overallHours.toFixed(2)} hrs`,
+          className: 'btn-primary',
+          onClick: c => {
+            let totalEntries = 0;
+            allAllocationPlans.forEach(planItem => {
+              createBtipTimesheets(planItem.sched, planItem.job, planItem.slices);
+              totalEntries += planItem.slices.length;
+            });
+            showToast(`Booked ${overallHours.toFixed(2)} hrs across ${totalEntries} timesheet ${totalEntries === 1 ? 'entry' : 'entries'}`, 'success');
+            c();
+            clearSelection();
+            render();
+          }
+        },
+      ],
+      width: 580
+    });
   }
 
   function bindMarquee(days) {
@@ -1081,6 +1231,7 @@ export function renderScheduleView(container) {
 
   function handleAddLeave() {
     const technicians = getTechnicians();
+    const todayStr = new Date().toISOString().split('T')[0];
 
     showDrawer({
       title: 'Book Technician Leave',
@@ -1092,9 +1243,15 @@ export function renderScheduleView(container) {
               ${technicians.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
-            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="form-group">
+              <label class="form-label">Start Date <span style="color:var(--color-danger)">*</span></label>
+              <input type="date" class="form-input" name="startDate" value="${todayStr}" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">End Date <span style="color:var(--color-danger)">*</span></label>
+              <input type="date" class="form-input" name="endDate" value="${todayStr}" required />
+            </div>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
@@ -1102,7 +1259,7 @@ export function renderScheduleView(container) {
               <input type="time" class="form-input" name="startTime" value="08:00" required />
             </div>
             <div class="form-group">
-              <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
+              <label class="form-label">Hours / Day <span style="color:var(--color-danger)">*</span></label>
               <input type="number" class="form-input" name="duration" min="0.5" step="0.5" value="8" required />
             </div>
           </div>
@@ -1128,32 +1285,53 @@ export function renderScheduleView(container) {
 
             const fd = new FormData(form);
             const techId = fd.get('technicianId');
-            const dateStr = fd.get('date');
+            const startDateStr = fd.get('startDate');
+            const endDateStr = fd.get('endDate');
             const timeStr = fd.get('startTime');
             const duration = parseFloat(fd.get('duration'));
             const notes = fd.get('notes');
 
+            const startD = new Date(startDateStr + 'T12:00:00');
+            const endD = new Date(endDateStr + 'T12:00:00');
+
+            if (endD < startD) {
+              showToast('End date cannot be earlier than start date.', 'error');
+              return;
+            }
+
             const tech = store.getById('technicians', techId);
             const startHour = parseFloat(timeStr.split(':')[0]) + (parseFloat(timeStr.split(':')[1]) / 60);
             const endHour = startHour + duration;
-
-            const startTimeISO = `${dateStr}T${timeStr}`;
             const endHourH = Math.floor(endHour);
             const endHourM = Math.round((endHour - endHourH) * 60);
-            const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
 
-            store.create('schedule', {
-              type: 'leave',
-              technicianId: techId,
-              technicianName: tech?.name || '',
-              date: dateStr,
-              startTime: startTimeISO,
-              finishTime: finishTimeISO,
-              hours: duration,
-              notes: notes
-            });
+            let createdCount = 0;
+            const cur = new Date(startD);
 
-            showToast(`Leave booked for ${tech?.name}`, 'success');
+            while (cur <= endD) {
+              const pad = n => n.toString().padStart(2, '0');
+              const dStr = `${cur.getFullYear()}-${pad(cur.getMonth() + 1)}-${pad(cur.getDate())}`;
+              const startTimeISO = `${dStr}T${timeStr}`;
+              const finishTimeISO = `${dStr}T${pad(endHourH)}:${pad(endHourM)}`;
+
+              store.create('schedule', {
+                type: 'leave',
+                technicianId: techId,
+                technicianName: tech?.name || '',
+                date: dStr,
+                startTime: startTimeISO,
+                finishTime: finishTimeISO,
+                hours: duration,
+                startHour: startHour,
+                endHour: endHour,
+                notes: notes
+              });
+
+              createdCount++;
+              cur.setDate(cur.getDate() + 1);
+            }
+
+            showToast(`Booked ${createdCount} day(s) of leave for ${tech?.name || 'technician'}`, 'success');
             c();
             render();
           }
@@ -1383,6 +1561,16 @@ export function renderScheduleView(container) {
           borderColor = '#3B82F6'; // Blue for meetings
           background = 'rgba(59, 130, 246, 0.1)';
           textColor = '#2563EB';
+        } else if (b.type === 'virtual') {
+          if (b.hasCollision) {
+            borderColor = '#EF4444';
+            background = 'rgba(239, 68, 68, 0.16)';
+            textColor = '#DC2626';
+          } else {
+            borderColor = '#9333ea';
+            background = 'rgba(147, 51, 234, 0.08)';
+            textColor = '#9333ea';
+          }
         } else {
           // Standard jobs: use status colors!
           const colors = statusColors[b.status];
@@ -1392,12 +1580,38 @@ export function renderScheduleView(container) {
             textColor = colors.text;
           }
         }
+        // Apply styling for collisions to ALL blocks
+        if (b.hasCollision) {
+          borderColor = '#EF4444';
+          background = 'rgba(239, 68, 68, 0.16)';
+          textColor = '#DC2626';
+        }
 
+        const isVirtual = b.type === 'virtual';
         const timeLabel = `${formatHour(b.startHour)} — ${formatHour(b.endHour)}`;
-        const tooltipTitle = b.type === 'leave' ? 'LEAVE' : (b.type === 'blockout' ? 'BLOCKOUT' : (b.type === 'meeting' ? 'MEETING' : b.title));
+        let tooltipTitle = b.title;
+        
+        if (isVirtual) {
+          tooltipTitle = b.hasCollision ? `⚠️ COLLISION DETECTED: ${b.title} (Overlaps existing schedule)` : `${b.title} (Right-click -> Create as Job)`;
+        } else if (b.type === 'leave') {
+          tooltipTitle = 'LEAVE';
+        } else if (b.type === 'blockout') {
+          tooltipTitle = 'BLOCKOUT';
+        } else if (b.type === 'meeting') {
+          tooltipTitle = 'MEETING';
+        }
+        
+        if (!isVirtual && b.hasCollision) {
+          tooltipTitle = `⚠️ COLLISION DETECTED: ${tooltipTitle} (Overlaps existing schedule)`;
+        }
+
         return `
-          <div class="schedule-block" draggable="true"
+          <div class="schedule-block ${b.hasCollision ? 'schedule-block-collision' : ''} ${isVirtual ? 'schedule-block-virtual' : ''}"
+            draggable="${isVirtual ? 'false' : 'true'}"
             data-block-job-id="${b.jobId || ''}"
+            data-parent-job-id="${b.parentJobId || ''}"
+            data-date="${b.dateStr || ''}"
+            data-tech-id="${b.technicianId || ''}"
             data-schedule-id="${b.id}"
             data-block-type="${b.type}"
             data-start="${b.startHour}"
@@ -1414,10 +1628,13 @@ export function renderScheduleView(container) {
               color:${textColor};
               pointer-events:auto;
             ">
-            <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.jobNumber}</div>
+            <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:space-between">
+              <span>${b.jobNumber}</span>
+              ${b.hasCollision ? `<span class="virtual-forecast-badge virtual-collision-badge">COLLISION</span>` : (isVirtual ? `<span class="virtual-forecast-badge">FORECAST</span>` : '')}
+            </div>
             ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.9;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
             ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.7;margin-top:2px">${timeLabel}</div>` : ''}
-            <div class="schedule-resize-handle" data-block-job-id="${b.jobId || ''}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>
+            ${!isVirtual ? `<div class="schedule-resize-handle" data-block-job-id="${b.jobId || ''}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>` : ''}
           </div>
         `;
       }).join('');
@@ -1598,6 +1815,22 @@ export function renderScheduleView(container) {
         if (e.defaultPrevented) return; // skip if drag/resize happened
         if (block.dataset.resized === 'true') { block.dataset.resized = 'false'; return; }
 
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          const scheduleId = block.dataset.scheduleId;
+          if (scheduleId) {
+            if (selectedScheduleIds.has(scheduleId)) {
+              selectedScheduleIds.delete(scheduleId);
+            } else {
+              selectedScheduleIds.add(scheduleId);
+            }
+            applySelectionStyles();
+            updateSelectionBar();
+          }
+          return;
+        }
+
         const jobId = block.dataset.blockJobId;
         const blockType = block.dataset.blockType;
         const scheduleId = block.dataset.scheduleId;
@@ -1703,7 +1936,7 @@ export function renderScheduleView(container) {
           contextMenu.style.cssText = `position:fixed;top:${e.clientY}px;left:${e.clientX}px;z-index:1000;background:var(--card-bg);box-shadow:var(--shadow-md);border:1px solid var(--border-color);border-radius:var(--border-radius);padding:4px 0;min-width:180px;`;
           contextMenu.innerHTML = `
             <div style="padding:4px 12px;font-size:11px;color:var(--text-tertiary);font-weight:600;">${n} allocations selected</div>
-            <button class="dropdown-item" id="ctx-bulk-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time (${n})</button>
+            <button class="dropdown-item" id="ctx-bulk-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place (${n})</button>
             <button class="dropdown-item text-danger" id="ctx-bulk-unsched"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${n})</button>`;
           document.body.appendChild(contextMenu);
           contextMenu.querySelector('#ctx-bulk-book').addEventListener('click', () => { closeContextMenu(); bulkBookTime(); });
@@ -1723,6 +1956,39 @@ export function renderScheduleView(container) {
         contextMenu.style.borderRadius = 'var(--border-radius)';
         contextMenu.style.padding = '4px 0';
         contextMenu.style.minWidth = '140px';
+
+        if (blockType === 'virtual') {
+          contextMenu.style.minWidth = '170px';
+          contextMenu.innerHTML = `
+            <button class="dropdown-item text-primary" id="ctx-create-job"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">add_task</span> Create as Job</button>
+            <button class="dropdown-item" id="ctx-view-parent"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Template Job</button>
+          `;
+          document.body.appendChild(contextMenu);
+
+          contextMenu.querySelector('#ctx-create-job').addEventListener('click', () => {
+            closeContextMenu();
+            const parentJobId = block.dataset.parentJobId;
+            const dateStr = block.dataset.date;
+            const techId = block.dataset.techId || null;
+            const startHour = parseFloat(block.dataset.start) || 8;
+            const duration = (parseFloat(block.dataset.end) || 10) - startHour;
+
+            const newJob = materializeVirtualOccurrence(parentJobId, dateStr, techId, startHour, duration);
+            if (newJob) {
+              showToast(`Created job ${newJob.number} from recurring template`, 'success');
+              render();
+            }
+          });
+
+          contextMenu.querySelector('#ctx-view-parent').addEventListener('click', () => {
+            closeContextMenu();
+            const parentJobId = block.dataset.parentJobId;
+            if (parentJobId) {
+              router.navigate(`/jobs/${parentJobId}`);
+            }
+          });
+          return;
+        }
 
         if (isJobBlock) {
           const isRealSchedule = blockType === 'schedule';
@@ -2168,6 +2434,36 @@ export function renderScheduleView(container) {
         const dropHour = Math.min(23.75, Math.max(0, snapToQuarter(rawHour)));
 
         const tech = technicians.find(t => t.id === targetTechId);
+
+        if (dragState.type === 'existing' && ['leave', 'blockout', 'meeting'].includes(dragState.blockType)) {
+          const duration = dragState.endHour - dragState.startHour;
+          const dropEndHour = dropHour + duration;
+          const pad = n => n.toString().padStart(2, '0');
+          const localDateStr = `${targetDay.getFullYear()}-${pad(targetDay.getMonth() + 1)}-${pad(targetDay.getDate())}`;
+          const startH = Math.floor(dropHour);
+          const startM = Math.round((dropHour - startH) * 60);
+          const endH = Math.floor(dropEndHour);
+          const endM = Math.round((dropEndHour - endH) * 60);
+          const startTimeStr = `${localDateStr}T${pad(startH)}:${pad(startM)}`;
+          const finishTimeStr = `${localDateStr}T${pad(endH)}:${pad(endM)}`;
+
+          store.update('schedule', dragState.scheduleId, {
+            technicianId: targetTechId,
+            technicianName: tech?.name || '',
+            date: localDateStr,
+            startTime: startTimeStr,
+            finishTime: finishTimeStr,
+            hours: duration,
+            startHour: dropHour,
+            endHour: dropEndHour
+          });
+
+          showToast(`Moved ${dragState.blockType.toUpperCase()} entry for ${tech?.name || 'technician'} to ${localDateStr}`, 'success');
+          dragState = null;
+          render();
+          return;
+        }
+
         const job = jobs.find(j => j.id === dragState.jobId);
 
         if (job) {
@@ -2344,7 +2640,7 @@ export function renderScheduleView(container) {
           resizeState.block.style.userSelect = '';
 
           if (Math.abs(endHour - initialEndHour) >= 0.25) {
-            if (resizeState.blockType === 'schedule') {
+            if (['schedule', 'leave', 'blockout', 'meeting'].includes(resizeState.blockType)) {
               const sched = store.getById('schedule', resizeState.scheduleId);
               if (sched) {
                 const sDateStr = sched.date || sched.startTime?.split('T')[0] || new Date().toISOString().split('T')[0];
@@ -2357,9 +2653,11 @@ export function renderScheduleView(container) {
                 store.update('schedule', resizeState.scheduleId, {
                   startTime: `${sDateStr}T${pad(startH)}:${pad(startM)}`,
                   finishTime: `${sDateStr}T${pad(endH)}:${pad(endM)}`,
-                  hours: duration
+                  hours: duration,
+                  startHour: startHour,
+                  endHour: endHour
                 });
-                syncJobWithSchedules(jobId);
+                if (jobId) syncJobWithSchedules(jobId);
                 showToast(`Time updated to ${formatHour(startHour)} — ${formatHour(endHour)}`, 'success');
               }
             } else {

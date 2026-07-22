@@ -21,7 +21,7 @@ import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
-
+import './utils/DeputyAutopilot.js';
 // Pages
 import { renderDashboard } from './pages/Dashboard.js';
 import { renderPeopleList } from './pages/people/PeopleList.js';

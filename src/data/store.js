@@ -34,7 +34,8 @@ const TABLE_MAP = {
   leads: 'leads',
   schedule: 'schedule',
   projects: 'projects',
-  costCenters: 'cost_centers'
+  costCenters: 'cost_centers',
+  deputyAsks: null
 };
 
 const TABLE_COLUMNS = {
@@ -1465,11 +1466,42 @@ class DataStore {
       record.reorderLevel = parseFloat(record.reorder_level);
       delete record.reorder_level;
     }
-    if (record.duration_hours !== undefined) {
-      record.durationHours = parseFloat(record.duration_hours);
+    if (record.duration_hours !== undefined || record.durationHours !== undefined || record.hours !== undefined) {
+      const h = parseFloat(record.duration_hours !== undefined ? record.duration_hours : (record.durationHours !== undefined ? record.durationHours : record.hours)) || 0;
+      record.durationHours = h;
+      record.hours = h;
       delete record.duration_hours;
     }
-    if (record.approved_by !== undefined) {
+    if (record.task_name !== undefined) { record.taskName = record.task_name; delete record.task_name; }
+    if (record.task_id !== undefined) { record.taskId = record.task_id; delete record.task_id; }
+    if (record.task_path !== undefined) { record.taskPath = record.task_path; delete record.task_path; }
+    if (record.phase_name !== undefined) { record.phaseName = record.phase_name; delete record.phase_name; }
+    if (record.phase_id !== undefined) { record.phaseId = record.phase_id; delete record.phase_id; }
+    if (record.start_time !== undefined) { record.startTime = record.start_time; delete record.start_time; }
+    if (record.finish_time !== undefined) { record.finishTime = record.finish_time; delete record.finish_time; }
+    if (record.approved_by && typeof record.approved_by === 'string' && record.approved_by.startsWith('__meta__:')) {
+      try {
+        const parsed = JSON.parse(record.approved_by.substring(9));
+        if (parsed.taskId !== undefined) record.taskId = parsed.taskId;
+        if (parsed.taskName !== undefined) record.taskName = parsed.taskName;
+        if (parsed.taskPath !== undefined) record.taskPath = parsed.taskPath;
+        if (parsed.phaseId !== undefined) record.phaseId = parsed.phaseId;
+        if (parsed.phaseName !== undefined) record.phaseName = parsed.phaseName;
+        if (parsed.startTime !== undefined) record.startTime = parsed.startTime;
+        if (parsed.finishTime !== undefined) record.finishTime = parsed.finishTime;
+        if (parsed.description !== undefined) record.description = parsed.description;
+        if (parsed.jobNumber !== undefined) record.jobNumber = parsed.jobNumber;
+        if (parsed.jobTitle !== undefined) record.jobTitle = parsed.jobTitle;
+        if (parsed.hours !== undefined) {
+          record.hours = parsed.hours;
+          record.durationHours = parsed.hours;
+        }
+        record.approvedBy = parsed.approvedBy || null;
+      } catch (e) {
+        console.error(e);
+      }
+      delete record.approved_by;
+    } else if (record.approved_by !== undefined) {
       record.approvedBy = record.approved_by;
       delete record.approved_by;
     }
@@ -1587,6 +1619,7 @@ class DataStore {
           record.preferredTime = meta.preferredTime || '';
           record.description = meta.description || '';
           record.parentJobId = meta.parentJobId || null;
+          record.assetName = meta.assetName || '';
           record.notes = meta.notes || '';
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
@@ -1787,10 +1820,19 @@ class DataStore {
       record.reorder_level = record.reorderLevel;
       delete record.reorderLevel;
     }
-    if (record.durationHours !== undefined) {
-      record.duration_hours = record.durationHours;
-      delete record.durationHours;
+    if (record.durationHours !== undefined || record.hours !== undefined) {
+      const h = parseFloat(record.durationHours !== undefined ? record.durationHours : record.hours) || 0;
+      record.duration_hours = h;
+      record.durationHours = h;
+      record.hours = h;
     }
+    if (record.taskName !== undefined) record.task_name = record.taskName;
+    if (record.taskId !== undefined) record.task_id = record.taskId;
+    if (record.taskPath !== undefined) record.task_path = record.taskPath;
+    if (record.phaseName !== undefined) record.phase_name = record.phaseName;
+    if (record.phaseId !== undefined) record.phase_id = record.phaseId;
+    if (record.startTime !== undefined) record.start_time = record.startTime;
+    if (record.finishTime !== undefined) record.finish_time = record.finishTime;
     if (record.approvedBy !== undefined) {
       record.approved_by = record.approvedBy;
       delete record.approvedBy;
@@ -1856,6 +1898,7 @@ class DataStore {
         preferredTime: record.preferredTime || '',
         description: record.description || '',
         parentJobId: record.parentJobId || null,
+        assetName: record.assetName || '',
         notes: record.notes || ''
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
@@ -1889,6 +1932,25 @@ class DataStore {
       };
       record.line_items = meta;
       delete record.lineItems;
+    }
+
+    if (collection === 'timesheets') {
+      const meta = {
+        taskId: record.taskId || record.taskPath || null,
+        taskName: record.taskName || record.phaseName || null,
+        taskPath: record.taskPath || null,
+        phaseId: record.phaseId || null,
+        phaseName: record.phaseName || null,
+        startTime: record.startTime || null,
+        finishTime: record.finishTime || null,
+        description: record.description || null,
+        hours: record.hours !== undefined ? record.hours : record.duration_hours,
+        approvedBy: record.approvedBy || null,
+        jobNumber: record.jobNumber || null,
+        jobTitle: record.jobTitle || null
+      };
+      record.approved_by = '__meta__:' + JSON.stringify(meta);
+      delete record.approvedBy;
     }
 
     // Filter out columns not in schema to prevent 400 Bad Request

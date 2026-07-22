@@ -16,6 +16,7 @@ import { calculateTotalBillableMaterials } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 import { FLAGS } from '../utils/flags.js';
 import { showDrawer } from '../components/Drawer.js';
+import { renderDeputyAsksWidget } from '../components/DeputyAsksWidget.js';
 
 function getHeaderActionsHtml() {
   const canCreateJob = hasPermission('Jobs', 'create');
@@ -101,6 +102,7 @@ const MODULES = {
   'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', render: renderCashFlow },
   'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', render: renderWeatherForecast },
   'notifications-widget': { title: 'Notifications',             defaultW: 'M',  defaultH: 'tall',     render: renderNotificationsWidget },
+  'deputy-asks-widget':   { title: 'Deputy Proposals',          defaultW: 'M',  defaultH: 'tall',     render: renderDeputyAsksWidget },
 
   // ── Live page widgets (full, interactive pages embedded in a widget) ──
   // Workflow group
@@ -210,6 +212,7 @@ const WIDGET_PERMS = {
   'asset-status':         ['Assets', 'view'],
   'overdue-maintenance':  ['Assets', 'view'],
   'timesheet-exceptions': ['Timesheets', 'approve'],
+  'deputy-asks-widget':   ['Dashboard', 'view'],
   // Live page widgets — gated by their page's view permission
   'page-leads':           ['Leads', 'view'],
   'page-quotes':          ['Quotes', 'view'],
@@ -240,6 +243,7 @@ const ADMIN_DEFAULT = [
   { id: 'recent-activity',  x: 760, y: 360, w: 440, h: 300 },
   { id: 'recent-leads',     x: 40,  y: 560, w: 420, h: 280 },
   { id: 'tech-map',         x: 480, y: 560, w: 240, h: 280 },
+  { id: 'deputy-asks-widget', x: 740, y: 560, w: 440, h: 280 },
 ];
 
 const TECH_DEFAULT = [
@@ -415,6 +419,7 @@ export async function renderDashboard(container) {
     leads:    store.getAll('leads'),
     people:   store.getAll('technicians'),
   };
+  live.data = data;
 
   container.innerHTML = `
     <div class="page-content-wrapper dash-page">
@@ -614,27 +619,24 @@ function renderWidgets(world, data) {
     el.style.top = item.y + 'px';
     el.style.width = item.w + 'px';
     el.style.height = item.h + 'px';
-    const bodyContent = mod.render ? mod.render(data, item) : '';
     el.innerHTML = `
       <div class="card ${mod.kpiStrip ? 'kpi-strip' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
         <div class="card-header dash-drag-handle">
           <span style="font-weight:600;font-size:14px;">${mod.title}</span>
           ${widgetControls}
         </div>
-        <div class="card-body" ${bodyStyle} style="flex:1;overflow-y:auto;min-height:0;">${bodyContent}</div>
+        <div class="card-body" ${bodyStyle} style="flex:1;overflow-y:auto;min-height:0;"></div>
       </div>
       ${resizeHandles}`;
     world.appendChild(el);
 
-    // Page widgets render a real, live page into their body — but LAZILY: the heavy
-    // page only mounts the first time the widget scrolls into view (and then stays
-    // mounted, so no state is lost). Off-screen page widgets show a light placeholder.
-    if (mod.page && mod.mount) {
-      const body = el.querySelector('.card-body');
-      if (isEditMode) body.style.pointerEvents = 'none';
-      body.innerHTML = renderPlaceholder('hourglass_empty', 'Loads when in view');
-      el.dataset.pwPending = '1';
-    }
+    // All widgets render their contents LAZILY: the heavy content only mounts the first time
+    // the widget scrolls into view (and then stays mounted, so no state is lost).
+    // Off-screen widgets show a light placeholder.
+    const body = el.querySelector('.card-body');
+    if (mod.page && isEditMode) body.style.pointerEvents = 'none';
+    body.innerHTML = renderPlaceholder('hourglass_empty', 'Loads when in view');
+    el.dataset.pwPending = '1';
   });
 
   wireWidgetControls(world, data);
@@ -645,18 +647,24 @@ function renderWidgets(world, data) {
   if (vp) { mountVisiblePageWidgets(vp); applyGluedWidths(vp); updateGlueAffordance(vp); }
 }
 
-// Mount any pending (placeholder) page widget whose box is currently in the viewport.
+// Mount any pending (placeholder) widget whose box is currently in the viewport.
 // Once mounted, the widget is never torn down on pan, so its in-widget state persists.
 function mountVisiblePageWidgets(viewport) {
   if (!viewport) return;
-  document.querySelectorAll('.dash-widget.page-widget[data-pw-pending]').forEach(el => {
+  document.querySelectorAll('.dash-widget[data-pw-pending]').forEach(el => {
     const item = live.widgets.find(w => w.instanceId === el.dataset.instanceId);
     if (!item || !widgetInView(item, viewport)) return;
     const mod = MODULES[item.id];
-    if (!mod || !mod.mount) return;
+    if (!mod) return;
+    
     delete el.dataset.pwPending;
     const body = el.querySelector('.card-body');
-    try { mod.mount(body, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Could not load page'); }
+    
+    if (mod.page && mod.mount) {
+      try { mod.mount(body, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Could not load page'); }
+    } else if (mod.render) {
+      try { body.innerHTML = mod.render(live.data || {}, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Error rendering widget'); }
+    }
   });
 }
 
@@ -1144,6 +1152,11 @@ function wireCanvas(container, viewport, world, guides, data) {
   };
 
   viewport.addEventListener('wheel', e => {
+    // If scrolling over the map container, let Google Maps handle its zoom/pan and don't affect the dashboard canvas
+    if (e.target.closest('.techmap-real') || e.target.closest('.techmap-canvas') || e.target.closest('.gm-style')) {
+      return;
+    }
+
     // Ctrl + wheel = zoom toward the cursor
     if (e.ctrlKey) {
       e.preventDefault();
@@ -2213,7 +2226,7 @@ async function enhanceTechMaps() {
     }).filter(Boolean);
 
     const google = await loadGoogleMapsSdk();
-    const { Map } = await google.maps.importLibrary('maps');
+    const { Map: GMap } = await google.maps.importLibrary('maps');
     const { Marker } = await google.maps.importLibrary('marker');
     const { InfoWindow } = await google.maps.importLibrary('maps');
 
@@ -2234,7 +2247,7 @@ async function enhanceTechMaps() {
       c.dataset.mapMounted = '1';
       const canvas = c.querySelector('.techmap-canvas');
       const note = c.querySelector('.techmap-note');
-      const map = new Map(canvas, {
+      const map = new GMap(canvas, {
         center: { lat: base.lat, lng: base.lng }, zoom: 12,
         disableDefaultUI: true, zoomControl: true, clickableIcons: false,
       });
@@ -2284,7 +2297,7 @@ async function enhanceTechMaps() {
     });
   } catch (e) {
     console.warn('Tech map unavailable:', e);
-    setNote('Map unavailable — check the Google Maps browser key');
+    setNote(`Map unavailable: ${e.message}`);
   }
 }
 

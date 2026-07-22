@@ -124,12 +124,27 @@ export function renderFormBuilder(container, { id }) {
     sections.forEach(sec => { if (!sec.isSpacer) sec.fields = normalizeFields(sec.fields || [], sec.columns || 1); });
     container.innerHTML = `
       ${getStyles()}
+      
+      <!-- Preview Modal -->
+      <div class="modal-overlay" id="fb2-preview-modal" style="display:none; z-index:9999;">
+        <div class="modal modal-lg">
+          <div class="modal-header">
+            <h3>Form Preview</h3>
+            <button class="modal-close" id="fb2-preview-close"><span class="material-icons-outlined">close</span></button>
+          </div>
+          <div class="modal-body" id="fb2-preview-content" style="background: var(--bg-color); padding: 24px; min-height: 400px; max-height: 70vh; overflow-y: auto;">
+            <!-- Form will be rendered here -->
+          </div>
+        </div>
+      </div>
+
       <div class="fb2-header">
         <div style="display:flex;align-items:center;gap:12px">
           <button class="btn btn-ghost btn-icon" id="fb2-back"><span class="material-icons-outlined">arrow_back</span></button>
           <h1 style="margin:0">${isEdit ? 'Edit Form Template' : 'Create Form Template'}</h1>
         </div>
         <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" id="fb2-preview-btn"><span class="material-icons-outlined">visibility</span> Preview</button>
           <button class="btn btn-secondary" id="fb2-cancel">Cancel</button>
           <button class="btn btn-primary" id="fb2-save"><span class="material-icons-outlined">save</span> Save Template</button>
         </div>
@@ -244,16 +259,43 @@ export function renderFormBuilder(container, { id }) {
     }
 
     const label = f.label || meta.label + '...';
+    let fieldHtml = '';
 
-    let preview = '';
-    if (f.type === 'text') preview = `<div class="fb2-prev-input"></div>`;
-    if (f.type === 'textarea') preview = `<div class="fb2-prev-ta"></div>`;
-    if (f.type === 'checkbox') preview = `<div class="fb2-prev-chk"><input type="checkbox" disabled /> <span style="flex:1; word-break: break-word; white-space: pre-wrap;">${escapeHTML(label)}</span></div>`;
-    if (f.type === 'select') preview = `<div class="fb2-prev-input" style="display:flex;justify-content:space-between"><span class="material-icons-outlined" style="font-size:16px">expand_more</span></div>`;
-    if (f.type === 'date') preview = `<div class="fb2-prev-input"><span class="material-icons-outlined" style="font-size:14px">calendar_today</span></div>`;
-    if (f.type === 'signature') preview = `<div class="fb2-prev-sig">Signature Field</div>`;
-    if (f.type === 'info') preview = `<div class="fb2-prev-info"><span class="material-icons-outlined" style="font-size:18px;flex-shrink:0">info</span> <span style="flex:1; word-break: break-word; white-space: pre-wrap;">${escapeHTML(f.label || 'Informational text block').replace(/\n/g, '<br/>')}</span></div>`;
-    if (f.type === 'spacer') preview = `<div class="fb2-prev-spacer">Spacer</div>`;
+    if (f.type === 'text') {
+      fieldHtml = `<input class="form-input" style="pointer-events: none;" placeholder="${escapeHTML(label)}" disabled />`;
+    } else if (f.type === 'textarea') {
+      fieldHtml = `<textarea class="form-textarea" rows="3" style="pointer-events: none;" placeholder="${escapeHTML(label)}" disabled></textarea>`;
+    } else if (f.type === 'checkbox') {
+      fieldHtml = `
+        <label style="display:flex; align-items:center; gap:10px; cursor:default; opacity:0.7; pointer-events:none;">
+          <input type="checkbox" style="width:18px; height:18px" disabled />
+          <span style="font-size:14px">${escapeHTML(label)}</span>
+        </label>`;
+    } else if (f.type === 'select') {
+      fieldHtml = `
+        <select class="form-select" style="pointer-events: none;" disabled>
+          <option value="">Select option...</option>
+          ${(f.options || []).map(opt => `<option>${escapeHTML(opt)}</option>`).join('')}
+        </select>`;
+    } else if (f.type === 'date') {
+      fieldHtml = `<input type="date" class="form-input" style="pointer-events: none;" disabled />`;
+    } else if (f.type === 'signature') {
+      fieldHtml = `
+        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic">
+          Digitally Signed on submission
+        </div>`;
+    } else if (f.type === 'info') {
+      fieldHtml = `
+        <div class="form-group info-block" style="margin:0; padding:16px; background:rgba(27, 109, 224, 0.05); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
+          <div style="display:flex; gap:12px; align-items:flex-start">
+            <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px; margin-top:2px">info</span>
+            <div>${escapeHTML(f.label || 'Informational text block').replace(/\n/g, '<br/>')}</div>
+          </div>
+        </div>`;
+    } else if (f.type === 'spacer') {
+      const fHeight = f.height ? (String(f.height).endsWith('px') ? f.height : f.height + 'px') : '50px';
+      fieldHtml = `<div style="height: ${fHeight}; border: 2px dashed var(--border-color); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px;">Spacer</div>`;
+    }
 
     return `
       <div class="fb2-field ${isSel ? 'fb2-sel' : ''}" data-sidx="${sIdx}" data-fidx="${fIdx}" style="grid-column:span ${span}" draggable="true">
@@ -262,14 +304,15 @@ export function renderFormBuilder(container, { id }) {
           <span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary)">${meta.icon}</span>
           <span class="fb2-ftype-lbl">${meta.label}</span>
         </div>
-        <div style="padding:10px 14px 14px">
-          ${f.type !== 'info' ? `
-            <div style="font-size:13px;font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between">
-              <span class="fb2-lbl" style="word-break: break-word; white-space: pre-wrap;">${escapeHTML(label)}</span>
-              ${f.required ? '<span style="color:var(--color-danger);flex-shrink:0;margin-left:8px">*</span>' : ''}
+        <div style="padding:10px 14px 14px; pointer-events: none;">
+          ${f.type !== 'info' && f.type !== 'spacer' ? `
+            <div class="form-group" style="margin:0;">
+              ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
+              ${fieldHtml}
             </div>
-          ` : ''}
-          ${preview}
+          ` : `
+            ${fieldHtml}
+          `}
         </div>
       </div>
     `;
@@ -398,11 +441,106 @@ export function renderFormBuilder(container, { id }) {
     container.querySelector('#fb2-back')?.addEventListener('click', () => router.navigate('/settings?tab=forms'));
     container.querySelector('#fb2-cancel')?.addEventListener('click', () => router.navigate('/settings?tab=forms'));
     container.querySelector('#fb2-save')?.addEventListener('click', handleSave);
+    container.querySelector('#fb2-preview-btn')?.addEventListener('click', showPreview);
+    container.querySelector('#fb2-preview-close')?.addEventListener('click', () => {
+      const modal = container.querySelector('#fb2-preview-modal');
+      if (modal) modal.style.display = 'none';
+    });
     container.querySelector('#fb2-name')?.addEventListener('input', e => formName = e.target.value);
     container.querySelector('#fb2-desc')?.addEventListener('input', e => formDesc = e.target.value);
     bindCanvasEvents();
     bindSidebarEvents();
     setupDragDrop();
+  }
+
+  function showPreview() {
+    const modal = container.querySelector('#fb2-preview-modal');
+    const content = container.querySelector('#fb2-preview-content');
+    if (!modal || !content) return;
+
+    // Generate Form HTML identical to JobDetail.js
+    const html = `
+      <div style="margin-bottom:24px; border-bottom:1px solid var(--border-color); padding-bottom:16px">
+        <h3 style="margin:0">${escapeHTML(formName || 'Untitled Form')}</h3>
+        <div style="font-size:14px; color:var(--text-secondary); margin-top:6px">${escapeHTML(formDesc || '')}</div>
+      </div>
+      <form id="active-job-form">
+        <div style="display:flex; flex-direction:column; gap:24px">
+          ${sections.map(sec => {
+            const secCols = sec.columns || (sec.width === 'half' ? 1 : 2);
+            if (sec.isSpacer) {
+              const secHeight = sec.height ? (String(sec.height).endsWith('px') ? sec.height : sec.height + 'px') : '50px';
+              return `<div style="width:100%; height: ${secHeight}"></div>`;
+            }
+            return `
+              <div class="form-section" style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px; overflow:hidden">
+                <div style="background:var(--content-bg); padding:12px 16px; border-bottom:1px solid var(--border-color); border-left:4px solid var(--color-primary)">
+                  <h4 style="margin:0; font-size:15px; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(sec.title || 'Untitled Section')}</h4>
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(${secCols}, 1fr); gap:16px; padding:16px">
+                  ${(sec.fields || []).map(f => {
+                    const fSpan = Math.min(f.colSpan || (f.width === 'half' ? 1 : secCols), secCols);
+                    if (f.type === 'spacer' || f.type === 'blank') {
+                      const fHeight = f.height ? (String(f.height).endsWith('px') ? f.height : f.height + 'px') : '50px';
+                      return `<div style="grid-column: span ${fSpan}; height: ${f.type === 'blank' ? 'auto' : fHeight}"></div>`;
+                    }
+
+                    if (f.type === 'info') {
+                      return `
+                      <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:rgba(27, 109, 224, 0.05); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
+                        <div style="display:flex; gap:12px; align-items:flex-start">
+                          <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px; margin-top:2px">info</span>
+                          <div>${escapeHTML(f.label || 'Informational text block').replace(/\n/g, '<br/>')}</div>
+                        </div>
+                      </div>
+                    `;
+                    }
+
+                    let fieldHtml = '';
+                    const label = f.label || fieldMeta(f.type).label + '...';
+
+                    if (f.type === 'text') {
+                      fieldHtml = `<input class="form-input" name="${f.id}" placeholder="${escapeHTML(label)}" ${f.required ? 'required' : ''} />`;
+                    } else if (f.type === 'textarea') {
+                      fieldHtml = `<textarea class="form-textarea" name="${f.id}" rows="3" placeholder="${escapeHTML(label)}" ${f.required ? 'required' : ''}></textarea>`;
+                    } else if (f.type === 'checkbox') {
+                      fieldHtml = `
+                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                          <input type="checkbox" name="${f.id}" style="width:18px; height:18px" />
+                          <span style="font-size:14px">${escapeHTML(label)}</span>
+                        </label>`;
+                    } else if (f.type === 'select') {
+                      fieldHtml = `
+                        <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''}>
+                          <option value="">Select option...</option>
+                          ${(f.options || []).map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
+                        </select>`;
+                    } else if (f.type === 'date') {
+                      fieldHtml = `<input type="date" class="form-input" name="${f.id}" ${f.required ? 'required' : ''} />`;
+                    } else if (f.type === 'signature') {
+                      fieldHtml = `
+                        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic; cursor:pointer;">
+                          Click to Sign (Preview)
+                        </div>`;
+                    }
+
+                    return `
+                      <div class="form-group" style="margin:0; grid-column: span ${fSpan}">
+                        ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
+                        ${fieldHtml}
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </form>
+    `;
+
+    content.innerHTML = html;
+    modal.style.display = 'flex';
   }
 
   function bindCanvasEvents() {
@@ -851,14 +989,7 @@ export function renderFormBuilder(container, { id }) {
       .fb2-field-bar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--content-bg);border-bottom:1px solid var(--border-color)}
       .fb2-ftype-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary)}
 
-      /* Previews */
-      .fb2-prev-input{padding:8px 10px;margin:8px;border:1px solid var(--border-color);border-radius:4px;font-size:12px;color:var(--text-tertiary);background:var(--content-bg)}
-      .fb2-prev-ta{padding:8px 10px;margin:8px;border:1px solid var(--border-color);border-radius:4px;font-size:12px;color:var(--text-tertiary);background:var(--content-bg);min-height:48px}
-      .fb2-prev-chk{padding:8px 10px;margin:8px;display:flex;align-items:flex-start;gap:6px;font-size:12px;color:var(--text-secondary)}
-      .fb2-prev-chk input {margin-top:2px;}
-      .fb2-prev-sig{padding:12px 10px;margin:8px;border:1px dashed var(--border-color);border-radius:4px;font-size:12px;color:var(--text-tertiary);text-align:center;font-style:italic}
-      .fb2-prev-info{padding:8px 10px;margin:8px;background:var(--color-primary-light);border-radius:4px;font-size:12px;color:var(--color-primary-dark);display:flex;align-items:flex-start;gap:6px;line-height:1.4}
-      .fb2-prev-spacer{padding:12px 10px;margin:8px;border:2px dashed var(--border-color);border-radius:4px;font-size:11px;color:var(--text-tertiary);text-align:center;text-transform:uppercase;letter-spacing:1px}
+      /* Previews removed in favor of global form CSS */
 
       /* Sidebar */
       .fb2-sb-head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border-color);font-weight:600;font-size:14px}

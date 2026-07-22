@@ -444,6 +444,13 @@ export function renderJobDetail(container, { id }) {
                   ${r('Priority', escapeHTML(job.priority))}
                   ${r('Customer', escapeHTML(job.customerName))}
                   ${r('Contact', escapeHTML(job.contactName || '—'))}
+                  ${(() => {
+                    const assetObj = job.assetId ? store.getById('assets', job.assetId) : null;
+                    const aName = job.assetName || (assetObj ? assetObj.name : '');
+                    if (!aName && !assetObj) return '';
+                    const assetId = assetObj ? assetObj.id : job.assetId;
+                    return r('Linked Asset', `<a href="#/assets/${assetId}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(aName)} ${assetObj?.serial ? `<span class="text-tertiary" style="font-weight:normal;">(S/N: ${escapeHTML(assetObj.serial)})</span>` : ''}</a>`);
+                  })()}
                   ${job.preferredTime ? r('Preferred Time', escapeHTML(job.preferredTime)) : ''}
                 </div>
               </div>
@@ -1920,26 +1927,29 @@ export function renderJobDetail(container, { id }) {
           const startStr = `${dateStr}T09:00`;
           const finishStr = `${dateStr}T10:00`;
 
-          const content = document.createElement('div');
-          content.innerHTML = `
-            <div style="margin-bottom:var(--space-lg)">
-              <h5 style="margin-bottom:8px">All Logged Time for this Job (${allTimesheets.reduce((s, t) => s + (t.hours || 0), 0).toFixed(2)} hrs)</h5>
-              <div style="max-height:150px;overflow-y:auto;background:var(--content-bg);border-radius:4px;border:1px solid var(--border-color)">
-                <table class="data-table" style="font-size:13px">
-                  <thead><tr><th>Date</th><th>Tech</th><th>Task</th><th>Hours</th></tr></thead>
-                  <tbody>
-                    ${allTimesheets.length ? allTimesheets.map(t => `
-                      <tr>
-                        <td>${t.startTime ? new Date(t.startTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(t.date).toLocaleDateString()}</td>
-                        <td>${escapeHTML(t.technicianName)}</td>
-                        <td>${escapeHTML(t.taskName || t.phaseName || '—')}</td>
-                        <td style="font-weight:600">${t.hours}</td>
-                      </tr>
-                    `).join('') : '<tr><td colspan="4" style="text-align:center" class="text-secondary">No time logged</td></tr>'}
-                  </tbody>
-                </table>
+            const getTsHours = t => parseFloat(t.hours !== undefined ? t.hours : (t.durationHours !== undefined ? t.durationHours : (t.duration_hours !== undefined ? t.duration_hours : 0))) || 0;
+            const getTsTaskName = t => t.taskName || t.phaseName || t.task_name || t.description || '—';
+
+            const content = document.createElement('div');
+            content.innerHTML = `
+              <div style="margin-bottom:var(--space-lg)">
+                <h5 style="margin-bottom:8px">All Logged Time for this Job (${allTimesheets.reduce((s, t) => s + getTsHours(t), 0).toFixed(2)} hrs)</h5>
+                <div style="max-height:150px;overflow-y:auto;background:var(--content-bg);border-radius:4px;border:1px solid var(--border-color)">
+                  <table class="data-table" style="font-size:13px">
+                    <thead><tr><th>Date</th><th>Tech</th><th>Task</th><th>Hours</th></tr></thead>
+                    <tbody>
+                      ${allTimesheets.length ? allTimesheets.map(t => `
+                        <tr>
+                          <td>${t.startTime ? new Date(t.startTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(t.date).toLocaleDateString()}</td>
+                          <td>${escapeHTML(t.technicianName)}</td>
+                          <td>${escapeHTML(getTsTaskName(t))}</td>
+                          <td style="font-weight:600">${getTsHours(t).toFixed(2)}</td>
+                        </tr>
+                      `).join('') : '<tr><td colspan="4" style="text-align:center" class="text-secondary">No time logged</td></tr>'}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Start Time *</label>
@@ -2891,14 +2901,16 @@ export function renderJobDetail(container, { id }) {
       });
     } else if (activeTab === 'timesheets') {
       const timesheets = store.getAll('timesheets').filter(t => t.jobId === id);
-      const totalHours = timesheets.reduce((sum, t) => sum + (t.hours || 0), 0);
+      const getTsHours = t => parseFloat(t.hours !== undefined ? t.hours : (t.durationHours !== undefined ? t.durationHours : (t.duration_hours !== undefined ? t.duration_hours : 0))) || 0;
+      const getTsTaskName = t => t.taskName || t.phaseName || t.task_name || t.description || '—';
+      const totalHours = timesheets.reduce((sum, t) => sum + getTsHours(t), 0);
       const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
 
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0">Timesheets (${totalHours} hrs total)</h4>
+            <h4 style="margin:0">Timesheets (${totalHours.toFixed(2)} hrs total)</h4>
             <button class="btn btn-sm btn-primary" id="btn-log-time-tab"><span class="material-icons-outlined" style="font-size:16px;">add_task</span> Log Time</button>
           </div>
           <div class="card-body" style="padding:0">
@@ -2913,9 +2925,9 @@ export function renderJobDetail(container, { id }) {
                   <tr>
                     <td>${new Date(t.date).toLocaleDateString()}</td>
                     <td>${escapeHTML(t.technicianName)}</td>
-                    <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || '—')}</span></td>
+                    <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(getTsTaskName(t))}</span></td>
                     <td class="text-secondary">${escapeHTML(t.description || '—')}</td>
-                    <td style="text-align:right;font-weight:600">${t.hours}</td>
+                    <td style="text-align:right;font-weight:600">${getTsHours(t).toFixed(2)}</td>
                     <td><span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">${t.status}</span></td>
                     <td style="text-align:right">
                       <div style="display:flex; justify-content:flex-end; gap:4px;">

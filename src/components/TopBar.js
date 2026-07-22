@@ -20,8 +20,9 @@ export function createTopBar() {
       <input type="text" id="global-search" placeholder="Search customers, jobs, quotes..." autocomplete="off" />
     </div>
     <div class="topbar-actions">
-      <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant">
+      <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant" style="position: relative;">
         ${relayIcon}
+        <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:#FF3B30; color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
       </button>
       <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
         <span class="material-icons-outlined" id="theme-icon">${(THEMES[getStoredTheme()] ? THEMES[getStoredTheme()].mode : 'light') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
@@ -131,6 +132,27 @@ export function createTopBar() {
 
   store.on('notifications', updateNotificationsDot);
   updateNotificationsDot();
+
+  // Deputy Asks Notification Badge
+  const askBadge = topbar.querySelector('#deputy-ask-badge');
+  function updateAskBadge() {
+    if (!askBadge) return;
+    const asks = store.getAll('deputyAsks') || [];
+    const pending = asks.filter(a => a.status === 'pending').length;
+    if (pending > 0) {
+      askBadge.textContent = pending;
+      askBadge.style.display = 'block';
+      
+      // Also add a little animation to draw attention
+      askBadge.style.animation = 'none';
+      askBadge.offsetHeight; /* trigger reflow */
+      askBadge.style.animation = 'pulse-soft 2s infinite';
+    } else {
+      askBadge.style.display = 'none';
+    }
+  }
+  store.on('deputyAsks', updateAskBadge);
+  updateAskBadge();
 
   notifBtn.addEventListener('click', (e) => {
     e.stopPropagation();

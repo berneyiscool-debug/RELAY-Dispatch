@@ -827,6 +827,43 @@ select.badge option {
   z-index: 4;
 }
 
+/* Virtual / Forecast Recurring Schedule Blocks */
+.schedule-block-virtual {
+  border-style: dashed !important;
+  border-width: 1.5px !important;
+  opacity: 0.88;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(147, 51, 234, 0.04) 10px, rgba(147, 51, 234, 0.04) 20px) !important;
+  cursor: context-menu !important;
+}
+.schedule-block-virtual:hover {
+  opacity: 1;
+  box-shadow: 0 0 0 1.5px #9333ea, 0 4px 12px rgba(147, 51, 234, 0.25) !important;
+}
+.virtual-forecast-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(147, 51, 234, 0.15);
+  color: #9333ea;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-left: 4px;
+}
+.schedule-block-collision {
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(239, 68, 68, 0.08) 10px, rgba(239, 68, 68, 0.08) 20px) !important;
+}
+.schedule-block-collision:hover {
+  box-shadow: 0 0 0 1.5px #EF4444, 0 4px 12px rgba(239, 68, 68, 0.35) !important;
+}
+.virtual-collision-badge {
+  background: #EF4444 !important;
+  color: #FFFFFF !important;
+}
+
 /* Resize grip at the bottom of each block */
 .schedule-resize-handle {
   position: absolute;

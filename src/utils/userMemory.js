@@ -77,3 +77,31 @@ export const clearStaleMemory = (mem) => {
   }
   return mem;
 };
+
+/** Categorize raw factsheet text into structured nodes */
+export const getStructuredMemory = (factsheetText = '') => {
+  const lines = (factsheetText || '').split('\n').map(l => l.replace(/^[\s\-*]+/, '').trim()).filter(Boolean);
+  const categories = {
+    preferences: [],
+    dispatchRules: [],
+    clientNotes: [],
+    frequentTechs: [],
+    general: []
+  };
+
+  lines.forEach(line => {
+    const lower = line.toLowerCase();
+    if (lower.includes('prefer') || lower.includes('like') || lower.includes('always')) {
+      categories.preferences.push(line);
+    } else if (lower.includes('assign') || lower.includes('schedule') || lower.includes('rule') || lower.includes('tech')) {
+      categories.dispatchRules.push(line);
+    } else if (lower.includes('cust') || lower.includes('client') || lower.includes('account')) {
+      categories.clientNotes.push(line);
+    } else {
+      categories.general.push(line);
+    }
+  });
+
+  return categories;
+};
+

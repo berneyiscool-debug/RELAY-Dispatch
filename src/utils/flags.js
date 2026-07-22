@@ -13,7 +13,7 @@ const on = (key) => {
 };
 
 export const FLAGS = {
-  maps:     on('relay_beta_maps'),     // routing, drive-time chips, route view
+  maps:     true,                      // always enable maps widget for all users
   weather:  on('relay_beta_weather'),  // live forecasts + warnings
   payments: on('relay_beta_payments'), // Stripe pay-online
   email:    on('relay_beta_email'),    // email sending + domain settings

@@ -108,6 +108,91 @@ export function renderJobForm(container, params) {
     }).join('');
   }
 
+  const allAssets = store.getAll('assets') || [];
+
+  function buildAssetOptions(selectedCustomerId, currentAssetId, showAll = false) {
+    let filtered = showAll
+      ? allAssets
+      : (selectedCustomerId
+          ? allAssets.filter(a => a.customerId === selectedCustomerId || a.customer_id === selectedCustomerId || a.id === currentAssetId)
+          : allAssets);
+
+    if (filtered.length === 0 && !showAll && selectedCustomerId) {
+      return `<option value="">— No assets found for this customer —</option>`;
+    }
+
+    return `<option value="">-- No Asset Linked --</option>` +
+      filtered.map(a => {
+        const ownerName = a.customerName || a.customer_name || '';
+        const serialStr = a.serial ? ` (S/N: ${a.serial})` : '';
+        const ownerStr = (showAll && ownerName) ? ` — ${ownerName}` : '';
+        const selected = a.id === currentAssetId ? 'selected' : '';
+        return `<option value="${a.id}" ${selected}>${escapeHTML(a.name)}${escapeHTML(serialStr)}${escapeHTML(ownerStr)}</option>`;
+      }).join('');
+  }
+
+  function renderAssetCard(asset) {
+    if (!asset) {
+      return `
+        <div style="text-align:center; padding:32px 16px; background:var(--bg-color); border:1px dashed var(--border-color); border-radius:8px; margin-top:16px;">
+          <span class="material-icons-outlined" style="font-size:36px; color:var(--text-tertiary); margin-bottom:8px; display:block;">inventory_2</span>
+          <div style="font-weight:600; color:var(--text-secondary); margin-bottom:4px;">No Asset Linked</div>
+          <div class="text-tertiary" style="font-size:12px; max-width:400px; margin:0 auto;">Select an equipment or asset record above to link it to this job for service history, meter readings, and maintenance tracking.</div>
+        </div>
+      `;
+    }
+
+    const serial = asset.serial || '—';
+    const owner = asset.customerName || asset.customer_name || '—';
+    const meter = asset.currentMeter !== undefined && asset.currentMeter !== null ? asset.currentMeter : '—';
+    const status = asset.status || 'Active';
+    const type = asset.type || 'Equipment';
+
+    return `
+      <div class="card" style="margin-top:16px; border-left:4px solid var(--color-primary); box-shadow:var(--shadow-sm);">
+        <div class="card-body" style="padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="width:42px; height:42px; border-radius:8px; background:var(--color-primary-light); color:var(--color-primary); display:flex; align-items:center; justify-content:center;">
+                <span class="material-icons-outlined" style="font-size:24px;">inventory_2</span>
+              </div>
+              <div>
+                <h4 style="margin:0; font-size:16px; font-weight:700;">${escapeHTML(asset.name)}</h4>
+                <div class="text-secondary" style="font-size:12px; margin-top:2px;">Category / Type: <strong>${escapeHTML(type)}</strong></div>
+              </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <a href="#/assets/${asset.id}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:4px;">
+                <span class="material-icons-outlined" style="font-size:16px;">open_in_new</span> View Asset
+              </a>
+              <button type="button" class="btn btn-outline btn-sm" id="btn-unlink-asset" style="display:inline-flex; align-items:center; gap:4px; color:var(--color-danger); border-color:var(--color-danger);">
+                <span class="material-icons-outlined" style="font-size:16px;">link_off</span> Unlink
+              </button>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:12px; margin-top:16px; padding-top:12px; border-top:1px solid var(--border-color);">
+            <div>
+              <div style="font-size:11px; color:var(--text-tertiary); font-weight:600; text-transform:uppercase">Serial Number</div>
+              <div style="font-size:13px; font-weight:600; margin-top:2px">${escapeHTML(serial)}</div>
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--text-tertiary); font-weight:600; text-transform:uppercase">Owner / Customer</div>
+              <div style="font-size:13px; font-weight:600; margin-top:2px">${escapeHTML(owner)}</div>
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--text-tertiary); font-weight:600; text-transform:uppercase">Current Meter</div>
+              <div style="font-size:13px; font-weight:600; margin-top:2px">${escapeHTML(String(meter))}</div>
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--text-tertiary); font-weight:600; text-transform:uppercase">Status</div>
+              <div style="margin-top:2px"><span class="badge ${status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(status)}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   const initCustId = job.customerId || '';
 
   container.innerHTML = `
@@ -187,209 +272,265 @@ export function renderJobForm(container, params) {
     </div>
     <div class="tabs" id="job-form-tabs" style="margin-bottom:16px">
       <button type="button" class="tab active" data-tab="details">Details</button>
+      <button type="button" class="tab" data-tab="asset">Asset / Equipment</button>
+      <button type="button" class="tab" data-tab="scheduling">Scheduling & Recurrence</button>
       <button type="button" class="tab" data-tab="tasks">Tasklists</button>
       <button type="button" class="tab" data-tab="forms">Compliance Forms</button>
     </div>
     
-    <div id="jf-tab-details">
-      <div class="card">
-        <div class="card-body">
-          <form id="job-form">
+    <form id="job-form">
+      <input type="hidden" name="assetId" id="jf-asset-id" value="${job.assetId || ''}" />
+      <input type="hidden" name="assetName" id="jf-asset-name" value="${escapeHTML(job.assetName || '')}" />
 
-          <!-- Title -->
-          <div class="form-group">
-            <label class="form-label">Title *</label>
-            <input class="form-input" name="title" value="${escapeHTML(job.title || '')}" required placeholder="e.g. Electrical fault repair — Main Office" />
-          </div>
+      <!-- TAB 1: DETAILS -->
+      <div id="jf-tab-details">
+        <div class="card">
+          <div class="card-body">
 
-          <!-- Customer + Type -->
-          <div class="form-row">
+            <!-- Title -->
             <div class="form-group">
-              <label class="form-label">Customer *</label>
-              <select class="form-select" id="jf-customer" name="customerId" required>
-                <option value="">Select customer...</option>
-                ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
-              </select>
+              <label class="form-label">Title *</label>
+              <input class="form-input" name="title" value="${escapeHTML(job.title || '')}" required placeholder="e.g. Electrical fault repair — Main Office" />
             </div>
-            <div class="form-group">
-              <label class="form-label">Type</label>
-              <select class="form-select" name="type">
-                ${jobTypes.map(t => `<option ${job.type === t ? 'selected' : ''}>${escapeHTML(t)}</option>`).join('')}
-              </select>
-            </div>
-          </div>
 
-          <!-- Jobsite -->
-          <div class="form-group">
-            <label class="form-label">Jobsite</label>
-            <select class="form-select" id="jf-site" name="siteId" ${!initCustId ? 'disabled' : ''}>
-              ${buildSiteOptions(initCustId, job.siteName || job.siteId)}
-            </select>
-            <div class="site-address-hint" id="jf-site-hint">${job.siteAddress ? escapeHTML(job.siteAddress) : 'Select a customer to enable jobsite selection'}</div>
-          </div>
-
-          <!-- Primary Contact + Additional Contact -->
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Primary Contact</label>
-              <select class="form-select" id="jf-primary-contact" name="primaryContactId" ${!initCustId ? 'disabled' : ''}>
-                ${buildContactOptions(initCustId, job.primaryContactName || job.primaryContactId, 'Select primary contact...')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Additional Contact</label>
-              <select class="form-select" id="jf-additional-contact" name="additionalContactId" ${!initCustId ? 'disabled' : ''}>
-                ${buildContactOptions(initCustId, job.additionalContactName || job.additionalContactId, 'None')}
-              </select>
-            </div>
-          </div>
-
-          <!-- Status + Priority -->
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Status</label>
-              <select class="form-select" name="status" ${job.isRecurring ? 'disabled' : ''}>
-                ${job.isRecurring ? `<option value="Recurring Template" selected>Recurring Template</option>` : ''}
-                ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `<option ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Priority</label>
-              <select class="form-select" name="priority" id="job-priority">
-                ${['Low','Medium','High','Urgent'].map(p => `<option ${job.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          
-          <!-- Project & Cost Center -->
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Project (Stage Container)</label>
-              <select class="form-select" name="projectId">
-                <option value="">-- None / Standalone Job --</option>
-                ${projectsList.map(p => `<option value="${p.id}" ${job.projectId === p.id ? 'selected' : ''}>${escapeHTML(p.number)} — ${escapeHTML(p.name)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Cost Center</label>
-              <select class="form-select" name="costCenterId">
-                <option value="">-- Select Cost Center --</option>
-                ${costCentersList.map(cc => `<option value="${cc.id}" ${job.costCenterId === cc.id ? 'selected' : ''}>${escapeHTML(cc.code)} — ${escapeHTML(cc.name)}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-
-          <!-- Contractor -->
-          <div class="form-group">
-            <label class="form-label">Assign to Contractor (Optional)</label>
-            <select class="form-select" name="contractorId">
-              <option value="">None (Internal Techs)</option>
-              ${contractors.map(c => `<option value="${c.id}" ${job.contractorId === c.id ? 'selected' : ''}>${escapeHTML(c.businessName)}</option>`).join('')}
-            </select>
-          </div>
-
-          <!-- Preferred Time -->
-          <div class="form-group">
-            <label class="form-label">Preferred Time (Optional)</label>
-            <input type="text" class="form-input" name="preferredTime" placeholder="e.g. 2:00 PM, 2pm everyday, Morning" value="${escapeHTML(job.preferredTime || '')}" />
-          </div>
-
-          <!-- Tags -->
-          <div class="form-group">
-            <label class="form-label">Tags</label>
-            <div id="jf-tags" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:4px;">
-              ${renderTagPills()}
-            </div>
-          </div>
-
-          <!-- Emergency -->
-          <div class="form-row">
-            <div class="form-group" style="display:flex;align-items:center;gap:8px">
-              <input type="checkbox" id="is-emergency" style="width:16px;height:16px" ${job.isEmergency ? 'checked' : ''} />
-              <label class="form-label" style="margin:0; color:var(--color-danger);" for="is-emergency">Is Emergency (Applies Callout Fee)</label>
-            </div>
-          </div>
-          <div id="emergency-dispatch-suggestion" style="display:none; background:var(--color-warning-bg); border:1px solid var(--color-warning); padding:15px; border-radius:8px; margin-bottom:15px;">
-            <strong>Emergency Dispatch Suggestion:</strong>
-            <p style="margin:5px 0 0 0;" id="dispatch-reason">Loading best technician...</p>
-          </div>
-
-          ${(!isEdit && !job.parentJobId) ? `
-          <div class="form-row">
-            <div class="form-group" style="display:flex;align-items:center;gap:8px">
-              <input type="checkbox" id="is-recurring" style="width:16px;height:16px" />
-              <label class="form-label" style="margin:0" for="is-recurring">Recurring Job</label>
-            </div>
-          </div>
-          <div id="recurring-options" style="display:none; flex-direction:column; gap:16px; background:var(--card-bg); padding:16px; border-radius:4px; border:1px solid var(--border-color); margin-bottom:16px">
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:16px;">
+            <!-- Customer + Type -->
+            <div class="form-row">
               <div class="form-group">
-                <label class="form-label">Frequency</label>
-                <select class="form-select" id="recurring-freq">
-                  <option value="Weekly">Weekly</option>
-                  <option value="Monthly">Monthly</option>
-                  <option value="Daily">Daily</option>
+                <label class="form-label">Customer *</label>
+                <select class="form-select" id="jf-customer" name="customerId" required>
+                  <option value="">Select customer...</option>
+                  ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">First Job Date</label>
-                <input type="date" class="form-input" id="recurring-start" value="${new Date().toISOString().split('T')[0]}" />
+                <label class="form-label">Type</label>
+                <select class="form-select" name="type">
+                  ${jobTypes.map(t => `<option ${job.type === t ? 'selected' : ''}>${escapeHTML(t)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <!-- Jobsite -->
+            <div class="form-group">
+              <label class="form-label">Jobsite</label>
+              <select class="form-select" id="jf-site" name="siteId" ${!initCustId ? 'disabled' : ''}>
+                ${buildSiteOptions(initCustId, job.siteName || job.siteId)}
+              </select>
+              <div class="site-address-hint" id="jf-site-hint">${job.siteAddress ? escapeHTML(job.siteAddress) : 'Select a customer to enable jobsite selection'}</div>
+            </div>
+
+            <!-- Primary Contact + Additional Contact -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Primary Contact</label>
+                <select class="form-select" id="jf-primary-contact" name="primaryContactId" ${!initCustId ? 'disabled' : ''}>
+                  ${buildContactOptions(initCustId, job.primaryContactName || job.primaryContactId, 'Select primary contact...')}
+                </select>
               </div>
               <div class="form-group">
-                <label class="form-label">End Date (Max 50 occurrences)</label>
-                <input type="date" class="form-input" id="recurring-end" />
+                <label class="form-label">Additional Contact</label>
+                <select class="form-select" id="jf-additional-contact" name="additionalContactId" ${!initCustId ? 'disabled' : ''}>
+                  ${buildContactOptions(initCustId, job.additionalContactName || job.additionalContactId, 'None')}
+                </select>
+              </div>
+            </div>
+
+            <!-- Status + Priority -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-select" name="status" ${job.isRecurring ? 'disabled' : ''}>
+                  ${job.isRecurring ? `<option value="Recurring Template" selected>Recurring Template</option>` : ''}
+                  ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `<option ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Default Technician</label>
-                <select class="form-select" id="recurring-tech">
-                  <option value="">-- No Default (Unassigned) --</option>
-                  ${store.getAll('technicians').filter(t => !t.deactivated || job.recurringConfig?.defaultTechnicianId === t.id).map(t => `<option value="${t.id}" ${job.recurringConfig?.defaultTechnicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+                <label class="form-label">Priority</label>
+                <select class="form-select" name="priority" id="job-priority">
+                  ${['Low','Medium','High','Urgent'].map(p => `<option ${job.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
                 </select>
               </div>
             </div>
             
-            <div id="recurring-days-selection" style="display:none; flex-direction:column; gap:8px;">
-              <label class="form-label" id="recurring-days-label" style="font-weight:var(--font-weight-medium);"></label>
-              <div id="recurring-days-container"></div>
+            <!-- Project & Cost Center -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Project (Stage Container)</label>
+                <select class="form-select" name="projectId">
+                  <option value="">-- None / Standalone Job --</option>
+                  ${projectsList.map(p => `<option value="${p.id}" ${job.projectId === p.id ? 'selected' : ''}>${escapeHTML(p.number)} — ${escapeHTML(p.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cost Center</label>
+                <select class="form-select" name="costCenterId">
+                  <option value="">-- Select Cost Center --</option>
+                  ${costCentersList.map(cc => `<option value="${cc.id}" ${job.costCenterId === cc.id ? 'selected' : ''}>${escapeHTML(cc.code)} — ${escapeHTML(cc.name)}</option>`).join('')}
+                </select>
+              </div>
             </div>
-          </div>
-          ` : ''}
 
-          <!-- Rich Description Editor -->
-          <div class="form-group">
-            <label class="form-label">Description</label>
-            <div class="rich-editor-toolbar" id="editor-toolbar">
-              <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
-              <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
-              <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
-              <div class="sep"></div>
-              <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading">H2</button>
-              <button type="button" data-cmd="formatBlock" data-val="h3" title="Subheading">H3</button>
-              <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph">P</button>
-              <div class="sep"></div>
-              <button type="button" data-cmd="insertUnorderedList" title="Bullet List">&#8226; List</button>
-              <button type="button" data-cmd="insertOrderedList" title="Numbered List">1. List</button>
-              <div class="sep"></div>
-              <button type="button" data-cmd="formatBlock" data-val="blockquote" title="Blockquote">&#8220; Quote</button>
-              <button type="button" data-cmd="removeFormat" title="Clear Formatting">&#10006; Clear</button>
-              <div class="sep"></div>
-              <button type="button" id="editor-link-btn" title="Insert Link">&#128279; Link</button>
+            <!-- Contractor -->
+            <div class="form-group">
+              <label class="form-label">Assign to Contractor (Optional)</label>
+              <select class="form-select" name="contractorId">
+                <option value="">None (Internal Techs)</option>
+                ${contractors.map(c => `<option value="${c.id}" ${job.contractorId === c.id ? 'selected' : ''}>${escapeHTML(c.businessName)}</option>`).join('')}
+              </select>
             </div>
-            <div id="job-description-editor" contenteditable="true" spellcheck="true">${job.description || job.notes || ''}</div>
-          </div>
 
-        </form>
+            <!-- Tags -->
+            <div class="form-group">
+              <label class="form-label">Tags</label>
+              <div id="jf-tags" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:4px;">
+                ${renderTagPills()}
+              </div>
+            </div>
+
+            <!-- Rich Description Editor -->
+            <div class="form-group" style="margin-top:16px;">
+              <label class="form-label">Description</label>
+              <div class="rich-editor-toolbar" id="editor-toolbar">
+                <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
+                <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+                <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
+                <div class="sep"></div>
+                <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading">H2</button>
+                <button type="button" data-cmd="formatBlock" data-val="h3" title="Subheading">H3</button>
+                <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph">P</button>
+                <div class="sep"></div>
+                <button type="button" data-cmd="insertUnorderedList" title="Bullet List">&#8226; List</button>
+                <button type="button" data-cmd="insertOrderedList" title="Numbered List">1. List</button>
+                <div class="sep"></div>
+                <button type="button" data-cmd="formatBlock" data-val="blockquote" title="Blockquote">&#8220; Quote</button>
+                <button type="button" data-cmd="removeFormat" title="Clear Formatting">&#10006; Clear</button>
+                <div class="sep"></div>
+                <button type="button" id="editor-link-btn" title="Insert Link">&#128279; Link</button>
+              </div>
+              <div id="job-description-editor" contenteditable="true" spellcheck="true">${job.description || job.notes || ''}</div>
+            </div>
+
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-  
-  <div id="jf-tab-tasks" style="display:none;">
-    <div id="jf-task-container"></div>
-  </div>
-  
-  <div id="jf-tab-forms" style="display:none;">
-    <div id="jf-forms-container"></div>
-  </div>
+
+      <!-- TAB 2: ASSET / EQUIPMENT -->
+      <div id="jf-tab-asset" style="display:none;">
+        <div class="card">
+          <div class="card-body">
+            <h4 style="margin:0 0 4px 0; display:flex; align-items:center; gap:6px;">
+              <span class="material-icons-outlined" style="color:var(--color-primary);">inventory_2</span>
+              Linked Asset / Equipment
+            </h4>
+            <p class="text-secondary" style="font-size:13px; margin:0 0 16px 0;">
+              Connect customer machinery or equipment to this job to track service history, serial numbers, and meter readings.
+            </p>
+
+            <div class="form-group">
+              <label class="form-label">Select Equipment / Asset</label>
+              <select class="form-select" id="jf-asset-select">
+                ${buildAssetOptions(initCustId, job.assetId || '')}
+              </select>
+            </div>
+
+            <div class="form-group" style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+              <input type="checkbox" id="jf-show-all-assets" style="width:16px; height:16px;" />
+              <label for="jf-show-all-assets" class="form-label" style="margin:0; font-weight:normal; cursor:pointer;">
+                Show all company assets (not just selected customer)
+              </label>
+            </div>
+
+            <div id="jf-asset-preview-card">
+              ${renderAssetCard(job.assetId ? store.getById('assets', job.assetId) : null)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: SCHEDULING & RECURRENCE -->
+      <div id="jf-tab-scheduling" style="display:none;">
+        <div class="card">
+          <div class="card-body">
+            <h4 style="margin:0 0 16px 0; display:flex; align-items:center; gap:6px;">
+              <span class="material-icons-outlined" style="color:var(--color-primary);">schedule</span>
+              Scheduling & Callout Options
+            </h4>
+
+            <!-- Preferred Time -->
+            <div class="form-group">
+              <label class="form-label">Preferred Work Time (Optional)</label>
+              <input type="text" class="form-input" name="preferredTime" placeholder="e.g. 2:00 PM, 2pm everyday, Morning" value="${escapeHTML(job.preferredTime || '')}" />
+              <div class="site-address-hint">The auto-scheduler and dispatch system will use this preferred time when booking.</div>
+            </div>
+
+            <!-- Emergency -->
+            <div class="form-row" style="margin-top:16px;">
+              <div class="form-group" style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="is-emergency" style="width:16px;height:16px" ${job.isEmergency ? 'checked' : ''} />
+                <label class="form-label" style="margin:0; color:var(--color-danger);" for="is-emergency">Is Emergency (Applies Callout Fee)</label>
+              </div>
+            </div>
+            <div id="emergency-dispatch-suggestion" style="display:none; background:var(--color-warning-bg); border:1px solid var(--color-warning); padding:15px; border-radius:8px; margin-bottom:15px;">
+              <strong>Emergency Dispatch Suggestion:</strong>
+              <p style="margin:5px 0 0 0;" id="dispatch-reason">Loading best technician...</p>
+            </div>
+
+            <!-- Recurring -->
+            ${(!isEdit && !job.parentJobId) ? `
+            <div class="form-row" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-color);">
+              <div class="form-group" style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="is-recurring" style="width:16px;height:16px" />
+                <label class="form-label" style="margin:0" for="is-recurring">Recurring Job Template</label>
+              </div>
+            </div>
+            <div id="recurring-options" style="display:none; flex-direction:column; gap:16px; background:var(--card-bg); padding:16px; border-radius:4px; border:1px solid var(--border-color); margin-bottom:16px">
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:16px;">
+                <div class="form-group">
+                  <label class="form-label">Frequency</label>
+                  <select class="form-select" id="recurring-freq">
+                    <option value="Weekly">Weekly</option>
+                    <option value="Monthly">Monthly</option>
+                    <option value="Daily">Daily</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">First Job Date</label>
+                  <input type="date" class="form-input" id="recurring-start" value="${new Date().toISOString().split('T')[0]}" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">End Date (Max 50 occurrences)</label>
+                  <input type="date" class="form-input" id="recurring-end" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Default Technician</label>
+                  <select class="form-select" id="recurring-tech">
+                    <option value="">-- No Default (Unassigned) --</option>
+                    ${store.getAll('technicians').filter(t => !t.deactivated || job.recurringConfig?.defaultTechnicianId === t.id).map(t => `<option value="${t.id}" ${job.recurringConfig?.defaultTechnicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+              
+              <div id="recurring-days-selection" style="display:none; flex-direction:column; gap:8px;">
+                <label class="form-label" id="recurring-days-label" style="font-weight:var(--font-weight-medium);"></label>
+                <div id="recurring-days-container"></div>
+              </div>
+            </div>
+            ` : ''}
+
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: TASKLISTS -->
+      <div id="jf-tab-tasks" style="display:none;">
+        <div id="jf-task-container"></div>
+      </div>
+      
+      <!-- TAB 5: COMPLIANCE FORMS -->
+      <div id="jf-tab-forms" style="display:none;">
+        <div id="jf-forms-container"></div>
+      </div>
+    </form>
   `;
 
   // ---- Tabs ----
@@ -399,6 +540,8 @@ export function renderJobForm(container, params) {
       e.currentTarget.classList.add('active');
       const t = e.currentTarget.dataset.tab;
       container.querySelector('#jf-tab-details').style.display = t === 'details' ? 'block' : 'none';
+      container.querySelector('#jf-tab-asset').style.display = t === 'asset' ? 'block' : 'none';
+      container.querySelector('#jf-tab-scheduling').style.display = t === 'scheduling' ? 'block' : 'none';
       container.querySelector('#jf-tab-tasks').style.display = t === 'tasks' ? 'block' : 'none';
       container.querySelector('#jf-tab-forms').style.display = t === 'forms' ? 'block' : 'none';
       if (t === 'tasks') renderFormTasks();
@@ -413,6 +556,47 @@ export function renderJobForm(container, params) {
   const primaryContactSel = container.querySelector('#jf-primary-contact');
   const additionalContactSel = container.querySelector('#jf-additional-contact');
 
+  // ---- Asset Selection & Controls ----
+  const assetSelect = container.querySelector('#jf-asset-select');
+  const assetIdInput = container.querySelector('#jf-asset-id');
+  const assetNameInput = container.querySelector('#jf-asset-name');
+  const showAllAssetsCheck = container.querySelector('#jf-show-all-assets');
+  const assetPreviewContainer = container.querySelector('#jf-asset-preview-card');
+
+  function updateAssetSelection(assetId) {
+    const asset = assetId ? store.getById('assets', assetId) : null;
+    if (assetIdInput) assetIdInput.value = asset ? asset.id : '';
+    if (assetNameInput) assetNameInput.value = asset ? asset.name : '';
+    if (assetSelect && assetSelect.value !== (asset ? asset.id : '')) {
+      assetSelect.value = asset ? asset.id : '';
+    }
+    if (assetPreviewContainer) {
+      assetPreviewContainer.innerHTML = renderAssetCard(asset);
+      const unlinkBtn = assetPreviewContainer.querySelector('#btn-unlink-asset');
+      if (unlinkBtn) {
+        unlinkBtn.addEventListener('click', () => {
+          updateAssetSelection('');
+        });
+      }
+    }
+  }
+
+  assetSelect?.addEventListener('change', (e) => {
+    updateAssetSelection(e.target.value);
+  });
+
+  showAllAssetsCheck?.addEventListener('change', (e) => {
+    const currentCustId = custSelect.value;
+    const currentAssetId = assetIdInput.value;
+    if (assetSelect) {
+      assetSelect.innerHTML = buildAssetOptions(currentCustId, currentAssetId, e.target.checked);
+    }
+  });
+
+  if (job.assetId) {
+    updateAssetSelection(job.assetId);
+  }
+
   function refreshCustomerDependents(custId) {
     const disabled = !custId;
     siteSelect.innerHTML = buildSiteOptions(custId, '');
@@ -424,6 +608,17 @@ export function renderJobForm(container, params) {
     
     const opt = siteSelect.selectedOptions[0];
     siteHint.textContent = opt?.dataset.address || (disabled ? 'Select a customer to enable jobsite selection' : 'Select a jobsite above');
+
+    if (assetSelect) {
+      const isShowAll = showAllAssetsCheck?.checked || false;
+      assetSelect.innerHTML = buildAssetOptions(custId, assetIdInput.value, isShowAll);
+      if (assetIdInput.value && !isShowAll && custId) {
+        const curAsset = store.getById('assets', assetIdInput.value);
+        if (curAsset && curAsset.customerId !== custId && curAsset.customer_id !== custId) {
+          updateAssetSelection('');
+        }
+      }
+    }
   }
 
   // Set initial site hint if already selected
@@ -1241,15 +1436,21 @@ export function renderJobForm(container, params) {
   container.querySelector('#btn-save').addEventListener('click', () => {
     const form = container.querySelector('#job-form');
     if (!form.checkValidity()) {
-      container.querySelectorAll('#job-form-tabs .tab').forEach(t => t.classList.remove('active'));
-      container.querySelector('#job-form-tabs .tab[data-tab="details"]').classList.add('active');
-      container.querySelector('#jf-tab-details').style.display = 'block';
-      container.querySelector('#jf-tab-tasks').style.display = 'none';
-      container.querySelector('#jf-tab-forms').style.display = 'none';
+      const invalidElem = form.querySelector(':invalid');
+      if (invalidElem) {
+        const parentTabDiv = invalidElem.closest('[id^="jf-tab-"]');
+        if (parentTabDiv) {
+          const tabName = parentTabDiv.id.replace('jf-tab-', '');
+          const tabBtn = container.querySelector(`#job-form-tabs .tab[data-tab="${tabName}"]`);
+          if (tabBtn) tabBtn.click();
+        }
+      }
       form.reportValidity();
       return;
     }
     const data = Object.fromEntries(new FormData(form));
+    data.assetId = container.querySelector('#jf-asset-id')?.value || null;
+    data.assetName = container.querySelector('#jf-asset-name')?.value || '';
 
     const custId = data.customerId;
     const cust = customers.find(c => c.id === custId);
@@ -1331,8 +1532,11 @@ export function renderJobForm(container, params) {
     const jobId = finalJob.id;
 
     if (finalJob.isRecurring) {
-      import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs }) => {
+      import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs, propagateParentJobUpdates }) => {
         checkRecurringJobs();
+        if (isEdit) {
+          propagateParentJobUpdates(finalJob);
+        }
       });
     }
 

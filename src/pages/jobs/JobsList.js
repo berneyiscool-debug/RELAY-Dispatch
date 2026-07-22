@@ -31,7 +31,7 @@ export function renderJobsList(container, params) {
       </div>
       <div class="toolbar-search" style="flex: 0 0 auto;">
         <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search jobs..." id="jobs-search" />
+        <input type="text" placeholder="Search jobs, customers, assets..." id="jobs-search" />
       </div>
     </div>
     <div id="jobs-table-container"></div>
@@ -45,6 +45,12 @@ export function renderJobsList(container, params) {
     { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '100px' },
     { key: 'title', label: 'Title', render: (r) => `<span class="truncate" style="max-width:200px;display:inline-block">${escapeHTML(r.title)}</span>` },
     { key: 'customerName', label: 'Customer' },
+    { key: 'asset', label: 'Asset', render: (r) => {
+        const asset = r.assetId ? store.getById('assets', r.assetId) : null;
+        const name = r.assetName || (asset ? asset.name : '');
+        if (!name) return '<span class="text-tertiary">—</span>';
+        return `<span class="text-primary font-medium truncate" style="max-width:140px;display:inline-flex;align-items:center;gap:4px;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
+      }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '130px' },
     { key: 'technicians', label: 'Assignee', render: (r) => {
         if (r.contractorId) {
           const contractor = store.getById('contractors', r.contractorId);
@@ -529,10 +535,16 @@ export function renderJobsList(container, params) {
         const title = j.title || '';
         const custName = j.customerName || '';
         const techName = j.technicianName || '';
+        const assetObj = j.assetId ? store.getById('assets', j.assetId) : null;
+        const assetName = j.assetName || (assetObj ? assetObj.name : '');
+        const assetSerial = assetObj ? (assetObj.serial || '') : '';
+
         if (!num.toLowerCase().includes(q) && 
             !title.toLowerCase().includes(q) && 
             !custName.toLowerCase().includes(q) && 
-            !techName.toLowerCase().includes(q)) {
+            !techName.toLowerCase().includes(q) &&
+            !assetName.toLowerCase().includes(q) &&
+            !assetSerial.toLowerCase().includes(q)) {
           return false;
         }
       }

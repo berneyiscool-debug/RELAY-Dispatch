@@ -110,6 +110,16 @@ export function renderLogin(container) {
                   </div>
                 </div>
 
+                <div class="auth-remember-row">
+                  <label class="auth-remember-label" for="signin-remember">
+                    <input type="checkbox" id="signin-remember" class="auth-remember-checkbox" ${localStorage.getItem('relay_remember_me') === 'true' ? 'checked' : ''} />
+                    <span class="auth-remember-check">
+                      <span class="material-icons-outlined auth-remember-tick">check</span>
+                    </span>
+                    <span class="auth-remember-text">Remember me</span>
+                  </label>
+                </div>
+
                 <button type="submit" id="btn-signin-submit" class="btn btn-primary" style="width:100%; padding:12px; font-size:15px; justify-content:center; margin-top:8px;">
                   Sign In
                 </button>
@@ -283,6 +293,20 @@ export function renderLogin(container) {
          </div>
        </div>
     `;
+
+    // Pre-fill email if "Remember Me" was previously checked
+    const rememberedEmail = localStorage.getItem('relay_remembered_email');
+    if (rememberedEmail && localStorage.getItem('relay_remember_me') === 'true') {
+      const emailInput = container.querySelector('#signin-email');
+      if (emailInput) {
+        emailInput.value = rememberedEmail;
+        // Focus password field instead since email is pre-filled
+        setTimeout(() => {
+          const pwdInput = container.querySelector('#signin-password');
+          if (pwdInput) pwdInput.focus();
+        }, 100);
+      }
+    }
 
     // Active panel switching handlers
     const signinPanel = container.querySelector('.signin-panel');
@@ -507,6 +531,17 @@ export function renderLogin(container) {
         };
 
         localStorage.setItem('currentUser', JSON.stringify(user));
+
+        // Persist Remember Me state
+        const rememberCheckbox = container.querySelector('#signin-remember');
+        if (rememberCheckbox && rememberCheckbox.checked) {
+          localStorage.setItem('relay_remember_me', 'true');
+          localStorage.setItem('relay_remembered_email', emailInput);
+        } else {
+          localStorage.removeItem('relay_remember_me');
+          localStorage.removeItem('relay_remembered_email');
+        }
+
         completeLogin(user);
       });
     }
@@ -610,6 +645,17 @@ export function renderLogin(container) {
       };
 
       localStorage.setItem('currentUser', JSON.stringify(user));
+
+      // Persist Remember Me state
+      const rememberCheckbox = container.querySelector('#signin-remember');
+      if (rememberCheckbox && rememberCheckbox.checked) {
+        localStorage.setItem('relay_remember_me', 'true');
+        localStorage.setItem('relay_remembered_email', rawInput);
+      } else {
+        localStorage.removeItem('relay_remember_me');
+        localStorage.removeItem('relay_remembered_email');
+      }
+
       completeLogin(user);
 
     } catch (err) {

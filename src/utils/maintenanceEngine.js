@@ -645,8 +645,48 @@ export function checkRecurringJobs() {
               taskId: null,
               taskName: 'Whole Job'
             });
+
+            // Check if auto-scheduled block collides with an existing allocation for this technician
+            const existingSchedules = (store.getAll('schedule') || []).filter(s => s.jobId !== spawnedJob.id);
+            const startHourCalc = startHour + (startMin / 60);
+            const endHourCalc = startHourCalc + duration;
+
+            const hasCollision = existingSchedules.some(s => {
+              if (s.technicianId !== defaultTechId || s.date !== dateStr) return false;
+              let sStart = 8;
+              let sEnd = 10;
+              if (s.startTime && s.finishTime) {
+                const sD = new Date(s.startTime);
+                const fD = new Date(s.finishTime);
+                sStart = sD.getHours() + (sD.getMinutes() / 60);
+                sEnd = fD.getHours() + (fD.getMinutes() / 60);
+              } else if (s.startHour !== undefined && s.endHour !== undefined) {
+                sStart = s.startHour;
+                sEnd = s.endHour;
+              }
+              return Math.max(startHourCalc, sStart) < Math.min(endHourCalc, sEnd);
+            });
+
+            if (hasCollision) {
+              const collisionNotifId = 'notif_collision_' + Date.now() + Math.random().toString(36).substr(2, 5);
+              const collisionDesc = `WARNING: Job ${spawnedJob.number} auto-created for ${defaultTechName} on ${formattedDate} (${startHour}:00) collides with an existing schedule allocation.`;
+              newNotifications.push({
+                id: collisionNotifId,
+                type: 'Recurring Job Collision',
+                jobId: spawnedJob.id,
+                parentJobId: job.id,
+                title: `Schedule Collision: Job ${spawnedJob.number}`,
+                description: collisionDesc,
+                message: collisionDesc,
+                dueDate: dateStr,
+                status: 'Warning',
+                priority: 'High',
+                createdAt: new Date().toISOString(),
+                createdBy: 'System Engine'
+              });
+            }
           }
-          
+
           // 2. Create read-only "Recurring Job Created" notification
           const notifId = 'notif_recurring_' + Date.now() + Math.random().toString(36).substr(2, 5);
           const description = `Job ${spawnedJob.number} has been created and is ready to be scheduled for customer ${job.customerName || 'Internal'} due on ${formattedDate}`;
@@ -720,6 +760,249 @@ export function scheduleEngineChecks() {
   setTimeout(runCheckAndReschedule, ms);
 }
 
+export function getVirtualRecurringOccurrences(startDateStr, endDateStr) {
+  const jobs = store.getAll('jobs') || [];
+  const recurringJobs = jobs.filter(j => j.isRecurring === true && j.recurringConfig);
+  const virtualOccurrences = [];
+
+  const startD = new Date(startDateStr + 'T00:00:00');
+  const endD = new Date(endDateStr + 'T23:59:59');
+
+  recurringJobs.forEach(parentJob => {
+    const dates = getRecurringDates(parentJob.recurringConfig);
+    dates.forEach(dateStr => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const occD = new Date(y, m - 1, d);
+      if (occD >= startD && occD <= endD) {
+        // Check if an actual spawned child job already exists for this date
+        const hasJob = jobs.some(j =>
+          (j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))) &&
+          j.scheduledDate === dateStr
+        );
+
+        if (!hasJob) {
+          const tasklistHrs = getJobTasklistHours(parentJob.tasks || []);
+          const calculatedHours = tasklistHrs > 0 ? tasklistHrs : (parseFloat(parentJob.estimatedHours) || 2);
+
+          virtualOccurrences.push({
+            isVirtual: true,
+            id: `virtual_${parentJob.id}_${dateStr}`,
+            parentJobId: parentJob.id,
+            parentJobNumber: parentJob.number,
+            title: parentJob.title || parentJob.number,
+            customerName: parentJob.customerName || '',
+            siteAddress: parentJob.siteAddress || '',
+            scheduledDate: dateStr,
+            technicianId: parentJob.recurringConfig?.defaultTechnicianId || null,
+            preferredTime: parentJob.preferredTime || '',
+            tasks: parentJob.tasks || [],
+            estimatedHours: calculatedHours,
+            priority: parentJob.priority || 'Normal',
+            parentJob: parentJob
+          });
+        }
+      }
+    });
+  });
+
+  return virtualOccurrences;
+}
+
+export function propagateParentJobUpdates(parentJob) {
+  if (!parentJob || !parentJob.isRecurring) return;
+  const jobs = store.getAll('jobs') || [];
+  const childJobs = jobs.filter(j =>
+    j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))
+  );
+
+  childJobs.forEach(childJob => {
+    if (childJob.status === 'Completed' || childJob.status === 'Invoiced') return;
+
+    // Format child title
+    let childTitle = childJob.title;
+    if (childJob.scheduledDate) {
+      const [yr, mo, dy] = childJob.scheduledDate.split('-');
+      const formattedDate = `${dy}/${mo}/${yr}`;
+      childTitle = `${parentJob.title || parentJob.number} — Recurring (${formattedDate})`;
+    } else {
+      childTitle = `${parentJob.title || parentJob.number} — Recurring`;
+    }
+
+    // Merge tasks while preserving completed progress on child tasks/subtasks
+    const parentTasks = parentJob.tasks ? JSON.parse(JSON.stringify(parentJob.tasks)) : [];
+    const childExistingTasks = childJob.tasks || [];
+
+    const mergedTasks = parentTasks.map(pTask => {
+      const existingTask = childExistingTasks.find(c => c.name === pTask.name || c.id === pTask.id);
+      const newTask = {
+        ...pTask,
+        id: existingTask ? existingTask.id : (store.generateId ? store.generateId() : 'task_' + Math.random().toString(36).substr(2, 9)),
+        status: existingTask ? existingTask.status : 'Not Started',
+        progress: existingTask ? (existingTask.progress || 0) : 0,
+        technicians: existingTask ? (existingTask.technicians || []) : []
+      };
+
+      if (pTask.subTasks) {
+        const existingSubtasks = existingTask ? (existingTask.subTasks || []) : [];
+        newTask.subTasks = pTask.subTasks.map(pSub => {
+          const existingSub = existingSubtasks.find(cSub => cSub.name === pSub.name || cSub.id === pSub.id);
+          return {
+            ...pSub,
+            id: existingSub ? existingSub.id : (store.generateId ? store.generateId() : 'sub_' + Math.random().toString(36).substr(2, 9)),
+            status: existingSub ? existingSub.status : 'Not Started',
+            progress: existingSub ? (existingSub.progress || 0) : 0,
+            technicians: existingSub ? (existingSub.technicians || []) : []
+          };
+        });
+      }
+      return newTask;
+    });
+
+    const updatedChild = {
+      title: childTitle,
+      description: parentJob.description || '',
+      customerId: parentJob.customerId || '',
+      customerName: parentJob.customerName || '',
+      contactName: parentJob.contactName || '',
+      siteAddress: parentJob.siteAddress || '',
+      siteName: parentJob.siteName || '',
+      priority: parentJob.priority || 'Normal',
+      materials: parentJob.materials ? JSON.parse(JSON.stringify(parentJob.materials)) : [],
+      laborCost: parentJob.laborCost || 0,
+      materialCost: parentJob.materialCost || 0,
+      estimatedLaborCost: parentJob.estimatedLaborCost || 0,
+      estimatedMaterialCost: parentJob.estimatedMaterialCost || 0,
+      preferredTime: parentJob.preferredTime || childJob.preferredTime || '',
+      tasks: mergedTasks
+    };
+
+    store.update('jobs', childJob.id, updatedChild);
+  });
+}
+
+export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId = null, customStartHour = null, customHours = null) {
+  const parentJob = store.getById('jobs', parentJobId);
+  if (!parentJob) return null;
+
+  const [yr, mo, dy] = dateStr.split('-').map(Number);
+  const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
+  const childTitle = `${parentJob.title || parentJob.number} — Recurring (${formattedDate})`;
+
+  const latestJobs = store.getAll('jobs') || [];
+  const siblingJobs = latestJobs.filter(j => j.parentJobId === parentJob.id);
+  let maxSuffix = 0;
+  const prefix = `${parentJob.number}.`;
+  siblingJobs.forEach(sj => {
+    if (sj.number && sj.number.startsWith(prefix)) {
+      const suffixStr = sj.number.substring(prefix.length);
+      const suffixNum = parseInt(suffixStr, 10);
+      if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
+        maxSuffix = suffixNum;
+      }
+    }
+  });
+  const childNumber = `${parentJob.number}.${maxSuffix + 1}`;
+
+  const jobMaterials = parentJob.materials ? JSON.parse(JSON.stringify(parentJob.materials)) : [];
+  const jobTasks = parentJob.tasks ? JSON.parse(JSON.stringify(parentJob.tasks)) : [];
+  jobTasks.forEach(task => {
+    task.id = store.generateId ? store.generateId() : 'task_' + Math.random().toString(36).substr(2, 9);
+    task.status = 'Not Started';
+    task.progress = 0;
+    task.startDate = new Date().toISOString();
+    task.technicians = [];
+    if (task.subTasks) {
+      task.subTasks.forEach(st => {
+        st.id = store.generateId ? store.generateId() : 'sub_' + Math.random().toString(36).substr(2, 9);
+        st.status = 'Not Started';
+        st.progress = 0;
+        st.startDate = new Date().toISOString();
+        st.technicians = [];
+      });
+    }
+  });
+
+  const techIdToUse = customTechId || parentJob.recurringConfig?.defaultTechnicianId || '';
+  let techName = '';
+  let childStatus = 'Pending';
+  if (techIdToUse) {
+    const tech = (store.getAll('technicians') || []).find(t => t.id === techIdToUse);
+    if (tech) {
+      techName = tech.name;
+    }
+    childStatus = 'Scheduled';
+  }
+
+  const childJobData = {
+    parentJobId: parentJob.id,
+    scheduledDate: dateStr,
+    status: childStatus,
+    technicianId: techIdToUse || undefined,
+    technicianName: techName,
+    number: childNumber,
+    title: childTitle,
+    description: parentJob.description || '',
+    priority: parentJob.priority || 'Normal',
+    notes: `Materialized from recurring template ${parentJob.number}`,
+    createdAt: new Date().toISOString(),
+    customerId: parentJob.customerId || '',
+    customerName: parentJob.customerName || '',
+    contactName: parentJob.contactName || '',
+    siteAddress: parentJob.siteAddress || '',
+    siteName: parentJob.siteName || '',
+    assetId: parentJob.assetId || undefined,
+    preferredTime: parentJob.preferredTime || '',
+    materials: jobMaterials,
+    laborCost: parentJob.laborCost || 0,
+    materialCost: parentJob.materialCost || 0,
+    estimatedLaborCost: parentJob.estimatedLaborCost || 0,
+    estimatedMaterialCost: parentJob.estimatedMaterialCost || 0,
+    isRecurring: false,
+    recurringConfig: null,
+    tasks: jobTasks
+  };
+
+  const spawnedJob = store.create('jobs', childJobData);
+
+  if (techIdToUse) {
+    let startHour = customStartHour !== null ? customStartHour : 8;
+    let startMin = 0;
+    if (customStartHour === null && parentJob.preferredTime) {
+      const parsed = parsePreferredTime(parentJob.preferredTime);
+      if (parsed) {
+        startHour = parsed.hours;
+        startMin = parsed.minutes;
+      }
+    }
+    const startTimeISO = `${dateStr}T${Math.floor(startHour).toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
+    const tasklistHours = getJobTasklistHours(parentJob.tasks || []);
+    const duration = customHours || (tasklistHours > 0 ? tasklistHours : (parentJob.estimatedHours || 2));
+    const endHour = startHour + duration;
+    const endHourH = Math.floor(endHour);
+    const endHourM = Math.round((endHour - endHourH) * 60) + startMin;
+    const finalHour = endHourH + Math.floor(endHourM / 60);
+    const finalMin = endHourM % 60;
+    const finishTimeISO = `${dateStr}T${finalHour.toString().padStart(2, '0')}:${finalMin.toString().padStart(2, '0')}`;
+
+    store.create('schedule', {
+      jobId: spawnedJob.id,
+      jobNumber: spawnedJob.number,
+      technicianId: techIdToUse,
+      technicianName: techName,
+      date: dateStr,
+      startTime: startTimeISO,
+      finishTime: finishTimeISO,
+      hours: duration,
+      startHour: startHour,
+      endHour: startHour + duration,
+      taskId: null,
+      taskName: 'Whole Job'
+    });
+  }
+
+  return spawnedJob;
+}
+
 function getJobTasklistHours(tasks) {
   if (!tasks || !Array.isArray(tasks) || tasks.length === 0) return 0;
   
@@ -732,4 +1015,5 @@ function getJobTasklistHours(tasks) {
   
   return tasks.reduce((sum, t) => sum + calculateNodeHours(t), 0);
 }
+
 

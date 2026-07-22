@@ -245,5 +245,173 @@ describe('Job Recurring Scheduling Integrations', () => {
     assert.strictEqual(schedules[0].startTime, `${todayStr}T10:30`);
     assert.strictEqual(schedules[0].finishTime, `${todayStr}T12:30`);
   });
+
+  test('Virtual occurrences calculation and materialization via right-click action', async () => {
+    const { getVirtualRecurringOccurrences, materializeVirtualOccurrence } = await import('../../utils/maintenanceEngine.js');
+
+    const parentJob = store.create('jobs', {
+      number: 'J-010',
+      title: 'Future Generator Service',
+      customerId: 'cust_10',
+      customerName: 'Future Tech Ltd',
+      siteAddress: '456 Future Way',
+      priority: 'High',
+      estimatedHours: 3,
+      isRecurring: true,
+      recurringConfig: {
+        freq: 'Daily',
+        start: '2026-09-01',
+        end: '2026-09-03'
+      }
+    });
+
+    // 1. Calculate virtual occurrences for September 2026
+    const virtualOccs = getVirtualRecurringOccurrences('2026-09-01', '2026-09-05');
+    assert.strictEqual(virtualOccs.length, 3);
+    assert.strictEqual(virtualOccs[0].scheduledDate, '2026-09-01');
+    assert.strictEqual(virtualOccs[1].scheduledDate, '2026-09-02');
+    assert.strictEqual(virtualOccs[2].scheduledDate, '2026-09-03');
+    assert.strictEqual(virtualOccs[0].title, 'Future Generator Service');
+
+    // Verify database does NOT contain spawned jobs yet (forecast mode)
+    const initialChildren = store.getAll('jobs').filter(j => j.parentJobId === parentJob.id);
+    assert.strictEqual(initialChildren.length, 0);
+
+    // 2. Materialize the first virtual occurrence explicitly (User right-clicks -> "Create as Job")
+    const materializedJob = materializeVirtualOccurrence(parentJob.id, '2026-09-01', 'tech_99', 9, 3);
+    assert.ok(materializedJob);
+    assert.strictEqual(materializedJob.parentJobId, parentJob.id);
+    assert.strictEqual(materializedJob.number, 'J-010.1');
+    assert.strictEqual(materializedJob.scheduledDate, '2026-09-01');
+    assert.strictEqual(materializedJob.status, 'Scheduled');
+
+    // 3. Re-calculate virtual occurrences: 2026-09-01 should no longer be virtual because real child exists!
+    const virtualOccsAfter = getVirtualRecurringOccurrences('2026-09-01', '2026-09-05');
+    assert.strictEqual(virtualOccsAfter.length, 2);
+    assert.strictEqual(virtualOccsAfter[0].scheduledDate, '2026-09-02');
+  });
+
+  test('Parent-to-child template propagation updates active child jobs', async () => {
+    const { propagateParentJobUpdates } = await import('../../utils/maintenanceEngine.js');
+
+    const parentJob = store.create('jobs', {
+      number: 'J-020',
+      title: 'Original Title',
+      description: 'Original Description',
+      customerId: 'cust_20',
+      customerName: 'Apex Power',
+      siteAddress: '100 Power St',
+      priority: 'Normal',
+      isRecurring: true,
+      tasks: [
+        { id: 'pt1', name: 'Inspection', status: 'Not Started', progress: 0 }
+      ]
+    });
+
+    const childJob1 = store.create('jobs', {
+      parentJobId: parentJob.id,
+      number: 'J-020.1',
+      title: 'Original Title — Recurring (01/10/2026)',
+      description: 'Original Description',
+      scheduledDate: '2026-10-01',
+      status: 'Scheduled',
+      tasks: [
+        { id: 'ct1', name: 'Inspection', status: 'In Progress', progress: 50 }
+      ]
+    });
+
+    const childJobCompleted = store.create('jobs', {
+      parentJobId: parentJob.id,
+      number: 'J-020.0',
+      title: 'Original Title — Recurring (01/09/2026)',
+      description: 'Original Description',
+      scheduledDate: '2026-09-01',
+      status: 'Completed',
+      tasks: [
+        { id: 'ct0', name: 'Inspection', status: 'Completed', progress: 100 }
+      ]
+    });
+
+    // Update parent job
+    const updatedParent = store.update('jobs', parentJob.id, {
+      title: 'Updated Master Service',
+      description: 'Updated Master Description',
+      siteAddress: '999 New Power Way',
+      priority: 'Urgent',
+      tasks: [
+        { id: 'pt1', name: 'Inspection', status: 'Not Started', progress: 0 },
+        { id: 'pt2', name: 'Oil Filter Replacement', status: 'Not Started', progress: 0 }
+      ]
+    });
+
+    // Propagate changes
+    propagateParentJobUpdates(updatedParent);
+
+    // Verify active child job updated with new template fields while keeping task progress
+    const child1Fresh = store.getById('jobs', childJob1.id);
+    assert.strictEqual(child1Fresh.description, 'Updated Master Description');
+    assert.strictEqual(child1Fresh.siteAddress, '999 New Power Way');
+    assert.strictEqual(child1Fresh.priority, 'Urgent');
+    assert.strictEqual(child1Fresh.tasks.length, 2);
+    assert.strictEqual(child1Fresh.tasks[0].name, 'Inspection');
+    assert.strictEqual(child1Fresh.tasks[0].status, 'In Progress');
+    assert.strictEqual(child1Fresh.tasks[0].progress, 50);
+
+    // Verify completed child job was NOT modified
+    const childCompletedFresh = store.getById('jobs', childJobCompleted.id);
+    assert.strictEqual(childCompletedFresh.description, 'Original Description');
+    assert.strictEqual(childCompletedFresh.status, 'Completed');
+  });
+
+  test('Engine detects collision and creates warning notification when auto-scheduling', () => {
+    const localDateStr = (date) => {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const todayStr = localDateStr(new Date());
+
+    const tech = store.create('technicians', {
+      id: 'tech_collision_1',
+      name: 'Collision Technician'
+    });
+
+    // Create an existing schedule allocation for this technician today 8:00 - 10:00 AM
+    store.create('schedule', {
+      jobId: 'existing_job_1',
+      technicianId: tech.id,
+      date: todayStr,
+      startTime: `${todayStr}T08:00:00`,
+      finishTime: `${todayStr}T10:00:00`,
+      startHour: 8,
+      endHour: 10
+    });
+
+    // Create recurring parent job targeting 8:00 AM today
+    store.create('jobs', {
+      number: 'J-COLLIDE-01',
+      title: 'Conflicting Recurring Service',
+      customerId: 'cust_collide',
+      preferredTime: '08:00',
+      isRecurring: true,
+      recurringConfig: {
+        freq: 'Daily',
+        start: todayStr,
+        end: todayStr,
+        defaultTechnicianId: tech.id
+      }
+    });
+
+    checkRecurringJobs();
+
+    // Verify warning notification was created for collision
+    const notifs = store.getAll('notifications') || [];
+    const collisionNotif = notifs.find(n => n.type === 'Recurring Job Collision');
+    assert.ok(collisionNotif, 'Collision notification should be created');
+    assert.strictEqual(collisionNotif.status, 'Warning');
+    assert.ok(collisionNotif.description.includes('collides with an existing schedule allocation'));
+  });
 });
+
 

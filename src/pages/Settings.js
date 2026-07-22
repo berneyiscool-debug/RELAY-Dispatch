@@ -439,7 +439,7 @@ export function renderSettings(container) {
         { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
-        { id: 'ai_assistant', label: 'AI Assistant', disabled: isAIAssistantDisabled, tooltip: 'Requires Cloud Account' },
+        { id: 'api_keys', label: 'Integrations & APIs' },
         { id: 'system', label: 'System Options' }
       ]
     },
@@ -647,8 +647,8 @@ export function renderSettings(container) {
       return;
     }
 
-    if (activeTab === 'ai_assistant') {
-      renderAIAssistantTab(tc);
+    if (activeTab === 'api_keys') {
+      renderApiKeysTab(tc);
       return;
     }
 
@@ -4794,16 +4794,22 @@ export function renderSettings(container) {
     render();
   }
 
-  function renderAIAssistantTab(tc) {
+  function renderApiKeysTab(tc) {
     const s = store.getSettings();
     const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
     const ai = s.ai || {
       enabled: false,
       apiKey: '',
-      endpoint: 'https://api.openai.com/v1/chat/completions',
-      model: 'gpt-4o-mini',
-      systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
+      visionApiKey: '',
+      useSameKey: true,
+      endpoint: 'https://api.deepseek.com/chat/completions',
+      model: 'deepseek-chat',
+      visionEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      visionModel: 'gemini-2.0-flash',
+      systemPrompt: 'You are Deputy, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
     };
+    if (ai.useSameKey === undefined) ai.useSameKey = true;
+    const maps = s.maps || { apiKey: '' };
 
     const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null') || { id: 'default' };
     const userId = currentUser.id || 'default';
@@ -4831,20 +4837,42 @@ export function renderSettings(container) {
                 </div>
 
                 <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
-                  <div class="form-group">
-                    <label class="form-label" style="font-weight:600;">API Key</label>
-                    <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="${isLocalMode ? 'sk-...' : 'Optional — Defaults to secure cloud API key'}" />
-                    <div class="text-tertiary" style="font-size:11px; margin-top:4px;">${isLocalMode ? 'Your API key is stored locally in your browser/sync directory and shared amongst employees.' : 'Your API key is optional. If left blank, cloud operations will securely route through Supabase Edge Functions.'}</div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label" style="font-weight:600;">Text API Key</label>
+                      <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="${isLocalMode ? 'sk-...' : 'Optional — Defaults to secure cloud API key'}" />
+                    </div>
+                    <div class="form-group">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label class="form-label" style="font-weight:600; margin-bottom:0;">Vision API Key</label>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+                          <input type="checkbox" id="ai-use-same-key" ${ai.useSameKey ? 'checked' : ''} style="width:14px; height:14px;" /> Use Text API Key
+                        </label>
+                      </div>
+                      <input type="password" class="form-input" id="ai-vision-apikey" value="${ai.useSameKey ? (ai.apiKey || '') : (ai.visionApiKey || '')}" placeholder="API Key for Vision Model" style="margin-top:6px; ${ai.useSameKey ? 'opacity:0.5; pointer-events:none;' : ''}" />
+                    </div>
+                  </div>
+                  <div class="text-tertiary" style="font-size:11px; margin-top:-8px;">${isLocalMode ? 'Your API keys are stored locally in your browser/sync directory.' : 'Keys are optional. If blank, cloud operations will route securely through Edge Functions.'}</div>
+
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label" style="font-weight:600;">Text API Endpoint</label>
+                      <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label" style="font-weight:600;">Text Model Name</label>
+                      <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
+                    </div>
                   </div>
 
                   <div class="form-row">
                     <div class="form-group">
-                      <label class="form-label" style="font-weight:600;">API Endpoint</label>
-                      <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.openai.com/v1/chat/completions'}" placeholder="https://api.openai.com/v1/chat/completions" />
+                      <label class="form-label" style="font-weight:600;">Vision API Endpoint (Multimodal)</label>
+                      <input type="text" class="form-input" id="ai-vision-endpoint" value="${ai.visionEndpoint || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'}" placeholder="https://api.openai.com/v1/chat/completions" />
                     </div>
                     <div class="form-group">
-                      <label class="form-label" style="font-weight:600;">Model Name</label>
-                      <input type="text" class="form-input" id="ai-model" value="${ai.model || 'gpt-4o-mini'}" placeholder="gpt-4o-mini" />
+                      <label class="form-label" style="font-weight:600;">Vision Model Name</label>
+                      <input type="text" class="form-input" id="ai-vision-model" value="${ai.visionModel || 'gemini-2.0-flash'}" placeholder="gpt-4o-mini" />
                     </div>
                   </div>
 
@@ -4870,7 +4898,19 @@ export function renderSettings(container) {
               </div>
             </div>
 
-
+            <div class="card">
+              <div class="card-header"><h4>Google Maps Configuration</h4></div>
+              <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+                <div class="form-group">
+                  <label class="form-label" style="font-weight:600;">Maps API Key</label>
+                  <input type="password" class="form-input" id="maps-apikey" value="${maps.apiKey || ''}" placeholder="AIzaSy..." />
+                  <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Used for address autocomplete, distance calculations, and rendering maps. Get this from the Google Cloud Console.</div>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
+                  <button class="btn btn-primary" id="btn-save-maps">Save Maps Config</button>
+                </div>
+              </div>
+            </div>
 
           </div>
 
@@ -4906,8 +4946,32 @@ export function renderSettings(container) {
       const fieldsContainer = tc.querySelector('#ai-fields');
       enabledCheckbox.addEventListener('change', (e) => {
         fieldsContainer.style.display = e.target.checked ? 'flex' : 'none';
-
       });
+
+      const useSameKeyCheckbox = tc.querySelector('#ai-use-same-key');
+      const visionApiKeyInput = tc.querySelector('#ai-vision-apikey');
+      const textApiKeyInput = tc.querySelector('#ai-apikey');
+      if (useSameKeyCheckbox && visionApiKeyInput) {
+        useSameKeyCheckbox.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            visionApiKeyInput.style.opacity = '0.5';
+            visionApiKeyInput.style.pointerEvents = 'none';
+            if (textApiKeyInput) visionApiKeyInput.value = textApiKeyInput.value;
+          } else {
+            visionApiKeyInput.style.opacity = '1';
+            visionApiKeyInput.style.pointerEvents = 'auto';
+            visionApiKeyInput.focus();
+          }
+        });
+        
+        if (textApiKeyInput) {
+          textApiKeyInput.addEventListener('input', (e) => {
+            if (useSameKeyCheckbox.checked) {
+              visionApiKeyInput.value = e.target.value;
+            }
+          });
+        }
+      }
 
 
 
@@ -4915,12 +4979,16 @@ export function renderSettings(container) {
       tc.querySelector('#btn-save-ai').addEventListener('click', () => {
         const enabled = enabledCheckbox.checked;
         const apiKey = tc.querySelector('#ai-apikey').value.trim();
+        const useSameKey = tc.querySelector('#ai-use-same-key') ? tc.querySelector('#ai-use-same-key').checked : true;
+        const visionApiKey = useSameKey ? apiKey : tc.querySelector('#ai-vision-apikey').value.trim();
         const endpoint = tc.querySelector('#ai-endpoint').value.trim();
         const model = tc.querySelector('#ai-model').value.trim();
+        const visionEndpoint = tc.querySelector('#ai-vision-endpoint').value.trim();
+        const visionModel = tc.querySelector('#ai-vision-model').value.trim();
         const systemPrompt = tc.querySelector('#ai-systemprompt').value.trim();
 
         if (isLocalMode && enabled && !apiKey) {
-          showToast('API Key is required when enabling the AI assistant.', 'error');
+          showToast('Text API Key is required when enabling the AI assistant.', 'error');
           return;
         }
 
@@ -4928,13 +4996,25 @@ export function renderSettings(container) {
         settings.ai = {
           enabled,
           apiKey,
+          visionApiKey,
+          useSameKey,
           endpoint,
           model,
+          visionEndpoint,
+          visionModel,
           systemPrompt
         };
 
         store.saveSettings(settings);
         showToast('AI settings saved successfully', 'success');
+      });
+
+      tc.querySelector('#btn-save-maps').addEventListener('click', () => {
+        const apiKey = tc.querySelector('#maps-apikey').value.trim();
+        const settings = store.getSettings();
+        settings.maps = { apiKey };
+        store.saveSettings(settings);
+        showToast('Maps settings saved successfully', 'success');
       });
 
       // Test handler
