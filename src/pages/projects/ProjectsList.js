@@ -23,9 +23,15 @@ export function renderProjectsList(container) {
     const totalCount = filteredProjs.length;
     let totalValue = 0;
     let totalBilled = 0;
+    
+    let totalStages = 0;
+    let completedStages = 0;
 
     filteredProjs.forEach(proj => {
       const projJobs = jobs.filter(j => j.projectId === proj.id);
+      totalStages += projJobs.length;
+      completedStages += projJobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
+
       projJobs.forEach(job => {
         const matsTotal = (job.materials || []).reduce((s, m) => s + (m.total || 0), 0);
         const laborTotal = (job.labor || []).reduce((s, l) => s + (l.total || 0), 0);
@@ -36,7 +42,7 @@ export function renderProjectsList(container) {
       });
     });
 
-    return { totalCount, totalValue, totalBilled };
+    return { totalCount, totalValue, totalBilled, totalStages, completedStages };
   };
 
   const getFilteredProjects = () => {
@@ -68,6 +74,10 @@ export function renderProjectsList(container) {
     const filtered = getFilteredProjects();
     const metrics = calculateMetrics(filtered);
 
+    const activeProjCount = filtered.filter(p => p.status === 'In Progress').length;
+    const completedProjCount = filtered.filter(p => p.status === 'Completed').length;
+    const uninvoiced = metrics.totalValue - metrics.totalBilled;
+
     container.innerHTML = `
       <style>
         .kpi-card {
@@ -79,7 +89,7 @@ export function renderProjectsList(container) {
           overflow: hidden;
         }
         .kpi-card:hover {
-          transform: translateY(-4px);
+          transform: translateY(-2px);
           box-shadow: var(--shadow-md);
         }
         .kpi-card::before {
@@ -89,7 +99,7 @@ export function renderProjectsList(container) {
         }
         .kpi-card.kpi-primary::before { background: var(--color-primary); }
         .kpi-card.kpi-success::before { background: var(--color-success); }
-        .kpi-card.kpi-warning::before { background: var(--color-warning); }
+        .kpi-card.kpi-purple::before { background: var(--color-purple); }
 
         .progress-bar-container {
           width: 100%;
@@ -116,46 +126,55 @@ export function renderProjectsList(container) {
       </div>
 
       <!-- Projects KPI Summary Row -->
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:20px; margin-bottom:24px">
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:20px">
         
-        <!-- Card 1: Total Projects -->
+        <!-- Card 1: Projects Overview -->
         <div class="card kpi-card kpi-primary">
-          <div class="card-body" style="padding:20px; display:flex; align-items:center; gap:16px">
-            <div style="width:52px; height:52px; border-radius:12px; background:linear-gradient(135deg, var(--color-primary-light), #e0e7ff); color:var(--color-primary); display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15)">
-              <span class="material-icons-outlined" style="font-size:26px">folder_copy</span>
+          <div class="card-body" style="padding:12px 16px; display:flex; align-items:center; gap:12px">
+            <div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, var(--color-primary-light), #e0e7ff); color:var(--color-primary); display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15)">
+              <span class="material-icons-outlined" style="font-size:20px">folder_copy</span>
             </div>
-            <div>
-              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Active Projects</div>
-              <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${filtered.filter(p => p.status === 'In Progress').length} / ${metrics.totalCount}</div>
-              <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">Projects currently in progress</div>
+            <div style="flex:1">
+              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Projects</div>
+              <div style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalCount}</div>
+            </div>
+            <div style="text-align:right; font-size:11px; color:var(--text-secondary); line-height:1.4">
+              <div style="color:var(--color-primary-dark); font-weight:600">${activeProjCount} Active</div>
+              <div>${completedProjCount} Completed</div>
             </div>
           </div>
         </div>
 
-        <!-- Card 2: Est. Portfolio Value -->
+        <!-- Card 2: Portfolio Financials -->
         <div class="card kpi-card kpi-success">
-          <div class="card-body" style="padding:20px; display:flex; align-items:center; gap:16px">
-            <div style="width:52px; height:52px; border-radius:12px; background:linear-gradient(135deg, var(--color-success-bg), #dcfce7); color:var(--color-success); display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15)">
-              <span class="material-icons-outlined" style="font-size:26px">monetization_on</span>
+          <div class="card-body" style="padding:12px 16px; display:flex; align-items:center; gap:12px">
+            <div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, var(--color-success-bg), #dcfce7); color:var(--color-success); display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15)">
+              <span class="material-icons-outlined" style="font-size:20px">monetization_on</span>
             </div>
-            <div>
-              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Portfolio Value</div>
-              <div style="font-size:24px; font-weight:800; color:var(--color-success-dark); margin-top:2px; line-height:1.2">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-              <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">Sum of stage/job values</div>
+            <div style="flex:1">
+              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Portfolio Value</div>
+              <div style="font-size:18px; font-weight:800; color:var(--color-success-dark); margin-top:2px; line-height:1.2">$${metrics.totalValue.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
+            </div>
+            <div style="text-align:right; font-size:11px; color:var(--text-secondary); line-height:1.4">
+              <div>Billed: $${metrics.totalBilled.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
+              <div style="color:${uninvoiced > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; font-weight:600">Unbilled: $${Math.max(0, uninvoiced).toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
             </div>
           </div>
         </div>
 
-        <!-- Card 3: Portfolio Billed -->
-        <div class="card kpi-card kpi-warning">
-          <div class="card-body" style="padding:20px; display:flex; align-items:center; gap:16px">
-            <div style="width:52px; height:52px; border-radius:12px; background:linear-gradient(135deg, var(--color-warning-bg), #fef9c3); color:var(--color-warning-dark); display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15)">
-              <span class="material-icons-outlined" style="font-size:26px">receipt_long</span>
+        <!-- Card 3: Stage Progress -->
+        <div class="card kpi-card kpi-purple">
+          <div class="card-body" style="padding:12px 16px; display:flex; align-items:center; gap:12px">
+            <div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, var(--color-purple-light), #f3e8ff); color:var(--color-purple); display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 8px rgba(168, 85, 247, 0.15)">
+              <span class="material-icons-outlined" style="font-size:20px">account_tree</span>
             </div>
-            <div>
-              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Invoiced</div>
-              <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-              <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">${Math.round(metrics.totalValue > 0 ? (metrics.totalBilled / metrics.totalValue) * 100 : 0)}% of total value billed</div>
+            <div style="flex:1">
+              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Stages</div>
+              <div style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalStages}</div>
+            </div>
+            <div style="text-align:right; font-size:11px; color:var(--text-secondary); line-height:1.4">
+              <div style="color:var(--color-success-dark); font-weight:600">${metrics.completedStages} Completed</div>
+              <div>${metrics.totalStages - metrics.completedStages} Pending</div>
             </div>
           </div>
         </div>

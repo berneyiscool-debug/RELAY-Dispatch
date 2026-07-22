@@ -1145,7 +1145,7 @@ export function renderScheduleView(container) {
             const endHourM = Math.round((endHour - endHourH) * 60);
             const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
 
-            store.add('schedule', {
+            store.create('schedule', {
               jobId: job.id,
               jobNumber: job.number,
               technicianId: techId,
@@ -1319,7 +1319,7 @@ export function renderScheduleView(container) {
               const startTimeISO = `${dStr}T${timeStr}`;
               const finishTimeISO = `${dStr}T${pad(endHourH)}:${pad(endHourM)}`;
 
-              store.add('schedule', {
+              store.create('schedule', {
                 type: 'leave',
                 technicianId: techId,
                 technicianName: tech?.name || '',
@@ -1403,7 +1403,7 @@ export function renderScheduleView(container) {
             const endHourM = Math.round((endHour - endHourH) * 60);
             const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
 
-            store.add('schedule', {
+            store.create('schedule', {
               type: 'blockout',
               technicianId: techId,
               technicianName: tech?.name || '',
@@ -1481,7 +1481,7 @@ export function renderScheduleView(container) {
             const endHourM = Math.round((endHour - endHourH) * 60);
             const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
 
-            store.add('schedule', {
+            store.create('schedule', {
               type: 'meeting',
               technicianId: techId,
               technicianName: tech?.name || '',
@@ -1555,9 +1555,19 @@ export function renderScheduleView(container) {
 
         // Custom styling overrides for leave, blockout, meeting
         if (b.type === 'leave') {
-          borderColor = '#EF4444'; // Red for leave
-          background = 'rgba(239, 68, 68, 0.1)';
-          textColor = '#EF4444';
+          if (b.status === 'Approved') {
+            borderColor = '#10B981'; // Green for approved leave
+            background = 'rgba(16, 185, 129, 0.16)';
+            textColor = '#059669';
+          } else if (b.status === 'Denied' || b.status === 'Rejected') {
+            borderColor = '#EF4444'; // Red for denied leave
+            background = 'rgba(239, 68, 68, 0.16)';
+            textColor = '#DC2626';
+          } else {
+            borderColor = '#F59E0B'; // Orange for pending leave
+            background = 'rgba(245, 158, 11, 0.1)';
+            textColor = '#D97706';
+          }
         } else if (b.type === 'blockout') {
           borderColor = '#6B7280'; // Gray for blockout
           background = 'rgba(107, 114, 128, 0.1)';
@@ -1636,6 +1646,7 @@ export function renderScheduleView(container) {
             <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:space-between">
               <span>${b.jobNumber}</span>
               ${b.hasCollision ? `<span class="virtual-forecast-badge virtual-collision-badge">COLLISION</span>` : (isVirtual ? `<span class="virtual-forecast-badge">FORECAST</span>` : '')}
+              ${b.type === 'leave' && (b.status === 'Approved' || b.status === 'Denied' || b.status === 'Rejected') ? `<span class="virtual-forecast-badge" style="background:${b.status === 'Approved' ? '#10B981' : '#EF4444'};color:white;border:none;">${b.status.toUpperCase()}</span>` : ''}
             </div>
             ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.9;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
             ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.7;margin-top:2px">${timeLabel}</div>` : ''}
@@ -1975,7 +1986,7 @@ export function renderScheduleView(container) {
             closeContextMenu();
             const parentJobId = block.dataset.parentJobId;
             const dateStr = block.dataset.date;
-            const parentJob = store.get('jobs', parentJobId);
+            const parentJob = store.getById('jobs', parentJobId);
             if (parentJob && parentJob.recurringConfig) {
               if (!parentJob.recurringConfig.skippedDates) {
                 parentJob.recurringConfig.skippedDates = [];
@@ -2021,18 +2032,66 @@ export function renderScheduleView(container) {
           const parentJob = job?.parentJobId ? store.getById('jobs', job.parentJobId) : null;
           const isRecurringChild = parentJob && parentJob.isRecurring === true;
 
-          contextMenu.innerHTML = `
-            <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
-            ${isRealSchedule ? `
-              <button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">assignment</span> Change Task</button>
-              <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
-            ` : ''}
-            <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
-            ${isRecurringChild ? `
-              <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
-            ` : ''}
-          `;
+          const isBatch = selectedScheduleIds.size > 1 && selectedScheduleIds.has(scheduleId);
+
+          if (isBatch) {
+            contextMenu.innerHTML = `
+              <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign (${selectedScheduleIds.size})</button>
+              <button class="dropdown-item text-danger" id="ctx-batch-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${selectedScheduleIds.size})</button>
+            `;
+          } else {
+            contextMenu.innerHTML = `
+              <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
+              ${isRealSchedule ? `
+                <button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">assignment</span> Change Task</button>
+                <button class="dropdown-item" id="ctx-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign</button>
+                <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
+              ` : ''}
+              <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
+              ${isRecurringChild ? `
+                <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
+              ` : ''}
+            `;
+          }
           document.body.appendChild(contextMenu);
+
+          function promptReassign(idsToReassign) {
+            const techs = store.getAll('technicians').filter(t => !t.deactivated);
+            const options = techs.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+            showModal({
+              title: 'Reassign ' + (idsToReassign.length > 1 ? 'Jobs' : 'Job'),
+              content: `<div class="form-group"><label class="form-label">Select Technician</label><select id="reassign-tech" class="form-select">${options}</select></div>`,
+              actions: [
+                { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                { label: 'Reassign', className: 'btn-primary', onClick: c => {
+                     const newTechId = document.getElementById('reassign-tech').value;
+                     idsToReassign.forEach(id => {
+                         store.update('schedule', id, { technicianId: newTechId });
+                     });
+                     showToast('Reassigned successfully', 'success');
+                     selectedScheduleIds.clear();
+                     render();
+                     c();
+                }}
+              ]
+            });
+          }
+
+          if (isBatch) {
+            contextMenu.querySelector('#ctx-batch-reassign').addEventListener('click', () => {
+              closeContextMenu();
+              promptReassign(Array.from(selectedScheduleIds));
+            });
+            contextMenu.querySelector('#ctx-batch-unschedule').addEventListener('click', () => {
+              closeContextMenu();
+              const count = selectedScheduleIds.size;
+              selectedScheduleIds.forEach(id => store.delete('schedule', id));
+              selectedScheduleIds.clear();
+              showToast(`Unscheduled ${count} jobs`, 'success');
+              render();
+            });
+            return;
+          }
 
           if (isRecurringChild) {
             contextMenu.querySelector('#ctx-skip-occurrence').addEventListener('click', () => {
@@ -2061,6 +2120,11 @@ export function renderScheduleView(container) {
           });
 
           if (isRealSchedule) {
+            contextMenu.querySelector('#ctx-reassign').addEventListener('click', () => {
+              closeContextMenu();
+              promptReassign([scheduleId]);
+            });
+
             contextMenu.querySelector('#ctx-change-task').addEventListener('click', () => {
               closeContextMenu();
               const jobId = block.dataset.blockJobId;
@@ -2594,7 +2658,7 @@ export function renderScheduleView(container) {
             }
           } else {
             // New schedule booking for unscheduled or legacy blocks
-            store.add('schedule', {
+            store.create('schedule', {
               jobId: job.id,
               jobNumber: job.number,
               technicianId: targetTechId,
@@ -2723,7 +2787,7 @@ export function renderScheduleView(container) {
                 const endH = Math.floor(endHour);
                 const endM = Math.round((endHour - endH) * 60);
 
-                store.add('schedule', {
+                store.create('schedule', {
                   jobId: job.id,
                   jobNumber: job.number,
                   technicianId: job.technicianId || technicians[0]?.id || '',
@@ -2878,7 +2942,7 @@ function computeBtipSlices(sched, job) {
 
 function createBtipTimesheets(sched, job, slices) {
   slices.forEach(s => {
-    store.add('timesheets', {
+    store.create('timesheets', {
       jobId: job.id,
       jobNumber: job.number,
       taskId: s.node ? s.node.id : null,

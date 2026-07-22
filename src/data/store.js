@@ -397,6 +397,27 @@ const TABLE_COLUMNS = {
     "job_id",
     "created_at",
     "updated_at"
+  ],
+  schedule: [
+    "id",
+    "company_id",
+    "type",
+    "jobid",
+    "jobnumber",
+    "technicianid",
+    "technicianname",
+    "date",
+    "starttime",
+    "finishtime",
+    "hours",
+    "starthour",
+    "endhour",
+    "notes",
+    "status",
+    "taskid",
+    "taskname",
+    "created_at",
+    "updated_at"
   ]
 };
 
@@ -593,7 +614,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 3);
+      const request = window.indexedDB.open(dbName, 4);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1398,6 +1419,19 @@ class DataStore {
       record.collisionMerging = record.collision_merging;
       delete record.collision_merging;
     }
+    if (collection === 'schedule') {
+      if (record.jobid !== undefined) { record.jobId = record.jobid; delete record.jobid; }
+      if (record.jobnumber !== undefined) { record.jobNumber = record.jobnumber; delete record.jobnumber; }
+      if (record.technicianid !== undefined) { record.technicianId = record.technicianid; delete record.technicianid; }
+      if (record.technicianname !== undefined) { record.technicianName = record.technicianname; delete record.technicianname; }
+      if (record.starttime !== undefined) { record.startTime = record.starttime; delete record.starttime; }
+      if (record.finishtime !== undefined) { record.finishTime = record.finishtime; delete record.finishtime; }
+      if (record.starthour !== undefined) { record.startHour = record.starthour != null ? parseFloat(record.starthour) : null; delete record.starthour; }
+      if (record.endhour !== undefined) { record.endHour = record.endhour != null ? parseFloat(record.endhour) : null; delete record.endhour; }
+      if (record.taskid !== undefined) { record.taskId = record.taskid; delete record.taskid; }
+      if (record.taskname !== undefined) { record.taskName = record.taskname; delete record.taskname; }
+    }
+
     if (record.line_items !== undefined) {
       record.lineItems = record.line_items;
       delete record.line_items;
@@ -1951,6 +1985,19 @@ class DataStore {
       };
       record.approved_by = '__meta__:' + JSON.stringify(meta);
       delete record.approvedBy;
+    }
+
+    if (collection === 'schedule') {
+      record.jobid = record.jobId || null; delete record.jobId;
+      record.jobnumber = record.jobNumber || null; delete record.jobNumber;
+      record.technicianid = record.technicianId || null; delete record.technicianId;
+      record.technicianname = record.technicianName || null; delete record.technicianName;
+      record.starttime = record.startTime || null; delete record.startTime;
+      record.finishtime = record.finishTime || null; delete record.finishTime;
+      record.starthour = record.startHour !== undefined ? record.startHour : null; delete record.startHour;
+      record.endhour = record.endHour !== undefined ? record.endHour : null; delete record.endHour;
+      record.taskid = record.taskId || null; delete record.taskId;
+      record.taskname = record.taskName || null; delete record.taskName;
     }
 
     // Filter out columns not in schema to prevent 400 Bad Request
