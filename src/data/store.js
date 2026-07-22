@@ -223,6 +223,9 @@ const TABLE_COLUMNS = {
     "tax",
     "total",
     "due_date",
+    "paid_date",
+    "payment_method",
+    "stripe_session_id",
     "notes",
     "created_at",
     "updated_at"
@@ -1488,6 +1491,18 @@ class DataStore {
       record.dueDate = record.due_date;
       delete record.due_date;
     }
+    if (record.paid_date !== undefined) {
+      record.paidDate = record.paid_date;
+      delete record.paid_date;
+    }
+    if (record.payment_method !== undefined) {
+      record.paymentMethod = record.payment_method;
+      delete record.payment_method;
+    }
+    if (record.stripe_session_id !== undefined) {
+      record.stripeSessionId = record.stripe_session_id;
+      delete record.stripe_session_id;
+    }
     if (record.cost_price !== undefined) {
       record.costPrice = parseFloat(record.cost_price);
       delete record.cost_price;
@@ -1841,6 +1856,18 @@ class DataStore {
     if (record.dueDate !== undefined) {
       record.due_date = record.dueDate;
       delete record.dueDate;
+    }
+    if (record.paidDate !== undefined) {
+      record.paid_date = record.paidDate;
+      delete record.paidDate;
+    }
+    if (record.paymentMethod !== undefined) {
+      record.payment_method = record.paymentMethod;
+      delete record.paymentMethod;
+    }
+    if (record.stripeSessionId !== undefined) {
+      record.stripe_session_id = record.stripeSessionId;
+      delete record.stripeSessionId;
     }
     if (record.costPrice !== undefined) {
       record.cost_price = record.costPrice;
