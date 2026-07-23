@@ -2,6 +2,7 @@ import { store } from '../../data/store.js';
 import { escapeHTML } from '../../utils/security.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 
 export function renderCustomerPortal(container, params) {
   const token = params.token;
@@ -1447,9 +1448,16 @@ export function renderCustomerPortal(container, params) {
                     <!-- PDF print preview uploader button -->
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:28px; padding-top:20px; border-top:1px solid var(--border-color);">
                       <span style="font-size:11px; color:var(--text-tertiary);">Job Reference: ${escapeHTML(invoice.jobReference || invoice.jobNumber || 'Main Dispatch')}</span>
-                      <button class="btn btn-secondary btn-print-invoice" data-id="${invoice.id}" style="display:flex; align-items:center; gap:6px;">
-                        <span class="material-icons-outlined" style="font-size:18px;">download</span> Export PDF Report
-                      </button>
+                      <div style="display:flex; gap:8px;">
+                        <button class="btn btn-secondary btn-print-invoice" data-id="${invoice.id}" style="display:flex; align-items:center; gap:6px;">
+                          <span class="material-icons-outlined" style="font-size:18px;">download</span> Export PDF Report
+                        </button>
+                        ${invoice.status !== 'Paid' && paymentsEnabledFor('invoice') ? `
+                          <button class="btn btn-primary btn-portal-pay" data-id="${invoice.id}" style="display:flex; align-items:center; gap:6px;">
+                            <span class="material-icons-outlined" style="font-size:18px;">credit_card</span> Pay Now
+                          </button>
+                        ` : ''}
+                      </div>
                     </div>
 
                   </div>
@@ -1905,6 +1913,24 @@ export function renderCustomerPortal(container, params) {
             showPrintPreview({ type: 'invoice', data: invoice });
           });
         }
+        return;
+      }
+
+      // Invoice "Pay Now" → Stripe checkout (customer-facing)
+      const payBtn = e.target.closest('.btn-portal-pay');
+      if (payBtn) {
+        const invoice = store.getById('invoices', payBtn.dataset.id);
+        if (!invoice) return;
+        const original = payBtn.innerHTML;
+        payBtn.disabled = true;
+        payBtn.innerHTML = `<span class="material-icons-outlined" style="font-size:18px;">hourglass_empty</span> Redirecting…`;
+        createInvoicePaymentLink(invoice)
+          .then(({ url }) => { window.location.href = url; })
+          .catch(err => {
+            showToast(err.message || 'Could not start payment', 'error');
+            payBtn.disabled = false;
+            payBtn.innerHTML = original;
+          });
         return;
       }
 
