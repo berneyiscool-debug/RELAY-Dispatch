@@ -1,21 +1,19 @@
 // ============================================
 // RELAY — v1.3 FEATURE FLAGS
 // ============================================
-// Feature visibility is driven by BUILD MODE so in-development v1.3 work is fully
-// testable in the app you run, without leaking to customers:
-//   • Dev server (npm run dev / electron:dev)      → MODE 'development' → ON
-//   • Your test builds (electron:build)            → MODE 'production'  → ON
-//   • Customer patch build (electron:build:stable) → MODE 'stable'      → DARK
-// Only a `--mode stable` build hides the features; every build you test in shows
-// them. In a stable build a device can still opt in with e.g.:
+// You develop/test in the dev env (vite dev server → import.meta.env.DEV === true),
+// so in-development v1.3 features are ON there — fully testable, no setup. The
+// packaged electron build (the finished customer product, DEV === false) stays
+// DARK, so a 1.2.x patch release never ships half-built v1.3 work. A packaged
+// build can still opt a device in for a demo:
 //   localStorage.setItem('relay_beta_payments', '1'); location.reload();
 // When a feature is release-ready for v1.3.0, promote it to `true` (like maps).
 
-let VISIBLE = true;
-try { VISIBLE = import.meta.env.MODE !== 'stable'; } catch { VISIBLE = true; }
+let IS_DEV = false;
+try { IS_DEV = !!import.meta.env.DEV; } catch { IS_DEV = false; }
 
 const on = (key) => {
-  if (VISIBLE) return true;                        // on in dev + normal builds
+  if (IS_DEV) return true;                          // on in your dev/test env
   try { return localStorage.getItem(key) === '1'; } catch { return false; }
 };
 
