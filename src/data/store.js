@@ -404,21 +404,17 @@ const TABLE_COLUMNS = {
   schedule: [
     "id",
     "company_id",
-    "type",
     "job_id",
     "job_number",
+    "title",
     "technician_id",
     "technician_name",
-    "date",
-    "start_time",
-    "finish_time",
-    "hours",
+    "color",
+    "day_offset",
     "start_hour",
     "end_hour",
-    "notes",
-    "status",
-    "task_id",
-    "task_name",
+    "customer_name",
+    "site_address",
     "created_at",
     "updated_at"
   ]
@@ -1427,12 +1423,11 @@ class DataStore {
       if (record.job_number !== undefined) { record.jobNumber = record.job_number; delete record.job_number; }
       if (record.technician_id !== undefined) { record.technicianId = record.technician_id; delete record.technician_id; }
       if (record.technician_name !== undefined) { record.technicianName = record.technician_name; delete record.technician_name; }
-      if (record.start_time !== undefined) { record.startTime = record.start_time; delete record.start_time; }
-      if (record.finish_time !== undefined) { record.finishTime = record.finish_time; delete record.finish_time; }
       if (record.start_hour !== undefined) { record.startHour = record.start_hour != null ? parseFloat(record.start_hour) : null; delete record.start_hour; }
       if (record.end_hour !== undefined) { record.endHour = record.end_hour != null ? parseFloat(record.end_hour) : null; delete record.end_hour; }
-      if (record.task_id !== undefined) { record.taskId = record.task_id; delete record.task_id; }
-      if (record.task_name !== undefined) { record.taskName = record.task_name; delete record.task_name; }
+      if (record.day_offset !== undefined) { record.dayOffset = record.day_offset; delete record.day_offset; }
+      if (record.customer_name !== undefined) { record.customerName = record.customer_name; delete record.customer_name; }
+      if (record.site_address !== undefined) { record.siteAddress = record.site_address; delete record.site_address; }
     }
 
     if (record.line_items !== undefined) {
@@ -1615,6 +1610,9 @@ class DataStore {
         if (parsed.startHour !== undefined && parsed.startHour !== null) record.startHour = parsed.startHour;
         if (parsed.endHour !== undefined && parsed.endHour !== null) record.endHour = parsed.endHour;
         if (parsed.dayOffset !== undefined && parsed.dayOffset !== null) record.dayOffset = parsed.dayOffset;
+        if (parsed.type !== undefined) record.type = parsed.type;
+        if (parsed.status !== undefined) record.status = parsed.status;
+        if (parsed.notes !== undefined) record.notes = parsed.notes;
       } catch (e) {
         console.error(e);
       }
@@ -2027,16 +2025,43 @@ class DataStore {
     }
 
     if (collection === 'schedule') {
+      const meta = {
+        taskId: record.taskId || null,
+        taskName: record.taskName || null,
+        color: record.color || null,
+        date: record.date || null,
+        startTime: record.startTime || null,
+        finishTime: record.finishTime || null,
+        hours: record.hours !== undefined ? record.hours : null,
+        startHour: record.startHour !== undefined ? record.startHour : null,
+        endHour: record.endHour !== undefined ? record.endHour : null,
+        dayOffset: record.dayOffset !== undefined ? record.dayOffset : null,
+        type: record.type || null,
+        status: record.status || null,
+        notes: record.notes || null
+      };
+
       record.job_id = record.jobId || null; delete record.jobId;
       record.job_number = record.jobNumber || null; delete record.jobNumber;
       record.technician_id = record.technicianId || null; delete record.technicianId;
       record.technician_name = record.technicianName || null; delete record.technicianName;
-      record.start_time = record.startTime || null; delete record.startTime;
-      record.finish_time = record.finishTime || null; delete record.finishTime;
       record.start_hour = record.startHour !== undefined ? record.startHour : null; delete record.startHour;
       record.end_hour = record.endHour !== undefined ? record.endHour : null; delete record.endHour;
-      record.task_id = record.taskId || null; delete record.taskId;
-      record.task_name = record.taskName || null; delete record.taskName;
+      record.day_offset = record.dayOffset !== undefined ? record.dayOffset : null; delete record.dayOffset;
+      record.customer_name = record.customerName || null; delete record.customerName;
+      record.site_address = record.siteAddress || null; delete record.siteAddress;
+      
+      record.color = '__meta__:' + JSON.stringify(meta);
+      
+      delete record.date;
+      delete record.type;
+      delete record.status;
+      delete record.notes;
+      delete record.startTime;
+      delete record.finishTime;
+      delete record.hours;
+      delete record.taskId;
+      delete record.taskName;
     }
 
     // Filter out columns not in schema to prevent 400 Bad Request

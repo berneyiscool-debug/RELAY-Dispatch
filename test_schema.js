@@ -5,7 +5,7 @@ dotenv.config();
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
 
 async function test() { 
-  const { data, error } = await supabase.from('schedule').select('*').limit(1); 
+  const { data, error } = await supabase.from('schedule').select('date').limit(1); 
   console.log(JSON.stringify({data, error}, null, 2)); 
 } 
 
