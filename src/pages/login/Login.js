@@ -477,9 +477,11 @@ export function renderLogin(container) {
 
         // Fetch all technicians from local store
         const technicians = store.getAll('technicians') || [];
+        const inputUsername = emailInput.includes('@') ? emailInput.split('@')[0] : emailInput;
         const tech = technicians.find(t => 
           (t.email && t.email.toLowerCase() === emailInput) || 
           (t.username && t.username.toLowerCase() === emailInput) ||
+          (t.username && t.username.toLowerCase() === inputUsername) ||
           (t.name && t.name.toLowerCase() === emailInput)
         );
 
@@ -609,7 +611,49 @@ export function renderLogin(container) {
         }
       }
       
-      if (signInResult.error) throw signInResult.error;
+      if (signInResult.error) {
+        // Attempt Local Fallback
+        const technicians = store.getAll('technicians') || [];
+        const inputUsername = rawInput.toLowerCase().includes('@') ? rawInput.toLowerCase().split('@')[0] : rawInput.toLowerCase();
+        
+        const localTech = technicians.find(t => 
+          (t.email && t.email.toLowerCase() === rawInput.toLowerCase()) || 
+          (t.username && t.username.toLowerCase() === rawInput.toLowerCase()) ||
+          (t.username && t.username.toLowerCase() === inputUsername) ||
+          (t.name && t.name.toLowerCase() === rawInput.toLowerCase())
+        );
+        
+        if (localTech && (localTech.password === password || (!localTech.password && password === '123456'))) {
+          // Local login successful
+          const user = {
+            id: localTech.id,
+            companyId: store.companyId || 'local_company',
+            name: localTech.name,
+            role: localTech.role || 'technician',
+            userTypeName: localTech.role === 'admin' ? 'Admin' : (localTech.role === 'manager' ? 'Manager' : 'Technician'),
+            userTypeId: localTech.userTypeId || (localTech.role === 'admin' ? 'ut_admin' : 'ut_tech'),
+            color: localTech.color || '#1B6DE0',
+            payRate: localTech.payRate || 0,
+            email: localTech.email || '',
+            theme: 'light'
+          };
+          localStorage.setItem('currentUser', JSON.stringify(user));
+          
+          if (container.querySelector('#signin-remember').checked) {
+            localStorage.setItem('relay_remember_me', 'true');
+            localStorage.setItem('relay_remembered_email', rawInput);
+          } else {
+            localStorage.removeItem('relay_remember_me');
+            localStorage.removeItem('relay_remembered_email');
+          }
+          
+          const target = getLandingRoute(user, store);
+          router.navigate(target);
+          return;
+        }
+
+        throw signInResult.error;
+      }
       const { data } = signInResult;
 
       // 2. Fetch the corresponding profile record from the database

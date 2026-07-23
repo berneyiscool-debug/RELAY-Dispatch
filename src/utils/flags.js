@@ -1,21 +1,21 @@
 // ============================================
 // RELAY — v1.3 FEATURE FLAGS
 // ============================================
-// In-development v1.3 features are ON in dev builds so they're fully testable in
-// the app (the Vite dev server — both `npm run dev` and `electron:dev` — sets
-// import.meta.env.DEV === true). PACKAGED releases (`electron:build`) are DEV=false,
-// so the features stay dark there unless a device explicitly opts in, meaning a
-// 1.2.x bugfix release still can't leak half-built work to installed clients.
-//
-// To preview a feature inside a production build, opt in per device with e.g.:
+// Feature visibility is driven by BUILD MODE so in-development v1.3 work is fully
+// testable in the app you run, without leaking to customers:
+//   • Dev server (npm run dev / electron:dev)      → MODE 'development' → ON
+//   • Your test builds (electron:build)            → MODE 'production'  → ON
+//   • Customer patch build (electron:build:stable) → MODE 'stable'      → DARK
+// Only a `--mode stable` build hides the features; every build you test in shows
+// them. In a stable build a device can still opt in with e.g.:
 //   localStorage.setItem('relay_beta_payments', '1'); location.reload();
 // When a feature is release-ready for v1.3.0, promote it to `true` (like maps).
 
-let IS_DEV = false;
-try { IS_DEV = !!import.meta.env.DEV; } catch { IS_DEV = false; }
+let VISIBLE = true;
+try { VISIBLE = import.meta.env.MODE !== 'stable'; } catch { VISIBLE = true; }
 
 const on = (key) => {
-  if (IS_DEV) return true;                        // testable in every dev/preview run
+  if (VISIBLE) return true;                        // on in dev + normal builds
   try { return localStorage.getItem(key) === '1'; } catch { return false; }
 };
 
