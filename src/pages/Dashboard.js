@@ -3303,6 +3303,12 @@ async function enhanceRouteSummaryWidget() {
 }
 
 function renderWeatherForecast(data, item) {
+  // v1.3 #4 (flag-gated): real forecast for the dispatch office. Renders a sync
+  // placeholder, then fills in live data after paint (fails soft to the mock look).
+  if (FLAGS.weather) {
+    setTimeout(enhanceWeatherWidget, 0);
+    return `<div class="weather-real" style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:12px;">Loading forecast…</div>`;
+  }
   return `
     <div style="display:flex; align-items:center; gap:16px; height:100%; padding:4px;">
       <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;">
@@ -3318,6 +3324,51 @@ function renderWeatherForecast(data, item) {
       </div>
     </div>
   `;
+}
+
+// Real weather for the dispatch office (v1.3 maps/weather). Fails soft into a
+// text note (offline, no office geo) — never breaks the widget.
+async function enhanceWeatherWidget() {
+  const hosts = [...document.querySelectorAll('.dash-widget[data-id="weather-forecast"] .weather-real')]
+    .filter(h => !h.dataset.wxMounted);
+  if (!hosts.length) return;
+  hosts.forEach(h => h.dataset.wxMounted = '1');
+
+  const { getOfficeForecast, dayLabel } = await import('../utils/weather.js');
+  const fc = await getOfficeForecast(6);
+  const fail = (msg) => hosts.forEach(h => { h.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:12px;text-align:center;padding:8px;">${msg}</div>`; });
+  if (!fc) return fail('Set a company office address to see the local forecast.');
+
+  const c = fc.current;
+  const severe = c.severe || fc.daily.some(d => d.severe);
+  const strip = fc.daily.slice(0, 5).map(d => `
+    <div style="flex:1;text-align:center;min-width:0;">
+      <div style="font-size:10px;color:var(--text-tertiary);white-space:nowrap;">${dayLabel(d.date)}</div>
+      <div style="font-size:16px;line-height:1.3;">${d.emoji}</div>
+      <div style="font-size:10px;font-weight:600;">${d.maxC}°<span style="color:var(--text-tertiary);font-weight:400;">/${d.minC}°</span></div>
+    </div>`).join('');
+
+  const html = `
+    <div style="height:100%;display:flex;flex-direction:column;padding:4px 6px;gap:6px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span class="material-icons-outlined" style="font-size:38px;color:#f59e0b;flex-shrink:0;">${c.icon}</span>
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;align-items:baseline;gap:6px;">
+            <span style="font-size:22px;font-weight:800;color:var(--text-primary);">${c.tempC}°</span>
+            <span style="font-size:12px;font-weight:600;color:var(--color-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.text}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary);">Feels ${c.feelsLikeC}° · Wind ${c.windKph} km/h${c.humidity != null ? ` · ${c.humidity}% RH` : ''}</div>
+          ${fc.label ? `<div style="font-size:10px;color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlSafe(fc.label)}</div>` : ''}
+        </div>
+        ${severe ? `<span title="Severe weather in the forecast" style="flex-shrink:0;display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--color-danger);background:rgba(239,68,68,.12);padding:3px 6px;border-radius:12px;"><span class="material-icons-outlined" style="font-size:13px;">warning</span></span>` : ''}
+      </div>
+      <div style="display:flex;gap:2px;border-top:1px solid var(--border-color);padding-top:6px;margin-top:auto;">${strip}</div>
+    </div>`;
+  hosts.forEach(h => { h.innerHTML = html; });
+}
+
+function escapeHtmlSafe(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function renderNotificationsWidget(data, item) {
