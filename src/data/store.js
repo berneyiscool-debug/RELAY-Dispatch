@@ -2478,6 +2478,14 @@ class DataStore {
         endpoint: 'https://api.openai.com/v1/chat/completions',
         model: 'gpt-4o-mini',
         systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
+      },
+      // Data platform (Phase 1): contribute anonymized, aggregated industry statistics.
+      // AU opt-out default — enabled unless the user turns it off (EU would flip to opt-in,
+      // gated by jurisdiction). Never sends PII; see docs/DATA_PLATFORM_STRATEGY.md.
+      dataContribution: {
+        enabled: true,
+        consentedAt: null,   // ISO timestamp set when the user changes the toggle
+        consentVersion: null // e.g. 'v1' — bump when disclosure copy changes
       }
     };
 
@@ -2490,6 +2498,7 @@ class DataStore {
       // Ensure sub-objects merge safely
       merged.documentTheme = { ...defaultSettings.documentTheme, ...this.companySettings.documentTheme };
       merged.ai = { ...defaultSettings.ai, ...this.companySettings.ai };
+      merged.dataContribution = { ...defaultSettings.dataContribution, ...this.companySettings.dataContribution };
       return merged;
     }
 

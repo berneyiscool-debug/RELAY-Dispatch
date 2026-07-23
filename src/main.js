@@ -15,6 +15,7 @@ const initialTheme = localStorage.getItem('simpro_theme') || 'light';
 applyTheme(initialTheme);
 import { seedData } from './data/seed.js';
 import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenanceEngine.js';
+import { scheduleLocalContribution } from './utils/contribSync.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
@@ -789,6 +790,9 @@ if (store.initPromise && typeof store.initPromise.then === 'function') {
   store.initPromise
     .then(() => {
       router.resolve();
+      // Data platform: best-effort weekly local aggregate contribution (dark-flagged,
+      // consent-gated, local tenants only). Never blocks boot.
+      scheduleLocalContribution();
     })
     .catch((err) => {
       console.error('Failed to initialize data store:', err);
@@ -796,5 +800,6 @@ if (store.initPromise && typeof store.initPromise.then === 'function') {
     });
 } else {
   router.resolve();
+  scheduleLocalContribution();
 }
 

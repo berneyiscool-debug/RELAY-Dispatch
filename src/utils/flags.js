@@ -18,4 +18,6 @@ export const FLAGS = {
   payments: on('relay_beta_payments'), // Stripe pay-online
   email:    on('relay_beta_email'),    // email sending + domain settings
   sms:      on('relay_beta_sms'),      // SMS confirmations
+  contrib:  true,                      // anonymized aggregate data contribution (data platform) — ON for dev/testing
+
 };

@@ -249,11 +249,15 @@ The single step that keeps this legitimate.
 3. **Sell** — quarterly report from Layer 4, then licensed API. (Once density clears k-threshold.)
 4. **Marketplace** — later, once regional density + consumer-consent design are ready.
 
-## Open decisions
+## Decisions
 
-- Consent **default**: opt-out (bigger dataset) vs opt-in (safer/trust).
-- **k-threshold** starting value (proposed 5) and how it varies by region density.
-- First **launch region(s)** and the initial allowlist.
-- Benchmarking as a **new top tier** vs an **add-on** to existing cloud tier.
+**Resolved 2026-07-22:**
+- Consent **default: opt-out + prominent disclosure**, defensible because the EU is geo-gated out
+  (per-jurisdiction: EU would flip to opt-in).
+- First **launch region: AU** (allowlist `['AU']`), aligned with existing AU-only geocoding.
+- Contribution **cadence: weekly**.
+- **k-threshold** deferred to Phase 2 (start at 5).
+
+**Still open:**
+- Benchmarking as a **new top tier** vs an **add-on** to existing cloud tier (Phase 2).
 - Which exact metrics land in **keep** vs **sell** (Section 5) at launch.
-- Contribution **cadence** (weekly vs monthly) for local clients.

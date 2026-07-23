@@ -7,6 +7,31 @@ legally and cheaply.*
 
 Parent strategy: [DATA_PLATFORM_STRATEGY.md](DATA_PLATFORM_STRATEGY.md).
 
+### Build status (2026-07-22)
+| Ticket | Status | Files |
+|---|---|---|
+| 0 Flag | ✅ | `src/utils/flags.js` |
+| 1 Consent | ✅ | `src/data/store.js` + Settings "Data & Privacy" tab in `src/pages/Settings.js` |
+| 2 Table | ✅ | `supabase/migrations/007_contributed_metrics.sql` |
+| 3 Metric module + PII test | ✅ | `src/utils/contribMetrics.js` (+ `.test.js`, 8/8) |
+| 4 Local sync job | ✅ | `src/utils/contribSync.js`, wired in `src/main.js` |
+| 5 Ingest function | ✅ | `supabase/functions/contrib-ingest/index.ts` |
+| 6 Cloud cron | ✅ | `supabase/functions/contrib-aggregate-cloud/index.ts` |
+| 7 Geo-gate | ✅ | `src/utils/jurisdiction.js` (+ `.test.js`) — onboarding soft-block UI still to wire |
+
+**Phase 1 core complete and browser-verified** (flag dark by default; tab renders heading +
+toggle + disclosure + region banner; toggle persists `enabled`/`consentedAt`/`consentVersion` via
+store.saveSettings; metric engine runs with zero PII leaks at runtime). Remaining niceties:
+first-run disclosure modal and the non-AU onboarding soft-block (Ticket 7 UI).
+
+**Deploy notes (both functions need this):**
+- `contrib-ingest`: deploy with `verify_jwt = false` (local clients are unauthenticated). Set
+  `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (standard function env).
+- `contrib-aggregate-cloud`: `verify_jwt = false`; set `CONTRIB_CRON_SECRET` and pass it as the
+  `x-cron-secret` header; schedule weekly via Supabase cron / pg_cron.
+- No `supabase/config.toml` exists in the repo, so set `verify_jwt` per-function via the
+  dashboard or add a full config.toml when one is introduced.
+
 **Why this is worth it:** data revenue is what subsidizes keeping RELAY free/cheap. Including
 local users (not just paying cloud tenants) is the whole point — it's what makes the eventual
 dataset big and dense enough to matter.
@@ -35,7 +60,7 @@ releases never leak this.
 - Extend company settings with:
   ```js
   dataContribution: {
-    enabled: false,          // OPEN DECISION: opt-out vs opt-in default (see strategy)
+    enabled: true,           // AU opt-out default (resolved 2026-07-22); EU would flip to opt-in
     consentedAt: null,       // ISO timestamp when toggled on
     consentVersion: null,    // e.g. 'v1' — bump when disclosure text changes
   }
@@ -163,8 +188,12 @@ client+server), and the onboarding gate exists behind the flag.
 0 → 1 → 2 → 3 (with tests) → 5 → 4 → 6 → 7.
 Ship 3 + its PII test before anything sends data anywhere.
 
-## Carries into these OPEN DECISIONS (from strategy)
-- Consent default (opt-out vs opt-in) — affects Ticket 1 default.
-- Cadence (weekly vs monthly) — affects Ticket 4.
-- First allowlist region(s) — affects Ticket 7.
-- k-threshold — deferred to Phase 2.
+## Resolved decisions (2026-07-22)
+- **Launch region: AU first** — allowlist starts `['AU']`. Coherent with the existing AU-only
+  geocoding filter, and AU's regime is permissive enough for de-identified aggregates that the
+  opt-out default below is defensible.
+- **Consent default: opt-out + prominent disclosure** — maximizes dataset to subsidize keeping
+  the app cheap/free. Defensible *because* we geo-gate the EU out; EU (if ever added) flips to
+  opt-in per-jurisdiction.
+- **Cadence: weekly** — affects Ticket 4 last-run check.
+- **k-threshold: deferred to Phase 2** (start at 5 when benchmark publishing lands).

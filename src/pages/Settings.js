@@ -12,6 +12,8 @@ import { seedMinimalData, seedData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
+import { FLAGS } from '../utils/flags.js';
+import { evaluateContributionEligibility } from '../utils/jurisdiction.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -440,6 +442,7 @@ export function renderSettings(container) {
         { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
         { id: 'ai_assistant', label: 'AI Assistant', disabled: isAIAssistantDisabled, tooltip: 'Requires Cloud Account' },
+        ...(FLAGS.contrib ? [{ id: 'data_privacy', label: 'Data & Privacy' }] : []),
         { id: 'system', label: 'System Options' }
       ]
     },
@@ -664,6 +667,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'cost_centers') {
       renderCostCentersTab(tc);
+      return;
+    }
+
+    if (activeTab === 'data_privacy') {
+      renderDataPrivacyTab(tc);
       return;
     }
 
@@ -4553,6 +4561,113 @@ export function renderSettings(container) {
     }
 
     renderMarkup();
+  }
+
+  function renderDataPrivacyTab(tc) {
+    const CONSENT_VERSION = 'v1';
+    const s = store.getSettings();
+    const dc = s.dataContribution || { enabled: true };
+    const enabled = dc.enabled !== false;
+    const elig = evaluateContributionEligibility(s);
+
+    const eligBanner = elig.allowed
+      ? `<div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-info); display:flex; align-items:center; gap:8px;">
+           <span class="material-icons-outlined">public</span>
+           <span>Region detected: <strong>${escapeHTML(elig.country)}</strong> — eligible. Contributions ${enabled ? 'are active' : 'are turned off'}.</span>
+         </div>`
+      : `<div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-warning); display:flex; align-items:center; gap:8px;">
+           <span class="material-icons-outlined">info</span>
+           <span>The data platform isn't available in your region yet${elig.country ? ` (${escapeHTML(elig.country)})` : ''}. Nothing is contributed regardless of the toggle below.</span>
+         </div>`;
+
+    tc.innerHTML = `
+      <div style="max-width:820px; display:flex; flex-direction:column; gap:var(--space-lg)">
+        <div class="card">
+          <div class="card-header" style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined" style="color:var(--color-primary)">insights</span>
+            <h4 style="margin:0;">Contribute to Industry Insights</h4>
+          </div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+            ${eligBanner}
+            <p class="text-secondary" style="font-size:var(--font-size-sm); line-height:1.5; margin:0;">
+              Help build anonymized pricing, duration, and demand benchmarks that make every
+              RELAY business — including yours — more competitive. We send <strong>statistics only</strong>:
+              never your customers' names, addresses, contact details, or job notes.
+            </p>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 16px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:var(--border-radius);">
+              <div>
+                <div style="font-weight:600; color:var(--text-primary);">Share anonymized aggregate statistics</div>
+                <div class="text-tertiary" style="font-size:12px; margin-top:2px;">You can turn this off at any time. Changes apply from the next weekly cycle.</div>
+              </div>
+              <label style="position:relative; display:inline-block; width:52px; height:28px; flex:0 0 auto; cursor:pointer;">
+                <input type="checkbox" id="dc-toggle" ${enabled ? 'checked' : ''} style="opacity:0; width:0; height:0;" />
+                <span id="dc-track" style="position:absolute; inset:0; border-radius:999px; transition:.2s; background:${enabled ? 'var(--color-primary)' : 'var(--border-color)'};"></span>
+                <span id="dc-knob" style="position:absolute; top:3px; left:${enabled ? '27px' : '3px'}; width:22px; height:22px; border-radius:50%; background:#fff; transition:.2s; box-shadow:0 1px 3px rgba(0,0,0,0.3);"></span>
+              </label>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+              <div style="background:var(--color-success-bg, rgba(16,185,129,0.08)); border-radius:var(--border-radius); padding:14px;">
+                <div style="font-weight:600; color:var(--color-success, #10B981); display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+                  <span class="material-icons-outlined" style="font-size:18px;">check_circle</span> What we send
+                </div>
+                <ul style="margin:0; padding-left:18px; font-size:12.5px; color:var(--text-secondary); line-height:1.6;">
+                  <li>Median labour rates &amp; call-out fees</li>
+                  <li>Job counts &amp; values by trade and postcode</li>
+                  <li>Quote win rates &amp; material margins</li>
+                  <li>Region as a <strong>postcode</strong> — never a street address</li>
+                </ul>
+              </div>
+              <div style="background:var(--color-danger-bg, rgba(220,38,38,0.06)); border-radius:var(--border-radius); padding:14px;">
+                <div style="font-weight:600; color:var(--color-danger, #DC2626); display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+                  <span class="material-icons-outlined" style="font-size:18px;">block</span> What we never send
+                </div>
+                <ul style="margin:0; padding-left:18px; font-size:12.5px; color:var(--text-secondary); line-height:1.6;">
+                  <li>Customer names, emails, or phone numbers</li>
+                  <li>Street addresses or site details</li>
+                  <li>Job notes, descriptions, or documents</li>
+                  <li>Staff names or pay rates</li>
+                </ul>
+              </div>
+            </div>
+
+            <p class="text-tertiary" style="font-size:11.5px; line-height:1.5; margin:0;">
+              Statistics are aggregated across many businesses before anyone can see them, and are used
+              first to power in-app benchmarks. See the Privacy Policy for full detail.
+              ${dc.consentedAt ? `<br><span style="opacity:0.8;">Last changed: ${new Date(dc.consentedAt).toLocaleString()}</span>` : ''}
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const toggle = tc.querySelector('#dc-toggle');
+    toggle?.addEventListener('change', async (e) => {
+      const on = e.target.checked;
+      const track = tc.querySelector('#dc-track');
+      const knob = tc.querySelector('#dc-knob');
+      if (track) track.style.background = on ? 'var(--color-primary)' : 'var(--border-color)';
+      if (knob) knob.style.left = on ? '27px' : '3px';
+      toggle.disabled = true;
+      try {
+        const settings = store.getSettings();
+        settings.dataContribution = {
+          ...(settings.dataContribution || {}),
+          enabled: on,
+          consentedAt: new Date().toISOString(),
+          consentVersion: CONSENT_VERSION,
+        };
+        await store.saveSettings(settings);
+        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+        showToast(on ? 'Thanks — you\'re contributing to industry insights' : 'Data contribution turned off', 'success');
+      } catch (err) {
+        console.error('Error saving data contribution preference:', err);
+        showToast('Failed to save preference: ' + (err.message || err), 'error');
+      } finally {
+        toggle.disabled = false;
+      }
+    });
   }
 
   function renderFolderSyncTab(tc) {
