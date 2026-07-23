@@ -27,11 +27,13 @@ export function paymentsEnabled() {
   return !!(FLAGS.payments && isCloudUser());
 }
 
-// Is online payment switched on for this document type? (invoices by default)
+// Is online payment switched on for this document type? Requires the admin to have
+// ticked "Payments configured & live" in Settings → Payments (so we never show a
+// Pay button before Stripe is actually set up).
 export function paymentsEnabledFor(docType = 'invoice') {
   if (!paymentsEnabled()) return false;
   const cfg = paymentsSettings();
-  if (cfg.connected === false) return false;
+  if (!cfg.connected) return false;
   const per = cfg.enabledFor;
   return !per || per[docType] !== false; // default on once connected
 }
