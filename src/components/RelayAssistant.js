@@ -15,6 +15,7 @@ import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAG
 import { loadUserMemory, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
 import { FLAGS } from '../utils/flags.js';
 import { hasMapsAction, runMapsActions } from '../utils/deputyMaps.js';
+import { hasWeatherAction, runWeatherActions } from '../utils/deputyWeather.js';
 
 let panel = null;
 let onStateChange = null;
@@ -889,22 +890,29 @@ async function callAIEngine() {
 
   const reply = await dispatchChat(messages, ai, ai.model || 'deepseek-chat');
 
-  // Maps actions can't be answered in one turn: they need real drive-time data
-  // from the routing service. Compute it, then feed the result back so Deputy
-  // phrases the final answer with actual numbers instead of an empty tag.
+  // Some actions can't be answered in one turn: they need real external data
+  // (drive times from the routing service, live forecasts). Fetch it, then feed
+  // the result back so Deputy phrases the final answer with real numbers instead
+  // of an empty tag.
+  let externalData = '';
   if (FLAGS.maps && hasMapsAction(reply)) {
     const routeData = await runMapsActions(reply);
-    if (routeData) {
-      const followup = [
-        { role: 'system', content: systemPrompt },
-        ...chatHistory,
-        { role: 'assistant', content: reply },
-        { role: 'user', content: `[ROUTE SERVICE RESULTS]\n${routeData}\n\nUsing only these results, answer my previous question concisely and naturally. Report the stop order, drive times and totals as given. Do NOT emit any action tags.` }
-      ];
-      const finalReply = await dispatchChat(followup, ai, ai.model || 'deepseek-chat');
-      pushAssistant(finalReply);
-      return parseAndExecuteActions(finalReply);
-    }
+    if (routeData) externalData += (externalData ? '\n\n' : '') + routeData;
+  }
+  if (FLAGS.weather && hasWeatherAction(reply)) {
+    const wxData = await runWeatherActions(reply);
+    if (wxData) externalData += (externalData ? '\n\n' : '') + wxData;
+  }
+  if (externalData.trim()) {
+    const followup = [
+      { role: 'system', content: systemPrompt },
+      ...chatHistory,
+      { role: 'assistant', content: reply },
+      { role: 'user', content: `[LIVE SERVICE RESULTS]\n${externalData}\n\nUsing only these results, answer my previous question concisely and naturally. Report the stop order, drive times, totals and forecast details as given. Do NOT emit any action tags.` }
+    ];
+    const finalReply = await dispatchChat(followup, ai, ai.model || 'deepseek-chat');
+    pushAssistant(finalReply);
+    return parseAndExecuteActions(finalReply);
   }
 
   pushAssistant(reply);
@@ -1113,6 +1121,10 @@ Routing & Drive Times (live Google Maps data):
 - You have access to real driving distances, ETAs and route optimisation. When the user asks about the best order to visit jobs, a technician's route/run for a day, or the drive time between two places, emit ONE of these tags and STOP — the routing service will compute the real numbers and hand them back to you to phrase the final answer. Never invent drive times or distances yourself.
 - Best visit order + ETAs for a technician's day: [ACTION: ROUTE_PLAN, {"technicianName": "John Doe", "date": "2026-07-25"}] (technicianName optional = whole team; date accepts "today"/"tomorrow" or YYYY-MM-DD — resolve relative dates using the Current Local Date above).
 - Drive time between two points: [ACTION: DRIVE_TIME, {"from": "office", "to": "#1005"}] — each of from/to may be "office", a job number like "#1005", a customer name, or a literal address.
+` : ''}${FLAGS.weather ? `
+Weather (live forecast data):
+- You can answer weather questions for the office or any job site. When the user asks about weather/rain/conditions/temperature at a place or on a day, emit this tag and STOP — the forecast service returns real data for you to phrase the answer. Never invent forecasts.
+- [ACTION: WEATHER_LOOKUP, {"location": "#1005", "date": "tomorrow"}] — location may be "office", a job number, a customer name, or a literal address (omit for the office); date accepts "today"/"tomorrow" or YYYY-MM-DD within the next 7 days (resolve relative dates using the Current Local Date above).
 ` : ''}
 Always perform requested actions using action tags. Do not state you are unable to modify data.`;
 }
