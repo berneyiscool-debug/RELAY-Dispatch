@@ -49,17 +49,15 @@
   color: #ffffff;
 }
 
-/* Secondary Button (Frosted premium glass) */
+/* Secondary Button (flat, opaque) */
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.65);
+  background: #ffffff;
   color: var(--text-primary);
   border: 1px solid rgba(0, 0, 0, 0.08);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--bg-color);
   border-color: rgba(0, 0, 0, 0.16);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   transform: translateY(-1.5px);
@@ -315,7 +313,7 @@ select.badge option {
   border-radius: var(--border-radius); /* 0.5rem standard components */
   font-size: var(--font-size-base);
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.4); /* Translucent white fill */
+  background: var(--card-bg); /* opaque, theme-aware (was translucent glass) */
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   outline: none;
 }
@@ -543,7 +541,7 @@ select.badge option {
   cursor: pointer;
   user-select: none;
   transition: color var(--transition-fast);
-  background: rgba(255, 255, 255, 0.2); /* Frosted table header */
+  background: var(--bg-color); /* subtle opaque header (was frosted glass) */
 }
 .data-table th:hover {
   color: var(--text-primary);

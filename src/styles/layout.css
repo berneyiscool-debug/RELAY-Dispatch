@@ -537,7 +537,7 @@
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 9999px; /* Premium fully-rounded pill shape */
   font-size: var(--font-size-base);
-  background: rgba(255, 255, 255, 0.65); /* Translucent white fill */
+  background: var(--bg-color); /* opaque recessed field (was translucent glass) */
   color: var(--text-primary);
   outline: none;
   transition: all var(--transition-fast);
@@ -754,7 +754,7 @@
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 9999px; /* Premium fully-rounded pill shape */
   font-size: var(--font-size-sm);
-  background: rgba(255, 255, 255, 0.65); /* Translucent white fill */
+  background: var(--bg-color); /* opaque recessed field (was translucent glass) */
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -782,7 +782,7 @@
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 9999px; /* Match pill design */
   font-size: var(--font-size-base);
-  background: rgba(255, 255, 255, 0.65); /* Translucent white fill */
+  background: var(--bg-color); /* opaque recessed field (was translucent glass) */
   color: var(--text-primary);
   outline: none;
   width: 176px;
