@@ -791,7 +791,7 @@ select.badge option {
 .print-document .pdf-table td { padding: 10px 12px; border-bottom: 1px solid #E4E9F0; font-size: 12px; }
 .print-document .pdf-table tbody tr:last-child td { border-bottom: 2px solid #1E2A3A; }
 .print-document .pdf-table tbody tr:nth-child(even) { background: #F8FAFC; }
-.print-document .pdf-type-tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #E8F1FC; color: #1B6DE0; }
+.print-document .pdf-type-tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #F1F5F9; color: #475569; }
 .print-document .pdf-totals { margin-left: auto; width: 280px; margin-bottom: 32px; }
 .print-document .pdf-total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; color: #5A6B7F; }
 .print-document .pdf-grand-total { border-top: 2px solid #1E2A3A; padding-top: 12px; margin-top: 4px; font-size: 18px; font-weight: 800; color: #1A2332; }
@@ -928,15 +928,15 @@ select.badge option {
 
 /* Dark mode overrides for elements that use hardcoded colors */
 [data-theme-mode="dark"] .btn-primary {
-  background: rgba(130, 180, 230, 0.12) !important;
-  border-color: rgba(130, 180, 230, 0.3) !important;
-  color: #93c5fd !important; /* Soft brilliant cobalt */
+  background: rgba(255, 122, 46, 0.14) !important;
+  border-color: rgba(255, 122, 46, 0.35) !important;
+  color: #FF9A5C !important; /* Soft brand orange */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
 }
 [data-theme-mode="dark"] .btn-primary:hover:not(:disabled) {
-  background: rgba(130, 180, 230, 0.22) !important;
-  border-color: rgba(130, 180, 230, 0.5) !important;
-  color: #bfdbfe !important;
+  background: rgba(255, 122, 46, 0.24) !important;
+  border-color: rgba(255, 122, 46, 0.55) !important;
+  color: #FFB380 !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
 [data-theme-mode="dark"] .btn-secondary {

@@ -161,7 +161,7 @@ export function generateDocument(type, data) {
   const settings = store.getSettings();
   const dt = settings.documentTheme || {
     preset: 'relay',
-    accentColor: '#1B6DE0',
+    accentColor: '#FF5C00',
     headerBg: '#1E2A3A',
     accentTint: '#F8FAFC',
     fontFamily: 'sans-serif',
@@ -190,9 +190,9 @@ export function generateDocument(type, data) {
   const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
   const logoImgHtml = logoUrl 
     ? `<img class="pdf-logo-img" src="${logoUrl}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
-    : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${(settings.name || 'A').charAt(0)}</div>`;
+    : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#FF5C00'}, ${dt.accentColor || '#FF5C00'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${(settings.name || 'A').charAt(0)}</div>`;
 
-  const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#1B6DE0'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Company Name')}</div>`;
+  const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#FF5C00'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Company Name')}</div>`;
 
   const companyHeaderHtml = `
     ${logoImgHtml}
@@ -265,7 +265,7 @@ export function generateDocument(type, data) {
           <strong>Credit Card / Online</strong><br/>
           Pay securely via Stripe Credit Card link.
           <div style="margin-top: 6px;">
-            <a href="#" onclick="alert('Payment link mock: Stripe payment would be loaded here.'); return false;" style="display:inline-block; padding: 4px 10px; background:${dt.accentColor || '#1B6DE0'}; color:white; border-radius:4px; font-weight:600; text-decoration:none; font-size:10px;">Pay Invoice Online</a>
+            <a href="#" onclick="alert('Payment link mock: Stripe payment would be loaded here.'); return false;" style="display:inline-block; padding: 4px 10px; background:${dt.accentColor || '#FF5C00'}; color:white; border-radius:4px; font-weight:600; text-decoration:none; font-size:10px;">Pay Invoice Online</a>
           </div>
         </div>
         <div class="pdf-payment-option pdf-payment-option-direct" style="display: ${dt.paymentDirectTransfer ? 'block' : 'none'};">
@@ -558,7 +558,7 @@ export function formatDate(dateStr) {
 export function getPrintStyles(settings = store.getSettings()) {
   const dt = settings.documentTheme || {
     preset: 'relay',
-    accentColor: '#1B6DE0',
+    accentColor: '#FF5C00',
     headerBg: '#1E2A3A',
     accentTint: '#F8FAFC',
     fontFamily: 'sans-serif'

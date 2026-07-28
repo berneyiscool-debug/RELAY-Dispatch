@@ -415,6 +415,15 @@ const TABLE_COLUMNS = {
     "end_hour",
     "customer_name",
     "site_address",
+    "type",
+    "date",
+    "status",
+    "notes",
+    "start_time",
+    "finish_time",
+    "hours",
+    "task_id",
+    "task_name",
     "created_at",
     "updated_at"
   ]
@@ -1428,6 +1437,10 @@ class DataStore {
       if (record.day_offset !== undefined) { record.dayOffset = record.day_offset; delete record.day_offset; }
       if (record.customer_name !== undefined) { record.customerName = record.customer_name; delete record.customer_name; }
       if (record.site_address !== undefined) { record.siteAddress = record.site_address; delete record.site_address; }
+      if (record.task_id !== undefined) { record.taskId = record.task_id; delete record.task_id; }
+      if (record.task_name !== undefined) { record.taskName = record.task_name; delete record.task_name; }
+      if (record.start_time !== undefined) { record.startTime = record.start_time; delete record.start_time; }
+      if (record.finish_time !== undefined) { record.finishTime = record.finish_time; delete record.finish_time; }
     }
 
     if (record.line_items !== undefined) {
@@ -1613,6 +1626,7 @@ class DataStore {
         if (parsed.type !== undefined) record.type = parsed.type;
         if (parsed.status !== undefined) record.status = parsed.status;
         if (parsed.notes !== undefined) record.notes = parsed.notes;
+        if (parsed.jobTitle !== undefined) record.jobTitle = parsed.jobTitle;
       } catch (e) {
         console.error(e);
       }
@@ -1957,7 +1971,10 @@ class DataStore {
         hours: record.hours || null,
         startHour: record.startHour !== undefined ? record.startHour : null,
         endHour: record.endHour !== undefined ? record.endHour : null,
-        dayOffset: record.dayOffset !== undefined ? record.dayOffset : null
+        dayOffset: record.dayOffset !== undefined ? record.dayOffset : null,
+        type: record.type || null,
+        notes: record.notes || null,
+        jobTitle: record.jobTitle || record.title || null
       };
       record.color = '__meta__:' + JSON.stringify(meta);
     }
@@ -2025,22 +2042,6 @@ class DataStore {
     }
 
     if (collection === 'schedule') {
-      const meta = {
-        taskId: record.taskId || null,
-        taskName: record.taskName || null,
-        color: record.color || null,
-        date: record.date || null,
-        startTime: record.startTime || null,
-        finishTime: record.finishTime || null,
-        hours: record.hours !== undefined ? record.hours : null,
-        startHour: record.startHour !== undefined ? record.startHour : null,
-        endHour: record.endHour !== undefined ? record.endHour : null,
-        dayOffset: record.dayOffset !== undefined ? record.dayOffset : null,
-        type: record.type || null,
-        status: record.status || null,
-        notes: record.notes || null
-      };
-
       record.job_id = record.jobId || null; delete record.jobId;
       record.job_number = record.jobNumber || null; delete record.jobNumber;
       record.technician_id = record.technicianId || null; delete record.technicianId;
@@ -2050,18 +2051,10 @@ class DataStore {
       record.day_offset = record.dayOffset !== undefined ? record.dayOffset : null; delete record.dayOffset;
       record.customer_name = record.customerName || null; delete record.customerName;
       record.site_address = record.siteAddress || null; delete record.siteAddress;
-      
-      record.color = '__meta__:' + JSON.stringify(meta);
-      
-      delete record.date;
-      delete record.type;
-      delete record.status;
-      delete record.notes;
-      delete record.startTime;
-      delete record.finishTime;
-      delete record.hours;
-      delete record.taskId;
-      delete record.taskName;
+      record.task_id = record.taskId || null; delete record.taskId;
+      record.task_name = record.taskName || null; delete record.taskName;
+      record.start_time = record.startTime || null; delete record.startTime;
+      record.finish_time = record.finishTime || null; delete record.finishTime;
     }
 
     // Filter out columns not in schema to prevent 400 Bad Request
@@ -2621,7 +2614,7 @@ class DataStore {
       ],
       documentTheme: {
         preset: 'relay',
-        accentColor: '#1B6DE0',
+        accentColor: '#FF5C00',
         headerBg: '#1E2A3A',
         accentTint: '#F8FAFC',
         fontFamily: 'sans-serif',
