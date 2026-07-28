@@ -8,11 +8,11 @@
   --color-primary-hover: #E05200;
   --color-primary-light: rgba(255, 92, 0, 0.10);
   --color-primary-dark: #2C2C2E;
-  --body-bg: linear-gradient(135deg, #f7f9fb 0%, #eceef0 100%) no-repeat fixed;
+  --body-bg: #f3f5f7; /* flat calm canvas (was glass gradient) */
 
-  /* ---- Sidebar (Level 1 Glass Sidebar) ---- */
-  --sidebar-bg: rgba(255, 255, 255, 0.4); /* 40% white glass */
-  --sidebar-bg-dark: rgba(255, 255, 255, 0.25);
+  /* ---- Sidebar (flat, opaque) ---- */
+  --sidebar-bg: #ffffff; /* opaque (was 40% white glass) */
+  --sidebar-bg-dark: #f3f5f7;
   --sidebar-text: #595f66; /* Secondary slate-gray */
   --sidebar-text-hover: #191c1e; /* On-surface charcoal */
   --sidebar-active-bg: rgba(255, 92, 0, 0.08);
@@ -22,18 +22,18 @@
   --sidebar-transition: 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ---- Top Bar ---- */
-  --topbar-bg: rgba(255, 255, 255, 0.5);
+  --topbar-bg: #ffffff;
   --topbar-height: 45px;
-  --topbar-border: rgba(255, 255, 255, 0.2);
-  --topbar-shadow: 0 8px 32px rgba(72, 83, 103, 0.04);
+  --topbar-border: rgba(16, 24, 40, 0.08);
+  --topbar-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 
   /* ---- Content Area (Arctic White & Level 1 Glass) ---- */
   --content-bg: #f7f9fb; /* Neutral Arctic White base canvas */
   --bg-color: #f1f5f9; /* Slate-100 shade */
-  --card-bg: rgba(255, 255, 255, 0.4); /* Level 1 Glass: 40% white fill */
-  --card-border: rgba(255, 255, 255, 0.2); /* 1px solid border at 20% white opacity */
-  --card-shadow: 0 8px 32px rgba(72, 83, 103, 0.08); /* Ambient soft 8% Slate shadow with 32px blur */
-  --card-shadow-hover: 0 12px 40px rgba(72, 83, 103, 0.12), 0 0 0 1px rgba(255, 92, 0, 0.15);
+  --card-bg: #ffffff; /* opaque flat surface (was 40% white glass) */
+  --card-border: rgba(16, 24, 40, 0.08); /* real 1px hairline */
+  --card-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --card-shadow-hover: 0 4px 12px rgba(16, 24, 40, 0.10); /* no colored halo */
 
   /* ---- Text (High Contrast Charcoal & Slate) ---- */
   --text-primary: #191c1e; /* On-surface charcoal */
@@ -88,11 +88,11 @@
   --line-height: 1.5;
 
   /* ---- Shadows ---- */
-  --shadow-sm: 0 2px 4px rgba(72, 83, 103, 0.02);
-  --shadow: 0 8px 32px rgba(72, 83, 103, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  --shadow-md: 0 8px 32px rgba(72, 83, 103, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  --shadow-lg: 0 12px 40px rgba(72, 83, 103, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --shadow-xl: 0 20px 50px rgba(72, 83, 103, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.07);
+  --shadow-md: 0 2px 6px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 6px 16px rgba(16, 24, 40, 0.10);
+  --shadow-xl: 0 12px 28px rgba(16, 24, 40, 0.12);
 
   /* ---- Transitions ---- */
   --transition-fast: 0.12s ease;

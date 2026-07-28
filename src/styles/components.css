@@ -129,9 +129,8 @@
   transition: box-shadow 0.22s, border-color 0.22s;
 }
 .card:hover {
-  /* lift animation removed */
   box-shadow: var(--card-shadow-hover);
-  border-color: rgba(99, 102, 241, 0.25); /* Subtle Indigo aura highlight */
+  border-color: rgba(16, 24, 40, 0.14); /* quieter: neutral hairline, was indigo aura */
 }
 .card-header {
   display: flex;
@@ -2818,8 +2817,7 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   width: 200%;
   height: 40%;
   background: radial-gradient(ellipse at 50% 100%, rgba(0, 210, 255, 0.05) 0%, transparent 70%);
-  animation: waveMotion 20s linear infinite;
-  opacity: 0.7;
+  opacity: 0.5; /* quieter: static (was animated ocean wave) */
 }
 .ocean-wave-2 {
   position: absolute;
@@ -2828,7 +2826,6 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   width: 200%;
   height: 45%;
   background: radial-gradient(ellipse at 30% 100%, rgba(0, 168, 204, 0.04) 0%, transparent 80%);
-  animation: waveMotion 15s linear infinite reverse;
 }
 .ocean-light-rays {
   position: absolute;
@@ -2838,7 +2835,6 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   height: 100%;
   background: repeating-linear-gradient(105deg, rgba(0, 210, 255, 0.02) 0%, transparent 8%, rgba(0, 210, 255, 0.01) 15%, transparent 22%);
   background-size: 200% 100%;
-  animation: oceanRaysMove 35s linear infinite;
 }
 
 @keyframes waveMotion {
