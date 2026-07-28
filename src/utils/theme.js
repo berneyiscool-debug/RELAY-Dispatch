@@ -18,6 +18,22 @@ export const THEMES = {
   'ballet-pointe': { name: 'Ballet Pointe', mode: 'light' }
 };
 
+// Decorative-theme web fonts load lazily — only when a theme that needs them is
+// applied — so the serif faces aren't downloaded on every boot for the users who
+// never switch to them. (Was a render-blocking @import in components.css.)
+const THEME_FONTS = {
+  'ballet-pointe': 'https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap',
+};
+function ensureThemeFonts(theme) {
+  const href = THEME_FONTS[theme];
+  if (!href) return;
+  const id = 'theme-font-' + theme;
+  if (document.getElementById(id)) return;
+  const link = document.createElement('link');
+  link.id = id; link.rel = 'stylesheet'; link.href = href;
+  document.head.appendChild(link);
+}
+
 export function applyTheme(theme, saveToDatabase = false) {
   if (!theme || !THEMES[theme]) {
     document.documentElement.removeAttribute('data-theme');
@@ -32,6 +48,7 @@ export function applyTheme(theme, saveToDatabase = false) {
   const mode = THEMES[theme].mode;
   document.documentElement.setAttribute('data-theme', theme);
   document.documentElement.setAttribute('data-theme-mode', mode);
+  ensureThemeFonts(theme);
   localStorage.setItem('simpro_theme', theme);
   
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
