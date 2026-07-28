@@ -163,14 +163,20 @@ textarea:focus-visible,
 }
 
 /* ---- Accessibility: honor reduced-motion ----
-   Kills the infinite loops (pulse-glow, ocean-wave) and collapses transitions to
-   near-instant for users who ask the OS to reduce motion. */
+   Intentional, not a blanket kill. Stop looping/decorative animation and
+   smooth-scroll (the real vestibular triggers), but PRESERVE useful state
+   feedback: by restricting the transition set to non-movement properties,
+   transform-based motion becomes instant while colour/opacity/shadow changes
+   still register (just quicker). */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.001ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+  *, *::before, *::after {
+    transition-property: opacity, background-color, color, border-color, fill, stroke, box-shadow !important;
+    transition-duration: 0.15s !important;
   }
 }
 
