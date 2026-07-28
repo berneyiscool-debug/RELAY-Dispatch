@@ -2168,3 +2168,28 @@
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ---- Touch adaptation ----
+   This is a desktop-first Operate tool, so the default layout stays dense for
+   mouse/trackpad (pointer:fine). On touch or stylus devices, grow the key hit
+   targets to the 44px comfort minimum — detected by input method, not screen
+   width, so a touchscreen laptop gets big targets and a mouse never does. */
+@media (pointer: coarse) {
+  .sidebar-nav-item,
+  .sidebar-category-header,
+  .btn,
+  .btn-icon,
+  .topbar-action-btn,
+  .dash-zoom-btn,
+  .relay-question-opt-btn,
+  .dt-pagination button,
+  .data-table th[data-key] {
+    min-height: 44px;
+  }
+  .btn-icon,
+  .topbar-action-btn,
+  .dash-zoom-btn {
+    min-width: 44px;
+  }
+  .sidebar-nav-item { margin-block: 2px; } /* a little separation between stacked targets */
+}
