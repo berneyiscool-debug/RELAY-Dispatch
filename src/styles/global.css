@@ -143,12 +143,47 @@ input, select, textarea, button {
   border: 0;
 }
 
+/* ---- Accessibility: visible keyboard focus ----
+   Many controls set `outline:none`; restore a real, high-visibility focus ring
+   for keyboard users only (:focus-visible), so pointer users don't see it. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--border-radius-sm);
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---- Accessibility: honor reduced-motion ----
+   Kills the infinite loops (pulse-glow, ocean-wave) and collapses transitions to
+   near-instant for users who ask the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ---- Material Icons sizing ---- */
 .material-icons-outlined {
   font-size: 16px;
   vertical-align: middle;
   line-height: 1;
 }
+/* Icons that sit beside a text label are decorative — hide their ligature text
+   from assistive tech at the source so screen readers don't read "receipt_long
+   Invoices". (Icon-only controls must still carry an aria-label/title.) */
+.material-icons-outlined[aria-hidden="true"] { }
 .icon-sm .material-icons-outlined,
 .material-icons-outlined.icon-sm { font-size: 13px; }
 .icon-lg .material-icons-outlined,

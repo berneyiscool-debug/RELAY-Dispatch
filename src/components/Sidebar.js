@@ -110,12 +110,12 @@ export function createSidebar() {
 
       html += `
         <div class="sidebar-category-container" data-category-id="${item.id}">
-          <button class="sidebar-category-header" data-category-id="${item.id}" id="cat-header-${item.id}">
+          <button class="sidebar-category-header" data-category-id="${item.id}" id="cat-header-${item.id}" aria-expanded="${!isCollapsed}">
             <span class="category-chevron">
-              <span class="material-icons-outlined">${isCollapsed ? 'keyboard_arrow_right' : 'expand_more'}</span>
+              <span class="material-icons-outlined" aria-hidden="true">${isCollapsed ? 'keyboard_arrow_right' : 'expand_more'}</span>
             </span>
             <span class="category-icon">
-              <span class="material-icons-outlined">${item.icon}</span>
+              <span class="material-icons-outlined" aria-hidden="true">${item.icon}</span>
             </span>
             <span class="category-label">${item.category}</span>
           </button>
@@ -127,7 +127,7 @@ export function createSidebar() {
         const isChildDisabled = isLocalMode && child.id === 'documents';
         html += `
           <button class="sidebar-nav-item sub-item ${isChildDisabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${isChildDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
-            <span class="nav-icon"><span class="material-icons-outlined">${child.icon}</span></span>
+            <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
             <span class="nav-label">${child.label}</span>
           </button>
         `;
@@ -143,7 +143,7 @@ export function createSidebar() {
       const isItemDisabled = isLocalMode && item.id === 'documents';
       html += `
         <button class="sidebar-nav-item ${isItemDisabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}" ${isItemDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
-          <span class="nav-icon"><span class="material-icons-outlined">${item.icon}</span></span>
+          <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
           <span class="nav-label">${item.label}</span>
         </button>
       `;
@@ -157,12 +157,12 @@ export function createSidebar() {
     </div>
     <div style="padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.06);">
       <button id="btn-logout" class="sidebar-nav-item" style="width: calc(100% - 16px);">
-        <span class="nav-icon"><span class="material-icons-outlined">logout</span></span>
+        <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
         <span class="nav-label">Logout</span>
       </button>
     </div>
-    <button class="sidebar-toggle" id="sidebar-toggle">
-      <span class="material-icons-outlined" id="sidebar-toggle-icon">chevron_right</span>
+    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Expand or collapse the sidebar">
+      <span class="material-icons-outlined" id="sidebar-toggle-icon" aria-hidden="true">chevron_right</span>
     </button>
   `;
 

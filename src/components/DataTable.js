@@ -65,9 +65,10 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
       const isSorted = sortCol && sortCol.key === col.key;
       const sortClass = isSorted ? ' sorted' : '';
       const sortIcon = isSorted ? (sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more';
-      html += `<th class="${sortClass}" data-key="${col.key}" style="${col.width ? 'width:' + col.width : ''}">
+      const ariaSort = isSorted ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
+      html += `<th class="${sortClass}" data-key="${col.key}" role="button" tabindex="0" aria-sort="${ariaSort}" style="${col.width ? 'width:' + col.width : ''}">
         ${escapeHTML(col.label)}
-        <span class="material-icons-outlined sort-icon">${sortIcon}</span>
+        <span class="material-icons-outlined sort-icon" aria-hidden="true">${sortIcon}</span>
       </th>`;
     });
 
@@ -115,9 +116,9 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
     wrapper.innerHTML = html;
 
-    // Event: sort
+    // Event: sort (pointer + keyboard — headers are role=button, tabindex=0)
     wrapper.querySelectorAll('th[data-key]').forEach(th => {
-      th.addEventListener('click', () => {
+      const doSort = () => {
         const col = columns.find(c => c.key === th.dataset.key);
         if (sortCol === col) {
           sortDir = sortDir === 'asc' ? 'desc' : 'asc';
@@ -126,6 +127,10 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
           sortDir = 'asc';
         }
         render();
+      };
+      th.addEventListener('click', doSort);
+      th.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSort(); }
       });
     });
 

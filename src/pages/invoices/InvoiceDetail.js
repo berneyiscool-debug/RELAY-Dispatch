@@ -638,6 +638,31 @@ export function renderInvoiceDetail(container, { id }) {
     });
 
     container.querySelector('#btn-save-inv')?.addEventListener('click', () => {
+      // Guard the high-stakes status transitions (financial/legal) with a branded
+      // confirm — marking Paid or Void should never be a silent, undo-less save.
+      const newStatus = container.querySelector('#inv-status').value;
+      if (!invoice._statusGuardPassed && (newStatus === 'Void' || newStatus === 'Paid') && newStatus !== invoice.status) {
+        const body = document.createElement('div');
+        body.style.cssText = 'font-size:13px;color:var(--text-secondary);line-height:1.5;';
+        body.textContent = newStatus === 'Void'
+          ? `Void invoice ${invoice.number ? '#' + invoice.number : ''}? This cancels it and can affect your reporting — it isn't easily undone.`
+          : `Mark invoice ${invoice.number ? '#' + invoice.number : ''} as Paid? Tip: use the "Mark Paid" button to also record the payment date and method.`;
+        showModal({
+          title: newStatus === 'Void' ? 'Void this invoice?' : 'Mark invoice as Paid?',
+          content: body,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            {
+              label: newStatus === 'Void' ? 'Void invoice' : 'Mark Paid',
+              className: newStatus === 'Void' ? 'btn-danger' : 'btn-primary',
+              onClick: c => { c(); invoice._statusGuardPassed = true; container.querySelector('#btn-save-inv').click(); }
+            }
+          ]
+        });
+        return;
+      }
+      invoice._statusGuardPassed = false;
+
       const custId = container.querySelector('#inv-customer').value;
       if (!custId) {
         showToast('Please select a customer before saving.', 'error');

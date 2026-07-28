@@ -38,7 +38,7 @@
   /* ---- Text (High Contrast Charcoal & Slate) ---- */
   --text-primary: #191c1e; /* On-surface charcoal */
   --text-secondary: #42474d; /* Secondary slate gray */
-  --text-tertiary: #72787e; /* Muted zinc outline */
+  --text-tertiary: #5e646b; /* Muted zinc — darkened to pass WCAG AA (≥4.5:1) on light surfaces */
   --text-inverse: #ffffff;
 
   /* ---- Status Colors (Soft low-saturation glass pill tags) ---- */

@@ -516,6 +516,7 @@ export async function renderDashboard(container) {
 
   container.innerHTML = `
     <div class="page-content-wrapper dash-page">
+      <h1 class="sr-only">Dashboard</h1>
       <div id="dash-viewport" class="dash-viewport">
         <div id="dash-world" class="dash-world"></div>
         <div id="dash-guides" class="dash-guides"></div>
@@ -2457,8 +2458,8 @@ function renderTodaySchedule(data, item) {
   // Get all schedule blocks for today
   let scheduleBlocks = store.getAll('schedule') || [];
   
-  // Filter by date = today
-  scheduleBlocks = scheduleBlocks.filter(s => s.date === todayStr);
+  // Filter by date = today and only include actual job allocations (excluding leaves, blockouts, meetings)
+  scheduleBlocks = scheduleBlocks.filter(s => s.date === todayStr && s.jobId);
 
   // If user is a technician (i.e. doesn't have full schedule view permission), filter by their technicianId
   const canViewAllSchedule = hasPermission('Schedule', 'view');
@@ -2483,17 +2484,30 @@ function renderTodaySchedule(data, item) {
   if (FLAGS.maps) setTimeout(enhanceTodayScheduleRoutes, 0);
 
   const rowsHtml = scheduleBlocks.map(s => {
-    const j = store.getById('jobs', s.jobId);
+    const isJob = !!s.jobId;
+    const j = isJob ? store.getById('jobs', s.jobId) : null;
     const status = j ? j.status : 'Scheduled';
     const customerName = j ? j.customerName : '';
-    const title = s.jobTitle || (j ? j.title : 'Scheduled Job');
     
-    const timeStr = `${String(s.startHour).padStart(2, '0')}:${String(s.startMinute || 0).padStart(2, '0')}`;
+    let title = '';
+    if (isJob) {
+      title = s.jobTitle || (j ? j.title : 'Scheduled Job');
+    } else {
+      const eventType = s.type ? s.type.charAt(0).toUpperCase() + s.type.slice(1) : 'Schedule Block';
+      title = s.notes || eventType;
+    }
+    
+    const hourInt = Math.floor(s.startHour);
+    const minInt = Math.round((s.startHour - hourInt) * 60);
+    const timeStr = `${String(hourInt).padStart(2, '0')}:${String(minInt).padStart(2, '0')}`;
     const techNameHtml = canViewAllSchedule ? `<span style="opacity: 0.8;"> · ${s.technicianName || 'Unassigned'}</span>` : '';
+    const badgeText = isJob ? status : (s.type ? s.type.toUpperCase() : 'EVENT');
+    const badgeClass = isJob ? (status === 'In Progress' ? 'badge-primary' : 'badge-warning') : 'badge-neutral';
+    const barColor = isJob ? (status === 'In Progress' ? 'var(--color-primary)' : 'var(--color-warning)') : 'var(--text-tertiary)';
 
     return `
-      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="window.location.hash='/jobs/${s.jobId}'">
-        <div style="width:3px;height:35px;border-radius:2px;flex-shrink:0;background:${status==='In Progress'?'var(--color-primary)':'var(--color-warning)'};"></div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);cursor:pointer;" ${isJob ? `onclick="window.location.hash='/jobs/${s.jobId}'"` : ''}>
+        <div style="width:3px;height:35px;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;">
             <span style="font-size:11px;color:var(--text-tertiary);background:var(--border-color);padding:1px 4px;border-radius:3px;font-weight:600;">${timeStr}</span>
@@ -2503,9 +2517,9 @@ function renderTodaySchedule(data, item) {
             ${customerName}${techNameHtml}
           </div>
         </div>
-        <span class="badge ${status==='In Progress'?'badge-primary':'badge-warning'}">${status}</span>
+        <span class="badge ${badgeClass}">${badgeText}</span>
       </div>
-      ${FLAGS.maps && singleTech ? `<div class="ts-drive-slot" data-to-job="${s.jobId}" style="display:none;font-size:11px;color:var(--text-tertiary);padding:2px 0 2px 13px;"></div>` : ''}
+      ${FLAGS.maps && singleTech && isJob ? `<div class="ts-drive-slot" data-to-job="${s.jobId}" style="display:none;font-size:11px;color:var(--text-tertiary);padding:2px 0 2px 13px;"></div>` : ''}
     `;
   }).join('');
 
