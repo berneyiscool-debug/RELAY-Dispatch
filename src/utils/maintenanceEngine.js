@@ -4,26 +4,48 @@ import { supabase } from './supabase.js';
 
 export async function checkMaintenancePlans() {
   const { data: { session } } = await supabase.auth.getSession();
-  const userId = session?.user?.id;
+  const userId = session?.user?.id || store.userId;
   if (!userId) return;
 
-  // Try to acquire the engine lock for 30 seconds
-  const { data: gotLock, error: lockError } = await supabase.rpc('acquire_lock', {
-    p_lock_name: 'maintenance_engine',
-    p_user_id: userId,
-    p_timeout_seconds: 30
-  });
+  const isCloud = store.companyId && !store.companyId.startsWith('acct_');
 
-  if (lockError) {
-    console.warn('Failed to call acquire_lock RPC:', lockError);
-    return;
-  }
+  if (isCloud) {
+    // Try to acquire the engine lock for 30 seconds via Supabase
+    const { data: gotLock, error: lockError } = await supabase.rpc('acquire_lock', {
+      p_lock_name: 'maintenance_engine',
+      p_user_id: userId,
+      p_timeout_seconds: 30
+    });
 
-  // If another browser holds the lock, skip execution
-  if (!gotLock) {
-    console.log('Maintenance engine locked by another process, skipping...');
-    return;
+    if (lockError) {
+      console.warn('Failed to call acquire_lock RPC:', lockError);
+      return;
+    }
+
+    if (!gotLock) {
+      console.log('Maintenance engine locked by another process (cloud), skipping...');
+      return;
+    }
+    
+    await runEngineCore(userId, isCloud);
+  } else {
+    // Local / Offline mode: Use Browser Web Locks API for cross-tab coordination
+    if (navigator.locks) {
+      await navigator.locks.request('maintenance_engine_local', { ifAvailable: true }, async (lock) => {
+        if (!lock) {
+          console.log('Maintenance engine locked by another tab (local), skipping...');
+          return;
+        }
+        await runEngineCore(userId, isCloud);
+      });
+    } else {
+      // Fallback if no locks API
+      await runEngineCore(userId, isCloud);
+    }
   }
+}
+
+async function runEngineCore(userId, isCloud) {
 
   try {
     const plans = store.getAll('maintenancePlans') || [];
@@ -465,11 +487,14 @@ export async function checkMaintenancePlans() {
   checkRecurringJobs();
 
   } finally {
-    // Release the lock
-    await supabase.rpc('release_lock', {
-      p_lock_name: 'maintenance_engine',
-      p_user_id: userId
-    }).catch(err => console.error('Error releasing lock:', err));
+    // Release the Supabase lock if in cloud mode
+    // (If local mode, Web Locks API automatically releases the lock when the async callback finishes)
+    if (isCloud) {
+      await supabase.rpc('release_lock', {
+        p_lock_name: 'maintenance_engine',
+        p_user_id: userId
+      }).catch(err => console.error('Error releasing lock:', err));
+    }
   }
 }
 

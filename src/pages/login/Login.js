@@ -95,7 +95,7 @@ export function renderLogin(container) {
                   <label class="auth-form-label">Username or Email</label>
                   <div class="auth-input-wrapper">
                     <span class="material-icons-outlined">person</span>
-                    <input type="text" id="signin-email" class="auth-form-input" placeholder="username@company or name@company.com" required>
+                    <input type="text" id="signin-email" class="auth-form-input" placeholder="username@company or name@company.com" value="${localStorage.getItem('relay_remembered_email') || ''}" required>
                   </div>
                 </div>
 

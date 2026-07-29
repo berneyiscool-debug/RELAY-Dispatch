@@ -1769,6 +1769,8 @@ function wireWidgetControls(grid, data) {
 
       const schedule = store.getAll('schedule') || [];
       const job = store.getById('jobs', jobId);
+      const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
+      const duration = totalTaskHours || parseFloat(job.estimatedHours) || parseFloat(job.estimated_hours) || 4;
       schedule.push({
         id: `sched_` + Date.now(),
         jobId: job.id,
@@ -1779,7 +1781,7 @@ function wireWidgetControls(grid, data) {
         color: tech.color || '#3B82F6',
         dayOffset: 0,
         startHour: 9,
-        endHour: 13,
+        endHour: 9 + duration,
         customerName: job.customerName,
         siteAddress: job.siteAddress || ''
       });

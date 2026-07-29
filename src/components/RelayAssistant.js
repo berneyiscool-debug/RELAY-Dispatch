@@ -1026,6 +1026,10 @@ async function callAIEngine() {
   const lookupMatches = [...reply.matchAll(/\[ACTION:\s*LOOKUP_RECORD\s*\|\s*([^\|\]]+)\s*\|\s*([^\]]+)\]/gi)];
   for (const match of lookupMatches) {
     const collection = match[1].trim();
+    if (collection.toLowerCase() === 'settings') {
+      externalData += `[RECORD LOOKUP - SETTINGS]: Access Denied.\n\n`;
+      continue;
+    }
     const idOrNum = match[2].trim();
     const list = store.getAll(collection) || [];
     const record = list.find(r => r.id === idOrNum || String(r.number) === String(idOrNum));
@@ -1204,7 +1208,7 @@ export function getSystemContext() {
 - Always check the list of active technicians and their roles. When a job is mentioned, match it to the technician with the corresponding role/skills. Suggest the best candidates based on workload, and proactively allocate the job using the appropriate action tags.
 - You must ONLY use, suggest, or assign jobs to technicians who are currently listed in the "Active Technicians" list below. Do NOT reference, suggest, or assign jobs to any other technicians (including those from older chat history, memory, or previous job assignments) as they are deactivated.
 - Be highly analytical and helpful. When answering user questions about CRM metrics, synthesize a clear, structural summary from the live data context (e.g., outlining workload distribution, quote conversion states, or timesheet approvals).
-- CRITICAL RULE: You must strictly abide by the user's permissions listed below. If the user asks you to create, edit, or delete a record, but their permissions say "Read-only" for that module, you must gracefully refuse and explain they lack permission.
+- SECURITY & ACCESS MODEL: You have universal READ access to all CRM records in the system. You can view and lookup any record (except Settings) regardless of the user's view permissions. However, you can ONLY perform modifications (Create/Edit/Delete/Assign) if the user has the required explicit permission listed below. You have absolutely NO access to the Settings page or system configuration—if asked, you must refuse.
 - DEEP RECORD LOOKUP: You only see a high-level summary of records by default. If you need to read the specific details, description, notes, tasks, materials, or scheduled times for ANY record (jobs, customers, quotes, invoices, stock, etc.), you MUST query it using this action tag: [ACTION: LOOKUP_RECORD | collection | id_or_number]. For example: [ACTION: LOOKUP_RECORD | jobs | JOB-001]. The system will immediately fetch the full details and provide them to you so you can answer the user's question accurately. Do NOT tell the user you lack access to job details—use the LOOKUP_RECORD tag instead!
 
 Assistant Tone & Formatting Guidelines:
@@ -1247,7 +1251,7 @@ Action parameters can be passed as structured JSON objects OR pipe-separated str
 - To add a dashboard widget: [ACTION: ADD_WIDGET, WidgetID]
 - To fit canvas: [ACTION: FIT_CANVAS]
 - To lock/unlock canvas: [ACTION: LOCK_CANVAS, true] or [ACTION: LOCK_CANVAS, false]
-- To navigate: [ACTION: NAVIGATE, PageName] (e.g. jobs, quotes, invoices, customers, schedule, stock, etc.)
+- To navigate to a page or open a specific record: [ACTION: NAVIGATE, PageNameOrPath] (e.g. jobs, invoices, invoices/INV-00001, jobs/JOB-123, customers/CUST-100, etc.)
 - To create customer: [ACTION: CREATE_CUSTOMER, {"type": "Commercial", "firstName": "Barry", "lastName": "Buttons", "companyName": "Buttons Plumbing", "email": "barry@buttons.com"}]
 - To create job: [ACTION: CREATE_JOB, {"title": "Fix Tap", "status": "Scheduled", "customerName": "Barry Buttons", "technicianName": "John Doe", "scheduledDate": "2026-07-25"}]
 - To create quote: [ACTION: CREATE_QUOTE, {"title": "Proposal", "status": "Draft", "customerName": "Barry Buttons", "total": 1100, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 100}]}]
@@ -1517,7 +1521,13 @@ function executeAction(action, param) {
           'purchase-orders': 'Purchase Orders'
         };
 
-        const moduleName = permissionMapping[route];
+        const baseRoute = route.split('/')[0];
+        if (baseRoute === 'settings') {
+          showToast(`Permission Denied: Assistant cannot access Settings.`, 'error');
+          return;
+        }
+
+        const moduleName = permissionMapping[baseRoute];
         if (moduleName) {
           const allowed = hasPermission(moduleName, 'view') || hasPermission(moduleName, 'view_own');
           if (!allowed) {

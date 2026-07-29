@@ -440,7 +440,7 @@ export function renderSettings(container) {
         { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
-        { id: 'api_keys', label: 'Integrations & APIs' },
+        { id: 'api_keys', label: 'Local System Configuration' },
         { id: 'system', label: 'System Options' }
       ]
     },

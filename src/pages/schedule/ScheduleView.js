@@ -329,13 +329,16 @@ export function renderScheduleView(container) {
     jobs.filter(j => j.scheduledDate && j.isRecurring !== true && !jobIdsWithSchedules.has(j.id) && j.status !== 'Completed' && j.status !== 'Invoiced')
       .forEach(job => {
         const jobDate = new Date(job.scheduledDate);
+        const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
+        const jobDuration = totalTaskHours || parseFloat(job.estimatedHours) || parseFloat(job.estimated_hours) || 2;
+
         days.forEach((day, dayIdx) => {
           if (jobDate.toDateString() === day.toDateString()) {
             const startHour = job.startHour !== undefined ? job.startHour : (7 + (Math.abs(hashStr(job.id)) % 6));
 
             if (job.technicians && job.technicians.length > 0) {
               job.technicians.forEach(t => {
-                const duration = t.hours || 2;
+                const duration = t.hours || jobDuration;
                 blocks.push({
                   id: `legacy-${job.id}-${t.id}`,
                   type: 'legacy',
@@ -352,7 +355,7 @@ export function renderScheduleView(container) {
                 });
               });
             } else if (job.technicianId) {
-              const duration = job.estimatedHours || 2;
+              const duration = jobDuration;
               blocks.push({
                 id: `legacy-${job.id}`,
                 type: 'legacy',
@@ -2583,9 +2586,11 @@ export function renderScheduleView(container) {
         const job = jobs.find(j => j.id === dragState.jobId);
 
         if (job) {
+          const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
+          const jobDuration = totalTaskHours || parseFloat(job.estimatedHours) || parseFloat(job.estimated_hours) || 2;
           const duration = dragState.type === 'existing'
             ? (dragState.endHour - dragState.startHour)
-            : (dragState.hours || job.estimatedHours || 2);
+            : (dragState.hours || jobDuration);
 
           const dropEndHour = dropHour + duration;
 
