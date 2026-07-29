@@ -2734,7 +2734,7 @@ function renderProfitabilityChart(data, item) {
             <span style="font-weight:600; color:var(--color-success);">+$${profit.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div style="height:12px; background:var(--bg-color); border-radius:6px; overflow:hidden; border:1px solid var(--border-color);">
-            <div style="width:${Math.min(margin, 100)}%; height:100%; background:linear-gradient(90deg, var(--color-primary), var(--color-success));"></div>
+            <div style="width:${Math.min(margin, 100)}%; height:100%; background:var(--color-primary);"></div>
           </div>
         </div>
 
@@ -3015,7 +3015,7 @@ function renderTopCustomers(data, item) {
               <span style="font-weight:700; color:var(--color-primary);">$${spend.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div style="height:8px; background:var(--bg-color); border-radius:4px; overflow:hidden;">
-              <div style="width:${percent}%; height:100%; background:linear-gradient(90deg, var(--color-primary), #60a5fa); border-radius:4px;"></div>
+              <div style="width:${percent}%; height:100%; background:var(--color-primary); border-radius:4px;"></div>
             </div>
           </div>
         `;
@@ -3150,7 +3150,7 @@ function renderRevenueComparison(data, item) {
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
       <span style="width:64px;font-size:11px;color:var(--text-secondary);flex-shrink:0;">${label}</span>
       <div style="flex:1;height:22px;background:var(--content-bg);border-radius:5px;overflow:hidden;position:relative;">
-        <div style="width:${(val / max * 100).toFixed(1)}%;height:100%;background:${primary ? 'linear-gradient(90deg,var(--color-primary),#FF7A2E)' : 'var(--text-tertiary)'};border-radius:5px;min-width:${val > 0 ? '4px' : '0'};transition:width .5s;"></div>
+        <div style="width:${(val / max * 100).toFixed(1)}%;height:100%;background:${primary ? 'var(--color-primary)' : 'var(--text-tertiary)'};border-radius:5px;min-width:${val > 0 ? '4px' : '0'};transition:width .5s;"></div>
       </div>
       <span style="width:78px;text-align:right;font-size:12px;font-weight:700;">${fmtMoney0(val)}</span>
     </div>`;

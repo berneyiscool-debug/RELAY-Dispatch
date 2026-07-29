@@ -1,14 +1,38 @@
 import { store } from '../data/store.js';
 import { parsePreferredTime } from './dateUtils.js';
+import { supabase } from './supabase.js';
 
-export function checkMaintenancePlans() {
-  const plans = store.getAll('maintenancePlans') || [];
-  const assets = store.getAll('assets') || [];
-  const quotes = store.getAll('quotes') || [];
-  const notifications = store.getAll('notifications') || [];
-  const stock = store.getAll('stock') || [];
+export async function checkMaintenancePlans() {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return;
 
-  let storeUpdated = false;
+  // Try to acquire the engine lock for 30 seconds
+  const { data: gotLock, error: lockError } = await supabase.rpc('acquire_lock', {
+    p_lock_name: 'maintenance_engine',
+    p_user_id: userId,
+    p_timeout_seconds: 30
+  });
+
+  if (lockError) {
+    console.warn('Failed to call acquire_lock RPC:', lockError);
+    return;
+  }
+
+  // If another browser holds the lock, skip execution
+  if (!gotLock) {
+    console.log('Maintenance engine locked by another process, skipping...');
+    return;
+  }
+
+  try {
+    const plans = store.getAll('maintenancePlans') || [];
+    const assets = store.getAll('assets') || [];
+    const quotes = store.getAll('quotes') || [];
+    const notifications = store.getAll('notifications') || [];
+    const stock = store.getAll('stock') || [];
+
+    let storeUpdated = false;
 
   function getPriorityScore(p) {
     if (typeof p === 'number') return p;
@@ -439,6 +463,14 @@ export function checkMaintenancePlans() {
 
   // Run recurring jobs check
   checkRecurringJobs();
+
+  } finally {
+    // Release the lock
+    await supabase.rpc('release_lock', {
+      p_lock_name: 'maintenance_engine',
+      p_user_id: userId
+    }).catch(err => console.error('Error releasing lock:', err));
+  }
 }
 
 function getRecurringDates(config) {

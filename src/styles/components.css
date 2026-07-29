@@ -216,7 +216,7 @@ select.badge:hover {
 }
 
 select.badge:focus {
-  box-shadow: 0 0 0 2px rgba(27, 109, 224, 0.2);
+  box-shadow: 0 0 0 2px rgba(255, 92, 0, 0.2);
   border-color: var(--color-primary);
 }
 
@@ -831,7 +831,7 @@ select.badge option {
 }
 .schedule-block-virtual:hover {
   opacity: 1;
-  box-shadow: 0 0 0 1.5px #9333ea, 0 4px 12px rgba(147, 51, 234, 0.25) !important;
+  box-shadow: 0 0 0 1.5px #9333ea !important;
 }
 .virtual-forecast-badge {
   display: inline-flex;

@@ -87,7 +87,7 @@ export function renderLaunchScreen(container, onComplete) {
       display: flex;
       width: 100vw;
       height: 100vh;
-      background: linear-gradient(135deg, #FFEBE3 0%, #F5F7FF 50%, #E6EEFF 100%);
+      background: #f3f5f7;
       color: #1e293b;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       overflow: hidden;
@@ -107,7 +107,7 @@ export function renderLaunchScreen(container, onComplete) {
       width: 500px;
       height: 500px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(255, 92, 0, 0.15) 0%, rgba(255, 92, 0, 0) 70%);
+      background: transparent;
       top: -150px;
       right: -100px;
       z-index: 0;
@@ -119,7 +119,7 @@ export function renderLaunchScreen(container, onComplete) {
       width: 600px;
       height: 600px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(27, 109, 224, 0.12) 0%, rgba(27, 109, 224, 0) 75%);
+      background: transparent;
       bottom: -200px;
       left: -150px;
       z-index: 0;
@@ -137,9 +137,7 @@ export function renderLaunchScreen(container, onComplete) {
       z-index: 1;
       position: relative;
       min-width: 0;
-      background: rgba(255, 255, 255, 0.35);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+      background: #ffffff;
     }
     .launch-panel-left {
       border-right: 1px solid rgba(0, 0, 0, 0.08);

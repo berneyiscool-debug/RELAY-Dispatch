@@ -1022,12 +1022,32 @@ async function callAIEngine() {
     const wxData = await runWeatherActions(reply);
     if (wxData) externalData += (externalData ? '\n\n' : '') + wxData;
   }
+  
+  const lookupMatches = [...reply.matchAll(/\[ACTION:\s*LOOKUP_RECORD\s*\|\s*([^\|\]]+)\s*\|\s*([^\]]+)\]/gi)];
+  for (const match of lookupMatches) {
+    const collection = match[1].trim();
+    const idOrNum = match[2].trim();
+    const list = store.getAll(collection) || [];
+    const record = list.find(r => r.id === idOrNum || String(r.number) === String(idOrNum));
+    let lookupResult = '';
+    if (record) {
+      if (collection === 'jobs') {
+        const sch = (store.getAll('schedule') || []).find(s => s.jobId === record.id);
+        if (sch) record._scheduleInfo = { date: sch.date, startHour: sch.startHour, endHour: sch.endHour };
+      }
+      lookupResult = `[RECORD LOOKUP - ${collection.toUpperCase()} - ${idOrNum}]\n${JSON.stringify(record, null, 2)}`;
+    } else {
+      lookupResult = `[RECORD LOOKUP - ${collection.toUpperCase()} - ${idOrNum}]: Not found.`;
+    }
+    externalData += (externalData ? '\n\n' : '') + lookupResult;
+  }
+
   if (externalData.trim()) {
     const followup = [
       { role: 'system', content: systemPrompt },
       ...chatHistory,
       { role: 'assistant', content: reply },
-      { role: 'user', content: `[LIVE SERVICE RESULTS]\n${externalData}\n\nUsing only these results, answer my previous question concisely and naturally. Report the stop order, drive times, totals and forecast details as given. Do NOT emit any action tags.` }
+      { role: 'user', content: `[LIVE SERVICE RESULTS / LOOKUP DATA]\n${externalData}\n\nUsing only this additional data, answer my previous question concisely and naturally. Do NOT emit any action tags in this response.` }
     ];
     const finalReply = await dispatchChat(followup, ai, ai.model || 'deepseek-chat');
     pushAssistant(finalReply);
@@ -1185,6 +1205,7 @@ export function getSystemContext() {
 - You must ONLY use, suggest, or assign jobs to technicians who are currently listed in the "Active Technicians" list below. Do NOT reference, suggest, or assign jobs to any other technicians (including those from older chat history, memory, or previous job assignments) as they are deactivated.
 - Be highly analytical and helpful. When answering user questions about CRM metrics, synthesize a clear, structural summary from the live data context (e.g., outlining workload distribution, quote conversion states, or timesheet approvals).
 - CRITICAL RULE: You must strictly abide by the user's permissions listed below. If the user asks you to create, edit, or delete a record, but their permissions say "Read-only" for that module, you must gracefully refuse and explain they lack permission.
+- DEEP RECORD LOOKUP: You only see a high-level summary of records by default. If you need to read the specific details, description, notes, tasks, materials, or scheduled times for ANY record (jobs, customers, quotes, invoices, stock, etc.), you MUST query it using this action tag: [ACTION: LOOKUP_RECORD | collection | id_or_number]. For example: [ACTION: LOOKUP_RECORD | jobs | JOB-001]. The system will immediately fetch the full details and provide them to you so you can answer the user's question accurately. Do NOT tell the user you lack access to job details—use the LOOKUP_RECORD tag instead!
 
 Assistant Tone & Formatting Guidelines:
 - You are a professional dispatch co-pilot. Keep your tone helpful, direct, concise, and business-focused.
