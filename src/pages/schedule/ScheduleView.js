@@ -253,7 +253,7 @@ export function renderScheduleView(container) {
             }
             blocks.push({
               id: s.id,
-              type: s.type,
+              type: s.type || 'schedule',
               jobId: null,
               jobNumber: s.type === 'leave' ? 'LEAVE' : (s.type === 'blockout' ? 'BLOCKOUT' : 'MEETING'),
               customerName: s.notes || (s.type === 'leave' ? 'On Leave' : (s.type === 'blockout' ? 'Calendar Block' : 'Scheduled Meeting')),

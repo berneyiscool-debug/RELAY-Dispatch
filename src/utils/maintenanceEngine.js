@@ -634,6 +634,7 @@ export function checkRecurringJobs() {
             const finishTimeISO = `${dateStr}T${finalHour.toString().padStart(2, '0')}:${finalMin.toString().padStart(2, '0')}`;
 
             store.create('schedule', {
+              type: 'schedule',
               jobId: spawnedJob.id,
               jobNumber: spawnedJob.number,
               technicianId: defaultTechId,
@@ -980,7 +981,7 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
     }
     const startTimeISO = `${dateStr}T${Math.floor(startHour).toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
     const tasklistHours = getJobTasklistHours(parentJob.tasks || []);
-    const duration = customHours || (tasklistHours > 0 ? tasklistHours : (parentJob.estimatedHours || 2));
+    const duration = customHours || (tasklistHours > 0 ? tasklistHours : (parseFloat(parentJob.estimatedHours) || 2));
     const endHour = startHour + duration;
     const endHourH = Math.floor(endHour);
     const endHourM = Math.round((endHour - endHourH) * 60) + startMin;
@@ -989,6 +990,7 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
     const finishTimeISO = `${dateStr}T${finalHour.toString().padStart(2, '0')}:${finalMin.toString().padStart(2, '0')}`;
 
     store.create('schedule', {
+      type: 'schedule',
       jobId: spawnedJob.id,
       jobNumber: spawnedJob.number,
       technicianId: techIdToUse,
