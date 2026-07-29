@@ -522,7 +522,7 @@ export function checkRecurringJobs() {
         // Check if there is already a spawned job for this occurrence
         const hasJob = jobs.some(j => 
           (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) && 
-          j.scheduledDate === dateStr
+          (j.templateDate === dateStr || j.scheduledDate === dateStr)
         );
 
         const isSkipped = job.recurringConfig?.skippedDates?.includes(dateStr);
@@ -583,6 +583,7 @@ export function checkRecurringJobs() {
 
           const childJob = {
             parentJobId: job.id,
+            templateDate: dateStr,
             scheduledDate: dateStr,
             status: childStatus,
             technicianId: defaultTechId || undefined,
@@ -611,7 +612,6 @@ export function checkRecurringJobs() {
           };
 
           const spawnedJob = store.create('jobs', childJob);
-          jobs.push(spawnedJob);
 
           if (defaultTechId) {
             let startHour = 8;
@@ -625,7 +625,7 @@ export function checkRecurringJobs() {
             }
             const startTimeISO = `${dateStr}T${startHour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
             const tasklistHours = getJobTasklistHours(job.tasks || []);
-            const duration = tasklistHours > 0 ? tasklistHours : (job.estimatedHours || 2);
+            const duration = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 2);
             const endHour = startHour + duration;
             const endHourH = Math.floor(endHour);
             const endHourM = Math.round((endHour - endHourH) * 60) + startMin;

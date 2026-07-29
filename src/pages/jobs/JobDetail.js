@@ -1146,6 +1146,15 @@ export function renderJobDetail(container, { id }) {
                        </button>
                      </div>
                      ${isRecordingValues ? `
+                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px" id="value-recording-panel">
+                       ${node.valueFields.map((vf, vi) => {
+                         const ft = vf.fieldType || 'text';
+                         const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
+                         const isNumOutOfRange = hasRange && vf.value !== undefined && vf.value !== '' && (
+                           (vf.min !== undefined && vf.min !== '' && parseFloat(vf.value) < parseFloat(vf.min)) ||
+                           (vf.max !== undefined && vf.max !== '' && parseFloat(vf.value) > parseFloat(vf.max))
+                         );
+                         const isDropdownMismatch = ft === 'dropdown' && vf.expectedValue && vf.value && vf.value !== '' && vf.value !== vf.expectedValue;
                          const isOutOfRange = isNumOutOfRange || isDropdownMismatch;
                          const rangeHint = hasRange ? `Expected: ${vf.min !== undefined && vf.min !== '' ? vf.min : '—'} to ${vf.max !== undefined && vf.max !== '' ? vf.max : '—'}${vf.unit ? ' ' + escapeHTML(vf.unit) : ''}` : '';
                          const dropdownHint = isDropdownMismatch ? `Expected: ${escapeHTML(vf.expectedValue)}` : '';
@@ -1204,181 +1213,6 @@ export function renderJobDetail(container, { id }) {
                      `}
                    </div>
                    ` : ''}
-                  ` : `
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-                    <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%" title="${escapeHTML(node.name)}">Task Details</h4>
-                    <div style="display:flex;gap:8px">
-                      <button class="btn btn-sm btn-secondary btn-duplicate-task" data-path="${path.join('-')}" title="Duplicate Task"><span class="material-icons-outlined" style="font-size:16px">content_copy</span> Duplicate</button>
-                      <button class="btn btn-sm btn-danger btn-remove-task" data-path="${path.join('-')}" title="Delete"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete</button>
-                    </div>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Task Name</label>
-                    <input type="text" class="form-input detail-input" data-field="name" value="${escapeHTML(node.name)}" ${!isTasksEditing ? 'disabled' : ''} />
-                  </div>
-                  ${hasSubs ? `
-                  <div style="margin-bottom:16px">
-                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Total Hours</div>
-                    <div style="font-size:14px; font-weight:500">${calculateTotalHours(node)} hrs</div>
-                  </div>
-                  ` : `
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label class="form-label">Start Date</label>
-                      <input type="date" class="form-input detail-input" data-field="startDate" value="${node.startDate ? node.startDate.split('T')[0] : ''}" ${!isTasksEditing ? 'disabled' : ''} />
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label">Estimated Hours</label>
-                      <input type="number" class="form-input detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" ${!isTasksEditing ? 'disabled' : ''} />
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label">People</label>
-                      <input type="number" class="form-input detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" ${!isTasksEditing ? 'disabled' : ''} />
-                    </div>
-                  </div>
-                  `}
-                  <div class="form-group">
-                    <label class="form-label">Progress</label>
-                    <div style="width:100%;background:var(--border-color);height:36px;border-radius:4px;overflow:hidden;position:relative">
-                      <div style="width:${node.progress || 0}%;background:var(--color-primary);height:100%;transition:width 0.3s"></div>
-                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:600;color:${node.progress > 50 ? '#fff' : 'var(--text-primary)'}">${node.progress || 0}%</div>
-                    </div>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label" style="margin-bottom:8px">Assigned Subcontractors</label>
-                    <div style="border:1px solid var(--border-color); border-radius:6px; max-height:160px; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:6px; background:var(--bg-color)">
-                      ${activeContractors.map(c => {
-                        const isChecked = (node.assignedContractorIds || []).includes(c.id);
-                        return `
-                          <label class="contractor-checkbox-label" style="display:flex; align-items:center; gap:8px; margin:0; padding:4px 6px; border-radius:4px; cursor:pointer; font-size:13px; font-weight:normal; transition:background 0.2s">
-                            <input type="checkbox" class="contractor-assign-checkbox" value="${c.id}" ${isChecked ? 'checked' : ''} ${!isTasksEditing ? 'disabled' : ''} style="width:16px; height:16px; margin:0; cursor:pointer" />
-                            <span style="font-weight:500; color:var(--text-primary)">${escapeHTML(c.businessName)}</span>
-                            <span style="color:var(--text-tertiary); font-size:11px">(${escapeHTML(c.contactName)})</span>
-                          </label>
-                        `;
-                      }).join('')}
-                      ${activeContractors.length === 0 ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:12px">No active subcontractors found</div>' : ''}
-                    </div>
-                  </div>
-                  <div class="form-group">
-                     <label class="form-label">Description</label>
-                     <textarea class="form-input detail-input" data-field="description" rows="3" ${!isTasksEditing ? 'disabled' : ''}>${escapeHTML(node.description || '')}</textarea>
-                   </div>
-                   ${!hasSubs ? `
-                   <div style="margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px">
-                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
-                       <div style="display:flex; align-items:center; gap:6px">
-                         <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">assignment</span>
-                         <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Fields</span>
-                       </div>
-                       <div style="display:flex; gap:6px">
-                         <button class="btn btn-xs ${!isRecordingValues ? 'btn-primary' : 'btn-secondary'} btn-sub-tab-config">Configure</button>
-                         ${node.valueFields && node.valueFields.length > 0 ? `<button class="btn btn-xs ${isRecordingValues ? 'btn-primary' : 'btn-secondary'} btn-sub-tab-record">Record Values</button>` : ''}
-                       </div>
-                     </div>
-                     
-                     ${!isRecordingValues ? `
-                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
-                       <div style="font-size:11px; color:var(--text-tertiary)">Define the values a technician needs to record for this task.</div>
-                       ${canEditTasks && isTasksEditing ? `<button class="btn btn-sm btn-secondary btn-add-value-field" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>` : ''}
-                     </div>
-                     <div style="display:flex; flex-direction:column; gap:8px" id="value-fields-config">
-                       ${(node.valueFields || []).map((vf, vi) => {
-                         const ft = vf.fieldType || 'text';
-                         return `
-                         <div style="padding:10px 12px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px" data-vf-idx="${vi}">
-                           <div style="display:flex; align-items:center; gap:8px; margin-bottom:${ft !== 'text' ? '8px' : '0'}">
-                             <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:grab">drag_indicator</span>
-                             <input type="text" class="form-input vf-label-input" data-vf-idx="${vi}" value="${escapeHTML(vf.label)}" placeholder="Field label (e.g. Oil Pressure)" style="flex:2; height:32px; font-size:13px" />
-                             <select class="form-input vf-type-select" data-vf-idx="${vi}" style="flex:0 0 110px; height:32px; font-size:12px">
-                               <option value="text"${ft === 'text' ? ' selected' : ''}>Text</option>
-                               <option value="number"${ft === 'number' ? ' selected' : ''}>Number</option>
-                               <option value="dropdown"${ft === 'dropdown' ? ' selected' : ''}>Dropdown</option>
-                             </select>
-                             ${canEditTasks && isTasksEditing ? `<button class="btn btn-ghost btn-sm btn-icon btn-remove-value-field" data-vf-idx="${vi}" style="color:var(--color-danger); min-width:28px; min-height:28px; padding:0"><span class="material-icons-outlined" style="font-size:16px">close</span></button>` : ''}
-                           </div>
-                           ${ft === 'number' ? `
-                           <div style="display:flex; align-items:center; gap:8px; margin-left:28px">
-                             <input type="text" class="form-input vf-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
-                             <div style="display:flex; align-items:center; gap:4px; flex:2">
-                               <span style="font-size:11px; color:var(--text-tertiary); white-space:nowrap">Range:</span>
-                               <input type="number" class="form-input vf-min-input" data-vf-idx="${vi}" value="${vf.min !== undefined ? vf.min : ''}" placeholder="Min" style="flex:1; height:30px; font-size:12px" />
-                               <span style="color:var(--text-tertiary)">–</span>
-                               <input type="number" class="form-input vf-max-input" data-vf-idx="${vi}" value="${vf.max !== undefined ? vf.max : ''}" placeholder="Max" style="flex:1; height:30px; font-size:12px" />
-                             </div>
-                           </div>
-                           ` : ''}
-                           ${ft === 'text' ? `
-                           <div style="display:flex; align-items:center; gap:8px; margin-left:28px; margin-top:4px">
-                             <input type="text" class="form-input vf-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (optional, e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
-                           </div>
-                           ` : ''}
-                           ${ft === 'dropdown' ? `
-                           <div style="margin-left:28px; display:flex; flex-direction:column; gap:6px">
-                             <div>
-                               <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Options (one per line)</div>
-                               <textarea class="form-input vf-options-input" data-vf-idx="${vi}" rows="3" placeholder="Low\nAs Expected\nHigh" style="font-size:12px; line-height:1.5">${escapeHTML((vf.options || []).join('\n'))}</textarea>
-                             </div>
-                             <div>
-                               <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Expected / Ideal Value <span style="font-weight:400">(flags others as out of range)</span></div>
-                               <select class="form-input vf-expected-select" data-vf-idx="${vi}" style="height:30px; font-size:12px">
-                                 <option value=""${!vf.expectedValue ? ' selected' : ''}>— No expected value —</option>
-                                 ${(vf.options || []).map(opt => `<option value="${escapeHTML(opt)}"${vf.expectedValue === opt ? ' selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
-                               </select>
-                             </div>
-                           </div>
-                           ` : ''}
-                         </div>`;
-                       }).join('')}
-                       ${(!node.valueFields || node.valueFields.length === 0) ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:16px; border:1px dashed var(--border-color); border-radius:6px">No value fields defined. Click "Add Field" to create one.</div>' : ''}
-                     </div>
-                     ` : `
-                     <!-- Data Recording Panel -->
-                     <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:10px">Enter and save live values for this task.</div>
-                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px" id="value-recording-panel">
-                       ${node.valueFields.map((vf, vi) => {
-                         const ft = vf.fieldType || 'text';
-                         const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
-                         const isNumOutOfRange = hasRange && vf.value !== undefined && vf.value !== '' && (
-                           (vf.min !== undefined && vf.min !== '' && parseFloat(vf.value) < parseFloat(vf.min)) ||
-                           (vf.max !== undefined && vf.max !== '' && parseFloat(vf.value) > parseFloat(vf.max))
-                         );
-                         const isDropdownMismatch = ft === 'dropdown' && vf.expectedValue && vf.value && vf.value !== '' && vf.value !== vf.expectedValue;
-                         const isOutOfRange = isNumOutOfRange || isDropdownMismatch;
-                         const rangeHint = hasRange ? `Expected: ${vf.min !== undefined && vf.min !== '' ? vf.min : '—'} to ${vf.max !== undefined && vf.max !== '' ? vf.max : '—'}${vf.unit ? ' ' + escapeHTML(vf.unit) : ''}` : '';
-                         const dropdownHint = isDropdownMismatch ? `Expected: ${escapeHTML(vf.expectedValue)}` : '';
-                         let inputHtml = '';
-                         if (ft === 'dropdown' && vf.options && vf.options.length > 0) {
-                           inputHtml = `<select class="form-input vf-value-input" data-vf-idx="${vi}" style="height:34px; font-size:14px; font-weight:500; ${isDropdownMismatch ? 'border-color:var(--color-danger); background:rgba(220,53,69,0.06)' : ''}">
-                             <option value=""${!vf.value ? ' selected' : ''}>— Select —</option>
-                             ${vf.options.map(opt => `<option value="${escapeHTML(opt)}"${vf.value === opt ? ' selected' : ''}>${escapeHTML(opt)}${opt === vf.expectedValue ? ' ✓' : ''}</option>`).join('')}
-                           </select>`;
-                         } else if (ft === 'number') {
-                           inputHtml = `<input type="number" class="form-input vf-value-input" data-vf-idx="${vi}" value="${escapeHTML(vf.value || '')}" placeholder="Enter value..." ${vf.min !== undefined && vf.min !== '' ? `min="${vf.min}"` : ''} ${vf.max !== undefined && vf.max !== '' ? `max="${vf.max}"` : ''} style="height:34px; font-size:14px; font-weight:500; ${isNumOutOfRange ? 'border-color:var(--color-danger); background:rgba(220,53,69,0.06)' : ''}" />`;
-                         } else {
-                           inputHtml = `<input type="text" class="form-input vf-value-input" data-vf-idx="${vi}" value="${escapeHTML(vf.value || '')}" placeholder="Enter value..." style="height:34px; font-size:14px; font-weight:500" />`;
-                         }
-                         const hintText = rangeHint || dropdownHint;
-                         return `
-                         <div style="display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--bg-color); border:1px solid ${isOutOfRange ? 'var(--color-danger)' : 'var(--border-color)'}; border-radius:6px; transition:border-color 0.2s" data-vf-idx="${vi}">
-                           <div style="flex:1; min-width:0">
-                             <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:4px">${escapeHTML(vf.label)}${vf.unit ? ` <span style="font-weight:400; text-transform:none">(${escapeHTML(vf.unit)})</span>` : ''}</div>
-                             ${inputHtml}
-                             ${hintText ? `<div style="font-size:10px; color:${isOutOfRange ? 'var(--color-danger)' : 'var(--text-tertiary)'}; margin-top:3px">${isOutOfRange ? '<span class="material-icons-outlined" style="font-size:12px; vertical-align:middle">warning</span> ' + (isDropdownMismatch ? 'Not the expected value — ' : 'Out of range — ') : ''}${hintText}</div>` : ''}
-                           </div>
-                           ${isOutOfRange ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-danger); flex-shrink:0">error</span>` : (vf.value ? `<span class="material-icons-outlined" style="font-size:20px; color:var(--color-success); flex-shrink:0">check_circle</span>` : `<span class="material-icons-outlined" style="font-size:20px; color:var(--border-color); flex-shrink:0">radio_button_unchecked</span>`)}
-                         </div>`;
-                       }).join('')}
-                       <div style="grid-column: span 2; display:flex; justify-content:flex-end; gap:8px; margin-top:4px">
-                         <button class="btn btn-sm btn-primary btn-save-values" data-path="${path.join('-')}">
-                           <span class="material-icons-outlined" style="font-size:14px">save</span> Save Values
-                         </button>
-                       </div>
-                     </div>
-                     `}
-                   </div>
-                   ` : ''}
-                  `}
                 </div>
               `;
         })() : ''}
@@ -1690,23 +1524,6 @@ export function renderJobDetail(container, { id }) {
             node.valueFields[idx].expectedValue = inp.value || undefined;
           }
         });
-      });
-
-      tc.querySelector('#btn-edit-tasks')?.addEventListener('click', () => {
-        isTasksEditing = true;
-        renderTabContent();
-      });
-
-      tc.querySelector('#btn-cancel-edit-tasks')?.addEventListener('click', () => {
-        isTasksEditing = false;
-        renderTabContent();
-      });
-
-      tc.querySelector('#btn-save-tasks')?.addEventListener('click', () => {
-        store.update('jobs', id, { tasks: job.tasks });
-        isTasksEditing = false;
-        showToast('Tasks saved', 'success');
-        renderTabContent();
       });
 
       tc.querySelector('#btn-save-tasklist-template')?.addEventListener('click', () => {

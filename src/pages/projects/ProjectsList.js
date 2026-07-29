@@ -126,19 +126,19 @@ export function renderProjectsList(container) {
       </div>
 
       <!-- Projects KPI Summary Row -->
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:20px">
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:16px">
         
         <!-- Card 1: Projects Overview -->
         <div class="card kpi-card kpi-primary">
-          <div class="card-body" style="padding:12px 16px; display:flex; align-items:center; gap:12px">
-            <div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, var(--color-primary-light), #e0e7ff); color:var(--color-primary); display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15)">
-              <span class="material-icons-outlined" style="font-size:20px">folder_copy</span>
+          <div class="card-body" style="padding:10px 12px; display:flex; align-items:center; gap:10px">
+            <div style="width:32px; height:32px; border-radius:6px; background:linear-gradient(135deg, var(--color-primary-light), #e0e7ff); color:var(--color-primary); display:flex; align-items:center; justify-content:center; box-shadow: 0 1px 4px rgba(79, 70, 229, 0.1)">
+              <span class="material-icons-outlined" style="font-size:18px">folder_copy</span>
             </div>
             <div style="flex:1">
-              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Projects</div>
-              <div style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalCount}</div>
+              <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px">Total Projects</div>
+              <div style="font-size:16px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalCount}</div>
             </div>
-            <div style="text-align:right; font-size:11px; color:var(--text-secondary); line-height:1.4">
+            <div style="text-align:right; font-size:10px; color:var(--text-secondary); line-height:1.3">
               <div style="color:var(--color-primary-dark); font-weight:600">${activeProjCount} Active</div>
               <div>${completedProjCount} Completed</div>
             </div>
@@ -147,15 +147,15 @@ export function renderProjectsList(container) {
 
         <!-- Card 2: Portfolio Financials -->
         <div class="card kpi-card kpi-success">
-          <div class="card-body" style="padding:12px 16px; display:flex; align-items:center; gap:12px">
-            <div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, var(--color-success-bg), #dcfce7); color:var(--color-success); display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15)">
-              <span class="material-icons-outlined" style="font-size:20px">monetization_on</span>
+          <div class="card-body" style="padding:10px 12px; display:flex; align-items:center; gap:10px">
+            <div style="width:32px; height:32px; border-radius:6px; background:linear-gradient(135deg, var(--color-success-bg), #dcfce7); color:var(--color-success); display:flex; align-items:center; justify-content:center; box-shadow: 0 1px 4px rgba(16, 185, 129, 0.1)">
+              <span class="material-icons-outlined" style="font-size:18px">monetization_on</span>
             </div>
             <div style="flex:1">
-              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Portfolio Value</div>
-              <div style="font-size:18px; font-weight:800; color:var(--color-success-dark); margin-top:2px; line-height:1.2">$${metrics.totalValue.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
+              <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px">Portfolio Value</div>
+              <div style="font-size:16px; font-weight:800; color:var(--color-success-dark); margin-top:2px; line-height:1.2">$${metrics.totalValue.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
             </div>
-            <div style="text-align:right; font-size:11px; color:var(--text-secondary); line-height:1.4">
+            <div style="text-align:right; font-size:10px; color:var(--text-secondary); line-height:1.3">
               <div>Billed: $${metrics.totalBilled.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
               <div style="color:${uninvoiced > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; font-weight:600">Unbilled: $${Math.max(0, uninvoiced).toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
             </div>
@@ -164,15 +164,15 @@ export function renderProjectsList(container) {
 
         <!-- Card 3: Stage Progress -->
         <div class="card kpi-card kpi-purple">
-          <div class="card-body" style="padding:12px 16px; display:flex; align-items:center; gap:12px">
-            <div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, var(--color-purple-light), #f3e8ff); color:var(--color-purple); display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 8px rgba(168, 85, 247, 0.15)">
-              <span class="material-icons-outlined" style="font-size:20px">account_tree</span>
+          <div class="card-body" style="padding:10px 12px; display:flex; align-items:center; gap:10px">
+            <div style="width:32px; height:32px; border-radius:6px; background:linear-gradient(135deg, var(--color-purple-light), #f3e8ff); color:var(--color-purple); display:flex; align-items:center; justify-content:center; box-shadow: 0 1px 4px rgba(168, 85, 247, 0.1)">
+              <span class="material-icons-outlined" style="font-size:18px">account_tree</span>
             </div>
             <div style="flex:1">
-              <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Stages</div>
-              <div style="font-size:18px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalStages}</div>
+              <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px">Total Stages</div>
+              <div style="font-size:16px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalStages}</div>
             </div>
-            <div style="text-align:right; font-size:11px; color:var(--text-secondary); line-height:1.4">
+            <div style="text-align:right; font-size:10px; color:var(--text-secondary); line-height:1.3">
               <div style="color:var(--color-success-dark); font-weight:600">${metrics.completedStages} Completed</div>
               <div>${metrics.totalStages - metrics.completedStages} Pending</div>
             </div>
