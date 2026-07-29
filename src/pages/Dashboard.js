@@ -3111,9 +3111,9 @@ function renderCashFlow(data, item) {
 
   return `
     <div style="display:flex; flex-direction:column; justify-content:center; height:100%; padding:4px;">
-      <div style="background:linear-gradient(135deg, var(--color-primary), #FF7A2E); padding:16px; border-radius:10px; color:white; box-shadow:0 4px 15px rgba(255, 92, 0, 0.2); margin-bottom:10px;">
-        <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.5px; opacity:0.8; margin-bottom:2px;">Total Paid Cash Flow</div>
-        <div style="font-size:22px; font-weight:800;">$${paidTotal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+      <div style="padding:10px 2px 14px; border-bottom:1px solid var(--card-border); margin-bottom:12px;">
+        <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-tertiary); margin-bottom:3px;">Total Paid Cash Flow</div>
+        <div style="font-size:24px; font-weight:800; color:var(--text-primary);">$${paidTotal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:0 4px;">
         <span style="color:var(--text-secondary);">Receivables Outstanding</span>

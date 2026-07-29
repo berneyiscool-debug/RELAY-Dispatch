@@ -56,8 +56,8 @@
   --border-color-dark: rgba(0, 0, 0, 0.12);
   --border-radius-sm: 0.25rem; /* 4px (small components) */
   --border-radius: 0.5rem; /* 8px (inputs and buttons) */
-  --border-radius-md: 1rem; /* 16px (dashboard cards / sidebar container) */
-  --border-radius-lg: 1.5rem; /* 24px (large content blocks / mobile detail cards) */
+  --border-radius-md: 0.625rem; /* 10px (dashboard cards / sidebar container) — de-bubbled */
+  --border-radius-lg: 0.875rem; /* 14px (large content blocks / mobile detail cards) */
 
   /* ---- Spacing (Base 8px Rhythm) ---- */
   --space-xs: 4px;

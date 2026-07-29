@@ -1006,7 +1006,7 @@ export function renderScheduleView(container) {
 
         const mRect = { left: x, top: y, right: x + w, bottom: y + h };
         const next = new Set(baseSelection);
-        container.querySelectorAll('.schedule-block[data-block-type="schedule"]').forEach(bl => {
+        container.querySelectorAll('.schedule-block[data-block-type="schedule"], .schedule-block[data-block-type="virtual"], .schedule-block[data-block-type="legacy"]').forEach(bl => {
           const r = bl.getBoundingClientRect();
           const hit = r.left < mRect.right && r.right > mRect.left && r.top < mRect.bottom && r.bottom > mRect.top;
           if (hit) next.add(bl.dataset.scheduleId);

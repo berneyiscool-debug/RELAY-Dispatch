@@ -44,25 +44,36 @@ function renderIntroDashboard(thread, memory) {
   const activeJobsCount = activeJobsList.length;
   const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending' || q.status === 'Draft').length;
   const overdueInvoices = invoices.filter(i => i.status === 'Overdue').length;
-  const unassignedJobs = jobs.filter(j => (j.status === 'Scheduled' || j.status === 'In Progress' || j.status === 'Pending') && (!j.technicianName || j.technicianName === 'Unassigned'));
+  const unassignedJobs = jobs.filter(j => {
+    if (j.status !== 'Scheduled' && j.status !== 'In Progress' && j.status !== 'Pending') return false;
+    const hasTechName = j.technicianName && j.technicianName !== 'Unassigned';
+    const hasTechArray = j.technicians && j.technicians.length > 0;
+    return !hasTechName && !hasTechArray;
+  });
   const lowStock = stock.filter(s => (s.quantity || 0) <= (s.reorderPoint || 5));
   
-  // Detect schedule conflicts (same tech, same date, multiple jobs)
-  const conflicts = [];
-  const assignedActiveJobs = activeJobsList.filter(j => j.technicianName && j.technicianName !== 'Unassigned' && j.scheduledDate);
-  const techDateMap = {};
-  assignedActiveJobs.forEach(j => {
-    const key = `${j.technicianName}_${j.scheduledDate}`;
-    if (!techDateMap[key]) techDateMap[key] = [];
-    techDateMap[key].push(j);
+  // Detect schedule conflicts (overlapping schedule blocks)
+  const schedules = store.getAll('schedule') || [];
+  const techDateBlocks = {};
+  schedules.forEach(s => {
+    if (!s.technicianId || !s.date) return;
+    const key = `${s.technicianId}_${s.date}`;
+    if (!techDateBlocks[key]) techDateBlocks[key] = [];
+    techDateBlocks[key].push(s);
   });
-  Object.values(techDateMap).forEach(group => {
-    if (group.length > 1) {
-      conflicts.push(...group);
+  
+  let conflictCount = 0;
+  Object.values(techDateBlocks).forEach(blocks => {
+    if (blocks.length > 1) {
+      blocks.sort((a, b) => (a.startHour || 0) - (b.startHour || 0));
+      for (let i = 1; i < blocks.length; i++) {
+        if ((blocks[i].startHour || 0) < (blocks[i-1].endHour || 0)) {
+          conflictCount++;
+          break; // Count at most 1 conflict per tech per day
+        }
+      }
     }
   });
-  // distinct conflicts count based on unique tech+date pairs
-  const conflictCount = Object.keys(techDateMap).filter(k => techDateMap[k].length > 1).length;
 
   const count = memory.interactionCount || 0;
   const welcomeText = count > 0 
@@ -102,9 +113,6 @@ function renderIntroDashboard(thread, memory) {
         ${conflictCount > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="optimize today's schedule and resolve conflicts">⚠️ ${conflictCount} Schedule Collision(s) — Optimize</button>` : ''}
         ${lowStock.length > 0 ? `<button class="relay-chip-btn info-chip" data-cmd="show low stock items and reorder">📦 ${lowStock.length} Low Stock Item(s) — Reorder</button>` : ''}
         ${FLAGS.maps ? `<button class="relay-chip-btn" data-cmd="What's the best order to run today's jobs, with drive times?">🗺️ Plan Today's Route</button>` : ''}
-        <button class="relay-chip-btn" data-cmd="add a schedule widget">📅 Add Schedule Widget</button>
-        <button class="relay-chip-btn" data-cmd="fit the canvas">🔍 Zoom Canvas to Fit</button>
-        <button class="relay-chip-btn" data-cmd="lock the canvas">🔒 Lock Canvas Layout</button>
         ${(() => {
             let topChip = { cmd: '', label: '' };
             if (activeJobsCount >= overdueInvoices && activeJobsCount >= pendingQuotes) {
@@ -223,10 +231,12 @@ export async function openRelay() {
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="relay-toggle-week" title="What's Happening This Week"><span class="material-icons-outlined">calendar_month</span></button>
         <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
         <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button><button class="assistant-reset-memory" title="Reset Assistant Memory"><span class="material-icons-outlined">refresh</span></button>
       </div>
     </div>
+    <div class="relay-weekly-overlay" id="relay-weekly-overlay"></div>
     <div class="relay-thread" id="relay-thread"></div>
     <div class="relay-attach-row" id="relay-attach-row"></div>
     <div class="relay-input-wrap">
@@ -409,6 +419,21 @@ export async function openRelay() {
   }
 
   panel.querySelector('.relay-close').addEventListener('click', closeRelay);
+  
+  const toggleWeekBtn = panel.querySelector('.relay-toggle-week');
+  if (toggleWeekBtn) {
+    toggleWeekBtn.addEventListener('click', () => {
+      const overlay = panel.querySelector('#relay-weekly-overlay');
+      if (overlay.classList.contains('open')) {
+        overlay.classList.remove('open');
+        toggleWeekBtn.classList.remove('active');
+      } else {
+        overlay.classList.add('open');
+        toggleWeekBtn.classList.add('active');
+        if (!overlay.innerHTML) renderWeeklyReportWidget(overlay);
+      }
+    });
+  }
 panel.querySelector('.assistant-reset-memory')?.addEventListener('click', async () => {
   await saveUserMemory({});
   location.reload();
@@ -875,6 +900,100 @@ function countMsg(label, n) {
   return `You have ${n} ${label}.`;
 }
 
+async function renderWeeklyReportWidget(container) {
+  container.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-tertiary);">Building your week ahead...</div>`;
+  
+  // 1. Get next 7 days
+  const today = new Date();
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    days.push(d);
+  }
+  
+  // 2. Fetch jobs
+  const jobs = store.getAll('jobs') || [];
+  const activeJobs = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress');
+  
+  // 3. Fetch weather if FLAG is on
+  let weatherData = null;
+  if (FLAGS.weather) {
+    try {
+      const { getOfficeForecast } = await import('../utils/weather.js');
+      weatherData = await getOfficeForecast();
+    } catch (e) {
+      console.warn('Failed to load weather for weekly widget', e);
+    }
+  }
+  
+  // 4. Build HTML
+  let html = `<div class="relay-weekly-report">
+    <div class="relay-weekly-header">
+      <h4>📅 What's Happening This Week</h4>
+    </div>`;
+    
+  if (weatherData && weatherData.daily && weatherData.daily.length > 0) {
+    html += `<div class="relay-weather-ribbon">`;
+    weatherData.daily.forEach(day => {
+      // Find matching date in the 7 days if possible, or just iterate
+      html += `<div class="relay-weather-day">
+        <div class="rw-date">${new Date(day.date).toLocaleDateString('en-US', {weekday:'short'})}</div>
+        <div class="rw-icon" title="${day.text}">${day.severe ? '⚠️' : (day.text.toLowerCase().includes('rain') ? '🌧️' : '☀️')}</div>
+        <div class="rw-temp">${day.maxC}°<span class="rw-low">/${day.minC}°</span></div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  
+  html += `<div class="relay-weekly-timeline">`;
+  
+  days.forEach((d, i) => {
+    const dateStr = d.toISOString().split('T')[0];
+    const dayJobs = activeJobs.filter(j => j.scheduledDate === dateStr);
+    
+    // Group jobs by tech
+    const techJobs = {};
+    dayJobs.forEach(j => {
+      const tech = j.technicianName || 'Unassigned';
+      if (!techJobs[tech]) techJobs[tech] = [];
+      techJobs[tech].push(j);
+    });
+    
+    const isToday = i === 0;
+    const label = isToday ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    
+    html += `<div class="relay-timeline-day">
+      <div class="rtd-header">
+        <span class="rtd-date">${label}</span>
+        <span class="rtd-count">${dayJobs.length} job${dayJobs.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="rtd-body">`;
+      
+    if (dayJobs.length === 0) {
+      html += `<div class="rtd-empty">No jobs scheduled.</div>`;
+    } else {
+      Object.entries(techJobs).forEach(([tech, jobs]) => {
+        const locations = jobs.map(j => {
+           let loc = j.location || 'Unknown location';
+           if (typeof loc === 'object') loc = loc.label || loc.address || 'Unknown location';
+           return loc.split(',')[0]; // Just the street or city
+        }).join(' → ');
+        
+        html += `<div class="rtd-tech-row">
+          <div class="rtd-tech-name">${tech}</div>
+          <div class="rtd-tech-route" title="${locations}">📍 ${jobs.length} stop${jobs.length !== 1 ? 's' : ''} <span class="route-locs">(${locations})</span></div>
+        </div>`;
+      });
+    }
+    
+    html += `</div></div>`;
+  });
+  
+  html += `</div></div>`; // close timeline and report
+  container.innerHTML = html;
+}
+
 // ── AI Engine completions call ───────────────────────────────────
 
 async function callAIEngine() {
@@ -1076,6 +1195,7 @@ Assistant Tone & Formatting Guidelines:
 
 Current Live CRM Data Context (updated real-time):
 - Current Local Date & Time: ${new Date().toLocaleString()}
+- CRITICAL DATE AWARENESS: The "Current Local Date & Time" above is the absolute ground truth. If it differs from any dates mentioned in past chat messages, ALWAYS use the date above.
 - Active Technicians & Workloads: ${techWorkloadMap || 'None'}
 - Total Registered Customers: ${customers.length}
 - Jobs Summary: Total: ${jobs.length}, Active/Scheduled: ${activeJobs.length}, Completed/Invoiced: ${completedJobs.length}, Pending: ${pendingJobs.length}, Unassigned: ${unassignedJobs.length}

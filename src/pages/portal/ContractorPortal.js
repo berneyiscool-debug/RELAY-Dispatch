@@ -293,9 +293,19 @@ export function renderContractorPortal(container, params) {
     if (!node) return;
 
     node.progress = newProgress;
-    if (newProgress === 100) node.status = 'Completed';
-    else if (newProgress > 0) node.status = 'In Progress';
-    else node.status = 'Not Started';
+    if (newProgress === 100) {
+      node.status = 'Completed';
+      node.completedBy = contractor.businessName || contractor.name || 'Contractor';
+      node.completedAt = new Date().toISOString();
+    } else if (newProgress > 0) {
+      node.status = 'In Progress';
+      delete node.completedBy;
+      delete node.completedAt;
+    } else {
+      node.status = 'Not Started';
+      delete node.completedBy;
+      delete node.completedAt;
+    }
 
     // Update parent tasks recursively
     updateParentProgress(job.tasks, path);
@@ -1040,6 +1050,10 @@ export function renderContractorPortal(container, params) {
                 <span class="material-icons-outlined btn-toggle-desc text-tertiary" data-job-id="${jobId}" data-path="${pathStr}" style="font-size:14px; cursor:pointer;" title="Toggle description">
                   ${isDescExpanded ? 'info' : 'info_outline'}
                 </span>
+
+                ${t.completedBy ? `
+                  <span style="font-size:10px; color:var(--text-tertiary); font-style:italic;">✓ ${escapeHTML(t.completedBy)} (${new Date(t.completedAt).toLocaleDateString()})</span>
+                ` : ''}
               </div>
               <div class="task-desc-container" style="font-size:11px; color:var(--text-secondary); line-height:1.4; padding-left: ${isAssignedToUs ? '24px' : '0px'}; font-style: italic; max-height: ${isDescExpanded ? '200px' : '0px'}; overflow: hidden; transition: max-height 0.2s ease-in-out; margin-top: ${isDescExpanded ? '4px' : '0px'};">
                 ${escapeHTML(taskDescription)}

@@ -34,18 +34,17 @@
   pointer-events: none;
 }
 
-/* Primary Button (Vibrant brand gradient & orange aura glow) */
+/* Primary Button (flat solid brand — no gradient, no aura) */
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-gradient-end, #FF3D00) 100%);
+  background: var(--color-primary);
   color: #ffffff;
-  border: 1px solid var(--color-primary-border, rgba(255, 92, 0, 0.2));
-  box-shadow: 0 4px 12px var(--color-primary-shadow, rgba(255, 92, 0, 0.22));
+  border: 1px solid transparent;
+  box-shadow: none;
 }
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--color-primary-hover-gradient-start, #FF6B1A) 0%, var(--color-primary-hover-gradient-end, #FF4D14) 100%);
-  border-color: var(--color-primary-border-hover, rgba(255, 92, 0, 0.3));
-  box-shadow: 0 6px 18px var(--color-primary-shadow-hover, rgba(255, 92, 0, 0.35));
-  transform: translateY(-1.5px);
+  background: var(--color-primary-hover);
+  border-color: transparent;
+  box-shadow: none;
   color: #ffffff;
 }
 
@@ -63,18 +62,17 @@
   transform: translateY(-1.5px);
 }
 
-/* Danger Button (Rose-to-Crimson gradient) */
+/* Danger Button (flat solid crimson — no gradient, no aura) */
 .btn-danger {
-  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+  background: var(--color-danger);
   color: #ffffff;
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.22);
+  border: 1px solid transparent;
+  box-shadow: none;
 }
 .btn-danger:hover:not(:disabled) {
-  background: linear-gradient(135deg, #F87171 0%, #E11D48 100%);
-  border-color: rgba(220, 38, 38, 0.3);
-  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.35);
-  transform: translateY(-1.5px);
+  background: #B91C1C;
+  border-color: transparent;
+  box-shadow: none;
   color: #ffffff;
 }
 
@@ -121,10 +119,8 @@
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: var(--border-radius-md); /* 1rem (16px) standard glass container */
+  border-radius: var(--border-radius-md); /* 10px flat surface (glass removed) */
   box-shadow: var(--card-shadow);
-  backdrop-filter: blur(12px); /* Level 1 Glass (12px blur) */
-  -webkit-backdrop-filter: blur(12px);
   transition: box-shadow 0.22s, border-color 0.22s;
 }
 .card:hover {

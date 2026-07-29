@@ -919,7 +919,7 @@ export function renderJobDetail(container, { id }) {
 
     } else if (activeTab === 'tasks') {
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      let canEditTasks = false;
+      let canEditTasks = true;
 
       if (!job.tasks) {
         job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
@@ -995,9 +995,7 @@ export function renderJobDetail(container, { id }) {
           <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
             <h4>Tasklists</h4>
             <div style="display:flex; gap:8px">
-              ${canEditTasks ? `<button class="btn btn-sm btn-secondary" id="btn-import-tasklist"><span class="material-icons-outlined" style="font-size:14px">download</span> Import</button>` : ''}
-              ${canEditTasks ? `<button class="btn btn-sm btn-secondary" id="btn-save-tasklist-template"><span class="material-icons-outlined" style="font-size:14px">bookmark_add</span> Save as Template</button>` : ''}
-              ${canEditTasks ? `<button class="btn btn-sm btn-primary" id="btn-save-tasks"><span class="material-icons-outlined" style="font-size:14px">save</span> Save Tasks</button>` : ''}
+              <!-- Edit logic moved back to JobForm.js -->
             </div>
           </div>
           <div class="card-body" style="padding:16px; display:flex; gap:16px; overflow-x:auto; min-height:400px; align-items:stretch">
@@ -1015,7 +1013,6 @@ export function renderJobDetail(container, { id }) {
                       ${taskViewPath.length > 0 ? `<button class="btn btn-ghost btn-sm btn-icon btn-view-back" title="Back"><span class="material-icons-outlined" style="font-size:18px">arrow_back</span></button>` : ''}
                       <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${viewTitle}">${viewTitle}</span>
                     </div>
-                    ${canEditTasks ? (taskViewPath.length === 0 ? `<button class="btn btn-ghost btn-sm btn-icon" id="btn-add-main-task" title="Add Main Task"><span class="material-icons-outlined">add</span></button>` : `<button class="btn btn-ghost btn-sm btn-icon btn-add-child-task" data-path="${taskViewPath.join('-')}" title="Add Task"><span class="material-icons-outlined">add</span></button>`) : ''}
                   </div>
                   <div style="padding:8px; display:flex; flex-direction:column; gap:4px; overflow-y:auto; flex:1">
                     ${viewList.map((p, i) => {
@@ -1023,13 +1020,11 @@ export function renderJobDetail(container, { id }) {
             const isSelected = currentPath.join('-') === taskExpandedPath.join('-');
             return `
                         <div class="task-list-item ${p.progress === 100 ? 'completed' : ''}" data-path="${currentPath.join('-')}" style="padding:8px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; ${isSelected ? 'background:var(--color-primary-light); color:var(--color-primary)' : 'background:transparent; color:var(--text-primary)'}">
-                          <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0; overflow:hidden">
-                            <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:calc(100% - 28px);" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
-                            ${canEditTasks && currentPath.length < 3 ? `
-                              <button class="btn btn-ghost btn-icon btn-sm btn-add-child-task hover-only" data-path="${currentPath.join('-')}" style="padding:0; min-width:20px; min-height:20px; height:20px; width:20px; color:var(--text-secondary); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0" title="Add Sub-task">
-                                <span class="material-icons-outlined" style="font-size:16px">add</span>
-                              </button>
-                            ` : ''}
+                          <div style="display:flex; flex-direction:column; flex:1; min-width:0; overflow:hidden">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                              <span style="font-weight:${isSelected ? '600' : '400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:calc(100% - 28px);" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</span>
+                            </div>
+                            ${p.completedBy ? `<div style="font-size:10px; color:var(--text-tertiary); margin-top:2px;">Completed by ${escapeHTML(p.completedBy)} on ${new Date(p.completedAt).toLocaleString()}</div>` : ''}
                           </div>
                           <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
                             ${(() => {
@@ -1054,7 +1049,7 @@ export function renderJobDetail(container, { id }) {
                             })()}
                             ${p.subTasks && p.subTasks.length > 0 
                               ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` 
-                              : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} ${!canEditTasks ? 'disabled style="width:18px; height:18px; cursor:not-allowed;"' : 'style="width:18px; height:18px; cursor:pointer;"'} />`
+                              : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />`
                             }
                           </div>
                         </div>
@@ -1074,7 +1069,6 @@ export function renderJobDetail(container, { id }) {
           const hasSubs = node.subTasks && node.subTasks.length > 0;
           return `
                 <div style="flex: 1; min-width:300px; display:flex; flex-direction:column; border:1px solid var(--border-color); border-radius:4px; background:var(--content-bg); padding:16px">
-                  ${!canEditTasks ? `
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
                     <h4 style="margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%" title="${escapeHTML(node.name)}">Task Details</h4>
                     <div style="display:flex;gap:8px">
@@ -1114,7 +1108,7 @@ export function renderJobDetail(container, { id }) {
                     </div>
                   </div>
                   <div style="margin-top:16px">
-                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:6px">Assigned Subcontractors</div>
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Assigned Subcontractors</div>
                     <div style="display:flex; flex-wrap:wrap; gap:6px">
                       ${(() => {
                         const ids = node.assignedContractorIds || [];
@@ -1146,21 +1140,12 @@ export function renderJobDetail(container, { id }) {
                          <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Records</span>
                          <span class="badge ${node.valueFields.filter(f => f.value !== undefined && f.value !== '').length === node.valueFields.length ? 'badge-success' : 'badge-warning'}" style="font-size:10px; padding:2px 6px">${node.valueFields.filter(f => f.value !== undefined && f.value !== '').length}/${node.valueFields.length}</span>
                        </div>
-                       <button class="btn btn-sm ${isRecordingValues ? 'btn-secondary' : 'btn-primary'} btn-toggle-recording" data-path="${path.join('-')}">
+                       <button class="btn btn-sm btn-ghost btn-record-values" data-path="${path.join('-')}">
                          <span class="material-icons-outlined" style="font-size:14px">${isRecordingValues ? 'close' : 'edit_note'}</span>
-                         ${isRecordingValues ? 'Close' : 'Enter Values'}
+                         ${isRecordingValues ? 'Cancel' : 'Record Values'}
                        </button>
                      </div>
                      ${isRecordingValues ? `
-                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px" id="value-recording-panel">
-                       ${node.valueFields.map((vf, vi) => {
-                         const ft = vf.fieldType || 'text';
-                         const hasRange = ft === 'number' && (vf.min !== undefined && vf.min !== '' || vf.max !== undefined && vf.max !== '');
-                         const isNumOutOfRange = hasRange && vf.value !== undefined && vf.value !== '' && (
-                           (vf.min !== undefined && vf.min !== '' && parseFloat(vf.value) < parseFloat(vf.min)) ||
-                           (vf.max !== undefined && vf.max !== '' && parseFloat(vf.value) > parseFloat(vf.max))
-                         );
-                         const isDropdownMismatch = ft === 'dropdown' && vf.expectedValue && vf.value && vf.value !== '' && vf.value !== vf.expectedValue;
                          const isOutOfRange = isNumOutOfRange || isDropdownMismatch;
                          const rangeHint = hasRange ? `Expected: ${vf.min !== undefined && vf.min !== '' ? vf.min : '—'} to ${vf.max !== undefined && vf.max !== '' ? vf.max : '—'}${vf.unit ? ' ' + escapeHTML(vf.unit) : ''}` : '';
                          const dropdownHint = isDropdownMismatch ? `Expected: ${escapeHTML(vf.expectedValue)}` : '';
@@ -1229,7 +1214,7 @@ export function renderJobDetail(container, { id }) {
                   </div>
                   <div class="form-group">
                     <label class="form-label">Task Name</label>
-                    <input type="text" class="form-input detail-input" data-field="name" value="${escapeHTML(node.name)}" ${!canEditTasks ? 'disabled' : ''} />
+                    <input type="text" class="form-input detail-input" data-field="name" value="${escapeHTML(node.name)}" ${!isTasksEditing ? 'disabled' : ''} />
                   </div>
                   ${hasSubs ? `
                   <div style="margin-bottom:16px">
@@ -1240,15 +1225,15 @@ export function renderJobDetail(container, { id }) {
                   <div class="form-row">
                     <div class="form-group">
                       <label class="form-label">Start Date</label>
-                      <input type="date" class="form-input detail-input" data-field="startDate" value="${node.startDate ? node.startDate.split('T')[0] : ''}" ${!canEditTasks ? 'disabled' : ''} />
+                      <input type="date" class="form-input detail-input" data-field="startDate" value="${node.startDate ? node.startDate.split('T')[0] : ''}" ${!isTasksEditing ? 'disabled' : ''} />
                     </div>
                     <div class="form-group">
                       <label class="form-label">Estimated Hours</label>
-                      <input type="number" class="form-input detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" ${!canEditTasks ? 'disabled' : ''} />
+                      <input type="number" class="form-input detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" ${!isTasksEditing ? 'disabled' : ''} />
                     </div>
                     <div class="form-group">
                       <label class="form-label">People</label>
-                      <input type="number" class="form-input detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" ${!canEditTasks ? 'disabled' : ''} />
+                      <input type="number" class="form-input detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" ${!isTasksEditing ? 'disabled' : ''} />
                     </div>
                   </div>
                   `}
@@ -1266,7 +1251,7 @@ export function renderJobDetail(container, { id }) {
                         const isChecked = (node.assignedContractorIds || []).includes(c.id);
                         return `
                           <label class="contractor-checkbox-label" style="display:flex; align-items:center; gap:8px; margin:0; padding:4px 6px; border-radius:4px; cursor:pointer; font-size:13px; font-weight:normal; transition:background 0.2s">
-                            <input type="checkbox" class="contractor-assign-checkbox" value="${c.id}" ${isChecked ? 'checked' : ''} ${!canEditTasks ? 'disabled' : ''} style="width:16px; height:16px; margin:0; cursor:pointer" />
+                            <input type="checkbox" class="contractor-assign-checkbox" value="${c.id}" ${isChecked ? 'checked' : ''} ${!isTasksEditing ? 'disabled' : ''} style="width:16px; height:16px; margin:0; cursor:pointer" />
                             <span style="font-weight:500; color:var(--text-primary)">${escapeHTML(c.businessName)}</span>
                             <span style="color:var(--text-tertiary); font-size:11px">(${escapeHTML(c.contactName)})</span>
                           </label>
@@ -1277,7 +1262,7 @@ export function renderJobDetail(container, { id }) {
                   </div>
                   <div class="form-group">
                      <label class="form-label">Description</label>
-                     <textarea class="form-input detail-input" data-field="description" rows="3" ${!canEditTasks ? 'disabled' : ''}>${escapeHTML(node.description || '')}</textarea>
+                     <textarea class="form-input detail-input" data-field="description" rows="3" ${!isTasksEditing ? 'disabled' : ''}>${escapeHTML(node.description || '')}</textarea>
                    </div>
                    ${!hasSubs ? `
                    <div style="margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px">
@@ -1295,7 +1280,7 @@ export function renderJobDetail(container, { id }) {
                      ${!isRecordingValues ? `
                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
                        <div style="font-size:11px; color:var(--text-tertiary)">Define the values a technician needs to record for this task.</div>
-                       ${canEditTasks ? `<button class="btn btn-sm btn-secondary btn-add-value-field" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>` : ''}
+                       ${canEditTasks && isTasksEditing ? `<button class="btn btn-sm btn-secondary btn-add-value-field" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>` : ''}
                      </div>
                      <div style="display:flex; flex-direction:column; gap:8px" id="value-fields-config">
                        ${(node.valueFields || []).map((vf, vi) => {
@@ -1310,7 +1295,7 @@ export function renderJobDetail(container, { id }) {
                                <option value="number"${ft === 'number' ? ' selected' : ''}>Number</option>
                                <option value="dropdown"${ft === 'dropdown' ? ' selected' : ''}>Dropdown</option>
                              </select>
-                             ${canEditTasks ? `<button class="btn btn-ghost btn-sm btn-icon btn-remove-value-field" data-vf-idx="${vi}" style="color:var(--color-danger); min-width:28px; min-height:28px; padding:0"><span class="material-icons-outlined" style="font-size:16px">close</span></button>` : ''}
+                             ${canEditTasks && isTasksEditing ? `<button class="btn btn-ghost btn-sm btn-icon btn-remove-value-field" data-vf-idx="${vi}" style="color:var(--color-danger); min-width:28px; min-height:28px; padding:0"><span class="material-icons-outlined" style="font-size:16px">close</span></button>` : ''}
                            </div>
                            ${ft === 'number' ? `
                            <div style="display:flex; align-items:center; gap:8px; margin-left:28px">
@@ -1421,6 +1406,16 @@ export function renderJobDetail(container, { id }) {
           const node = getTaskByPath(job.tasks, path);
           node.progress = e.target.checked ? 100 : 0;
           node.status = e.target.checked ? 'Completed' : 'Not Started';
+          
+          if (e.target.checked) {
+            const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+            node.completedBy = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
+            node.completedAt = new Date().toISOString();
+          } else {
+            delete node.completedBy;
+            delete node.completedAt;
+          }
+          
           updateParentProgress(job.tasks, path);
           store.update('jobs', id, { tasks: job.tasks });
           renderTabContent();
@@ -1697,9 +1692,21 @@ export function renderJobDetail(container, { id }) {
         });
       });
 
+      tc.querySelector('#btn-edit-tasks')?.addEventListener('click', () => {
+        isTasksEditing = true;
+        renderTabContent();
+      });
+
+      tc.querySelector('#btn-cancel-edit-tasks')?.addEventListener('click', () => {
+        isTasksEditing = false;
+        renderTabContent();
+      });
+
       tc.querySelector('#btn-save-tasks')?.addEventListener('click', () => {
         store.update('jobs', id, { tasks: job.tasks });
+        isTasksEditing = false;
         showToast('Tasks saved', 'success');
+        renderTabContent();
       });
 
       tc.querySelector('#btn-save-tasklist-template')?.addEventListener('click', () => {

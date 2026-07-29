@@ -525,7 +525,9 @@ export function checkRecurringJobs() {
           j.scheduledDate === dateStr
         );
 
-        if (!hasJob) {
+        const isSkipped = job.recurringConfig?.skippedDates?.includes(dateStr);
+
+        if (!hasJob && !isSkipped) {
           // 1. Auto-spawn the child job
           const jobMaterials = job.materials ? JSON.parse(JSON.stringify(job.materials)) : [];
           const jobTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [];
