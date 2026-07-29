@@ -1069,6 +1069,74 @@ class DataStore {
     }
   }
 
+  async acquireFolderLock(lockName, timeoutSeconds = 30) {
+    if (!this.folderSyncEnabled || !this.dirHandle) return true; // Bypass if not using local folder sync
+    try {
+      const hasPerm = await this.verifyDirPermission(true);
+      if (!hasPerm) return true;
+      const companyFolder = await this.ensureCompanyFolderHandle();
+      if (!companyFolder) return true;
+      const dataDir = await companyFolder.getDirectoryHandle('data', { create: true });
+      
+      const fileName = `${lockName}.lock`;
+      let existingLock = null;
+      try {
+        const fileHandle = await dataDir.getFileHandle(fileName, { create: false });
+        const file = await fileHandle.getFile();
+        const text = await file.text();
+        existingLock = JSON.parse(text);
+      } catch (e) {
+        // Not found, or unparseable
+      }
+
+      const now = Date.now();
+      if (existingLock && existingLock.timestamp) {
+        if (now - existingLock.timestamp < timeoutSeconds * 1000) {
+          // Lock is still active
+          return false;
+        }
+      }
+
+      // Claim the lock
+      const machineId = this.userId || Math.random().toString(36).substr(2, 9);
+      const lockData = { machineId, timestamp: now };
+      
+      const writeHandle = await dataDir.getFileHandle(fileName, { create: true });
+      const writable = await writeHandle.createWritable();
+      await writable.write(JSON.stringify(lockData));
+      await writable.close();
+
+      // Wait 500ms and verify we still hold the lock (rudimentary collision detection)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const verifyHandle = await dataDir.getFileHandle(fileName, { create: false });
+      const verifyFile = await verifyHandle.getFile();
+      const verifyText = await verifyFile.text();
+      const verifyData = JSON.parse(verifyText);
+
+      if (verifyData.machineId !== machineId || verifyData.timestamp !== now) {
+        // Someone else wrote over our lock!
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error(`Failed to acquire folder lock ${lockName}:`, err);
+      return false; // Fail safe
+    }
+  }
+
+  async releaseFolderLock(lockName) {
+    if (!this.folderSyncEnabled || !this.dirHandle) return;
+    try {
+      const companyFolder = await this.ensureCompanyFolderHandle();
+      if (!companyFolder) return;
+      const dataDir = await companyFolder.getDirectoryHandle('data', { create: true });
+      await dataDir.removeEntry(`${lockName}.lock`);
+    } catch (err) {
+      // Ignore errors if file doesn't exist
+    }
+  }
+
   async writeDocumentFileToFolder(docId, name, dataUrl) {
     if (!this.folderSyncEnabled) return null;
 

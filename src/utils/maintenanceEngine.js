@@ -29,18 +29,40 @@ export async function checkMaintenancePlans() {
     
     await runEngineCore(userId, isCloud);
   } else {
-    // Local / Offline mode: Use Browser Web Locks API for cross-tab coordination
+    // Local / Offline mode: Use Folder Sync lock (if enabled) + Browser Web Locks API for cross-tab coordination
+    
+    // 1. Cross-machine lock (via shared network drive folder)
+    if (store.folderSyncEnabled) {
+      const gotFolderLock = await store.acquireFolderLock('maintenance_engine', 30);
+      if (!gotFolderLock) {
+        console.log('Maintenance engine locked by another machine (LAN sync), skipping...');
+        return;
+      }
+    }
+
+    // 2. Cross-tab lock (via local browser)
+    const runWithLock = async () => {
+      try {
+        await runEngineCore(userId, isCloud);
+      } finally {
+        if (store.folderSyncEnabled) {
+          await store.releaseFolderLock('maintenance_engine');
+        }
+      }
+    };
+
     if (navigator.locks) {
       await navigator.locks.request('maintenance_engine_local', { ifAvailable: true }, async (lock) => {
         if (!lock) {
           console.log('Maintenance engine locked by another tab (local), skipping...');
+          if (store.folderSyncEnabled) await store.releaseFolderLock('maintenance_engine');
           return;
         }
-        await runEngineCore(userId, isCloud);
+        await runWithLock();
       });
     } else {
       // Fallback if no locks API
-      await runEngineCore(userId, isCloud);
+      await runWithLock();
     }
   }
 }
