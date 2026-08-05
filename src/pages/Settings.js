@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../data/store.js';
+import { supabase } from '../utils/supabase.js';
 import { showToast } from '../components/Notifications.js';
 import { showModal } from '../components/Modal.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
@@ -12,6 +13,7 @@ import { seedMinimalData, seedData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 import { FLAGS } from '../utils/flags.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain } from '../utils/email.js';
+import { EMAIL_TEMPLATES, previewEmail } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
 
@@ -235,7 +237,7 @@ export function renderSettings(container) {
 
   function getCategoryForTab(tab) {
     if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
-    if (['templates_forms', 'invoices_quotes', 'payments', 'email'].includes(tab)) return 'workflow';
+    if (['templates_forms', 'invoices_quotes', 'payments', 'email', 'email_templates'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
     if (['materials', 'cost_centers', 'tax'].includes(tab)) return 'resources';
     return 'general';
@@ -455,7 +457,8 @@ export function renderSettings(container) {
         // v1.3 #3 — dark until FLAGS.payments flips on for launch
         ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : []),
         // v1.3 #5 — dark until FLAGS.email flips on for launch
-        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain' }] : [])
+        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain' }] : []),
+        ...(FLAGS.email ? [{ id: 'email_templates', label: 'Email Templates' }] : [])
       ]
     },
     {
@@ -675,6 +678,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'email') {
       renderEmailTab(tc);
+      return;
+    }
+
+    if (activeTab === 'email_templates') {
+      renderEmailTemplatesTab(tc);
       return;
     }
 
@@ -3863,6 +3871,156 @@ export function renderSettings(container) {
     });
   }
 
+  function renderEmailTemplatesTab(tc) {
+    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+    if (!isCloud) {
+      tc.innerHTML = `
+        <div class="card" style="max-width:760px">
+          <div class="card-header"><h4>Email Templates</h4></div>
+          <div class="card-body"><p style="color:var(--text-secondary);">Email personalisation is a cloud feature. Upgrade to a cloud account to customise the emails RELAY sends.</p></div>
+        </div>`;
+      return;
+    }
+
+    const s0 = store.getSettings() || {};
+    const email0 = s0.email || {};
+    const dtheme = s0.documentTheme || {};
+    const draft = {
+      branding: { ...(email0.branding || {}) },
+      templates: JSON.parse(JSON.stringify(email0.templates || {})),
+    };
+    let activeType = 'invoice';
+
+    const varChips = (keys) => keys.map(k => `<code style="font-size:11px;background:var(--bg-color);padding:1px 6px;border-radius:4px;">{${k}}</code>`).join(' ');
+
+    tc.innerHTML = `
+      <div class="card" style="max-width:1100px">
+        <div class="card-header"><h4>Email Templates</h4></div>
+        <div class="card-body">
+          <p style="color:var(--text-secondary);margin-top:0;">Personalise the emails RELAY sends. Edits preview live on the right and apply to every send. Leave a field blank to use the built-in default.</p>
+          <div style="display:flex;gap:24px;flex-wrap:wrap;">
+            <div style="flex:1 1 380px;min-width:320px;">
+              <h5 style="margin:6px 0 10px;">Brand</h5>
+              <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:10px;">
+                <input type="checkbox" id="et-uselogo" style="width:16px;height:16px;" ${draft.branding.useLogo ? 'checked' : ''} />
+                Show your company logo in the header
+              </label>
+              <div style="display:flex;gap:12px;margin-bottom:8px;">
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label">Header colour</label>
+                  <input type="color" id="et-headerbg" value="${escapeHTML(draft.branding.headerBg || dtheme.headerBg || '#1E2A3A')}" style="width:56px;height:36px;padding:2px;" />
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label">Button / accent</label>
+                  <input type="color" id="et-accent" value="${escapeHTML(draft.branding.accent || dtheme.accentColor || '#FF5C00')}" style="width:56px;height:36px;padding:2px;" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Footer line (optional)</label>
+                <input class="form-input" id="et-footer" value="${escapeHTML(draft.branding.footer || '')}" placeholder="Grace Dance • 02 4900 0000 • gracedance.com" />
+              </div>
+
+              <h5 style="margin:18px 0 10px;">Template</h5>
+              <div class="form-group">
+                <select class="form-input" id="et-type">
+                  ${EMAIL_TEMPLATES.map(t => `<option value="${t.key}" ${t.key === activeType ? 'selected' : ''}>${t.label}</option>`).join('')}
+                </select>
+              </div>
+              <div id="et-fields"></div>
+            </div>
+
+            <div style="flex:1 1 460px;min-width:340px;">
+              <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;">Subject: <span id="et-subject" style="color:var(--text-primary);font-weight:600;"></span></div>
+              <iframe id="et-preview" title="Email preview" style="width:100%;height:620px;border:1px solid var(--border-color);border-radius:10px;background:#fff;"></iframe>
+            </div>
+          </div>
+
+          <div style="margin-top:18px;">
+            <button class="btn btn-primary" id="et-save"><span class="material-icons-outlined">save</span> Save Email Templates</button>
+          </div>
+        </div>
+      </div>`;
+
+    const metaFor = () => EMAIL_TEMPLATES.find(t => t.key === activeType);
+    const fieldsEl = tc.querySelector('#et-fields');
+    const preview = tc.querySelector('#et-preview');
+    const subjectEl = tc.querySelector('#et-subject');
+
+    const syncBrand = () => {
+      draft.branding.useLogo = tc.querySelector('#et-uselogo').checked;
+      draft.branding.headerBg = tc.querySelector('#et-headerbg').value;
+      draft.branding.accent = tc.querySelector('#et-accent').value;
+      draft.branding.footer = tc.querySelector('#et-footer').value;
+    };
+
+    function currentOverride() {
+      syncBrand();
+      return { branding: { ...draft.branding }, template: draft.templates[activeType] || {} };
+    }
+
+    function refreshPreview() {
+      const { subject, html } = previewEmail(activeType, currentOverride());
+      preview.srcdoc = html;
+      subjectEl.textContent = subject;
+    }
+
+    function renderFields() {
+      const t = draft.templates[activeType] || {};
+      const m = metaFor();
+      fieldsEl.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">Subject</label>
+          <input class="form-input et-f" data-k="subject" value="${escapeHTML(t.subject || '')}" placeholder="(default)" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Greeting / intro</label>
+          <textarea class="form-input et-f" data-k="intro" rows="3" placeholder="(default)">${escapeHTML(t.intro || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Closing note</label>
+          <textarea class="form-input et-f" data-k="note" rows="2" placeholder="(default)">${escapeHTML(t.note || '')}</textarea>
+        </div>
+        ${m.cta ? `
+        <div class="form-group">
+          <label class="form-label">Button label</label>
+          <input class="form-input et-f" data-k="ctaLabel" value="${escapeHTML(t.ctaLabel || '')}" placeholder="(default)" />
+        </div>` : ''}
+        <div style="font-size:11px;color:var(--text-tertiary);">Variables: ${varChips(m.vars)}</div>`;
+      fieldsEl.querySelectorAll('.et-f').forEach(el => el.addEventListener('input', () => {
+        draft.templates[activeType] = draft.templates[activeType] || {};
+        draft.templates[activeType][el.dataset.k] = el.value;
+        refreshPreview();
+      }));
+    }
+
+    ['et-uselogo', 'et-headerbg', 'et-accent', 'et-footer'].forEach(id => {
+      tc.querySelector('#' + id)?.addEventListener('input', refreshPreview);
+    });
+
+    tc.querySelector('#et-type').addEventListener('change', (e) => {
+      activeType = e.target.value;
+      renderFields();
+      refreshPreview();
+    });
+
+    tc.querySelector('#et-save').addEventListener('click', async () => {
+      try {
+        syncBrand();
+        const s = store.getSettings() || {};
+        s.email = { ...(s.email || {}), branding: draft.branding, templates: draft.templates };
+        await store.saveSettings(s);
+        showToast('Email templates saved', 'success');
+        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+      } catch (err) {
+        console.error('Error saving email templates:', err);
+        showToast('Could not save email templates', 'error');
+      }
+    });
+
+    renderFields();
+    refreshPreview();
+  }
+
   function renderEmailTab(tc) {
     const settings = store.getSettings() || {};
     const email = settings.email || {};
@@ -5327,9 +5485,9 @@ export function renderSettings(container) {
         const errEl = tc.querySelector('#test-error-details');
 
         const inElectron = !!(window.electronAPI && window.electronAPI.callDeepSeek);
-        const hasEnvKey = !!(import.meta.env.VITE_DEEPSEEK_API_KEY);
+        const isCloudUser = !!(store.companyId && !store.companyId.startsWith('acct_'));
 
-        if (!apiKey && !inElectron && !hasEnvKey) {
+        if (!apiKey && !inElectron && !isCloudUser) {
           showToast('Enter an API key to test.', 'error');
           return;
         }
@@ -5340,23 +5498,12 @@ export function renderSettings(container) {
 
         const startTime = Date.now();
         try {
-          if (inElectron) {
-            const data = await window.electronAPI.callDeepSeek({
-              messages: [{ role: 'user', content: 'respond only with the word OK' }],
-              endpoint,
-              model,
-              apiKey // Pass typed key if any
-            });
-            const latency = Date.now() - startTime;
-            const reply = data.choices?.[0]?.message?.content || 'No reply';
-            statusEl.style.color = 'var(--color-success)';
-            statusEl.textContent = `Success (via Electron IPC)! Latency: ${latency}ms (Reply: "${reply}")`;
-          } else {
+          if (apiKey) {
             const res = await fetch(endpoint, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey || import.meta.env.VITE_DEEPSEEK_API_KEY}`
+                'Authorization': `Bearer ${apiKey}`
               },
               body: JSON.stringify({
                 model: model || 'deepseek-chat',
@@ -5377,6 +5524,30 @@ export function renderSettings(container) {
             const reply = data.choices?.[0]?.message?.content || 'No reply';
             statusEl.style.color = 'var(--color-success)';
             statusEl.textContent = `Success! Latency: ${latency}ms (Reply: "${reply}")`;
+          } else if (inElectron) {
+            const data = await window.electronAPI.callDeepSeek({
+              messages: [{ role: 'user', content: 'respond only with the word OK' }],
+              endpoint,
+              model,
+              apiKey
+            });
+            const latency = Date.now() - startTime;
+            const reply = data.choices?.[0]?.message?.content || 'No reply';
+            statusEl.style.color = 'var(--color-success)';
+            statusEl.textContent = `Success (via Electron IPC)! Latency: ${latency}ms (Reply: "${reply}")`;
+          } else if (isCloudUser) {
+            const { data, error } = await supabase.functions.invoke('relay-copilot', {
+              body: {
+                messages: [{ role: 'user', content: 'respond only with the word OK' }],
+                endpoint,
+                model
+              }
+            });
+            if (error) throw error;
+            const latency = Date.now() - startTime;
+            const reply = data.choices?.[0]?.message?.content || 'No reply';
+            statusEl.style.color = 'var(--color-success)';
+            statusEl.textContent = `Success (via Supabase Edge Function)! Latency: ${latency}ms (Reply: "${reply}")`;
           }
         } catch (err) {
           console.error('AI test connection failed:', err);
