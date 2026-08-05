@@ -35,6 +35,7 @@ const TABLE_MAP = {
   schedule: 'schedule',
   projects: 'projects',
   costCenters: 'cost_centers',
+  emailLog: 'email_log',
   deputyAsks: null
 };
 
@@ -426,6 +427,20 @@ const TABLE_COLUMNS = {
     "task_name",
     "created_at",
     "updated_at"
+  ],
+  email_log: [
+    "id",
+    "company_id",
+    "to_email",
+    "subject",
+    "template",
+    "status",
+    "provider_id",
+    "related_type",
+    "related_id",
+    "error",
+    "created_at",
+    "updated_at"
   ]
 };
 
@@ -622,7 +637,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 4);
+      const request = window.indexedDB.open(dbName, 5);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1510,6 +1525,12 @@ class DataStore {
       if (record.start_time !== undefined) { record.startTime = record.start_time; delete record.start_time; }
       if (record.finish_time !== undefined) { record.finishTime = record.finish_time; delete record.finish_time; }
     }
+    if (collection === 'emailLog') {
+      if (record.to_email !== undefined) { record.toEmail = record.to_email; delete record.to_email; }
+      if (record.provider_id !== undefined) { record.providerId = record.provider_id; delete record.provider_id; }
+      if (record.related_type !== undefined) { record.relatedType = record.related_type; delete record.related_type; }
+      if (record.related_id !== undefined) { record.relatedId = record.related_id; delete record.related_id; }
+    }
 
     if (record.line_items !== undefined) {
       if (collection === 'invoices' || collection === 'quotes') {
@@ -2141,6 +2162,13 @@ class DataStore {
       if (record.taskName !== undefined) { record.task_name = record.taskName; delete record.taskName; }
       if (record.startTime !== undefined) { record.start_time = record.startTime; delete record.startTime; }
       if (record.finishTime !== undefined) { record.finish_time = record.finishTime; delete record.finishTime; }
+    }
+
+    if (collection === 'emailLog') {
+      if (record.toEmail !== undefined) { record.to_email = record.toEmail; delete record.toEmail; }
+      if (record.providerId !== undefined) { record.provider_id = record.providerId; delete record.providerId; }
+      if (record.relatedType !== undefined) { record.related_type = record.relatedType; delete record.relatedType; }
+      if (record.relatedId !== undefined) { record.related_id = record.relatedId; delete record.relatedId; }
     }
 
     // Filter out columns not in schema to prevent 400 Bad Request
