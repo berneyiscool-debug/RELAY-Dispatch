@@ -747,6 +747,11 @@ export function renderLaunchScreen(container, onComplete) {
           </div>
         </div>
 
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: -4px;">
+          <input type="checkbox" id="local-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${localStorage.getItem('relay_local_remember_me') === 'true' ? 'checked' : ''}>
+          <label for="local-remember-me" style="font-size: 13px; color: #94a3b8; cursor: pointer; user-select: none;">Remember me</label>
+        </div>
+
         <button type="submit" class="launch-btn launch-btn-primary" id="btn-local-signin-submit">
           Sign In Offline
         </button>
@@ -784,6 +789,11 @@ export function renderLaunchScreen(container, onComplete) {
             <span class="material-icons-outlined launch-input-icon">lock</span>
             <input type="password" id="cloud-password" class="launch-input" placeholder="••••••••" required>
           </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: -4px;">
+          <input type="checkbox" id="cloud-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${localStorage.getItem('relay_cloud_remember_me') === 'true' ? 'checked' : ''}>
+          <label for="cloud-remember-me" style="font-size: 13px; color: #64748b; cursor: pointer; user-select: none;">Remember me</label>
         </div>
 
         <button type="submit" class="launch-btn launch-btn-primary" id="btn-cloud-submit">
@@ -1229,6 +1239,23 @@ export function renderLaunchScreen(container, onComplete) {
         render();
       });
     }
+    // Prefill Remembered Emails
+    if (localStorage.getItem('relay_local_remember_me') === 'true') {
+      const localUsername = localStorage.getItem('relay_local_remembered_email');
+      const input = container.querySelector('#local-signin-username');
+      if (input && localUsername) {
+        input.value = localUsername;
+        setTimeout(() => container.querySelector('#local-signin-password')?.focus(), 50);
+      }
+    }
+    if (localStorage.getItem('relay_cloud_remember_me') === 'true') {
+      const cloudEmail = localStorage.getItem('relay_cloud_remembered_email');
+      const input = container.querySelector('#cloud-email');
+      if (input && cloudEmail) {
+        input.value = cloudEmail;
+        setTimeout(() => container.querySelector('#cloud-password')?.focus(), 50);
+      }
+    }
   };
 
   const handleCloudSignIn = async (e) => {
@@ -1243,6 +1270,14 @@ export function renderLaunchScreen(container, onComplete) {
 
     const rawInput = container.querySelector('#cloud-email').value.trim();
     const password = container.querySelector('#cloud-password').value;
+
+    const rememberMe = container.querySelector('#cloud-remember-me')?.checked;
+    localStorage.setItem('relay_cloud_remember_me', rememberMe ? 'true' : 'false');
+    if (rememberMe) {
+      localStorage.setItem('relay_cloud_remembered_email', rawInput);
+    } else {
+      localStorage.removeItem('relay_cloud_remembered_email');
+    }
 
     let authEmail = rawInput;
     if (authEmail.includes('@')) {
@@ -1394,6 +1429,14 @@ export function renderLaunchScreen(container, onComplete) {
     const accountId = profileSelect.value;
     const usernameInput = container.querySelector('#local-signin-username').value.trim().toLowerCase();
     const passwordInput = container.querySelector('#local-signin-password').value;
+
+    const rememberMe = container.querySelector('#local-remember-me')?.checked;
+    localStorage.setItem('relay_local_remember_me', rememberMe ? 'true' : 'false');
+    if (rememberMe) {
+      localStorage.setItem('relay_local_remembered_email', usernameInput);
+    } else {
+      localStorage.removeItem('relay_local_remembered_email');
+    }
 
     try {
       if (typeof sessionStorage !== 'undefined') {
