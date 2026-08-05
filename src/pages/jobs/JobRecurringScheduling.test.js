@@ -412,6 +412,54 @@ describe('Job Recurring Scheduling Integrations', () => {
     assert.strictEqual(collisionNotif.status, 'Warning');
     assert.ok(collisionNotif.description.includes('collides with an existing schedule allocation'));
   });
+
+  test('Spawned schedule block survives cloud serialization round-trip (regression: job_id/technician_id nulled)', () => {
+    const localDateStr = (date) => {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const todayStr = localDateStr(new Date());
+
+    const tech = store.create('technicians', { name: 'Round Trip Tech' });
+    const parent = store.create('jobs', {
+      number: 'J-RT', title: 'Round Trip Service', customerId: 'c1', customerName: 'ACME',
+      preferredTime: '14:00', estimatedHours: 3, isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: todayStr, end: todayStr, defaultTechnicianId: tech.id, daysOfWeek: [] }
+    });
+
+    checkRecurringJobs();
+    const child = store.getAll('jobs').find(j => j.parentJobId === parent.id);
+    const sched = store.getAll('schedule').find(s => s.jobId === child.id);
+    assert.ok(sched, 'schedule block should exist in cache');
+
+    // Denormalize (what is written to Supabase) must keep the FK + position columns.
+    // These were previously overwritten with null by the schedule-specific block,
+    // which dropped the block on reload and mis-rendered the spawned job.
+    const dbRow = store.denormalizeRecord(sched, 'schedule');
+    assert.strictEqual(dbRow.job_id, child.id, 'job_id must not be nulled on write');
+    assert.strictEqual(dbRow.technician_id, tech.id, 'technician_id must not be nulled on write');
+    assert.strictEqual(dbRow.start_hour, 14, 'start_hour must not be nulled on write');
+    assert.strictEqual(dbRow.start_time, `${todayStr}T14:00`);
+
+    // Simulate the Supabase timestamptz column re-tagging naive times as UTC,
+    // then normalize back (as a reload / realtime push would).
+    const asTz = (s) => (s && !/[+Z]/.test(s.slice(11)) ? s + ':00+00:00' : s);
+    const back = store.normalizeRecord(
+      { ...dbRow, start_time: asTz(dbRow.start_time), finish_time: asTz(dbRow.finish_time) },
+      'schedule'
+    );
+
+    assert.strictEqual(back.jobId, child.id, 'jobId must survive the full round-trip');
+    assert.strictEqual(back.technicianId, tech.id, 'technicianId must survive the full round-trip');
+
+    // Rendered vertical position must equal the forecast (preferredTime 14:00).
+    const renderStartHour = back.startTime
+      ? new Date(back.startTime).getHours() + new Date(back.startTime).getMinutes() / 60
+      : back.startHour;
+    assert.strictEqual(renderStartHour, 14, 'spawned block must render at preferredTime, matching the forecast');
+  });
 });
 
 

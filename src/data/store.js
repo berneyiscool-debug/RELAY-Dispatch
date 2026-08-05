@@ -2062,7 +2062,11 @@ class DataStore {
 
     if (collection === 'invoices') {
       const meta = {
-        sections: record.sections || [],
+        // The generic mapper above already moved `sections` into record.line_items
+        // and deleted the source, so `record.sections` is undefined here. Read the
+        // sections back from record.line_items or every invoice line item is
+        // silently dropped on cloud save.
+        sections: record.sections || record.line_items || [],
         invoiceType: record.invoiceType || 'Standard',
         laborProfileId: record.laborProfileId || '',
         issueDate: record.issueDate || '',
@@ -2080,7 +2084,10 @@ class DataStore {
 
     if (collection === 'quotes') {
       const meta = {
-        sections: record.sections || [],
+        // See invoices above: the generic mapper relocated `sections` into
+        // record.line_items and deleted the source, so read it back from there
+        // to avoid dropping quote line items on cloud save.
+        sections: record.sections || record.line_items || [],
         laborProfileId: record.laborProfileId || '',
         description: record.description || '',
         isTemplate: record.isTemplate || false,
@@ -2110,19 +2117,30 @@ class DataStore {
     }
 
     if (collection === 'schedule') {
-      record.job_id = record.jobId || null; delete record.jobId;
-      record.job_number = record.jobNumber || null; delete record.jobNumber;
-      record.technician_id = record.technicianId || null; delete record.technicianId;
-      record.technician_name = record.technicianName || null; delete record.technicianName;
-      record.start_hour = record.startHour !== undefined ? record.startHour : null; delete record.startHour;
-      record.end_hour = record.endHour !== undefined ? record.endHour : null; delete record.endHour;
-      record.day_offset = record.dayOffset !== undefined ? record.dayOffset : null; delete record.dayOffset;
-      record.customer_name = record.customerName || null; delete record.customerName;
-      record.site_address = record.siteAddress || null; delete record.siteAddress;
-      record.task_id = record.taskId || null; delete record.taskId;
-      record.task_name = record.taskName || null; delete record.taskName;
-      record.start_time = record.startTime || null; delete record.startTime;
-      record.finish_time = record.finishTime || null; delete record.finishTime;
+      // NOTE: the generic camelCase->snake_case mappers above already convert
+      // ALL of these fields and delete the camelCase source. This block used to
+      // re-assign them unconditionally (e.g. `record.job_id = record.jobId || null`),
+      // but by this point record.jobId/technicianId/startHour/... are already
+      // deleted, so it read `undefined` and wrote `null` — nulling job_id,
+      // technician_id and start_hour on every spawned schedule block. On reload
+      // the block could no longer be matched to its job (jobId null) and fell
+      // through to the legacy hash-random-time renderer, so auto-scheduled
+      // recurring jobs appeared at the wrong time/place. Guard every mapping so
+      // it only fills a field the generic pass missed and never clobbers a good
+      // value with null.
+      if (record.jobId !== undefined) { record.job_id = record.jobId; delete record.jobId; }
+      if (record.jobNumber !== undefined) { record.job_number = record.jobNumber; delete record.jobNumber; }
+      if (record.technicianId !== undefined) { record.technician_id = record.technicianId; delete record.technicianId; }
+      if (record.technicianName !== undefined) { record.technician_name = record.technicianName; delete record.technicianName; }
+      if (record.startHour !== undefined) { record.start_hour = record.startHour; delete record.startHour; }
+      if (record.endHour !== undefined) { record.end_hour = record.endHour; delete record.endHour; }
+      if (record.dayOffset !== undefined) { record.day_offset = record.dayOffset; delete record.dayOffset; }
+      if (record.customerName !== undefined) { record.customer_name = record.customerName; delete record.customerName; }
+      if (record.siteAddress !== undefined) { record.site_address = record.siteAddress; delete record.siteAddress; }
+      if (record.taskId !== undefined) { record.task_id = record.taskId; delete record.taskId; }
+      if (record.taskName !== undefined) { record.task_name = record.taskName; delete record.taskName; }
+      if (record.startTime !== undefined) { record.start_time = record.startTime; delete record.startTime; }
+      if (record.finishTime !== undefined) { record.finish_time = record.finishTime; delete record.finishTime; }
     }
 
     // Filter out columns not in schema to prevent 400 Bad Request

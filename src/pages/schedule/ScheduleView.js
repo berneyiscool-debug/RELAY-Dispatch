@@ -334,7 +334,17 @@ export function renderScheduleView(container) {
 
         days.forEach((day, dayIdx) => {
           if (jobDate.toDateString() === day.toDateString()) {
-            const startHour = job.startHour !== undefined ? job.startHour : (7 + (Math.abs(hashStr(job.id)) % 6));
+            // Prefer an explicit startHour, then the job's preferredTime, so an
+            // auto-spawned recurring job whose schedule row is missing or orphaned
+            // (e.g. legacy rows saved before the job_id serialization fix) still
+            // lands at its intended time and matches the forecast. Falls back to
+            // 8am. Previously this hashed the job id, scattering spawned jobs to
+            // random hours — the "wrong time" symptom on the schedule.
+            let startHour = job.startHour;
+            if (startHour === undefined) {
+              const parsedPref = job.preferredTime ? parsePreferredTime(job.preferredTime) : null;
+              startHour = parsedPref ? parsedPref.hours + (parsedPref.minutes / 60) : 8;
+            }
 
             if (job.technicians && job.technicians.length > 0) {
               job.technicians.forEach(t => {
@@ -447,15 +457,6 @@ export function renderScheduleView(container) {
     }
 
     return blocks;
-  }
-
-  function hashStr(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash) + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return hash;
   }
 
   function bindSearchListEvents() {
