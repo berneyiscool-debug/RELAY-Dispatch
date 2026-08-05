@@ -14,7 +14,7 @@ import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
-import { invoiceEmail } from '../../utils/emailTemplates.js';
+import { invoiceEmail, receiptEmail } from '../../utils/emailTemplates.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
@@ -800,6 +800,16 @@ export function renderInvoiceDetail(container, { id }) {
             invoice.status = 'Paid';
             invoice.paidDate = paidDate;
             invoice.paymentMethod = paymentMethod;
+            // Best-effort: email a receipt if that template is switched on.
+            if (emailEnabledFor('receipt')) {
+              const rTo = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
+              if (rTo) {
+                const { subject, html } = receiptEmail(invoice);
+                sendEmail({ to: rTo, subject, html, template: 'receipt', relatedType: 'invoice', relatedId: invoice.id })
+                  .then(() => showToast(`Receipt emailed to ${rTo}`, 'success'))
+                  .catch(err => showToast(`Marked paid, but receipt email failed: ${err.message || err}`, 'error'));
+              }
+            }
             showToast('Invoice marked as paid', 'success');
             render();
             close();

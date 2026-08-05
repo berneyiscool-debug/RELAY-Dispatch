@@ -11,6 +11,8 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
+import { emailEnabledFor, sendEmail } from '../../utils/email.js';
+import { quoteEmail } from '../../utils/emailTemplates.js';
 import { hasPermission } from '../../utils/permissions.js';
 
 export function renderQuoteDetail(container, { id, customerId, type }) {
@@ -106,6 +108,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           ${!isNew ? `<button class="btn btn-secondary" id="btn-delete-template" style="color:var(--color-danger)"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
         ` : `
           <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and view a print-ready PDF proposal" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
+          ${!isNew && emailEnabledFor('quote') && quote.status === 'Sent' ? `<button class="btn btn-secondary" id="btn-email-quote" data-tooltip="Email this quote to the customer via your configured sender" data-tooltip-pos="left"><span class="material-icons-outlined">mail</span> Email</button>` : ''}
           ${!isNew && quote.status !== 'Archived' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-secondary" id="btn-create-revision" data-tooltip="Archive version & draft revisions in a new clone" data-tooltip-pos="left"><span class="material-icons-outlined">history</span> Create Revision</button>` : ''}
           ${!isNew && quote.status === 'Accepted' && hasPermission('Quotes', 'convert') ? `<button class="btn btn-primary" id="btn-convert-job" data-tooltip="Accept proposal and spawn an active Project Job" data-tooltip-pos="left"><span class="material-icons-outlined">build</span> Convert to Job</button>` : ''}
           ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote" data-tooltip="Email professional proposal to primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
@@ -492,6 +495,25 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         if (menu) menu.style.display = 'none';
       });
     }
+
+    container.querySelector('#btn-email-quote')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.innerHTML;
+      const to = quote.customerEmail || (quote.customerId && store.getById('customers', quote.customerId)?.email);
+      if (!to) { showToast('No customer email on file for this quote', 'error'); return; }
+      btn.disabled = true;
+      btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+      try {
+        const { subject, html } = quoteEmail(quote, {});
+        await sendEmail({ to, subject, html, template: 'quote', relatedType: 'quote', relatedId: quote.id });
+        showToast(`Quote emailed to ${to}`, 'success');
+      } catch (err) {
+        showToast(err.message || 'Could not email quote', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    });
 
     container.querySelector('#btn-create-revision')?.addEventListener('click', () => {
       // Archive current quote

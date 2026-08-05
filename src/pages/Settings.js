@@ -4077,6 +4077,7 @@ export function renderSettings(container) {
             <div class="form-group">
               <label class="form-label">From address</label>
               <input class="form-input" id="em-from-address" value="${escapeHTML(email.fromAddress || '')}" placeholder="billing@yourdomain.com" />
+              <button type="button" id="em-test-sender" class="btn btn-ghost btn-sm" style="margin-top:4px;padding:2px 6px;font-size:11px;">Use Resend test sender</button>
             </div>
             <div class="form-group">
               <label class="form-label">Reply-to (optional)</label>
@@ -4175,6 +4176,11 @@ export function renderSettings(container) {
         console.error('Error saving email settings:', err);
         showToast('Could not save email settings', 'error');
       }
+    });
+
+    tc.querySelector('#em-test-sender')?.addEventListener('click', () => {
+      const inp = tc.querySelector('#em-from-address');
+      if (inp) { inp.value = 'onboarding@resend.dev'; showToast('Test sender set — tick “live” and Save', 'info'); }
     });
 
     tc.querySelector('#em-add-domain')?.addEventListener('click', async (e) => {
