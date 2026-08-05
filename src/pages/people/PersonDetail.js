@@ -10,6 +10,7 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
+import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
 import { showAssetQuickAdd } from '../../utils/quickModals.js';
 
 export function renderPersonDetail(container, { id, tab }) {
@@ -463,6 +464,13 @@ export function renderPersonDetail(container, { id, tab }) {
             }}
           ]
         });
+
+        // Mount address autocomplete on the site address field once the drawer
+        // is in the DOM (cloud users only — paid/online feature).
+        const isCloudUser = store.companyId && !store.companyId.startsWith('acct_');
+        setTimeout(() => {
+          attachAddressAutocomplete(document.querySelector('.drawer-overlay #new-s-address'), { enabled: isCloudUser });
+        }, 0);
       }
 
       tabContent.querySelector('#btn-toggle-site').addEventListener('click', () => {

@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
 
 export function renderSupplierForm(container, params) {
   const isNew = params.id === 'new';
@@ -96,6 +97,10 @@ export function renderSupplierForm(container, params) {
       </div>
     </div>
   `;
+
+  // Address autocomplete (cloud users only — paid/online feature).
+  const isCloudUser = store.companyId && !store.companyId.startsWith('acct_');
+  attachAddressAutocomplete(container.querySelector('#address'), { enabled: isCloudUser });
 
   container.querySelector('#btn-cancel').addEventListener('click', () => {
     router.navigate(isNew ? '/suppliers' : `/suppliers/${params.id}`);
