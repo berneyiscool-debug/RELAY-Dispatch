@@ -2753,10 +2753,10 @@ class DataStore {
         quoteStartingNumber: 1
       },
       ai: {
-        enabled: (this.companyId && !this.companyId.startsWith('acct_')) ? !!(typeof import.meta.env !== 'undefined' && (import.meta.env?.VITE_AI_API_KEY || import.meta.env?.VITE_DEEPSEEK_API_KEY)) : false,
-        apiKey: (this.companyId && !this.companyId.startsWith('acct_')) ? (typeof import.meta.env !== 'undefined' ? (import.meta.env?.VITE_AI_API_KEY || import.meta.env?.VITE_DEEPSEEK_API_KEY || '') : '') : '',
-        endpoint: 'https://api.openai.com/v1/chat/completions',
-        model: 'gpt-4o-mini',
+        enabled: (this.companyId && !this.companyId.startsWith('acct_')) ? true : false,
+        apiKey: '',
+        endpoint: 'https://api.deepseek.com/chat/completions',
+        model: 'deepseek-chat',
         systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
       }
     };

@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../../data/store.js';
+import { supabase } from '../../utils/supabase.js';
 import { escapeHTML } from '../../utils/security.js';
 
 let reportViewMode = 'detailed'; // Simple vs. Detailed report toggle
@@ -501,11 +502,12 @@ async function fetchAIInsights(reportId, d, cacheKey) {
 
   const s = store.getSettings();
   const ai = s.ai || {};
-  const hasKey = ai.apiKey || import.meta.env.VITE_DEEPSEEK_API_KEY;
+  const isCloudUser = !!(store.companyId && !store.companyId.startsWith('acct_'));
+  const canUseAI = ai.enabled !== false && (isCloudUser || !!ai.apiKey);
 
   let insightsHTML = '';
 
-  if (ai.enabled && hasKey) {
+  if (canUseAI) {
     try {
       const statsSummary = getStatsSummaryText(reportId, d);
       let messages = [];
@@ -566,32 +568,42 @@ You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks).
 
       const endpoint = ai.endpoint || 'https://api.deepseek.com/chat/completions';
       const model = ai.model || 'deepseek-chat';
-      const apiKey = ai.apiKey || import.meta.env.VITE_DEEPSEEK_API_KEY;
+      let reply = '[]';
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          temperature: 0.3
-        })
-      });
+      if (ai.apiKey) {
+        // Direct fetch if custom user API key is configured
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${ai.apiKey}`
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            temperature: 0.3
+          })
+        });
 
-      if (!res.ok) {
-        throw new Error(`API returned status ${res.status}`);
+        if (!res.ok) {
+          throw new Error(`API returned status ${res.status}`);
+        }
+
+        const resData = await res.json();
+        reply = resData.choices?.[0]?.message?.content || '[]';
+      } else if (isCloudUser) {
+        // Cloud users call Supabase Edge Function securely
+        const { data, error } = await supabase.functions.invoke('relay-copilot', {
+          body: { messages, endpoint, model }
+        });
+        if (error) throw error;
+        reply = data?.choices?.[0]?.message?.content || '[]';
       }
 
-      const resData = await res.json();
-      let reply = resData.choices?.[0]?.message?.content || '[]';
-      
       if (reply.includes('```')) {
         reply = reply.replace(/```json/g, '').replace(/```/g, '').trim();
       }
-      
+
       const insights = JSON.parse(reply);
       insightsHTML = renderInsightsListHTML(reportId, insights, false, mode);
     } catch (err) {
