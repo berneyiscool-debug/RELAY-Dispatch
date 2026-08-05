@@ -11,6 +11,7 @@ import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 import { FLAGS } from '../utils/flags.js';
+import { addEmailDomain, getEmailDomain, verifyEmailDomain } from '../utils/email.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
 
@@ -234,7 +235,7 @@ export function renderSettings(container) {
 
   function getCategoryForTab(tab) {
     if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
-    if (['templates_forms', 'invoices_quotes', 'payments'].includes(tab)) return 'workflow';
+    if (['templates_forms', 'invoices_quotes', 'payments', 'email'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
     if (['materials', 'cost_centers', 'tax'].includes(tab)) return 'resources';
     return 'general';
@@ -452,7 +453,9 @@ export function renderSettings(container) {
         { id: 'templates_forms', label: 'Templates & Forms' },
         { id: 'invoices_quotes', label: 'Quotes & Invoices' },
         // v1.3 #3 — dark until FLAGS.payments flips on for launch
-        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : [])
+        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : []),
+        // v1.3 #5 — dark until FLAGS.email flips on for launch
+        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain' }] : [])
       ]
     },
     {
@@ -667,6 +670,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'payments') {
       renderPaymentsTab(tc);
+      return;
+    }
+
+    if (activeTab === 'email') {
+      renderEmailTab(tc);
       return;
     }
 
@@ -3851,6 +3859,203 @@ export function renderSettings(container) {
       } catch (err) {
         console.error('Error saving payment settings:', err);
         showToast('Could not save payment settings', 'error');
+      }
+    });
+  }
+
+  function renderEmailTab(tc) {
+    const settings = store.getSettings() || {};
+    const email = settings.email || {};
+    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+
+    if (!isCloud) {
+      tc.innerHTML = `
+        <div class="card" style="max-width:760px">
+          <div class="card-header"><h4>Email &amp; Domain</h4></div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);">Sending email is a cloud feature. Upgrade to a cloud account to email quotes, invoices and reminders to your customers.</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const enabledFor = email.enabledFor || {};
+    const templates = [
+      { key: 'quote', label: 'Quotes (with accept link)' },
+      { key: 'invoice', label: 'Invoices (with pay link)' },
+      { key: 'receipt', label: 'Payment receipts' },
+      { key: 'reminder', label: 'Payment reminders' },
+      { key: 'portal_invite', label: 'Portal invites' },
+    ];
+    const status = email.domainStatus || (email.domainId ? 'pending' : 'none');
+    const records = Array.isArray(email.domainRecords) ? email.domainRecords : [];
+    const statusColor = status === 'verified' ? 'var(--color-success)'
+      : (status === 'failed' ? 'var(--color-danger)' : 'var(--color-warning)');
+
+    tc.innerHTML = `
+      <div class="card" style="max-width:860px">
+        <div class="card-header"><h4>Email &amp; Domain</h4></div>
+        <div class="card-body">
+          <p style="color:var(--text-secondary);margin-top:0;">
+            Send themed quotes, invoices, receipts and reminders via Resend. Every send is logged so Deputy and Reports can see what went out.
+          </p>
+
+          <div style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin:14px 0;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px;">One-time setup</div>
+            <ol style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
+              <li>Create a <strong>Resend</strong> account and copy an <strong>API key</strong>.</li>
+              <li>In Supabase → Edge Functions → Secrets, add <code>RESEND_API_KEY</code>.</li>
+              <li>Deploy the <code>relay-email</code> function.</li>
+              <li>Add &amp; verify your sending domain below (or trial sends to your own inbox with Resend's test sender first).</li>
+            </ol>
+          </div>
+
+          <h5 style="margin:18px 0 8px;">Sender</h5>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group">
+              <label class="form-label">From name</label>
+              <input class="form-input" id="em-from-name" value="${escapeHTML(email.fromName || settings.name || '')}" placeholder="Grace Dance" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">From address</label>
+              <input class="form-input" id="em-from-address" value="${escapeHTML(email.fromAddress || '')}" placeholder="billing@yourdomain.com" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Reply-to (optional)</label>
+              <input class="form-input" id="em-reply-to" value="${escapeHTML(email.replyTo || '')}" placeholder="office@yourdomain.com" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Signature (optional)</label>
+            <textarea class="form-input" id="em-signature" rows="3" placeholder="Grace Dance • 02 4900 0000 • gracedance.com">${escapeHTML(email.signature || '')}</textarea>
+          </div>
+
+          <h5 style="margin:18px 0 8px;">Sending domain</h5>
+          ${email.domainId ? `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+              <strong style="font-size:13px;">${escapeHTML(email.domain || '')}</strong>
+              <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${statusColor}1f;color:${statusColor};text-transform:capitalize;">${escapeHTML(status)}</span>
+            </div>
+            ${records.length ? `
+              <p style="font-size:12px;color:var(--text-secondary);margin:0 0 8px;">Add these DNS records at your domain registrar, then re-check:</p>
+              <div style="overflow-x:auto;">
+                <table class="data-table" style="font-size:11px;">
+                  <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Status</th></tr></thead>
+                  <tbody>
+                    ${records.map(r => `<tr>
+                      <td>${escapeHTML(r.type || r.record || '')}</td>
+                      <td style="font-family:monospace;">${escapeHTML(r.name || '')}</td>
+                      <td style="font-family:monospace;word-break:break-all;max-width:340px;">${escapeHTML(r.value || '')}</td>
+                      <td style="text-transform:capitalize;">${escapeHTML(r.status || '—')}</td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>` : ''}
+            <div style="margin-top:10px;display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" id="em-verify">Re-check verification</button>
+              <button class="btn btn-ghost btn-sm" id="em-remove-domain">Remove domain</button>
+            </div>
+          ` : `
+            <div style="display:flex;gap:8px;align-items:flex-end;max-width:540px;">
+              <div class="form-group" style="flex:1;margin:0;">
+                <label class="form-label">Your domain</label>
+                <input class="form-input" id="em-domain" placeholder="yourdomain.com" />
+              </div>
+              <button class="btn btn-secondary" id="em-add-domain">Add &amp; get DNS records</button>
+            </div>
+            <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Optional — trial sends to your own inbox with Resend's test sender before verifying a domain.</p>
+          `}
+
+          <h5 style="margin:18px 0 8px;">Send these</h5>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            ${templates.map(t => `
+              <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                <input type="checkbox" class="em-tpl" data-key="${t.key}" style="width:16px;height:16px;" ${enabledFor[t.key] !== false ? 'checked' : ''} />
+                ${t.label}
+              </label>`).join('')}
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-top:18px;">
+            <input type="checkbox" id="em-connected" style="width:16px;height:16px;" ${email.connected ? 'checked' : ''} />
+            <div>
+              <div style="font-weight:600;font-size:13px;">Email configured &amp; live</div>
+              <div style="font-size:11px;color:var(--text-tertiary);">Tick once setup is done. Controls whether Email actions appear on quotes and invoices.</div>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <button class="btn btn-primary" id="em-save"><span class="material-icons-outlined">save</span> Save Email Settings</button>
+          </div>
+        </div>
+      </div>`;
+
+    // Persist sender/toggle fields; the domain wizard merges its own state via `extra`.
+    const collectAndSave = async (extra = {}) => {
+      const s = store.getSettings() || {};
+      const per = {};
+      tc.querySelectorAll('.em-tpl').forEach(cb => { per[cb.dataset.key] = cb.checked; });
+      s.email = {
+        ...(s.email || {}),
+        fromName: tc.querySelector('#em-from-name')?.value.trim() || '',
+        fromAddress: tc.querySelector('#em-from-address')?.value.trim() || '',
+        replyTo: tc.querySelector('#em-reply-to')?.value.trim() || '',
+        signature: tc.querySelector('#em-signature')?.value || '',
+        connected: tc.querySelector('#em-connected')?.checked || false,
+        enabledFor: per,
+        ...extra,
+      };
+      await store.saveSettings(s);
+      window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+      return s;
+    };
+
+    tc.querySelector('#em-save')?.addEventListener('click', async () => {
+      try {
+        await collectAndSave();
+        showToast('Email settings saved', 'success');
+      } catch (err) {
+        console.error('Error saving email settings:', err);
+        showToast('Could not save email settings', 'error');
+      }
+    });
+
+    tc.querySelector('#em-add-domain')?.addEventListener('click', async (e) => {
+      const name = tc.querySelector('#em-domain')?.value.trim();
+      if (!name) { showToast('Enter a domain first', 'error'); return; }
+      const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Adding…';
+      try {
+        const res = await addEmailDomain(name);
+        await collectAndSave({ domain: res.name || name, domainId: res.id, domainStatus: res.status || 'pending', domainRecords: res.records || [] });
+        showToast('Domain added — add the DNS records shown', 'success');
+        renderEmailTab(tc);
+      } catch (err) {
+        console.error('Add domain failed:', err);
+        showToast(`Could not add domain: ${err.message || err}`, 'error');
+        btn.disabled = false; btn.textContent = 'Add & get DNS records';
+      }
+    });
+
+    tc.querySelector('#em-verify')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Checking…';
+      try {
+        await verifyEmailDomain(email.domainId);
+        const fresh = await getEmailDomain(email.domainId);
+        await collectAndSave({ domainStatus: fresh.status || 'pending', domainRecords: fresh.records || [] });
+        showToast(fresh.status === 'verified' ? 'Domain verified!' : `Status: ${fresh.status}`, fresh.status === 'verified' ? 'success' : 'info');
+        renderEmailTab(tc);
+      } catch (err) {
+        console.error('Verify domain failed:', err);
+        showToast(`Verification check failed: ${err.message || err}`, 'error');
+        btn.disabled = false; btn.textContent = 'Re-check verification';
+      }
+    });
+
+    tc.querySelector('#em-remove-domain')?.addEventListener('click', async () => {
+      try {
+        await collectAndSave({ domain: '', domainId: '', domainStatus: 'none', domainRecords: [] });
+        renderEmailTab(tc);
+      } catch (err) {
+        showToast('Could not remove domain', 'error');
       }
     });
   }
