@@ -13,6 +13,8 @@ import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
+import { emailEnabledFor, sendEmail } from '../../utils/email.js';
+import { invoiceEmail } from '../../utils/emailTemplates.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
@@ -97,6 +99,7 @@ export function renderInvoiceDetail(container, { id }) {
           ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice" data-tooltip="Email this invoice PDF directly to the primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder" data-tooltip="Send an automated friendly payment reminder email to the client" data-tooltip-pos="left"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
           ${!isNew && paymentsEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-pay-link" data-tooltip="Create a secure Stripe card-payment link for this invoice and copy it" data-tooltip-pos="left"><span class="material-icons-outlined">link</span> Pay Link</button>` : ''}
+          ${!isNew && emailEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-email-invoice" data-tooltip="Email this invoice to the customer via your configured sender" data-tooltip-pos="left"><span class="material-icons-outlined">mail</span> Email</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid" data-tooltip="Record a bank transfer, cheque, cash, or card payment against this invoice" data-tooltip-pos="left"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
@@ -736,6 +739,30 @@ export function renderInvoiceDetail(container, { id }) {
         showToast(copied ? 'Payment link copied and opened' : 'Payment link opened', 'success');
       } catch (err) {
         showToast(err.message || 'Could not create payment link', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    });
+
+    container.querySelector('#btn-email-invoice')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.innerHTML;
+      const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
+      if (!to) { showToast('No customer email on file for this invoice', 'error'); return; }
+      btn.disabled = true;
+      btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+      try {
+        // Include a Stripe pay link when online payments are configured (best-effort).
+        let payUrl = null;
+        if (paymentsEnabledFor('invoice')) {
+          try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
+        }
+        const { subject, html } = invoiceEmail(invoice, { payUrl });
+        await sendEmail({ to, subject, html, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
+        showToast(`Invoice emailed to ${to}`, 'success');
+      } catch (err) {
+        showToast(err.message || 'Could not email invoice', 'error');
       } finally {
         btn.disabled = false;
         btn.innerHTML = original;
