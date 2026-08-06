@@ -13,6 +13,7 @@ import { getPrintStyles, generateDocument } from '../components/PrintPreview.js'
 import { FLAGS } from '../utils/flags.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
+import { getSmsCreditCents } from '../utils/smsCredits.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -234,7 +235,7 @@ export function renderSettings(container) {
 
   function getCategoryForTab(tab) {
     if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
-    if (['templates_forms', 'invoices_quotes', 'payments'].includes(tab)) return 'workflow';
+    if (['templates_forms', 'invoices_quotes', 'payments', 'sms'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
     if (['materials', 'cost_centers', 'tax'].includes(tab)) return 'resources';
     return 'general';
@@ -452,7 +453,9 @@ export function renderSettings(container) {
         { id: 'templates_forms', label: 'Templates & Forms' },
         { id: 'invoices_quotes', label: 'Quotes & Invoices' },
         // v1.3 #3 — dark until FLAGS.payments flips on for launch
-        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : [])
+        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : []),
+        // v1.3 #6b — dark until FLAGS.sms flips on for launch
+        ...(FLAGS.sms ? [{ id: 'sms', label: 'SMS' }] : [])
       ]
     },
     {
@@ -667,6 +670,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'payments') {
       renderPaymentsTab(tc);
+      return;
+    }
+
+    if (activeTab === 'sms') {
+      renderSmsTab(tc);
       return;
     }
 
@@ -3851,6 +3859,105 @@ export function renderSettings(container) {
       } catch (err) {
         console.error('Error saving payment settings:', err);
         showToast('Could not save payment settings', 'error');
+      }
+    });
+  }
+
+  function renderSmsTab(tc) {
+    const settings = store.getSettings() || {};
+    const sms = settings.sms || {};
+    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+
+    if (!isCloud) {
+      tc.innerHTML = `
+        <div class="card" style="max-width:760px">
+          <div class="card-header"><h4>SMS</h4></div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);">SMS confirmations and reminders are a cloud feature. Upgrade to a cloud account to text customers automatically.</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const enabledFor = sms.enabledFor || {};
+
+    tc.innerHTML = `
+      <div class="card" style="max-width:820px">
+        <div class="card-header"><h4>SMS</h4></div>
+        <div class="card-body">
+          <p style="color:var(--text-secondary);margin-top:0;">
+            Text customers appointment confirmations and payment reminders from a shared RELAY number. Billed separately from your subscription as prepaid credit — each message debits the balance below.
+          </p>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+            <label class="switch" style="margin:0;">
+              <input type="checkbox" id="sms-enabled" ${sms.enabled !== false ? 'checked' : ''} />
+            </label>
+            <div>
+              <div style="font-weight:600;font-size:13px;">SMS enabled</div>
+              <div style="font-size:11px;color:var(--text-tertiary);">Master switch. Turning this off stops all texts regardless of the toggles below.</div>
+            </div>
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" id="sms-enable-confirmation" style="width:16px;height:16px;" ${enabledFor.confirmation !== false ? 'checked' : ''} />
+            <label for="sms-enable-confirmation" style="margin:0;font-size:13px;">Send a confirmation text when a job is scheduled</label>
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" id="sms-enable-payment_nudge" style="width:16px;height:16px;" ${enabledFor.payment_nudge !== false ? 'checked' : ''} />
+            <label for="sms-enable-payment_nudge" style="margin:0;font-size:13px;">Allow sending a payment reminder text from an invoice</label>
+          </div>
+
+          <div id="sms-balance-box" style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin:14px 0;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px;">Credit balance</div>
+            <div style="font-size:12px;color:var(--text-secondary);">Loading…</div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <button class="btn btn-primary" id="sms-save"><span class="material-icons-outlined">save</span> Save SMS Settings</button>
+          </div>
+        </div>
+      </div>`;
+
+    // Balance can't come from the synchronous settings cache -- it changes
+    // server-side on every send, so it's fetched fresh each time this tab renders.
+    getSmsCreditCents().then(cents => {
+      const box = tc.querySelector('#sms-balance-box');
+      if (!box) return; // user navigated to a different tab before this resolved
+      const dollars = (cents / 100).toFixed(2);
+      const low = cents < 200; // ~20 messages at the server's current per-message price
+      box.innerHTML = `
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px;">Credit balance</div>
+        <div style="font-size:20px;font-weight:700;color:${low ? 'var(--color-danger)' : 'var(--text-primary)'};">$${dollars}</div>
+        ${low ? `<div style="font-size:11px;color:var(--color-danger);margin-top:4px;">Running low — texts will stop sending once this reaches $0.00.</div>` : ''}
+        <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Top-up purchasing isn't live yet — contact support to add credit.</div>
+      `;
+    }).catch(err => {
+      const box = tc.querySelector('#sms-balance-box');
+      if (!box) return;
+      console.error('Error loading SMS credit balance:', err);
+      box.innerHTML = `<div style="font-size:12px;color:var(--text-secondary);">Couldn't load balance.</div>`;
+    });
+
+    tc.querySelector('#sms-save')?.addEventListener('click', async () => {
+      try {
+        const s = store.getSettings() || {};
+        s.sms = {
+          ...(s.sms || {}),
+          enabled: tc.querySelector('#sms-enabled').checked,
+          enabledFor: {
+            ...((s.sms || {}).enabledFor || {}),
+            confirmation: tc.querySelector('#sms-enable-confirmation').checked,
+            payment_nudge: tc.querySelector('#sms-enable-payment_nudge').checked,
+          },
+        };
+        await store.saveSettings(s);
+        showToast('SMS settings saved', 'success');
+        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+      } catch (err) {
+        console.error('Error saving SMS settings:', err);
+        showToast('Could not save SMS settings', 'error');
       }
     });
   }

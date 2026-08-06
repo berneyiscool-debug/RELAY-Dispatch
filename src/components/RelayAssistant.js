@@ -16,6 +16,8 @@ import { loadUserMemory, saveUserMemory, clearStaleMemory, getStructuredMemory }
 import { FLAGS } from '../utils/flags.js';
 import { hasMapsAction, runMapsActions } from '../utils/deputyMaps.js';
 import { hasWeatherAction, runWeatherActions } from '../utils/deputyWeather.js';
+import { hasSmsAction, runSmsActions } from '../utils/deputySms.js';
+import { smsEventEnabled, sendSms } from '../utils/sms.js';
 
 let panel = null;
 let onStateChange = null;
@@ -903,6 +905,10 @@ async function callAIEngine() {
     const wxData = await runWeatherActions(reply);
     if (wxData) externalData += (externalData ? '\n\n' : '') + wxData;
   }
+  if (FLAGS.sms && hasSmsAction(reply)) {
+    const smsData = await runSmsActions(reply);
+    if (smsData) externalData += (externalData ? '\n\n' : '') + smsData;
+  }
   if (externalData.trim()) {
     const followup = [
       { role: 'system', content: systemPrompt },
@@ -1113,7 +1119,8 @@ Action parameters can be passed as structured JSON objects OR pipe-separated str
 - To create invoice: [ACTION: CREATE_INVOICE, {"title": "Invoice", "status": "Sent", "jobNum": "1005", "customerName": "Barry Buttons", "total": 165, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 150}]}]
 - To update a record's fields: [ACTION: UPDATE_RECORD, {"collection": "jobs", "id": "1002", "updates": {"status": "In Progress", "technicianName": "Jane Smith"}}]
 - To delete record: [ACTION: DELETE_RECORD, jobs | 1002]
-- To save memory fact: [ACTION: UPDATE_FACTSHEET, Single concise fact]
+- To save memory fact: [ACTION: UPDATE_FACTSHEET, Single concise fact]${FLAGS.sms ? `
+- To text a customer about a job: [ACTION: SEND_SMS, {"jobId": "1002", "template": "confirmation"}] (template is one of confirmation | reminder | payment_nudge; the job must have a customer on file)` : ''}
 - To ask single question: [QUESTION: Text? | Opt 1 | Opt 2]
 - To ask multi question: [QUESTION_MULTI: Text? | Opt 1 | Opt 2]
 ${FLAGS.maps ? `
@@ -1125,6 +1132,11 @@ Routing & Drive Times (live Google Maps data):
 Weather (live forecast data):
 - You can answer weather questions for the office or any job site. When the user asks about weather/rain/conditions/temperature at a place or on a day, emit this tag and STOP — the forecast service returns real data for you to phrase the answer. Never invent forecasts.
 - [ACTION: WEATHER_LOOKUP, {"location": "#1005", "date": "tomorrow"}] — location may be "office", a job number, a customer name, or a literal address (omit for the office); date accepts "today"/"tomorrow" or YYYY-MM-DD within the next 7 days (resolve relative dates using the Current Local Date above).
+` : ''}${FLAGS.sms ? `
+SMS Status (live send log):
+- You can check whether a job's confirmation SMS has been sent or confirmed, and look up recent SMS activity for a customer. Emit this tag and STOP — the real log will be looked up for you to phrase the answer. Never guess whether a message was sent.
+- [ACTION: SMS_STATUS, {"jobId": "1005"}] — jobId may also be a bare job number. Reports whether a confirmation was sent and whether the customer has confirmed.
+- To actually send a text, use the SEND_SMS action tag from Action Execution Formats above, not this one.
 ` : ''}
 Always perform requested actions using action tags. Do not state you are unable to modify data.`;
 }
@@ -1299,6 +1311,20 @@ function executeAction(action, param) {
         } else {
           showToast(`No matching items found in ${collection} to update status.`, 'error');
         }
+
+      } else if (action === 'SEND_SMS' && param) {
+        const jobId = json?.jobId;
+        const template = json?.template || 'confirmation';
+        if (!smsEventEnabled(template)) { showToast('SMS is not enabled for this account.', 'error'); return; }
+        if (!jobId) { showToast('SEND_SMS requires a jobId.', 'error'); return; }
+        const job = (store.getAll('jobs') || []).find(j => j.id === jobId || String(j.number) === String(jobId));
+        if (!job) { showToast(`Could not find Job "${jobId}".`, 'error'); return; }
+        if (!job.customerId) { showToast('This job has no customer on file.', 'error'); return; }
+        // executeAction is synchronous -- fire the send and resolve the toast
+        // once it settles rather than blocking the switch on it.
+        sendSms({ customerId: job.customerId, template, jobId: job.id })
+          .then(result => showToast(result?.sent ? 'SMS sent' : 'Customer has opted out of SMS', result?.sent ? 'success' : 'warning'))
+          .catch(err => showToast(err.message || 'Could not send SMS', 'error'));
 
       } else if (action === 'REORDER_STOCK' && param) {
         if (!checkCollectionPermission('purchaseOrders', 'create')) return;

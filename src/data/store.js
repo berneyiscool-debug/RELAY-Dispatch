@@ -90,6 +90,8 @@ const TABLE_COLUMNS = {
     "status",
     "type",
     "portal_token",
+    "sms_opt_out",
+    "sms_opt_out_at",
     "created_at",
     "updated_at"
   ],
@@ -177,6 +179,9 @@ const TABLE_COLUMNS = {
     "notes",
     "project_id",
     "cost_center_id",
+    "confirmation_sms_sent_at",
+    "confirmed_at",
+    "reminder_sms_sent_at",
     "created_at",
     "updated_at"
   ],
@@ -1346,6 +1351,26 @@ class DataStore {
       record.portalToken = record.portal_token;
       delete record.portal_token;
     }
+    if (record.sms_opt_out !== undefined) {
+      record.smsOptOut = record.sms_opt_out;
+      delete record.sms_opt_out;
+    }
+    if (record.sms_opt_out_at !== undefined) {
+      record.smsOptOutAt = record.sms_opt_out_at;
+      delete record.sms_opt_out_at;
+    }
+    if (record.confirmation_sms_sent_at !== undefined) {
+      record.confirmationSmsSentAt = record.confirmation_sms_sent_at;
+      delete record.confirmation_sms_sent_at;
+    }
+    if (record.confirmed_at !== undefined) {
+      record.confirmedAt = record.confirmed_at;
+      delete record.confirmed_at;
+    }
+    if (record.reminder_sms_sent_at !== undefined) {
+      record.reminderSmsSentAt = record.reminder_sms_sent_at;
+      delete record.reminder_sms_sent_at;
+    }
     if (record.owner_type !== undefined) {
       record.ownerType = record.owner_type;
       delete record.owner_type;
@@ -1755,6 +1780,26 @@ class DataStore {
     if (record.portalToken !== undefined) {
       record.portal_token = record.portalToken;
       delete record.portalToken;
+    }
+    if (record.smsOptOut !== undefined) {
+      record.sms_opt_out = record.smsOptOut;
+      delete record.smsOptOut;
+    }
+    if (record.smsOptOutAt !== undefined) {
+      record.sms_opt_out_at = record.smsOptOutAt;
+      delete record.smsOptOutAt;
+    }
+    if (record.confirmationSmsSentAt !== undefined) {
+      record.confirmation_sms_sent_at = record.confirmationSmsSentAt;
+      delete record.confirmationSmsSentAt;
+    }
+    if (record.confirmedAt !== undefined) {
+      record.confirmed_at = record.confirmedAt;
+      delete record.confirmedAt;
+    }
+    if (record.reminderSmsSentAt !== undefined) {
+      record.reminder_sms_sent_at = record.reminderSmsSentAt;
+      delete record.reminderSmsSentAt;
     }
     if (record.ownerType !== undefined) {
       record.owner_type = record.ownerType;

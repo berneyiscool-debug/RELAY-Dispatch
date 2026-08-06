@@ -22,6 +22,7 @@ import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import './utils/DeputyAutopilot.js';
+import './utils/smsAutomation.js';
 // Pages
 import { renderDashboard } from './pages/Dashboard.js';
 import { renderPeopleList } from './pages/people/PeopleList.js';
@@ -55,6 +56,7 @@ import { renderLaunchScreen } from './pages/launch/LaunchScreen.js';
 import { storageGet, storageSet } from './utils/tauriStore.js';
 import { renderCustomerPortal } from './pages/portal/Portal.js';
 import { renderContractorPortal } from './pages/portal/ContractorPortal.js';
+import { renderSmsAction } from './pages/portal/SmsAction.js';
 import { renderContractorsList } from './pages/contractors/ContractorsList.js';
 import { renderContractorForm } from './pages/contractors/ContractorForm.js';
 import { renderContractorDetail } from './pages/contractors/ContractorDetail.js';
@@ -536,6 +538,9 @@ router.register('/login', renderPage((container) => {
 // Customer Portal
 router.register('/portal/customer', renderPage(renderCustomerPortal));
 
+// SMS action link (confirm/reschedule/opt-out) -- no PIN, no login. See SmsAction.js.
+router.register('/portal/sms', renderPage(renderSmsAction));
+
 // Subcontractor Portal
 router.register('/contractor-portal/:token', renderPage(renderContractorPortal));
 
@@ -643,7 +648,11 @@ router.onNavigate = (path, params) => {
 
   const isContractorPortal = path.startsWith('/contractor-portal');
   const isCustomerPortal = path.startsWith('/portal/customer');
-  const isPortal = isContractorPortal || isCustomerPortal;
+  // No-login SMS action page (confirm/reschedule/opt-out) -- deliberately NOT
+  // routed through the PIN-gated customer portal, since ACMA requires opting
+  // out of SMS not require logging in or creating an account.
+  const isSmsAction = path.startsWith('/portal/sms');
+  const isPortal = isContractorPortal || isCustomerPortal || isSmsAction;
 
   // Toggle app shell elements (sidebar, topbar, breadcrumb) based on whether it is a portal
   const sidebarEl = document.querySelector('.sidebar');
@@ -780,7 +789,7 @@ if (currentUser && !localStorage.getItem('relay_login_mode')) {
   }
   localStorage.setItem('relay_login_mode', mode);
 }
-const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
+const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer') || window.location.hash.startsWith('#/portal/sms');
 if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
   window.location.hash = '#/login';
 }

@@ -13,6 +13,7 @@ import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
+import { smsEventEnabled, sendSms } from '../../utils/sms.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
@@ -95,7 +96,7 @@ export function renderInvoiceDetail(container, { id }) {
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
           ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice" data-tooltip="Email this invoice PDF directly to the primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send</button>` : ''}
-          ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder" data-tooltip="Send an automated friendly payment reminder email to the client" data-tooltip-pos="left"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
+          ${!isNew && smsEventEnabled('payment_nudge') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder" data-tooltip="Text a friendly payment reminder with a pay link to the client" data-tooltip-pos="left"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
           ${!isNew && paymentsEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-pay-link" data-tooltip="Create a secure Stripe card-payment link for this invoice and copy it" data-tooltip-pos="left"><span class="material-icons-outlined">link</span> Pay Link</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid" data-tooltip="Record a bank transfer, cheque, cash, or card payment against this invoice" data-tooltip-pos="left"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
           <div class="dropdown">
@@ -108,17 +109,17 @@ export function renderInvoiceDetail(container, { id }) {
         `
       })}
 
-      <!-- Linked Quote alert header if present -->
+      <!-- Linked Quote header if present -->
       ${invoice.originalQuoteNumber ? `
-        <div class="card" style="margin-bottom:var(--space-lg); border-left: 4px solid var(--color-primary); background: var(--color-primary-light); padding: 16px var(--space-lg); display:flex; justify-content:space-between; align-items:center; box-shadow:var(--shadow-sm); border-radius:8px">
+        <div class="card" style="margin-bottom:var(--space-lg); padding:16px var(--space-lg); display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:10px">
-            <span class="material-icons-outlined" style="color:var(--color-primary); font-size:24px">request_quote</span>
+            <span class="material-icons-outlined" style="color:var(--text-secondary); font-size:20px">request_quote</span>
             <div>
-              <div style="font-weight:700; color:var(--color-primary-dark); font-size:14px">Linked Quote: <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:800; color:inherit">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
-              <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Original Quote Subtotal: <strong>$${(invoice.originalSubtotal || 0).toFixed(2)}</strong></div>
+              <div style="font-size:14px; color:var(--text-primary);">Linked to quote <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:600; color:var(--color-primary);">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
+              <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Original subtotal: $${(invoice.originalSubtotal || 0).toFixed(2)}</div>
             </div>
           </div>
-          <button class="btn btn-secondary btn-sm" id="btn-unlink-quote" data-tooltip="Sever link to original quote, unlocking edit controls for all lines" data-tooltip-pos="left" style="color:var(--color-danger); border-color:rgba(239,68,68,0.2); background:rgba(239,68,68,0.02)">
+          <button class="btn btn-secondary btn-sm" id="btn-unlink-quote" data-tooltip="Sever link to original quote, unlocking edit controls for all lines" data-tooltip-pos="left">
             <span class="material-icons-outlined" style="font-size:16px; vertical-align:middle; margin-right:4px">link_off</span> Unlink Quote
           </button>
         </div>
@@ -711,6 +712,24 @@ export function renderInvoiceDetail(container, { id }) {
         showToast(copied ? 'Payment link copied and opened' : 'Payment link opened', 'success');
       } catch (err) {
         showToast(err.message || 'Could not create payment link', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    });
+
+    container.querySelector('#btn-send-reminder')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.innerHTML;
+      const customerId = invoice.customerId || invoice.customer_id;
+      if (!customerId) { showToast('This invoice has no customer on file', 'error'); return; }
+      btn.disabled = true;
+      btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+      try {
+        const result = await sendSms({ customerId, template: 'payment_nudge', invoiceId: invoice.id });
+        showToast(result?.sent ? 'Reminder sent' : 'Customer has opted out of SMS', result?.sent ? 'success' : 'warning');
+      } catch (err) {
+        showToast(err.message || 'Could not send reminder', 'error');
       } finally {
         btn.disabled = false;
         btn.innerHTML = original;
