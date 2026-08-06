@@ -12,7 +12,7 @@ import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 import { FLAGS } from '../utils/flags.js';
-import { addEmailDomain, getEmailDomain, verifyEmailDomain } from '../utils/email.js';
+import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings } from '../utils/email.js';
 import { EMAIL_TEMPLATES, previewEmail } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
@@ -3845,7 +3845,7 @@ export function renderSettings(container) {
     }
 
     const s0 = store.getSettings() || {};
-    const email0 = s0.email || {};
+    const email0 = emailSettings();   // settings.mailer — see utils/email.js
     const dtheme = s0.documentTheme || {};
     const draft = {
       branding: { ...(email0.branding || {}) },
@@ -3969,7 +3969,10 @@ export function renderSettings(container) {
       try {
         syncBrand();
         const s = store.getSettings() || {};
-        s.email = { ...(s.email || {}), branding: draft.branding, templates: draft.templates };
+        // settings.mailer, never settings.email — that key is the business email
+        // address string used on invoices and the customer portal.
+        s.mailer = { ...emailSettings(), branding: draft.branding, templates: draft.templates };
+        if (s.email && typeof s.email === 'object') s.email = '';
         await store.saveSettings(s);
         showToast('Email templates saved', 'success');
         window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
@@ -3985,13 +3988,13 @@ export function renderSettings(container) {
 
   function renderEmailTab(tc) {
     const settings = store.getSettings() || {};
-    const email = settings.email || {};
+    const email = emailSettings();   // settings.mailer — see utils/email.js
     const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
 
     if (!isCloud) {
       tc.innerHTML = `
         <div class="card" style="max-width:760px">
-          <div class="card-header"><h4>Email &amp; Domain</h4></div>
+          <div class="card-header"><h4>Email</h4></div>
           <div class="card-body">
             <p style="color:var(--text-secondary);">Sending email is a cloud feature. Upgrade to a cloud account to email quotes, invoices and reminders to your customers.</p>
           </div>
@@ -4014,36 +4017,31 @@ export function renderSettings(container) {
 
     tc.innerHTML = `
       <div class="card" style="max-width:860px">
-        <div class="card-header"><h4>Email &amp; Domain</h4></div>
+        <div class="card-header"><h4>Email</h4></div>
         <div class="card-body">
           <p style="color:var(--text-secondary);margin-top:0;">
-            Send themed quotes, invoices, receipts and reminders via Resend. Every send is logged so Deputy and Reports can see what went out.
+            Send themed quotes, invoices, receipts and reminders straight from RELAY — no account or domain setup needed. Every send is logged so Deputy and Reports can see what went out.
           </p>
 
-          <div style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin:14px 0;">
-            <div style="font-weight:600;font-size:13px;margin-bottom:8px;">One-time setup</div>
-            <ol style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
-              <li>Create a <strong>Resend</strong> account and copy an <strong>API key</strong>.</li>
-              <li>In Supabase → Edge Functions → Secrets, add <code>RESEND_API_KEY</code>.</li>
-              <li>Deploy the <code>relay-email</code> function.</li>
-              <li>Add &amp; verify your sending domain below (or trial sends to your own inbox with Resend's test sender first).</li>
-            </ol>
+          <h5 style="margin:18px 0 8px;">Your sending addresses</h5>
+          <div id="em-sender-box" style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin-bottom:6px;">
+            <div style="font-size:12px;color:var(--text-tertiary);">Loading…</div>
           </div>
+          <p style="font-size:11px;color:var(--text-tertiary);margin:0 0 8px;">
+            These are issued by RELAY and can't be edited — it's what keeps one business from sending mail as another. Replies go to your reply-to address below.
+          </p>
 
-          <h5 style="margin:18px 0 8px;">Sender</h5>
+          <h5 style="margin:18px 0 8px;">Sender details</h5>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div class="form-group">
-              <label class="form-label">From name</label>
+              <label class="form-label">Display name</label>
               <input class="form-input" id="em-from-name" value="${escapeHTML(email.fromName || settings.name || '')}" placeholder="Grace Dance" />
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">What customers see as the sender name.</div>
             </div>
             <div class="form-group">
-              <label class="form-label">From address</label>
-              <input class="form-input" id="em-from-address" value="${escapeHTML(email.fromAddress || '')}" placeholder="billing@yourdomain.com" />
-              <button type="button" id="em-test-sender" class="btn btn-ghost btn-sm" style="margin-top:4px;padding:2px 6px;font-size:11px;">Use Resend test sender</button>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Reply-to (optional)</label>
-              <input class="form-input" id="em-reply-to" value="${escapeHTML(email.replyTo || '')}" placeholder="office@yourdomain.com" />
+              <label class="form-label">Reply-to</label>
+              <input class="form-input" id="em-reply-to" value="${escapeHTML(email.replyTo || (typeof settings.email === 'string' ? settings.email : '') || '')}" placeholder="office@yourdomain.com" />
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">Where customer replies land. Defaults to your company email.</div>
             </div>
           </div>
           <div class="form-group">
@@ -4051,7 +4049,19 @@ export function renderSettings(container) {
             <textarea class="form-input" id="em-signature" rows="3" placeholder="Grace Dance • 02 4900 0000 • gracedance.com">${escapeHTML(email.signature || '')}</textarea>
           </div>
 
-          <h5 style="margin:18px 0 8px;">Sending domain</h5>
+          <details style="margin:18px 0 8px;border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;" ${email.mode === 'own-domain' ? 'open' : ''}>
+            <summary style="cursor:pointer;font-weight:600;font-size:13px;">Advanced: send from your own domain</summary>
+            <p style="font-size:12px;color:var(--text-secondary);margin:10px 0;">
+              Optional. Most businesses should stay on RELAY sending. Use this only if you need mail to come from your own domain — you'll need to add DNS records at your registrar.
+            </p>
+            <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:10px;">
+              <input type="checkbox" id="em-own-domain" style="width:16px;height:16px;" ${email.mode === 'own-domain' ? 'checked' : ''} />
+              Use my own domain instead of RELAY sending
+            </label>
+            <div class="form-group" style="max-width:420px;">
+              <label class="form-label">From address on your domain</label>
+              <input class="form-input" id="em-from-address" value="${escapeHTML(email.fromAddress || '')}" placeholder="billing@yourdomain.com" />
+            </div>
           ${email.domainId ? `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
               <strong style="font-size:13px;">${escapeHTML(email.domain || '')}</strong>
@@ -4084,8 +4094,8 @@ export function renderSettings(container) {
               </div>
               <button class="btn btn-secondary" id="em-add-domain">Add &amp; get DNS records</button>
             </div>
-            <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Optional — trial sends to your own inbox with Resend's test sender before verifying a domain.</p>
           `}
+          </details>
 
           <h5 style="margin:18px 0 8px;">Send these</h5>
           <div style="display:flex;flex-direction:column;gap:8px;">
@@ -4113,14 +4123,6 @@ export function renderSettings(container) {
           </div>
           <p style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">One nudge that many days before the due date, then a repeat every N days while overdue. Uses the “Payment reminder” template; runs while the app is open.</p>
 
-          <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-top:18px;">
-            <input type="checkbox" id="em-connected" style="width:16px;height:16px;" ${email.connected ? 'checked' : ''} />
-            <div>
-              <div style="font-weight:600;font-size:13px;">Email configured &amp; live</div>
-              <div style="font-size:11px;color:var(--text-tertiary);">Tick once setup is done. Controls whether Email actions appear on quotes and invoices.</div>
-            </div>
-          </div>
-
           <div style="margin-top:16px;">
             <button class="btn btn-primary" id="em-save"><span class="material-icons-outlined">save</span> Save Email Settings</button>
           </div>
@@ -4131,15 +4133,17 @@ export function renderSettings(container) {
               const logs = (store.getAll('emailLog') || []).slice()
                 .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 15);
               if (!logs.length) return `<p style="font-size:12px;color:var(--text-tertiary);">No emails sent yet.</p>`;
-              return `<table class="data-table" style="font-size:12px;"><thead><tr><th>When</th><th>To</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead><tbody>
-                ${logs.map(l => `<tr>
+              return `<table class="data-table" style="font-size:12px;"><thead><tr><th>When</th><th>To</th><th>Sent as</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead><tbody>
+                ${logs.map(l => `<tr${l.status === 'failed' && l.error ? ` title="${escapeHTML(l.error)}"` : ''}>
                   <td style="white-space:nowrap;">${escapeHTML(l.createdAt ? new Date(l.createdAt).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')}</td>
                   <td>${escapeHTML(l.toEmail || '')}</td>
+                  <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(l.fromEmail || '—')}</td>
                   <td style="text-transform:capitalize;">${escapeHTML(String(l.template || '').replace('_', ' '))}</td>
-                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(l.subject || '')}</td>
+                  <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(l.subject || '')}</td>
                   <td><span style="font-weight:600;color:${l.status === 'sent' ? 'var(--color-success)' : 'var(--color-danger)'};">${escapeHTML(l.status || '')}</span></td>
                 </tr>`).join('')}
-              </tbody></table>`;
+              </tbody></table>
+              <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Hover a failed row to see the error.</p>`;
             })()}
           </div>
         </div>
@@ -4150,13 +4154,15 @@ export function renderSettings(container) {
       const s = store.getSettings() || {};
       const per = {};
       tc.querySelectorAll('.em-tpl').forEach(cb => { per[cb.dataset.key] = cb.checked; });
-      s.email = {
-        ...(s.email || {}),
+      // settings.mailer, never settings.email — that key is the business email
+      // address string used on invoices and the customer portal.
+      s.mailer = {
+        ...emailSettings(),
         fromName: tc.querySelector('#em-from-name')?.value.trim() || '',
         fromAddress: tc.querySelector('#em-from-address')?.value.trim() || '',
         replyTo: tc.querySelector('#em-reply-to')?.value.trim() || '',
         signature: tc.querySelector('#em-signature')?.value || '',
-        connected: tc.querySelector('#em-connected')?.checked || false,
+        mode: tc.querySelector('#em-own-domain')?.checked ? 'own-domain' : 'relay',
         enabledFor: per,
         reminders: {
           enabled: tc.querySelector('#em-rem-enabled')?.checked || false,
@@ -4165,6 +4171,11 @@ export function renderSettings(container) {
         },
         ...extra,
       };
+      // Repair the legacy collision: an early build stored this config object at
+      // settings.email, which is the business email address string.
+      if (s.email && typeof s.email === 'object') {
+        s.email = s.mailer.replyTo || '';
+      }
       await store.saveSettings(s);
       window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
       return s;
@@ -4174,16 +4185,52 @@ export function renderSettings(container) {
       try {
         await collectAndSave();
         showToast('Email settings saved', 'success');
+        renderEmailTab(tc);
       } catch (err) {
         console.error('Error saving email settings:', err);
         showToast('Could not save email settings', 'error');
       }
     });
 
-    tc.querySelector('#em-test-sender')?.addEventListener('click', () => {
-      const inp = tc.querySelector('#em-from-address');
-      if (inp) { inp.value = 'onboarding@resend.dev'; showToast('Test sender set — tick “live” and Save', 'info'); }
-    });
+    // The sending addresses are built server-side from the company's slug, so
+    // ask the edge function what they actually are rather than guessing here.
+    (async () => {
+      const box = tc.querySelector('#em-sender-box');
+      if (!box) return;
+      try {
+        const info = await getSenderInfo();
+        const labels = {
+          quote: 'Quotes', invoice: 'Invoices', receipt: 'Receipts',
+          reminder: 'Reminders', portal_invite: 'Portal invites',
+        };
+        const seen = new Set();
+        const rows = Object.keys(labels)
+          .map(k => ({ k, addr: (info.addresses || {})[k] || '' }))
+          .filter(r => r.addr)
+          // billing.* covers three types — show each address once.
+          .filter(r => { const a = r.addr.toLowerCase(); if (seen.has(a)) return false; seen.add(a); return true; });
+
+        box.innerHTML = `
+          ${info.mode === 'own-domain'
+            ? `<div style="font-size:12px;color:var(--color-success);font-weight:600;margin-bottom:8px;">Sending from your own domain (${escapeHTML(info.domain || '')})</div>`
+            : ''}
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            ${rows.map(r => `<tr>
+              <td style="padding:3px 12px 3px 0;color:var(--text-secondary);white-space:nowrap;">${escapeHTML(
+                Object.keys(labels).filter(k => ((info.addresses || {})[k] || '').toLowerCase() === r.addr.toLowerCase()).map(k => labels[k]).join(', ')
+              )}</td>
+              <td style="padding:3px 0;font-family:monospace;word-break:break-all;">${escapeHTML(r.addr.replace(/^.*</, '').replace(/>$/, ''))}</td>
+            </tr>`).join('')}
+          </table>
+          ${info.replyTo
+            ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:8px;">Replies go to <strong>${escapeHTML(info.replyTo)}</strong></div>`
+            : `<div style="font-size:11px;color:var(--color-warning);margin-top:8px;">No reply-to set — customer replies will go nowhere. Add one below.</div>`}
+          ${info.dailyCap ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">Daily send limit: ${escapeHTML(String(info.dailyCap))} emails</div>` : ''}
+        `;
+      } catch (err) {
+        box.innerHTML = `<div style="font-size:12px;color:var(--color-danger);">Couldn't load your sending addresses: ${escapeHTML(err.message || String(err))}</div>`;
+      }
+    })();
 
     tc.querySelector('#em-add-domain')?.addEventListener('click', async (e) => {
       const name = tc.querySelector('#em-domain')?.value.trim();
