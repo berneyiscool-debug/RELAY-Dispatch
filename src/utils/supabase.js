@@ -3,10 +3,19 @@
 // ============================================
 import { createClient } from '@supabase/supabase-js';
 
-// Vite injects import.meta.env at build; guard so non-Vite runtimes (Node test runner) don't crash on boot.
-const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
-const supabaseUrl = env.VITE_SUPABASE_URL;
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+// Read via the *static* `import.meta.env.VITE_*` form so Vite inlines the real
+// values at build/serve time. (Aliasing import.meta.env to a variable defeats
+// that inlining — the runtime object only carries built-ins, not VITE_* vars —
+// which silently drops the app into offline/stub mode.) The try/catch keeps the
+// Node test runner happy, where import.meta.env is undefined.
+let supabaseUrl, supabaseAnonKey;
+try {
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+} catch (_) {
+  supabaseUrl = undefined;
+  supabaseAnonKey = undefined;
+}
 
 // Check if variables are populated and not fallback strings
 const isConfigured = 
