@@ -9,6 +9,11 @@ export async function storageGet(key) {
   }
 }
 
+// Request persistent storage from browser (prevents iOS/Safari from auto-clearing storage)
+if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}
+
 export async function storageSet(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
