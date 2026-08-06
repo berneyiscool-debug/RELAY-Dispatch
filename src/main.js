@@ -798,3 +798,4 @@ if (store.initPromise && typeof store.initPromise.then === 'function') {
   router.resolve();
 }
 
+
