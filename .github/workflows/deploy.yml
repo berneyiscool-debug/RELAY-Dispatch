@@ -28,7 +28,6 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://zufsncswsoqlomtqhkks.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1ZnNuY3N3c29xbG9tdHFoa2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjI3MjUsImV4cCI6MjA5NjEzODcyNX0.U5Ix7VP8bUxvd-niB7SkfvSrafHfCZaUyj1mkWSfu4M' }}
-          VITE_DEEPSEEK_API_KEY: ${{ secrets.VITE_DEEPSEEK_API_KEY || 'sk-44289f48627143ca835bd7316f147603' }}
           VITE_GOOGLE_MAPS_BROWSER_KEY: ${{ secrets.VITE_GOOGLE_MAPS_BROWSER_KEY || 'AIzaSyA2vKK34ANMcoqO-ANp6J2uQRI6r969ea4' }}
       - uses: actions/upload-pages-artifact@v3
         with:
