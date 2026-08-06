@@ -79,7 +79,7 @@ export function renderLaunchScreen(container, onComplete) {
   let activePasswordPromptId = null;
   let activeAuthMode = 'cloud'; // 'cloud' | 'local'
   let pendingLocalDirHandle = null;
-  let majoritySide = 'left'; // 'left' | 'right'
+  let majoritySide = localStorage.getItem('relay_last_login_side') || 'left'; // 'left' | 'right'
 
   // Injected scoped styles
   const styles = `
@@ -936,6 +936,16 @@ export function renderLaunchScreen(container, onComplete) {
             </div>
           </div>
         `;
+      } else {
+        dirSyncHtml = `
+          <div class="launch-form-group" style="margin-bottom: 8px;">
+            <label class="launch-form-label" style="color: #94a3b8;">Storage</label>
+            <div style="font-size: 12px; color: #94a3b8; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 8px;">
+              <span class="material-icons-outlined" style="font-size: 18px; color: #3b82f6;">tablet_mac</span>
+              <span>Data will be stored locally in device browser storage (IndexedDB).</span>
+            </div>
+          </div>
+        `;
       }
  
       html += `
@@ -1004,6 +1014,7 @@ export function renderLaunchScreen(container, onComplete) {
       panelLeft.addEventListener('click', (e) => {
         if (majoritySide === 'right') {
           majoritySide = 'left';
+          localStorage.setItem('relay_last_login_side', 'left');
           render();
         }
       });
@@ -1014,6 +1025,7 @@ export function renderLaunchScreen(container, onComplete) {
       panelRight.addEventListener('click', (e) => {
         if (majoritySide === 'left') {
           majoritySide = 'right';
+          localStorage.setItem('relay_last_login_side', 'right');
           render();
         }
       });
@@ -1044,6 +1056,7 @@ export function renderLaunchScreen(container, onComplete) {
       btnSlideDivider.addEventListener('click', (e) => {
         e.stopPropagation();
         majoritySide = majoritySide === 'left' ? 'right' : 'left';
+        localStorage.setItem('relay_last_login_side', majoritySide);
         render();
       });
     }
@@ -1569,7 +1582,8 @@ export function renderLaunchScreen(container, onComplete) {
 
     if (!businessName) return; // HTML5 required triggers this too, but safety check
 
-    if (!pendingLocalDirHandle) {
+    const isDirSupported = typeof window !== 'undefined' && !!window.showDirectoryPicker;
+    if (isDirSupported && !pendingLocalDirHandle) {
       const formEl = container.querySelector('.new-account-form');
       let errEl = formEl.querySelector('.auth-error');
       if (!errEl) {
