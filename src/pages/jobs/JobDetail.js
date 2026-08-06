@@ -10,6 +10,7 @@ import { showToast } from '../../components/Notifications.js';
 import { showTimesheetEditModal } from '../../utils/timesheetModals.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
+import { navigateLinkHTML } from '../../utils/mapsLinks.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
@@ -581,7 +582,7 @@ export function renderJobDetail(container, { id }) {
                   ${r('Technicians', techNames)}
                   ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
                   ${r('Est. Hours', job.estimatedHours || '—')}
-                  ${r('Site Address', escapeHTML(job.siteAddress || '—'))}
+                  ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
                   ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
                   ${r('Created', new Date(job.createdAt).toLocaleDateString())}
                 </div>

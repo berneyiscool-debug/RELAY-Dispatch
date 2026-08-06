@@ -2357,6 +2357,9 @@ async function enhanceTechMaps() {
          <g transform="translate(9,9) scale(0.667)"><path d="${GLYPHS[glyph]}" fill="white"/></g>
        </svg>`);
 
+    // Legend rows: dedupe today's technicians to name → colour.
+    const techLegend = [...new Map(stops.map(s => [s.techName, s.color])).entries()].map(([name, color]) => ({ name, color }));
+
     containers.forEach(c => {
       c.dataset.mapMounted = '1';
       const canvas = c.querySelector('.techmap-canvas');
@@ -2408,6 +2411,16 @@ async function enhanceTechMaps() {
           note.style.display = 'none';
         }
       }
+
+      // Colour legend overlay — makes the per-technician pin colours meaningful.
+      const esc = (s) => String(s).replace(/[<>&"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
+      const swatch = (color, label) => `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;"><span style="width:10px;height:10px;border-radius:50%;background:${color};border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);flex-shrink:0;"></span><span style="color:var(--text-secondary);white-space:nowrap;">${label}</span></div>`;
+      const legend = document.createElement('div');
+      legend.style.cssText = 'position:absolute;top:8px;right:8px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:6px;padding:6px 8px;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.15);max-height:45%;overflow:auto;z-index:5;';
+      legend.innerHTML = swatch('#1E2A3A', 'Office') + swatch('#64748B', 'Customers')
+        + techLegend.map((t) => swatch(t.color, esc(t.name))).join('');
+      c.style.position = 'relative';
+      c.appendChild(legend);
     });
   } catch (e) {
     console.warn('Tech map unavailable:', e);
