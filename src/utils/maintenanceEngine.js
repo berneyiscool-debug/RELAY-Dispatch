@@ -664,6 +664,14 @@ export function checkRecurringJobs() {
             }
           }
 
+          let parentPrefTime = job.preferredTime;
+          if (!parentPrefTime && job.notes && job.notes.startsWith('__meta__:')) {
+            try {
+              const meta = JSON.parse(job.notes.slice(9));
+              parentPrefTime = meta.preferredTime || null;
+            } catch(e){}
+          }
+
           const childJob = {
             parentJobId: job.id,
             templateDate: dateStr,
@@ -683,7 +691,7 @@ export function checkRecurringJobs() {
             siteAddress: job.siteAddress || '',
             siteName: job.siteName || '',
             assetId: job.assetId || undefined,
-            preferredTime: job.preferredTime || '',
+            preferredTime: parentPrefTime || '',
             materials: jobMaterials,
             laborCost: job.laborCost || 0,
             materialCost: job.materialCost || 0,
@@ -701,8 +709,8 @@ export function checkRecurringJobs() {
             const duration = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 2);
 
             let desiredStart = 8;
-            if (job.preferredTime) {
-              const parsed = parsePreferredTime(job.preferredTime);
+            if (parentPrefTime) {
+              const parsed = parsePreferredTime(parentPrefTime);
               if (parsed) {
                 desiredStart = parsed.hours + (parsed.minutes / 60);
               }
