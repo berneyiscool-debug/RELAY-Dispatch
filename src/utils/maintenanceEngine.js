@@ -673,6 +673,9 @@ export function checkRecurringJobs() {
             } catch(e){}
           }
 
+          const tasklistHours = getJobTasklistHours(jobTasks);
+          const duration = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 1);
+
           const childJob = {
             parentJobId: job.id,
             templateDate: dateStr,
@@ -693,6 +696,7 @@ export function checkRecurringJobs() {
             siteName: job.siteName || '',
             assetId: job.assetId || undefined,
             preferredTime: parentPrefTime || '',
+            estimatedHours: duration,
             materials: jobMaterials,
             laborCost: job.laborCost || 0,
             materialCost: job.materialCost || 0,
@@ -706,9 +710,6 @@ export function checkRecurringJobs() {
           const spawnedJob = store.create('jobs', childJob);
 
           if (defaultTechId) {
-            const tasklistHours = getJobTasklistHours(job.tasks || []);
-            const duration = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 2);
-
             let desiredStart = 8;
             if (parentPrefTime) {
               const parsed = parsePreferredTime(parentPrefTime);

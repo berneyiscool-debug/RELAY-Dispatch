@@ -785,9 +785,22 @@ if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
   window.location.hash = '#/login';
 }
 
+// An early build of the email feature stored its config object at settings.email,
+// which is the business email address string shown on invoices and the customer
+// portal. Move it to settings.mailer once, on boot, so those stop rendering
+// "[object Object]" and the saved email config survives.
+function repairMailerSettings() {
+  const s = store.getSettings();
+  if (!s || !s.email || typeof s.email !== 'object') return;
+  import('./utils/email.js')
+    .then(({ migrateMailerSettings }) => migrateMailerSettings())
+    .catch((err) => console.warn('Mailer settings repair skipped:', err));
+}
+
 if (store.initPromise && typeof store.initPromise.then === 'function') {
   store.initPromise
     .then(() => {
+      repairMailerSettings();
       router.resolve();
     })
     .catch((err) => {
