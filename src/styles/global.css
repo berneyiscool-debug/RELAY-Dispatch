@@ -188,11 +188,24 @@ textarea:focus-visible,
   -webkit-backdrop-filter: none !important;
 }
 
-/* ---- Material Icons sizing ---- */
+/* ---- Material Icons sizing ----
+   If the ligature font is slow/fails to load (flaky wifi/cellular), the raw
+   ligature text (e.g. "shield", "person") renders as literal words instead of
+   a glyph. Without these constraints that text blows out fixed-size icon
+   containers app-wide. font-display:block avoids a highly visible glyph->text
+   flash, and the box/overflow rules keep any fallback text from breaking layout. */
 .material-icons-outlined {
   font-size: 16px;
   vertical-align: middle;
   line-height: 1;
+  display: inline-block;
+  width: 1em;
+  overflow: hidden;
+  white-space: nowrap;
+  word-wrap: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  flex-shrink: 0;
 }
 /* Icons that sit beside a text label are decorative — hide their ligature text
    from assistive tech at the source so screen readers don't read "receipt_long

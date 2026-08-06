@@ -35,9 +35,13 @@ export const supabase = isConfigured
   : {
       auth: {
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+        getSession: async () => ({ data: { session: null }, error: null }),
+        getUser: async () => ({ data: { user: null }, error: null }),
         signInWithPassword: async () => { throw new Error('Supabase is not configured.'); },
         signUp: async () => { throw new Error('Supabase is not configured.'); },
-        signOut: async () => {}
+        signOut: async () => {},
+        updateUser: async () => ({ data: null, error: new Error('Supabase is not configured.') }),
+        resetPasswordForEmail: async () => ({ data: null, error: new Error('Supabase is not configured.') })
       },
       from: () => ({
         select: () => ({
@@ -58,5 +62,8 @@ export const supabase = isConfigured
           subscribe: () => {}
         })
       }),
-      removeChannel: () => {}
+      removeChannel: () => {},
+      functions: {
+        invoke: async () => ({ data: null, error: new Error('Supabase is not configured.') })
+      }
     };
