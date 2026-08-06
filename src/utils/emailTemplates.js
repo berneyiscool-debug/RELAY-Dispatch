@@ -12,6 +12,7 @@
 
 import { store } from '../data/store.js';
 import { escapeHTML } from './security.js';
+import { emailSettings } from './email.js';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -36,8 +37,11 @@ export const EMAIL_TEMPLATES = [
 function resolveConfig(type, override = {}) {
   const s = store.getSettings() || {};
   const dt = s.documentTheme || {};
-  const b = (s.email || {}).branding || {};
-  const savedTpl = ((s.email || {}).templates || {})[type] || {};
+  // settings.mailer, not settings.email — that key holds the business email
+  // address string (see the note in email.js).
+  const mailer = emailSettings();
+  const b = mailer.branding || {};
+  const savedTpl = (mailer.templates || {})[type] || {};
   const ob = override.branding || {};
   const ot = override.template || {};
   const pick = (...vals) => vals.find(v => v !== undefined && v !== null);
@@ -49,7 +53,7 @@ function resolveConfig(type, override = {}) {
       headerBg: pick(ob.headerBg, b.headerBg, dt.headerBg, '#1E2A3A'),
       footer: pick(ob.footer, b.footer, ''),
       companyName: s.name || 'RELAY',
-      signature: pick(ob.signature, (s.email || {}).signature, ''),
+      signature: pick(ob.signature, mailer.signature, ''),
     },
     text: {
       subject: pick(ot.subject, savedTpl.subject, ''),

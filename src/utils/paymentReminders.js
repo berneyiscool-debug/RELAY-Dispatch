@@ -8,13 +8,13 @@
 // periodic check, so only one tab/machine sweeps at a time.
 
 import { store } from '../data/store.js';
-import { emailConfigured, emailEnabledFor, sendEmail } from './email.js';
+import { emailConfigured, emailEnabledFor, emailSettings, sendEmail } from './email.js';
 import { reminderEmail } from './emailTemplates.js';
 
 const DAY = 86400000;
 
 function reminderSettings() {
-  return (((store.getSettings() || {}).email || {}).reminders) || {};
+  return emailSettings().reminders || {};
 }
 
 export async function checkPaymentReminders() {

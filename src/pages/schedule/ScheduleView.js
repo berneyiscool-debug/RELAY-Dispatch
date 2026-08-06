@@ -2926,9 +2926,28 @@ function btipLeafTasks(tasks, path = [], out = []) {
 function computeBtipSlices(sched, job) {
   const pad = n => String(n).padStart(2, '0');
   const hourToStr = h => `${pad(Math.floor(h))}:${pad(Math.round((h - Math.floor(h)) * 60))}`;
-  const startISO = sched.startTime || `${sched.date}T${hourToStr(sched.startHour ?? 9)}`;
-  const finishISO = sched.finishTime || `${sched.date}T${hourToStr(sched.endHour ?? ((sched.startHour ?? 9) + 1))}`;
-  const totalHours = Math.round(((new Date(finishISO) - new Date(startISO)) / 36e5) * 100) / 100;
+  const dateStr = sched.date || (sched.startTime ? sched.startTime.split('T')[0] : new Date().toISOString().split('T')[0]);
+
+  let sHour = sched.startHour;
+  let eHour = sched.endHour;
+
+  if (sHour === undefined && sched.startTime) {
+    const timePart = sched.startTime.split('T')[1] || '';
+    const cleanTime = timePart.replace(/Z|\+.*$/, '');
+    const [hh, mm] = cleanTime.split(':').map(Number);
+    if (!isNaN(hh)) sHour = hh + ((mm || 0) / 60);
+  }
+  if (sHour === undefined) sHour = 9;
+
+  if (eHour === undefined && sched.finishTime) {
+    const timePart = sched.finishTime.split('T')[1] || '';
+    const cleanTime = timePart.replace(/Z|\+.*$/, '');
+    const [hh, mm] = cleanTime.split(':').map(Number);
+    if (!isNaN(hh)) eHour = hh + ((mm || 0) / 60);
+  }
+  if (eHour === undefined) eHour = sHour + (sched.hours || 1);
+
+  const totalHours = Math.round((eHour - sHour) * 100) / 100;
   if (!(totalHours > 0)) return null;
 
   let slices;
@@ -2943,8 +2962,6 @@ function computeBtipSlices(sched, job) {
     if (!pool.length) {
       slices = [{ node: null, path: null, hours: totalHours }];
     } else {
-      // Proportional to each task's estimatedHours, quantised to 0.25h via
-      // largest-remainder so the pieces always sum to the slot exactly.
       const est = pool.map(l => parseFloat(l.node.estimatedHours) || 0);
       const known = est.filter(v => v > 0);
       const fallback = known.length ? known.reduce((a, b) => a + b, 0) / known.length : 1;
@@ -2968,14 +2985,25 @@ function computeBtipSlices(sched, job) {
     }
   }
 
-  let cursor = new Date(startISO);
-  const fmtLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  let currHour = sHour;
   slices.forEach(s => {
-    s.start = fmtLocal(cursor);
-    cursor = new Date(cursor.getTime() + s.hours * 36e5);
-    s.finish = fmtLocal(cursor);
+    const sH = Math.floor(currHour);
+    const sM = Math.round((currHour - sH) * 60);
+    const eH_curr = currHour + s.hours;
+    const endH = Math.floor(eH_curr);
+    const endM = Math.round((eH_curr - endH) * 60);
+
+    s.start = `${dateStr}T${pad(sH)}:${pad(sM)}`;
+    s.finish = `${dateStr}T${pad(endH)}:${pad(endM)}`;
+    currHour = eH_curr;
   });
-  return { totalHours, startISO, finishISO, slices };
+
+  return {
+    totalHours,
+    startISO: `${dateStr}T${hourToStr(sHour)}`,
+    finishISO: `${dateStr}T${hourToStr(eHour)}`,
+    slices
+  };
 }
 
 function createBtipTimesheets(sched, job, slices) {

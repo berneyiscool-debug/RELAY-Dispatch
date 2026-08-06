@@ -432,6 +432,7 @@ const TABLE_COLUMNS = {
     "id",
     "company_id",
     "to_email",
+    "from_email",
     "subject",
     "template",
     "status",
@@ -1527,6 +1528,7 @@ class DataStore {
     }
     if (collection === 'emailLog') {
       if (record.to_email !== undefined) { record.toEmail = record.to_email; delete record.to_email; }
+      if (record.from_email !== undefined) { record.fromEmail = record.from_email; delete record.from_email; }
       if (record.provider_id !== undefined) { record.providerId = record.provider_id; delete record.provider_id; }
       if (record.related_type !== undefined) { record.relatedType = record.related_type; delete record.related_type; }
       if (record.related_id !== undefined) { record.relatedId = record.related_id; delete record.related_id; }
@@ -2166,6 +2168,7 @@ class DataStore {
 
     if (collection === 'emailLog') {
       if (record.toEmail !== undefined) { record.to_email = record.toEmail; delete record.toEmail; }
+      if (record.fromEmail !== undefined) { record.from_email = record.fromEmail; delete record.fromEmail; }
       if (record.providerId !== undefined) { record.provider_id = record.providerId; delete record.providerId; }
       if (record.relatedType !== undefined) { record.related_type = record.relatedType; delete record.relatedType; }
       if (record.relatedId !== undefined) { record.related_id = record.relatedId; delete record.relatedId; }
@@ -2802,7 +2805,12 @@ class DataStore {
         name: settings.name || '',
         abn: settings.abn || '',
         phone: settings.phone || '',
-        email: settings.email || '',
+        // companies.email is a text column holding the business email address.
+        // Guard it: an early build of the email feature stored its config object
+        // at settings.email, and pushing that object here made Postgres reject
+        // the whole update, so no settings saved at all. Config now lives at
+        // settings.mailer (see utils/email.js).
+        email: typeof settings.email === 'string' ? settings.email : '',
         address: settings.address || '',
         domain: settings.domain || ''
       })
@@ -3042,7 +3050,7 @@ class DataStore {
       abn: currentSettings.abn || '',
       phone: currentSettings.phone || '',
       domain: currentSettings.domain || '',
-      email: currentSettings.email || '',
+      email: typeof currentSettings.email === 'string' ? currentSettings.email : '',
       address: currentSettings.address || '',
       settings: currentSettings
     }).eq('id', companyId);
