@@ -697,48 +697,24 @@ export function checkRecurringJobs() {
           const spawnedJob = store.create('jobs', childJob);
 
           if (defaultTechId) {
-            let startHour = 8;
-            let startMin = 0;
+            const tasklistHours = getJobTasklistHours(job.tasks || []);
+            const duration = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 2);
+
+            let desiredStart = 8;
             if (job.preferredTime) {
               const parsed = parsePreferredTime(job.preferredTime);
               if (parsed) {
-                startHour = parsed.hours;
-                startMin = parsed.minutes;
+                desiredStart = parsed.hours + (parsed.minutes / 60);
               }
             }
-            const startTimeISO = `${dateStr}T${startHour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
-            const tasklistHours = getJobTasklistHours(job.tasks || []);
-            const duration = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 2);
-            const endHour = startHour + duration;
-            const endHourH = Math.floor(endHour);
-            const endHourM = Math.round((endHour - endHourH) * 60) + startMin;
-            const finalHour = endHourH + Math.floor(endHourM / 60);
-            const finalMin = endHourM % 60;
-            const finishTimeISO = `${dateStr}T${finalHour.toString().padStart(2, '0')}:${finalMin.toString().padStart(2, '0')}`;
 
-            store.create('schedule', {
-              type: 'schedule',
-              jobId: spawnedJob.id,
-              jobNumber: spawnedJob.number,
-              technicianId: defaultTechId,
-              technicianName: defaultTechName,
-              date: dateStr,
-              startTime: startTimeISO,
-              finishTime: finishTimeISO,
-              hours: duration,
-              startHour: startHour + (startMin / 60),
-              endHour: startHour + (startMin / 60) + duration,
-              taskId: null,
-              taskName: 'Whole Job'
-            });
+            // Gather all existing allocations for this technician on dateStr
+            const existingSchedules = (store.getAll('schedule') || []).filter(s =>
+              s.technicianId === defaultTechId &&
+              (s.date === dateStr || (s.startTime && s.startTime.startsWith(dateStr)))
+            );
 
-            // Check if auto-scheduled block collides with an existing allocation for this technician
-            const existingSchedules = (store.getAll('schedule') || []).filter(s => s.jobId !== spawnedJob.id);
-            const startHourCalc = startHour + (startMin / 60);
-            const endHourCalc = startHourCalc + duration;
-
-            const hasCollision = existingSchedules.some(s => {
-              if (s.technicianId !== defaultTechId || s.date !== dateStr) return false;
+            const intervals = existingSchedules.map(s => {
               let sStart = 8;
               let sEnd = 10;
               if (s.startTime && s.finishTime) {
@@ -750,27 +726,47 @@ export function checkRecurringJobs() {
                 sStart = s.startHour;
                 sEnd = s.endHour;
               }
-              return Math.max(startHourCalc, sStart) < Math.min(endHourCalc, sEnd);
-            });
+              return { sStart, sEnd };
+            }).sort((a, b) => a.sStart - b.sStart);
 
-            if (hasCollision) {
-              const collisionNotifId = 'notif_collision_' + Date.now() + Math.random().toString(36).substr(2, 5);
-              const collisionDesc = `WARNING: Job ${spawnedJob.number} auto-created for ${defaultTechName} on ${formattedDate} (${startHour}:00) collides with an existing schedule allocation.`;
-              newNotifications.push({
-                id: collisionNotifId,
-                type: 'Recurring Job Collision',
-                jobId: spawnedJob.id,
-                parentJobId: job.id,
-                title: `Schedule Collision: Job ${spawnedJob.number}`,
-                description: collisionDesc,
-                message: collisionDesc,
-                dueDate: dateStr,
-                status: 'Warning',
-                priority: 'High',
-                createdAt: new Date().toISOString(),
-                createdBy: 'System Engine'
-              });
+            // Find first available slot starting at or after desiredStart
+            let candidateStart = desiredStart;
+            let foundSlot = false;
+            while (!foundSlot && candidateStart + duration <= 20) {
+              const collision = intervals.find(inv =>
+                Math.max(candidateStart, inv.sStart) < Math.min(candidateStart + duration, inv.sEnd)
+              );
+              if (collision) {
+                candidateStart = collision.sEnd;
+              } else {
+                foundSlot = true;
+              }
             }
+
+            const startHour = Math.floor(candidateStart);
+            const startMin = Math.round((candidateStart - startHour) * 60);
+            const startTimeISO = `${dateStr}T${startHour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
+
+            const endHour = candidateStart + duration;
+            const endHourH = Math.floor(endHour);
+            const endHourM = Math.round((endHour - endHourH) * 60);
+            const finishTimeISO = `${dateStr}T${endHourH.toString().padStart(2, '0')}:${endHourM.toString().padStart(2, '0')}`;
+
+            store.create('schedule', {
+              type: 'schedule',
+              jobId: spawnedJob.id,
+              jobNumber: spawnedJob.number,
+              technicianId: defaultTechId,
+              technicianName: defaultTechName,
+              date: dateStr,
+              startTime: startTimeISO,
+              finishTime: finishTimeISO,
+              hours: duration,
+              startHour: candidateStart,
+              endHour: candidateStart + duration,
+              taskId: null,
+              taskName: 'Whole Job'
+            });
           }
 
           // 2. Create read-only "Recurring Job Created" notification

@@ -326,7 +326,7 @@ export function renderScheduleView(container) {
 
     // 2. Legacy fallback for jobs without schedules
     const jobIdsWithSchedules = new Set(schedules.map(s => s.jobId));
-    jobs.filter(j => j.scheduledDate && j.isRecurring !== true && !jobIdsWithSchedules.has(j.id) && j.status !== 'Completed' && j.status !== 'Invoiced')
+    jobs.filter(j => j.scheduledDate && j.isRecurring !== true && !jobIdsWithSchedules.has(j.id))
       .forEach(job => {
         const jobDate = new Date(job.scheduledDate);
         const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
