@@ -866,8 +866,34 @@ export function renderScheduleView(container) {
     document.getElementById('sched-selection-bar')?.remove();
   }
 
+  function resolveScheduleOrLegacy(id) {
+    if (!id) return null;
+    const real = store.getById('schedule', id);
+    if (real) return real;
+    if (typeof id === 'string' && id.startsWith('legacy-')) {
+      const parts = id.split('-');
+      const jobId = parts[1];
+      const techId = parts[2] || null;
+      const job = store.getById('jobs', jobId);
+      if (!job) return null;
+      const tech = techId ? store.getById('technicians', techId) : null;
+      return {
+        id,
+        jobId: job.id,
+        jobNumber: job.number,
+        type: 'legacy',
+        date: job.scheduledDate,
+        startHour: job.startHour ?? 8,
+        endHour: (job.startHour ?? 8) + (parseFloat(job.estimatedHours) || 2),
+        technicianId: techId || job.technicianId || null,
+        technicianName: tech ? tech.name : (job.technicianName || 'Unassigned')
+      };
+    }
+    return null;
+  }
+
   function selectedSchedules() {
-    return [...selectedScheduleIds].map(id => store.getById('schedule', id)).filter(Boolean);
+    return [...selectedScheduleIds].map(id => resolveScheduleOrLegacy(id)).filter(Boolean);
   }
 
   function bulkUnschedule() {
@@ -1949,7 +1975,7 @@ export function renderScheduleView(container) {
 
         // Bulk menu: right-clicking a block that's part of a multi-selection acts on
         // the whole selection instead of the single block.
-        if (blockType === 'schedule' && selectedScheduleIds.has(scheduleId) && selectedScheduleIds.size > 1) {
+        if ((blockType === 'schedule' || blockType === 'legacy') && selectedScheduleIds.has(scheduleId) && selectedScheduleIds.size > 1) {
           const n = selectedScheduleIds.size;
           contextMenu = document.createElement('div');
           contextMenu.className = 'dropdown-menu';
@@ -1957,9 +1983,11 @@ export function renderScheduleView(container) {
           contextMenu.innerHTML = `
             <div style="padding:4px 12px;font-size:11px;color:var(--text-tertiary);font-weight:600;">${n} allocations selected</div>
             <button class="dropdown-item" id="ctx-bulk-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place (${n})</button>
+            <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign (${n})</button>
             <button class="dropdown-item text-danger" id="ctx-bulk-unsched"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${n})</button>`;
           document.body.appendChild(contextMenu);
           contextMenu.querySelector('#ctx-bulk-book').addEventListener('click', () => { closeContextMenu(); bulkBookTime(); });
+          contextMenu.querySelector('#ctx-batch-reassign')?.addEventListener('click', () => { closeContextMenu(); promptReassign([...selectedScheduleIds]); });
           contextMenu.querySelector('#ctx-bulk-unsched').addEventListener('click', () => { closeContextMenu(); bulkUnschedule(); });
           return;
         }
@@ -2040,17 +2068,16 @@ export function renderScheduleView(container) {
 
           if (isBatch) {
             contextMenu.innerHTML = `
+              <button class="dropdown-item" id="ctx-batch-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place (${selectedScheduleIds.size})</button>
               <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign (${selectedScheduleIds.size})</button>
               <button class="dropdown-item text-danger" id="ctx-batch-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${selectedScheduleIds.size})</button>
             `;
           } else {
             contextMenu.innerHTML = `
               <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
-              ${isRealSchedule ? `
-                <button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">assignment</span> Change Task</button>
-                <button class="dropdown-item" id="ctx-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign</button>
-                <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
-              ` : ''}
+              ${isRealSchedule ? `<button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">assignment</span> Change Task</button>` : ''}
+              <button class="dropdown-item" id="ctx-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign</button>
+              <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
               <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
               ${isRecurringChild ? `
                 <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
@@ -2286,11 +2313,16 @@ export function renderScheduleView(container) {
             });
           }
 
+          contextMenu.querySelector('#ctx-batch-book')?.addEventListener('click', () => {
+            closeContextMenu();
+            bulkBookTime();
+          });
+
           // Book Time in Place — turn this allocation's slot into logged time
           // against the job's tasklist without opening the job page.
           contextMenu.querySelector('#ctx-book-time')?.addEventListener('click', () => {
             closeContextMenu();
-            const sched = store.getById('schedule', scheduleId);
+            const sched = resolveScheduleOrLegacy(scheduleId);
             const job = sched && store.getById('jobs', sched.jobId);
             if (!sched || !job) { showToast('Could not find this allocation', 'error'); return; }
             openBookTimeInPlace(sched, job);

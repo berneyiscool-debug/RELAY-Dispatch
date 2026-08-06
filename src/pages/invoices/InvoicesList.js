@@ -222,26 +222,40 @@ export function renderInvoicesList(container) {
                       invoices.forEach(inv => {
                         if (inv.sections && inv.sections.length > 0) {
                           inv.sections.forEach(sec => {
-                            combinedSections.push({
-                              id: store.generateId(),
-                              name: `${inv.number} — ${sec.name || 'Items'}`,
-                              lineItems: (sec.lineItems || []).map(li => ({ ...li }))
-                            });
+                            const lineItems = (sec.lineItems || []).map(li => ({
+                              ...li,
+                              description: `${inv.number} — ${li.description}`
+                            }));
+                            if (combinedSections.length === 0) {
+                              combinedSections.push({
+                                id: store.generateId(),
+                                name: 'Items',
+                                lineItems: lineItems
+                              });
+                            } else {
+                              combinedSections[0].lineItems.push(...lineItems);
+                            }
                           });
                         } else {
                           // Fallback: create a section from the invoice total
-                          combinedSections.push({
-                            id: store.generateId(),
-                            name: `${inv.number} — ${inv.title || 'Invoice Items'}`,
-                            lineItems: [{
-                              description: `${inv.title || 'Invoice'} (${inv.number})`,
-                              type: 'other',
-                              qty: 1,
-                              rate: inv.subtotal || inv.total || 0,
-                              unitPrice: inv.subtotal || inv.total || 0,
-                              total: inv.subtotal || inv.total || 0
-                            }]
-                          });
+                          const fallbackItem = {
+                            description: `${inv.title || 'Invoice'} (${inv.number})`,
+                            type: 'other',
+                            qty: 1,
+                            rate: inv.subtotal || inv.total || 0,
+                            unitPrice: inv.subtotal || inv.total || 0,
+                            total: inv.subtotal || inv.total || 0
+                          };
+                          
+                          if (combinedSections.length === 0) {
+                            combinedSections.push({
+                              id: store.generateId(),
+                              name: 'Items',
+                              lineItems: [fallbackItem]
+                            });
+                          } else {
+                            combinedSections[0].lineItems.push(fallbackItem);
+                          }
                         }
                       });
 

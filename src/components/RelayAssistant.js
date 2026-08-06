@@ -843,7 +843,7 @@ function runLocalCommand(raw) {
   const t = raw.toLowerCase().trim();
 
   if (/\b(help|what can you|commands|capabilities)\b/.test(t)) {
-    return "Right now I can:\n• Add a page widget — “add a jobs widget”\n• Jump to a saved view — “go to the finance view”\n• Fit everything — “fit the canvas”\n• Lock / unlock — “lock the canvas”\n• Quick counts — “how many overdue invoices?”\nFull conversation lands once my backend is connected.";
+    return "Right now I'm running in local mode. I can:\n• Add a page widget — “add a jobs widget”\n• Jump to a saved view — “go to the finance view”\n• Fit everything — “fit the canvas”\n• Lock / unlock — “lock the canvas”\n• Quick counts — “how many overdue invoices?”\n\nTo chat freely, connect your own API key in Settings or upgrade to a paid Cloud account.";
   }
 
   // Lock / unlock (dashboard canvas)
@@ -893,7 +893,7 @@ function runLocalCommand(raw) {
   if (/\b(hi|hello|hey|yo)\b/.test(t)) return "Hey! Ask me to add a widget, jump to a view, or fit/lock the canvas.";
   if (/\b(thanks|thank you|cheers|ta)\b/.test(t)) return "Anytime. 👍";
 
-  return "I'm still learning to chat freely — that arrives once my backend's connected. For now try: “add a jobs widget”, “go to the finance view”, “fit the canvas”, or “how many overdue invoices?”";
+  return "To chat freely with Deputy, please connect your own API key in **Settings → AI**, or upgrade your workspace to a **paid Cloud account**.";
 }
 
 function countMsg(label, n) {

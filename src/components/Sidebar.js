@@ -160,11 +160,15 @@ export function createSidebar() {
         <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
         <span class="nav-label">Logout</span>
       </button>
+      <div class="sidebar-version" style="text-align: center; font-size: 10px; color: rgba(255, 255, 255, 0.25); margin-top: 8px; font-weight: 500; letter-spacing: 0.5px; opacity: 0; transition: opacity 0.2s ease;">v1.2.2</div>
     </div>
     <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Expand or collapse the sidebar">
       <span class="material-icons-outlined" id="sidebar-toggle-icon" aria-hidden="true">chevron_right</span>
     </button>
   `;
+  
+  // Make version visible only when sidebar is expanded by injecting CSS dynamically or relying on hover/expanded classes
+  html = html.replace('class="sidebar-version"', 'class="sidebar-version nav-label"');
 
   sidebar.innerHTML = html;
 

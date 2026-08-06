@@ -2582,7 +2582,7 @@ class DataStore {
     // 2. Write to Supabase asynchronously
     const table = TABLE_MAP[collection];
     if (table) {
-      supabase
+      return supabase
         .from(table)
         .delete()
         .eq('id', id)
@@ -2783,7 +2783,7 @@ class DataStore {
     return rate / 100;
   }
 
-  saveSettings(settings) {
+  async saveSettings(settings) {
     this.companySettings = settings;
     this.emit('settings', settings);
 
@@ -2794,17 +2794,21 @@ class DataStore {
       return;
     }
 
-    // Save settings directly into the company JSONB column and keep top-level name in sync
-    supabase
+    // Save settings directly into the company JSONB column and keep top-level columns in sync
+    const { error } = await supabase
       .from('companies')
       .update({ 
         settings,
-        name: settings.name
+        name: settings.name || '',
+        abn: settings.abn || '',
+        phone: settings.phone || '',
+        email: settings.email || '',
+        address: settings.address || '',
+        domain: settings.domain || ''
       })
-      .eq('id', this.companyId)
-      .then(({ error }) => {
-        if (error) console.error('Error saving company settings to Supabase:', error);
-      });
+      .eq('id', this.companyId);
+
+    if (error) console.error('Error saving company settings to Supabase:', error);
   }
 
   // ── v1.3 Maps: per-user dispatch start location ────────────────────────────
@@ -2865,7 +2869,7 @@ class DataStore {
     return localStorage.getItem(this.getStorageKey('seeded')) === 'true';
   }
 
-  save(collection, items) {
+  async save(collection, items) {
     const prev = this.cache[collection] || [];
     this.cache[collection] = items;
     this.emit(collection, items);
@@ -2882,27 +2886,24 @@ class DataStore {
     }
 
     // Cloud mode: persist the whole collection. Upsert every current row, then delete
-    // any rows that were removed from the array. (Previously this only touched the
-    // in-memory cache, so every save() — assign-tech, role edits, form templates,
-    // portal edits, stock receiving, mark-read, etc. — silently failed to persist.)
+    // any rows that were removed from the array.
     const table = TABLE_MAP[collection];
     if (!table) return; // cache-only collections (e.g. 'activity') have no table
 
     const payload = items
       .filter(it => it && it.id)
       .map(it => this.denormalizeRecord({ ...it, companyId: this.companyId }, collection));
+
     if (payload.length) {
-      supabase.from(table).upsert(payload).then(({ error }) => {
-        if (error) this._notifyWriteError('save', collection, error);
-      });
+      const { error } = await supabase.from(table).upsert(payload);
+      if (error) this._notifyWriteError('save', collection, error);
     }
 
     const currentIds = new Set(items.map(it => it && it.id));
     const removedIds = prev.filter(p => p && p.id && !currentIds.has(p.id)).map(p => p.id);
     if (removedIds.length) {
-      supabase.from(table).delete().in('id', removedIds).then(({ error }) => {
-        if (error) this._notifyWriteError('save', collection, error);
-      });
+      const { error } = await supabase.from(table).delete().in('id', removedIds);
+      if (error) this._notifyWriteError('save', collection, error);
     }
   }
 
@@ -2932,17 +2933,17 @@ class DataStore {
   }
 
   async seedDefaultUserTypes() {
-    if (!this.companyId) return;
+    const companyPrefix = this.companyId ? `${this.companyId}_` : '';
 
     const userTypes = [
       {
-        id: `${this.companyId}_ut_admin`,
+        id: `${companyPrefix}ut_admin`,
         name: 'Admin',
         description: 'Full system access',
         permissions: buildGranularPerms(() => true)
       },
       {
-        id: `${this.companyId}_ut_manager`,
+        id: `${companyPrefix}ut_manager`,
         name: 'Manager',
         description: 'Can manage most workflows but limited settings access',
         permissions: buildGranularPerms((mod, key) => {
@@ -2951,7 +2952,7 @@ class DataStore {
         })
       },
       {
-        id: `${this.companyId}_ut_tech`,
+        id: `${companyPrefix}ut_tech`,
         name: 'Technician',
         description: 'Field staff — limited to their own jobs, schedule and timesheets',
         permissions: buildGranularPerms((mod, key) => {
@@ -2973,7 +2974,7 @@ class DataStore {
         })
       },
       {
-        id: `${this.companyId}_ut_office`,
+        id: `${companyPrefix}ut_office`,
         name: 'Office Staff',
         description: 'Admin / reception — can manage customers, quotes, invoices but not system settings',
         permissions: buildGranularPerms((mod, key) => {
@@ -2988,7 +2989,7 @@ class DataStore {
     this.cache.userTypes = userTypes;
     this.emit('userTypes', userTypes);
 
-    if (this.companyId.startsWith('acct_')) {
+    if (!this.companyId || this.companyId.startsWith('acct_')) {
       await this.writeAllToIndexedDB('userTypes', userTypes);
       return;
     }
@@ -3133,6 +3134,24 @@ class DataStore {
           console.error('Error clearing IndexedDB:', err);
         }
       }
+    } else {
+      // Cloud mode: clear all domain tables in Supabase for this companyId
+      const collectionsToWipe = [
+        'customers', 'assets', 'maintenancePlans', 'taskTemplates', 'quotes', 
+        'jobs', 'invoices', 'stock', 'timesheets', 'contractors', 'suppliers', 
+        'purchaseOrders', 'notifications', 'formTemplates', 'formInstances', 
+        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog'
+      ];
+      
+      await Promise.all(
+        collectionsToWipe.map(async (col) => {
+          const table = TABLE_MAP[col];
+          if (!table) return;
+          const { error } = await supabase.from(table).delete().eq('company_id', this.companyId);
+          if (error) console.error(`Error wiping cloud table ${table}:`, error);
+          this.cache[col] = [];
+        })
+      );
     }
   }
 }

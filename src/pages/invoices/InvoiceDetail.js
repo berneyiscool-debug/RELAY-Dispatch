@@ -96,7 +96,7 @@ export function renderInvoiceDetail(container, { id }) {
         `,
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
-          ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice" data-tooltip="Email this invoice PDF directly to the primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send</button>` : ''}
+          ${!isNew && invoice.status === 'Draft' ? `<button class="btn btn-primary" id="btn-send-invoice" data-tooltip="Email this invoice to the primary customer contact and mark it as Sent" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-send-reminder" data-tooltip="Send an automated friendly payment reminder email to the client" data-tooltip-pos="left"><span class="material-icons-outlined">notifications</span> Reminder</button>` : ''}
           ${!isNew && paymentsEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-pay-link" data-tooltip="Create a secure Stripe card-payment link for this invoice and copy it" data-tooltip-pos="left"><span class="material-icons-outlined">link</span> Pay Link</button>` : ''}
           ${!isNew && emailEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-email-invoice" data-tooltip="Email this invoice to the customer via your configured sender" data-tooltip-pos="left"><span class="material-icons-outlined">mail</span> Email</button>` : ''}
@@ -192,10 +192,10 @@ export function renderInvoiceDetail(container, { id }) {
 
       <div style="display:flex; gap:12px; margin-bottom:var(--space-lg)">
         <button class="btn btn-secondary" id="btn-add-section" data-tooltip="Add a new billing phase to group invoice line items" data-tooltip-pos="top">
-          <span class="material-icons-outlined" style="font-size:16px">add</span> Add New Phase/Section
+          <span class="material-icons-outlined" style="font-size:16px">add</span> Add Section
         </button>
         <button class="btn btn-secondary" id="btn-add-variation" data-tooltip="Create a special variation phase for extra out-of-scope work requiring customer sign-off" data-tooltip-pos="top" style="border-color:var(--color-warning); color:var(--color-warning-dark); background:rgba(245,158,11,0.02)">
-          <span class="material-icons-outlined" style="font-size:16px">history_edu</span> Add Variation Phase
+          <span class="material-icons-outlined" style="font-size:16px">history_edu</span> Add Variation
         </button>
       </div>
 
@@ -719,10 +719,41 @@ export function renderInvoiceDetail(container, { id }) {
       }
     });
 
-    container.querySelector('#btn-send-invoice')?.addEventListener('click', () => {
+    // "Send" really emails the invoice when email is configured (Settings -> Email &
+    // Domain). It used to only flip the status to Sent and toast "Invoice sent to
+    // customer" without sending anything. The status only advances once Resend has
+    // accepted the message; a failed send leaves the invoice in Draft to retry.
+    container.querySelector('#btn-send-invoice')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.innerHTML;
+      const canEmail = emailEnabledFor('invoice');
+      const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
+
+      if (canEmail) {
+        if (!to) { showToast('No customer email on file for this invoice', 'error'); return; }
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+        try {
+          // Include a Stripe pay link when online payments are configured (best-effort).
+          let payUrl = null;
+          if (paymentsEnabledFor('invoice')) {
+            try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
+          }
+          const { subject, html } = invoiceEmail(invoice, { payUrl });
+          await sendEmail({ to, subject, html, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
+        } catch (err) {
+          showToast(err.message || 'Could not email invoice', 'error');
+          return;
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = original;
+        }
+      }
+
       store.update('invoices', id, { status: 'Sent' });
       invoice.status = 'Sent';
-      showToast('Invoice sent to customer', 'success');
+      // Don't claim an email went out when email isn't set up — just record the status.
+      showToast(canEmail ? `Invoice emailed to ${to}` : 'Invoice marked as sent', 'success');
       render();
     });
 

@@ -322,16 +322,27 @@ export function renderJobsList(container, params) {
                   const quote = qId && qId !== 'tasklist' ? store.getById('quotes', qId) : null;
                   const { sections, subtotal: jobSub, worksDescription } = getInvoiceDataForJob(job, quote);
                   
+                  const jobTitle = job.title || 'Untitled Job';
+                  
                   sections.forEach(sec => {
-                    combinedSections.push({
-                      ...sec,
-                      name: `${job.title || 'Untitled Job'} — ${sec.name}`
-                    });
+                    const lineItems = (sec.lineItems || []).map(li => ({
+                      ...li,
+                      description: `${jobTitle} — ${li.description}`
+                    }));
+                    if (combinedSections.length === 0) {
+                      combinedSections.push({
+                        id: store.generateId(),
+                        name: 'Items',
+                        lineItems: lineItems
+                      });
+                    } else {
+                      combinedSections[0].lineItems.push(...lineItems);
+                    }
                   });
                   
                   subtotal += jobSub;
                   if (worksDescription) {
-                    worksDoneNotes.push(`${job.title || 'Untitled Job'}:\n${worksDescription}`);
+                    worksDoneNotes.push(`${jobTitle}:\n${worksDescription}`);
                   }
                 });
 
@@ -651,7 +662,7 @@ function getInvoiceDataForJob(job, selectedQuote) {
       sections = JSON.parse(JSON.stringify(quoteToUse.sections));
       subtotal = quoteToUse.subtotal || 0;
     } else if (quoteToUse.lineItems) {
-      sections = [{ id: store.generateId(), name: 'Main Phase', lineItems: JSON.parse(JSON.stringify(quoteToUse.lineItems)) }];
+      sections = [{ id: store.generateId(), name: 'Items', lineItems: JSON.parse(JSON.stringify(quoteToUse.lineItems)) }];
       subtotal = quoteToUse.subtotal || 0;
     }
   }

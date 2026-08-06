@@ -900,36 +900,39 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       router.navigate(`/jobs/${newJob.id}`);
     });
 
-    container.querySelector('#btn-send-quote')?.addEventListener('click', () => {
+    // "Send Quote" really sends when email is configured (Settings -> Email & Domain).
+    // It used to only flip emailStatus and toast "Email sent to customer" without
+    // sending anything, then fake an "opened by the customer" notification 15s later —
+    // so quotes were silently never delivered. The status only advances once Resend
+    // has accepted the message; a failed send leaves the quote in Draft to retry.
+    container.querySelector('#btn-send-quote')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.innerHTML;
+      const canEmail = emailEnabledFor('quote');
+      const to = quote.customerEmail || (quote.customerId && store.getById('customers', quote.customerId)?.email);
+
+      if (canEmail) {
+        if (!to) { showToast('No customer email on file for this quote', 'error'); return; }
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+        try {
+          const { subject, html } = quoteEmail(quote, {});
+          await sendEmail({ to, subject, html, template: 'quote', relatedType: 'quote', relatedId: quote.id });
+        } catch (err) {
+          showToast(err.message || 'Could not email quote', 'error');
+          return;
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = original;
+        }
+      }
+
       quote.emailStatus = 'Sent';
       if (quote.status === 'Draft') quote.status = 'Sent';
       store.update('quotes', id, { emailStatus: 'Sent', status: quote.status });
-
-      import('../../components/Notifications.js').then(({ showToast, addSystemNotification }) => {
-        showToast('Email sent to customer', 'success');
-        render();
-
-        // Simulated email tracking pixel
-        setTimeout(() => {
-          const currentQuote = store.getById('quotes', id);
-          if (currentQuote && currentQuote.emailStatus === 'Sent') {
-            currentQuote.emailStatus = 'Opened/Viewed';
-            store.update('quotes', id, { emailStatus: 'Opened/Viewed' });
-            
-            addSystemNotification(
-              'Quote Opened',
-              `Quote ${currentQuote.number} was opened by ${currentQuote.customerName || 'the customer'}.`,
-              `/quotes/${id}`
-            );
-
-            // If we are still viewing this quote, update the UI
-            if (window.location.hash.includes(`/quotes/${id}`)) {
-              quote.emailStatus = 'Opened/Viewed';
-              render();
-            }
-          }
-        }, 15000);
-      });
+      // Don't claim an email went out when email isn't set up — just record the status.
+      showToast(canEmail ? `Quote emailed to ${to}` : 'Quote marked as sent', 'success');
+      render();
     });
 
     container.querySelector('#btn-sign-approve-modal')?.addEventListener('click', () => {
