@@ -1,6 +1,7 @@
 import { store } from '../data/store.js';
 import { parsePreferredTime } from './dateUtils.js';
 import { supabase } from './supabase.js';
+import { checkPaymentReminders } from './paymentReminders.js';
 
 export async function checkMaintenancePlans() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -507,6 +508,9 @@ async function runEngineCore(userId, isCloud) {
 
   // Run recurring jobs check
   checkRecurringJobs();
+
+  // v1.3 #5 — automatic payment reminders (cloud + email-configured only; no-ops otherwise)
+  await checkPaymentReminders();
 
   } finally {
     // Release the Supabase lock if in cloud mode

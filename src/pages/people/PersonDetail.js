@@ -7,6 +7,8 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
+import { emailEnabledFor, sendEmail } from '../../utils/email.js';
+import { portalInviteEmail } from '../../utils/emailTemplates.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
@@ -201,7 +203,32 @@ export function renderPersonDetail(container, { id, tab }) {
 
       const sendBtn = tabContent.querySelector('#btn-send-portal-link');
       if (sendBtn) {
-        sendBtn.addEventListener('click', () => {
+        sendBtn.addEventListener('click', async () => {
+          // Real send via Resend when email is configured; falls through to the
+          // simulated notice below otherwise (local / unconfigured accounts).
+          if (emailEnabledFor('portal_invite') && person.email) {
+            const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+            const original = sendBtn.innerHTML;
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+            try {
+              const { subject, html } = portalInviteEmail(person, { portalUrl: `${origin}/#/portal/customer` });
+              await sendEmail({ to: person.email, subject, html, template: 'portal_invite', relatedType: 'customer', relatedId: person.id });
+              showToast(`Portal invite emailed to ${person.email}`, 'success');
+              store.create('notifications', {
+                title: 'Portal Invite Sent',
+                message: `Portal access link emailed to ${person.company || person.name} (${person.email})`,
+                link: `/people/${person.id}`, read: true, createdAt: new Date().toISOString(), status: 'Converted'
+              });
+            } catch (err) {
+              showToast(err.message || 'Could not send portal invite', 'error');
+            } finally {
+              sendBtn.disabled = false;
+              sendBtn.innerHTML = original;
+            }
+            return;
+          }
+
           const content = document.createElement('div');
           content.innerHTML = `<p>Simulated dispatching secure portal link via email to <strong>${escapeHTML(person.email)}</strong>.</p>`;
           showModal({

@@ -4134,6 +4134,23 @@ export function renderSettings(container) {
               </label>`).join('')}
           </div>
 
+          <h5 style="margin:18px 0 8px;">Automatic payment reminders</h5>
+          <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;">
+            <input type="checkbox" id="em-rem-enabled" style="width:16px;height:16px;" ${(email.reminders || {}).enabled ? 'checked' : ''} />
+            Send reminders automatically
+          </label>
+          <div style="display:flex;gap:12px;max-width:440px;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Nudge — days before due</label>
+              <input type="number" min="0" class="form-input" id="em-rem-before" value="${escapeHTML(String((email.reminders || {}).beforeDays ?? 3))}" />
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Overdue — repeat every N days</label>
+              <input type="number" min="1" class="form-input" id="em-rem-after" value="${escapeHTML(String((email.reminders || {}).afterDays ?? 7))}" />
+            </div>
+          </div>
+          <p style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">One nudge that many days before the due date, then a repeat every N days while overdue. Uses the “Payment reminder” template; runs while the app is open.</p>
+
           <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-top:18px;">
             <input type="checkbox" id="em-connected" style="width:16px;height:16px;" ${email.connected ? 'checked' : ''} />
             <div>
@@ -4144,6 +4161,24 @@ export function renderSettings(container) {
 
           <div style="margin-top:16px;">
             <button class="btn btn-primary" id="em-save"><span class="material-icons-outlined">save</span> Save Email Settings</button>
+          </div>
+
+          <h5 style="margin:24px 0 8px;">Recent sends</h5>
+          <div style="overflow-x:auto;">
+            ${(() => {
+              const logs = (store.getAll('emailLog') || []).slice()
+                .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 15);
+              if (!logs.length) return `<p style="font-size:12px;color:var(--text-tertiary);">No emails sent yet.</p>`;
+              return `<table class="data-table" style="font-size:12px;"><thead><tr><th>When</th><th>To</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead><tbody>
+                ${logs.map(l => `<tr>
+                  <td style="white-space:nowrap;">${escapeHTML(l.createdAt ? new Date(l.createdAt).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')}</td>
+                  <td>${escapeHTML(l.toEmail || '')}</td>
+                  <td style="text-transform:capitalize;">${escapeHTML(String(l.template || '').replace('_', ' '))}</td>
+                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(l.subject || '')}</td>
+                  <td><span style="font-weight:600;color:${l.status === 'sent' ? 'var(--color-success)' : 'var(--color-danger)'};">${escapeHTML(l.status || '')}</span></td>
+                </tr>`).join('')}
+              </tbody></table>`;
+            })()}
           </div>
         </div>
       </div>`;
@@ -4161,6 +4196,11 @@ export function renderSettings(container) {
         signature: tc.querySelector('#em-signature')?.value || '',
         connected: tc.querySelector('#em-connected')?.checked || false,
         enabledFor: per,
+        reminders: {
+          enabled: tc.querySelector('#em-rem-enabled')?.checked || false,
+          beforeDays: Number(tc.querySelector('#em-rem-before')?.value) || 0,
+          afterDays: Number(tc.querySelector('#em-rem-after')?.value) || 7,
+        },
         ...extra,
       };
       await store.saveSettings(s);
