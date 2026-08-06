@@ -120,7 +120,7 @@ describe('Job Recurring Scheduling Integrations', () => {
 
     const [yr, mo, dy] = todayStr.split('-').map(Number);
     const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
-    assert.strictEqual(childJobs[0].title, `Weekly Recurring Service — Recurring (${formattedDate})`);
+    assert.strictEqual(childJobs[0].title, `Weekly Recurring Service`);
 
     // Verify that a notification is created referencing the child job
     const notifications = store.getAll('notifications') || [];
@@ -311,7 +311,7 @@ describe('Job Recurring Scheduling Integrations', () => {
     const childJob1 = store.create('jobs', {
       parentJobId: parentJob.id,
       number: 'J-020.1',
-      title: 'Original Title — Recurring (01/10/2026)',
+      title: 'Original Title',
       description: 'Original Description',
       scheduledDate: '2026-10-01',
       status: 'Scheduled',
@@ -323,7 +323,7 @@ describe('Job Recurring Scheduling Integrations', () => {
     const childJobCompleted = store.create('jobs', {
       parentJobId: parentJob.id,
       number: 'J-020.0',
-      title: 'Original Title — Recurring (01/09/2026)',
+      title: 'Original Title',
       description: 'Original Description',
       scheduledDate: '2026-09-01',
       status: 'Completed',
@@ -405,12 +405,20 @@ describe('Job Recurring Scheduling Integrations', () => {
 
     checkRecurringJobs();
 
-    // Verify warning notification was created for collision
+    // The engine now auto-finds the next free slot instead of double-booking and
+    // warning about it: the tech is busy 08:00–10:00, so the job that wanted
+    // 08:00 should be placed at 10:00 rather than colliding.
+    const child = store.getAll('jobs').find(j => j.number && j.number.startsWith('J-COLLIDE-01.'));
+    assert.ok(child, 'child job should be spawned');
+    const sched = store.getAll('schedule').find(s => s.jobId === child.id);
+    assert.ok(sched, 'schedule block should be created for the spawned job');
+    assert.strictEqual(sched.startHour, 10, 'should start after the existing 08:00–10:00 booking');
+    assert.strictEqual(sched.startTime, `${todayStr}T10:00`);
+
+    // ...and because it was rescheduled cleanly, no collision warning is raised.
     const notifs = store.getAll('notifications') || [];
-    const collisionNotif = notifs.find(n => n.type === 'Recurring Job Collision');
-    assert.ok(collisionNotif, 'Collision notification should be created');
-    assert.strictEqual(collisionNotif.status, 'Warning');
-    assert.ok(collisionNotif.description.includes('collides with an existing schedule allocation'));
+    assert.strictEqual(notifs.filter(n => n.type === 'Recurring Job Collision').length, 0,
+      'no collision warning when the engine finds a free slot');
   });
 
   test('Spawned schedule block survives cloud serialization round-trip (regression: job_id/technician_id nulled)', () => {

@@ -139,9 +139,14 @@ try {
 // IPC handler for DeepSeek API calls
 const { ipcMain } = require('electron');
 ipcMain.handle('call-deepseek', async (event, { messages, endpoint, model, apiKey }) => {
-  const key = apiKey || process.env.VITE_DEEPSEEK_API_KEY;
+  // Cloud accounts never reach this handler — their AI goes through the
+  // `relay-copilot` edge function using the server-side DEEPSEEK_API_KEY secret.
+  // This desktop path is only for local/offline accounts, which supply their own
+  // key in Settings → AI. (The old process.env.VITE_DEEPSEEK_API_KEY fallback was
+  // removed: the VITE_ prefix made Vite inline that key into the web bundle.)
+  const key = apiKey;
   if (!key) {
-    throw new Error('VITE_DEEPSEEK_API_KEY is not configured in environment, and no custom key was supplied.');
+    throw new Error('No AI API key configured. Add one in Settings → AI Assistant, or sign in to a cloud account to use the managed AI service.');
   }
 
   const response = await fetch(endpoint || 'https://api.deepseek.com/chat/completions', {

@@ -648,9 +648,10 @@ export function checkRecurringJobs() {
           });
           const childNumber = `${job.number}.${maxSuffix + 1}`;
 
-          // Format title to Australian standard date format (DD/MM/YYYY)
+          // Child jobs keep the parent's plain title (no date suffix). The
+          // Australian-format date is still used in the notification text below.
           const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
-          const childTitle = `${job.title || job.number} — Recurring (${formattedDate})`;
+          const childTitle = `${job.title || job.number}`;
 
           let defaultTechName = '';
           let defaultTechId = '';
@@ -915,7 +916,7 @@ export function propagateParentJobUpdates(parentJob) {
     if (childJob.scheduledDate) {
       const [yr, mo, dy] = childJob.scheduledDate.split('-');
       const formattedDate = `${dy}/${mo}/${yr}`;
-      childTitle = `${parentJob.title || parentJob.number} — Recurring (${formattedDate})`;
+      childTitle = `${parentJob.title || parentJob.number}`;
     } else {
       childTitle = `${parentJob.title || parentJob.number} — Recurring`;
     }
@@ -978,7 +979,7 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
 
   const [yr, mo, dy] = dateStr.split('-').map(Number);
   const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
-  const childTitle = `${parentJob.title || parentJob.number} — Recurring (${formattedDate})`;
+  const childTitle = `${parentJob.title || parentJob.number}`;
 
   const latestJobs = store.getAll('jobs') || [];
   const siblingJobs = latestJobs.filter(j => j.parentJobId === parentJob.id);
