@@ -924,63 +924,25 @@ export function renderSettings(container) {
       const techs = store.getAll('technicians');
       const pendingResets = store.getAll('passwordResetRequests') || [];
       const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      let userTypes = store.getAll('userTypes');
-      if (!userTypes || userTypes.length === 0) {
-        userTypes = [
-          { id: 'ut_admin', name: 'Admin', description: 'Full system access',
-            permissions: buildGranularPerms(() => true) },
-          { id: 'ut_manager', name: 'Manager', description: 'Can manage most workflows but limited settings',
-            permissions: buildGranularPerms((mod, key) => {
-              if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
-              return true;
-            })
-          },
-          { id: 'ut_tech', name: 'Technician', description: 'Field staff — limited to their own jobs',
-            permissions: buildGranularPerms((mod, key) => {
-              if (mod === 'Dashboard') return key === 'view';
-              if (mod === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
-              if (mod === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
-              if (mod === 'Jobs') {
-                return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
-              }
-              if (mod === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
-              if (mod === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);
-              if (mod === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
-              if (mod === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
-              if (mod === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
-              if (mod === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
-              if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
-              if (mod === 'Documents') return ['view', 'upload'].includes(key);
-              return false;
-            })
-          },
-          { id: 'ut_office', name: 'Office Staff', description: 'Admin / reception — can manage customers, quotes, invoices but not system settings',
-            permissions: buildGranularPerms((mod, key) => {
-              if (mod === 'Settings') return false;
-              if (mod === 'Reports') return key === 'view';
-              if (['Invoices', 'Purchase Orders'].includes(mod) && key === 'delete') return false;
-              return true;
-            })
-          }
-        ];
-        store.save('userTypes', userTypes);
-      } else {
-        // Self-healing migration: Restore Office Staff role if it was wiped
-        const hasOffice = userTypes.some(ut => ut.id === 'ut_office');
-        if (!hasOffice) {
-          userTypes.push({
-            id: 'ut_office',
-            name: 'Office Staff',
-            description: 'Admin / reception — can manage customers, quotes, invoices but not system settings',
-            permissions: buildGranularPerms((mod, key) => {
-              if (mod === 'Settings') return false;
-              if (mod === 'Reports') return key === 'view';
-              if (['Invoices', 'Purchase Orders'].includes(mod) && key === 'delete') return false;
-              return true;
-            })
-          });
-          store.save('userTypes', userTypes);
+      let userTypes = store.getAll('userTypes') || [];
+
+      // Clean up any exact duplicate userTypes (e.g. legacy 'ut_office' alongside `${companyId}_ut_office`)
+      const seenNames = new Set();
+      const uniqueTypes = [];
+      userTypes.forEach(ut => {
+        const key = (ut.name || '').trim().toLowerCase();
+        if (key && seenNames.has(key)) {
+          store.delete('userTypes', ut.id);
+        } else {
+          if (key) seenNames.add(key);
+          uniqueTypes.push(ut);
         }
+      });
+      userTypes = uniqueTypes;
+
+      if (!userTypes || userTypes.length === 0) {
+        store.seedDefaultUserTypes();
+        userTypes = store.getAll('userTypes') || [];
       }
 
       tc.innerHTML = `
@@ -1271,20 +1233,20 @@ export function renderSettings(container) {
       });
 
       tc.querySelectorAll('.btn-edit-perms').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          openPermissionsModal(e.target.dataset.id);
+        btn.addEventListener('click', () => {
+          openPermissionsModal(btn.dataset.id);
         });
       });
 
       tc.querySelectorAll('.btn-edit-usertype').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          openUserTypeModal(e.target.dataset.id);
+        btn.addEventListener('click', () => {
+          openUserTypeModal(btn.dataset.id);
         });
       });
 
       tc.querySelectorAll('.btn-delete-usertype').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const id = e.target.dataset.id;
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.id;
           const ut = store.getById('userTypes', id);
           if (!ut) return;
           if (ut.name.toLowerCase().includes('admin')) {
@@ -1293,14 +1255,14 @@ export function renderSettings(container) {
           }
           const usersWithType = store.getAll('technicians').filter(t => t.userTypeId === id);
           const contentDiv = document.createElement('div');
-          contentDiv.innerHTML = `<p>Are you sure you want to delete the user type <strong>${ut.name}</strong>?${usersWithType.length > 0 ? ` <strong>${usersWithType.length} user(s)</strong> will become unassigned.` : ''} This cannot be undone.</p>`;
+          contentDiv.innerHTML = `<p>Are you sure you want to delete the user type <strong>${escapeHTML(ut.name)}</strong>?${usersWithType.length > 0 ? ` <strong>${usersWithType.length} user(s)</strong> will become unassigned.` : ''} This cannot be undone.</p>`;
           showModal({
             title: 'Confirm Deletion',
             content: contentDiv,
             actions: [
               { label: 'Cancel', className: 'btn-secondary', onClick: (c) => c() },
-              { label: 'Delete', className: 'btn-danger', onClick: (c) => {
-                store.delete('userTypes', id);
+              { label: 'Delete', className: 'btn-danger', onClick: async (c) => {
+                await store.delete('userTypes', id);
                 showToast('User Type deleted', 'success');
                 c();
                 renderContent();
@@ -5419,24 +5381,28 @@ export function renderSettings(container) {
 
           </div>
 
-          <!-- Cheapest Smart AI Card -->
+          <!-- AI API Guide Card -->
           <div class="card" style="background:var(--content-bg);">
-            <div class="card-header"><h4>Cheapest Smart AI Guide</h4></div>
+            <div class="card-header"><h4>Connecting Your Own API</h4></div>
             <div class="card-body" style="font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
               <p style="margin:0;">
-                <strong>DeepSeek</strong> is one of the most cost-efficient and high-performance language models currently available, making it perfect for lightweight co-pilot tasks.
+                To power Deputy in local mode, you'll need an API key from an AI provider. Deputy uses the standard OpenAI-compatible API format, meaning you can connect almost any modern language model.
               </p>
               <div style="display:flex; gap:8px; align-items:flex-start;">
                 <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">key</span>
-                <span><strong>API Key:</strong> Get your key from <a href="https://platform.deepseek.com/" target="_blank" style="color:var(--color-primary); text-decoration:underline;">platform.deepseek.com</a>. New accounts typically receive free trial credits.</span>
+                <span><strong>1. Get an API Key:</strong> Create an account with an AI provider (e.g. OpenAI, Anthropic, DeepSeek, or Google) and generate an API key from their developer dashboard.</span>
+              </div>
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">tune</span>
+                <span><strong>2. Configure Endpoints:</strong> Enter your API key, the provider's API endpoint URL, and the exact model name you wish to use.</span>
               </div>
               <div style="display:flex; gap:8px; align-items:flex-start;">
                 <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">security</span>
-                <span><strong>CORS Restrictions:</strong> Due to browser security, direct API calls to DeepSeek may be blocked. To bypass this:
+                <span><strong>CORS Restrictions:</strong> Due to browser security, direct API calls from a local web browser may be blocked by some providers. To bypass this:
                   <ul style="margin:4px 0 0 16px; padding:0; list-style:disc; font-size:12px;">
                     <li>Route via a CORS proxy (e.g. <code>https://cors-anywhere.herokuapp.com/</code> prefix).</li>
-                    <li>Connect via an aggregator like <strong>OpenRouter</strong> (API Endpoint: <code>https://openrouter.ai/api/v1/chat/completions</code>).</li>
-                    <li>Use a local LLM runner like <strong>Ollama</strong> (API Endpoint: <code>http://localhost:11434/v1/chat/completions</code>).</li>
+                    <li>Connect via an aggregator like <strong>OpenRouter</strong> (Endpoint: <code>https://openrouter.ai/api/v1/chat/completions</code>).</li>
+                    <li>Use a local LLM runner like <strong>Ollama</strong> (Endpoint: <code>http://localhost:11434/v1/chat/completions</code>).</li>
                   </ul>
                 </span>
               </div>
