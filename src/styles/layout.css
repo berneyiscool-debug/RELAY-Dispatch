@@ -5,10 +5,17 @@
 /* ---- App Shell ---- */
 #app {
   display: flex;
+  /* Fallback for old browsers, then the *dynamic* viewport height so the shell
+     fits the actually-visible area on mobile/tablet. Plain 100vh is the tallest
+     possible viewport (measured as if the browser toolbars were hidden), so on
+     iPad/iOS Safari it runs taller than the screen and the bottom of the app
+     gets cut off — dvh tracks the real, toolbar-adjusted height. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   gap: 0; /* Sit flush with the main content area for a cohesive interface */
   width: 100vw;
+  width: 100dvw;
 }
 @media (min-width: 769px) {
   #app {
@@ -24,6 +31,7 @@
   width: var(--sidebar-width-collapsed);
   min-width: var(--sidebar-width-collapsed);
   height: 100vh;
+  height: 100dvh;
   background: var(--sidebar-bg);
   display: flex;
   flex-direction: column;
@@ -886,6 +894,7 @@
   display: flex;
   gap: 0;
   height: calc(100vh - var(--topbar-height) - 120px);
+  height: calc(100dvh - var(--topbar-height) - 120px);
 }
 .schedule-sidebar {
   width: 176px;
@@ -1139,6 +1148,7 @@
 .dash-page {
   /* Break out of the main content padding so the canvas fills the whole area */
   height: calc(100vh - var(--topbar-height));
+  height: calc(100dvh - var(--topbar-height));
   min-height: 520px;
   padding: 0 !important;
   margin: -20px -24px;
@@ -1536,7 +1546,11 @@
   right: 0;
   width: 360px;
   max-width: 92vw;
+  /* dvh so the panel matches the visible viewport: with plain 100vh the panel
+     runs below the fold on iPad and its composer (input box) at the bottom is
+     cut off — the "no box to type into" symptom. */
   height: 100vh;
+  height: 100dvh;
   z-index: 500;
   display: flex;
   flex-direction: column;

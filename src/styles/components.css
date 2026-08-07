@@ -417,7 +417,10 @@ select.badge option {
   box-shadow: var(--shadow-xl);
   width: 90%;
   max-width: 560px;
+  /* dvh so a tall modal (and its footer buttons) stays within the visible
+     viewport on iPad/iOS rather than overflowing above/below the screen. */
   max-height: 85vh;
+  max-height: 85dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1787,7 +1790,10 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
 .auth-split-wrapper {
   display: flex;
   width: 100vw;
+  /* dvh so the login/launch screen fits the visible area on iPad/iOS instead of
+     running taller than the screen and clipping the bottom controls. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   position: relative;
   box-sizing: border-box;
@@ -1942,6 +1948,7 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
 
   .auth-panel.active {
     height: calc(100vh - 60px);
+    height: calc(100dvh - 60px);
     width: 100vw;
   }
 
