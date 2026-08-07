@@ -9,6 +9,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
 import { portalInviteEmail } from '../../utils/emailTemplates.js';
+import { customerPortalUrl } from '../../utils/portalLinks.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
@@ -204,48 +205,109 @@ export function renderPersonDetail(container, { id, tab }) {
       const sendBtn = tabContent.querySelector('#btn-send-portal-link');
       if (sendBtn) {
         sendBtn.addEventListener('click', async () => {
-          // Real send via Resend when email is configured; falls through to the
-          // simulated notice below otherwise (local / unconfigured accounts).
-          if (emailEnabledFor('portal_invite') && person.email) {
-            const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
-            const original = sendBtn.innerHTML;
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
-            try {
-              const { subject, html } = portalInviteEmail(person, { portalUrl: `${origin}/#/portal/customer` });
-              await sendEmail({ to: person.email, subject, html, template: 'portal_invite', relatedType: 'customer', relatedId: person.id });
-              showToast(`Portal invite emailed to ${person.email}`, 'success');
-              store.create('notifications', {
-                title: 'Portal Invite Sent',
-                message: `Portal access link emailed to ${person.company || person.name} (${person.email})`,
-                link: `/people/${person.id}`, read: true, createdAt: new Date().toISOString(), status: 'Converted'
-              });
-            } catch (err) {
-              showToast(err.message || 'Could not send portal invite', 'error');
-            } finally {
-              sendBtn.disabled = false;
-              sendBtn.innerHTML = original;
-            }
+          if (!person.email) {
+            showToast('Customer has no email address on file', 'error');
             return;
           }
 
-          const content = document.createElement('div');
-          content.innerHTML = `<p>Simulated dispatching secure portal link via email to <strong>${escapeHTML(person.email)}</strong>.</p>`;
+          if (sendBtn.dataset.undoing === 'true') {
+            const timerId = parseInt(sendBtn.dataset.timerId, 10);
+            const intervalId = parseInt(sendBtn.dataset.intervalId, 10);
+            clearTimeout(timerId);
+            clearInterval(intervalId);
+            sendBtn.dataset.undoing = 'false';
+            sendBtn.innerHTML = sendBtn.dataset.originalHtml || sendBtn.innerHTML;
+            sendBtn.classList.remove('btn-danger');
+            showToast('Send cancelled', 'info');
+            return;
+          }
+
+          const original = sendBtn.innerHTML;
+
+          const startCountdown = () => {
+            sendBtn.dataset.originalHtml = original;
+            sendBtn.dataset.undoing = 'true';
+            sendBtn.classList.add('btn-danger');
+            let timeLeft = 10;
+
+            const updateText = () => {
+              sendBtn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+            };
+            updateText();
+
+            const intervalId = setInterval(() => {
+              timeLeft--;
+              if (timeLeft > 0) {
+                updateText();
+              } else {
+                clearInterval(intervalId);
+              }
+            }, 1000);
+
+            const timerId = setTimeout(async () => {
+              sendBtn.dataset.undoing = 'false';
+              sendBtn.classList.remove('btn-danger');
+              sendBtn.disabled = true;
+              sendBtn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+
+              try {
+                // Real send via Resend when email is configured; falls through to the
+                // simulated notice below otherwise (local / unconfigured accounts).
+                if (emailEnabledFor('portal_invite') && person.email) {
+                  // Must carry the customer's token — a bare /#/portal/customer
+                  // link lands them on the portal with no way in.
+                  const { subject, html } = portalInviteEmail(person, { portalUrl: customerPortalUrl(person) });
+                  await sendEmail({ to: person.email, subject, html, template: 'portal_invite', relatedType: 'customer', relatedId: person.id });
+                  showToast(`Portal invite emailed to ${person.email}`, 'success');
+                  store.create('notifications', {
+                    title: 'Portal Invite Sent',
+                    message: `Portal access link emailed to ${person.company || person.name} (${person.email})`,
+                    link: `/people/${person.id}`, read: true, createdAt: new Date().toISOString(), status: 'Converted'
+                  });
+                } else {
+                  const content = document.createElement('div');
+                  content.innerHTML = `<p>Simulated dispatching secure portal link via email to <strong>${escapeHTML(person.email)}</strong>.</p>`;
+                  showModal({
+                    title: 'Send Portal Link',
+                    content,
+                    actions: [
+                      { label: 'Dismiss', className: 'btn-primary', onClick: (close) => close() }
+                    ]
+                  });
+
+                  store.create('notifications', {
+                    title: 'Portal Link Dispatched',
+                    message: `Portal access link sent to ${person.company} (${person.email})`,
+                    link: `/people/${person.id}`,
+                    read: true,
+                    createdAt: new Date().toISOString(),
+                    status: 'Converted'
+                  });
+                }
+              } catch (err) {
+                showToast(err.message || 'Could not send portal invite', 'error');
+              } finally {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = sendBtn.dataset.originalHtml || original;
+              }
+            }, 10000);
+
+            sendBtn.dataset.timerId = timerId;
+            sendBtn.dataset.intervalId = intervalId;
+          };
+
+          const modalContent = document.createElement('div');
+          modalContent.innerHTML = `<p>Are you sure you want to send the customer portal invite email to <strong>${escapeHTML(person.email)}</strong>?</p>`;
           showModal({
-            title: 'Send Portal Link',
-            content,
+            title: 'Confirm Send Portal Invite',
+            content: modalContent,
             actions: [
-              { label: 'Dismiss', className: 'btn-primary', onClick: (close) => close() }
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Send', className: 'btn-primary', onClick: (close) => {
+                close();
+                startCountdown();
+              }}
             ]
-          });
-          
-          store.create('notifications', {
-            title: 'Portal Link Dispatched',
-            message: `Portal access link sent to ${person.company} (${person.email})`,
-            link: `/people/${person.id}`,
-            read: true,
-            createdAt: new Date().toISOString(),
-            status: 'Converted'
           });
         });
       }

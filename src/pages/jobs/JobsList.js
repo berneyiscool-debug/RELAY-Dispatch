@@ -560,13 +560,18 @@ export function renderJobsList(container, params) {
         }
       }
 
-      const dateVal = j.scheduledDate || j.createdAt || '';
-      const jDateStr = dateVal ? dateVal.split('T')[0] : '';
-      if (filterStartDate && jDateStr < filterStartDate) {
-        return false;
-      }
-      if (filterEndDate && jDateStr > filterEndDate) {
-        return false;
+      // Strictly filter by scheduledDate so jobs without one don't magically appear due to their createdAt date
+      if (filterStartDate || filterEndDate) {
+        if (!j.scheduledDate) {
+          return false;
+        }
+        const jDateStr = j.scheduledDate.split('T')[0];
+        if (filterStartDate && jDateStr < filterStartDate) {
+          return false;
+        }
+        if (filterEndDate && jDateStr > filterEndDate) {
+          return false;
+        }
       }
 
       return true;

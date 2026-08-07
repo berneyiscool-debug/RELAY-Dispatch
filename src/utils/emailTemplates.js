@@ -82,7 +82,9 @@ function signatureHtml(branding) {
 
 // heading + row label/value are plain text (escaped here); intro + note are raw
 // HTML fragments already run through fillHtml by the caller.
-function shell(branding, { preheader, heading, intro, rows = [], ctaLabel, ctaUrl, note }) {
+// `portalUrl` adds the customer's magic link under the note so they can review,
+// accept and pay in their portal rather than replying to the email.
+function shell(branding, { preheader, heading, intro, rows = [], ctaLabel, ctaUrl, note, portalUrl, portalLabel }) {
   const name = branding.companyName;
   const brandHead = (branding.useLogo && branding.logo)
     ? `<img src="${escapeHTML(branding.logo)}" alt="${escapeHTML(name)}" style="max-height:34px;max-width:200px;display:block;" />`
@@ -108,6 +110,7 @@ function shell(branding, { preheader, heading, intro, rows = [], ctaLabel, ctaUr
           ${rows.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eaecf0;border-bottom:1px solid #eaecf0;margin:0 0 20px;">${rowsHtml}</table>` : ''}
           ${ctaUrl && ctaLabel ? `<div style="margin:0 0 20px;"><a href="${escapeHTML(ctaUrl)}" style="display:inline-block;background:${branding.accent};color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;border-radius:8px;">${escapeHTML(ctaLabel)}</a></div>` : ''}
           ${note ? `<p style="margin:0 0 8px;font-size:13px;color:#667085;line-height:1.6;">${note}</p>` : ''}
+          ${portalUrl ? `<p style="margin:14px 0 0;padding-top:14px;border-top:1px solid #eaecf0;font-size:13px;color:#667085;line-height:1.6;">${escapeHTML(portalLabel || 'View this and everything else in your portal:')} <a href="${escapeHTML(portalUrl)}" style="color:${branding.accent};font-weight:600;text-decoration:none;">Open my portal</a></p>` : ''}
           ${signatureHtml(branding)}
         </td></tr>
       </table>
@@ -129,7 +132,7 @@ function baseVars(entity, branding) {
   };
 }
 
-export function quoteEmail(quote, { acceptUrl, override } = {}) {
+export function quoteEmail(quote, { acceptUrl, portalUrl, override } = {}) {
   const cfg = resolveConfig('quote', override);
   const vars = baseVars(quote, cfg.branding);
   const defaultIntro = `Hi ${escapeHTML(vars.customer)}, please find your quote below. Let us know if you'd like to go ahead.`;
@@ -144,14 +147,18 @@ export function quoteEmail(quote, { acceptUrl, override } = {}) {
         { label: 'Quote total', value: money(quote.total) },
         quote.validUntil ? { label: 'Valid until', value: fmtDate(quote.validUntil) } : null,
       ].filter(Boolean),
-      ctaLabel: acceptUrl ? (cfg.text.ctaLabel || 'Review & accept quote') : null,
-      ctaUrl: acceptUrl || null,
-      note: cfg.text.note ? fillHtml(cfg.text.note, vars) : 'Reply to this email with any questions.',
+      // The portal is where a quote is actually accepted or declined, so it
+      // becomes the call to action when no other accept link was supplied.
+      ctaLabel: (acceptUrl || portalUrl) ? (cfg.text.ctaLabel || 'Review & accept quote') : null,
+      ctaUrl: acceptUrl || portalUrl || null,
+      note: cfg.text.note ? fillHtml(cfg.text.note, vars)
+        : (portalUrl ? 'You can accept or decline this quote in your portal — no need to reply.' : 'Reply to this email with any questions.'),
+      portalUrl: (acceptUrl && portalUrl) ? portalUrl : null,
     }),
   };
 }
 
-export function invoiceEmail(invoice, { payUrl, override } = {}) {
+export function invoiceEmail(invoice, { payUrl, portalUrl, override } = {}) {
   const cfg = resolveConfig('invoice', override);
   const vars = baseVars(invoice, cfg.branding);
   const defaultIntro = `Hi ${escapeHTML(vars.customer)}, your invoice is below.`;
@@ -166,15 +173,16 @@ export function invoiceEmail(invoice, { payUrl, override } = {}) {
         { label: 'Amount due', value: money(invoice.total) },
         invoice.dueDate ? { label: 'Due date', value: fmtDate(invoice.dueDate) } : null,
       ].filter(Boolean),
-      ctaLabel: payUrl ? (cfg.text.ctaLabel || 'Pay invoice online') : null,
-      ctaUrl: payUrl || null,
+      ctaLabel: (payUrl || portalUrl) ? (cfg.text.ctaLabel || (payUrl ? 'Pay invoice online' : 'View invoice in my portal')) : null,
+      ctaUrl: payUrl || portalUrl || null,
       note: cfg.text.note ? fillHtml(cfg.text.note, vars)
         : (payUrl ? 'Pay securely by card using the button above.' : 'Please arrange payment by the due date.'),
+      portalUrl: (payUrl && portalUrl) ? portalUrl : null,
     }),
   };
 }
 
-export function receiptEmail(invoice, { override } = {}) {
+export function receiptEmail(invoice, { portalUrl, override } = {}) {
   const cfg = resolveConfig('receipt', override);
   const vars = baseVars(invoice, cfg.branding);
   const defaultIntro = `Hi ${escapeHTML(vars.customer)}, thanks — we've received your payment. Here's your receipt.`;
@@ -190,11 +198,13 @@ export function receiptEmail(invoice, { override } = {}) {
         invoice.paidDate ? { label: 'Paid on', value: fmtDate(invoice.paidDate) } : null,
       ].filter(Boolean),
       note: cfg.text.note ? fillHtml(cfg.text.note, vars) : 'No action needed — this email is for your records.',
+      portalUrl: portalUrl || null,
+      portalLabel: 'Every receipt and invoice is kept in your portal:',
     }),
   };
 }
 
-export function reminderEmail(invoice, { payUrl, override } = {}) {
+export function reminderEmail(invoice, { payUrl, portalUrl, override } = {}) {
   const cfg = resolveConfig('reminder', override);
   const vars = baseVars(invoice, cfg.branding);
   const overdue = invoice.dueDate && new Date(invoice.dueDate) < new Date();
@@ -209,9 +219,10 @@ export function reminderEmail(invoice, { payUrl, override } = {}) {
         { label: 'Amount due', value: money(invoice.total) },
         invoice.dueDate ? { label: 'Due date', value: fmtDate(invoice.dueDate) } : null,
       ].filter(Boolean),
-      ctaLabel: payUrl ? (cfg.text.ctaLabel || 'Pay now') : null,
-      ctaUrl: payUrl || null,
+      ctaLabel: (payUrl || portalUrl) ? (cfg.text.ctaLabel || (payUrl ? 'Pay now' : 'View invoice in my portal')) : null,
+      ctaUrl: payUrl || portalUrl || null,
       note: cfg.text.note ? fillHtml(cfg.text.note, vars) : "If you've already paid, please disregard this reminder.",
+      portalUrl: (payUrl && portalUrl) ? portalUrl : null,
     }),
   };
 }
@@ -249,12 +260,14 @@ function sampleData() {
 // Build a preview email for a given type with the current (or overridden) config.
 export function previewEmail(type, override) {
   const s = sampleData();
+  // A stand-in portal link so the editor shows the magic-link line real sends carry.
+  const portalUrl = 'https://portal.example/#/portal/customer?token=sample';
   switch (type) {
-    case 'quote': return quoteEmail(s.quote, { acceptUrl: 'https://portal.example/quote', override });
-    case 'invoice': return invoiceEmail(s.invoice, { payUrl: 'https://pay.example/checkout', override });
-    case 'receipt': return receiptEmail(s.receipt, { override });
-    case 'reminder': return reminderEmail(s.reminder, { payUrl: 'https://pay.example/checkout', override });
-    case 'portal_invite': return portalInviteEmail(s.portal_invite, { portalUrl: 'https://portal.example', override });
+    case 'quote': return quoteEmail(s.quote, { portalUrl, override });
+    case 'invoice': return invoiceEmail(s.invoice, { payUrl: 'https://pay.example/checkout', portalUrl, override });
+    case 'receipt': return receiptEmail(s.receipt, { portalUrl, override });
+    case 'reminder': return reminderEmail(s.reminder, { payUrl: 'https://pay.example/checkout', portalUrl, override });
+    case 'portal_invite': return portalInviteEmail(s.portal_invite, { portalUrl, override });
     default: return { subject: '', html: '' };
   }
 }

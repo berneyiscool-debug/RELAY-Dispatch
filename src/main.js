@@ -5,6 +5,7 @@
 import './styles/global.css';
 import './styles/components.css';
 import './styles/layout.css';
+import './styles/docEditor.css';
 
 import { router } from './router.js';
 import { store } from './data/store.js';
@@ -48,6 +49,8 @@ import { renderPurchaseOrderDetail } from './pages/purchaseOrders/PurchaseOrderD
 import { renderReports } from './pages/reports/Reports.js';
 import { renderSettings } from './pages/Settings.js';
 import { renderFormBuilder } from './pages/forms/FormBuilder.js';
+import { renderDocumentStudio } from './pages/settings/DocumentStudio.js';
+import { renderEmailStudio } from './pages/settings/EmailStudio.js';
 import { renderKitDetail } from './pages/kits/KitDetail.js';
 
 import { renderLogin, handleCloudLoginSuccess } from './pages/login/Login.js';
@@ -447,6 +450,9 @@ function renderPage(handler) {
     mainContent.innerHTML = '';
     mainContent.scrollTop = 0;
     mainContent.removeAttribute('style');
+    // Document editors take over the content area; clear that here so the class
+    // can never outlive the page that set it.
+    document.body.classList.remove('rde-immersive');
 
     // Clear breadcrumb actions so we start with a clean slate for the new page
     const breadcrumbActions = document.getElementById('breadcrumb-actions');
@@ -625,6 +631,8 @@ router.register('/reports', renderPage(renderReports));
 
 // Settings
 router.register('/settings', renderPage(renderSettings));
+router.register('/settings/documents', renderPage(renderDocumentStudio));
+router.register('/settings/email-templates', renderPage(renderEmailStudio));
 router.register('/settings/forms/new', renderPage((c, p) => renderFormBuilder(c, { id: 'new' })));
 router.register('/settings/forms/:id/edit', renderPage((c, p) => renderFormBuilder(c, p)));
 router.register('/settings/quote-templates/new', renderPage((c, p) => renderQuoteDetail(c, { id: 'new', type: 'template' })));

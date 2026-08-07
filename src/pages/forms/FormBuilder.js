@@ -1,22 +1,31 @@
 // ============================================
-// FIELDFORGE — FORM BUILDER V2
-// Visual Drag & Drop Form Designer
+// RELAY — FORM TEMPLATE EDITOR
 // ============================================
+// Builds the forms technicians fill out in the field. Laid out as a document
+// editor: a Word-style ribbon of grouped controls across the top, and the form
+// itself as a sheet on a grey canvas — shown the way a technician will see it,
+// not as a grid of builder cards. Selecting a field or a section reveals a
+// contextual ribbon tab for its properties.
 
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import {
+  enterEditorChrome, group, btn, valueBtn, seg, field, select,
+  tabStrip, bindTabs, openPopover, closePopover, textPopoverHTML, bindTextPopover,
+  applyZoom, zoomControlHTML,
+} from '../../components/DocEditor.js';
 
 const FIELD_TYPES = [
-  { type: 'text', label: 'Text Input', icon: 'edit' },
-  { type: 'textarea', label: 'Long Text', icon: 'notes' },
-  { type: 'checkbox', label: 'Checkbox', icon: 'check_box' },
-  { type: 'select', label: 'Dropdown', icon: 'arrow_drop_down_circle' },
-  { type: 'date', label: 'Date', icon: 'calendar_today' },
-  { type: 'signature', label: 'Signature', icon: 'draw' },
-  { type: 'info', label: 'Info Box', icon: 'info' },
-  { type: 'spacer', label: 'Spacer', icon: 'space_bar' },
+  { type: 'text', label: 'Text', icon: 'edit', kind: 'input' },
+  { type: 'textarea', label: 'Long text', icon: 'notes', kind: 'input' },
+  { type: 'checkbox', label: 'Checkbox', icon: 'check_box', kind: 'input' },
+  { type: 'select', label: 'Dropdown', icon: 'arrow_drop_down_circle', kind: 'input' },
+  { type: 'date', label: 'Date', icon: 'calendar_today', kind: 'input' },
+  { type: 'signature', label: 'Signature', icon: 'draw', kind: 'input' },
+  { type: 'info', label: 'Info box', icon: 'info', kind: 'content' },
+  { type: 'spacer', label: 'Spacer', icon: 'space_bar', kind: 'content' },
 ];
 
 function fieldMeta(type) {
@@ -35,6 +44,8 @@ export function renderFormBuilder(container, { id }) {
     container.innerHTML = '<div class="empty-state"><h3>Template not found</h3></div>';
     return;
   }
+
+  enterEditorChrome(container);
 
   // ── State ──
   let sections = existing ? JSON.parse(JSON.stringify(existing.sections || [])) : [
@@ -55,9 +66,14 @@ export function renderFormBuilder(container, { id }) {
   let dragInfo = null;
   let formName = existing?.name || '';
   let formDesc = existing?.description || '';
+  let activeTab = 'insert';
+  let zoom = 100;
+
+  const selField = () => (sel.type === 'field' ? sections[sel.sIdx]?.fields?.[sel.fIdx] : null);
+  const selSection = () => (sel.type ? sections[sel.sIdx] : null);
 
   // ════════════════════════
-  //  RENDER
+  //  LAYOUT NORMALISATION
   // ════════════════════════
 
   function normalizeFields(fields, cols) {
@@ -70,7 +86,7 @@ export function renderFormBuilder(container, { id }) {
          span = Math.min(f.colSpan, cols - currentSpan);
          if (span <= 0) continue;
       }
-      
+
       if (currentSpan + span > cols) {
         if (cols - currentSpan > 0) {
           normalized.push({ id: uid('blk'), type: 'blank', colSpan: cols - currentSpan });
@@ -82,7 +98,7 @@ export function renderFormBuilder(container, { id }) {
       currentSpan += span;
       if (currentSpan === cols) currentSpan = 0;
     }
-    
+
     if (currentSpan > 0) {
       normalized.push({ id: uid('blk'), type: 'blank', colSpan: cols - currentSpan });
     }
@@ -92,7 +108,7 @@ export function renderFormBuilder(container, { id }) {
       if (last.type === 'blank' && last.colSpan === cols) normalized.pop();
       else break;
     }
-    
+
     normalized.push({ id: uid('blk'), type: 'blank', colSpan: cols });
 
     let merged = [];
@@ -115,353 +131,716 @@ export function renderFormBuilder(container, { id }) {
     return merged;
   }
 
-  function render() {
-    const canvas = container.querySelector('#fb2-canvas');
-    const rightSide = container.querySelector('.fb2-right');
-    const canvasScroll = canvas ? canvas.scrollTop : 0;
-    const rightScroll = rightSide ? rightSide.scrollTop : 0;
+  // ════════════════════════
+  //  RIBBON
+  // ════════════════════════
 
-    sections.forEach(sec => { if (!sec.isSpacer) sec.fields = normalizeFields(sec.fields || [], sec.columns || 1); });
-    container.innerHTML = `
-      ${getStyles()}
-      
-      <!-- Preview Modal -->
-      <div class="modal-overlay" id="fb2-preview-modal" style="display:none; z-index:9999;">
-        <div class="modal modal-lg">
-          <div class="modal-header">
-            <h3>Form Preview</h3>
-            <button class="modal-close" id="fb2-preview-close"><span class="material-icons-outlined">close</span></button>
-          </div>
-          <div class="modal-body" id="fb2-preview-content" style="background: var(--bg-color); padding: 24px; min-height: 400px; max-height: 70vh; overflow-y: auto;">
-            <!-- Form will be rendered here -->
-          </div>
-        </div>
-      </div>
-
-      <div class="fb2-header">
-        <div style="display:flex;align-items:center;gap:12px">
-          <button class="btn btn-ghost btn-icon" id="fb2-back"><span class="material-icons-outlined">arrow_back</span></button>
-          <h1 style="margin:0">${isEdit ? 'Edit Form Template' : 'Create Form Template'}</h1>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary" id="fb2-preview-btn"><span class="material-icons-outlined">visibility</span> Preview</button>
-          <button class="btn btn-secondary" id="fb2-cancel">Cancel</button>
-          <button class="btn btn-primary" id="fb2-save"><span class="material-icons-outlined">save</span> Save Template</button>
-        </div>
-      </div>
-      <div class="fb2-body">
-        <div class="fb2-left">
-          <div class="fb2-meta">
-            <div class="form-group" style="margin:0;flex:1">
-              <label class="form-label">Form Name <span style="color:var(--color-danger)">*</span></label>
-              <input class="form-input" id="fb2-name" value="${escapeHTML(formName)}" placeholder="e.g. Daily Safety Audit" />
-            </div>
-            <div class="form-group" style="margin:0;flex:1">
-              <label class="form-label">Description</label>
-              <input class="form-input" id="fb2-desc" value="${escapeHTML(formDesc)}" placeholder="Optional description..." />
-            </div>
-          </div>
-          <div class="fb2-canvas" id="fb2-canvas">
-            ${renderCanvas()}
-          </div>
-          <div class="fb2-toolbox">
-            <span class="fb2-toolbox-label">DRAG TO ADD</span>
-            ${FIELD_TYPES.map(ft => `
-              <div class="fb2-tool" draggable="true" data-type="${ft.type}">
-                <span class="material-icons-outlined">${ft.icon}</span>
-                <span>${ft.label}</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-        <div class="fb2-right" id="fb2-sidebar">
-          ${renderSidebar()}
-        </div>
-      </div>
-    `;
-    bindAll();
-
-    const newCanvas = container.querySelector('#fb2-canvas');
-    const newRightSide = container.querySelector('.fb2-right');
-    if (newCanvas) newCanvas.scrollTop = canvasScroll;
-    if (newRightSide) newRightSide.scrollTop = rightScroll;
+  function tabsForSelection() {
+    const tabs = [
+      { id: 'insert', label: 'Insert' },
+      { id: 'layout', label: 'Layout' },
+    ];
+    if (sel.type === 'field') tabs.push({ id: 'field', label: 'Field', contextual: true });
+    else if (sel.type === 'section') tabs.push({ id: 'section', label: 'Section', contextual: true });
+    return tabs;
   }
 
-  // ── Canvas ──
+  function insertTab() {
+    const tile = (ft) => btn({
+      label: ft.label, iconName: ft.icon, draggable: true,
+      dataset: { type: ft.type },
+      title: `Drag onto the form, or click to add a ${ft.label.toLowerCase()} field`,
+    });
+    return group('Inputs', FIELD_TYPES.filter(f => f.kind === 'input').map(tile).join(''))
+      + group('Content', FIELD_TYPES.filter(f => f.kind === 'content').map(tile).join(''))
+      + group('Structure',
+        btn({ id: 'fb-add-sec', label: 'Section', iconName: 'view_agenda', title: 'Add a new section' })
+        + btn({ id: 'fb-add-spacer', label: 'Page space', iconName: 'space_bar', title: 'Add vertical space between sections' }));
+  }
 
-  function renderCanvas() {
-    if (!sections.length) {
-      return `<div class="fb2-empty">
-        <span class="material-icons-outlined" style="font-size:48px">dashboard_customize</span>
-        <p>Click "Add Section" below to get started</p>
-      </div>`;
+  function layoutTab() {
+    const sec = selSection();
+    const cols = sec && !sec.isSpacer ? (sec.columns || 1) : null;
+    const f = selField();
+    const spanOptions = cols
+      ? Array.from({ length: cols }, (_, i) => ({
+          value: i + 1,
+          label: i + 1 === cols ? 'Full' : String(i + 1),
+          title: i + 1 === cols ? 'Span the full width' : `Span ${i + 1} of ${cols} columns`,
+        }))
+      : [{ value: 1, label: '1' }];
+
+    return group('Section columns', seg({
+      id: 'fb-cols',
+      value: cols || 1,
+      disabled: !cols,
+      options: [
+        { value: 1, label: '1', title: 'One column' },
+        { value: 2, label: '2', title: 'Two columns' },
+        { value: 3, label: '3', title: 'Three columns' },
+      ],
+    }))
+      + group('Field width', seg({
+        id: 'fb-span',
+        value: f ? Math.min(f.colSpan || 1, cols || 1) : 1,
+        disabled: !f || !cols || cols < 2,
+        options: spanOptions,
+      }))
+      + group('Move section',
+        btn({ id: 'fb-move-up', label: 'Up', iconName: 'arrow_upward', small: true, disabled: !sec || sel.sIdx === 0 })
+        + btn({ id: 'fb-move-down', label: 'Down', iconName: 'arrow_downward', small: true, disabled: !sec || sel.sIdx === sections.length - 1 }));
+  }
+
+  function fieldTab() {
+    const f = selField();
+    if (!f) return group('Field', '<span class="rde-grp-label">Nothing selected</span>');
+    const meta = fieldMeta(f.type);
+    const cols = selSection()?.columns || 1;
+    const isContent = f.type === 'info' || f.type === 'spacer';
+
+    let labelControl;
+    if (f.type === 'info') {
+      labelControl = valueBtn({ id: 'fb-info-text', iconName: 'info', label: 'Information text', value: f.label, placeholder: 'Empty' });
+    } else if (f.type === 'spacer') {
+      labelControl = field({ id: 'fb-spacer-h', srLabel: 'Spacer height in pixels', value: parseInt(f.height || 50, 10), type: 'number', min: 10, max: 400, width: 88 });
+    } else {
+      labelControl = field({ id: 'fb-label', srLabel: 'Field label', value: f.label || '', placeholder: `${meta.label} field`, width: 240 });
     }
 
-    let html = '';
-    sections.forEach((sec, sIdx) => {
-      const isSel = sel.type === 'section' && sel.sIdx === sIdx;
-      const cols = sec.columns || 1;
-
-      if (sec.isSpacer) {
-        html += `
-          <div class="fb2-section fb2-spacer-sec ${isSel ? 'fb2-sel' : ''}" data-sidx="${sIdx}">
-            <div class="fb2-sec-header" draggable="true" data-sidx="${sIdx}">
-              <span class="material-icons-outlined fb2-drag-handle">drag_indicator</span>
-              <span style="flex:1;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-tertiary)">Layout Spacer</span>
-              <button class="btn btn-ghost btn-icon btn-sm fb2-del-sec" data-sidx="${sIdx}" style="color:var(--color-danger)">
-                <span class="material-icons-outlined" style="font-size:18px">close</span>
-              </button>
-            </div>
-          </div>`;
-        return;
-      }
-
-      html += `
-        <div class="fb2-section ${isSel ? 'fb2-sel' : ''}" data-sidx="${sIdx}">
-          <div class="fb2-sec-header" draggable="true" data-sidx="${sIdx}">
-            <span class="material-icons-outlined fb2-drag-handle">drag_indicator</span>
-            <input class="fb2-sec-title" value="${escapeHTML(sec.title)}" placeholder="Section title..." data-sidx="${sIdx}" />
-            <div class="fb2-col-btns">
-              ${[1,2,3].map(n => `<button class="fb2-col-btn ${cols===n?'active':''}" data-sidx="${sIdx}" data-cols="${n}" title="${n} column${n>1?'s':''}">${n}</button>`).join('')}
-            </div>
-            <button class="btn btn-ghost btn-icon btn-sm fb2-del-sec" data-sidx="${sIdx}" style="color:var(--color-danger)" title="Delete section">
-              <span class="material-icons-outlined" style="font-size:18px">close</span>
-            </button>
-          </div>
-          <div class="fb2-fields" data-sidx="${sIdx}" style="grid-template-columns:repeat(${cols},1fr)">
-            ${sec.fields.length ? sec.fields.map((f, fIdx) => renderFieldCard(sec, sIdx, f, fIdx)).join('') : ''}
-          </div>
-        </div>`;
-    });
-
-    html += `
-      <div class="fb2-add-row">
-        <button class="fb2-add-sec" id="fb2-add-sec"><span class="material-icons-outlined">add</span> Add Section</button>
-        <button class="fb2-add-sec fb2-add-sec-alt" id="fb2-add-spacer"><span class="material-icons-outlined">space_bar</span> Add Spacer</button>
-      </div>`;
-    return html;
+    return group(isContent ? (f.type === 'spacer' ? 'Height' : 'Content') : 'Question',
+      labelControl
+      + (isContent ? '' : btn({
+        id: 'fb-required', label: 'Required', iconName: f.required ? 'star' : 'star_outline',
+        pressed: !!f.required, small: true, title: 'Technicians must answer this before submitting',
+      })))
+      + group('Type', select({
+        id: 'fb-type', srLabel: 'Field type', value: f.type, width: 158,
+        options: FIELD_TYPES.map(ft => ({ value: ft.type, label: ft.label })),
+      }))
+      + (cols > 1 ? group('Width', seg({
+        id: 'fb-span-ctx',
+        value: Math.min(f.colSpan || 1, cols),
+        options: Array.from({ length: cols }, (_, i) => ({
+          value: i + 1, label: i + 1 === cols ? 'Full' : String(i + 1),
+        })),
+      })) : '')
+      + (f.type === 'select' ? group('Choices', valueBtn({
+        id: 'fb-options', iconName: 'list', label: `${(f.options || []).length} options`,
+        value: (f.options || []).join(', '), placeholder: 'None yet',
+      })) : '')
+      + group('Field', btn({ id: 'fb-del-field', label: 'Delete', iconName: 'delete_outline', small: true }), { end: true });
   }
 
-  // ── Field Card ──
+  function sectionTab() {
+    const sec = selSection();
+    if (!sec) return group('Section', '<span class="rde-grp-label">Nothing selected</span>');
 
-  function renderFieldCard(sec, sIdx, f, fIdx) {
-    const meta = fieldMeta(f.type);
-    const isSel = sel.type === 'field' && sel.sIdx === sIdx && sel.fIdx === fIdx;
+    if (sec.isSpacer) {
+      return group('Page space height', field({
+        id: 'fb-sec-height', srLabel: 'Page space height in pixels', value: parseInt(sec.height || 60, 10), type: 'number', min: 20, max: 300, width: 96,
+      }))
+        + group('Section', btn({ id: 'fb-del-sec', label: 'Delete', iconName: 'delete_outline', small: true }), { end: true });
+    }
+
+    return group('Section heading', field({
+      id: 'fb-sec-title', srLabel: 'Section title', value: sec.title || '', placeholder: 'Untitled section', width: 260,
+    }))
+      + group('Columns', seg({
+        id: 'fb-sec-cols',
+        value: sec.columns || 1,
+        options: [{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 3, label: '3' }],
+      }))
+      + group('Order',
+        btn({ id: 'fb-move-up', label: 'Up', iconName: 'arrow_upward', small: true, disabled: sel.sIdx === 0 })
+        + btn({ id: 'fb-move-down', label: 'Down', iconName: 'arrow_downward', small: true, disabled: sel.sIdx === sections.length - 1 }))
+      + group('Section', btn({ id: 'fb-del-sec', label: 'Delete', iconName: 'delete_outline', small: true }), { end: true });
+  }
+
+  function ribbonHTML() {
+    const body = activeTab === 'insert' ? insertTab()
+      : activeTab === 'layout' ? layoutTab()
+      : activeTab === 'field' ? fieldTab()
+      : sectionTab();
+    return `<div class="rde-ribbon" id="fb-ribbon" role="tabpanel">${body}</div>`;
+  }
+
+  // ════════════════════════
+  //  CANVAS
+  // ════════════════════════
+
+  function renderSheet() {
+    const totals = counts();
+    return `
+      <div class="fb-doc">
+        <div class="fb-doc-head">
+          <h2 class="fb-doc-title" id="fb-doc-title">${escapeHTML(formName || 'Untitled form')}</h2>
+          <input class="fb-doc-desc" id="fb-desc" value="${escapeHTML(formDesc)}"
+            placeholder="Add a short description — technicians see this above the form" />
+        </div>
+        ${sections.length ? sections.map((sec, sIdx) => renderSection(sec, sIdx)).join('') : `
+          <div class="fb-empty">
+            <span class="material-icons-outlined">dashboard_customize</span>
+            <p>This form is empty. Drag a field from the ribbon, or add a section to group your questions.</p>
+            <button class="btn btn-secondary btn-sm" id="fb-empty-add">
+              <span class="material-icons-outlined" style="font-size:16px">add</span> Add a section
+            </button>
+          </div>`}
+        <div class="fb-add-row">
+          <button class="fb-add" id="fb-add-sec-inline">
+            <span class="material-icons-outlined" style="font-size:18px">add</span> Add section
+          </button>
+          <button class="fb-add fb-add-alt" id="fb-add-spacer-inline">
+            <span class="material-icons-outlined" style="font-size:18px">space_bar</span> Add page space
+          </button>
+        </div>
+        <div class="fb-doc-foot">${totals.sections} section${totals.sections === 1 ? '' : 's'} · ${totals.fields} field${totals.fields === 1 ? '' : 's'}</div>
+      </div>`;
+  }
+
+  function renderSection(sec, sIdx) {
+    const isSel = sel.type === 'section' && sel.sIdx === sIdx;
+    const cols = sec.columns || 1;
+
+    if (sec.isSpacer) {
+      const h = parseInt(sec.height || 60, 10);
+      return `
+        <div class="fb-sec fb-sec-space ${isSel ? 'is-sel' : ''}" data-sidx="${sIdx}" style="height:${h}px">
+          <div class="fb-sec-grip" draggable="true" data-sidx="${sIdx}" title="Drag to reorder">
+            <span class="material-icons-outlined">drag_indicator</span>
+          </div>
+          <span class="fb-sec-space-lbl">Page space · ${h}px</span>
+          <button class="fb-sec-del" data-sidx="${sIdx}" title="Delete this space" aria-label="Delete this space">
+            <span class="material-icons-outlined">close</span>
+          </button>
+        </div>`;
+    }
+
+    return `
+      <section class="fb-sec ${isSel ? 'is-sel' : ''}" data-sidx="${sIdx}">
+        <header class="fb-sec-head" data-sidx="${sIdx}">
+          <div class="fb-sec-grip" draggable="true" data-sidx="${sIdx}" title="Drag to reorder">
+            <span class="material-icons-outlined">drag_indicator</span>
+          </div>
+          <input class="fb-sec-title" value="${escapeHTML(sec.title || '')}" placeholder="Untitled section" data-sidx="${sIdx}" aria-label="Section title" />
+          <div class="fb-sec-tools">
+            <span class="fb-sec-cols">${cols} col${cols > 1 ? 's' : ''}</span>
+            <button class="fb-sec-del" data-sidx="${sIdx}" title="Delete section" aria-label="Delete section">
+              <span class="material-icons-outlined">delete_outline</span>
+            </button>
+          </div>
+        </header>
+        <div class="fb-fields" data-sidx="${sIdx}" style="grid-template-columns:repeat(${cols},1fr)">
+          ${(sec.fields || []).map((f, fIdx) => renderField(sec, sIdx, f, fIdx)).join('')}
+        </div>
+      </section>`;
+  }
+
+  function renderField(sec, sIdx, f, fIdx) {
     const cols = sec.columns || 1;
     const span = Math.min(f.colSpan || 1, cols);
-    
+
     if (f.type === 'blank') {
-      return `
-        <div class="fb2-field fb2-blank" data-sidx="${sIdx}" data-fidx="${fIdx}" style="grid-column:span ${span};border:2px dashed var(--border-color);display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.02);min-height:70px;border-radius:6px;cursor:crosshair;box-shadow:none">
-          <span style="color:var(--text-tertiary);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px">Drop Here</span>
-        </div>
-      `;
+      return `<div class="fb-blank" data-sidx="${sIdx}" data-fidx="${fIdx}" style="grid-column:span ${span}">
+        <span>Drop a field here</span>
+      </div>`;
     }
 
-    const label = f.label || meta.label + '...';
-    let fieldHtml = '';
+    const meta = fieldMeta(f.type);
+    const isSel = sel.type === 'field' && sel.sIdx === sIdx && sel.fIdx === fIdx;
+    const label = f.label || `${meta.label} field`;
+    const req = f.required ? '<span class="fb-req" aria-hidden="true">*</span>' : '';
+    let body = '';
 
     if (f.type === 'text') {
-      fieldHtml = `<input class="form-input" style="pointer-events: none;" placeholder="${escapeHTML(label)}" disabled />`;
+      body = `<input class="form-input" placeholder="${escapeHTML(label)}" disabled />`;
     } else if (f.type === 'textarea') {
-      fieldHtml = `<textarea class="form-textarea" rows="3" style="pointer-events: none;" placeholder="${escapeHTML(label)}" disabled></textarea>`;
+      body = `<textarea class="form-textarea" rows="3" placeholder="${escapeHTML(label)}" disabled></textarea>`;
     } else if (f.type === 'checkbox') {
-      fieldHtml = `
-        <label style="display:flex; align-items:center; gap:10px; cursor:default; opacity:0.7; pointer-events:none;">
-          <input type="checkbox" style="width:18px; height:18px" disabled />
-          <span style="font-size:14px">${escapeHTML(label)}</span>
-        </label>`;
+      body = `<label class="fb-check"><input type="checkbox" disabled /><span>${escapeHTML(label)}</span></label>`;
     } else if (f.type === 'select') {
-      fieldHtml = `
-        <select class="form-select" style="pointer-events: none;" disabled>
-          <option value="">Select option...</option>
-          ${(f.options || []).map(opt => `<option>${escapeHTML(opt)}</option>`).join('')}
-        </select>`;
+      body = `<select class="form-select" disabled><option>${(f.options || []).length ? escapeHTML(f.options[0]) : 'Select option…'}</option></select>`;
     } else if (f.type === 'date') {
-      fieldHtml = `<input type="date" class="form-input" style="pointer-events: none;" disabled />`;
+      body = `<input type="date" class="form-input" disabled />`;
     } else if (f.type === 'signature') {
-      fieldHtml = `
-        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic">
-          Digitally Signed on submission
-        </div>`;
+      body = `<div class="fb-sig">Signed on submission</div>`;
     } else if (f.type === 'info') {
-      fieldHtml = `
-        <div class="form-group info-block" style="margin:0; padding:16px; background:rgba(27, 109, 224, 0.05); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
-          <div style="display:flex; gap:12px; align-items:flex-start">
-            <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px; margin-top:2px">info</span>
-            <div>${escapeHTML(f.label || 'Informational text block').replace(/\n/g, '<br/>')}</div>
-          </div>
-        </div>`;
+      body = `<div class="fb-info"><span class="material-icons-outlined">info</span><div>${escapeHTML(f.label || 'Informational text block').replace(/\n/g, '<br/>')}</div></div>`;
     } else if (f.type === 'spacer') {
-      const fHeight = f.height ? (String(f.height).endsWith('px') ? f.height : f.height + 'px') : '50px';
-      fieldHtml = `<div style="height: ${fHeight}; border: 2px dashed var(--border-color); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px;">Spacer</div>`;
+      const h = f.height ? parseInt(f.height, 10) : 50;
+      body = `<div class="fb-spacer" style="height:${h}px">Spacer</div>`;
     }
+
+    const showLabel = f.type !== 'info' && f.type !== 'spacer' && f.type !== 'checkbox';
 
     return `
-      <div class="fb2-field ${isSel ? 'fb2-sel' : ''}" data-sidx="${sIdx}" data-fidx="${fIdx}" style="grid-column:span ${span}" draggable="true">
-        <div class="fb2-field-bar">
-          <span class="material-icons-outlined fb2-drag-handle" style="font-size:16px">drag_indicator</span>
-          <span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary)">${meta.icon}</span>
-          <span class="fb2-ftype-lbl">${meta.label}</span>
-        </div>
-        <div style="padding:10px 14px 14px; pointer-events: none;">
-          ${f.type !== 'info' && f.type !== 'spacer' ? `
-            <div class="form-group" style="margin:0;">
-              ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
-              ${fieldHtml}
-            </div>
-          ` : `
-            ${fieldHtml}
-          `}
-        </div>
-      </div>
-    `;
-  }
-
-  // ── Sidebar ──
-
-  function renderSidebar() {
-    if (sel.type === 'field') {
-      const f = sections[sel.sIdx]?.fields[sel.fIdx];
-      if (!f) { sel = { type: null }; return renderSidebar(); }
-      const meta = fieldMeta(f.type);
-      const sec = sections[sel.sIdx];
-      const cols = sec.columns || 1;
-
-      return `
-        <div class="fb2-sb-head"><span class="material-icons-outlined" style="color:var(--color-primary)">${meta.icon}</span><span>${meta.label} Properties</span></div>
-        <div class="fb2-sb-body">
-          ${f.type !== 'spacer' ? `
-            <div class="form-group">
-              <label class="form-label">${f.type === 'info' ? 'Information Text' : 'Label'}</label>
-              <textarea class="form-textarea" id="sb-label" rows="${f.type === 'info' ? 4 : 2}" placeholder="${f.type === 'info' ? 'Informational text...' : 'Field label...'}">${escapeHTML(f.label || '')}</textarea>
-            </div>
-          ` : ''}
-          <div class="form-group">
-            <label class="form-label">Field Type</label>
-            <select class="form-select" id="sb-type">
-              ${FIELD_TYPES.map(ft => `<option value="${ft.type}" ${f.type === ft.type ? 'selected' : ''}>${ft.label}</option>`).join('')}
-            </select>
-          </div>
-          ${(f.type !== 'info' && f.type !== 'spacer') ? `
-            <div class="form-group">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
-                <input type="checkbox" id="sb-req" ${f.required ? 'checked' : ''} style="width:18px;height:18px" />
-                Required field
-              </label>
-            </div>
-          ` : ''}
-          ${cols > 1 ? `
-            <div class="form-group">
-              <label class="form-label">Column Span</label>
-              <div class="fb2-col-btns" style="justify-content:flex-start">
-                ${Array.from({length: cols}, (_, i) => i + 1).map(n => `
-                  <button class="fb2-col-btn sb-span-btn ${(f.colSpan || 1) === n ? 'active' : ''}" data-span="${n}">${n === cols ? 'Full' : n}</button>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-          ${f.type === 'select' ? `
-            <div class="form-group">
-              <label class="form-label">Dropdown Options</label>
-              <textarea class="form-textarea" id="sb-opts" rows="4" placeholder="One option per line...">${(f.options || []).join('\n')}</textarea>
-              <small style="color:var(--text-tertiary);font-size:11px">One option per line</small>
-            </div>
-          ` : ''}
-          <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:8px">
-            <button class="btn btn-ghost btn-sm" id="sb-del-field" style="color:var(--color-danger);width:100%;justify-content:center">
-              <span class="material-icons-outlined" style="font-size:16px">delete</span> Delete Field
-            </button>
-          </div>
-        </div>`;
-    }
-
-    if (sel.type === 'section') {
-      const sec = sections[sel.sIdx];
-      if (!sec) { sel = { type: null }; return renderSidebar(); }
-      const cols = sec.columns || 1;
-      return `
-        <div class="fb2-sb-head"><span class="material-icons-outlined" style="color:var(--color-primary)">view_agenda</span><span>Section Properties</span></div>
-        <div class="fb2-sb-body">
-          ${!sec.isSpacer ? `
-            <div class="form-group">
-              <label class="form-label">Section Title</label>
-              <input class="form-input" id="sb-sec-title" value="${escapeHTML(sec.title || '')}" placeholder="Section title..." />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Columns</label>
-              <div class="fb2-col-btns" style="justify-content:flex-start">
-                ${[1,2,3].map(n => `<button class="fb2-col-btn sb-col-btn ${cols===n?'active':''}" data-cols="${n}">${n} Col${n>1?'s':''}</button>`).join('')}
-              </div>
-            </div>
-          ` : `
-            <div class="form-group">
-              <label class="form-label">Spacer Height (px)</label>
-              <input type="number" class="form-input" id="sb-spacer-h" value="${parseInt(sec.height || '60')}" min="20" max="300" />
-            </div>
-          `}
-          <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:8px">
-            <button class="btn btn-ghost btn-sm" id="sb-del-sec" style="color:var(--color-danger);width:100%;justify-content:center">
-              <span class="material-icons-outlined" style="font-size:16px">delete</span> Delete Section
-            </button>
-          </div>
-        </div>`;
-    }
-
-    return `
-      <div class="fb2-sb-empty">
-        <span class="material-icons-outlined" style="font-size:40px;color:var(--text-tertiary)">touch_app</span>
-        <h4 style="margin:12px 0 4px;color:var(--text-secondary)">No Selection</h4>
-        <p style="color:var(--text-tertiary);font-size:13px;line-height:1.5">Click a field or section to edit its properties here.<br><br>Drag items from the toolbox to add new fields.</p>
+      <div class="fb-field ${isSel ? 'is-sel' : ''}" data-sidx="${sIdx}" data-fidx="${fIdx}"
+           style="grid-column:span ${span}" draggable="true" tabindex="0" role="button"
+           aria-label="${escapeHTML(label)} — ${escapeHTML(meta.label)}">
+        <span class="fb-field-tag">${escapeHTML(meta.label)}</span>
+        ${showLabel ? `<label class="fb-field-lbl">${escapeHTML(label)}${req}</label>` : ''}
+        ${body}
       </div>`;
   }
 
-  // ════════════════════════
-  //  EVENTS
-  // ════════════════════════
-
-  function renderPreservingFocus() {
-    const ae = document.activeElement;
-    const aeId = ae?.id;
-    const start = ae?.selectionStart;
-    const end = ae?.selectionEnd;
-    render();
-    if (aeId) {
-      const el = container.querySelector(`#${aeId}`);
-      if (el) { el.focus(); try { el.setSelectionRange(start, end); } catch(e) {} }
-    }
+  function counts() {
+    const real = sections.reduce((sum, s) => sum + (s.fields || []).filter(f => f.type !== 'blank').length, 0);
+    return { sections: sections.filter(s => !s.isSpacer).length, fields: real };
   }
 
-  function updateSidebar() {
-    const sb = container.querySelector('#fb2-sidebar');
-    if (sb) { sb.innerHTML = renderSidebar(); bindSidebarEvents(); }
+  // ════════════════════════
+  //  SHELL
+  // ════════════════════════
+
+  function shellHTML() {
+    return `
+      ${styles()}
+      <div class="modal-overlay" id="fb-preview-modal" style="display:none; z-index:9999;">
+        <div class="modal modal-lg">
+          <div class="modal-header">
+            <h3>Form preview</h3>
+            <button class="modal-close" id="fb-preview-close" aria-label="Close preview"><span class="material-icons-outlined">close</span></button>
+          </div>
+          <div class="modal-body" id="fb-preview-content" style="background:var(--bg-color); padding:24px; min-height:400px; max-height:70vh; overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <div class="rde" style="--rde-sheet-w:860px">
+        <div class="rde-cmd">
+          <button type="button" class="rde-cmd-back" id="fb-back" title="Back to Settings" aria-label="Back to Settings">
+            <span class="material-icons-outlined">arrow_back</span>
+          </button>
+          <div class="rde-cmd-id">
+            <input class="rde-cmd-title" id="fb-name" value="${escapeHTML(formName)}"
+              placeholder="Untitled form" aria-label="Form name" />
+            <span class="rde-cmd-sub">${isEdit ? 'Form template' : 'New form template'}</span>
+          </div>
+          <span class="rde-cmd-spacer"></span>
+          <div class="rde-cmd-actions">
+            <button class="btn btn-secondary btn-sm" id="fb-preview-btn">
+              <span class="material-icons-outlined" style="font-size:16px">visibility</span> Preview
+            </button>
+            <button class="btn btn-primary btn-sm" id="fb-save">
+              <span class="material-icons-outlined" style="font-size:16px">save</span> Save template
+            </button>
+          </div>
+        </div>
+
+        <div id="fb-tabs-host">${tabStrip(tabsForSelection(), activeTab)}</div>
+        ${ribbonHTML()}
+
+        <div class="rde-canvas" id="fb-canvas">
+          <div class="rde-stage" id="fb-stage">
+            <div class="rde-sheet rde-sheet-app" id="fb-sheet">${renderSheet()}</div>
+          </div>
+        </div>
+
+        <div class="rde-status">
+          <span id="fb-status">${statusText()}</span>
+          ${zoomControlHTML('fb-zoom', zoom)}
+        </div>
+      </div>`;
+  }
+
+  function statusText() {
+    const t = counts();
+    const f = selField();
+    if (f) return `${fieldMeta(f.type).label} selected — edit it on the Field tab`;
+    if (sel.type === 'section') return 'Section selected — edit it on the Section tab';
+    return `${t.sections} section${t.sections === 1 ? '' : 's'} · ${t.fields} field${t.fields === 1 ? '' : 's'}`;
+  }
+
+  // ════════════════════════
+  //  RENDER
+  // ════════════════════════
+
+  // Full repaint of the sheet; the ribbon and tab strip are refreshed alongside
+  // it so contextual tabs track the selection.
+  function render() {
+    const canvas = container.querySelector('#fb-canvas');
+    const scroll = canvas ? canvas.scrollTop : 0;
+
+    sections.forEach(sec => {
+      if (!sec.isSpacer) sec.fields = normalizeFields(sec.fields || [], sec.columns || 1);
+    });
+
+    const sheet = container.querySelector('#fb-sheet');
+    if (!sheet) { container.innerHTML = shellHTML(); bindAll(); return; }
+
+    sheet.innerHTML = renderSheet();
+    renderTabs();
+    renderRibbon();
+    updateStatus();
+    bindCanvas();
+    setupDragDrop();
+
+    const freshCanvas = container.querySelector('#fb-canvas');
+    if (freshCanvas) freshCanvas.scrollTop = scroll;
+  }
+
+  function renderTabs() {
+    const host = container.querySelector('#fb-tabs-host');
+    if (!host) return;
+    host.innerHTML = tabStrip(tabsForSelection(), activeTab);
+    bindTabs(host, (id) => {
+      if (id === activeTab) return;
+      activeTab = id;
+      closePopover();
+      renderTabs();
+      renderRibbon();
+    });
+  }
+
+  function renderRibbon() {
+    const old = container.querySelector('#fb-ribbon');
+    if (!old) return;
+    const scrollLeft = old.scrollLeft;
+    old.outerHTML = ribbonHTML();
+    const fresh = container.querySelector('#fb-ribbon');
+    if (fresh) fresh.scrollLeft = scrollLeft;
+    bindRibbon();
+  }
+
+  function updateStatus() {
+    const el = container.querySelector('#fb-status');
+    if (el) el.textContent = statusText();
+  }
+
+  // Selecting always surfaces the matching contextual tab, so properties are one
+  // glance away instead of hidden behind a panel.
+  function selectField(sIdx, fIdx) {
+    sel = { type: 'field', sIdx, fIdx };
+    activeTab = 'field';
+    render();
+  }
+
+  function selectSection(sIdx) {
+    sel = { type: 'section', sIdx };
+    activeTab = 'section';
+    render();
+  }
+
+  function clearSelection() {
+    if (!sel.type) return;
+    sel = { type: null, sIdx: null, fIdx: null };
+    if (activeTab === 'field' || activeTab === 'section') activeTab = 'insert';
+    render();
+  }
+
+  // ════════════════════════
+  //  RIBBON EVENTS
+  // ════════════════════════
+
+  function bindRibbon() {
+    const q = (s) => container.querySelector(s);
+
+    // Click a palette tile to insert without dragging.
+    container.querySelectorAll('#fb-ribbon .rde-b[data-type]').forEach(tile => {
+      tile.addEventListener('click', () => insertField(tile.dataset.type));
+    });
+
+    q('#fb-add-sec')?.addEventListener('click', addSection);
+    q('#fb-add-spacer')?.addEventListener('click', addSpacer);
+
+    // Layout tab
+    q('#fb-cols')?.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => setColumns(sel.sIdx, +b.dataset.value));
+    });
+    q('#fb-span')?.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => setSpan(+b.dataset.value));
+    });
+    q('#fb-move-up')?.addEventListener('click', () => moveSection(-1));
+    q('#fb-move-down')?.addEventListener('click', () => moveSection(1));
+
+    // Field tab
+    const labelInput = q('#fb-label');
+    labelInput?.addEventListener('input', () => {
+      const f = selField();
+      if (!f) return;
+      f.label = labelInput.value;
+      const lbl = container.querySelector(`.fb-field[data-sidx="${sel.sIdx}"][data-fidx="${sel.fIdx}"] .fb-field-lbl`);
+      if (lbl) lbl.innerHTML = escapeHTML(f.label || `${fieldMeta(f.type).label} field`) + (f.required ? '<span class="fb-req">*</span>' : '');
+    });
+    q('#fb-required')?.addEventListener('click', () => {
+      const f = selField();
+      if (!f) return;
+      f.required = !f.required;
+      render();
+    });
+    q('#fb-type')?.addEventListener('change', (e) => {
+      const f = selField();
+      if (!f) return;
+      f.type = e.target.value;
+      if (f.type === 'select' && !f.options) f.options = [];
+      render();
+    });
+    q('#fb-span-ctx')?.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => setSpan(+b.dataset.value));
+    });
+    q('#fb-del-field')?.addEventListener('click', () => {
+      if (sel.type !== 'field') return;
+      sections[sel.sIdx].fields.splice(sel.fIdx, 1);
+      clearSelection();
+    });
+    q('#fb-spacer-h')?.addEventListener('input', (e) => {
+      const f = selField();
+      if (f) { f.height = `${Math.max(10, parseInt(e.target.value, 10) || 50)}px`; render(); }
+    });
+
+    q('#fb-info-text')?.addEventListener('click', (e) => {
+      const f = selField();
+      if (!f) return;
+      const trigger = e.currentTarget;
+      openPopover(trigger, textPopoverHTML({
+        title: 'Information text',
+        hint: 'Shown to the technician as a highlighted note. No answer required.',
+        value: f.label || '', placeholder: 'e.g. Check isolation before starting', rows: 4,
+      }), (panel, close) => {
+        bindTextPopover(panel, close, {
+          onInput: (v) => {
+            f.label = v;
+            const box = container.querySelector(`.fb-field[data-sidx="${sel.sIdx}"][data-fidx="${sel.fIdx}"] .fb-info div`);
+            if (box) box.innerHTML = escapeHTML(v || 'Informational text block').replace(/\n/g, '<br/>');
+            const valEl = trigger.querySelector('.rde-b-val-v');
+            if (valEl) {
+              valEl.textContent = v.trim() ? v.replace(/\s+/g, ' ').trim().slice(0, 34) : 'Empty';
+              valEl.classList.toggle('is-default', !v.trim());
+            }
+          },
+        });
+      });
+    });
+
+    q('#fb-options')?.addEventListener('click', (e) => {
+      const f = selField();
+      if (!f) return;
+      openPopover(e.currentTarget, textPopoverHTML({
+        title: 'Dropdown choices',
+        hint: 'One choice per line, in the order technicians will see them.',
+        value: (f.options || []).join('\n'), placeholder: 'Pass\nFail\nNot applicable', rows: 6,
+      }), (panel, close) => {
+        bindTextPopover(panel, close, {
+          onInput: (v) => { f.options = v.split('\n').map(s => s.trim()).filter(Boolean); },
+        });
+        panel.querySelector('.rde-pop-done')?.addEventListener('click', () => render());
+      });
+    });
+
+    // Section tab
+    const secTitle = q('#fb-sec-title');
+    secTitle?.addEventListener('input', () => {
+      const sec = selSection();
+      if (!sec) return;
+      sec.title = secTitle.value;
+      const canvasTitle = container.querySelector(`.fb-sec-title[data-sidx="${sel.sIdx}"]`);
+      if (canvasTitle && canvasTitle !== document.activeElement) canvasTitle.value = sec.title;
+    });
+    q('#fb-sec-cols')?.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => setColumns(sel.sIdx, +b.dataset.value));
+    });
+    q('#fb-sec-height')?.addEventListener('input', (e) => {
+      const sec = selSection();
+      if (!sec) return;
+      sec.height = `${Math.max(20, parseInt(e.target.value, 10) || 60)}px`;
+      const el = container.querySelector(`.fb-sec-space[data-sidx="${sel.sIdx}"]`);
+      if (el) {
+        el.style.height = sec.height;
+        const lbl = el.querySelector('.fb-sec-space-lbl');
+        if (lbl) lbl.textContent = `Page space · ${parseInt(sec.height, 10)}px`;
+      }
+    });
+    q('#fb-del-sec')?.addEventListener('click', deleteSection);
+  }
+
+  // ════════════════════════
+  //  MUTATIONS
+  // ════════════════════════
+
+  function addSection() {
+    sections.push({ id: uid('sec'), title: 'New section', columns: 1, fields: [] });
+    selectSection(sections.length - 1);
+  }
+
+  function addSpacer() {
+    sections.push({ id: uid('sec'), title: '', isSpacer: true, width: 'full', columns: 1, height: '60px', fields: [] });
+    selectSection(sections.length - 1);
+  }
+
+  function deleteSection() {
+    if (sel.type === null) return;
+    const sec = sections[sel.sIdx];
+    const hasFields = sec && !sec.isSpacer && (sec.fields || []).some(f => f.type !== 'blank');
+    if (hasFields && !confirm('Delete this section and every field in it?')) return;
+    sections.splice(sel.sIdx, 1);
+    clearSelection();
+  }
+
+  function moveSection(delta) {
+    if (sel.type === null) return;
+    const from = sel.sIdx;
+    const to = from + delta;
+    if (to < 0 || to >= sections.length) return;
+    const [moved] = sections.splice(from, 1);
+    sections.splice(to, 0, moved);
+    sel = { ...sel, sIdx: to };
+    render();
+  }
+
+  function setColumns(sIdx, cols) {
+    const sec = sections[sIdx];
+    if (!sec || sec.isSpacer) return;
+    sec.columns = cols;
+    (sec.fields || []).forEach(f => { if ((f.colSpan || 1) > cols) f.colSpan = cols; });
+    render();
+  }
+
+  function setSpan(span) {
+    const f = selField();
+    if (!f) return;
+    f.colSpan = span;
+    render();
+  }
+
+  // Click-to-insert drops the field in the first free slot of the section you're
+  // working in, so the palette works without dragging.
+  function insertField(type) {
+    if (!sections.length) sections.push({ id: uid('sec'), title: 'New section', columns: 1, fields: [] });
+    let sIdx = (sel.type && !sections[sel.sIdx]?.isSpacer) ? sel.sIdx : -1;
+    if (sIdx === -1) {
+      for (let i = sections.length - 1; i >= 0; i--) {
+        if (!sections[i].isSpacer) { sIdx = i; break; }
+      }
+    }
+    if (sIdx === -1) {
+      sections.push({ id: uid('sec'), title: 'New section', columns: 1, fields: [] });
+      sIdx = sections.length - 1;
+    }
+
+    const sec = sections[sIdx];
+    sec.fields = normalizeFields(sec.fields || [], sec.columns || 1);
+    const newField = { id: uid('f'), type, label: '', required: false, colSpan: 1 };
+    if (type === 'select') newField.options = [];
+
+    const blankIdx = sec.fields.findIndex(f => f.type === 'blank');
+    if (blankIdx === -1) {
+      sec.fields.push(newField);
+      selectField(sIdx, sec.fields.length - 1);
+      return;
+    }
+    const blankSpan = sec.fields[blankIdx].colSpan;
+    sec.fields.splice(blankIdx, 1, newField);
+    if (blankSpan > 1) {
+      sec.fields.splice(blankIdx + 1, 0, { id: uid('blk'), type: 'blank', colSpan: blankSpan - 1 });
+    }
+    selectField(sIdx, blankIdx);
+  }
+
+  // ════════════════════════
+  //  CANVAS EVENTS
+  // ════════════════════════
+
+  function bindCanvas() {
+    container.querySelector('#fb-desc')?.addEventListener('input', (e) => { formDesc = e.target.value; });
+    container.querySelector('#fb-empty-add')?.addEventListener('click', addSection);
+    container.querySelector('#fb-add-sec-inline')?.addEventListener('click', addSection);
+    container.querySelector('#fb-add-spacer-inline')?.addEventListener('click', addSpacer);
+
+    container.querySelectorAll('.fb-field').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectField(+el.dataset.sidx, +el.dataset.fidx);
+      });
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectField(+el.dataset.sidx, +el.dataset.fidx);
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          sections[+el.dataset.sidx].fields.splice(+el.dataset.fidx, 1);
+          clearSelection();
+        }
+      });
+    });
+
+    container.querySelectorAll('.fb-sec-head, .fb-sec-space').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.fb-sec-del') || e.target.classList.contains('fb-sec-title')) return;
+        selectSection(+el.dataset.sidx);
+      });
+    });
+
+    container.querySelectorAll('.fb-sec-title').forEach(input => {
+      input.addEventListener('input', () => {
+        sections[+input.dataset.sidx].title = input.value;
+        const ribbonTitle = container.querySelector('#fb-sec-title');
+        if (ribbonTitle && ribbonTitle !== document.activeElement) ribbonTitle.value = input.value;
+      });
+      input.addEventListener('focus', () => {
+        if (!(sel.type === 'section' && sel.sIdx === +input.dataset.sidx)) selectSection(+input.dataset.sidx);
+      });
+    });
+
+    container.querySelectorAll('.fb-sec-del').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sel = { type: 'section', sIdx: +b.dataset.sidx };
+        deleteSection();
+      });
+    });
+
+    container.querySelector('#fb-canvas')?.addEventListener('click', (e) => {
+      if (e.target.closest('.fb-field') || e.target.closest('.fb-sec') || e.target.closest('.fb-add') || e.target.closest('.fb-doc-head')) return;
+      clearSelection();
+    });
   }
 
   function bindAll() {
-    container.querySelector('#fb2-back')?.addEventListener('click', () => router.navigate('/settings?tab=forms'));
-    container.querySelector('#fb2-cancel')?.addEventListener('click', () => router.navigate('/settings?tab=forms'));
-    container.querySelector('#fb2-save')?.addEventListener('click', handleSave);
-    container.querySelector('#fb2-preview-btn')?.addEventListener('click', showPreview);
-    container.querySelector('#fb2-preview-close')?.addEventListener('click', () => {
-      const modal = container.querySelector('#fb2-preview-modal');
-      if (modal) modal.style.display = 'none';
+    container.querySelector('#fb-back')?.addEventListener('click', () => {
+      closePopover();
+      router.navigate('/settings?tab=forms');
     });
-    container.querySelector('#fb2-name')?.addEventListener('input', e => formName = e.target.value);
-    container.querySelector('#fb2-desc')?.addEventListener('input', e => formDesc = e.target.value);
-    bindCanvasEvents();
-    bindSidebarEvents();
+    container.querySelector('#fb-save')?.addEventListener('click', handleSave);
+    container.querySelector('#fb-preview-btn')?.addEventListener('click', showPreview);
+    container.querySelector('#fb-preview-close')?.addEventListener('click', hidePreview);
+    container.querySelector('#fb-preview-modal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'fb-preview-modal') hidePreview();
+    });
+
+    const nameInput = container.querySelector('#fb-name');
+    nameInput?.addEventListener('input', () => {
+      formName = nameInput.value;
+      const title = container.querySelector('#fb-doc-title');
+      if (title) title.textContent = formName || 'Untitled form';
+    });
+
+    const zoomSel = container.querySelector('#fb-zoom');
+    zoomSel?.addEventListener('change', () => {
+      zoom = parseInt(zoomSel.value, 10);
+      applyZoom(container.querySelector('#fb-stage'), zoom);
+    });
+
+    renderTabs();
+    bindRibbon();
+    bindCanvas();
     setupDragDrop();
   }
 
+  // ════════════════════════
+  //  PREVIEW
+  // ════════════════════════
+
+  function hidePreview() {
+    const modal = container.querySelector('#fb-preview-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
   function showPreview() {
-    const modal = container.querySelector('#fb2-preview-modal');
-    const content = container.querySelector('#fb2-preview-content');
+    const modal = container.querySelector('#fb-preview-modal');
+    const content = container.querySelector('#fb-preview-content');
     if (!modal || !content) return;
 
-    // Generate Form HTML identical to JobDetail.js
-    const html = `
+    content.innerHTML = `
       <div style="margin-bottom:24px; border-bottom:1px solid var(--border-color); padding-bottom:16px">
-        <h3 style="margin:0">${escapeHTML(formName || 'Untitled Form')}</h3>
+        <h3 style="margin:0">${escapeHTML(formName || 'Untitled form')}</h3>
         <div style="font-size:14px; color:var(--text-secondary); margin-top:6px">${escapeHTML(formDesc || '')}</div>
       </div>
       <form id="active-job-form">
@@ -474,8 +853,8 @@ export function renderFormBuilder(container, { id }) {
             }
             return `
               <div class="form-section" style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px; overflow:hidden">
-                <div style="background:var(--content-bg); padding:12px 16px; border-bottom:1px solid var(--border-color); border-left:4px solid var(--color-primary)">
-                  <h4 style="margin:0; font-size:15px; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(sec.title || 'Untitled Section')}</h4>
+                <div style="background:var(--content-bg); padding:12px 16px; border-bottom:1px solid var(--border-color)">
+                  <h4 style="margin:0; font-size:15px; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(sec.title || 'Untitled section')}</h4>
                 </div>
                 <div style="display:grid; grid-template-columns: repeat(${secCols}, 1fr); gap:16px; padding:16px">
                   ${(sec.fields || []).map(f => {
@@ -484,21 +863,18 @@ export function renderFormBuilder(container, { id }) {
                       const fHeight = f.height ? (String(f.height).endsWith('px') ? f.height : f.height + 'px') : '50px';
                       return `<div style="grid-column: span ${fSpan}; height: ${f.type === 'blank' ? 'auto' : fHeight}"></div>`;
                     }
-
                     if (f.type === 'info') {
                       return `
-                      <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:rgba(27, 109, 224, 0.05); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
-                        <div style="display:flex; gap:12px; align-items:flex-start">
-                          <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px; margin-top:2px">info</span>
-                          <div>${escapeHTML(f.label || 'Informational text block').replace(/\n/g, '<br/>')}</div>
-                        </div>
-                      </div>
-                    `;
+                        <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:var(--color-primary-light); border-radius:6px; color:var(--text-primary); font-size:14px; line-height:1.6">
+                          <div style="display:flex; gap:12px; align-items:flex-start">
+                            <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px">info</span>
+                            <div>${escapeHTML(f.label || 'Informational text block').replace(/\n/g, '<br/>')}</div>
+                          </div>
+                        </div>`;
                     }
 
+                    const label = f.label || fieldMeta(f.type).label + ' field';
                     let fieldHtml = '';
-                    const label = f.label || fieldMeta(f.type).label + '...';
-
                     if (f.type === 'text') {
                       fieldHtml = `<input class="form-input" name="${f.id}" placeholder="${escapeHTML(label)}" ${f.required ? 'required' : ''} />`;
                     } else if (f.type === 'textarea') {
@@ -512,15 +888,15 @@ export function renderFormBuilder(container, { id }) {
                     } else if (f.type === 'select') {
                       fieldHtml = `
                         <select class="form-select" name="${f.id}" ${f.required ? 'required' : ''}>
-                          <option value="">Select option...</option>
+                          <option value="">Select option…</option>
                           ${(f.options || []).map(opt => `<option value="${escapeHTML(opt)}">${escapeHTML(opt)}</option>`).join('')}
                         </select>`;
                     } else if (f.type === 'date') {
                       fieldHtml = `<input type="date" class="form-input" name="${f.id}" ${f.required ? 'required' : ''} />`;
                     } else if (f.type === 'signature') {
                       fieldHtml = `
-                        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic; cursor:pointer;">
-                          Click to Sign (Preview)
+                        <div style="border:1px solid var(--border-color); background:var(--bg-color); height:80px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-style:italic;">
+                          Click to sign
                         </div>`;
                     }
 
@@ -528,184 +904,15 @@ export function renderFormBuilder(container, { id }) {
                       <div class="form-group" style="margin:0; grid-column: span ${fSpan}">
                         ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
                         ${fieldHtml}
-                      </div>
-                    `;
+                      </div>`;
                   }).join('')}
                 </div>
-              </div>
-            `;
+              </div>`;
           }).join('')}
         </div>
-      </form>
-    `;
+      </form>`;
 
-    content.innerHTML = html;
     modal.style.display = 'flex';
-  }
-
-  function bindCanvasEvents() {
-    // Add section / spacer
-    container.querySelector('#fb2-add-sec')?.addEventListener('click', () => {
-      sections.push({ id: uid('sec'), title: 'New Section', columns: 1, fields: [] });
-      sel = { type: 'section', sIdx: sections.length - 1 };
-      render();
-    });
-    container.querySelector('#fb2-add-spacer')?.addEventListener('click', () => {
-      sections.push({ id: uid('sec'), title: '', isSpacer: true, width: 'full', columns: 1, height: '60px', fields: [] });
-      sel = { type: 'section', sIdx: sections.length - 1 };
-      render();
-    });
-
-    // Select field
-    container.querySelectorAll('.fb2-field:not(.fb2-blank)').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        sel = { type: 'field', sIdx: +el.dataset.sidx, fIdx: +el.dataset.fidx };
-        render();
-      });
-    });
-
-    // Select section
-    container.querySelectorAll('.fb2-sec-header').forEach(el => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.fb2-del-sec') || e.target.closest('.fb2-col-btn') || e.target.classList.contains('fb2-sec-title')) return;
-        sel = { type: 'section', sIdx: +el.dataset.sidx };
-        render();
-      });
-    });
-
-    // Section title live edit
-    container.querySelectorAll('.fb2-sec-title').forEach(input => {
-      input.addEventListener('input', () => {
-        sections[+input.dataset.sidx].title = input.value;
-        const sbTitle = container.querySelector('#sb-sec-title');
-        if (sbTitle && sbTitle !== document.activeElement) sbTitle.value = input.value;
-      });
-    });
-
-    // Column buttons in section header
-    container.querySelectorAll('.fb2-col-btn[data-sidx][data-cols]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const sIdx = +btn.dataset.sidx;
-        const cols = +btn.dataset.cols;
-        sections[sIdx].columns = cols;
-        sections[sIdx].fields.forEach(f => { if ((f.colSpan || 1) > cols) f.colSpan = cols; });
-        sel = { type: 'section', sIdx };
-        render();
-      });
-    });
-
-    // Delete section
-    container.querySelectorAll('.fb2-del-sec').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (confirm('Delete this section and all its fields?')) {
-          sections.splice(+btn.dataset.sidx, 1);
-          sel = { type: null };
-          render();
-        }
-      });
-    });
-
-    // Deselect on canvas bg click
-    container.querySelector('.fb2-canvas')?.addEventListener('click', (e) => {
-      if (e.target.closest('.fb2-field') || e.target.closest('.fb2-sec-header') || e.target.closest('.fb2-add-sec') || e.target.closest('.fb2-add-sec-alt')) return;
-      sel = { type: null };
-      updateSidebar();
-      container.querySelectorAll('.fb2-sel').forEach(el => el.classList.remove('fb2-sel'));
-    });
-  }
-
-  function bindSidebarEvents() {
-    // Label
-    const lbl = container.querySelector('#sb-label');
-    if (lbl) lbl.addEventListener('input', () => {
-      if (sel.type === 'field') {
-        sections[sel.sIdx].fields[sel.fIdx].label = lbl.value;
-        // Live-update the canvas label text
-        const card = container.querySelector(`.fb2-field[data-sidx="${sel.sIdx}"][data-fidx="${sel.fIdx}"] .fb2-lbl`);
-        if (card) card.textContent = lbl.value || fieldMeta(sections[sel.sIdx].fields[sel.fIdx].type).label + '...';
-      }
-    });
-
-    // Type
-    container.querySelector('#sb-type')?.addEventListener('change', (e) => {
-      if (sel.type === 'field') {
-        sections[sel.sIdx].fields[sel.fIdx].type = e.target.value;
-        render();
-      }
-    });
-
-    // Required
-    container.querySelector('#sb-req')?.addEventListener('change', (e) => {
-      if (sel.type === 'field') {
-        sections[sel.sIdx].fields[sel.fIdx].required = e.target.checked;
-        renderPreservingFocus();
-      }
-    });
-
-    // Column span
-    container.querySelectorAll('.sb-span-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (sel.type === 'field') {
-          sections[sel.sIdx].fields[sel.fIdx].colSpan = +btn.dataset.span;
-          render();
-        }
-      });
-    });
-
-    // Dropdown options
-    container.querySelector('#sb-opts')?.addEventListener('input', (e) => {
-      if (sel.type === 'field') {
-        sections[sel.sIdx].fields[sel.fIdx].options = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
-      }
-    });
-
-    // Section title in sidebar
-    const secTitle = container.querySelector('#sb-sec-title');
-    if (secTitle) secTitle.addEventListener('input', () => {
-      if (sel.type === 'section') {
-        sections[sel.sIdx].title = secTitle.value;
-        const canvasTitle = container.querySelector(`.fb2-sec-title[data-sidx="${sel.sIdx}"]`);
-        if (canvasTitle && canvasTitle !== document.activeElement) canvasTitle.value = secTitle.value;
-      }
-    });
-
-    // Section columns in sidebar
-    container.querySelectorAll('.sb-col-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (sel.type === 'section') {
-          const cols = +btn.dataset.cols;
-          sections[sel.sIdx].columns = cols;
-          sections[sel.sIdx].fields.forEach(f => { if ((f.colSpan || 1) > cols) f.colSpan = cols; });
-          render();
-        }
-      });
-    });
-
-    // Spacer height
-    container.querySelector('#sb-spacer-h')?.addEventListener('input', (e) => {
-      if (sel.type === 'section') sections[sel.sIdx].height = e.target.value + 'px';
-    });
-
-    // Delete field
-    container.querySelector('#sb-del-field')?.addEventListener('click', () => {
-      if (sel.type === 'field') {
-        sections[sel.sIdx].fields.splice(sel.fIdx, 1);
-        sel = { type: null };
-        render();
-      }
-    });
-
-    // Delete section
-    container.querySelector('#sb-del-sec')?.addEventListener('click', () => {
-      if (sel.type === 'section' && confirm('Delete this section?')) {
-        sections.splice(sel.sIdx, 1);
-        sel = { type: null };
-        render();
-      }
-    });
   }
 
   // ════════════════════════
@@ -713,8 +920,8 @@ export function renderFormBuilder(container, { id }) {
   // ════════════════════════
 
   function setupDragDrop() {
-    // ── Toolbox tiles ──
-    container.querySelectorAll('.fb2-tool').forEach(tile => {
+    // Palette tiles
+    container.querySelectorAll('#fb-ribbon .rde-b[data-type]').forEach(tile => {
       tile.addEventListener('dragstart', (e) => {
         const type = tile.dataset.type;
         const meta = fieldMeta(type);
@@ -723,159 +930,144 @@ export function renderFormBuilder(container, { id }) {
         e.dataTransfer.setData('text/plain', type);
 
         const ghost = document.createElement('div');
-        ghost.style.cssText = 'position:fixed;top:-999px;padding:10px 16px;background:white;border:2px solid #1B6DE0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;';
+        ghost.style.cssText = 'position:fixed;top:-999px;padding:9px 14px;background:#fff;border:2px solid #FF5C00;border-radius:8px;box-shadow:0 6px 18px rgba(16,24,40,.18);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#191c1e;font-family:Inter,sans-serif';
         ghost.innerHTML = `<span class="material-icons-outlined" style="font-size:18px">${meta.icon}</span> ${meta.label}`;
         document.body.appendChild(ghost);
         e.dataTransfer.setDragImage(ghost, 80, 20);
         requestAnimationFrame(() => ghost.remove());
-        document.body.classList.add('fb2-dragging');
+        document.body.classList.add('fb-dragging');
       });
       tile.addEventListener('dragend', cleanupDrag);
     });
 
-    // ── Field cards ──
-    container.querySelectorAll('.fb2-field:not(.fb2-blank)[draggable]').forEach(card => {
+    // Field cards
+    container.querySelectorAll('.fb-field[draggable]').forEach(card => {
       card.addEventListener('dragstart', (e) => {
         e.stopPropagation();
         dragInfo = { action: 'moveField', sIdx: +card.dataset.sidx, fIdx: +card.dataset.fidx };
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', 'field');
-        card.classList.add('fb2-dragging-src');
-        document.body.classList.add('fb2-dragging');
+        card.classList.add('is-dragging');
+        document.body.classList.add('fb-dragging');
       });
       card.addEventListener('dragend', () => {
-        card.classList.remove('fb2-dragging-src');
+        card.classList.remove('is-dragging');
         cleanupDrag();
       });
     });
 
-    // ── Section headers ──
-    container.querySelectorAll('.fb2-sec-header[draggable]').forEach(hdr => {
-      hdr.addEventListener('dragstart', (e) => {
-        dragInfo = { action: 'moveSection', sIdx: +hdr.dataset.sidx };
+    // Section grips
+    container.querySelectorAll('.fb-sec-grip[draggable]').forEach(grip => {
+      grip.addEventListener('dragstart', (e) => {
+        dragInfo = { action: 'moveSection', sIdx: +grip.dataset.sidx };
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', 'section');
-        const secEl = hdr.closest('.fb2-section');
-        if (secEl) secEl.classList.add('fb2-dragging-src');
-        document.body.classList.add('fb2-dragging');
+        grip.closest('.fb-sec')?.classList.add('is-dragging');
+        document.body.classList.add('fb-dragging');
       });
-      hdr.addEventListener('dragend', () => {
-        container.querySelectorAll('.fb2-dragging-src').forEach(el => el.classList.remove('fb2-dragging-src'));
+      grip.addEventListener('dragend', () => {
+        container.querySelectorAll('.is-dragging').forEach(el => el.classList.remove('is-dragging'));
         cleanupDrag();
       });
     });
 
-    // ── Drop targets: blanks ──
-    container.querySelectorAll('.fb2-blank').forEach(blank => {
+    // Empty slots
+    container.querySelectorAll('.fb-blank').forEach(blank => {
       blank.addEventListener('dragover', (e) => {
         if (!dragInfo || dragInfo.action === 'moveSection') return;
         const targetSpan = sections[+blank.dataset.sidx].fields[+blank.dataset.fidx].colSpan;
         const sourceSpan = dragInfo.action === 'add' ? 1 : sections[dragInfo.sIdx].fields[dragInfo.fIdx].colSpan;
-        if (sourceSpan > targetSpan) {
-           e.dataTransfer.dropEffect = 'none';
-           return;
-        }
+        if (sourceSpan > targetSpan) { e.dataTransfer.dropEffect = 'none'; return; }
         e.preventDefault(); e.stopPropagation();
         e.dataTransfer.dropEffect = dragInfo.action === 'add' ? 'copy' : 'move';
-        blank.style.borderColor = 'var(--color-primary)';
-        blank.style.background = 'var(--color-primary-light)';
+        blank.classList.add('is-over');
       });
-      blank.addEventListener('dragleave', () => {
-        blank.style.borderColor = '';
-        blank.style.background = 'rgba(0,0,0,0.02)';
-      });
+      blank.addEventListener('dragleave', () => blank.classList.remove('is-over'));
       blank.addEventListener('drop', (e) => {
         e.preventDefault(); e.stopPropagation();
+        blank.classList.remove('is-over');
         if (!dragInfo || dragInfo.action === 'moveSection') return;
+
         const targetSIdx = +blank.dataset.sidx;
         const targetFIdx = +blank.dataset.fidx;
         const targetSpan = sections[targetSIdx].fields[targetFIdx].colSpan;
-        
+
         if (dragInfo.action === 'add') {
           const newField = { id: uid('f'), type: dragInfo.type, label: '', required: false, colSpan: 1 };
           if (newField.type === 'select') newField.options = [];
           sections[targetSIdx].fields.splice(targetFIdx, 1, newField);
           if (targetSpan > 1) {
-             sections[targetSIdx].fields.splice(targetFIdx + 1, 0, { id: uid('blk'), type: 'blank', colSpan: targetSpan - 1 });
+            sections[targetSIdx].fields.splice(targetFIdx + 1, 0, { id: uid('blk'), type: 'blank', colSpan: targetSpan - 1 });
           }
-          sel = { type: 'field', sIdx: targetSIdx, fIdx: targetFIdx };
-        } else if (dragInfo.action === 'moveField') {
+        } else {
           const { sIdx: srcSIdx, fIdx: srcFIdx } = dragInfo;
           const srcField = { ...sections[srcSIdx].fields[srcFIdx] };
           if (srcField.colSpan > targetSpan) return;
           sections[srcSIdx].fields[srcFIdx] = { id: uid('blk'), type: 'blank', colSpan: srcField.colSpan };
           sections[targetSIdx].fields.splice(targetFIdx, 1, srcField);
           if (targetSpan > srcField.colSpan) {
-             sections[targetSIdx].fields.splice(targetFIdx + 1, 0, { id: uid('blk'), type: 'blank', colSpan: targetSpan - srcField.colSpan });
+            sections[targetSIdx].fields.splice(targetFIdx + 1, 0, { id: uid('blk'), type: 'blank', colSpan: targetSpan - srcField.colSpan });
           }
-          sel = { type: 'field', sIdx: targetSIdx, fIdx: targetFIdx };
         }
-        cleanupDrag(); render();
+        const dropped = { sIdx: targetSIdx, fIdx: targetFIdx };
+        cleanupDrag();
+        selectField(dropped.sIdx, dropped.fIdx);
       });
     });
 
-    // ── Drop targets: field swap ──
-    container.querySelectorAll('.fb2-field:not(.fb2-blank)').forEach(fCard => {
-      fCard.addEventListener('dragover', (e) => {
+    // Swap two same-width fields
+    container.querySelectorAll('.fb-field').forEach(card => {
+      card.addEventListener('dragover', (e) => {
         if (!dragInfo || dragInfo.action !== 'moveField') return;
-        const targetSpan = sections[+fCard.dataset.sidx].fields[+fCard.dataset.fidx].colSpan;
+        const targetSpan = sections[+card.dataset.sidx].fields[+card.dataset.fidx].colSpan;
         const sourceSpan = sections[dragInfo.sIdx].fields[dragInfo.fIdx].colSpan;
-        if (sourceSpan !== targetSpan) {
-           e.dataTransfer.dropEffect = 'none';
-           return;
-        }
+        if (sourceSpan !== targetSpan) { e.dataTransfer.dropEffect = 'none'; return; }
         e.preventDefault(); e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
-        fCard.style.boxShadow = '0 0 0 2px var(--color-primary)';
+        card.classList.add('is-over');
       });
-      fCard.addEventListener('dragleave', () => { fCard.style.boxShadow = ''; });
-      fCard.addEventListener('drop', (e) => {
+      card.addEventListener('dragleave', () => card.classList.remove('is-over'));
+      card.addEventListener('drop', (e) => {
         e.preventDefault(); e.stopPropagation();
+        card.classList.remove('is-over');
         if (!dragInfo || dragInfo.action !== 'moveField') return;
-        const targetSIdx = +fCard.dataset.sidx, targetFIdx = +fCard.dataset.fidx;
-        const srcSIdx = dragInfo.sIdx, srcFIdx = dragInfo.fIdx;
-        const targetField = sections[targetSIdx].fields[targetFIdx];
-        const srcField = sections[srcSIdx].fields[srcFIdx];
+        const tS = +card.dataset.sidx, tF = +card.dataset.fidx;
+        const sS = dragInfo.sIdx, sF = dragInfo.fIdx;
+        const targetField = sections[tS].fields[tF];
+        const srcField = sections[sS].fields[sF];
         if (targetField.colSpan !== srcField.colSpan) return;
-        sections[targetSIdx].fields[targetFIdx] = srcField;
-        sections[srcSIdx].fields[srcFIdx] = targetField;
-        sel = { type: 'field', sIdx: targetSIdx, fIdx: targetFIdx };
-        cleanupDrag(); render();
+        sections[tS].fields[tF] = srcField;
+        sections[sS].fields[sF] = targetField;
+        cleanupDrag();
+        selectField(tS, tF);
       });
     });
 
-    // ── Drop target: canvas (section reorder + field-onto-empty-canvas) ──
-    const canvas = container.querySelector('#fb2-canvas');
-    if (canvas) {
-      canvas.addEventListener('dragover', (e) => {
-        if (!dragInfo) return;
-        if (dragInfo.action === 'moveSection') {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-          showSectionIndicator(canvas, getSectionInsertIdx(canvas, e.clientY));
-        }
+    // Reorder sections by dropping on the sheet
+    const sheet = container.querySelector('#fb-sheet');
+    if (sheet) {
+      sheet.addEventListener('dragover', (e) => {
+        if (!dragInfo || dragInfo.action !== 'moveSection') return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        showSectionIndicator(sheet, getSectionInsertIdx(sheet, e.clientY));
       });
-      canvas.addEventListener('drop', (e) => {
-        if (!dragInfo) return;
-        if (dragInfo.action === 'moveSection') {
-          e.preventDefault();
-          let toIdx = getSectionInsertIdx(canvas, e.clientY);
-          const fromIdx = dragInfo.sIdx;
-          const sec = sections.splice(fromIdx, 1)[0];
-          if (fromIdx < toIdx) toIdx--;
-          sections.splice(toIdx, 0, sec);
-          sel = { type: 'section', sIdx: toIdx };
-          cleanupDrag();
-          render();
-        }
+      sheet.addEventListener('drop', (e) => {
+        if (!dragInfo || dragInfo.action !== 'moveSection') return;
+        e.preventDefault();
+        let toIdx = getSectionInsertIdx(sheet, e.clientY);
+        const fromIdx = dragInfo.sIdx;
+        const sec = sections.splice(fromIdx, 1)[0];
+        if (fromIdx < toIdx) toIdx--;
+        sections.splice(toIdx, 0, sec);
+        cleanupDrag();
+        selectSection(toIdx);
       });
     }
   }
 
-
-
-  function getSectionInsertIdx(canvasEl, mouseY) {
-    const secs = canvasEl.querySelectorAll('.fb2-section');
+  function getSectionInsertIdx(root, mouseY) {
+    const secs = root.querySelectorAll('.fb-sec');
     for (let i = 0; i < secs.length; i++) {
       const rect = secs[i].getBoundingClientRect();
       if (mouseY < rect.top + rect.height / 2) return i;
@@ -883,23 +1075,23 @@ export function renderFormBuilder(container, { id }) {
     return secs.length;
   }
 
-
-
-  function showSectionIndicator(canvasEl, idx) {
+  function showSectionIndicator(root, idx) {
     clearIndicators();
-    const secs = canvasEl.querySelectorAll('.fb2-section');
-    if (idx < secs.length) secs[idx].classList.add('fb2-drop-before');
-    else if (secs.length) secs[secs.length - 1].classList.add('fb2-drop-after');
+    const secs = root.querySelectorAll('.fb-sec');
+    if (idx < secs.length) secs[idx].classList.add('drop-before');
+    else if (secs.length) secs[secs.length - 1].classList.add('drop-after');
   }
 
   function clearIndicators() {
-    container.querySelectorAll('.fb2-drop-before,.fb2-drop-after').forEach(el => el.classList.remove('fb2-drop-before', 'fb2-drop-after'));
+    container.querySelectorAll('.drop-before,.drop-after,.is-over').forEach(el => {
+      el.classList.remove('drop-before', 'drop-after', 'is-over');
+    });
   }
 
   function cleanupDrag() {
     dragInfo = null;
     clearIndicators();
-    document.body.classList.remove('fb2-dragging');
+    document.body.classList.remove('fb-dragging');
   }
 
   // ════════════════════════
@@ -907,11 +1099,17 @@ export function renderFormBuilder(container, { id }) {
   // ════════════════════════
 
   function handleSave() {
-    const name = container.querySelector('#fb2-name')?.value.trim();
-    const desc = container.querySelector('#fb2-desc')?.value.trim();
-    if (!name) { showToast('Form name is required', 'error'); container.querySelector('#fb2-name')?.focus(); return; }
-    const totalFields = sections.reduce((sum, s) => sum + (s.fields?.length || 0), 0);
-    if (totalFields === 0) { showToast('Add at least one field', 'error'); return; }
+    const name = (formName || '').trim();
+    if (!name) {
+      showToast('Give the form a name before saving', 'error');
+      container.querySelector('#fb-name')?.focus();
+      return;
+    }
+    const totalFields = sections.reduce((sum, s) => sum + (s.fields || []).filter(f => f.type !== 'blank').length, 0);
+    if (totalFields === 0) {
+      showToast('Add at least one field before saving', 'error');
+      return;
+    }
 
     // Write both new (columns/colSpan) and old (width) properties for backward compat
     const cleanSections = sections.map(s => {
@@ -931,10 +1129,14 @@ export function renderFormBuilder(container, { id }) {
       };
     });
 
-    const template = { id: isEdit ? id : uid('fmt'), name, description: desc, sections: cleanSections };
+    const template = { id: isEdit ? id : uid('fmt'), name, description: (formDesc || '').trim(), sections: cleanSections };
     const templates = store.getAll('formTemplates');
-    if (isEdit) { const idx = templates.findIndex(t => t.id === id); if (idx >= 0) templates[idx] = template; }
-    else templates.push(template);
+    if (isEdit) {
+      const idx = templates.findIndex(t => t.id === id);
+      if (idx >= 0) templates[idx] = template;
+    } else {
+      templates.push(template);
+    }
 
     store.save('formTemplates', templates);
     showToast(`Form "${name}" saved`, 'success');
@@ -945,73 +1147,117 @@ export function renderFormBuilder(container, { id }) {
   //  STYLES
   // ════════════════════════
 
-  function getStyles() {
+  function styles() {
     return `<style>
-      .fb2-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px}
-      .fb2-body{display:flex;gap:0;height:calc(100vh - var(--topbar-height) - 110px);min-height:500px}
-      .fb2-left{flex:1;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--border-color);border-radius:12px 0 0 12px;background:var(--content-bg)}
-      .fb2-right{width:300px;min-width:280px;border:1px solid var(--border-color);border-left:none;border-radius:0 12px 12px 0;background:var(--card-bg);display:flex;flex-direction:column;overflow-y:auto}
-      .fb2-meta{display:flex;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border-color);background:var(--card-bg);flex-shrink:0}
-      .fb2-canvas{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
-      .fb2-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:8px;color:var(--text-tertiary)}
-
-      /* Toolbox */
-      .fb2-toolbox{display:flex;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid var(--border-color);background:var(--card-bg);flex-shrink:0;flex-wrap:wrap}
-      .fb2-toolbox-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-tertiary);margin-right:4px}
-      .fb2-tool{display:flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--card-bg);cursor:grab;font-size:12px;font-weight:500;color:var(--text-secondary);transition:all .15s;user-select:none}
-      .fb2-tool:hover{border-color:var(--color-primary);color:var(--color-primary);box-shadow:0 2px 8px rgba(27,109,224,.1)}
-      .fb2-tool .material-icons-outlined{font-size:16px}
+      /* The sheet reads as the printed form, with builder affordances kept to
+         the edges until you hover or select. */
+      .fb-doc { padding: 40px 46px 32px; }
+      .fb-doc-head { padding-bottom: 18px; margin-bottom: 26px; border-bottom: 1px solid var(--border-color); }
+      .fb-doc-title { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; color: var(--text-primary); margin: 0 0 4px; }
+      .fb-doc-desc { width: 100%; padding: 4px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent;
+        font-family: inherit; font-size: 13.5px; color: var(--text-secondary); }
+      .fb-doc-desc::placeholder { color: var(--text-tertiary); }
+      .fb-doc-desc:hover { border-color: var(--border-color-dark); }
+      .fb-doc-desc:focus { border-color: var(--color-primary); outline: none; box-shadow: 0 0 0 3px var(--color-primary-light); }
+      .fb-doc-foot { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border-color);
+        font-size: 11.5px; color: var(--text-tertiary); }
 
       /* Sections */
-      .fb2-section{flex-shrink:0;border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg);overflow:hidden;transition:border-color .15s,box-shadow .15s}
-      .fb2-section.fb2-sel{border-color:var(--color-primary);box-shadow:0 0 0 3px rgba(27,109,224,.12)}
-      .fb2-section.fb2-dragging-src{opacity:.35}
-      .fb2-spacer-sec{border-style:dashed;background:transparent;min-height:50px}
-      .fb2-sec-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--content-bg);border-bottom:1px solid var(--border-color);cursor:pointer}
-      .fb2-drag-handle{color:var(--text-tertiary);cursor:grab}
-      .fb2-drag-handle:hover{color:var(--text-primary)}
-      .fb2-sec-title{flex:1;border:none;background:transparent;font-weight:600;font-size:14px;color:var(--text-primary);outline:none;padding:4px 8px;border-radius:4px}
-      .fb2-sec-title:focus{background:var(--card-bg);box-shadow:inset 0 0 0 1px var(--border-color)}
-      .fb2-col-btns{display:flex;gap:2px}
-      .fb2-col-btn{width:32px;height:28px;border:1px solid var(--border-color);background:var(--card-bg);border-radius:4px;font-size:12px;font-weight:600;color:var(--text-secondary);cursor:pointer;transition:all .15s}
-      .fb2-col-btn:hover{border-color:var(--color-primary);color:var(--color-primary)}
-      .fb2-col-btn.active{background:var(--color-primary);color:white;border-color:var(--color-primary)}
+      .fb-sec { position: relative; margin-bottom: 26px; border-radius: 8px; }
+      .fb-sec.is-sel { box-shadow: 0 0 0 2px var(--color-primary); }
+      .fb-sec.is-dragging { opacity: .35; }
+      .fb-sec.drop-before::before, .fb-sec.drop-after::after { content: ''; position: absolute; left: 0; right: 0;
+        height: 3px; border-radius: 2px; background: var(--color-primary); }
+      .fb-sec.drop-before::before { top: -12px; }
+      .fb-sec.drop-after::after { bottom: -12px; }
+
+      .fb-sec-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px;
+        border-bottom: 2px solid var(--color-primary); margin-bottom: 14px; cursor: pointer; }
+      .fb-sec-grip { display: flex; align-items: center; justify-content: center; width: 22px; height: 26px;
+        border: none; background: none; color: var(--text-tertiary); cursor: grab; opacity: 0; transition: opacity .12s ease; }
+      .fb-sec-grip .material-icons-outlined { font-size: 18px; }
+      .fb-sec:hover .fb-sec-grip, .fb-sec.is-sel .fb-sec-grip { opacity: 1; }
+      .fb-sec-title { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid transparent; border-radius: 5px;
+        background: transparent; font-family: inherit; font-size: 14px; font-weight: 700; letter-spacing: .02em;
+        text-transform: uppercase; color: var(--text-primary); }
+      .fb-sec-title::placeholder { color: var(--text-tertiary); font-weight: 600; text-transform: none; letter-spacing: 0; }
+      .fb-sec-title:hover { border-color: var(--border-color-dark); }
+      .fb-sec-title:focus { border-color: var(--color-primary); outline: none; background: var(--card-bg); }
+      .fb-sec-tools { display: flex; align-items: center; gap: 8px; opacity: 0; transition: opacity .12s ease; }
+      .fb-sec:hover .fb-sec-tools, .fb-sec.is-sel .fb-sec-tools { opacity: 1; }
+      .fb-sec-cols { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+      .fb-sec-del { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+        border: none; border-radius: 6px; background: transparent; color: var(--text-tertiary); cursor: pointer; }
+      .fb-sec-del:hover { background: var(--color-danger-bg); color: var(--color-danger); }
+      .fb-sec-del .material-icons-outlined { font-size: 17px; }
+
+      /* Page space */
+      .fb-sec-space { display: flex; align-items: center; gap: 8px; justify-content: center;
+        border: 1px dashed var(--border-color-dark); background: transparent; }
+      .fb-sec-space-lbl { font-size: 11px; font-weight: 600; letter-spacing: .04em;
+        text-transform: uppercase; color: var(--text-tertiary); }
+      .fb-sec-space .fb-sec-del { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+        opacity: 0; transition: opacity .12s ease; }
+      .fb-sec-space:hover .fb-sec-del, .fb-sec-space.is-sel .fb-sec-del { opacity: 1; }
 
       /* Field grid */
-      .fb2-fields{display:grid;gap:10px;padding:14px;min-height:60px}
-      .fb2-field-empty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:24px;border:2px dashed var(--border-color);border-radius:8px;color:var(--text-tertiary);font-size:12px;transition:all .15s}
+      .fb-fields { display: grid; gap: 16px 18px; }
 
-      /* Field cards */
-      .fb2-field{background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;cursor:pointer;transition:all .15s;overflow:hidden;position:relative;user-select:none}
-      .fb2-field:hover{border-color:var(--color-primary);box-shadow:0 2px 8px rgba(0,0,0,.06)}
-      .fb2-field.fb2-sel{border-color:var(--color-primary);box-shadow:0 0 0 3px rgba(27,109,224,.12)}
-      .fb2-field.fb2-dragging-src{opacity:.25}
-      .fb2-field-bar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--content-bg);border-bottom:1px solid var(--border-color)}
-      .fb2-ftype-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary)}
+      .fb-field { position: relative; padding: 8px 10px 10px; border: 1px solid transparent; border-radius: 8px;
+        cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, background .12s ease; }
+      .fb-field:hover { border-color: var(--border-color-dark); background: var(--bg-color); }
+      .fb-field.is-sel { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-light); background: transparent; }
+      .fb-field.is-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
+      .fb-field.is-dragging { opacity: .28; }
+      .fb-field:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+      .fb-field-tag { position: absolute; top: -8px; right: 8px; padding: 1px 7px; border-radius: 999px;
+        background: var(--rde-accent-text); color: #fff; font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+        text-transform: uppercase; opacity: 0; transition: opacity .12s ease; pointer-events: none; }
+      .fb-field:hover .fb-field-tag, .fb-field.is-sel .fb-field-tag { opacity: 1; }
+      .fb-field-lbl { display: block; margin-bottom: 5px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+      .fb-req { color: var(--color-danger); margin-left: 2px; }
+      .fb-field .form-input, .fb-field .form-textarea, .fb-field .form-select { width: 100%; pointer-events: none; }
+      .fb-check { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary); pointer-events: none; }
+      .fb-check input { width: 17px; height: 17px; }
+      .fb-sig { height: 76px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border-color-dark);
+        border-radius: 6px; background: var(--bg-color); color: var(--text-tertiary); font-size: 12.5px; font-style: italic; }
+      .fb-info { display: flex; gap: 11px; padding: 14px 16px; border-radius: 8px; background: var(--color-primary-light);
+        color: var(--text-primary); font-size: 13.5px; line-height: 1.6; }
+      .fb-info .material-icons-outlined { color: var(--color-primary); font-size: 20px; flex-shrink: 0; }
+      .fb-spacer { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border-color-dark);
+        border-radius: 6px; color: var(--text-tertiary); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 
-      /* Previews removed in favor of global form CSS */
+      /* Empty slots stay quiet until you pick something up */
+      .fb-blank { display: flex; align-items: center; justify-content: center; min-height: 62px;
+        border: 1px dashed transparent; border-radius: 8px; transition: border-color .12s ease, background .12s ease; }
+      .fb-blank span { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+        color: var(--text-tertiary); opacity: 0; transition: opacity .12s ease; }
+      body.fb-dragging .fb-blank { border-color: var(--border-color-dark); background: var(--bg-color); }
+      body.fb-dragging .fb-blank span { opacity: 1; }
+      .fb-blank.is-over { border-color: var(--color-primary); border-style: solid; background: var(--color-primary-light); }
+      .fb-blank.is-over span { color: var(--rde-accent-text); opacity: 1; }
 
-      /* Sidebar */
-      .fb2-sb-head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border-color);font-weight:600;font-size:14px}
-      .fb2-sb-body{padding:20px;display:flex;flex-direction:column;gap:16px}
-      .fb2-sb-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center;flex:1}
+      /* Add row + empty state */
+      .fb-add-row { display: flex; gap: 10px; margin-top: 8px; }
+      .fb-add { display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; padding: 13px 20px;
+        border: 1px dashed var(--border-color-dark); border-radius: 9px; background: transparent;
+        color: var(--text-tertiary); font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+        transition: border-color .12s ease, color .12s ease, background .12s ease; }
+      .fb-add:hover { border-color: var(--color-primary); color: var(--rde-accent-text); background: var(--color-primary-light); }
+      .fb-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 56px 24px;
+        text-align: center; color: var(--text-tertiary); }
+      .fb-empty .material-icons-outlined { font-size: 40px; }
+      .fb-empty p { max-width: 42ch; font-size: 13.5px; line-height: 1.6; }
 
-      /* Add section */
-      .fb2-add-row{display:flex;gap:8px;justify-content:center;flex-shrink:0}
-      .fb2-add-sec{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 24px;border:2px dashed var(--border-color);border-radius:10px;background:transparent;color:var(--text-tertiary);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;flex:1}
-      .fb2-add-sec:hover{border-color:var(--color-primary);color:var(--color-primary);background:rgba(27,109,224,.03)}
-      .fb2-add-sec-alt{border-style:dotted}
-
-      /* Drop indicators */
-      .fb2-drop-before{border-top:3px solid var(--color-primary)!important}
-      .fb2-drop-after{border-bottom:3px solid var(--color-primary)!important}
-
-      /* Drag global state */
-      body.fb2-dragging .fb2-fields{min-height:80px}
-      body.fb2-dragging .fb2-field-empty{border-color:var(--color-primary);background:var(--color-primary-light)}
+      @media (max-width: 760px) {
+        .fb-doc { padding: 24px 20px; }
+        .fb-fields { grid-template-columns: 1fr !important; }
+        .fb-field { grid-column: span 1 !important; }
+      }
     </style>`;
   }
 
   // ── Init ──
-  render();
+  container.innerHTML = shellHTML();
+  bindAll();
 }

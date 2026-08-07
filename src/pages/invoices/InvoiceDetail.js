@@ -14,7 +14,9 @@ import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
-import { invoiceEmail, receiptEmail } from '../../utils/emailTemplates.js';
+import { invoiceEmail, receiptEmail, reminderEmail } from '../../utils/emailTemplates.js';
+import { portalUrlForDocument } from '../../utils/portalLinks.js';
+import { documentAttachment } from '../../utils/documentPdf.js';
 
 export function renderInvoiceDetail(container, { id }) {
   const isNew = id === 'new';
@@ -725,36 +727,96 @@ export function renderInvoiceDetail(container, { id }) {
     // accepted the message; a failed send leaves the invoice in Draft to retry.
     container.querySelector('#btn-send-invoice')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
-      const original = btn.innerHTML;
       const canEmail = emailEnabledFor('invoice');
       const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
 
-      if (canEmail) {
-        if (!to) { showToast('No customer email on file for this invoice', 'error'); return; }
-        btn.disabled = true;
-        btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
-        try {
-          // Include a Stripe pay link when online payments are configured (best-effort).
-          let payUrl = null;
-          if (paymentsEnabledFor('invoice')) {
-            try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
-          }
-          const { subject, html } = invoiceEmail(invoice, { payUrl });
-          await sendEmail({ to, subject, html, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
-        } catch (err) {
-          showToast(err.message || 'Could not email invoice', 'error');
-          return;
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = original;
-        }
+      if (canEmail && !to) {
+        showToast('No customer email on file for this invoice', 'error');
+        return;
       }
 
-      store.update('invoices', id, { status: 'Sent' });
-      invoice.status = 'Sent';
-      // Don't claim an email went out when email isn't set up — just record the status.
-      showToast(canEmail ? `Invoice emailed to ${to}` : 'Invoice marked as sent', 'success');
-      render();
+      if (btn.dataset.undoing === 'true') {
+        const timerId = parseInt(btn.dataset.timerId, 10);
+        const intervalId = parseInt(btn.dataset.intervalId, 10);
+        clearTimeout(timerId);
+        clearInterval(intervalId);
+        btn.dataset.undoing = 'false';
+        btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+        btn.classList.remove('btn-danger');
+        showToast('Send cancelled', 'info');
+        return;
+      }
+
+      const original = btn.innerHTML;
+
+      const startCountdown = () => {
+        btn.dataset.originalHtml = original;
+        btn.dataset.undoing = 'true';
+        btn.classList.add('btn-danger');
+        let timeLeft = 10;
+
+        const updateText = () => {
+          btn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+        };
+        updateText();
+
+        const intervalId = setInterval(() => {
+          timeLeft--;
+          if (timeLeft > 0) {
+            updateText();
+          } else {
+            clearInterval(intervalId);
+          }
+        }, 1000);
+
+        const timerId = setTimeout(async () => {
+          btn.dataset.undoing = 'false';
+          btn.classList.remove('btn-danger');
+          btn.disabled = true;
+          btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+
+          try {
+            if (canEmail) {
+              // Include a Stripe pay link when online payments are configured (best-effort).
+              let payUrl = null;
+              if (paymentsEnabledFor('invoice')) {
+                try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
+              }
+              const { subject, html } = invoiceEmail(invoice, { payUrl, portalUrl: portalUrlForDocument(invoice) });
+              const attachments = await documentAttachment('invoice', invoice);
+              await sendEmail({ to, subject, html, attachments, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
+            }
+
+            store.update('invoices', id, { status: 'Sent' });
+            invoice.status = 'Sent';
+            // Don't claim an email went out when email isn't set up — just record the status.
+            showToast(canEmail ? `Invoice emailed to ${to}` : 'Invoice marked as sent', 'success');
+            render();
+          } catch (err) {
+            showToast(err.message || 'Could not email invoice', 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalHtml || original;
+          }
+        }, 10000);
+
+        btn.dataset.timerId = timerId;
+        btn.dataset.intervalId = intervalId;
+      };
+
+      const modalContent = document.createElement('div');
+      modalContent.innerHTML = `<p>Are you sure you want to send this invoice to <strong>${escapeHTML(to || 'customer')}</strong>?</p>`;
+      showModal({
+        title: 'Confirm Send Invoice',
+        content: modalContent,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Send', className: 'btn-primary', onClick: (close) => {
+            close();
+            startCountdown();
+          }}
+        ]
+      });
     });
 
     container.querySelector('#btn-pay-link')?.addEventListener('click', async (e) => {
@@ -778,26 +840,166 @@ export function renderInvoiceDetail(container, { id }) {
 
     container.querySelector('#btn-email-invoice')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
-      const original = btn.innerHTML;
       const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
       if (!to) { showToast('No customer email on file for this invoice', 'error'); return; }
-      btn.disabled = true;
-      btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
-      try {
-        // Include a Stripe pay link when online payments are configured (best-effort).
-        let payUrl = null;
-        if (paymentsEnabledFor('invoice')) {
-          try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
-        }
-        const { subject, html } = invoiceEmail(invoice, { payUrl });
-        await sendEmail({ to, subject, html, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
-        showToast(`Invoice emailed to ${to}`, 'success');
-      } catch (err) {
-        showToast(err.message || 'Could not email invoice', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = original;
+
+      if (btn.dataset.undoing === 'true') {
+        const timerId = parseInt(btn.dataset.timerId, 10);
+        const intervalId = parseInt(btn.dataset.intervalId, 10);
+        clearTimeout(timerId);
+        clearInterval(intervalId);
+        btn.dataset.undoing = 'false';
+        btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+        btn.classList.remove('btn-danger');
+        showToast('Send cancelled', 'info');
+        return;
       }
+
+      const original = btn.innerHTML;
+
+      const startCountdown = () => {
+        btn.dataset.originalHtml = original;
+        btn.dataset.undoing = 'true';
+        btn.classList.add('btn-danger');
+        let timeLeft = 10;
+
+        const updateText = () => {
+          btn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+        };
+        updateText();
+
+        const intervalId = setInterval(() => {
+          timeLeft--;
+          if (timeLeft > 0) {
+            updateText();
+          } else {
+            clearInterval(intervalId);
+          }
+        }, 1000);
+
+        const timerId = setTimeout(async () => {
+          btn.dataset.undoing = 'false';
+          btn.classList.remove('btn-danger');
+          btn.disabled = true;
+          btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+          try {
+            // Include a Stripe pay link when online payments are configured (best-effort).
+            let payUrl = null;
+            if (paymentsEnabledFor('invoice')) {
+              try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
+            }
+            const { subject, html } = invoiceEmail(invoice, { payUrl, portalUrl: portalUrlForDocument(invoice) });
+            const attachments = await documentAttachment('invoice', invoice);
+            await sendEmail({ to, subject, html, attachments, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
+            showToast(`Invoice emailed to ${to}`, 'success');
+          } catch (err) {
+            showToast(err.message || 'Could not email invoice', 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalHtml || original;
+          }
+        }, 10000);
+
+        btn.dataset.timerId = timerId;
+        btn.dataset.intervalId = intervalId;
+      };
+
+      const modalContent = document.createElement('div');
+      modalContent.innerHTML = `<p>Are you sure you want to email this invoice to <strong>${escapeHTML(to)}</strong>?</p>`;
+      showModal({
+        title: 'Confirm Email Invoice',
+        content: modalContent,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Send', className: 'btn-primary', onClick: (close) => {
+            close();
+            startCountdown();
+          }}
+        ]
+      });
+    });
+
+    container.querySelector('#btn-send-reminder')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.innerHTML;
+      btn.dataset.originalHtml = original;
+      const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
+      if (!to) { showToast('No customer email on file for this invoice', 'error'); return; }
+
+      if (btn.dataset.undoing === 'true') {
+        const timerId = parseInt(btn.dataset.timerId, 10);
+        const intervalId = parseInt(btn.dataset.intervalId, 10);
+        clearTimeout(timerId);
+        clearInterval(intervalId);
+        btn.dataset.undoing = 'false';
+        btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+        btn.classList.remove('btn-danger');
+        showToast('Reminder cancelled', 'info');
+        return;
+      }
+
+
+
+      const startCountdown = () => {
+        btn.dataset.originalHtml = original;
+        btn.dataset.undoing = 'true';
+        btn.classList.add('btn-danger');
+        let timeLeft = 10;
+
+        const updateText = () => {
+          btn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+        };
+        updateText();
+
+        const intervalId = setInterval(() => {
+          timeLeft--;
+          if (timeLeft > 0) {
+            updateText();
+          } else {
+            clearInterval(intervalId);
+          }
+        }, 1000);
+
+        const timerId = setTimeout(async () => {
+          btn.dataset.undoing = 'false';
+          btn.classList.remove('btn-danger');
+          btn.disabled = true;
+          btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+          try {
+            // Include a Stripe pay link when online payments are configured (best-effort).
+            let payUrl = null;
+            if (paymentsEnabledFor('invoice')) {
+              try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
+            }
+            const { subject, html } = reminderEmail(invoice, { payUrl, portalUrl: portalUrlForDocument(invoice) });
+            const attachments = await documentAttachment('invoice', invoice);
+            await sendEmail({ to, subject, html, attachments, template: 'reminder', relatedType: 'invoice', relatedId: invoice.id });
+            showToast(`Reminder email sent to ${to}`, 'success');
+          } catch (err) {
+            showToast(err.message || 'Could not send reminder email', 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalHtml || original;
+          }
+        }, 10000);
+
+        btn.dataset.timerId = timerId;
+        btn.dataset.intervalId = intervalId;
+      };
+
+      const modalContent = document.createElement('div');
+      modalContent.innerHTML = `<p>Are you sure you want to send a payment reminder email to <strong>${escapeHTML(to)}</strong>?</p>`;
+      showModal({
+        title: 'Confirm Send Payment Reminder',
+        content: modalContent,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Send', className: 'btn-primary', onClick: (close) => {
+            close();
+            startCountdown();
+          }}
+        ]
+      });
     });
 
     container.querySelector('#btn-mark-paid')?.addEventListener('click', () => {
@@ -835,8 +1037,12 @@ export function renderInvoiceDetail(container, { id }) {
             if (emailEnabledFor('receipt')) {
               const rTo = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
               if (rTo) {
-                const { subject, html } = receiptEmail(invoice);
-                sendEmail({ to: rTo, subject, html, template: 'receipt', relatedType: 'invoice', relatedId: invoice.id })
+                const { subject, html } = receiptEmail(invoice, { portalUrl: portalUrlForDocument(invoice) });
+                // The paid invoice doubles as the receipt document. Rendering is
+                // async but must not hold up "marked as paid", so it stays in
+                // the same fire-and-forget chain.
+                documentAttachment('invoice', invoice)
+                  .then(attachments => sendEmail({ to: rTo, subject, html, attachments, template: 'receipt', relatedType: 'invoice', relatedId: invoice.id }))
                   .then(() => showToast(`Receipt emailed to ${rTo}`, 'success'))
                   .catch(err => showToast(`Marked paid, but receipt email failed: ${err.message || err}`, 'error'));
               }

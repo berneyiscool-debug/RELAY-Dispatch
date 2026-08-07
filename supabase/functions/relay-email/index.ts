@@ -165,7 +165,7 @@ serve(async (req) => {
     }
 
     if (action === 'send') {
-      const { to, subject, html, text, replyTo, cc, bcc } = payload
+      const { to, subject, html, text, replyTo, cc, bcc, attachments } = payload
       const template = String(payload.template || 'custom')
 
       const recipients = (Array.isArray(to) ? to : [to]).map((r: unknown) => String(r ?? '').trim()).filter(Boolean)
@@ -211,6 +211,31 @@ serve(async (req) => {
       if (bcc) {
         const list = (Array.isArray(bcc) ? bcc : [bcc]).map((v: unknown) => String(v ?? '').trim()).filter(isEmail)
         if (list.length) emailBody.bcc = list
+      }
+
+      // Attachments — used to send the full quote/invoice/receipt document
+      // alongside the summary email. Each is { filename, content } where content
+      // is base64. Resend's hard ceiling is a 40MB request, so cap well under it
+      // and sanitise the filename (it reaches a Content-Disposition header).
+      if (attachments) {
+        const list = (Array.isArray(attachments) ? attachments : [attachments]).slice(0, 5)
+        const clean: Array<Record<string, string>> = []
+        let totalBytes = 0
+        for (const a of list) {
+          const content = String(a?.content ?? '')
+          if (!content) continue
+          if (!/^[A-Za-z0-9+/=\s]+$/.test(content)) {
+            return json({ error: 'Attachment content must be base64.' }, 400)
+          }
+          // 4 base64 chars per 3 bytes.
+          totalBytes += Math.floor(content.replace(/\s/g, '').length * 0.75)
+          if (totalBytes > 15 * 1024 * 1024) {
+            return json({ error: 'Attachments are too large (15MB limit).' }, 413)
+          }
+          const filename = headerSafe(a?.filename, 120).replace(/[\\/:*?"<>|]/g, '_') || 'document.pdf'
+          clean.push({ filename, content: content.replace(/\s/g, '') })
+        }
+        if (clean.length) emailBody.attachments = clean
       }
 
       const data = await resend('/emails', key, 'POST', emailBody)

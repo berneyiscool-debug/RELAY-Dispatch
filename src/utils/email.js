@@ -126,7 +126,7 @@ function logEmail(entry) {
  */
 export async function sendEmail({
   to, subject, html, text, template = 'custom',
-  relatedType, relatedId, replyTo, cc,
+  relatedType, relatedId, replyTo, cc, attachments,
 } = {}) {
   if (!emailEnabled()) throw new Error('Email is not enabled for this account.');
   if (!to) throw new Error('A recipient (to) is required.');
@@ -143,6 +143,9 @@ export async function sendEmail({
     template,
     replyTo: replyTo || cfg.replyTo || undefined,
     cc: cc || undefined,
+    // [{ filename, content }] with content base64 — the full document that
+    // accompanies a quote/invoice/receipt summary email.
+    attachments: (attachments && attachments.length) ? attachments : undefined,
   };
 
   try {

@@ -10,10 +10,9 @@ import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
-import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
 import { FLAGS } from '../utils/flags.js';
-import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings } from '../utils/email.js';
-import { EMAIL_TEMPLATES, previewEmail } from '../utils/emailTemplates.js';
+import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail } from '../utils/email.js';
+import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
 
@@ -3833,6 +3832,8 @@ export function renderSettings(container) {
     });
   }
 
+  // Wording and branding are edited in the full-width Email Studio; this tab is
+  // the way in, and reports which emails have been personalised.
   function renderEmailTemplatesTab(tc) {
     const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
     if (!isCloud) {
@@ -3844,146 +3845,52 @@ export function renderSettings(container) {
       return;
     }
 
-    const s0 = store.getSettings() || {};
-    const email0 = emailSettings();   // settings.mailer — see utils/email.js
-    const dtheme = s0.documentTheme || {};
-    const draft = {
-      branding: { ...(email0.branding || {}) },
-      templates: JSON.parse(JSON.stringify(email0.templates || {})),
-    };
-    let activeType = 'invoice';
-
-    const varChips = (keys) => keys.map(k => `<code style="font-size:11px;background:var(--bg-color);padding:1px 6px;border-radius:4px;">{${k}}</code>`).join(' ');
+    const s = store.getSettings() || {};
+    const dtheme = s.documentTheme || {};
+    const mail = emailSettings();
+    const branding = mail.branding || {};
+    const header = branding.headerBg || dtheme.headerBg || '#1E2A3A';
+    const accent = branding.accent || dtheme.accentColor || '#FF5C00';
+    const templates = mail.templates || {};
+    const customised = EMAIL_TEMPLATES.filter(t => {
+      const v = templates[t.key] || {};
+      return !!(v.subject || v.intro || v.note || v.ctaLabel);
+    });
 
     tc.innerHTML = `
-      <div class="card" style="max-width:1100px">
-        <div class="card-header"><h4>Email Templates</h4></div>
-        <div class="card-body">
-          <p style="color:var(--text-secondary);margin-top:0;">Personalise the emails RELAY sends. Edits preview live on the right and apply to every send. Leave a field blank to use the built-in default.</p>
-          <div style="display:flex;gap:24px;flex-wrap:wrap;">
-            <div style="flex:1 1 380px;min-width:320px;">
-              <h5 style="margin:6px 0 10px;">Brand</h5>
-              <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:10px;">
-                <input type="checkbox" id="et-uselogo" style="width:16px;height:16px;" ${draft.branding.useLogo ? 'checked' : ''} />
-                Show your company logo in the header
-              </label>
-              <div style="display:flex;gap:12px;margin-bottom:8px;">
-                <div class="form-group" style="margin:0;">
-                  <label class="form-label">Header colour</label>
-                  <input type="color" id="et-headerbg" value="${escapeHTML(draft.branding.headerBg || dtheme.headerBg || '#1E2A3A')}" style="width:56px;height:36px;padding:2px;" />
-                </div>
-                <div class="form-group" style="margin:0;">
-                  <label class="form-label">Button / accent</label>
-                  <input type="color" id="et-accent" value="${escapeHTML(draft.branding.accent || dtheme.accentColor || '#FF5C00')}" style="width:56px;height:36px;padding:2px;" />
-                </div>
+      <div class="card" style="max-width:860px">
+        <div class="card-body" style="display:flex; gap:26px; align-items:center; padding:24px; flex-wrap:wrap">
+          <div style="flex:0 0 150px; width:150px; background:#eef1f4; border:1px solid var(--border-color-dark); border-radius:6px; box-shadow:var(--shadow-md); padding:10px; overflow:hidden" aria-hidden="true">
+            <div style="background:#fff; border-radius:4px; overflow:hidden">
+              <div style="height:16px; background:${header}"></div>
+              <div style="padding:8px 9px 11px">
+                <div style="height:4px; width:56%; border-radius:2px; background:#c9d0d8"></div>
+                <div style="height:3px; width:92%; margin-top:7px; border-radius:2px; background:#e3e7ec"></div>
+                <div style="height:3px; width:78%; margin-top:4px; border-radius:2px; background:#e3e7ec"></div>
+                <div style="height:11px; width:52%; margin-top:9px; border-radius:3px; background:${accent}"></div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Footer line (optional)</label>
-                <input class="form-input" id="et-footer" value="${escapeHTML(draft.branding.footer || '')}" placeholder="Grace Dance • 02 4900 0000 • gracedance.com" />
-              </div>
-
-              <h5 style="margin:18px 0 10px;">Template</h5>
-              <div class="form-group">
-                <select class="form-input" id="et-type">
-                  ${EMAIL_TEMPLATES.map(t => `<option value="${t.key}" ${t.key === activeType ? 'selected' : ''}>${t.label}</option>`).join('')}
-                </select>
-              </div>
-              <div id="et-fields"></div>
-            </div>
-
-            <div style="flex:1 1 460px;min-width:340px;">
-              <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;">Subject: <span id="et-subject" style="color:var(--text-primary);font-weight:600;"></span></div>
-              <iframe id="et-preview" title="Email preview" style="width:100%;height:620px;border:1px solid var(--border-color);border-radius:10px;background:#fff;"></iframe>
             </div>
           </div>
-
-          <div style="margin-top:18px;">
-            <button class="btn btn-primary" id="et-save"><span class="material-icons-outlined">save</span> Save Email Templates</button>
+          <div style="flex:1 1 340px; min-width:280px">
+            <h3 style="margin:0 0 6px; font-size:var(--font-size-xl)">Email templates</h3>
+            <p style="margin:0 0 14px; color:var(--text-secondary); font-size:var(--font-size-lg); line-height:1.6; max-width:52ch">
+              The subject lines, wording and branding of the quote, invoice, receipt, reminder and
+              portal invite emails RELAY sends on your behalf.
+            </p>
+            <p style="margin:0 0 18px; font-size:var(--font-size-base); color:var(--text-tertiary)">
+              ${customised.length
+                ? `${customised.length} of ${EMAIL_TEMPLATES.length} personalised — ${escapeHTML(customised.map(t => t.label).join(', '))}`
+                : `All ${EMAIL_TEMPLATES.length} emails use RELAY's standard wording.`}
+            </p>
+            <button class="btn btn-primary" id="open-email-studio">
+              <span class="material-icons-outlined" style="font-size:18px">drafts</span>
+              Open Email Studio
+            </button>
           </div>
         </div>
       </div>`;
 
-    const metaFor = () => EMAIL_TEMPLATES.find(t => t.key === activeType);
-    const fieldsEl = tc.querySelector('#et-fields');
-    const preview = tc.querySelector('#et-preview');
-    const subjectEl = tc.querySelector('#et-subject');
-
-    const syncBrand = () => {
-      draft.branding.useLogo = tc.querySelector('#et-uselogo').checked;
-      draft.branding.headerBg = tc.querySelector('#et-headerbg').value;
-      draft.branding.accent = tc.querySelector('#et-accent').value;
-      draft.branding.footer = tc.querySelector('#et-footer').value;
-    };
-
-    function currentOverride() {
-      syncBrand();
-      return { branding: { ...draft.branding }, template: draft.templates[activeType] || {} };
-    }
-
-    function refreshPreview() {
-      const { subject, html } = previewEmail(activeType, currentOverride());
-      preview.srcdoc = html;
-      subjectEl.textContent = subject;
-    }
-
-    function renderFields() {
-      const t = draft.templates[activeType] || {};
-      const m = metaFor();
-      fieldsEl.innerHTML = `
-        <div class="form-group">
-          <label class="form-label">Subject</label>
-          <input class="form-input et-f" data-k="subject" value="${escapeHTML(t.subject || '')}" placeholder="(default)" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Greeting / intro</label>
-          <textarea class="form-input et-f" data-k="intro" rows="3" placeholder="(default)">${escapeHTML(t.intro || '')}</textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Closing note</label>
-          <textarea class="form-input et-f" data-k="note" rows="2" placeholder="(default)">${escapeHTML(t.note || '')}</textarea>
-        </div>
-        ${m.cta ? `
-        <div class="form-group">
-          <label class="form-label">Button label</label>
-          <input class="form-input et-f" data-k="ctaLabel" value="${escapeHTML(t.ctaLabel || '')}" placeholder="(default)" />
-        </div>` : ''}
-        <div style="font-size:11px;color:var(--text-tertiary);">Variables: ${varChips(m.vars)}</div>`;
-      fieldsEl.querySelectorAll('.et-f').forEach(el => el.addEventListener('input', () => {
-        draft.templates[activeType] = draft.templates[activeType] || {};
-        draft.templates[activeType][el.dataset.k] = el.value;
-        refreshPreview();
-      }));
-    }
-
-    ['et-uselogo', 'et-headerbg', 'et-accent', 'et-footer'].forEach(id => {
-      tc.querySelector('#' + id)?.addEventListener('input', refreshPreview);
-    });
-
-    tc.querySelector('#et-type').addEventListener('change', (e) => {
-      activeType = e.target.value;
-      renderFields();
-      refreshPreview();
-    });
-
-    tc.querySelector('#et-save').addEventListener('click', async () => {
-      try {
-        syncBrand();
-        const s = store.getSettings() || {};
-        // settings.mailer, never settings.email — that key is the business email
-        // address string used on invoices and the customer portal.
-        s.mailer = { ...emailSettings(), branding: draft.branding, templates: draft.templates };
-        if (s.email && typeof s.email === 'object') s.email = '';
-        await store.saveSettings(s);
-        showToast('Email templates saved', 'success');
-        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
-      } catch (err) {
-        console.error('Error saving email templates:', err);
-        showToast('Could not save email templates', 'error');
-      }
-    });
-
-    renderFields();
-    refreshPreview();
+    tc.querySelector('#open-email-studio')?.addEventListener('click', () => router.navigate('/settings/email-templates'));
   }
 
   function renderEmailTab(tc) {
@@ -4030,6 +3937,15 @@ export function renderSettings(container) {
           <p style="font-size:11px;color:var(--text-tertiary);margin:0 0 8px;">
             These are issued by RELAY and can't be edited — it's what keeps one business from sending mail as another. Replies go to your reply-to address below.
           </p>
+
+          <div style="display:flex;gap:8px;align-items:flex-end;max-width:520px;margin-bottom:4px;">
+            <div class="form-group" style="flex:1;margin:0;">
+              <label class="form-label">Send a test email to</label>
+              <input class="form-input" id="em-test-to" value="${escapeHTML(email.replyTo || (typeof settings.email === 'string' ? settings.email : '') || '')}" placeholder="you@yourbusiness.com" />
+            </div>
+            <button class="btn btn-secondary" id="em-test-send">Send test</button>
+          </div>
+          <p style="font-size:11px;color:var(--text-tertiary);margin:0 0 8px;">Proves the whole chain end to end. Counts toward your daily limit; the result appears in Recent sends below.</p>
 
           <h5 style="margin:18px 0 8px;">Sender details</h5>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -4192,6 +4108,34 @@ export function renderSettings(container) {
       }
     });
 
+    tc.querySelector('#em-test-send')?.addEventListener('click', async (e) => {
+      const to = tc.querySelector('#em-test-to')?.value.trim();
+      if (!to) { showToast('Enter an address to send the test to', 'error'); return; }
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Sending…';
+      try {
+        // Deliberately plain HTML rather than a themed template: this is testing
+        // the delivery chain (auth -> slug -> sender -> Resend), not the branding.
+        const res = await sendEmail({
+          to,
+          subject: 'RELAY test email',
+          template: 'custom',
+          html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1E2A3A;line-height:1.6;">
+            <p>This is a test email from RELAY.</p>
+            <p>If it reached you, sending is working — quotes, invoices, receipts and reminders will go out the same way.</p>
+            <p style="color:#64748B;font-size:12px;">Sent ${escapeHTML(new Date().toLocaleString('en-AU'))}</p>
+          </div>`,
+        });
+        showToast(`Test sent to ${to}${res?.from ? ` as ${String(res.from).replace(/^.*</, '').replace(/>$/, '')}` : ''}`, 'success');
+        renderEmailTab(tc);
+      } catch (err) {
+        console.error('Test email failed:', err);
+        showToast(err.message || 'Test send failed', 'error');
+        btn.disabled = false; btn.textContent = original;
+      }
+    });
+
     // The sending addresses are built server-side from the company's slug, so
     // ask the edge function what they actually are rather than guessing here.
     (async () => {
@@ -4273,800 +4217,54 @@ export function renderSettings(container) {
     });
   }
 
+  // The design itself is edited in the full-width Document Studio; this tab is
+  // the way in, and summarises what the current design looks like.
   function renderInvoicesQuotesTab(tc) {
-    const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
-    const settings = store.getSettings();
-    let dt = JSON.parse(JSON.stringify(settings.documentTheme || {}));
-    let activePreviewTab = 'invoice';
-
-    const mockData = {
-      number: 'INV-00023',
-      status: 'Sent',
-      customerName: 'Acme Developments Pty Ltd',
-      contactName: 'Jane Smith',
-      issueDate: new Date().toISOString(),
-      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      jobNumber: 'J-00129',
-      originalQuoteNumber: 'Q-00412',
-      title: 'Emergency Electrical & Cabling Installation',
-      notes: 'Please review all measurements. Standard technician notes and variations have been compiled accordingly.',
-      subtotal: 1250.00,
-      tax: 125.00,
-      total: 1375.00,
-      lineItems: [
-        { description: 'Emergency Call-out Service Rate', type: 'labor', qty: 1, rate: 195.00, total: 195.00 },
-        { description: 'Electrical Cabling Installation & Termination', type: 'labor', qty: 4, rate: 85.00, total: 340.00 },
-        { description: 'Premium Circuit Breakers & Switchboards', type: 'material', qty: 3, rate: 150.00, total: 450.00 },
-        { description: 'Sundry Fixings, Consumables & Conduit', type: 'material', qty: 1, rate: 265.00, total: 265.00 }
-      ]
+    const s = store.getSettings() || {};
+    const dt = s.documentTheme || {};
+    const accent = dt.accentColor || '#FF5C00';
+    const header = dt.headerBg || '#1E2A3A';
+    const tint = dt.accentTint || '#F8FAFC';
+    const fontLabel = dt.fontFamily === 'serif' ? 'Serif'
+      : dt.fontFamily === 'monospace' ? 'Monospace' : 'Sans-serif';
+    const presetNames = {
+      relay: 'Relay', classic: 'Classic', forest: 'Forest', electric: 'Electric',
+      obsidian: 'Obsidian', terracotta: 'Terracotta', nordic: 'Nordic',
+      luxury: 'Velvet', steel: 'Steel', ballet: 'Ballet', custom: 'Custom',
     };
+    const themeLabel = presetNames[dt.preset] || 'Relay';
+    const chip = (label) => `<span style="padding:3px 10px; border:1px solid var(--border-color-dark); border-radius:999px; font-size:11.5px; font-weight:600; color:var(--text-secondary)">${escapeHTML(label)}</span>`;
 
-    const presets = {
-      relay: { name: 'Relay Dispatch', preset: 'relay', accentColor: '#FF5C00', headerBg: '#1E2A3A', accentTint: '#F8FAFC', fontFamily: 'sans-serif' },
-      classic: { name: 'Classic Corporate', preset: 'classic', accentColor: '#0F172A', headerBg: '#1E293B', accentTint: '#F8FAFC', fontFamily: 'serif' },
-      forest: { name: 'Forest Minimalist', preset: 'forest', accentColor: '#16A34A', headerBg: '#1F2937', accentTint: '#F9FAFB', fontFamily: 'sans-serif' },
-      electric: { name: 'Vibrant Electric', preset: 'electric', accentColor: '#7C3AED', headerBg: '#111827', accentTint: '#F9FAFB', fontFamily: 'sans-serif' },
-      obsidian: { name: 'Sleek Obsidian', preset: 'obsidian', accentColor: '#1E293B', headerBg: '#0F172A', accentTint: '#FAFBFB', fontFamily: 'monospace' },
-      terracotta: { name: 'Sunset Terracotta', preset: 'terracotta', accentColor: '#C2410C', headerBg: '#451A03', accentTint: '#FFF7ED', fontFamily: 'sans-serif' },
-      nordic: { name: 'Nordic Frost', preset: 'nordic', accentColor: '#0891B2', headerBg: '#0F172A', accentTint: '#F0FDFA', fontFamily: 'sans-serif' },
-      luxury: { name: 'Royal Velvet', preset: 'luxury', accentColor: '#D97706', headerBg: '#311005', accentTint: '#FEF3C7', fontFamily: 'serif' },
-      steel: { name: 'Steel Industrial', preset: 'steel', accentColor: '#475569', headerBg: '#1E293B', accentTint: '#F1F5F9', fontFamily: 'monospace' },
-      ballet: { name: 'Ballet Pointe', preset: 'ballet', accentColor: '#e58799', headerBg: '#5c2c36', accentTint: '#fff5f6', fontFamily: 'serif' }
-    };
-
-    function renderMarkup() {
-      tc.innerHTML = `
-        <style>
-          .preset-card:hover {
-            border-color: var(--color-primary-light) !important;
-            background: var(--bg-color) !important;
-          }
-          .preset-card.active {
-            border-color: var(--color-primary) !important;
-            background: var(--color-primary-light) !important;
-            color: var(--color-primary) !important;
-          }
-        </style>
-        <div style="display:grid; grid-template-columns: 460px 1fr; gap:var(--space-lg); min-height:calc(100vh - 200px); align-items:stretch">
-          
-          <!-- Control Panel -->
-          <div style="display:flex; flex-direction:column; gap:16px; overflow-y:auto; padding-right:8px; max-height:calc(100vh - 200px)">
-            
-            <!-- Preset Themes -->
-            <div class="card">
-              <div class="card-header"><h4>Choose Theme Preset</h4></div>
-              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:8px">
-                ${Object.entries(presets).map(([key, val]) => {
-                  const isActive = dt.preset === key;
-                  return `
-                    <div class="preset-card ${isActive ? 'active' : ''}" data-preset="${key}" style="
-                      display:flex; justify-content:space-between; align-items:center; 
-                      padding:12px 16px; border:2px solid ${isActive ? 'var(--color-primary)' : 'var(--border-color)'}; 
-                      border-radius:8px; cursor:pointer; background:var(--card-bg); transition:all 0.2s;
-                    ">
-                      <div style="display:flex; align-items:center; gap:10px">
-                        <div style="width:16px; height:16px; border-radius:50%; background:${val.accentColor}"></div>
-                        <span style="font-weight:600">${val.name}</span>
-                      </div>
-                      <span style="font-size:12px; color:var(--text-tertiary)">${val.fontFamily}</span>
-                    </div>
-                  `;
-                }).join('')}
-                <div class="preset-card ${dt.preset === 'custom' ? 'active' : ''}" data-preset="custom" style="
-                  display:flex; justify-content:space-between; align-items:center; 
-                  padding:12px 16px; border:2px solid ${dt.preset === 'custom' ? 'var(--color-primary)' : 'var(--border-color)'}; 
-                  border-radius:8px; cursor:pointer; background:var(--card-bg); transition:all 0.2s;
-                ">
-                  <div style="display:flex; align-items:center; gap:10px">
-                    <span class="material-icons-outlined" style="font-size:18px; color:var(--text-secondary)">palette</span>
-                    <span style="font-weight:600">Custom Styling</span>
-                  </div>
-                  <span style="font-size:12px; color:var(--text-tertiary)">Full control</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Custom Styles (only active/visible if preset is Custom) -->
-            <div class="card" id="custom-style-controls" style="display:${dt.preset === 'custom' ? 'block' : 'none'}">
-              <div class="card-header"><h4>Custom Color & Typography</h4></div>
-              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:12px">
-                <div class="form-group">
-                  <label class="form-label">Primary Accent Color</label>
-                  <div style="display:flex; gap:8px">
-                    <input type="color" class="form-input style-input" data-prop="accentColor" value="${dt.accentColor}" style="width:48px; height:38px; padding:2px; cursor:pointer" />
-                    <input type="text" class="form-input style-text" id="color-accent-text" value="${dt.accentColor}" style="flex:1" />
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Table Header Fill</label>
-                  <div style="display:flex; gap:8px">
-                    <input type="color" class="form-input style-input" data-prop="headerBg" value="${dt.headerBg}" style="width:48px; height:38px; padding:2px; cursor:pointer" />
-                    <input type="text" class="form-input style-text" id="color-header-text" value="${dt.headerBg}" style="flex:1" />
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Accent Tint Background</label>
-                  <div style="display:flex; gap:8px">
-                    <input type="color" class="form-input style-input" data-prop="accentTint" value="${dt.accentTint}" style="width:48px; height:38px; padding:2px; cursor:pointer" />
-                    <input type="text" class="form-input style-text" id="color-tint-text" value="${dt.accentTint}" style="flex:1" />
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Typography Font</label>
-                  <select class="form-select style-input" data-prop="fontFamily">
-                    <option value="sans-serif" ${dt.fontFamily === 'sans-serif' ? 'selected' : ''}>Sans-Serif (Modern / Inter & Outfit)</option>
-                    <option value="serif" ${dt.fontFamily === 'serif' ? 'selected' : ''}>Serif (Prestige / Georgia & Lora)</option>
-                    <option value="monospace" ${dt.fontFamily === 'monospace' ? 'selected' : ''}>Monospace (Industrial / Fira Code)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <!-- Branding / Logo layout -->
-            <div class="card">
-              <div class="card-header"><h4>Logo Branding & Scaling</h4></div>
-              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:12px">
-                <div class="form-group" style="display:flex; align-items:center; gap:8px">
-                  <input type="checkbox" id="theme-hide-logo" style="width:16px; height:16px" ${dt.hideLogo ? 'checked' : ''} />
-                  <label for="theme-hide-logo" class="form-label" style="margin:0; cursor:pointer">Hide logo image (show styled text header)</label>
-                </div>
-                <div id="logo-branding-controls" style="display:${dt.hideLogo ? 'none' : 'flex'}; flex-direction:column; gap:12px">
-                  <div class="form-group" style="display:flex; align-items:center; gap:8px">
-                    <input type="checkbox" id="theme-hide-company-name" style="width:16px; height:16px" ${dt.hideCompanyName ? 'checked' : ''} />
-                    <label for="theme-hide-company-name" class="form-label" style="margin:0; cursor:pointer">Hide company name text (use logo only)</label>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Logo Variation</label>
-                    <select class="form-select" id="theme-logo-source" style="width:100%">
-                      <option value="large" ${dt.logoSource === 'large' ? 'selected' : ''}>Standard Logo (Large)</option>
-                      <option value="small" ${dt.logoSource === 'small' ? 'selected' : ''}>Small / Shrunk Logo (Small)</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Logo Alignment</label>
-                    <div style="display:flex; gap:4px">
-                      <button class="btn btn-secondary btn-sm logo-align-btn ${dt.logoAlignment === 'left' ? 'btn-primary' : ''}" data-align="left" style="flex:1">Left</button>
-                      <button class="btn btn-secondary btn-sm logo-align-btn ${dt.logoAlignment === 'center' ? 'btn-primary' : ''}" data-align="center" style="flex:1">Center</button>
-                      <button class="btn btn-secondary btn-sm logo-align-btn ${dt.logoAlignment === 'right' ? 'btn-primary' : ''}" data-align="right" style="flex:1">Right</button>
-                    </div>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Logo Scale (Height): <span id="scale-val-label">${dt.logoScale || 60}px</span></label>
-                    <input type="range" id="theme-logo-scale" min="40" max="120" value="${dt.logoScale || 60}" style="width:100%" />
-                  </div>
-                </div>
-                <div style="height:1px; background:var(--border-color); margin:8px 0"></div>
-                <div class="form-group ${isLocalMode ? 'disabled-local' : ''}" ${isLocalMode ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="top"' : ''} style="display:flex; align-items:center; gap:8px">
-                  <input type="checkbox" id="theme-hide-brand-logo" style="width:16px; height:16px" ${dt.hideBrandLogo ? 'checked' : ''} ${isLocalMode ? 'disabled' : ''} />
-                  <label for="theme-hide-brand-logo" class="form-label" style="margin:0; cursor:${isLocalMode ? 'not-allowed' : 'pointer'}">Remove Relay-dispatch brand logo from document footers</label>
-                </div>
-              </div>
-            </div>
-
-            <!-- Document Text Custom Copy -->
-            <div class="card">
-              <div class="card-header"><h4>Custom Copy & Titles</h4></div>
-              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:12px">
-                <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:4px">Invoice Options</div>
-                <div class="form-group">
-                  <label class="form-label">Invoice Document Title</label>
-                  <input type="text" class="form-input text-copy-input" data-prop="invoiceTitle" value="${escapeHTML(dt.invoiceTitle || 'TAX INVOICE')}" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Direct Deposit Bank Account Details</label>
-                  <textarea class="form-input text-copy-input" data-prop="invoicePaymentTerms" rows="3" placeholder="BSB: ...\nAccount: ...">${escapeHTML(dt.invoicePaymentTerms || '')}</textarea>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Invoice Legal Terms / Footer Memo</label>
-                  <textarea class="form-input text-copy-input" data-prop="invoiceTerms" rows="2" placeholder="Payment is due...">${escapeHTML(dt.invoiceTerms || '')}</textarea>
-                </div>
-                <div class="form-row" style="display:flex; gap:12px">
-                  <div class="form-group" style="flex:1">
-                    <label class="form-label">Invoice Prefix</label>
-                    <input type="text" class="form-input text-copy-input" data-prop="invoicePrefix" value="${escapeHTML(dt.invoicePrefix || 'INV-')}" placeholder="INV-" />
-                  </div>
-                  <div class="form-group" style="flex:1">
-                    <label class="form-label">Invoice Starting Number</label>
-                    <input type="number" class="form-input text-copy-input" data-prop="invoiceStartingNumber" value="${dt.invoiceStartingNumber !== undefined ? dt.invoiceStartingNumber : 1}" min="1" placeholder="1" />
-                  </div>
-                </div>
-
-                <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px">Quote Options</div>
-                <div class="form-group">
-                  <label class="form-label">Quote Document Title</label>
-                  <input type="text" class="form-input text-copy-input" data-prop="quoteTitle" value="${escapeHTML(dt.quoteTitle || 'PROPOSAL / QUOTE')}" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Quote Validity / General Terms</label>
-                  <textarea class="form-input text-copy-input" data-prop="quoteTerms" rows="2" placeholder="Quote valid for...">${escapeHTML(dt.quoteTerms || '')}</textarea>
-                </div>
-                <div class="form-row" style="display:flex; gap:12px">
-                  <div class="form-group" style="flex:1">
-                    <label class="form-label">Quote Prefix</label>
-                    <input type="text" class="form-input text-copy-input" data-prop="quotePrefix" value="${escapeHTML(dt.quotePrefix || 'Q-')}" placeholder="Q-" />
-                  </div>
-                  <div class="form-group" style="flex:1">
-                    <label class="form-label">Quote Starting Number</label>
-                    <input type="number" class="form-input text-copy-input" data-prop="quoteStartingNumber" value="${dt.quoteStartingNumber !== undefined ? dt.quoteStartingNumber : 1}" min="1" placeholder="1" />
-                  </div>
-                </div>
-
-                <div style="font-weight:700; font-size:12px; color:var(--color-primary); text-transform:uppercase; border-bottom:1px solid var(--border-color); padding-bottom:4px; margin-top:8px">Global Options</div>
-                <div class="form-group">
-                  <label class="form-label">Footer Signature / Compliance Note</label>
-                  <input type="text" class="form-input text-copy-input" data-prop="footerNote" value="${escapeHTML(dt.footerNote || '')}" placeholder="Thank you for your business..." />
-                </div>
-              </div>
-            </div>
-
-            <!-- Features & Integration Toggles -->
-            <div class="card">
-              <div class="card-header"><h4>Features & Integrations</h4></div>
-              <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:10px">
-                <div class="form-group" style="display:flex; align-items:center; gap:8px">
-                  <input type="checkbox" id="theme-stripe" style="width:16px; height:16px" ${dt.paymentStripe ? 'checked' : ''} />
-                  <label for="theme-stripe" class="form-label" style="margin:0; cursor:pointer">Accept Credit Cards (Include online Stripe pay link)</label>
-                </div>
-                <div class="form-group" style="display:flex; align-items:center; gap:8px">
-                  <input type="checkbox" id="theme-bank-transfer" style="width:16px; height:16px" ${dt.paymentDirectTransfer ? 'checked' : ''} />
-                  <label for="theme-bank-transfer" class="form-label" style="margin:0; cursor:pointer">Show Bank Details (Direct Bank Transfers)</label>
-                </div>
-                <div class="form-group" style="display:flex; align-items:center; gap:8px">
-                  <input type="checkbox" id="theme-cash" style="width:16px; height:16px" ${dt.paymentCash ? 'checked' : ''} />
-                  <label for="theme-cash" class="form-label" style="margin:0; cursor:pointer">Accept Cash payment option text</label>
-                </div>
-                <div style="height:1px; background:var(--border-color); margin:4px 0"></div>
-                <div class="form-group" style="display:flex; align-items:center; gap:8px">
-                  <input type="checkbox" id="theme-quote-sig" style="width:16px; height:16px" ${dt.quoteSignature ? 'checked' : ''} />
-                  <label for="theme-quote-sig" class="form-label" style="margin:0; cursor:pointer">Include customer sign-off signature blocks on Quotes</label>
-                </div>
-              </div>
-            </div>
-
-            <!-- Action buttons -->
-            <div style="display:flex; gap:12px; margin-top:4px; padding-bottom:24px">
-              <button class="btn btn-secondary" id="btn-theme-reset" style="flex:1">Reset Defaults</button>
-              <button class="btn btn-primary" id="btn-theme-save" style="flex:1"><span class="material-icons-outlined" style="font-size:16px">save</span> Save Changes</button>
-            </div>
-
+    tc.innerHTML = `
+      <div class="card" style="max-width:860px">
+        <div class="card-body" style="display:flex; gap:26px; align-items:center; padding:24px; flex-wrap:wrap">
+          <div style="flex:0 0 128px; width:128px; aspect-ratio:210/297; background:#fff; border:1px solid var(--border-color-dark); border-radius:4px; box-shadow:var(--shadow-md); padding:10px 11px; overflow:hidden" aria-hidden="true">
+            <div style="height:12px; border-radius:2px; background:${header}"></div>
+            <div style="height:4px; width:52%; margin-top:8px; border-radius:2px; background:${accent}"></div>
+            <div style="height:3px; width:88%; margin-top:7px; border-radius:2px; background:#e2e6ec"></div>
+            <div style="height:3px; width:74%; margin-top:4px; border-radius:2px; background:#e2e6ec"></div>
+            <div style="height:26px; margin-top:9px; border-radius:2px; background:${tint}; border:1px solid #edf0f3"></div>
+            <div style="height:3px; width:60%; margin-top:9px; border-radius:2px; background:#e2e6ec"></div>
+            <div style="height:3px; width:40%; margin-top:4px; border-radius:2px; background:#e2e6ec"></div>
           </div>
-
-          <!-- Sticky Live Preview -->
-          <div style="display:flex; flex-direction:column; gap:12px; height:calc(100vh - 200px); position:sticky; top:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:13px; font-weight:700; color:var(--text-secondary); text-transform:uppercase">Live Layout Preview</span>
-              <div class="tabs" style="margin:0; background:var(--border-color); padding:2px; border-radius:6px; display:inline-flex; gap:2px">
-                <button class="btn btn-sm ${activePreviewTab === 'invoice' ? 'btn-primary' : 'btn-ghost'}" id="preview-tab-invoice" style="padding:6px 12px; border:none; border-radius:4px; font-size:12px; cursor:pointer">Tax Invoice</button>
-                <button class="btn btn-sm ${activePreviewTab === 'quote' ? 'btn-primary' : 'btn-ghost'}" id="preview-tab-quote" style="padding:6px 12px; border:none; border-radius:4px; font-size:12px; cursor:pointer">Quote / Proposal</button>
-              </div>
+          <div style="flex:1 1 340px; min-width:280px">
+            <h3 style="margin:0 0 6px; font-size:var(--font-size-xl)">Quote &amp; invoice design</h3>
+            <p style="margin:0 0 14px; color:var(--text-secondary); font-size:var(--font-size-lg); line-height:1.6; max-width:52ch">
+              Colours, logo placement, wording, numbering and accepted payment methods for every
+              quote and tax invoice you send.
+            </p>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:18px">
+              ${chip(`${themeLabel} theme`)}${chip(fontLabel)}${chip(`Accent ${accent.toUpperCase()}`)}
             </div>
-            <div style="flex:1; border:1px solid var(--border-color); border-radius:8px; overflow:hidden; background:#f1f5f9; position:relative; box-shadow:inset 0 4px 10px rgba(0,0,0,0.05)">
-              <iframe id="preview-frame" style="width:100%; height:100%; border:none;"></iframe>
-            </div>
+            <button class="btn btn-primary" id="open-doc-studio">
+              <span class="material-icons-outlined" style="font-size:18px">edit_document</span>
+              Open Document Studio
+            </button>
           </div>
-
         </div>
-      `;
+      </div>`;
 
-      bindListeners();
-      updatePreview();
-    }
-
-    function bindListeners() {
-      // Preset selection click
-      tc.querySelectorAll('.preset-card').forEach(card => {
-        card.addEventListener('click', () => {
-          const key = card.dataset.preset;
-          if (key === 'custom') {
-            dt.preset = 'custom';
-          } else {
-            const p = presets[key];
-            dt.preset = key;
-            dt.accentColor = p.accentColor;
-            dt.headerBg = p.headerBg;
-            dt.accentTint = p.accentTint;
-            dt.fontFamily = p.fontFamily;
-          }
-          syncControlsFromState();
-          updatePreview();
-        });
-      });
-
-      // Custom style hex text / inputs
-      tc.querySelectorAll('.style-input').forEach(inp => {
-        inp.addEventListener('input', (e) => {
-          const prop = e.target.dataset.prop;
-          dt[prop] = e.target.value;
-          
-          if (prop === 'accentColor') tc.querySelector('#color-accent-text').value = e.target.value;
-          if (prop === 'headerBg') tc.querySelector('#color-header-text').value = e.target.value;
-          if (prop === 'accentTint') tc.querySelector('#color-tint-text').value = e.target.value;
-          
-          updatePreview();
-        });
-      });
-
-      tc.querySelectorAll('.style-text').forEach(txt => {
-        txt.addEventListener('input', (e) => {
-          const val = e.target.value;
-          if (/^#[0-9A-F]{6}$/i.test(val)) {
-            if (e.target.id === 'color-accent-text') {
-              dt.accentColor = val;
-              tc.querySelector('[data-prop="accentColor"]').value = val;
-            } else if (e.target.id === 'color-header-text') {
-              dt.headerBg = val;
-              tc.querySelector('[data-prop="headerBg"]').value = val;
-            } else if (e.target.id === 'color-tint-text') {
-              dt.accentTint = val;
-              tc.querySelector('[data-prop="accentTint"]').value = val;
-            }
-            updatePreview();
-          }
-        });
-      });
-
-      // Logo Align
-      tc.querySelectorAll('.logo-align-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          dt.logoAlignment = btn.dataset.align;
-          tc.querySelectorAll('.logo-align-btn').forEach(b => b.classList.remove('btn-primary'));
-          btn.classList.add('btn-primary');
-          updatePreview();
-        });
-      });
-
-      // Hide Logo toggle
-      const hideLogoChk = tc.querySelector('#theme-hide-logo');
-      hideLogoChk.addEventListener('change', () => {
-        dt.hideLogo = hideLogoChk.checked;
-        tc.querySelector('#logo-branding-controls').style.display = dt.hideLogo ? 'none' : 'flex';
-        updatePreview();
-      });
-
-      // Hide Company Name toggle
-      const hideCompanyNameChk = tc.querySelector('#theme-hide-company-name');
-      if (hideCompanyNameChk) {
-        hideCompanyNameChk.addEventListener('change', () => {
-          dt.hideCompanyName = hideCompanyNameChk.checked;
-          updatePreview();
-        });
-      }
-
-      // Logo Variation toggle
-      const logoSourceSelect = tc.querySelector('#theme-logo-source');
-      if (logoSourceSelect) {
-        logoSourceSelect.addEventListener('change', (e) => {
-          dt.logoSource = e.target.value;
-          updatePreview();
-        });
-      }
-
-      // Scale slider
-      const scaleSlider = tc.querySelector('#theme-logo-scale');
-      scaleSlider.addEventListener('input', () => {
-        dt.logoScale = parseInt(scaleSlider.value);
-        tc.querySelector('#scale-val-label').textContent = dt.logoScale + 'px';
-        updatePreview();
-      });
-
-      // Hide Brand Logo toggle
-      const hideBrandLogoChk = tc.querySelector('#theme-hide-brand-logo');
-      if (hideBrandLogoChk) {
-        hideBrandLogoChk.addEventListener('change', () => {
-          dt.hideBrandLogo = hideBrandLogoChk.checked;
-          updatePreview();
-        });
-      }
-
-      // Text copy updates
-      tc.querySelectorAll('.text-copy-input').forEach(inp => {
-        inp.addEventListener('input', () => {
-          const prop = inp.dataset.prop;
-          dt[prop] = inp.value;
-          updatePreview();
-        });
-      });
-
-      // Features integration switches
-      tc.querySelector('#theme-stripe').addEventListener('change', (e) => {
-        dt.paymentStripe = e.target.checked;
-        updatePreview();
-      });
-      tc.querySelector('#theme-bank-transfer').addEventListener('change', (e) => {
-        dt.paymentDirectTransfer = e.target.checked;
-        updatePreview();
-      });
-      tc.querySelector('#theme-cash').addEventListener('change', (e) => {
-        dt.paymentCash = e.target.checked;
-        updatePreview();
-      });
-      tc.querySelector('#theme-quote-sig').addEventListener('change', (e) => {
-        dt.quoteSignature = e.target.checked;
-        updatePreview();
-      });
-
-      // Invoice / Quote Preview tabs
-      tc.querySelector('#preview-tab-invoice').addEventListener('click', () => {
-        activePreviewTab = 'invoice';
-        tc.querySelector('#preview-tab-invoice').classList.add('btn-primary');
-        tc.querySelector('#preview-tab-invoice').classList.remove('btn-ghost');
-        tc.querySelector('#preview-tab-quote').classList.add('btn-ghost');
-        tc.querySelector('#preview-tab-quote').classList.remove('btn-primary');
-        updatePreview(true); // Switch tab = full reload to replace layout
-      });
-      tc.querySelector('#preview-tab-quote').addEventListener('click', () => {
-        activePreviewTab = 'quote';
-        tc.querySelector('#preview-tab-quote').classList.add('btn-primary');
-        tc.querySelector('#preview-tab-quote').classList.remove('btn-ghost');
-        tc.querySelector('#preview-tab-invoice').classList.add('btn-ghost');
-        tc.querySelector('#preview-tab-invoice').classList.remove('btn-primary');
-        updatePreview(true); // Switch tab = full reload to replace layout
-      });
-
-      // Save Theme Settings
-      tc.querySelector('#btn-theme-save').addEventListener('click', async () => {
-        const btn = tc.querySelector('#btn-theme-save');
-        const origHtml = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Saving...';
-
-        try {
-          const freshSettings = store.getSettings();
-          freshSettings.documentTheme = { ...dt };
-          await store.saveSettings(freshSettings);
-          showToast('Document customization settings saved successfully', 'success');
-        } catch (err) {
-          console.error('Error saving theme settings:', err);
-          showToast('Failed to save settings: ' + (err.message || err), 'error');
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = origHtml;
-        }
-      });
-
-      // Reset Theme Settings
-      tc.querySelector('#btn-theme-reset').addEventListener('click', () => {
-        if (confirm('Are you sure you want to reset documents customization to the factory defaults?')) {
-          dt = {
-            preset: 'relay',
-            accentColor: '#1B6DE0',
-            headerBg: '#1E2A3A',
-            accentTint: '#F8FAFC',
-            fontFamily: 'sans-serif',
-            invoiceTitle: 'TAX INVOICE',
-            invoiceTerms: 'Please pay within 7 days of invoice issue.',
-            invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
-            quoteTitle: 'PROPOSAL / QUOTE',
-            quoteTerms: 'This quote is valid for 30 days. All work is subject to standard conditions.',
-            logoAlignment: 'left',
-            logoScale: 60,
-            hideLogo: false,
-            logoSource: 'large',
-            hideCompanyName: false,
-            hideBrandLogo: false,
-            paymentStripe: true,
-            paymentDirectTransfer: true,
-            paymentCash: false,
-            quoteSignature: true,
-            footerNote: 'Thank you for your business!',
-            invoicePrefix: 'INV-',
-            invoiceStartingNumber: 1,
-            quotePrefix: 'Q-',
-            quoteStartingNumber: 1
-          };
-          syncControlsFromState();
-          updatePreview();
-        }
-      });
-    }
-
-    function syncControlsFromState() {
-      // 1. Preset cards active states
-      tc.querySelectorAll('.preset-card').forEach(card => {
-        const key = card.dataset.preset;
-        const isActive = dt.preset === key;
-        if (isActive) {
-          card.classList.add('active');
-          card.style.borderColor = 'var(--color-primary)';
-          card.style.background = 'var(--color-primary-light)';
-          card.style.color = 'var(--color-primary)';
-        } else {
-          card.classList.remove('active');
-          card.style.borderColor = 'var(--border-color)';
-          card.style.background = 'var(--card-bg)';
-          card.style.color = 'inherit';
-        }
-      });
-
-      // 2. Custom style panel visibility
-      const customStylePanel = tc.querySelector('#custom-style-controls');
-      if (customStylePanel) {
-        customStylePanel.style.display = dt.preset === 'custom' ? 'block' : 'none';
-      }
-
-      // 3. Custom color / font inputs
-      const accentColorVal = tc.querySelector('[data-prop="accentColor"]');
-      if (accentColorVal) accentColorVal.value = dt.accentColor;
-      const accentColorText = tc.querySelector('#color-accent-text');
-      if (accentColorText) accentColorText.value = dt.accentColor;
-
-      const headerBgVal = tc.querySelector('[data-prop="headerBg"]');
-      if (headerBgVal) headerBgVal.value = dt.headerBg;
-      const headerBgText = tc.querySelector('#color-header-text');
-      if (headerBgText) headerBgText.value = dt.headerBg;
-
-      const accentTintVal = tc.querySelector('[data-prop="accentTint"]');
-      if (accentTintVal) accentTintVal.value = dt.accentTint;
-      const accentTintText = tc.querySelector('#color-tint-text');
-      if (accentTintText) accentTintText.value = dt.accentTint;
-
-      const fontFamilySelect = tc.querySelector('[data-prop="fontFamily"]');
-      if (fontFamilySelect) fontFamilySelect.value = dt.fontFamily;
-
-      // 4. Logo visibility checkbox
-      const hideLogoChk = tc.querySelector('#theme-hide-logo');
-      if (hideLogoChk) hideLogoChk.checked = !!dt.hideLogo;
-
-      const logoControls = tc.querySelector('#logo-branding-controls');
-      if (logoControls) logoControls.style.display = dt.hideLogo ? 'none' : 'flex';
-
-      const hideCompanyNameChk = tc.querySelector('#theme-hide-company-name');
-      if (hideCompanyNameChk) hideCompanyNameChk.checked = !!dt.hideCompanyName;
-
-      const logoSourceSelect = tc.querySelector('#theme-logo-source');
-      if (logoSourceSelect) logoSourceSelect.value = dt.logoSource || 'large';
-
-      // 5. Logo Alignment buttons
-      tc.querySelectorAll('.logo-align-btn').forEach(btn => {
-        if (btn.dataset.align === dt.logoAlignment) {
-          btn.classList.add('btn-primary');
-        } else {
-          btn.classList.remove('btn-primary');
-        }
-      });
-
-      // 6. Logo Scale slider & label
-      const scaleSlider = tc.querySelector('#theme-logo-scale');
-      if (scaleSlider) scaleSlider.value = dt.logoScale || 60;
-      const scaleLabel = tc.querySelector('#scale-val-label');
-      if (scaleLabel) scaleLabel.textContent = (dt.logoScale || 60) + 'px';
-
-      // 7. Text Copy inputs
-      const invoiceTitleInp = tc.querySelector('[data-prop="invoiceTitle"]');
-      if (invoiceTitleInp) invoiceTitleInp.value = dt.invoiceTitle || '';
-
-      const invoicePrefixInp = tc.querySelector('[data-prop="invoicePrefix"]');
-      if (invoicePrefixInp) invoicePrefixInp.value = dt.invoicePrefix || '';
-
-      const invoiceStartingNumberInp = tc.querySelector('[data-prop="invoiceStartingNumber"]');
-      if (invoiceStartingNumberInp) invoiceStartingNumberInp.value = dt.invoiceStartingNumber !== undefined ? dt.invoiceStartingNumber : 1;
-
-      const invoicePaymentTermsInp = tc.querySelector('[data-prop="invoicePaymentTerms"]');
-      if (invoicePaymentTermsInp) invoicePaymentTermsInp.value = dt.invoicePaymentTerms || '';
-
-      const invoiceTermsInp = tc.querySelector('[data-prop="invoiceTerms"]');
-      if (invoiceTermsInp) invoiceTermsInp.value = dt.invoiceTerms || '';
-
-      const quoteTitleInp = tc.querySelector('[data-prop="quoteTitle"]');
-      if (quoteTitleInp) quoteTitleInp.value = dt.quoteTitle || '';
-
-      const quoteTermsInp = tc.querySelector('[data-prop="quoteTerms"]');
-      if (quoteTermsInp) quoteTermsInp.value = dt.quoteTerms || '';
-
-      const quotePrefixInp = tc.querySelector('[data-prop="quotePrefix"]');
-      if (quotePrefixInp) quotePrefixInp.value = dt.quotePrefix || '';
-
-      const quoteStartingNumberInp = tc.querySelector('[data-prop="quoteStartingNumber"]');
-      if (quoteStartingNumberInp) quoteStartingNumberInp.value = dt.quoteStartingNumber !== undefined ? dt.quoteStartingNumber : 1;
-
-      const footerNoteInp = tc.querySelector('[data-prop="footerNote"]');
-      if (footerNoteInp) footerNoteInp.value = dt.footerNote || '';
-
-      // 8. Toggles / Checkboxes
-      const stripeChk = tc.querySelector('#theme-stripe');
-      if (stripeChk) stripeChk.checked = !!dt.paymentStripe;
-
-      const bankTransferChk = tc.querySelector('#theme-bank-transfer');
-      if (bankTransferChk) bankTransferChk.checked = !!dt.paymentDirectTransfer;
-
-      const cashChk = tc.querySelector('#theme-cash');
-      if (cashChk) cashChk.checked = !!dt.paymentCash;
-
-      const quoteSigChk = tc.querySelector('#theme-quote-sig');
-      if (quoteSigChk) quoteSigChk.checked = !!dt.quoteSignature;
-
-      const hideBrandLogoChk = tc.querySelector('#theme-hide-brand-logo');
-      if (hideBrandLogoChk) hideBrandLogoChk.checked = !!dt.hideBrandLogo;
-    }
-
-    function updatePreview(fullReload = false) {
-      const frame = tc.querySelector('#preview-frame');
-      if (!frame) return;
-      
-      const tempSettings = {
-        ...settings,
-        documentTheme: { ...dt }
-      };
-
-      const frameDoc = frame.contentDocument || frame.contentWindow.document;
-      const hasWrapper = frameDoc && frameDoc.getElementById('document-content-wrapper');
-
-      if (fullReload || !hasWrapper) {
-        // If we already assigned srcdoc and are not forcing a full reload, wait for it to finish loading
-        if (!fullReload && frame.dataset.srcdocAssigned === 'true') {
-          return;
-        }
-
-        const html = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-            <style id="theme-preview-styles">
-              ${getPrintStyles(tempSettings)}
-              /* Overwrite general frame layout margins */
-              .pdf-page { padding: 24px 32px !important; max-width: 100% !important; margin: 0 !important; }
-            </style>
-          </head>
-          <body style="background:#f1f5f9; padding: 16px; margin:0">
-            <div style="background:white; border-radius:6px; border:1px solid #e2e8f0; overflow:hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)">
-              <div id="document-content-wrapper">
-                ${generateDocument(activePreviewTab, mockData)}
-              </div>
-            </div>
-          </body>
-          </html>
-        `;
-        
-        frame.dataset.srcdocAssigned = 'true';
-        frame.onload = () => {
-          frame.dataset.srcdocAssigned = 'false';
-          frame.onload = null;
-          updatePreview();
-        };
-        frame.srcdoc = html;
-        return;
-      }
-
-      // SELECTIVE DOM PATCHING (No Reload = No Scroll Reset)
-      
-      // 1. Live update the style tag
-      const styleTag = frameDoc.getElementById('theme-preview-styles');
-      if (styleTag) {
-        styleTag.innerHTML = `
-          ${getPrintStyles(tempSettings)}
-          /* Overwrite general frame layout margins */
-          .pdf-page { padding: 24px 32px !important; max-width: 100% !important; margin: 0 !important; }
-        `;
-      }
-
-      // 2. Live update document titles
-      const docTypeEl = frameDoc.querySelector('.pdf-doc-type');
-      if (docTypeEl) {
-        docTypeEl.textContent = activePreviewTab === 'quote' 
-          ? (dt.quoteTitle || 'PROPOSAL / QUOTE') 
-          : (dt.invoiceTitle || 'TAX INVOICE');
-      }
-
-      // 3. Live update logo size and header alignment
-      const headerEl = frameDoc.querySelector('.pdf-header');
-      const companyEl = frameDoc.querySelector('.pdf-company');
-      if (headerEl && companyEl) {
-        let headerFlexStyle = 'display:flex; justify-content:space-between; align-items:flex-start;';
-        let companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start;';
-        let titleBlockStyle = 'text-align: right;';
-        
-        if (dt.logoAlignment === 'right') {
-          companyFlexStyle = 'display:flex; gap:14px; align-items:flex-start; flex-direction: row-reverse; text-align: right;';
-        } else if (dt.logoAlignment === 'center') {
-          headerFlexStyle = 'display:flex; flex-direction:column; align-items:center; gap:20px; border-bottom: 2px solid #E4E9F0; padding-bottom: 24px; margin-bottom: 32px;';
-          companyFlexStyle = 'display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;';
-          titleBlockStyle = 'text-align: center; margin-top: 10px;';
-        }
-        
-        headerEl.style.cssText = headerFlexStyle;
-        companyEl.style.cssText = companyFlexStyle;
-        
-        const titleBlockEl = frameDoc.querySelector('.pdf-title-block');
-        if (titleBlockEl) titleBlockEl.style.cssText = titleBlockStyle;
-      }
-
-      // Logo Scale / Visibility
-      const logoImg = frameDoc.querySelector('.pdf-logo-img');
-      const logoBadge = frameDoc.querySelector('.pdf-logo');
-      const logoText = frameDoc.querySelector('.pdf-logo-text');
-
-      if (dt.hideLogo) {
-        if (logoImg) logoImg.style.display = 'none';
-        if (logoBadge) logoBadge.style.display = 'none';
-        if (logoText) {
-          logoText.style.display = 'block';
-          logoText.style.color = dt.accentColor || '#1B6DE0';
-        }
-      } else {
-        if (logoText) logoText.style.display = 'none';
-        
-        const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
-        const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
-        if (logoImg) {
-          logoImg.style.display = 'block';
-          logoImg.src = logoUrl || '';
-          logoImg.style.maxHeight = logoHeight + 'px';
-        }
-        if (logoBadge) {
-          logoBadge.style.display = 'flex';
-          logoBadge.style.background = `linear-gradient(135deg, ${dt.accentColor || '#1B6DE0'}, ${dt.accentColor || '#1B6DE0'}dd)`;
-        }
-      }
-
-      // Company Name visibility
-      const companyNameEl = frameDoc.querySelector('.pdf-company-name');
-      if (companyNameEl) {
-        companyNameEl.style.display = dt.hideCompanyName ? 'none' : 'block';
-      }
-
-      // 4. Live update Payment Options
-      const paymentSection = frameDoc.querySelector('.pdf-payment-methods');
-      if (paymentSection) {
-        const showPayment = activePreviewTab === 'invoice' && (dt.paymentStripe || dt.paymentDirectTransfer || dt.paymentCash);
-        paymentSection.style.display = showPayment ? 'block' : 'none';
-        
-        const stripeOption = paymentSection.querySelector('.pdf-payment-option-stripe');
-        if (stripeOption) {
-          stripeOption.style.display = dt.paymentStripe ? 'block' : 'none';
-          const stripeBtn = stripeOption.querySelector('a');
-          if (stripeBtn) stripeBtn.style.background = dt.accentColor || '#1B6DE0';
-        }
-        
-        const directOption = paymentSection.querySelector('.pdf-payment-option-direct');
-        if (directOption) {
-          directOption.style.display = dt.paymentDirectTransfer ? 'block' : 'none';
-          const bankDetailsEl = directOption.querySelector('.pdf-bank-details');
-          if (bankDetailsEl) {
-            bankDetailsEl.innerHTML = escapeHTML(dt.invoicePaymentTerms || '').replace(/\n/g, '<br/>');
-          }
-        }
-        
-        const cashOption = paymentSection.querySelector('.pdf-payment-option-cash');
-        if (cashOption) {
-          cashOption.style.display = dt.paymentCash ? 'block' : 'none';
-        }
-      }
-
-      // 5. Live update Quote Signatures
-      const sigSection = frameDoc.querySelector('.pdf-signature-block');
-      if (sigSection) {
-        const showSig = activePreviewTab === 'quote' && dt.quoteSignature;
-        sigSection.style.display = showSig ? 'flex' : 'none';
-      }
-
-      // 6. Live update Terms in Footer
-      const footerTextEl = frameDoc.querySelector('.pdf-footer-text');
-      if (footerTextEl) {
-        footerTextEl.textContent = activePreviewTab === 'quote'
-          ? (dt.quoteTerms || 'This quote is valid for the period shown above. Prices include GST where applicable. Please contact us to accept this quote or if you have any questions.')
-          : (dt.invoiceTerms || 'Payment is due by the date shown above. Please reference the invoice number when making payment. Thank you for your business.');
-      }
-
-      const footerNoteEl = frameDoc.querySelector('.pdf-footer-note');
-      if (footerNoteEl) {
-        if (dt.footerNote) {
-          footerNoteEl.style.display = 'block';
-          footerNoteEl.textContent = dt.footerNote;
-        } else {
-          footerNoteEl.style.display = 'none';
-        }
-      }
-
-      const footerBrandingEl = frameDoc.querySelector('.pdf-footer-branding');
-      if (footerBrandingEl) {
-        const hideBrandLogo = isLocalMode ? false : !!dt.hideBrandLogo;
-        footerBrandingEl.style.display = hideBrandLogo ? 'none' : 'flex';
-      }
-    }
-
-    renderMarkup();
+    tc.querySelector('#open-doc-studio')?.addEventListener('click', () => router.navigate('/settings/documents'));
   }
 
   function renderFolderSyncTab(tc) {

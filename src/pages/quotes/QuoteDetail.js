@@ -13,6 +13,8 @@ import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
 import { quoteEmail } from '../../utils/emailTemplates.js';
+import { portalUrlForDocument } from '../../utils/portalLinks.js';
+import { documentAttachment } from '../../utils/documentPdf.js';
 import { hasPermission } from '../../utils/permissions.js';
 
 export function renderQuoteDetail(container, { id, customerId, type }) {
@@ -454,6 +456,9 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       estimatedMaterialCost: materialCost,
     });
 
+    quote.status = 'Converted';
+    store.update('quotes', id, { status: 'Converted' });
+
     // Add activity log for live job conversion
     const activity = store.getAll('activity') || [];
     activity.push({
@@ -504,8 +509,9 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       btn.disabled = true;
       btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
       try {
-        const { subject, html } = quoteEmail(quote, {});
-        await sendEmail({ to, subject, html, template: 'quote', relatedType: 'quote', relatedId: quote.id });
+        const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
+        const attachments = await documentAttachment('quote', quote);
+        await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
         showToast(`Quote emailed to ${to}`, 'success');
       } catch (err) {
         showToast(err.message || 'Could not email quote', 'error');
@@ -852,87 +858,101 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     });
 
     container.querySelector('#btn-convert-job')?.addEventListener('click', () => {
-      (quote.sections || []).forEach(sec => {
-        (sec.lineItems || []).forEach(i => {
-          if (i.type === 'labor') laborCost += i.total;
-          if (i.type === 'material') materialCost += i.total;
-        });
-      });
-
-      // Map quote sections directly to job tasks
-      const jobTasks = quote.sections.map(sec => ({
-        id: store.generateId(),
-        name: sec.name,
-        status: 'Not Started',
-        progress: 0,
-        startDate: new Date().toISOString(),
-        technicians: [] // To be assigned later
-      }));
-
-      const newJob = store.create('jobs', {
-        number: `J-${Date.now().toString().slice(-6)}`,
-        customerId: quote.customerId,
-        customerName: quote.customerName,
-        contactName: quote.contactName,
-        title: quote.title,
-        type: 'Project',
-        status: 'Pending',
-        priority: 'Medium',
-        technicianId: tech?.id,
-        technicianName: tech?.name,
-        quoteId: id,
-        tasks: jobTasks,
-        phases: jobTasks,
-        laborCost: laborCost,
-        materialCost: materialCost,
-        estimatedLaborCost: laborCost,
-        estimatedMaterialCost: materialCost,
-      });
-      import('../../components/Notifications.js').then(({ addSystemNotification }) => {
-        addSystemNotification(
-          'New Job Assigned',
-          `You have been assigned to Live Job ${newJob.number} (${newJob.title}).`,
-          `/jobs/${newJob.id}`
-        );
-      });
-
-      showToast('Quote converted to project', 'success');
-      router.navigate(`/jobs/${newJob.id}`);
+      convertQuoteToJob();
     });
 
     // "Send Quote" really sends when email is configured (Settings -> Email & Domain).
     // It used to only flip emailStatus and toast "Email sent to customer" without
     // sending anything, then fake an "opened by the customer" notification 15s later —
     // so quotes were silently never delivered. The status only advances once Resend
-    // has accepted the message; a failed send leaves the quote in Draft to retry.
     container.querySelector('#btn-send-quote')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
-      const original = btn.innerHTML;
       const canEmail = emailEnabledFor('quote');
       const to = quote.customerEmail || (quote.customerId && store.getById('customers', quote.customerId)?.email);
 
-      if (canEmail) {
-        if (!to) { showToast('No customer email on file for this quote', 'error'); return; }
-        btn.disabled = true;
-        btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
-        try {
-          const { subject, html } = quoteEmail(quote, {});
-          await sendEmail({ to, subject, html, template: 'quote', relatedType: 'quote', relatedId: quote.id });
-        } catch (err) {
-          showToast(err.message || 'Could not email quote', 'error');
-          return;
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = original;
-        }
+      if (canEmail && !to) {
+        showToast('No customer email on file for this quote', 'error');
+        return;
       }
 
-      quote.emailStatus = 'Sent';
-      if (quote.status === 'Draft') quote.status = 'Sent';
-      store.update('quotes', id, { emailStatus: 'Sent', status: quote.status });
-      // Don't claim an email went out when email isn't set up — just record the status.
-      showToast(canEmail ? `Quote emailed to ${to}` : 'Quote marked as sent', 'success');
-      render();
+      if (btn.dataset.undoing === 'true') {
+        const timerId = parseInt(btn.dataset.timerId, 10);
+        const intervalId = parseInt(btn.dataset.intervalId, 10);
+        clearTimeout(timerId);
+        clearInterval(intervalId);
+        btn.dataset.undoing = 'false';
+        btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+        btn.classList.remove('btn-danger');
+        showToast('Send cancelled', 'info');
+        return;
+      }
+
+      const original = btn.innerHTML;
+
+      const startCountdown = () => {
+        btn.dataset.originalHtml = original;
+        btn.dataset.undoing = 'true';
+        btn.classList.add('btn-danger');
+        let timeLeft = 10;
+
+        const updateText = () => {
+          btn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+        };
+        updateText();
+
+        const intervalId = setInterval(() => {
+          timeLeft--;
+          if (timeLeft > 0) {
+            updateText();
+          } else {
+            clearInterval(intervalId);
+          }
+        }, 1000);
+
+        const timerId = setTimeout(async () => {
+          btn.dataset.undoing = 'false';
+          btn.classList.remove('btn-danger');
+          btn.disabled = true;
+          btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+
+          try {
+            if (canEmail) {
+              const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
+              const attachments = await documentAttachment('quote', quote);
+              await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
+            }
+
+            quote.emailStatus = 'Sent';
+            if (quote.status === 'Draft') quote.status = 'Sent';
+            store.update('quotes', id, { emailStatus: 'Sent', status: quote.status });
+            // Don't claim an email went out when email isn't set up — just record the status.
+            showToast(canEmail ? `Quote emailed to ${to}` : 'Quote marked as sent', 'success');
+            render();
+          } catch (err) {
+            showToast(err.message || 'Could not email quote', 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalHtml || original;
+          }
+        }, 10000);
+
+        btn.dataset.timerId = timerId;
+        btn.dataset.intervalId = intervalId;
+      };
+
+      const modalContent = document.createElement('div');
+      modalContent.innerHTML = `<p>Are you sure you want to send this quote to <strong>${escapeHTML(to || 'customer')}</strong>?</p>`;
+      showModal({
+        title: 'Confirm Send Quote',
+        content: modalContent,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Send', className: 'btn-primary', onClick: (close) => {
+            close();
+            startCountdown();
+          }}
+        ]
+      });
     });
 
     container.querySelector('#btn-sign-approve-modal')?.addEventListener('click', () => {

@@ -10,6 +10,8 @@
 import { store } from '../data/store.js';
 import { emailConfigured, emailEnabledFor, emailSettings, sendEmail } from './email.js';
 import { reminderEmail } from './emailTemplates.js';
+import { portalUrlForDocument } from './portalLinks.js';
+import { documentAttachment } from './documentPdf.js';
 
 const DAY = 86400000;
 
@@ -59,10 +61,11 @@ export async function checkPaymentReminders() {
     if (!to) continue;
 
     try {
-      const { subject, html } = reminderEmail(inv, {});
+      const { subject, html } = reminderEmail(inv, { portalUrl: portalUrlForDocument(inv) });
+      const attachments = await documentAttachment('invoice', inv);
       // sendEmail logs the attempt (sent/failed) to email_log, which is also our
       // de-dup source on the next sweep.
-      await sendEmail({ to, subject, html, template: 'reminder', relatedType: 'invoice', relatedId: inv.id });
+      await sendEmail({ to, subject, html, attachments, template: 'reminder', relatedType: 'invoice', relatedId: inv.id });
     } catch (_) {
       // Failure is already logged by sendEmail; keep going with the rest.
     }

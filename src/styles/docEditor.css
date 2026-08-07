@@ -1,0 +1,919 @@
+/* ============================================
+   RELAY — DOCUMENT EDITOR SHELL
+   ============================================
+   A full-width, Word-style workspace shared by the form builder, the
+   quote/invoice customiser and the email template editor:
+
+     command bar   →  back, document title, save state, primary actions
+     ribbon tabs   →  Design / Content / … plus contextual tabs
+     ribbon        →  grouped controls, each group captioned
+     canvas        →  grey backdrop, the document as a white sheet
+     status bar    →  what you're looking at, zoom
+
+   Everything is built from the app's own tokens so light/dark and the
+   brand accent stay consistent with the rest of RELAY. */
+
+/* ---- Immersive chrome ----
+   Set on <body> while an editor is mounted; main.js clears it on every
+   navigation so a page can never leak this state. */
+/* !important because the breadcrumb sets its own inline display. */
+body.rde-immersive #breadcrumb {
+  display: none !important;
+}
+body.rde-immersive .main-content {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+/* ---- Shell ---- */
+.rde {
+  --rde-chrome: var(--card-bg);
+  --rde-canvas: #e2e6eb;
+  --rde-sheet-w: 920px;
+  /* Brand orange at full strength is only 3.1:1 on white, so selected labels use
+     a deepened version of the same hue. Fills, borders and rules keep the real
+     brand colour — they only need 3:1. */
+  --rde-accent-text: #B84000;
+  /* Muted UI text. The shared tertiary token only reaches 3.7:1 on the dark
+     chrome, so dark mode steps up to the secondary one. */
+  --rde-muted: var(--text-tertiary);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--rde-chrome);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+}
+[data-theme-mode="dark"] .rde {
+  --rde-canvas: #0b0b0d;
+  --rde-accent-text: #FF8A4C;
+  --rde-muted: var(--text-secondary);
+}
+
+/* One focus treatment for every control in the editor. */
+.rde :is(button, input, select, textarea, [tabindex]):focus-visible,
+.rde-pop :is(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---- Command bar ---- */
+.rde-cmd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 48px;
+  height: 48px;
+  padding: 0 12px 0 6px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--rde-chrome);
+}
+.rde-cmd-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.rde-cmd-back:hover {
+  background: var(--bg-color);
+  color: var(--text-primary);
+}
+.rde-cmd-id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.rde-cmd-title {
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Borderless title that reveals its input affordance on hover/focus. */
+input.rde-cmd-title {
+  width: min(46ch, 40vw);
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+}
+input.rde-cmd-title:hover {
+  border-color: var(--border-color-dark);
+}
+input.rde-cmd-title:focus {
+  border-color: var(--color-primary);
+  background: var(--card-bg);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+input.rde-cmd-title::placeholder {
+  color: var(--text-tertiary);
+  font-weight: var(--font-weight-normal);
+}
+.rde-cmd-sub {
+  font-size: 11px;
+  color: var(--rde-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 7px;
+}
+.rde-cmd-spacer {
+  flex: 1;
+}
+.rde-cmd-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Unsaved-changes dot. */
+.rde-dirty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--rde-muted);
+}
+.rde-dirty::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
+.rde-dirty[hidden] {
+  display: none;
+}
+
+/* ---- Ribbon tab strip ---- */
+.rde-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  flex: 0 0 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--rde-chrome);
+}
+.rde-tab {
+  position: relative;
+  padding: 0 14px;
+  border: none;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.rde-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-color);
+}
+.rde-tab[aria-selected="true"] {
+  color: var(--rde-accent-text);
+}
+.rde-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--color-primary);
+}
+/* Contextual tabs (Word's "Table Tools"): only present while something is
+   selected, and marked as belonging to that selection. */
+.rde-tab-ctx {
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-color);
+}
+.rde-tab-ctx::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  opacity: 0.5;
+}
+.rde-tabs-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+}
+
+/* ---- Ribbon ---- */
+.rde-ribbon {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  min-height: 92px;
+  padding: 8px 6px 5px;
+  border-bottom: 1px solid var(--border-color-dark);
+  background: var(--rde-chrome);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.rde-grp {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+}
+.rde-grp + .rde-grp {
+  border-left: 1px solid var(--border-color);
+}
+.rde-grp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+/* Two stacked rows of small controls inside one group. */
+.rde-grp-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+}
+.rde-grp-label {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rde-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+.rde-grp-end {
+  margin-left: auto;
+  border-left: 1px solid var(--border-color);
+}
+
+/* ---- Ribbon button (icon over label) ---- */
+.rde-b {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 60px;
+  max-width: 96px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.rde-b .material-icons-outlined {
+  font-size: 21px;
+}
+.rde-b:hover:not(:disabled) {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+.rde-b:active:not(:disabled) {
+  background: var(--border-color);
+}
+.rde-b:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.rde-b[aria-pressed="true"] {
+  background: var(--color-primary-light);
+  border-color: rgba(255, 92, 0, 0.32);
+  color: var(--rde-accent-text);
+}
+/* Draggable palette tiles read as grabbable. */
+.rde-b[draggable="true"] {
+  cursor: grab;
+}
+.rde-b[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Compact horizontal variant. */
+.rde-b-sm {
+  flex-direction: row;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: none;
+  height: 30px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 12px;
+}
+.rde-b-sm .material-icons-outlined {
+  font-size: 17px;
+}
+
+/* Button that also shows the value it edits — keeps the ribbon informative
+   instead of a wall of identical triggers. */
+.rde-b-val {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 168px;
+  max-width: 240px;
+  height: 34px;
+  padding: 0 9px;
+  border-color: var(--border-color-dark);
+  background: var(--card-bg);
+  text-align: left;
+}
+.rde-b-val:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+.rde-b-val .material-icons-outlined {
+  font-size: 17px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.rde-b-val-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.rde-b-val-k {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rde-muted);
+}
+.rde-b-val-v {
+  font-size: 12px;
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rde-b-val-v.is-default {
+  color: var(--rde-muted);
+  font-style: italic;
+}
+
+/* ---- Segmented control ---- */
+.rde-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+}
+.rde-seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  min-width: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.rde-seg button .material-icons-outlined {
+  font-size: 17px;
+}
+.rde-seg button:hover:not([aria-pressed="true"]):not(:disabled) {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+.rde-seg button[aria-pressed="true"] {
+  background: var(--card-bg);
+  color: var(--rde-accent-text);
+  box-shadow: var(--shadow-sm);
+}
+.rde-seg button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Colour swatch button ---- */
+.rde-sw {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 56px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.rde-sw:hover {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+.rde-sw-chip {
+  width: 28px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(16, 24, 40, 0.22);
+  box-shadow: inset 0 -1px 0 rgba(16, 24, 40, 0.08);
+}
+
+/* ---- Inline labelled field ---- */
+.rde-f {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rde-f > span {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rde-muted);
+}
+.rde-f input,
+.rde-f select {
+  height: 29px;
+  padding: 0 9px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.rde-f input:focus,
+.rde-f select:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+.rde-f input:disabled,
+.rde-f select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Slider ---- */
+.rde-range {
+  width: 116px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+.rde-range-val {
+  min-width: 40px;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Style gallery (miniature documents) ---- */
+.rde-gal {
+  display: flex;
+  gap: 7px;
+  max-width: min(44vw, 560px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1px 1px 3px;
+  scrollbar-width: thin;
+}
+.rde-gal-item {
+  flex: 0 0 auto;
+  width: 88px;
+  padding: 0;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--card-bg);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.rde-gal-item:hover {
+  border-color: var(--color-primary);
+}
+.rde-gal-item[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+.rde-gal-thumb {
+  display: block;
+  height: 36px;
+  background: #fff;
+  padding: 5px 6px;
+}
+.rde-gal-name {
+  display: block;
+  padding: 4px 7px 5px;
+  border-top: 1px solid var(--border-color);
+  font-size: 10.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rde-gal-item[aria-pressed="true"] .rde-gal-name {
+  color: var(--rde-accent-text);
+}
+
+/* ---- Canvas ---- */
+.rde-canvas {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 26px 24px 48px;
+  background: var(--rde-canvas);
+}
+.rde-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  transform-origin: top center;
+}
+.rde-sheet {
+  width: 100%;
+  max-width: var(--rde-sheet-w);
+  background: #ffffff;
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.16), 0 14px 32px rgba(16, 24, 40, 0.14);
+}
+/* Sheets whose contents are app UI (the form builder canvas) follow the theme
+   instead of pretending to be paper. */
+.rde-sheet-app {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+.rde-sheet-frame {
+  display: block;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
+.rde-sheet-cap {
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: var(--rde-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ---- Email preview header ----
+   Frames the message the way an inbox does, so the subject line can be edited
+   in the place it is actually read. */
+.rde-mailhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 13px;
+  border-bottom: 1px solid #e6e9ee;
+  background: #ffffff;
+  border-radius: 3px 3px 0 0;
+}
+.rde-mailhead-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #eef1f5;
+  color: #4a5361;
+  font-size: 12px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.02em;
+}
+.rde-mailhead-body {
+  flex: 1;
+  min-width: 0;
+}
+.rde-mailhead-subject {
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #101828;
+  font-family: var(--font-family);
+  font-size: 15px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+}
+.rde-mailhead-subject::placeholder {
+  color: #667085;
+  font-weight: var(--font-weight-normal);
+}
+.rde-mailhead-subject:hover {
+  border-color: #d5dae1;
+}
+.rde-mailhead-subject:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+.rde-mailhead-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 0;
+  font-size: 11.5px;
+  color: #667085;
+}
+.rde-mailhead-meta strong {
+  color: #475467;
+  font-weight: var(--font-weight-semibold);
+}
+.rde-mailhead-vars {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid #dfe3e9;
+  border-radius: 999px;
+  background: #fff;
+  color: #475467;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.rde-mailhead-vars:hover {
+  border-color: var(--color-primary);
+  color: var(--rde-accent-text);
+}
+
+/* ---- Status bar ---- */
+.rde-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 30px;
+  height: 30px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border-color);
+  background: var(--rde-chrome);
+  font-size: 11.5px;
+  color: var(--rde-muted);
+}
+.rde-status-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rde-status select {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11.5px;
+}
+
+/* ---- Popover panel ---- */
+.rde-pop {
+  position: fixed;
+  z-index: 2200;
+  width: min(440px, calc(100vw - 28px));
+  padding: 14px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 10px;
+  background: var(--card-bg);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18), 0 2px 6px rgba(16, 24, 40, 0.10);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: rde-pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes rde-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rde-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rde-pop-title {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+.rde-pop-hint {
+  font-size: 11px;
+  color: var(--rde-muted);
+  line-height: 1.5;
+}
+.rde-pop textarea,
+.rde-pop input[type="text"] {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 7px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.rde-pop textarea:focus,
+.rde-pop input[type="text"]:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+.rde-pop-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rde-pop-foot .rde-pop-spacer {
+  flex: 1;
+}
+
+/* Colour picker inside a popover. */
+.rde-pop-color {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rde-pop-color input[type="color"] {
+  width: 46px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 7px;
+  background: var(--card-bg);
+  cursor: pointer;
+}
+.rde-pop-color input[type="text"] {
+  flex: 1;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.rde-pop-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rde-pop-preset {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid rgba(16, 24, 40, 0.22);
+  cursor: pointer;
+  padding: 0;
+}
+.rde-pop-preset:hover {
+  transform: scale(1.08);
+}
+
+/* Merge-variable chips — click to insert at the cursor. */
+.rde-vars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+.rde-var {
+  padding: 2px 8px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 999px;
+  background: var(--bg-color);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.rde-var:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--rde-accent-text);
+}
+
+/* ---- Locked / upgrade state ---- */
+.rde-locked {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--rde-canvas);
+}
+.rde-locked .material-icons-outlined {
+  font-size: 40px;
+  color: var(--text-tertiary);
+}
+.rde-locked h2 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.rde-locked p {
+  max-width: 46ch;
+  font-size: var(--font-size-lg);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ---- Narrow screens ---- */
+@media (max-width: 900px) {
+  .rde-canvas {
+    padding: 16px 12px 32px;
+  }
+  .rde-gal {
+    max-width: 60vw;
+  }
+  .rde-cmd-sub {
+    display: none;
+  }
+  input.rde-cmd-title {
+    width: 40vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rde-pop {
+    animation: none;
+  }
+  .rde *,
+  .rde-pop * {
+    transition-duration: 0.01ms !important;
+  }
+}
