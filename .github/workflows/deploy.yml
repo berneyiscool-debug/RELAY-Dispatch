@@ -10,9 +10,14 @@ permissions:
   pages: write
   id-token: write
 
+# Serialize Pages deploys. Do NOT cancel an in-progress deploy: cancelling
+# actions/deploy-pages mid-flight strands the Pages backend in
+# "deployment_in_progress", which makes the next run hang until it times out
+# ("Timeout reached, aborting!"). Letting each deploy finish before the next
+# starts is GitHub's recommended setting for Pages.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
