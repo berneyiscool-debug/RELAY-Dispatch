@@ -150,10 +150,23 @@ export async function documentAttachment(type, data, opts = {}) {
       renderDocumentPdf(type, data, opts),
       new Promise((_, reject) => setTimeout(() => reject(new Error('PDF render timed out')), 25000)),
     ]);
-    if (!rendered?.base64) return [];
+    if (!rendered?.base64) return failed(type, 'the document rendered empty');
     return [{ filename: rendered.filename, content: rendered.base64 }];
   } catch (err) {
-    console.warn(`Could not attach the ${type} PDF; sending the email without it.`, err);
-    return [];
+    return failed(type, err?.message || String(err), err);
   }
+}
+
+// Degrading to "no attachment" must stay non-fatal, but it must not be silent.
+// A render failure used to only console.warn, so the email went out with no PDF
+// and nothing said so — indistinguishable from the feature not existing. Tell
+// the user, and hang the reason off the returned array for callers that want it.
+function failed(type, reason, err) {
+  console.warn(`Could not attach the ${type} PDF; sending the email without it.`, err || reason);
+  const empty = [];
+  Object.defineProperty(empty, 'error', { value: reason, enumerable: false });
+  import('../components/Notifications.js')
+    .then(({ showToast }) => showToast(`The ${type} PDF could not be attached — ${reason}. The email was still sent.`, 'error'))
+    .catch(() => { /* toast is best-effort */ });
+  return empty;
 }

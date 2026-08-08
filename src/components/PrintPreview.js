@@ -226,7 +226,13 @@ export function generateDocument(type, data) {
           <td colspan="5" style="background:#F1F5F9; font-weight:700; color:#1E293B; border-bottom:2px solid #CBD5E1">${escapeHTML(sec.name || 'Phase')}${varBadge}</td>
         </tr>
       `;
-      sec.lineItems.forEach(item => {
+      // Sections arrive as either `lineItems` or the older `items` — QuoteDetail
+      // normalises one to the other on load, but records reaching us straight
+      // from the store (e.g. the PDF attached to an email) may not have been
+      // through it. An unguarded sec.lineItems.forEach threw here, and because
+      // documentAttachment swallows render failures the only symptom was an
+      // email arriving with no PDF attached.
+      (sec.lineItems || sec.items || []).forEach(item => {
         tableContent += `
           <tr>
             <td>${item.description ? escapeHTML(item.description) : '—'}</td>
