@@ -85,6 +85,42 @@ export function emailEnabledFor(template = 'invoice') {
   return !per || per[template] !== false;
 }
 
+/**
+ * Why is email off? null when sending is available, else a plain-English reason.
+ *
+ * Every gate above fails silently by design — a disabled feature just doesn't
+ * render its buttons, and callers written as `if (emailEnabledFor(x)) { send }`
+ * skip straight past. From the outside that is indistinguishable from "the email
+ * was sent but never arrived", which makes it impossible to self-diagnose. Any
+ * screen that hides an email action should be able to say why instead.
+ *
+ * @param {string} [template] also check the per-template toggle
+ */
+export function emailBlockedReason(template) {
+  if (!FLAGS.email) {
+    return 'The email feature is switched off in this build.';
+  }
+  if (!isCloudUser()) {
+    return 'This is a local (offline) account. Sending email is a cloud feature — sign in to a cloud account to send.';
+  }
+  const cfg = emailSettings();
+  if (cfg.mode === 'own-domain') {
+    if (!cfg.fromAddress) {
+      return 'Advanced "use your own domain" is selected, but no From address is set. Set one in Settings → Email → Advanced, or untick it to use RELAY sending.';
+    }
+    if (cfg.domainStatus !== 'verified') {
+      return `Advanced "use your own domain" is selected, but ${cfg.domain || 'that domain'} is not verified (status: ${cfg.domainStatus || 'none'}). Verify it, or untick it to use RELAY sending.`;
+    }
+  }
+  if (template) {
+    const per = cfg.enabledFor;
+    if (per && per[template] === false) {
+      return `Sending is switched off for "${template}" under Settings → Email → Send these.`;
+    }
+  }
+  return null;
+}
+
 async function invokeEmail(body) {
   const { data, error } = await supabase.functions.invoke('relay-email', { body });
   if (error) {

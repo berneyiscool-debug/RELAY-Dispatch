@@ -576,6 +576,8 @@ export function renderJobsList(container, params) {
 
       return true;
     });
+    console.log(`Filtered jobs count: ${filtered.length}. Filter range: ${filterStartDate} to ${filterEndDate}`);
+    console.log(filtered.map(j => ({ id: j.id, title: j.title, scheduledDate: j.scheduledDate, techId: j.technicianId, technicians: j.technicians, status: j.status })));
     table.updateData(filtered);
   }
 

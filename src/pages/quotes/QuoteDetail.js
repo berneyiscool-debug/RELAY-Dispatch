@@ -11,7 +11,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
-import { emailEnabledFor, sendEmail } from '../../utils/email.js';
+import { emailEnabledFor, sendEmail, emailBlockedReason } from '../../utils/email.js';
 import { quoteEmail } from '../../utils/emailTemplates.js';
 import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
@@ -925,8 +925,13 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
             quote.emailStatus = 'Sent';
             if (quote.status === 'Draft') quote.status = 'Sent';
             store.update('quotes', id, { emailStatus: 'Sent', status: quote.status });
-            // Don't claim an email went out when email isn't set up — just record the status.
-            showToast(canEmail ? `Quote emailed to ${to}` : 'Quote marked as sent', 'success');
+            // Never let "marked as sent" be mistaken for "the customer was emailed".
+            // When email is unavailable, say so and say why.
+            if (canEmail) {
+              showToast(`Quote emailed to ${to}`, 'success');
+            } else {
+              showToast(`Marked as sent — NO email was sent. ${emailBlockedReason('quote') || 'Email is unavailable.'}`, 'info');
+            }
             render();
           } catch (err) {
             showToast(err.message || 'Could not email quote', 'error');
@@ -941,7 +946,9 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       };
 
       const modalContent = document.createElement('div');
-      modalContent.innerHTML = `<p>Are you sure you want to send this quote to <strong>${escapeHTML(to || 'customer')}</strong>?</p>`;
+      modalContent.innerHTML = canEmail
+        ? `<p>Are you sure you want to send this quote to <strong>${escapeHTML(to || 'customer')}</strong>?</p>`
+        : `<p>This will mark the quote as <strong>Sent</strong>. <strong>No email will go to the customer</strong> — ${escapeHTML(emailBlockedReason('quote') || 'email is unavailable.')}</p>`;
       showModal({
         title: 'Confirm Send Quote',
         content: modalContent,

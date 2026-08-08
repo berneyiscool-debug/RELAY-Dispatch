@@ -1050,7 +1050,7 @@ export function renderJobDetail(container, { id }) {
                             })()}
                             ${p.subTasks && p.subTasks.length > 0 
                               ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>` 
-                              : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:default;" disabled />`
+                              : `<input type="checkbox" class="task-list-checkbox" data-path="${currentPath.join('-')}" ${p.progress === 100 ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;" />`
                             }
                           </div>
                         </div>
@@ -2729,8 +2729,8 @@ export function renderJobDetail(container, { id }) {
       const getTsHours = t => parseFloat(t.hours !== undefined ? t.hours : (t.durationHours !== undefined ? t.durationHours : (t.duration_hours !== undefined ? t.duration_hours : 0))) || 0;
       const getTsTaskName = t => t.taskName || t.phaseName || t.task_name || t.description || '—';
       const totalHours = timesheets.reduce((sum, t) => sum + getTsHours(t), 0);
-      const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
 
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">

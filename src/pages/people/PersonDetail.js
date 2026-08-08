@@ -205,10 +205,12 @@ export function renderPersonDetail(container, { id, tab }) {
       const sendBtn = tabContent.querySelector('#btn-send-portal-link');
       if (sendBtn) {
         sendBtn.addEventListener('click', async () => {
-          if (!person.email) {
-            showToast('Customer has no email address on file', 'error');
-            return;
-          }
+          try {
+            console.log('btn-send-portal-link clicked. Customer email:', person.email);
+            if (!person.email) {
+              showToast('Customer has no email address on file', 'error');
+              return;
+            }
 
           if (sendBtn.dataset.undoing === 'true') {
             const timerId = parseInt(sendBtn.dataset.timerId, 10);
@@ -309,6 +311,10 @@ export function renderPersonDetail(container, { id, tab }) {
               }}
             ]
           });
+          } catch (err) {
+            console.error('Error handling portal link send:', err);
+            showToast(`Error: ${err.message || err}`, 'error');
+          }
         });
       }
 

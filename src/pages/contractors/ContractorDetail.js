@@ -7,6 +7,9 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js';
+import { emailEnabledFor, sendEmail } from '../../utils/email.js';
+import { contractorInviteEmail } from '../../utils/emailTemplates.js';
+import { contractorPortalUrl } from '../../utils/portalLinks.js';
 
 export function renderContractorDetail(container, params) {
   const contractor = store.getById('contractors', params.id);
@@ -190,6 +193,9 @@ export function renderContractorDetail(container, params) {
               <button class="btn btn-primary btn-sm" id="btn-copy-magic-link" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px">content_copy</span> Copy Magic Link
               </button>
+              <button class="btn btn-secondary btn-sm" id="btn-send-portal-link" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap;">
+                <span class="material-icons-outlined" style="font-size:16px">send</span> Send Link
+              </button>
               ${contractor.portalPasscode ? `
                 <button class="btn btn-secondary btn-sm text-danger" id="btn-reset-contractor-pin" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap; border-color:#fee2e2;">
                   <span class="material-icons-outlined" style="font-size:16px">lock_reset</span> Reset PIN
@@ -211,6 +217,117 @@ export function renderContractorDetail(container, params) {
             }).catch(() => {
               showToast('Failed to copy link', 'error');
             });
+          }
+        });
+      }
+
+      const sendBtn = tabContent.querySelector('#btn-send-portal-link');
+      if (sendBtn) {
+        sendBtn.addEventListener('click', async () => {
+          try {
+            if (!contractor.email) {
+              showToast('Subcontractor has no email address on file', 'error');
+              return;
+            }
+
+            if (sendBtn.dataset.undoing === 'true') {
+              const timerId = parseInt(sendBtn.dataset.timerId, 10);
+              const intervalId = parseInt(sendBtn.dataset.intervalId, 10);
+              clearTimeout(timerId);
+              clearInterval(intervalId);
+              sendBtn.dataset.undoing = 'false';
+              sendBtn.innerHTML = sendBtn.dataset.originalHtml || sendBtn.innerHTML;
+              sendBtn.classList.remove('btn-danger');
+              showToast('Send cancelled', 'info');
+              return;
+            }
+
+            const original = sendBtn.innerHTML;
+
+            const startCountdown = () => {
+              sendBtn.dataset.originalHtml = original;
+              sendBtn.dataset.undoing = 'true';
+              sendBtn.classList.add('btn-danger');
+              let timeLeft = 10;
+
+              const updateText = () => {
+                sendBtn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+              };
+              updateText();
+
+              const intervalId = setInterval(() => {
+                timeLeft--;
+                if (timeLeft > 0) {
+                  updateText();
+                } else {
+                  clearInterval(intervalId);
+                }
+              }, 1000);
+
+              const timerId = setTimeout(async () => {
+                sendBtn.dataset.undoing = 'false';
+                sendBtn.classList.remove('btn-danger');
+                sendBtn.disabled = true;
+                sendBtn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+
+                try {
+                  // Real send via Resend when email is configured
+                  if (emailEnabledFor('contractor_invite') && contractor.email) {
+                    const { subject, html } = contractorInviteEmail(contractor, { portalUrl: contractorPortalUrl(contractor) });
+                    await sendEmail({ to: contractor.email, subject, html, template: 'contractor_invite', relatedType: 'contractor', relatedId: contractor.id });
+                    showToast(`Portal invite emailed to ${contractor.email}`, 'success');
+                    store.create('notifications', {
+                      title: 'Contractor Portal Invite Sent',
+                      message: `Portal access link emailed to ${contractor.businessName} (${contractor.email})`,
+                      link: `/contractors/${contractor.id}`, read: true, createdAt: new Date().toISOString(), status: 'Converted'
+                    });
+                  } else {
+                    const content = document.createElement('div');
+                    content.innerHTML = `<p>Simulated dispatching secure contractor portal link via email to <strong>${escapeHTML(contractor.email)}</strong>.</p>`;
+                    showModal({
+                      title: 'Send Portal Link',
+                      content,
+                      actions: [
+                        { label: 'Dismiss', className: 'btn-primary', onClick: (close) => close() }
+                      ]
+                    });
+                    store.create('notifications', {
+                      title: 'Portal Link Dispatched',
+                      message: `Portal access link sent to ${contractor.businessName} (${contractor.email})`,
+                      link: `/contractors/${contractor.id}`,
+                      read: true,
+                      createdAt: new Date().toISOString(),
+                      status: 'Converted'
+                    });
+                  }
+                } catch (err) {
+                  showToast(err.message || 'Error sending email', 'error');
+                } finally {
+                  sendBtn.disabled = false;
+                  sendBtn.innerHTML = original;
+                }
+              }, 10000);
+
+              sendBtn.dataset.timerId = timerId.toString();
+              sendBtn.dataset.intervalId = intervalId.toString();
+            };
+
+            const modalContent = document.createElement('div');
+            modalContent.innerHTML = `<p>Are you sure you want to send the subcontractor portal invite email to <strong>${escapeHTML(contractor.email)}</strong>?</p>`;
+            showModal({
+              title: 'Confirm Send Portal Invite',
+              content: modalContent,
+              actions: [
+                { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+                { label: 'Send', className: 'btn-primary', onClick: (close) => {
+                  close();
+                  startCountdown();
+                }}
+              ]
+            });
+          } catch (err) {
+            console.error('Error handling portal link send:', err);
+            showToast(`Error: ${err.message || err}`, 'error');
           }
         });
       }

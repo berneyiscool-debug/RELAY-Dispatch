@@ -13,7 +13,7 @@ import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
-import { emailEnabledFor, sendEmail } from '../../utils/email.js';
+import { emailEnabledFor, sendEmail, emailBlockedReason } from '../../utils/email.js';
 import { invoiceEmail, receiptEmail, reminderEmail } from '../../utils/emailTemplates.js';
 import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
@@ -103,6 +103,7 @@ export function renderInvoiceDetail(container, { id }) {
           ${!isNew && paymentsEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-pay-link" data-tooltip="Create a secure Stripe card-payment link for this invoice and copy it" data-tooltip-pos="left"><span class="material-icons-outlined">link</span> Pay Link</button>` : ''}
           ${!isNew && emailEnabledFor('invoice') && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-secondary" id="btn-email-invoice" data-tooltip="Email this invoice to the customer via your configured sender" data-tooltip-pos="left"><span class="material-icons-outlined">mail</span> Email</button>` : ''}
           ${!isNew && (invoice.status === 'Sent' || invoice.status === 'Overdue') ? `<button class="btn btn-primary" id="btn-mark-paid" data-tooltip="Record a bank transfer, cheque, cash, or card payment against this invoice" data-tooltip-pos="left"><span class="material-icons-outlined">check_circle</span> Mark Paid</button>` : ''}
+          ${!isNew && invoice.status === 'Paid' && emailEnabledFor('receipt') ? `<button class="btn btn-primary" id="btn-send-receipt" data-tooltip="Email a payment receipt for this invoice to the customer" data-tooltip-pos="left"><span class="material-icons-outlined">receipt</span> Send Receipt</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
              <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:var(--z-dropdown);min-width:160px">
@@ -789,8 +790,13 @@ export function renderInvoiceDetail(container, { id }) {
 
             store.update('invoices', id, { status: 'Sent' });
             invoice.status = 'Sent';
-            // Don't claim an email went out when email isn't set up — just record the status.
-            showToast(canEmail ? `Invoice emailed to ${to}` : 'Invoice marked as sent', 'success');
+            // Never let "marked as sent" be mistaken for "the customer was emailed".
+            // When email is unavailable, say so and say why.
+            if (canEmail) {
+              showToast(`Invoice emailed to ${to}`, 'success');
+            } else {
+              showToast(`Marked as sent — NO email was sent. ${emailBlockedReason('invoice') || 'Email is unavailable.'}`, 'info');
+            }
             render();
           } catch (err) {
             showToast(err.message || 'Could not email invoice', 'error');
@@ -805,7 +811,9 @@ export function renderInvoiceDetail(container, { id }) {
       };
 
       const modalContent = document.createElement('div');
-      modalContent.innerHTML = `<p>Are you sure you want to send this invoice to <strong>${escapeHTML(to || 'customer')}</strong>?</p>`;
+      modalContent.innerHTML = canEmail
+        ? `<p>Are you sure you want to send this invoice to <strong>${escapeHTML(to || 'customer')}</strong>?</p>`
+        : `<p>This will mark the invoice as <strong>Sent</strong>. <strong>No email will go to the customer</strong> — ${escapeHTML(emailBlockedReason('invoice') || 'email is unavailable.')}</p>`;
       showModal({
         title: 'Confirm Send Invoice',
         content: modalContent,
@@ -1033,26 +1041,95 @@ export function renderInvoiceDetail(container, { id }) {
             invoice.status = 'Paid';
             invoice.paidDate = paidDate;
             invoice.paymentMethod = paymentMethod;
-            // Best-effort: email a receipt if that template is switched on.
-            if (emailEnabledFor('receipt')) {
-              const rTo = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
-              if (rTo) {
-                const { subject, html } = receiptEmail(invoice, { portalUrl: portalUrlForDocument(invoice) });
-                // The paid invoice doubles as the receipt document. Rendering is
-                // async but must not hold up "marked as paid", so it stays in
-                // the same fire-and-forget chain.
-                documentAttachment('invoice', invoice)
-                  .then(attachments => sendEmail({ to: rTo, subject, html, attachments, template: 'receipt', relatedType: 'invoice', relatedId: invoice.id }))
-                  .then(() => showToast(`Receipt emailed to ${rTo}`, 'success'))
-                  .catch(err => showToast(`Marked paid, but receipt email failed: ${err.message || err}`, 'error'));
-              }
-            }
+            // No receipt is sent here. Marking paid is a bookkeeping action and
+            // used to fire a customer-facing email as a side effect, with no
+            // confirmation and no way to stop it. Once paid, "Mark Paid" is
+            // replaced by an explicit "Send Receipt" button that follows the
+            // same confirm-then-undo flow as every other email action.
             showToast('Invoice marked as paid', 'success');
             render();
             close();
           }}
         ],
         width: 350
+      });
+    });
+
+    // Replaces the receipt that used to fire automatically on Mark Paid. Same
+    // flow as the other email actions: confirm, then a 10s window where the
+    // button becomes "Undo Send" before anything actually goes out.
+    container.querySelector('#btn-send-receipt')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const to = invoice.customerEmail || (invoice.customerId && store.getById('customers', invoice.customerId)?.email);
+      if (!to) { showToast('No customer email on file for this invoice', 'error'); return; }
+
+      if (btn.dataset.undoing === 'true') {
+        clearTimeout(parseInt(btn.dataset.timerId, 10));
+        clearInterval(parseInt(btn.dataset.intervalId, 10));
+        btn.dataset.undoing = 'false';
+        btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+        btn.classList.remove('btn-danger');
+        showToast('Send cancelled', 'info');
+        return;
+      }
+
+      const original = btn.innerHTML;
+
+      const startCountdown = () => {
+        btn.dataset.originalHtml = original;
+        btn.dataset.undoing = 'true';
+        btn.classList.add('btn-danger');
+        let timeLeft = 10;
+
+        const updateText = () => {
+          btn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+        };
+        updateText();
+
+        const intervalId = setInterval(() => {
+          timeLeft--;
+          if (timeLeft > 0) {
+            updateText();
+          } else {
+            clearInterval(intervalId);
+          }
+        }, 1000);
+
+        const timerId = setTimeout(async () => {
+          btn.dataset.undoing = 'false';
+          btn.classList.remove('btn-danger');
+          btn.disabled = true;
+          btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+          try {
+            const { subject, html } = receiptEmail(invoice, { portalUrl: portalUrlForDocument(invoice) });
+            // The paid invoice doubles as the receipt document.
+            const attachments = await documentAttachment('invoice', invoice);
+            await sendEmail({ to, subject, html, attachments, template: 'receipt', relatedType: 'invoice', relatedId: invoice.id });
+            showToast(`Receipt emailed to ${to}`, 'success');
+          } catch (err) {
+            showToast(err.message || 'Could not email receipt', 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalHtml || original;
+          }
+        }, 10000);
+
+        btn.dataset.timerId = timerId;
+        btn.dataset.intervalId = intervalId;
+      };
+
+      const modalContent = document.createElement('div');
+      modalContent.innerHTML = `<p>Are you sure you want to email a payment receipt to <strong>${escapeHTML(to)}</strong>?</p>`;
+      showModal({
+        title: 'Confirm Send Receipt',
+        content: modalContent,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Send', className: 'btn-primary', onClick: (close) => {
+            close();
+            startCountdown();
+          }}
+        ]
       });
     });
 

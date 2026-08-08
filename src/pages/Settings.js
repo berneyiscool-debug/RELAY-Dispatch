@@ -11,7 +11,7 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { FLAGS } from '../utils/flags.js';
-import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail } from '../utils/email.js';
+import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
@@ -3929,6 +3929,21 @@ export function renderSettings(container) {
           <p style="color:var(--text-secondary);margin-top:0;">
             Send themed quotes, invoices, receipts and reminders straight from RELAY — no account or domain setup needed. Every send is logged so Deputy and Reports can see what went out.
           </p>
+
+          ${(() => {
+            // Say plainly when sending is off. Without this the only symptom is
+            // email actions quietly not appearing (or quietly doing nothing),
+            // which reads exactly like "the email never arrived".
+            const reason = emailBlockedReason();
+            if (!reason) return '';
+            return `<div style="display:flex;gap:10px;align-items:flex-start;background:color-mix(in srgb, var(--color-warning) 12%, transparent);border:1px solid var(--color-warning);border-radius:8px;padding:12px 14px;margin:14px 0;">
+              <span class="material-icons-outlined" style="color:var(--color-warning);font-size:20px;flex-shrink:0;">warning_amber</span>
+              <div>
+                <div style="font-weight:600;font-size:13px;margin-bottom:2px;">Email is not sending right now</div>
+                <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">${escapeHTML(reason)}</div>
+              </div>
+            </div>`;
+          })()}
 
           <h5 style="margin:18px 0 8px;">Your sending addresses</h5>
           <div id="em-sender-box" style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin-bottom:6px;">

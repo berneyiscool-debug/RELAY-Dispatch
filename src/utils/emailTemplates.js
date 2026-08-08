@@ -31,6 +31,7 @@ export const EMAIL_TEMPLATES = [
   { key: 'receipt', label: 'Payment receipt', vars: ['customer', 'number', 'total', 'company'], cta: false },
   { key: 'reminder', label: 'Payment reminder', vars: ['customer', 'number', 'total', 'dueDate', 'company'], cta: true },
   { key: 'portal_invite', label: 'Portal invite', vars: ['customer', 'company'], cta: true },
+  { key: 'contractor_invite', label: 'Contractor portal invite', vars: ['customer', 'company'], cta: true },
 ];
 
 // Merge the effective config for a template: defaults < saved settings < override.
@@ -244,6 +245,24 @@ export function portalInviteEmail(customer, { portalUrl, override } = {}) {
   };
 }
 
+export function contractorInviteEmail(contractor, { portalUrl, override } = {}) {
+  const cfg = resolveConfig('contractor_invite', override);
+  const vars = { ...baseVars(contractor, cfg.branding), number: '', total: '', dueDate: '' };
+  vars.customer = contractor.name || contractor.contactName || contractor.businessName || 'there';
+  const defaultIntro = `Hi ${escapeHTML(vars.customer)}, you can now view your assigned jobs, schedule and compliance documents online.`;
+  return {
+    subject: fillText(cfg.text.subject, vars) || `Your ${cfg.branding.companyName} contractor portal`,
+    html: shell(cfg.branding, {
+      preheader: 'Access your assigned tasks and submit timesheets online.',
+      heading: `Welcome to the ${cfg.branding.companyName} portal`,
+      intro: cfg.text.intro ? fillHtml(cfg.text.intro, vars) : defaultIntro,
+      ctaLabel: portalUrl ? (cfg.text.ctaLabel || 'Open my portal') : null,
+      ctaUrl: portalUrl || null,
+      note: cfg.text.note ? fillHtml(cfg.text.note, vars) : 'Bookmark the link above for easy access.',
+    }),
+  };
+}
+
 // Representative sample data so the Settings editor can render a live preview.
 function sampleData() {
   const in7 = new Date(Date.now() + 7 * 864e5).toISOString();
@@ -268,6 +287,7 @@ export function previewEmail(type, override) {
     case 'receipt': return receiptEmail(s.receipt, { portalUrl, override });
     case 'reminder': return reminderEmail(s.reminder, { payUrl: 'https://pay.example/checkout', portalUrl, override });
     case 'portal_invite': return portalInviteEmail(s.portal_invite, { portalUrl, override });
+    case 'contractor_invite': return contractorInviteEmail(s.portal_invite, { portalUrl, override });
     default: return { subject: '', html: '' };
   }
 }
