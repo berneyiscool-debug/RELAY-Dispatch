@@ -81,7 +81,7 @@ export function renderLogin(container) {
               <div class="auth-header" style="text-align: center; margin-bottom: 24px;">
                 <img src="${logoLarge}" alt="DISPATCH" style="max-height: 48px; max-width: 240px; object-fit: contain; margin: 0 auto 12px auto; display: block;" />
                 <p class="auth-subtitle" style="margin-top: 4px; margin-bottom: 4px;">Dispatch & Field Service Management Platform</p>
-                <div style="font-size:10px; color:var(--text-tertiary); font-weight:500; letter-spacing:0.5px;">v1.2.2</div>
+                <div style="font-size:10px; color:#888; font-weight:500; letter-spacing:0.5px;">v1.2.4</div>
               </div>
 
               <!-- Error Alert Panel -->

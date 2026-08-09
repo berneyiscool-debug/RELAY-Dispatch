@@ -23,6 +23,11 @@ dist-electron
 # Debug / scratch experiments — never commit
 scratch/
 scratch_*
+# One-off agent debugging scripts that keep landing in the repo root
+rebrand.js
+test-script*.js
+test_schema.js
+test-*.js
 
 # Local data exports / debug dumps — never commit. These are real business
 # records (customer names, site addresses, job costs) and the repo is public.

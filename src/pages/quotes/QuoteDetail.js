@@ -503,22 +503,78 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
 
     container.querySelector('#btn-email-quote')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
-      const original = btn.innerHTML;
       const to = quote.customerEmail || (quote.customerId && store.getById('customers', quote.customerId)?.email);
       if (!to) { showToast('No customer email on file for this quote', 'error'); return; }
-      btn.disabled = true;
-      btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
-      try {
-        const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
-        const attachments = await documentAttachment('quote', quote);
-        await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
-        showToast(`Quote emailed to ${to}`, 'success');
-      } catch (err) {
-        showToast(err.message || 'Could not email quote', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = original;
+
+      if (btn.dataset.undoing === 'true') {
+        const timerId = parseInt(btn.dataset.timerId, 10);
+        const intervalId = parseInt(btn.dataset.intervalId, 10);
+        clearTimeout(timerId);
+        clearInterval(intervalId);
+        btn.dataset.undoing = 'false';
+        btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+        btn.classList.remove('btn-danger');
+        showToast('Send cancelled', 'info');
+        return;
       }
+
+      const original = btn.innerHTML;
+
+      const startCountdown = () => {
+        btn.dataset.originalHtml = original;
+        btn.dataset.undoing = 'true';
+        btn.classList.add('btn-danger');
+        let timeLeft = 10;
+
+        const updateText = () => {
+          btn.innerHTML = `<span class="material-icons-outlined">undo</span> Undo Send (${timeLeft}s)`;
+        };
+        updateText();
+
+        const intervalId = setInterval(() => {
+          timeLeft--;
+          if (timeLeft > 0) {
+            updateText();
+          } else {
+            clearInterval(intervalId);
+          }
+        }, 1000);
+
+        const timerId = setTimeout(async () => {
+          btn.dataset.undoing = 'false';
+          btn.classList.remove('btn-danger');
+          btn.disabled = true;
+          btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
+          try {
+            const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
+            const attachments = await documentAttachment('quote', quote);
+            await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
+            showToast(`Quote emailed to ${to}`, 'success');
+          } catch (err) {
+            showToast(err.message || 'Could not email quote', 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalHtml || original;
+          }
+        }, 10000);
+
+        btn.dataset.timerId = timerId;
+        btn.dataset.intervalId = intervalId;
+      };
+
+      const modalContent = document.createElement('div');
+      modalContent.innerHTML = `<p>Are you sure you want to email this quote to <strong>${escapeHTML(to)}</strong>?</p>`;
+      showModal({
+        title: 'Confirm Email Quote',
+        content: modalContent,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Send', className: 'btn-primary', onClick: (close) => {
+            close();
+            startCountdown();
+          }}
+        ]
+      });
     });
 
     container.querySelector('#btn-create-revision')?.addEventListener('click', () => {
