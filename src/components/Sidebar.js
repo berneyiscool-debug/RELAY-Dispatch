@@ -255,8 +255,15 @@ function syncActiveFromRoute(sidebar, path) {
 
 // Compute the current user's display identity for the sidebar profile block.
 function getSidebarProfileInfo() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
-  const name = currentUser.name || 'Unknown User';
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const name = currentUser.name || 
+               currentUser.full_name || 
+               currentUser.displayName || 
+               currentUser.user_metadata?.full_name || 
+               currentUser.user_metadata?.name || 
+               (currentUser.email ? currentUser.email.split('@')[0] : null) || 
+               currentUser.username || 
+               'Admin User';
   let role = currentUser.userTypeName;
   if (!role && currentUser.userTypeId) {
     const ut = store.getById('userTypes', currentUser.userTypeId);
