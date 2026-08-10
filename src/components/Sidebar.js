@@ -1,253 +1,185 @@
 // ============================================
-// FIELDFORGE — SIDEBAR COMPONENT (CATEGORIZED)
+// RELAY — SIDEBAR COMPONENT (two-level master–detail)
 // ============================================
+// Supabase-style nav: a slim primary rail of top sections + a secondary
+// submenu panel that opens beside it for grouped sections. Keeps the primary
+// rail short (never scrolls); each group's pages live in the second panel.
 
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
 
-// Structured navigation items with collapsible categories
+// Primary sections. Items without `items[]` are direct pages (no submenu);
+// items with `items[]` open a secondary panel.
 const navItems = [
-  // Top Level / Uncollapsed Items
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
   { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
-  
-  // Collapsible Category Groups
   {
-    category: 'Workflow',
-    id: 'cat-workflow',
-    icon: 'account_tree',
+    category: 'Workflow', id: 'cat-workflow', icon: 'account_tree',
     items: [
       { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
       { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
       { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
       { id: 'projects', icon: 'folder_copy', label: 'Projects', path: '/projects' },
       { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
-      { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' }
-    ]
+      { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' },
+    ],
   },
   {
-    category: 'People',
-    id: 'cat-people',
-    icon: 'groups',
+    category: 'People', id: 'cat-people', icon: 'groups',
     items: [
       { id: 'people', icon: 'people', label: 'Customers', path: '/people' },
       { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
-      { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/suppliers' }
-    ]
+      { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/suppliers' },
+    ],
   },
   {
-    category: 'Resources',
-    id: 'cat-resources',
-    icon: 'widgets',
+    category: 'Resources', id: 'cat-resources', icon: 'widgets',
     items: [
       { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
       { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
       { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
-      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' }
-    ]
+      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
+    ],
   },
   {
-    category: 'Admin',
-    id: 'cat-admin',
-    icon: 'admin_panel_settings',
+    category: 'Admin', id: 'cat-admin', icon: 'admin_panel_settings',
     items: [
       { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
       { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports' },
-      { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' }
-    ]
-  }
+      { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' },
+    ],
+  },
 ];
+
+let sidebarRef = null;
+
+function isLocalMode() {
+  return !store.companyId || String(store.companyId).startsWith('acct_');
+}
+
+function buildLogoHtml(settings, collapsed) {
+  const logoSrc = collapsed ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
+  if (logoSrc) {
+    return `<img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${collapsed ? '32px' : '85%'}; object-fit: contain; display: block; margin: auto;" />`;
+  }
+  return `
+    <div class="logo-icon">R</div>
+    <span class="logo-text">Relay — Dispatch</span>
+  `;
+}
 
 export function createSidebar() {
   const sidebar = document.createElement('aside');
-  sidebar.className = 'sidebar';
+  sidebar.className = 'sidebar two-level';
   sidebar.id = 'sidebar';
+  sidebarRef = sidebar;
 
-  // Check saved expand state
-  const isExpanded = localStorage.getItem('simpro_sidebar_expanded') === 'true';
-  if (isExpanded) sidebar.classList.add('expanded');
+  const railCollapsed = localStorage.getItem('simpro_rail_collapsed') === 'true';
+  if (railCollapsed) sidebar.classList.add('rail-collapsed');
 
   const settings = store.getSettings();
-  const logoSrc = isExpanded 
-    ? (settings.logo || settings.logoSmall) 
-    : (settings.logoSmall || settings.logo);
-  const logoHtml = logoSrc 
-    ? `<img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${isExpanded ? '85%' : '32px'}; object-fit: contain; display: block; margin: auto;" />`
-    : `
-      <div class="logo-icon">R</div>
-      <span class="logo-text" style="${isExpanded ? 'display: block;' : 'display: none;'}">Relay — Dispatch</span>
-    `;
+  const local = isLocalMode();
 
-  let html = `
-    <div class="sidebar-logo ${settings.logo ? 'custom-logo-active' : ''}" id="sidebar-logo">
-      ${logoHtml}
-    </div>
-    <div class="sidebar-scroll-arrow up" id="sidebar-scroll-up">
-      <span class="material-icons-outlined">keyboard_arrow_up</span>
-    </div>
-    <nav class="sidebar-nav" id="sidebar-nav">
-  `;
-
-  // Fetch collapsed states from localStorage
-  let collapsedCats = {};
-  try {
-    collapsedCats = JSON.parse(localStorage.getItem('simpro_sidebar_collapsed_categories') || '{}');
-  } catch (e) {}
-
-  const currentPath = window.location.hash.slice(1) || '/';
-  const basePath = currentPath === '/' ? '/' : '/' + currentPath.split('/').filter(Boolean)[0];
-
-  // Render items loop
+  // --- Primary rail items ---
+  let railHtml = '';
   navItems.forEach(item => {
     if (item.category) {
-      // Auto expand categories that contain the active page
-      const hasActiveChild = item.items.some(child => child.path === basePath);
-      let isCollapsed = collapsedCats[item.id] === true;
-      if (hasActiveChild) {
-        isCollapsed = false; // Override saved collapsed state to keep active paths visible
-      }
-
-      html += `
-        <div class="sidebar-category-container" data-category-id="${item.id}">
-          <button class="sidebar-category-header" data-category-id="${item.id}" id="cat-header-${item.id}" aria-expanded="${!isCollapsed}">
-            <span class="category-chevron">
-              <span class="material-icons-outlined" aria-hidden="true">${isCollapsed ? 'keyboard_arrow_right' : 'expand_more'}</span>
-            </span>
-            <span class="category-icon">
-              <span class="material-icons-outlined" aria-hidden="true">${item.icon}</span>
-            </span>
-            <span class="category-label">${item.category}</span>
-          </button>
-          <div class="sidebar-category-items ${isCollapsed ? 'collapsed' : ''}" id="cat-items-${item.id}">
-      `;
-
-      item.items.forEach(child => {
-        const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
-        const isChildDisabled = isLocalMode && child.id === 'documents';
-        html += `
-          <button class="sidebar-nav-item sub-item ${isChildDisabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${isChildDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
-            <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
-            <span class="nav-label">${child.label}</span>
-          </button>
-        `;
-      });
-
-      html += `
-          </div>
-        </div>
-      `;
+      railHtml += `
+        <button class="rail-item rail-opener" data-section="${item.id}" data-id="${item.id}" id="rail-${item.id}" title="${item.category}">
+          <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
+          <span class="nav-label">${item.category}</span>
+          <span class="rail-caret material-icons-outlined" aria-hidden="true">chevron_right</span>
+        </button>`;
     } else {
-      // Top Level Item
-      const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
-      const isItemDisabled = isLocalMode && item.id === 'documents';
-      html += `
-        <button class="sidebar-nav-item ${isItemDisabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}" ${isItemDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
+      const disabled = local && item.id === 'documents';
+      railHtml += `
+        <button class="rail-item rail-page ${disabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="rail-${item.id}" title="${item.label}" ${disabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
           <span class="nav-label">${item.label}</span>
-        </button>
-      `;
+        </button>`;
     }
   });
 
-  html += `
-    </nav>
-    <div class="sidebar-scroll-arrow down" id="sidebar-scroll-down">
-      <span class="material-icons-outlined">keyboard_arrow_down</span>
-    </div>
-    <div style="padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.06);">
-      <button id="btn-logout" class="sidebar-nav-item" style="width: calc(100% - 16px);">
-        <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
-        <span class="nav-label">Logout</span>
+  // --- Secondary submenu panels (one per group, hidden until its section is active) ---
+  let panelsHtml = '';
+  navItems.forEach(item => {
+    if (!item.category) return;
+    let itemsHtml = '';
+    item.items.forEach(child => {
+      const disabled = local && child.id === 'documents';
+      itemsHtml += `
+        <button class="submenu-item ${disabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${disabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
+          <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
+          <span class="nav-label">${child.label}</span>
+        </button>`;
+    });
+    panelsHtml += `
+      <div class="submenu-panel" data-section="${item.id}">
+        <div class="submenu-head">${item.category}</div>
+        <nav class="submenu-nav">${itemsHtml}</nav>
+      </div>`;
+  });
+
+  sidebar.innerHTML = `
+    <div class="sidebar-rail">
+      <nav class="rail-nav" id="rail-nav">${railHtml}</nav>
+      <div class="sidebar-footer">
+        <button class="sidebar-profile" id="sidebar-profile" title="View profile">
+          <span class="sidebar-profile-avatar" id="sidebar-profile-avatar" aria-hidden="true"><span class="material-icons-outlined">account_circle</span></span>
+          <span class="sidebar-profile-info">
+            <span class="sidebar-profile-name" id="sidebar-profile-name">Loading…</span>
+            <span class="sidebar-profile-role" id="sidebar-profile-role">Role</span>
+          </span>
+        </button>
+        <button id="btn-logout" class="rail-item rail-page">
+          <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
+          <span class="nav-label">Logout</span>
+        </button>
+      </div>
+      <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Collapse or expand the menu labels">
+        <span class="material-icons-outlined" id="sidebar-toggle-icon" aria-hidden="true">chevron_left</span>
       </button>
-      <div class="sidebar-version nav-label" style="text-align: center; font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-top: 8px; font-weight: 500; letter-spacing: 0.5px;">v1.2.4</div>
     </div>
-    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Expand or collapse the sidebar">
-      <span class="material-icons-outlined" id="sidebar-toggle-icon" aria-hidden="true">chevron_right</span>
-    </button>
+    <div class="sidebar-submenu" id="sidebar-submenu">${panelsHtml}</div>
   `;
-  
-  sidebar.innerHTML = html;
 
-  // Event listeners
+  // --- Interaction ---
   sidebar.addEventListener('click', (e) => {
-    // 1. Collapsible category header click (only active when expanded)
-    const catHeader = e.target.closest('.sidebar-category-header');
-    if (catHeader) {
-      if (!sidebar.classList.contains('expanded')) return; // Ignore clicks if sidebar is collapsed (hover triggers flyout)
-      
-      const catId = catHeader.dataset.categoryId;
-      const itemsContainer = sidebar.querySelector(`#cat-items-${catId}`);
-      const chevronSpan = catHeader.querySelector('.category-chevron .material-icons-outlined');
+    // Group opener → reveal its submenu panel (does not navigate).
+    const opener = e.target.closest('.rail-opener');
+    if (opener) { setActiveSection(sidebar, opener.dataset.id); return; }
 
-      if (itemsContainer && chevronSpan) {
-        itemsContainer.classList.toggle('collapsed');
-        const isCollapsed = itemsContainer.classList.contains('collapsed');
-        chevronSpan.textContent = isCollapsed ? 'keyboard_arrow_right' : 'expand_more';
+    // Logout handled by its own listener.
+    if (e.target.closest('#btn-logout')) return;
 
-        // Persist collapsed state
-        try {
-          const collapsed = JSON.parse(localStorage.getItem('simpro_sidebar_collapsed_categories') || '{}');
-          collapsed[catId] = isCollapsed;
-          localStorage.setItem('simpro_sidebar_collapsed_categories', JSON.stringify(collapsed));
-        } catch (err) {}
-      }
-      return;
-    }
-
-    // 2. Navigation item click
-    const navItem = e.target.closest('.sidebar-nav-item');
-    if (navItem && navItem.id !== 'btn-logout') {
-      if (navItem.classList.contains('disabled-local')) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      const path = navItem.dataset.path;
+    // Any page link (direct rail page or submenu item).
+    const navBtn = e.target.closest('[data-path]');
+    if (navBtn) {
+      if (navBtn.classList.contains('disabled-local')) { e.preventDefault(); e.stopPropagation(); return; }
+      const path = navBtn.dataset.path;
       if (path) router.navigate(path);
     }
   });
 
-  const logoBtn = sidebar.querySelector('#sidebar-logo');
-  logoBtn.addEventListener('click', () => router.navigate('/'));
+  // Profile (footer, above Logout).
+  const profileBtn = sidebar.querySelector('#sidebar-profile');
+  if (profileBtn) profileBtn.addEventListener('click', () => router.navigate('/profile'));
+  window.addEventListener('fieldforge-profile-updated', () => updateSidebarProfile(sidebar));
+  updateSidebarProfile(sidebar);
 
+  // Toggle collapses the primary rail to icons only.
   const toggleBtn = sidebar.querySelector('#sidebar-toggle');
-  toggleBtn.addEventListener('click', () => toggleSidebar(sidebar));
-
-  const nav = sidebar.querySelector('#sidebar-nav');
-  const upArrow = sidebar.querySelector('#sidebar-scroll-up');
-  const downArrow = sidebar.querySelector('#sidebar-scroll-down');
-
-  const updateArrows = () => {
-    if (sidebar.classList.contains('expanded')) {
-      upArrow.classList.remove('visible');
-      downArrow.classList.remove('visible');
-      return;
-    }
-    
-    const { scrollTop, scrollHeight, clientHeight } = nav;
-    upArrow.classList.toggle('visible', scrollTop > 0);
-    downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
-  };
-
-  nav.addEventListener('scroll', updateArrows);
-  
-  upArrow.addEventListener('click', () => {
-    nav.scrollBy({ top: -100, behavior: 'smooth' });
-  });
-  
-  downArrow.addEventListener('click', () => {
-    nav.scrollBy({ top: 100, behavior: 'smooth' });
+  toggleBtn.addEventListener('click', () => {
+    sidebar.classList.toggle('rail-collapsed');
+    localStorage.setItem('simpro_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
   });
 
-  // Call after some delay to ensure layout is done
-  setTimeout(updateArrows, 100);
-
+  // Logout confirm-in-place.
   const logoutBtn = sidebar.querySelector('#btn-logout');
   if (logoutBtn) {
     let confirmState = false;
     let resetTimeout = null;
-
     function resetLogoutBtn() {
       confirmState = false;
       logoutBtn.classList.remove('confirm-logout');
@@ -256,9 +188,8 @@ export function createSidebar() {
       const label = logoutBtn.querySelector('.nav-label');
       if (label) label.textContent = 'Logout';
     }
-
     logoutBtn.addEventListener('click', (e) => {
-      e.stopPropagation(); // Prevent sidebar click handler
+      e.stopPropagation();
       if (!confirmState) {
         confirmState = true;
         logoutBtn.classList.add('confirm-logout');
@@ -266,7 +197,6 @@ export function createSidebar() {
         if (icon) icon.textContent = 'warning';
         const label = logoutBtn.querySelector('.nav-label');
         if (label) label.textContent = 'Confirm';
-        
         if (resetTimeout) clearTimeout(resetTimeout);
         resetTimeout = setTimeout(resetLogoutBtn, 3000);
       } else {
@@ -275,248 +205,126 @@ export function createSidebar() {
         window.dispatchEvent(new CustomEvent('fieldforge-logout'));
       }
     });
-
     logoutBtn.addEventListener('mouseleave', () => {
-      if (confirmState) {
-        if (resetTimeout) clearTimeout(resetTimeout);
-        resetLogoutBtn();
-      }
+      if (confirmState) { if (resetTimeout) clearTimeout(resetTimeout); resetLogoutBtn(); }
     });
   }
 
-  // --- MINIMIZED SIDEBAR HOVER PORTAL FLYOUT MANAGER ---
-  sidebar.querySelectorAll('.sidebar-category-container').forEach(container => {
-    let flyout = null;
-    let keepOpenTimeout = null;
-
-    function removeFlyout() {
-      if (flyout) {
-        flyout.remove();
-        flyout = null;
-      }
-    }
-
-    container.addEventListener('mouseenter', () => {
-      // Only show portal flyouts if the sidebar is collapsed (non-expanded)
-      if (sidebar.classList.contains('expanded')) return;
-      
-      if (keepOpenTimeout) {
-        clearTimeout(keepOpenTimeout);
-        keepOpenTimeout = null;
-      }
-
-      if (flyout) return;
-
-      const catId = container.dataset.categoryId;
-      const catHeader = container.querySelector('.sidebar-category-header');
-      const itemsContainer = container.querySelector('.sidebar-category-items');
-      if (!catHeader || !itemsContainer) return;
-
-      // Extract currently visible items (incorporates permission checks!)
-      const visibleItems = Array.from(itemsContainer.querySelectorAll('.sidebar-nav-item'))
-        .filter(el => el.style.display !== 'none');
-
-      if (visibleItems.length === 0) return;
-
-      // Create floating viewport portal container
-      flyout = document.createElement('div');
-      flyout.className = 'sidebar-collapsed-flyout';
-      flyout.id = `flyout-${catId}`;
-      
-      let subItemsHtml = '';
-      visibleItems.forEach(item => {
-        const isActive = item.classList.contains('active');
-        const isDisabled = item.classList.contains('disabled-local');
-        subItemsHtml += `
-          <button class="sidebar-nav-item sub-item ${isActive ? 'active' : ''} ${isDisabled ? 'disabled-local' : ''}" data-path="${item.dataset.path}" data-id="${item.dataset.id}" ${isDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
-            <span class="nav-icon">${item.querySelector('.nav-icon').innerHTML}</span>
-            <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">${item.querySelector('.nav-label').textContent}</span>
-          </button>
-        `;
-      });
-      flyout.innerHTML = subItemsHtml;
-
-      document.body.appendChild(flyout);
-
-      // Position popover floating directly next to category group icon
-      const rect = catHeader.getBoundingClientRect();
-      flyout.style.position = 'fixed';
-      flyout.style.left = `${rect.right + 2}px`;
-      flyout.style.top = `${rect.top}px`;
-      flyout.style.zIndex = '99999';
-
-      // Set up navigation click intercepts
-      flyout.addEventListener('click', (e) => {
-        const navItem = e.target.closest('.sidebar-nav-item');
-        if (navItem) {
-          if (navItem.classList.contains('disabled-local')) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-          }
-          const path = navItem.dataset.path;
-          if (path) {
-            router.navigate(path);
-            removeFlyout();
-          }
-        }
-      });
-
-      // Keep flyout alive when cursor enters popover area
-      flyout.addEventListener('mouseenter', () => {
-        if (keepOpenTimeout) {
-          clearTimeout(keepOpenTimeout);
-          keepOpenTimeout = null;
-        }
-      });
-
-      flyout.addEventListener('mouseleave', () => {
-        keepOpenTimeout = setTimeout(removeFlyout, 120);
-      });
-    });
-
-    container.addEventListener('mouseleave', () => {
-      if (sidebar.classList.contains('expanded')) return;
-      keepOpenTimeout = setTimeout(removeFlyout, 120);
-    });
-  });
-
-  const updateSidebarLogo = () => {
-    const s = store.getSettings();
-    const logoContainer = sidebar.querySelector('#sidebar-logo');
-    if (!logoContainer) return;
-    const isExpandedNow = sidebar.classList.contains('expanded');
-    const logoSrc = isExpandedNow 
-      ? (s.logo || s.logoSmall) 
-      : (s.logoSmall || s.logo);
-
-    if (logoSrc) {
-      logoContainer.innerHTML = `
-        <img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${isExpandedNow ? '85%' : '32px'}; object-fit: contain; display: block; margin: auto;" />
-      `;
-    } else {
-      logoContainer.innerHTML = `
-        <div class="logo-icon">R</div>
-        <span class="logo-text" style="${isExpandedNow ? 'display: block;' : 'display: none;'}">Relay — Dispatch</span>
-      `;
-    }
-  };
-
-  // Listen for settings changes (e.g. logo update)
-  window.addEventListener('simpro-settings-updated', updateSidebarLogo);
-  store.on('settings', updateSidebarLogo);
-
-  // Apply initial role-based sidebar link access
+  // Initial access + route sync.
   updateSidebarAccess(sidebar);
+  syncActiveFromRoute(sidebar, window.location.hash.slice(1) || '/');
 
   return sidebar;
 }
 
-export function updateSidebarAccess(sidebarElement) {
-  const sidebar = sidebarElement || document.getElementById('sidebar');
+// Show a section's submenu panel and mark its rail item active.
+function setActiveSection(sidebar, sectionId) {
+  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
-
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
-
-  if (currentUser.role === 'customer') {
-    sidebar.style.display = 'none';
-  } else {
-    sidebar.style.display = '';
-    
-    let permissions = null;
-    if (currentUser.userTypeId) {
-      const ut = store.getById('userTypes', currentUser.userTypeId);
-      if (ut && ut.permissions) {
-        permissions = ut.permissions;
-      }
-    }
-
-    // Hide specific items based on permissions
-    sidebar.querySelectorAll('.sidebar-nav-item').forEach(item => {
-      // Never hide the logout button
-      if (item.id === 'btn-logout') {
-        item.style.display = '';
-        return;
-      }
-
-      const labelEl = item.querySelector('.nav-label');
-      if (!labelEl) return;
-      const label = labelEl.textContent.trim();
-
-      // Dashboard and Notifications are always visible to authenticated users
-      if (label === 'Dashboard' || label === 'Notifications') {
-        item.style.display = '';
-        return;
-      }
-
-      // Check if user has permission to view this module (either view or view_own)
-      const canView = hasPermission(label, 'view') || hasPermission(label, 'view_own');
-      if (canView) {
-        item.style.display = '';
-      } else {
-        item.style.display = 'none';
-      }
-    });
-
-    // Hide empty category containers
-    sidebar.querySelectorAll('.sidebar-category-container').forEach(container => {
-      const subItems = container.querySelectorAll('.sidebar-nav-item');
-      let hasVisibleItems = false;
-      subItems.forEach(item => {
-        if (item.style.display !== 'none') {
-          hasVisibleItems = true;
-        }
-      });
-      container.style.display = hasVisibleItems ? '' : 'none';
-    });
-
-    // Update arrows
-    const nav = sidebar.querySelector('#sidebar-nav');
-    const upArrow = sidebar.querySelector('#sidebar-scroll-up');
-    const downArrow = sidebar.querySelector('#sidebar-scroll-down');
-    if (nav && upArrow && downArrow && !sidebar.classList.contains('expanded')) {
-      const { scrollTop, scrollHeight, clientHeight } = nav;
-      upArrow.classList.toggle('visible', scrollTop > 0);
-      downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
-    }
-  }
+  sidebar.querySelectorAll('.rail-item').forEach(r => {
+    r.classList.toggle('active', r.dataset.id === sectionId);
+  });
+  let hasPanel = false;
+  sidebar.querySelectorAll('.submenu-panel').forEach(p => {
+    const on = p.dataset.section === sectionId;
+    p.classList.toggle('active', on);
+    if (on) hasPanel = true;
+  });
+  sidebar.classList.toggle('submenu-open', hasPanel);
 }
 
-export function toggleSidebar(sidebar) {
-  sidebar.classList.toggle('expanded');
-  const isExpanded = sidebar.classList.contains('expanded');
-  localStorage.setItem('simpro_sidebar_expanded', isExpanded);
-  
-  // Toggle branding elements
-  const s = store.getSettings();
-  const customImg = sidebar.querySelector('.custom-logo');
-  
-  if (customImg) {
-    customImg.src = isExpanded 
-      ? (s.logo || s.logoSmall) 
-      : (s.logoSmall || s.logo);
-    customImg.style.maxWidth = isExpanded ? '85%' : '32px';
-  }
+// Sync rail + submenu to the current route.
+function syncActiveFromRoute(sidebar, path) {
+  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
 
-  // Update arrows state
-  const nav = sidebar.querySelector('#sidebar-nav');
-  const upArrow = sidebar.querySelector('#sidebar-scroll-up');
-  const downArrow = sidebar.querySelector('#sidebar-scroll-down');
-  if (nav && upArrow && downArrow) {
-    if (isExpanded) {
-      upArrow.classList.remove('visible');
-      downArrow.classList.remove('visible');
-    } else {
-      const { scrollTop, scrollHeight, clientHeight } = nav;
-      upArrow.classList.toggle('visible', scrollTop > 0);
-      downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
-    }
+  let sectionId = null;
+  for (const item of navItems) {
+    if (item.category) {
+      if (item.items.some(c => c.path === basePath)) { sectionId = item.id; break; }
+    } else if (item.path === basePath) { sectionId = item.id; break; }
   }
+  if (sectionId) setActiveSection(sidebar, sectionId);
+
+  // Highlight the exact current page inside the panel.
+  sidebar.querySelectorAll('.submenu-item').forEach(it => {
+    it.classList.toggle('active', it.dataset.path === basePath);
+  });
+}
+
+// Compute the current user's display identity for the sidebar profile block.
+function getSidebarProfileInfo() {
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  const name = currentUser.name || 'Unknown User';
+  let role = currentUser.userTypeName;
+  if (!role && currentUser.userTypeId) {
+    const ut = store.getById('userTypes', currentUser.userTypeId);
+    if (ut) role = ut.name;
+  }
+  if (!role) {
+    const roleMap = { admin: 'Administrator', manager: 'Manager', technician: 'Technician', customer: 'Customer' };
+    role = roleMap[currentUser.role] || currentUser.role || 'User';
+  }
+  if (localStorage.getItem('relay_login_mode') === 'local') {
+    const uiMode = localStorage.getItem('uiMode') || 'admin';
+    role = ({ admin: 'Complete Mode', technician: 'Simple Mode' })[uiMode] || role;
+  }
+  const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
+  return { name, role, initials, color: currentUser.color || '#FF5C00' };
+}
+
+// Fill the footer profile block (avatar / name / role).
+export function updateSidebarProfile(sidebarElement) {
+  const sidebar = sidebarElement || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  // Avatar renders the Lucide circle-user glyph (static markup); only name/role update here.
+  const { name, role } = getSidebarProfileInfo();
+  const nameEl = sidebar.querySelector('#sidebar-profile-name');
+  const roleEl = sidebar.querySelector('#sidebar-profile-role');
+  if (nameEl) nameEl.textContent = name;
+  if (roleEl) roleEl.textContent = role;
+}
+
+export function updateSidebarAccess(sidebarElement) {
+  const sidebar = sidebarElement || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  updateSidebarProfile(sidebar);
+
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  if (currentUser.role === 'customer') { sidebar.style.display = 'none'; return; }
+  sidebar.style.display = '';
+
+  // Permission-filter each page link (direct rail pages + submenu items).
+  sidebar.querySelectorAll('.rail-page, .submenu-item').forEach(item => {
+    if (item.id === 'btn-logout') { item.style.display = ''; return; }
+    const labelEl = item.querySelector('.nav-label');
+    if (!labelEl) return;
+    const label = labelEl.textContent.trim();
+    if (label === 'Dashboard' || label === 'Notifications') { item.style.display = ''; return; }
+    const canView = hasPermission(label, 'view') || hasPermission(label, 'view_own');
+    item.style.display = canView ? '' : 'none';
+  });
+
+  // Hide a group opener + panel if none of its pages are visible.
+  navItems.forEach(item => {
+    if (!item.category) return;
+    const opener = sidebar.querySelector(`.rail-opener[data-section="${item.id}"]`);
+    const panel = sidebar.querySelector(`.submenu-panel[data-section="${item.id}"]`);
+    if (!panel) return;
+    const anyVisible = Array.from(panel.querySelectorAll('.submenu-item')).some(it => it.style.display !== 'none');
+    if (opener) opener.style.display = anyVisible ? '' : 'none';
+  });
+}
+
+// Toggle the primary rail between labeled and icon-only.
+export function toggleSidebar(sidebar) {
+  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.classList.toggle('rail-collapsed');
+  localStorage.setItem('simpro_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
 }
 
 export function updateSidebarActive(path) {
-  const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
-  document.querySelectorAll('.sidebar-nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.path === basePath);
-  });
+  syncActiveFromRoute(null, path || (window.location.hash.slice(1) || '/'));
 }

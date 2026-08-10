@@ -814,6 +814,8 @@ export function renderNotificationsList(container, params) {
 
         jobData = {
           ...jobData,
+          title: parentJob.title || parentJob.number,
+          parentJobId: parentJob.id,
           customerId: parentJob.customerId || '',
           customerName: parentJob.customerName || '',
           contactName: parentJob.contactName || '',

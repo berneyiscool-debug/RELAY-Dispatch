@@ -51,15 +51,6 @@ export function renderJobsList(container, params) {
         if (!name) return '<span class="text-tertiary">—</span>';
         return `<span class="text-primary font-medium truncate" style="max-width:140px;display:inline-flex;align-items:center;gap:4px;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
       }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '130px' },
-    { key: 'technicians', label: 'Assignee', render: (r) => {
-        if (r.contractorId) {
-          const contractor = store.getById('contractors', r.contractorId);
-          return `<span class="text-primary font-medium truncate" style="max-width:150px;display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">business</span> ${contractor ? escapeHTML(contractor.businessName) : 'Unknown Contractor'}</span>`;
-        }
-        const names = r.technicians && r.technicians.length > 0 ? r.technicians.map(t => escapeHTML(t.name)).join(', ') : escapeHTML(r.technicianName || '—');
-        return `<span class="text-secondary truncate" style="max-width:150px;display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary)">person</span> ${names}</span>`;
-      }
-    },
     { key: 'status', label: 'Status', render: (r) => r.isRecurring ? `
       <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
     ` : `

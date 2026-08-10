@@ -9,17 +9,29 @@ import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssista
 import { showModal } from './Modal.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 
+// Brand lockup for the top bar's left (moved up from the sidebar). Uses the
+// company logo when set, else the Relay mark + wordmark.
+function buildBrandHtml() {
+  const s = store.getSettings() || {};
+  if (s.logo) return `<img src="${s.logo}" class="topbar-brand-logo" alt="Logo" />`;
+  return `<span class="topbar-brand-mark">R</span><span class="topbar-brand-name">Relay — Dispatch</span>`;
+}
+
 export function createTopBar() {
   const topbar = document.createElement('header');
   topbar.className = 'topbar';
   topbar.id = 'topbar';
 
   topbar.innerHTML = `
-    <div class="topbar-search">
-      <span class="material-icons-outlined search-icon">search</span>
-      <input type="text" id="global-search" placeholder="Search customers, jobs, quotes..." autocomplete="off" />
+    <div class="topbar-brand" id="topbar-brand" title="Home" role="button" tabindex="0">
+      ${buildBrandHtml()}
     </div>
     <div class="topbar-actions">
+      <div class="topbar-search">
+        <span class="material-icons-outlined search-icon">search</span>
+        <input type="text" id="global-search" placeholder="Search…" autocomplete="off" />
+        <span class="topbar-search-kbd">Ctrl K</span>
+      </div>
       <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant" style="position: relative;">
         ${relayIcon}
         <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:#FF3B30; color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
@@ -34,18 +46,11 @@ export function createTopBar() {
         <span class="material-icons-outlined">notifications</span>
         <span class="notification-dot"></span>
       </button>
-      <div class="topbar-user" id="topbar-user">
-        <div class="topbar-avatar" id="topbar-avatar">--</div>
-        <div class="topbar-user-info">
-          <span class="topbar-user-name" id="topbar-name">Loading...</span>
-          <span class="topbar-user-role" id="topbar-role">Role</span>
-        </div>
-         <!-- UI Mode Toggle Switch -->
-          <label class="toggle-pill" title="Toggle Simple/Complete Mode">
-            <input type="checkbox" id="ui-mode-toggle" />
-            <span class="slider"></span>
-          </label>
-      </div>
+      <!-- Simple/Complete mode toggle (local-admin only; profile block moved to the sidebar footer) -->
+      <label class="toggle-pill" title="Toggle Simple/Complete Mode" style="display:none;">
+        <input type="checkbox" id="ui-mode-toggle" />
+        <span class="slider"></span>
+      </label>
     </div>
   `;
 
@@ -171,17 +176,17 @@ export function createTopBar() {
   relayBtn.addEventListener('click', () => toggleRelay());
   onRelayToggle(open => relayBtn.classList.toggle('active', open));
 
-  // Navigate to profile on user click
-  const userBtn = topbar.querySelector('#topbar-user');
-  if (userBtn) {
-    userBtn.style.cursor = 'pointer';
-    userBtn.addEventListener('click', (e) => {
-      if (e.target.closest('#ui-mode-toggle') || e.target.closest('.toggle-pill')) {
-        return;
-      }
-      router.navigate('/profile');
-    });
+  // Brand (moved up from the sidebar) → home; refresh when the company logo changes.
+  const brandEl = topbar.querySelector('#topbar-brand');
+  if (brandEl) {
+    brandEl.addEventListener('click', () => router.navigate('/'));
+    const refreshBrand = () => { const el = topbar.querySelector('#topbar-brand'); if (el) el.innerHTML = buildBrandHtml(); };
+    window.addEventListener('simpro-settings-updated', refreshBrand);
+    store.on('settings', refreshBrand);
   }
+
+  // Profile display moved to the sidebar footer (see Sidebar.js). The top bar
+  // now only carries search + Deputy + theme/help/notifications + the mode toggle.
 
   // Update on profile details update
   window.addEventListener('fieldforge-profile-updated', () => {
@@ -218,45 +223,9 @@ export function updateTopbarAccess(topbarEl) {
     }
   }
 
-  // --- Name / role / avatar ---
-  const nameEl = topbar.querySelector('#topbar-name');
-  const roleEl = topbar.querySelector('#topbar-role');
-  const avatarEl = topbar.querySelector('#topbar-avatar');
-
-  if (nameEl) nameEl.textContent = currentUser.name || 'Unknown User';
-  if (roleEl) {
-    // Priority 1: Use the explicit userTypeName from session (set during login)
-    // Priority 2: Look up from userTypes collection
-    // Priority 3: Fallback to roleMap
-    let displayRole = currentUser.userTypeName;
-    
-    if (!displayRole && currentUser.userTypeId) {
-      const ut = store.getById('userTypes', currentUser.userTypeId);
-      if (ut) displayRole = ut.name;
-    }
-
-    if (!displayRole) {
-      const roleMap = { 'admin': 'Administrator', 'manager': 'Manager', 'technician': 'Technician', 'customer': 'Customer' };
-      displayRole = roleMap[currentUser.role] || currentUser.role;
-    }
-
-    // If local admin is using the toggle, show the toggled role instead
-    const loginMode = localStorage.getItem('relay_login_mode');
-    if (loginMode === 'local') {
-      const uiMode = localStorage.getItem('uiMode') || 'admin';
-      const modeMap = { 'admin': 'Complete Mode', 'technician': 'Simple Mode' };
-      displayRole = modeMap[uiMode] || displayRole;
-    }
-
-    roleEl.textContent = displayRole;
-  }
-
-  if (avatarEl) {
-    const nameStr = currentUser.name || '';
-    const initials = nameStr.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
-    avatarEl.textContent = initials;
-    avatarEl.style.backgroundColor = currentUser.color || '#FF5C00';
-  }
+  // Name / role / avatar now render in the sidebar footer
+  // (Sidebar.updateSidebarProfile), refreshed via updateSidebarAccess on login
+  // and the fieldforge-profile-updated event.
 }
 
 function toggleNotificationsDropdown(btn) {
@@ -275,12 +244,8 @@ function toggleNotificationsDropdown(btn) {
   dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'notifications-dropdown';
-  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;z-index:var(--z-dropdown);box-shadow:var(--shadow-lg);border-radius:var(--border-radius-md);background:rgba(255,255,255,0.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.08);padding:0;';
-
-  if (document.documentElement.getAttribute('data-theme') === 'dark') {
-    dropdown.style.background = 'rgba(13, 17, 30, 0.92)';
-    dropdown.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-  }
+  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;z-index:var(--z-dropdown);box-shadow:var(--shadow-lg);border-radius:var(--border-radius-md);background:var(--card-bg);border:1px solid var(--card-border);padding:0;';
+  // dark theme handled by [data-theme-mode="dark"] .dropdown-menu in components.css
 
   const header = document.createElement('div');
   header.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center';

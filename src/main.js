@@ -18,6 +18,7 @@ import { seedData } from './data/seed.js';
 import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenanceEngine.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
+import { initLucideIcons } from './utils/icons.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
@@ -197,12 +198,21 @@ const mainContent = document.createElement('main');
 mainContent.className = 'main-content';
 mainContent.id = 'main-content';
 
-mainWrapper.appendChild(topbar);
 mainWrapper.appendChild(breadcrumbEl);
 mainWrapper.appendChild(mainContent);
 
-app.appendChild(sidebar);
-app.appendChild(mainWrapper);
+// Supabase-style shell: full-width top bar as one piece, with the sidebar
+// (rail + submenu) sitting BELOW it so the submenu panel never splits the bar.
+const appBody = document.createElement('div');
+appBody.className = 'app-body';
+appBody.appendChild(sidebar);
+appBody.appendChild(mainWrapper);
+
+app.appendChild(topbar);
+app.appendChild(appBody);
+
+// Swap Material Icon glyphs for Lucide SVGs (initial pass + live for dynamic content).
+initLucideIcons();
 
 // ---- Page Header to Breadcrumb Actions Relocation ----
 // Override mainContent querySelector/querySelectorAll to find moved buttons inside breadcrumb-actions

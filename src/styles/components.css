@@ -11,21 +11,21 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  padding: 8px 18px; /* Slightly refined premium padding */
+  padding: 6px 12px;                    /* compact, Supabase-like */
   font-size: var(--font-size-base);
-  font-weight: 600; /* Crisp semi-bold text */
-  letter-spacing: 0.015em; /* Premium typography touch */
+  font-weight: 500;                     /* medium, not bold */
+  letter-spacing: 0;
   border: 1px solid transparent;
-  border-radius: 8px; /* Modern squircle geometry */
+  border-radius: var(--border-radius);  /* 6px */
   cursor: pointer;
   white-space: nowrap;
   line-height: 1.4;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); /* Ultra smooth ease-out */
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
-/* Active click bounce effect */
+/* Subtle press (no bounce) */
 .btn:active:not(:disabled) {
-  transform: scale(0.96) translateY(1px) !important;
+  transform: translateY(0.5px);
 }
 
 .btn:disabled {
@@ -50,16 +50,15 @@
 
 /* Secondary Button (flat, opaque) */
 .btn-secondary {
-  background: #ffffff;
+  background: var(--card-bg);
   color: var(--text-primary);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  border: 1px solid var(--border-color-dark);
+  box-shadow: none;
 }
 .btn-secondary:hover:not(:disabled) {
   background: var(--bg-color);
-  border-color: rgba(0, 0, 0, 0.16);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-  transform: translateY(-1.5px);
+  border-color: var(--border-color-dark);
+  box-shadow: none;
 }
 
 /* Danger Button (flat solid crimson — no gradient, no aura) */
@@ -83,9 +82,8 @@
   border: 1px solid transparent;
 }
 .btn-ghost:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--bg-color);
   color: var(--text-primary);
-  transform: translateY(-1px);
 }
 
 /* Outline Button (Premium bordered button) */
@@ -95,9 +93,8 @@
   border: 1px solid rgba(255, 92, 0, 0.4);
 }
 .btn-outline:hover:not(:disabled) {
-  background: rgba(255, 92, 0, 0.05);
+  background: var(--color-primary-light);
   border-color: var(--color-primary);
-  transform: translateY(-1.5px);
 }
 
 .btn-sm {
@@ -305,7 +302,7 @@ select.badge option {
   min-width: 0;
   box-sizing: border-box;
   padding: 8px 12px;
-  border: 1px solid rgba(72, 83, 103, 0.1); /* 1px Slate border at 10% opacity */
+  border: 1px solid var(--card-border); /* hairline, matches every other surface */
   border-radius: var(--border-radius); /* 0.5rem standard components */
   font-size: var(--font-size-base);
   color: var(--text-primary);
@@ -402,18 +399,17 @@ select.badge option {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(15, 15, 15, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: var(--z-modal);
   animation: fadeIn 0.15s ease;
-  backdrop-filter: blur(2px);
 }
 .modal {
-  background: rgba(255, 255, 255, 0.88); /* Highly legible 88% white fill */
-  border-radius: var(--border-radius-md); /* 1rem (16px) standard glass container */
-  border: 1px solid rgba(255, 255, 255, 0.5); /* Clean Frost border */
+  background: var(--card-bg);              /* flat opaque (was frosted glass) */
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--card-border);
   box-shadow: var(--shadow-xl);
   width: 90%;
   max-width: 560px;
@@ -425,8 +421,6 @@ select.badge option {
   display: flex;
   flex-direction: column;
   animation: slideUp 0.2s ease;
-  backdrop-filter: blur(20px); /* 20px frosted blur */
-  -webkit-backdrop-filter: blur(20px);
 }
 .modal-lg {
   max-width: 800px;
@@ -485,16 +479,14 @@ select.badge option {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  background: rgba(255, 255, 255, 0.6); /* Level 2 Glass (60% white fill) */
-  border: 1px solid rgba(255, 255, 255, 0.3); /* Level 2 Glass (30% border opacity) */
-  border-radius: var(--border-radius-md);
+  background: var(--card-bg);             /* flat opaque (was frosted glass) */
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius);
   box-shadow: var(--shadow-lg);
   min-width: 180px;
   z-index: var(--z-dropdown);
   padding: var(--space-xs) 0;
   animation: fadeIn 0.1s ease;
-  backdrop-filter: blur(20px); /* Level 2 Glass (20px blur) */
-  -webkit-backdrop-filter: blur(20px);
 }
 .dropdown-item {
   display: flex;
@@ -511,7 +503,7 @@ select.badge option {
   text-align: left;
 }
 .dropdown-item:hover {
-  background: var(--content-bg);
+  background: #f2f3f5; /* neutral grey; --content-bg #fbfbfa was near-invisible */
 }
 .dropdown-divider {
   height: 1px;
@@ -526,6 +518,7 @@ select.badge option {
 .data-table {
   width: 100%;
   border-collapse: collapse;
+  font-variant-numeric: tabular-nums;   /* aligned figures, Supabase-style */
 }
 .data-table th {
   padding: 10px 14px;
@@ -555,20 +548,20 @@ select.badge option {
   color: var(--color-primary);
 }
 .data-table td {
-  padding: 14px 16px; /* Increased padding (breathing rhythm) */
+  padding: 9px 14px; /* compact Supabase rows */
   border-bottom: 1px solid var(--border-color);
   font-size: var(--font-size-base);
   color: var(--text-primary);
   vertical-align: middle;
 }
 @media (max-width: 768px) {
-  /* Mobile technician lists target minimum 64px row targets */
+  /* Mobile technician lists keep larger row targets */
   .data-table td {
-    padding: 18px 16px;
+    padding: 13px 14px;
   }
 }
 .data-table tr:hover td {
-  background: rgba(255, 92, 0, 0.04); /* Soft Nordic Blue hover hover tint */
+  background: var(--bg-color); /* neutral hover (accent reserved for actions) */
 }
 .data-table tr.selected td {
   background: var(--color-primary-light);
@@ -581,6 +574,17 @@ select.badge option {
 .data-table td .cell-link:hover {
   text-decoration: underline;
 }
+
+/* Monospace / tabular utilities — for IDs, reference numbers and money,
+   the way Supabase renders uuid/ref columns. Apply .mono or .cell-mono in
+   table cells that hold an id/number. */
+.mono, .cell-mono, .data-table .id, .data-table .cell-id {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.money, .tabular-nums { font-variant-numeric: tabular-nums; }
 
 /* ---- Pagination ---- */
 .pagination {
@@ -1340,6 +1344,12 @@ tr.selected-row td {
   width: 100%;
   box-sizing: border-box;
   z-index: var(--z-dropdown);
+  /* flat opaque surface — don't rely solely on .dropdown-menu since JS reparents to <body> */
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-xs) 0;
 }
 .searchable-select-container.searchable-select-open .searchable-select-dropdown,
 body > .searchable-select-dropdown {
@@ -1357,7 +1367,7 @@ body > .searchable-select-dropdown {
 }
 .searchable-select-option:hover,
 .searchable-select-option.active-highlight {
-  background: rgba(255, 92, 0, 0.08);
+  background: #f2f3f5; /* neutral grey hover, accent reserved for selected */
 }
 .searchable-select-option.selected {
   background: var(--color-primary-light);
@@ -1381,7 +1391,7 @@ body > .searchable-select-dropdown {
 }
 [data-theme-mode="dark"] .searchable-select-option:hover,
 [data-theme-mode="dark"] .searchable-select-option.active-highlight {
-  background: rgba(139, 92, 246, 0.12);
+  background: rgba(255, 255, 255, 0.06); /* neutral raise, matches dark dropdown-item hover */
 }
 
 /* ---- Filters Carousel styles ---- */
@@ -3227,10 +3237,10 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
 .clock-picker-popup {
   position: absolute;
   z-index: 10000;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-md);
   width: 330px;
   padding: 8px;
   display: flex;
@@ -3262,19 +3272,23 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   width: 100%;
   white-space: nowrap;
 }
+.clock-picker-header-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
 .clock-picker-header-time span {
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
 }
 .clock-picker-header-time span.active {
-  color: var(--color-primary, #3b82f6);
-  background: var(--color-primary-light, #eff6ff);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 .clock-picker-ampm-toggle {
   display: flex;
   gap: 4px;
-  background: var(--content-bg, #f1f5f9);
+  background: var(--bg-color);
   padding: 2px;
   border-radius: 6px;
   margin-bottom: 8px;
@@ -3290,15 +3304,15 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   color: var(--text-secondary, #64748b);
 }
 .clock-picker-ampm-toggle button.active {
-  background: var(--card-bg, #fff);
-  color: var(--color-primary, #3b82f6);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background: var(--card-bg);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
 }
 .clock-picker-face-container {
   width: 150px;
   height: 150px;
   position: relative;
-  background: #f1f5f9;
+  background: var(--bg-color);
   border-radius: 50%;
   margin-bottom: 8px;
 }
@@ -3313,7 +3327,7 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   top: 50%;
   width: 2px;
   height: 50px;
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary);
   transform-origin: bottom center;
   margin-left: -1px;
   margin-top: -50px;
@@ -3328,7 +3342,7 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   width: 8px;
   height: 8px;
   margin-left: -4px;
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary);
   border-radius: 50%;
 }
 .clock-picker-center {
@@ -3339,7 +3353,7 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   height: 6px;
   margin-left: -3px;
   margin-top: -3px;
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -3356,17 +3370,19 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   justify-content: center;
   border-radius: 50%;
   cursor: pointer;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-primary, #1e293b);
+  color: var(--text-primary);
   transition: all 0.15s ease;
 }
 .clock-number:hover {
-  background: var(--color-primary-light, #eff6ff);
-  color: var(--color-primary, #3b82f6);
+  background: var(--bg-color);
+  color: var(--text-primary);
 }
 .clock-number.active {
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary);
   color: #fff !important;
 }
 .clock-picker-actions {
@@ -3374,7 +3390,7 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   justify-content: flex-end;
   gap: 8px;
   width: 100%;
-  border-top: 1px solid var(--border-color, #e2e8f0);
+  border-top: 1px solid var(--border-color);
   padding-top: 8px;
 }
 
@@ -3390,8 +3406,8 @@ body[data-tooltip-pref="partial"] [data-tooltip]:not([data-tooltip-level="partia
   color: #e4e4e7;
 }
 [data-theme-mode="dark"] .clock-number:hover {
-  background: rgba(255, 92, 0, 0.15);
-  color: var(--color-primary, #ff5c00);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
 }
 [data-theme-mode="dark"] .clock-picker-ampm-toggle {
   background: #09090b;
@@ -3470,12 +3486,10 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 .date-picker-popup {
   position: absolute;
   z-index: 10000;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 12px;
-  box-shadow: var(--shadow-xl);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-md);
   width: 250px;
   padding: 12px;
   user-select: none;
@@ -3483,9 +3497,9 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 [data-theme-mode="dark"] .date-picker-popup {
-  background: rgba(24, 24, 27, 0.88);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.4);
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  box-shadow: var(--shadow-md);
 }
 .date-picker-header {
   display: flex;
@@ -3506,16 +3520,17 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   transition: background 0.12s, color 0.12s;
 }
 .date-picker-header button:hover {
-  background: var(--color-primary-light, rgba(255, 92, 0, 0.1));
-  color: var(--color-primary, #ff5c00);
+  background: #f2f3f5;
+  color: var(--text-primary);
 }
 [data-theme-mode="dark"] .date-picker-header button:hover {
-  background: rgba(255, 92, 0, 0.15);
+  background: rgba(255, 255, 255, 0.06);
 }
 .date-picker-month-year {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 .date-picker-grid {
   display: grid;
@@ -3540,25 +3555,37 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: var(--border-radius);
   cursor: pointer;
   color: var(--text-primary);
-  transition: all 0.12s ease;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .date-picker-day.other-month {
   color: var(--text-tertiary);
   opacity: 0.35;
 }
 .date-picker-day:hover {
-  background: var(--color-primary-light, rgba(255, 92, 0, 0.1));
-  color: var(--color-primary, #ff5c00);
-  transform: scale(1.08);
+  background: #f2f3f5;
+  color: var(--text-primary);
 }
-.date-picker-day.active {
-  background: var(--color-primary, #ff5c00) !important;
+.date-picker-day.active,
+.date-picker-day.active:hover {
+  background: var(--color-primary) !important;
   color: #ffffff !important;
-  font-weight: 700;
-  box-shadow: 0 2px 8px rgba(255, 92, 0, 0.35);
+  font-weight: 600;
+  box-shadow: none;
+}
+/* Today marker (subtle hairline ring, not the selected fill) */
+.date-picker-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--border-color-dark);
+  font-weight: 600;
+}
+.date-picker-day.is-today.active {
+  box-shadow: none;
+}
+[data-theme-mode="dark"] .date-picker-day.is-today {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 [data-theme-mode="dark"] .date-picker-month-year {

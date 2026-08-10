@@ -427,10 +427,12 @@ export function openDatePickerPopup(anchorEl, onSelect) {
     }
 
     // Current month days
+    const _today = new Date();
     for (let i = 1; i <= daysInCurrentMonth; i++) {
       const dayCell = document.createElement('div');
       const isActive = i === selectedDay && viewMonth === selectedMonth && viewYear === selectedYear;
-      dayCell.className = `date-picker-day ${isActive ? 'active' : ''}`;
+      const isToday = i === _today.getDate() && viewMonth === _today.getMonth() && viewYear === _today.getFullYear();
+      dayCell.className = `date-picker-day ${isToday ? 'is-today' : ''} ${isActive ? 'active' : ''}`.replace(/\s+/g, ' ').trim();
       dayCell.textContent = i;
       grid.appendChild(dayCell);
 

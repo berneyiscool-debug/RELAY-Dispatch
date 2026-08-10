@@ -1,7 +1,7 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { store } from '../../data/store.js';
-import { checkRecurringJobs } from '../../utils/maintenanceEngine.js';
+import { checkRecurringJobs, cleanOldJobTitles } from '../../utils/maintenanceEngine.js';
 
 // Stub localStorage for Node.js test runs
 globalThis.localStorage = {
@@ -467,6 +467,36 @@ describe('Job Recurring Scheduling Integrations', () => {
       ? new Date(back.startTime).getHours() + new Date(back.startTime).getMinutes() / 60
       : back.startHour;
     assert.strictEqual(renderStartHour, 14, 'spawned block must render at preferredTime, matching the forecast');
+  });
+
+  test('cleanOldJobTitles renames existing jobs with legacy recurring suffixes to clean parent titles', () => {
+    const parent = store.create('jobs', {
+      number: 'J-MASTER',
+      title: 'HVAC Quarterly Maintenance',
+      isRecurring: true
+    });
+
+    const childWithSuffix = store.create('jobs', {
+      number: 'J-MASTER.1',
+      parentJobId: parent.id,
+      title: 'HVAC Quarterly Maintenance — Recurring (15/08/2026)',
+      scheduledDate: '2026-08-15'
+    });
+
+    const orphanWithSuffix = store.create('jobs', {
+      number: 'J-999',
+      title: 'Chiller Inspection — Recurring',
+      scheduledDate: '2026-09-01'
+    });
+
+    const cleanedCount = cleanOldJobTitles();
+    assert.strictEqual(cleanedCount, 2, 'should clean up 2 jobs carrying legacy titles');
+
+    const updatedChild = store.getById('jobs', childWithSuffix.id);
+    assert.strictEqual(updatedChild.title, 'HVAC Quarterly Maintenance');
+
+    const updatedOrphan = store.getById('jobs', orphanWithSuffix.id);
+    assert.strictEqual(updatedOrphan.title, 'Chiller Inspection');
   });
 });
 

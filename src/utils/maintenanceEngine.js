@@ -577,7 +577,32 @@ function getRecurringDates(config) {
   return dates;
 }
 
+export function cleanOldJobTitles() {
+  const jobs = store.getAll('jobs') || [];
+  let updatedCount = 0;
+  jobs.forEach(job => {
+    let newTitle = job.title;
+    if (job.parentJobId) {
+      const parentJob = store.getById('jobs', job.parentJobId);
+      if (parentJob && parentJob.title) {
+        newTitle = parentJob.title;
+      } else if (newTitle) {
+        newTitle = newTitle.replace(/\s*—\s*Recurring.*$/i, '').trim();
+      }
+    } else if (newTitle && /\s*—\s*Recurring/i.test(newTitle)) {
+      newTitle = newTitle.replace(/\s*—\s*Recurring.*$/i, '').trim();
+    }
+
+    if (newTitle && newTitle !== job.title) {
+      store.update('jobs', job.id, { title: newTitle });
+      updatedCount++;
+    }
+  });
+  return updatedCount;
+}
+
 export function checkRecurringJobs() {
+  cleanOldJobTitles();
   const jobs = store.getAll('jobs') || [];
   const notifications = store.getAll('notifications') || [];
   
@@ -913,14 +938,7 @@ export function propagateParentJobUpdates(parentJob) {
     if (childJob.status === 'Completed' || childJob.status === 'Invoiced') return;
 
     // Format child title
-    let childTitle = childJob.title;
-    if (childJob.scheduledDate) {
-      const [yr, mo, dy] = childJob.scheduledDate.split('-');
-      const formattedDate = `${dy}/${mo}/${yr}`;
-      childTitle = `${parentJob.title || parentJob.number}`;
-    } else {
-      childTitle = `${parentJob.title || parentJob.number} — Recurring`;
-    }
+    const childTitle = `${parentJob.title || parentJob.number}`;
 
     // Merge tasks while preserving completed progress on child tasks/subtasks
     const parentTasks = parentJob.tasks ? JSON.parse(JSON.stringify(parentJob.tasks)) : [];
