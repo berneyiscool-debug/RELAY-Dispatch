@@ -14,22 +14,29 @@ export function renderPeopleList(container) {
   const customers = store.getAll('customers');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Customers</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-secondary" id="btn-export-people" data-tooltip="Export customer lists to a CSV spreadsheet" data-tooltip-pos="left">
-          <span class="material-icons-outlined">download</span> Export
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Customers">
+          <option value="company_asc">Sort: Company (A-Z)</option>
+          <option value="company_desc">Sort: Company (Z-A)</option>
+          <option value="status_asc">Sort: Status</option>
+        </select>
+        <select id="people-status-filter" class="form-select" style="width:120px; height:26px; font-size:11px; padding:0 20px 0 6px;">
+          <option value="all">All Customers</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+        <div class="toolbar-search">
+          <span class="material-icons-outlined">search</span>
+          <input type="text" placeholder="Search customers..." id="people-search" style="height:26px; font-size:11px; width:150px;" />
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btn-export-people" style="height:26px; font-size:11px; padding:0 10px;">
+          <span class="material-icons-outlined" style="font-size:14px;">download</span> Export
         </button>
-        <button class="btn btn-primary" id="btn-new-person" data-tooltip="Create a new customer profile or organization record" data-tooltip-pos="left">
-          <span class="material-icons-outlined">add</span> New Customer
+        <button class="btn btn-primary btn-sm" id="btn-new-person" style="height:26px; font-size:11px; padding:0 10px;">
+          <span class="material-icons-outlined" style="font-size:14px;">add</span> New Customer
         </button>
-      </div>
-    </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center;">
-      <div id="people-filters-carousel-container" style="flex: 0 0 50%; max-width: 50%; overflow:hidden"></div>
-      <div class="toolbar-search">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search customers..." id="people-search" />
       </div>
     </div>
     <div id="people-table-container"></div>
@@ -159,12 +166,12 @@ export function renderPeopleList(container) {
     showToast('Customer data exported successfully', 'success');
   });
 
-  let tagFilteredData = [...customers];
-  let searchQuery = '';
+  let selectedStatus = 'all';
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
-    const filtered = tagFilteredData.filter(c => {
+    const filtered = customers.filter(c => {
+      if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
       if (!q) return true;
       const company = c.company || '';
       const firstName = c.firstName || '';
@@ -178,14 +185,15 @@ export function renderPeopleList(container) {
     table.updateData(filtered);
   }
 
-  createToolbarFilters({
-    container: container.querySelector('#people-filters-carousel-container'),
-    originalData: customers,
-    filterType: 'people',
-    onFilterChange: (filtered) => {
-      tagFilteredData = filtered;
-      applyFilters();
-    }
+  container.querySelector('#people-status-filter')?.addEventListener('change', (e) => {
+    selectedStatus = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
   });
 
   // Search

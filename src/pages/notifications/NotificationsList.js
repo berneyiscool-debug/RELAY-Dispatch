@@ -29,7 +29,13 @@ export function renderNotificationsList(container, params) {
   container.innerHTML = `
     <div class="page-header">
       <h1>Notifications</h1>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Notifications">
+          <option value="createdAt_desc">Sort: Newest First</option>
+          <option value="createdAt_asc">Sort: Oldest First</option>
+          <option value="priority_asc">Sort: Priority</option>
+          <option value="status_asc">Sort: Status</option>
+        </select>
         <button class="btn btn-primary" id="btn-raise-notification">
           <span class="material-icons-outlined">campaign</span> Raise Notification
         </button>
@@ -60,13 +66,6 @@ export function renderNotificationsList(container, params) {
       width: '100px'
     },
     { 
-      key: 'createdAt', 
-      label: 'Date', 
-      render: (n) => n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—',
-      getValue: (n) => n.createdAt ? new Date(n.createdAt).getTime() : 0,
-      width: '100px'
-    },
-    { 
       key: 'type', 
       label: 'Type', 
       render: (n) => `<span class="badge badge-neutral">${escapeHTML(n.type || 'Field Alert')}</span>`,
@@ -74,7 +73,7 @@ export function renderNotificationsList(container, params) {
     },
     { 
       key: 'title', 
-      label: 'Title / Job Name', 
+      label: 'Title / Details', 
       render: (n) => {
         const isPortal = n.source === 'customer_portal' || 
                         (n.message && n.message.toLowerCase().includes('via portal')) ||
@@ -124,6 +123,41 @@ export function renderNotificationsList(container, params) {
         `;
       }
     },
+    {
+      key: 'reference',
+      label: 'Reference',
+      render: (n) => {
+        const linkedJob = n.jobId ? store.getById('jobs', n.jobId) : null;
+        if (linkedJob) {
+          return `
+            <a href="#/jobs/${linkedJob.id}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px">
+              <span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">build</span>
+              <span>${escapeHTML(linkedJob.number || linkedJob.title || 'Job')}</span>
+            </a>
+          `;
+        }
+        
+        const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
+        if (linkedAsset) {
+          return `
+            <a href="#/assets/${linkedAsset.id}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px">
+              <span class="material-icons-outlined" style="font-size:14px;color:var(--text-secondary)">precision_manufacturing</span>
+              <span>${escapeHTML(linkedAsset.name || linkedAsset.number || 'Asset')}</span>
+            </a>
+          `;
+        }
+
+        if (n.jobNumber) {
+          return `<span class="font-medium" style="display:inline-flex;align-items:center;gap:4px"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">build</span>${escapeHTML(n.jobNumber)}</span>`;
+        }
+        if (n.assetName) {
+          return `<span class="font-medium" style="display:inline-flex;align-items:center;gap:4px"><span class="material-icons-outlined" style="font-size:14px;color:var(--text-secondary)">precision_manufacturing</span>${escapeHTML(n.assetName)}</span>`;
+        }
+
+        return '<span class="text-tertiary">—</span>';
+      },
+      width: '140px'
+    },
     { 
       key: 'priority', 
       label: 'Priority', 
@@ -133,10 +167,16 @@ export function renderNotificationsList(container, params) {
     { 
       key: 'status', 
       label: 'Status', 
-      render: (n) => `<span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status)}</span>`,
+      render: (n) => `<span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status || 'Pending')}</span>`,
       width: '110px'
     },
-
+    { 
+      key: 'createdAt', 
+      label: 'Date Created', 
+      render: (n) => n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—',
+      getValue: (n) => n.createdAt ? new Date(n.createdAt).getTime() : 0,
+      width: '110px'
+    },
     {
       key: 'actions',
       label: '',
@@ -256,6 +296,11 @@ export function renderNotificationsList(container, params) {
   });
 
   container.querySelector('#btn-raise-notification').addEventListener('click', () => openNotificationFormDrawer());
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
+  });
 
   table.addEventListener('click', (e) => {
     const btn = e.target.closest('button');

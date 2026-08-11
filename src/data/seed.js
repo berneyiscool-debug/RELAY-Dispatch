@@ -935,6 +935,35 @@ export async function seedData(force = false) {
   await store.save('schedule', generatedSchedule);
   await store.save('leads', generatedLeads);
   await store.save('notifications', generatedNotifications);
+
+  // System Notices Seeding
+  const generatedNotices = [
+    {
+      id: 'notice_1',
+      title: 'Database Synchronized',
+      message: 'Local offline database snapshot created and indexed successfully.',
+      type: 'info',
+      read: false,
+      createdAt: relativeDate(-1)
+    },
+    {
+      id: 'notice_2',
+      title: 'Maintenance Engine Active',
+      message: 'Background scheduler monitoring recurring jobs and asset service dates.',
+      type: 'info',
+      read: false,
+      createdAt: relativeDate(-2)
+    },
+    {
+      id: 'notice_3',
+      title: 'System Security Policy',
+      message: 'Role-based authorization and action gates are active across all modules.',
+      type: 'info',
+      read: true,
+      createdAt: relativeDate(-3)
+    }
+  ];
+  await store.save('notices', generatedNotices);
   await store.save('contractors', generatedContractors);
   await store.save('suppliers', generatedSuppliers);
   await store.save('timesheets', generatedTimesheets);

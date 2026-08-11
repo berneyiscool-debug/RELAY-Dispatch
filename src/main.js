@@ -19,6 +19,7 @@ import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenance
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { initLucideIcons } from './utils/icons.js';
+import { clearListSearch } from './utils/listSearch.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
@@ -460,6 +461,7 @@ function renderPage(handler) {
     mainContent.innerHTML = '';
     mainContent.scrollTop = 0;
     mainContent.removeAttribute('style');
+    clearListSearch(); // drop any previous page's table filter; a list page re-registers on render
     // Document editors take over the content area; clear that here so the class
     // can never outlive the page that set it.
     document.body.classList.remove('rde-immersive');

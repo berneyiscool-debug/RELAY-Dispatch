@@ -27,6 +27,7 @@ const TABLE_MAP = {
   suppliers: 'suppliers',
   purchaseOrders: 'purchase_orders',
   notifications: 'notifications',
+  notices: null,
   formTemplates: 'form_templates',
   formInstances: 'form_instances',
   kits: 'kits',
@@ -2232,7 +2233,8 @@ class DataStore {
       import('../components/Notifications.js')
         .then(({ showToast }) => showToast(
           `Couldn't ${action} ${collection.replace(/s$/, '')} — ${error?.message || 'database error'}`,
-          'error'))
+          'error',
+          { skipBell: true }))
         .catch(() => {});
     } catch (e) {}
   }
@@ -2272,6 +2274,9 @@ class DataStore {
     }
     if (collection === 'notifications' && !item.number) {
       item.number = this.getNextNumber('NT-', 'notifications');
+    }
+    if (collection === 'notices' && !item.number) {
+      item.number = this.getNextNumber('NTC-', 'notices');
     }
     if (collection === 'invoices' && !item.number) {
       item.number = this.getNextNumber('INV-', 'invoices');

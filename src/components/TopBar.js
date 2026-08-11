@@ -8,6 +8,7 @@ import { applyTheme, THEMES } from '../utils/theme.js';
 import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssistant.js';
 import { showModal } from './Modal.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
+import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
@@ -42,7 +43,7 @@ export function createTopBar() {
       <button class="topbar-action-btn" id="btn-help" title="Help">
         <span class="material-icons-outlined">help_outline</span>
       </button>
-      <button class="topbar-action-btn" id="btn-notifications" title="Notifications">
+      <button class="topbar-action-btn" id="btn-notifications" title="Notices">
         <span class="material-icons-outlined">notifications</span>
         <span class="notification-dot"></span>
       </button>
@@ -54,19 +55,33 @@ export function createTopBar() {
     </div>
   `;
 
-  // Search functionality
+  // Search functionality — context-aware: on a list page it filters that table
+  // in place; everywhere else it's the global "jump to a record" search.
   const searchInput = topbar.querySelector('#global-search');
   let searchTimeout;
   searchInput.addEventListener('input', (e) => {
+    const val = e.target.value;
+    const listHandler = getListSearch();
+    if (listHandler) {
+      hideSearchResults();
+      listHandler(val.trim());
+      return;
+    }
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-      const query = e.target.value.trim();
+      const query = val.trim();
       if (query.length >= 2) {
         showSearchResults(query);
       } else {
         hideSearchResults();
       }
     }, 300);
+  });
+
+  // Reflect the context in the placeholder, and clear the box when leaving a list.
+  window.addEventListener('relay-list-search-changed', () => {
+    searchInput.placeholder = getListSearch() ? `Filter ${getListSearchLabel() || 'list'}…` : 'Search…';
+    if (!getListSearch()) searchInput.value = '';
   });
 
   searchInput.addEventListener('blur', () => {
@@ -121,13 +136,13 @@ export function createTopBar() {
   // Apply stored theme on load
   applyStoredTheme();
 
-  // Notifications logic
+  // Notices logic
   const notifBtn = topbar.querySelector('#btn-notifications');
   const notifDot = topbar.querySelector('.notification-dot');
 
-  function updateNotificationsDot() {
-    const notifs = store.getAll('notifications');
-    const unread = notifs.filter(n => !n.read).length;
+  function updateNoticesDot() {
+    const notices = store.getAll('notices') || [];
+    const unread = notices.filter(n => !n.read).length;
     if (unread > 0) {
       notifDot.style.display = 'block';
     } else {
@@ -135,8 +150,8 @@ export function createTopBar() {
     }
   }
 
-  store.on('notifications', updateNotificationsDot);
-  updateNotificationsDot();
+  store.on('notices', updateNoticesDot);
+  updateNoticesDot();
 
   // Deputy Asks Notification Badge
   const askBadge = topbar.querySelector('#deputy-ask-badge');
@@ -235,11 +250,9 @@ function toggleNotificationsDropdown(btn) {
     return;
   }
 
-  const notifs = store.getAll('notifications').sort((a, b) => {
-    const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
-    const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
-    return dateB - dateA;
-  });
+  const notices = (store.getAll('notices') || [])
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 40);
   
   dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
@@ -249,7 +262,7 @@ function toggleNotificationsDropdown(btn) {
 
   const header = document.createElement('div');
   header.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center';
-  header.innerHTML = '<h4 style="margin:0;font-size:var(--font-size-md);font-weight:var(--font-weight-semibold);color:var(--text-primary);">Notifications</h4>';
+  header.innerHTML = '<h4 style="margin:0;font-size:var(--font-size-md);font-weight:var(--font-weight-semibold);color:var(--text-primary);">Notices</h4>';
   
   const markAllBtn = document.createElement('button');
   markAllBtn.className = 'btn btn-ghost btn-sm';
@@ -257,9 +270,9 @@ function toggleNotificationsDropdown(btn) {
   markAllBtn.textContent = 'Mark all as read';
   markAllBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const allNotifs = store.getAll('notifications');
+    const allNotices = store.getAll('notices') || [];
     let changed = false;
-    allNotifs.forEach(n => {
+    allNotices.forEach(n => {
       if (!n.read) {
         n.read = true;
         n.updatedAt = new Date().toISOString();
@@ -267,26 +280,26 @@ function toggleNotificationsDropdown(btn) {
       }
     });
     if (changed) {
-      store.save('notifications', allNotifs);
+      store.save('notices', allNotices);
     }
     dropdown.remove();
   });
   header.appendChild(markAllBtn);
   dropdown.appendChild(header);
 
-  if (notifs.length === 0) {
+  if (notices.length === 0) {
     const emptyState = document.createElement('div');
     emptyState.style.cssText = 'padding:32px 16px;text-align:center;color:var(--text-tertiary);font-size:var(--font-size-sm);display:flex;flex-direction:column;align-items:center;gap:8px;';
     emptyState.innerHTML = `
       <span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary);opacity:0.6;">notifications_off</span>
-      <span>No notifications</span>
+      <span>No system notices</span>
     `;
     dropdown.appendChild(emptyState);
   } else {
     const listContainer = document.createElement('div');
     listContainer.className = 'notifications-list';
     
-    notifs.forEach(n => {
+    notices.forEach(n => {
       const item = document.createElement('div');
       item.className = 'dropdown-item';
       item.style.cssText = `padding:12px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;white-space:normal;background:${n.read ? 'transparent' : 'var(--color-info-bg)'};display:flex;align-items:flex-start;transition:background 0.2s;`;
@@ -303,29 +316,18 @@ function toggleNotificationsDropdown(btn) {
       item.innerHTML = `
         ${dotHtml}
         <div style="flex:1">
-          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title || n.type || 'Notification'}</div>
-          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message || n.description || ''}</div>
-          <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${new Date(n.createdAt).toLocaleString()}</div>
+          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title || 'Notice'}</div>
+          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message || ''}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</div>
         </div>
       `;
       
       item.addEventListener('click', (e) => {
         e.stopPropagation();
-        store.update('notifications', n.id, { read: true });
+        store.update('notices', n.id, { read: true });
         
-        let targetLink = n.link;
-        if (!targetLink) {
-          if (n.jobId) {
-            targetLink = `/jobs/${n.jobId}`;
-          } else if (n.assetId) {
-            targetLink = `/assets/${n.assetId}`;
-          } else if (n.type === 'Low Stock' || (n.description && n.description.toLowerCase().includes('low stock'))) {
-            targetLink = '/stock';
-          }
-        }
-
-        if (targetLink) {
-          router.navigate(targetLink);
+        if (n.link) {
+          router.navigate(n.link);
         }
         dropdown.remove();
       });

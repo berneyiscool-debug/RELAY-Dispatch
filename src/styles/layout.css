@@ -717,11 +717,11 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
-  padding: 6px var(--space-xl);
+  padding: 4px var(--space-xl);
   font-size: var(--font-size-sm);
   border-bottom: 1px solid var(--border-color);
   background: var(--topbar-bg);
-  min-height: 48px;
+  min-height: 34px;
 }
 .breadcrumb-item {
   color: var(--text-tertiary);
@@ -791,7 +791,7 @@
   padding: 2px 16px;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border-color);
-  margin-bottom: 0;
+  margin-bottom: 0 !important; /* kill the inline margin-bottom:8px the pages hard-code — flush with the table */
   min-height: 28px;
 }
 .page-header h1 {
@@ -804,6 +804,52 @@
   align-items: center;
   gap: var(--space-xs);
 }
+
+/* ---- Consistent list-toolbar controls ----
+   Pages hard-code per-control inline sizing (height:26px/font:11px/varied widths),
+   which drifts. Normalise every button/select/input in the toolbar (both before
+   and after main.js relocates them into #breadcrumb-actions) to one size. */
+#breadcrumb-actions .btn,
+#breadcrumb-actions .form-select,
+#breadcrumb-actions .form-input,
+#breadcrumb-actions .toolbar-search input,
+.page-header-actions .btn,
+.page-header-actions .form-select,
+.page-header-actions .form-input,
+.page-header-actions .toolbar-search input {
+  height: 28px !important;
+  font-size: var(--font-size-sm) !important;
+}
+/* Compact date-range inputs */
+#breadcrumb-actions #filter-date-start,
+#breadcrumb-actions #filter-date-end,
+.page-header-actions #filter-date-start,
+.page-header-actions #filter-date-end {
+  width: 104px !important;
+}
+
+/* ---- Multi-select bar lives in the breadcrumb row ----
+   While rows are selected, show "N selected" + icon actions on the right and
+   hide the page's filters; clearing the selection restores them. */
+.breadcrumb.bulk-active #breadcrumb-actions { display: none !important; }
+.breadcrumb .bulk-action-bar { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.breadcrumb .bulk-action-bar .bulk-count { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.breadcrumb .bulk-action-bar .bulk-actions-separator { width: 1px; height: 18px; background: var(--border-color); margin: 0 2px; }
+
+/* ---- Compact Date range filter (replaces the two wide native date inputs) ---- */
+.date-range-filter { position: relative; }
+.date-range-filter.active .date-range-trigger { border-color: var(--color-primary); color: var(--color-primary-ink); }
+.date-range-trigger { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.date-range-pop {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: var(--z-dropdown);
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: var(--border-radius); box-shadow: var(--shadow-lg);
+  padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 190px;
+}
+.date-range-pop[hidden] { display: none; }
+.date-range-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--font-size-sm); color: var(--text-secondary); }
+.date-range-row input { width: 128px; }
+.date-range-clear { align-self: flex-end; }
 
 /* ---- Page Toolbar (Integrated Table Header Strip) ---- */
 .page-toolbar {
@@ -1977,6 +2023,13 @@
 .non-dashboard-schedule-page.main-content {
   padding-top: var(--space-xl) !important;
   padding-bottom: var(--space-xl) !important;
+}
+/* Table/list pages fill edge-to-edge — remove the top/bottom canvas padding
+   that opened a gap above the table and below the pagination. Detail/form
+   pages (no table container) keep their 24px breathing room above. */
+.non-dashboard-schedule-page.main-content:has([id$="-table-container"]) {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 .non-dashboard-schedule-page .page-toolbar {
   margin-top: 0 !important;

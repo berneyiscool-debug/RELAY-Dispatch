@@ -15,7 +15,12 @@ export function renderContractorsList(container) {
   container.innerHTML = `
     <div class="page-header">
       <h1>Contractors</h1>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Contractors">
+          <option value="businessName_asc">Sort: Business (A-Z)</option>
+          <option value="businessName_desc">Sort: Business (Z-A)</option>
+          <option value="contactName_asc">Sort: Contact (A-Z)</option>
+        </select>
         <button class="btn btn-primary" id="btn-new-contractor" data-tooltip="Onboard a new subcontractor technician" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Contractor</button>
       </div>
     </div>
@@ -123,6 +128,11 @@ export function renderContractorsList(container) {
   container.querySelector('#contractors-table-container').appendChild(table);
   
   container.querySelector('#btn-new-contractor').addEventListener('click', () => router.navigate('/contractors/new'));
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
+  });
 
   let activeFilter = 'all';
   let searchTerm = '';

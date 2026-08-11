@@ -4,14 +4,22 @@
 
 import { escapeHTML } from '../utils/security.js';
 
-export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null }) {
+export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc' }) {
   const wrapper = document.createElement('div');
-  wrapper.className = 'card';
+  wrapper.className = 'card data-table-card';
 
-  let sortCol = null;
-  let sortDir = 'asc';
+  const STORAGE_KEY = 'relay_table_page_size';
+  const savedSize = parseInt(localStorage.getItem(STORAGE_KEY) || '15', 10);
+  let pageSize = [15, 30, 45, 60].includes(savedSize) ? savedSize : 15;
+  
+  // Default to most recent (descending) by date or number/id column
+  let sortCol = defaultSortKey 
+    ? (columns.find(c => c.key === defaultSortKey) || null)
+    : (columns.find(c => ['createdAt', 'created_at', 'date', 'issueDate', 'orderDate', 'dueDate'].includes(c.key)) ||
+       columns.find(c => ['number', 'id', 'code'].includes(c.key)) || null);
+  
+  let sortDir = defaultSortDir || 'desc';
   let currentPage = 1;
-  const pageSize = 15;
   const selectedIds = new Set();
 
   function triggerSelectionChange() {
@@ -95,23 +103,45 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     html += '</tbody></table></div>';
 
     // Pagination
-    if (totalPages > 1) {
-      html += `<div class="pagination">
-        <span class="pagination-info">Showing ${start + 1}–${Math.min(start + pageSize, sorted.length)} of ${sorted.length}</span>
-        <div class="pagination-controls">
-          <button ${currentPage === 1 ? 'disabled' : ''} data-page="prev">‹</button>`;
-
-      for (let p = 1; p <= totalPages; p++) {
-        if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - currentPage) > 1) {
-          if (p === 3 || p === totalPages - 2) html += '<button disabled>…</button>';
-          continue;
-        }
-        html += `<button class="${p === currentPage ? 'page-active' : ''}" data-page="${p}">${p}</button>`;
-      }
-
-      html += `<button ${currentPage === totalPages ? 'disabled' : ''} data-page="next">›</button>
+    html += `<div class="pagination">
+      <div class="pagination-info" style="display:flex; align-items:center; gap:12px;">
+        <span>Showing ${start + 1}–${Math.min(start + pageSize, sorted.length)} of ${sorted.length}</span>
+        <div class="pagination-page-size" style="display:inline-flex; align-items:center; gap:4px; font-size:11px;">
+          <span style="color:var(--text-secondary)">Per page:</span>
+          <select class="dt-page-size-select form-select" style="height:22px; padding:0 18px 0 6px; font-size:11px; width:58px;">
+            <option value="15" ${pageSize === 15 ? 'selected' : ''}>15</option>
+            <option value="30" ${pageSize === 30 ? 'selected' : ''}>30</option>
+            <option value="45" ${pageSize === 45 ? 'selected' : ''}>45</option>
+            <option value="60" ${pageSize === 60 ? 'selected' : ''}>60</option>
+          </select>
         </div>
-      </div>`;
+      </div>
+      <div class="pagination-controls">
+        <button ${currentPage === 1 ? 'disabled' : ''} data-page="prev">‹</button>`;
+
+    for (let p = 1; p <= totalPages; p++) {
+      if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - currentPage) > 1) {
+        if (p === 3 || p === totalPages - 2) html += '<button disabled>…</button>';
+        continue;
+      }
+      html += `<button class="${p === currentPage ? 'page-active' : ''}" data-page="${p}">${p}</button>`;
+    }
+
+    html += `<button ${currentPage === totalPages || totalPages === 0 ? 'disabled' : ''} data-page="next">›</button>
+      </div>
+    </div>`;
+
+    wrapper.innerHTML = html;
+
+    // Event: page size select
+    const sizeSelect = wrapper.querySelector('.dt-page-size-select');
+    if (sizeSelect) {
+      sizeSelect.addEventListener('change', (e) => {
+        pageSize = parseInt(e.target.value, 10);
+        localStorage.setItem(STORAGE_KEY, String(pageSize));
+        currentPage = 1;
+        render();
+      });
     }
 
     wrapper.innerHTML = html;
@@ -188,6 +218,15 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
   wrapper.updateData = (newData) => {
     data = newData;
     render();
+  };
+
+  wrapper.setSort = (key, dir = 'desc') => {
+    const col = columns.find(c => c.key === key);
+    if (col) {
+      sortCol = col;
+      sortDir = dir;
+      render();
+    }
   };
 
   wrapper.clearSelection = () => {

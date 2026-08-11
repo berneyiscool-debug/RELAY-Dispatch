@@ -15,7 +15,13 @@ export function renderPurchaseOrdersList(container) {
   container.innerHTML = `
     <div class="page-header">
       <h1>Purchase Orders</h1>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Purchase Orders">
+          <option value="issueDate_desc">Sort: Newest First</option>
+          <option value="issueDate_asc">Sort: Oldest First</option>
+          <option value="total_desc">Sort: Total (High-Low)</option>
+          <option value="status_asc">Sort: Status</option>
+        </select>
         <button class="btn btn-primary" id="btn-new-po" data-tooltip="Draft a new purchase order to an external supplier for materials" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New PO</button>
       </div>
     </div>
@@ -193,6 +199,12 @@ export function renderPurchaseOrdersList(container) {
   container.querySelector('#po-search').addEventListener('input', (e) => {
     searchQuery = e.target.value;
     applyFilters();
+  });
+
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
   });
 
   container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {

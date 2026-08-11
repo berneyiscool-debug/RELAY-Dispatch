@@ -53,23 +53,28 @@ export function renderAssetList(container, params) {
   }
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Assets — ${escapeHTML(customer.company || `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed Customer')}` : 'Assets Manager'}</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-asset" data-tooltip="Register a new customer or company asset" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Asset</button>
-      </div>
-    </div>
-    
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter active" data-filter="all">All (${assets.length})</button>
-        <button class="toolbar-filter" data-filter="My Business">My Business (${assets.filter(a => a.ownerType === 'Business').length})</button>
-        <button class="toolbar-filter" data-filter="Customer Owned">Customer Owned (${assets.filter(a => a.ownerType === 'Customer').length})</button>
-        <button class="toolbar-filter" data-filter="In Maintenance">In Maintenance (${assets.filter(a => a.status === 'In Maintenance').length})</button>
-      </div>
-      <div class="toolbar-search">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search assets..." id="asset-search" />
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Assets">
+          <option value="name_asc">Sort: Name (A-Z)</option>
+          <option value="name_desc">Sort: Name (Z-A)</option>
+          <option value="type_asc">Sort: Type</option>
+          <option value="status_asc">Sort: Status</option>
+        </select>
+        <select id="asset-status-filter" class="form-select" style="width:130px; height:26px; font-size:11px; padding:0 20px 0 6px;">
+          <option value="all">All Assets</option>
+          <option value="My Business">My Business</option>
+          <option value="Customer Owned">Customer Owned</option>
+          <option value="In Maintenance">In Maintenance</option>
+        </select>
+        <div class="toolbar-search">
+          <span class="material-icons-outlined">search</span>
+          <input type="text" placeholder="Search assets..." id="asset-search" style="height:26px; font-size:11px; width:150px;" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-new-asset" style="height:26px; font-size:11px; padding:0 10px;">
+          <span class="material-icons-outlined" style="font-size:14px;">add</span> Add Asset
+        </button>
       </div>
     </div>
 
@@ -261,13 +266,15 @@ export function renderAssetList(container, params) {
     });
   });
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeFilter = btn.dataset.filter;
-      updateFilteredData();
-    });
+  container.querySelector('#asset-status-filter')?.addEventListener('change', (e) => {
+    activeFilter = e.target.value;
+    updateFilteredData();
+  });
+
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
   });
 
   container.querySelector('#asset-search').addEventListener('input', (e) => {

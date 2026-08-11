@@ -18,7 +18,12 @@ export function renderSuppliersList(container) {
   container.innerHTML = `
     <div class="page-header">
       <h1>Suppliers</h1>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Suppliers">
+          <option value="name_asc">Sort: Name (A-Z)</option>
+          <option value="name_desc">Sort: Name (Z-A)</option>
+          <option value="accountNumber_asc">Sort: Account #</option>
+        </select>
         ${canCreate ? `<button class="btn btn-primary" id="btn-new-supplier" data-tooltip="Register a new material or service vendor" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Supplier</button>` : ''}
       </div>
     </div>
@@ -136,6 +141,11 @@ export function renderSuppliersList(container) {
   if (canCreate) {
     container.querySelector('#btn-new-supplier').addEventListener('click', () => router.navigate('/suppliers/new'));
   }
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
+  });
 
   let activeFilter = 'all';
   let searchTerm = '';

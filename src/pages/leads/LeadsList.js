@@ -22,32 +22,35 @@ export function renderLeadsList(container) {
   };
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Leads</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-lead" data-tooltip="Create a new prospective customer lead" data-tooltip-pos="left">
-          <span class="material-icons-outlined">add</span> New Lead
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Leads">
+          <option value="createdAt_desc">Sort: Newest First</option>
+          <option value="createdAt_asc">Sort: Oldest First</option>
+          <option value="estimatedValue_desc">Sort: Value (High-Low)</option>
+          <option value="status_asc">Sort: Status</option>
+        </select>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <input type="date" class="form-input" id="filter-date-start" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
+          <span style="font-size:11px; color:var(--text-secondary)">to</span>
+          <input type="date" class="form-input" id="filter-date-end" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
+        </div>
+        <select id="filter-status-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:120px;">
+          <option value="all">All Statuses</option>
+          <option value="New">New</option>
+          <option value="Contacted">Contacted</option>
+          <option value="Qualified">Qualified</option>
+          <option value="Won">Won</option>
+          <option value="Lost">Lost</option>
+        </select>
+        <div class="toolbar-search">
+          <span class="material-icons-outlined">search</span>
+          <input type="text" placeholder="Search leads..." id="leads-search" style="height:26px; font-size:11px; width:150px;" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:26px; font-size:11px; padding:0 10px;">
+          <span class="material-icons-outlined" style="font-size:14px;">add</span> New Lead
         </button>
-      </div>
-    </div>
-
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
-        <button class="toolbar-filter active" data-filter="all">All (${leads.length})</button>
-        <button class="toolbar-filter" data-filter="New">New</button>
-        <button class="toolbar-filter" data-filter="Contacted">Contacted</button>
-        <button class="toolbar-filter" data-filter="Qualified">Qualified</button>
-        <button class="toolbar-filter" data-filter="Won">Won</button>
-        <button class="toolbar-filter" data-filter="Lost">Lost</button>
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex:0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search leads..." id="leads-search" />
       </div>
     </div>
     <div id="leads-table-container"></div>
@@ -271,13 +274,15 @@ export function renderLeadsList(container) {
     table.updateData(filtered);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeStatusFilter = btn.dataset.filter;
-      applyFilters();
-    });
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeStatusFilter = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
   });
 
   container.querySelector('#leads-search').addEventListener('input', (e) => {

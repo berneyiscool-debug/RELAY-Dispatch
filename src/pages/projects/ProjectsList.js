@@ -62,25 +62,16 @@ export function renderProjectsList(container) {
         }
       </style>
 
-      <div class="page-header">
+      <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h1>Projects</h1>
-        <div class="page-header-actions">
-          <button class="btn btn-primary" id="btn-new-project" data-tooltip="Create a new parent project" data-tooltip-pos="left">
-            <span class="material-icons-outlined">add</span> New Project
-          </button>
-        </div>
-      </div>
-
-      <!-- Filters & Toolbar -->
-      <div class="page-toolbar" style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
-        <div class="toolbar-filters">
-          <button class="toolbar-filter ${currentFilter === 'all' ? 'active' : ''}" data-filter="all">All (${projects.length})</button>
-          <button class="toolbar-filter ${currentFilter === 'In Progress' ? 'active' : ''}" data-filter="In Progress">In Progress</button>
-          <button class="toolbar-filter ${currentFilter === 'Completed' ? 'active' : ''}" data-filter="Completed">Completed</button>
-          <button class="toolbar-filter ${currentFilter === 'Cancelled' ? 'active' : ''}" data-filter="Cancelled">Cancelled</button>
-        </div>
-        <div style="display:flex; gap:12px; align-items:center;">
-          <select id="projects-date-range" class="form-select" style="min-width:160px; height:38px; border-radius:8px;">
+        <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Projects">
+            <option value="startDate_desc">Sort: Newest First</option>
+            <option value="startDate_asc">Sort: Oldest First</option>
+            <option value="name_asc">Sort: Name (A-Z)</option>
+            <option value="status_asc">Sort: Status</option>
+          </select>
+          <select id="projects-date-range" class="form-select" style="width:115px; height:26px; font-size:11px; padding:0 20px 0 6px;">
             <option value="all-time" ${currentDateRange === 'all-time' ? 'selected' : ''}>All Time</option>
             <option value="today" ${currentDateRange === 'today' ? 'selected' : ''}>Today</option>
             <option value="this-week" ${currentDateRange === 'this-week' ? 'selected' : ''}>This Week</option>
@@ -89,10 +80,19 @@ export function renderProjectsList(container) {
             <option value="last-month" ${currentDateRange === 'last-month' ? 'selected' : ''}>Last Month</option>
             <option value="this-year" ${currentDateRange === 'this-year' ? 'selected' : ''}>This Year</option>
           </select>
+          <select id="projects-status-filter" class="form-select" style="width:120px; height:26px; font-size:11px; padding:0 20px 0 6px;">
+            <option value="all" ${currentFilter === 'all' ? 'selected' : ''}>All Statuses</option>
+            <option value="In Progress" ${currentFilter === 'In Progress' ? 'selected' : ''}>In Progress</option>
+            <option value="Completed" ${currentFilter === 'Completed' ? 'selected' : ''}>Completed</option>
+            <option value="Cancelled" ${currentFilter === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+          </select>
           <div class="toolbar-search">
             <span class="material-icons-outlined">search</span>
-            <input type="text" placeholder="Search projects..." id="projects-search" value="${escapeHTML(searchQuery)}" />
+            <input type="text" placeholder="Search projects..." id="projects-search" value="${escapeHTML(searchQuery)}" style="height:26px; font-size:11px; width:150px;" />
           </div>
+          <button class="btn btn-primary btn-sm" id="btn-new-project" style="height:26px; font-size:11px; padding:0 10px;">
+            <span class="material-icons-outlined" style="font-size:14px;">add</span> New Project
+          </button>
         </div>
       </div>
 
@@ -205,12 +205,19 @@ export function renderProjectsList(container) {
       });
     }
 
-    // Filter clicks
-    container.querySelectorAll('.toolbar-filter').forEach(btn => {
-      btn.addEventListener('click', () => {
-        currentFilter = btn.dataset.filter;
+    // Filter status select
+    const statusSelect = container.querySelector('#projects-status-filter');
+    if (statusSelect) {
+      statusSelect.addEventListener('change', (e) => {
+        currentFilter = e.target.value;
         render();
       });
+    }
+
+    container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+      const val = e.target.value;
+      const [key, dir] = val.split('_');
+      table.setSort(key, dir);
     });
   };
 

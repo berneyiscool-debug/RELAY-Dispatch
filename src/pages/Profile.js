@@ -137,65 +137,71 @@ export function renderProfile(container) {
           padding: var(--space-lg);
           display: flex;
           flex-direction: column;
-          gap: var(--space-lg);
+      <style>
+        .profile-container {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
         }
-        .profile-header {
+        .profile-section {
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--border-color);
+          background: var(--card-bg);
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .profile-section-header {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .profile-section-title {
+          font-size: var(--font-size-lg);
+          font-weight: 600;
+          color: var(--text-primary);
+          margin: 0;
+        }
+        .profile-section-desc {
+          font-size: var(--font-size-sm);
+          color: var(--text-secondary);
+          margin: 0;
+        }
+        .profile-form-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 16px;
+          max-width: 800px;
+        }
+        .profile-avatar-row {
           display: flex;
           align-items: center;
           gap: 16px;
-          padding-bottom: 16px;
-          border-bottom: 1px solid var(--border-color);
-        }
-        .profile-title {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 700;
-          color: var(--text-primary);
-        }
-        .profile-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: var(--space-lg);
-        }
-        @media (max-width: 768px) {
-          .profile-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-        .profile-card {
-          background: var(--card-bg, rgba(255, 255, 255, 0.4));
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
-          border: 1px solid var(--border-color);
-          border-radius: 12px;
-          padding: var(--space-lg);
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-md);
         }
         .profile-avatar-preview {
-          width: 72px;
-          height: 72px;
+          width: 56px;
+          height: 56px;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 28px;
+          font-size: 22px;
           font-weight: 700;
           color: #ffffff;
-          margin: 0 auto 16px auto;
-          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-          transition: background-color 0.2s;
+          flex-shrink: 0;
+          position: relative;
+          overflow: hidden;
+          cursor: pointer;
         }
         .color-picker-grid {
-          display: grid;
-          grid-template-columns: repeat(8, 1fr);
+          display: flex;
+          align-items: center;
           gap: 8px;
-          margin-top: 8px;
+          margin-top: 4px;
         }
         .color-swatch {
-          width: 24px;
-          height: 24px;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
           border: 2px solid transparent;
           cursor: pointer;
@@ -214,17 +220,22 @@ export function renderProfile(container) {
       </style>
 
       <div class="profile-container">
-        <div class="profile-header">
-          <span class="material-icons-outlined" style="font-size: 28px; color: var(--color-primary);">account_circle</span>
-          <h2 class="profile-title">My Account</h2>
+        <div class="page-header">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined" style="font-size: 20px; color: var(--color-primary);">account_circle</span>
+            <h1 style="font-size:var(--font-size-xl); margin:0;">My Account</h1>
+          </div>
         </div>
 
-        <div class="profile-grid">
-          <!-- Left: User details -->
-          <div class="profile-card">
-            <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">Personal Information</h3>
-            
-            <div class="profile-avatar-preview" id="profile-avatar" style="background-color: ${activeAvatarColor}; position: relative; overflow: hidden; cursor: pointer;">
+        <!-- Section 1: Personal Information -->
+        <div class="profile-section">
+          <div class="profile-section-header">
+            <h2 class="profile-section-title">Personal Information</h2>
+            <p class="profile-section-desc">Manage your public profile, display name, and avatar settings.</p>
+          </div>
+          
+          <div class="profile-avatar-row">
+            <div class="profile-avatar-preview" id="profile-avatar" style="background-color: ${activeAvatarColor};">
               ${uploadedAvatarUrl 
                 ? `<img src="${uploadedAvatarUrl}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" id="profile-avatar-img" />`
                 : escapeHTML(initials)
@@ -232,18 +243,28 @@ export function renderProfile(container) {
               <div class="avatar-hover-overlay" style="
                 position: absolute; inset: 0; background: rgba(15, 23, 42, 0.6);
                 display: flex; align-items: center; justify-content: center;
-                opacity: 0; transition: opacity 0.2s; color: #fff; font-size: 11px; font-weight: 600;
+                opacity: 0; transition: opacity 0.2s; color: #fff; font-size: 10px; font-weight: 600;
                 pointer-events: none;
               ">
-                Upload Photo
+                Upload
               </div>
             </div>
             <input type="file" id="profile-avatar-input" accept="image/*" style="display: none;" />
             
-            <div style="text-align: center; margin-top: -8px; margin-bottom: 12px;">
-              <a href="#" id="link-remove-avatar" style="color: var(--color-danger); text-decoration: none; font-size: 12px; display: ${uploadedAvatarUrl ? 'inline-block' : 'none'};">Remove Photo</a>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+              <div style="display:flex; gap:10px; align-items:center;">
+                <button class="btn btn-secondary btn-sm" id="btn-trigger-upload" onclick="document.getElementById('profile-avatar-input').click()">Upload Photo</button>
+                <a href="#" id="link-remove-avatar" style="color: var(--color-danger); text-decoration: none; font-size: 11px; display: ${uploadedAvatarUrl ? 'inline-block' : 'none'};">Remove Photo</a>
+              </div>
+              <div class="color-picker-grid">
+                ${PRESET_AVATAR_COLORS.map(color => `
+                  <div class="color-swatch ${color === activeAvatarColor ? 'active' : ''}" data-color="${color}" style="background-color: ${color}"></div>
+                `).join('')}
+              </div>
             </div>
+          </div>
 
+          <div class="profile-form-grid">
             <div class="form-group">
               <label class="form-label">Full Name</label>
               <input type="text" id="profile-name" class="form-input" value="${escapeHTML(currentUser.name || '')}" placeholder="Your Full Name" required />
@@ -251,138 +272,143 @@ export function renderProfile(container) {
 
             <div class="form-group">
               <label class="form-label">Username / Email</label>
-              <input type="text" class="form-input" value="${escapeHTML(usernameOrEmail)}" disabled style="background: rgba(0, 0, 0, 0.04); color: var(--text-muted); cursor: not-allowed;" />
+              <input type="text" class="form-input" value="${escapeHTML(usernameOrEmail)}" disabled style="background: var(--bg-color); color: var(--text-secondary); cursor: not-allowed;" />
             </div>
 
             <div class="form-group">
               <label class="form-label">Role / Access Type</label>
-              <input type="text" class="form-input" value="${escapeHTML(displayRole)}" disabled style="background: rgba(0, 0, 0, 0.04); color: var(--text-muted); cursor: not-allowed;" />
+              <input type="text" class="form-input" value="${escapeHTML(displayRole)}" disabled style="background: var(--bg-color); color: var(--text-secondary); cursor: not-allowed;" />
             </div>
+          </div>
 
-            <div class="form-group">
-              <label class="form-label">Avatar Color</label>
-              <div class="color-picker-grid">
-                ${PRESET_AVATAR_COLORS.map(color => `
-                  <div class="color-swatch ${color === activeAvatarColor ? 'active' : ''}" data-color="${color}" style="background-color: ${color}"></div>
-                `).join('')}
-              </div>
-            </div>
-
-            <button class="btn btn-primary" id="btn-save-profile-details" style="margin-top: 12px; justify-content: center;">
+          <div style="max-width:800px; display:flex; justify-content:flex-end;">
+            <button class="btn btn-primary btn-sm" id="btn-save-profile-details">
               Save Details
             </button>
           </div>
+        </div>
 
-          <!-- Right: Password resets & Recovery options -->
-          <div style="display: flex; flex-direction: column; gap: var(--space-lg);">
-            
-            <!-- Card 1: Change Password / PIN -->
-            <div class="profile-card">
-              <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">Security</h3>
-              <p style="margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;">
-                ${isLocalAdmin ? 'Change the PIN code used to lock and unlock your local business profile on this machine.' : 'Update your credentials used to sign in to your company.'}
-              </p>
+        <!-- Section 2: Security -->
+        <div class="profile-section">
+          <div class="profile-section-header">
+            <h2 class="profile-section-title">Security</h2>
+            <p class="profile-section-desc">${isLocalAdmin ? 'Change the PIN code used to lock and unlock your local business profile on this machine.' : 'Update your credentials used to sign in to your company.'}</p>
+          </div>
 
-              <div class="form-group">
-                <label class="form-label">${isLocalAdmin ? 'New PIN / Password' : 'New Password'}</label>
-                <input type="password" id="profile-new-pwd" class="form-input" placeholder="${isLocalAdmin ? 'Leave blank to remove PIN protection' : 'Minimum 6 characters'}" minlength="${isLocalAdmin ? 0 : 6}" />
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Confirm ${isLocalAdmin ? 'PIN / Password' : 'Password'}</label>
-                <input type="password" id="profile-confirm-pwd" class="form-input" placeholder="Confirm new password" />
-              </div>
-
-              <button class="btn btn-primary" id="btn-update-profile-password" style="margin-top: 8px; justify-content: center;">
-                Update ${isLocalAdmin ? 'PIN' : 'Password'}
-              </button>
+          <div class="profile-form-grid">
+            <div class="form-group">
+              <label class="form-label">${isLocalAdmin ? 'New PIN / Password' : 'New Password'}</label>
+              <input type="password" id="profile-new-pwd" class="form-input" placeholder="${isLocalAdmin ? 'Leave blank to remove PIN protection' : 'Minimum 6 characters'}" minlength="${isLocalAdmin ? 0 : 6}" />
             </div>
 
-            <!-- Card: Dispatch start location (v1.3 maps, flag-gated) -->
-            ${FLAGS.maps ? `
-              <div class="profile-card">
-                <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">Dispatch Start Location</h3>
-                <p style="margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;">
-                  Where your day's driving starts and ends for route planning. Leave blank to use the company office.
-                </p>
-                <div class="form-group">
-                  <label class="form-label">Start Address</label>
-                  <input type="text" id="profile-start-location" class="form-input"
-                    placeholder="Company office (default)" value="${escapeHTML(myStartLocation?.address || '')}" />
-                  <div id="profile-start-location-hint" style="font-size: 11.5px; color: var(--text-tertiary); margin-top: 6px;">
-                    ${myStartLocation?.address ? 'Custom start location set.' : 'Currently using the company office address.'}
-                  </div>
-                </div>
-                <button class="btn btn-primary" id="btn-save-start-location" style="margin-top: 8px; justify-content: center;">
-                  Save Start Location
-                </button>
-              </div>` : ''}
-
-            <!-- Card 2: Local Recovery (Local Admin Only) -->
-            ${isLocalAdmin ? `
-              <div class="profile-card">
-                <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">Secret Recovery Question</h3>
-                <p style="margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;">
-                  Configure a secret question to reset your PIN if you ever forget it. The answer is stored securely.
-                </p>
-
-                <div class="form-group">
-                  <label class="form-label">Recovery Question</label>
-                  <select id="profile-recovery-select" class="form-select" style="width: 100%;">
-                    <option value="What was the name of your first pet?" ${activeRecoveryQuestion === 'What was the name of your first pet?' ? 'selected' : ''}>What was the name of your first pet?</option>
-                    <option value="In what city or town did your parents meet?" ${activeRecoveryQuestion === 'In what city or town did your parents meet?' ? 'selected' : ''}>In what city or town did your parents meet?</option>
-                    <option value="What was the name of your first school?" ${activeRecoveryQuestion === 'What was the name of your first school?' ? 'selected' : ''}>What was the name of your first school?</option>
-                    <option value="What was your favorite childhood food?" ${activeRecoveryQuestion === 'What was your favorite childhood food?' ? 'selected' : ''}>What was your favorite childhood food?</option>
-                    <option value="custom" ${activeRecoveryQuestion && !['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? 'selected' : ''}>Write a custom question...</option>
-                  </select>
-                </div>
-
-                <div class="form-group" id="profile-recovery-custom-group" style="display: ${activeRecoveryQuestion && !['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? 'block' : 'none'};">
-                  <label class="form-label">Custom Question</label>
-                  <input type="text" id="profile-recovery-custom-question" class="form-input" placeholder="Type your custom question" value="${escapeHTML(!['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? activeRecoveryQuestion : '')}" />
-                </div>
-
-                <div class="form-group">
-                  <label class="form-label">Recovery Answer</label>
-                  <input type="password" id="profile-recovery-answer" class="form-input" placeholder="Type answer (leave blank to keep current)" />
-                </div>
-
-                <button class="btn btn-primary" id="btn-update-recovery-question" style="margin-top: 8px; justify-content: center;">
-                  Save Recovery Settings
-                </button>
-              </div>
-            ` : ''}
-
-            <!-- Card 3: AI Co-Pilot Memory (Learned Profile) -->
-            <div class="profile-card">
-              <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">AI Co-Pilot Memory (Learned Profile)</h3>
-              <p style="margin: 0 0 12px 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.4;">
-                This factsheet is maintained automatically by Relay during your conversations to customize its interactions around your work patterns and preferences.
-              </p>
-              
-              <div class="form-group">
-                <label class="switch-container" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
-                  <input type="checkbox" id="profile-ai-enabled" ${memoryEnabled ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
-                  <strong>Make my day easier</strong>
-                </label>
-                <div class="text-tertiary" style="font-size:11.5px; margin-top:2px; margin-left:24px; line-height:1.3; color: var(--text-secondary);">
-                  Allows Relay to automatically learn your preferences, default assignees, and work patterns during chats to customize the co-pilot around your day.
-                </div>
-              </div>
-
-              <div class="form-group" id="profile-factsheet-group" style="margin-top: 12px; display: ${memoryEnabled ? 'block' : 'none'};">
-                <label class="form-label" style="font-weight: 600;">Personal Factsheet Context</label>
-                <textarea class="form-input" id="profile-ai-factsheet" rows="5" style="font-family:inherit; resize:vertical; font-size:12.5px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe on Mondays' or 'I like writing job notes in bullet points').">${escapeHTML(factsheetVal)}</textarea>
-                <p class="text-tertiary" style="font-size:11px; margin-top:4px; color: var(--text-secondary);">You can edit this factsheet manually here, or tell Relay to remember facts during your chats.</p>
-              </div>
-
-              <button class="btn btn-primary" id="btn-save-profile-factsheet" style="margin-top: 4px; justify-content: center;">
-                Save Memory Settings
-              </button>
+            <div class="form-group">
+              <label class="form-label">Confirm ${isLocalAdmin ? 'PIN / Password' : 'Password'}</label>
+              <input type="password" id="profile-confirm-pwd" class="form-input" placeholder="Confirm new password" />
             </div>
+          </div>
 
+          <div style="max-width:800px; display:flex; justify-content:flex-end;">
+            <button class="btn btn-primary btn-sm" id="btn-update-profile-password">
+              Update ${isLocalAdmin ? 'PIN' : 'Password'}
+            </button>
           </div>
         </div>
+
+        <!-- Section 3: Dispatch Start Location -->
+        ${FLAGS.maps ? `
+          <div class="profile-section">
+            <div class="profile-section-header">
+              <h2 class="profile-section-title">Dispatch Start Location</h2>
+              <p class="profile-section-desc">Where your day's driving starts and ends for route planning. Leave blank to use company office.</p>
+            </div>
+            <div class="profile-form-grid">
+              <div class="form-group" style="grid-column: 1 / -1;">
+                <label class="form-label">Start Address</label>
+                <input type="text" id="profile-start-location" class="form-input"
+                  placeholder="Company office (default)" value="${escapeHTML(myStartLocation?.address || '')}" />
+                <div id="profile-start-location-hint" style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">
+                  ${myStartLocation?.address ? 'Custom start location set.' : 'Currently using company office address.'}
+                </div>
+              </div>
+            </div>
+            <div style="max-width:800px; display:flex; justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="btn-save-start-location">
+                Save Start Location
+              </button>
+            </div>
+          </div>` : ''}
+
+        <!-- Section 4: Local Recovery (Local Admin Only) -->
+        ${isLocalAdmin ? `
+          <div class="profile-section">
+            <div class="profile-section-header">
+              <h2 class="profile-section-title">Secret Recovery Question</h2>
+              <p class="profile-section-desc">Configure a secret question to reset your PIN if you ever forget it.</p>
+            </div>
+
+            <div class="profile-form-grid">
+              <div class="form-group">
+                <label class="form-label">Recovery Question</label>
+                <select id="profile-recovery-select" class="form-select" style="width: 100%;">
+                  <option value="What was the name of your first pet?" ${activeRecoveryQuestion === 'What was the name of your first pet?' ? 'selected' : ''}>What was the name of your first pet?</option>
+                  <option value="In what city or town did your parents meet?" ${activeRecoveryQuestion === 'In what city or town did your parents meet?' ? 'selected' : ''}>In what city or town did your parents meet?</option>
+                  <option value="What was the name of your first school?" ${activeRecoveryQuestion === 'What was the name of your first school?' ? 'selected' : ''}>What was the name of your first school?</option>
+                  <option value="What was your favorite childhood food?" ${activeRecoveryQuestion === 'What was your favorite childhood food?' ? 'selected' : ''}>What was your favorite childhood food?</option>
+                  <option value="custom" ${activeRecoveryQuestion && !['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? 'selected' : ''}>Write a custom question...</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="profile-recovery-custom-group" style="display: ${activeRecoveryQuestion && !['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? 'block' : 'none'};">
+                <label class="form-label">Custom Question</label>
+                <input type="text" id="profile-recovery-custom-question" class="form-input" placeholder="Type your custom question" value="${escapeHTML(!['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? activeRecoveryQuestion : '')}" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Recovery Answer</label>
+                <input type="password" id="profile-recovery-answer" class="form-input" placeholder="Type answer (leave blank to keep current)" />
+              </div>
+            </div>
+
+            <div style="max-width:800px; display:flex; justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="btn-update-recovery-question">
+                Save Recovery Settings
+              </button>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Section 5: AI Co-Pilot Memory -->
+        <div class="profile-section">
+          <div class="profile-section-header">
+            <h2 class="profile-section-title">AI Co-Pilot Memory (Learned Profile)</h2>
+            <p class="profile-section-desc">Maintained automatically during conversations to customize co-pilot interactions around your work patterns.</p>
+          </div>
+          
+          <div style="max-width:800px;">
+            <div class="form-group">
+              <label class="switch-container" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px;">
+                <input type="checkbox" id="profile-ai-enabled" ${memoryEnabled ? 'checked' : ''} style="width:15px; height:15px; cursor:pointer;" />
+                <strong>Make my day easier</strong>
+              </label>
+              <div style="font-size:11px; margin-top:2px; margin-left:23px; color: var(--text-secondary);">
+                Allows Relay to automatically learn your preferences, default assignees, and work patterns during chats.
+              </div>
+            </div>
+
+            <div class="form-group" id="profile-factsheet-group" style="margin-top: 12px; display: ${memoryEnabled ? 'block' : 'none'};">
+              <label class="form-label">Personal Factsheet Context</label>
+              <textarea class="form-input" id="profile-ai-factsheet" rows="4" style="font-family:inherit; resize:vertical; font-size:11.5px;" placeholder="Write down your preferences here (e.g. 'I prefer scheduling HVAC jobs to John Doe on Mondays').">${escapeHTML(factsheetVal)}</textarea>
+              <p style="font-size:10.5px; margin-top:4px; color: var(--text-tertiary);">You can edit this factsheet manually here, or tell Relay to remember facts during your chats.</p>
+            </div>
+          </div>
+
+          <div style="max-width:800px; display:flex; justify-content:flex-end;">
+            <button class="btn btn-primary btn-sm" id="btn-save-profile-factsheet">
+              Save Memory Settings
+            </button>
+          </div>
+        </div>
+
       </div>
     `;
 

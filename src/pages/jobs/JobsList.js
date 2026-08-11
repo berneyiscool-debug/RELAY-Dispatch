@@ -15,23 +15,39 @@ export function renderJobsList(container, params) {
   const canCreate = hasPermission('Jobs', 'create');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs'}</h1>
-      ${canCreate ? `
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-job" data-tooltip="Create a new project or service job record" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Job</button>
-      </div>` : ''}
-    </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div id="jobs-filters-carousel-container" style="flex: 1 1 auto; overflow:hidden"></div>
-      <div style="display:flex; align-items:center; gap:8px; flex: 0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex: 0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search jobs, customers, assets..." id="jobs-search" />
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Jobs">
+          <option value="createdAt_desc">Sort: Newest First</option>
+          <option value="createdAt_asc">Sort: Oldest First</option>
+          <option value="number_asc">Sort: Job #</option>
+          <option value="title_asc">Sort: Title (A-Z)</option>
+          <option value="status_asc">Sort: Status</option>
+        </select>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <input type="date" class="form-input" id="filter-date-start" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
+          <span style="font-size:11px; color:var(--text-secondary)">to</span>
+          <input type="date" class="form-input" id="filter-date-end" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
+        </div>
+        <select id="filter-status-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:125px;">
+          <option value="">All Statuses</option>
+          <option value="Pending">Pending</option>
+          <option value="Scheduled">Scheduled</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+          <option value="On Hold">On Hold</option>
+          <option value="Invoiced">Invoiced</option>
+          <option value="Recurring Template">Recurring Template</option>
+        </select>
+        <div class="toolbar-search">
+          <span class="material-icons-outlined">search</span>
+          <input type="text" placeholder="Search jobs..." id="jobs-search" style="height:26px; font-size:11px; width:150px;" />
+        </div>
+        ${canCreate ? `
+          <button class="btn btn-primary btn-sm" id="btn-new-job" style="height:26px; font-size:11px; padding:0 10px;">
+            <span class="material-icons-outlined" style="font-size:14px;">add</span> New Job
+          </button>` : ''}
       </div>
     </div>
     <div id="jobs-table-container"></div>
@@ -524,14 +540,18 @@ export function renderJobsList(container, params) {
     btnNewJob.addEventListener('click', () => router.navigate('/jobs/new'));
   }
 
-  let tagFilteredData = [...jobs];
+  let selectedStatus = '';
   let searchQuery = '';
   let filterStartDate = '';
   let filterEndDate = '';
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
-    const filtered = tagFilteredData.filter(j => {
+    const filtered = jobs.filter(j => {
+      if (selectedStatus) {
+        if (selectedStatus === 'Recurring Template' && !j.isRecurring) return false;
+        if (selectedStatus !== 'Recurring Template' && j.status !== selectedStatus) return false;
+      }
       if (q) {
         const num = j.number || '';
         const title = j.title || '';
@@ -551,38 +571,30 @@ export function renderJobsList(container, params) {
         }
       }
 
-      // Strictly filter by scheduledDate so jobs without one don't magically appear due to their createdAt date
       if (filterStartDate || filterEndDate) {
-        if (!j.scheduledDate) {
-          return false;
-        }
+        if (!j.scheduledDate) return false;
         const jDateStr = j.scheduledDate.split('T')[0];
-        if (filterStartDate && jDateStr < filterStartDate) {
-          return false;
-        }
-        if (filterEndDate && jDateStr > filterEndDate) {
-          return false;
-        }
+        if (filterStartDate && jDateStr < filterStartDate) return false;
+        if (filterEndDate && jDateStr > filterEndDate) return false;
       }
 
       return true;
     });
-    console.log(`Filtered jobs count: ${filtered.length}. Filter range: ${filterStartDate} to ${filterEndDate}`);
-    console.log(filtered.map(j => ({ id: j.id, title: j.title, scheduledDate: j.scheduledDate, techId: j.technicianId, technicians: j.technicians, status: j.status })));
     table.updateData(filtered);
   }
 
-  createToolbarFilters({
-    container: container.querySelector('#jobs-filters-carousel-container'),
-    originalData: jobs,
-    filterType: 'jobs',
-    onFilterChange: (filtered) => {
-      tagFilteredData = filtered;
-      applyFilters();
-    }
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    selectedStatus = e.target.value;
+    applyFilters();
   });
 
-  container.querySelector('#jobs-search').addEventListener('input', (e) => {
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
+  });
+
+  container.querySelector('#jobs-search')?.addEventListener('input', (e) => {
     searchQuery = e.target.value;
     applyFilters();
   });

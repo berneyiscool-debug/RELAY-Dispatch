@@ -12,30 +12,35 @@ export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Invoices</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-outline" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none;"><span class="material-icons-outlined">download</span> Export to Accounting</button>
-        <button class="btn btn-primary" id="btn-new-invoice" data-tooltip="Create a new draft invoice to bill a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Invoice</button>
-      </div>
-    </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
-        <button class="toolbar-filter active" data-filter="all">All (${invoices.length})</button>
-        <button class="toolbar-filter" data-filter="Draft">Draft</button>
-        <button class="toolbar-filter" data-filter="Sent">Sent</button>
-        <button class="toolbar-filter" data-filter="Paid">Paid</button>
-        <button class="toolbar-filter" data-filter="Overdue">Overdue</button>
-        <button class="toolbar-filter" data-filter="Void">Void</button>
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex:0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search invoices..." id="invoices-search" />
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Invoices">
+          <option value="issueDate_desc">Sort: Newest First</option>
+          <option value="issueDate_asc">Sort: Oldest First</option>
+          <option value="number_asc">Sort: Invoice #</option>
+          <option value="total_desc">Sort: Total (High-Low)</option>
+          <option value="status_asc">Sort: Status</option>
+        </select>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <input type="date" class="form-input" id="filter-date-start" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
+          <span style="font-size:11px; color:var(--text-secondary)">to</span>
+          <input type="date" class="form-input" id="filter-date-end" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
+        </div>
+        <select id="filter-status-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:120px;">
+          <option value="all">All Statuses</option>
+          <option value="Draft">Draft</option>
+          <option value="Sent">Sent</option>
+          <option value="Paid">Paid</option>
+          <option value="Overdue">Overdue</option>
+          <option value="Void">Void</option>
+        </select>
+        <div class="toolbar-search">
+          <span class="material-icons-outlined">search</span>
+          <input type="text" placeholder="Search invoices..." id="invoices-search" style="height:26px; font-size:11px; width:150px;" />
+        </div>
+        <button class="btn btn-outline btn-sm" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none; height:26px; font-size:11px; padding:0 10px;"><span class="material-icons-outlined" style="font-size:14px;">download</span> Export</button>
+        <button class="btn btn-primary btn-sm" id="btn-new-invoice" style="height:26px; font-size:11px; padding:0 10px;"><span class="material-icons-outlined" style="font-size:14px;">add</span> New Invoice</button>
       </div>
     </div>
     <div id="invoices-table-container"></div>
@@ -372,13 +377,15 @@ export function renderInvoicesList(container) {
     updateExportButtonVisibility(filteredData);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeStatusFilter = btn.dataset.filter;
-      applyFilters();
-    });
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeStatusFilter = e.target.value;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
   });
 
   btnExport.addEventListener('click', () => {

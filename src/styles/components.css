@@ -116,13 +116,20 @@
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: var(--border-radius-md); /* 10px flat surface (glass removed) */
-  box-shadow: var(--card-shadow);
-  transition: box-shadow 0.22s, border-color 0.22s;
+  border-radius: var(--border-radius-sm);
+  box-shadow: none;
+  transition: border-color 0.22s;
+}
+.card:not(.dashboard-card) {
+  box-shadow: none;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: 1px solid var(--border-color);
 }
 .card:hover {
-  box-shadow: var(--card-shadow-hover);
-  border-color: rgba(16, 24, 40, 0.14); /* quieter: neutral hairline, was indigo aura */
+  border-color: var(--border-color);
 }
 .card-header {
   display: flex;
@@ -512,8 +519,26 @@ select.badge option {
 }
 
 /* ---- Table ---- */
+.data-table-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: 1px solid var(--card-border);
+  box-shadow: none;
+  background: var(--card-bg);
+  margin: 0;
+  overflow: hidden;
+}
 .data-table-wrapper {
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
+  overflow-y: auto;
 }
 .data-table {
   width: 100%;
@@ -521,8 +546,11 @@ select.badge option {
   font-variant-numeric: tabular-nums;   /* aligned figures, Supabase-style */
 }
 .data-table th {
-  padding: 10px 14px;
-  font-size: var(--font-size-xs);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 3px 8px;
+  font-size: 10px;
   font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.05em; /* Category trackers */
@@ -533,13 +561,14 @@ select.badge option {
   cursor: pointer;
   user-select: none;
   transition: color var(--transition-fast);
-  background: var(--bg-color); /* subtle opaque header (was frosted glass) */
+  background: var(--bg-color); /* subtle opaque header */
+  height: 25px;
 }
 .data-table th:hover {
   color: var(--text-primary);
 }
 .data-table th .sort-icon {
-  font-size: 14px;
+  font-size: 11px;
   margin-left: 2px;
   opacity: 0.4;
 }
@@ -548,20 +577,24 @@ select.badge option {
   color: var(--color-primary);
 }
 .data-table td {
-  padding: 9px 14px; /* compact Supabase rows */
+  padding: 4px 8px; /* 15% taller rows (28px height) */
   border-bottom: 1px solid var(--border-color);
   font-size: var(--font-size-base);
   color: var(--text-primary);
   vertical-align: middle;
+  height: 28px;
+}
+.data-table tr:last-child td {
+  border-bottom: none;
 }
 @media (max-width: 768px) {
   /* Mobile technician lists keep larger row targets */
   .data-table td {
-    padding: 13px 14px;
+    padding: 6px 8px;
   }
 }
 .data-table tr:hover td {
-  background: var(--bg-color); /* neutral hover (accent reserved for actions) */
+  background: var(--bg-color); /* neutral hover */
 }
 .data-table tr.selected td {
   background: var(--color-primary-light);
@@ -575,13 +608,26 @@ select.badge option {
   text-decoration: underline;
 }
 
+/* Status badges inside data tables */
+.data-table .badge, select.badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  height: 20px;
+  line-height: 18px;
+}
+select.badge {
+  padding: 1px 16px 1px 6px;
+  background-position: right 4px center;
+  background-size: 8px;
+}
+
 /* Monospace / tabular utilities — for IDs, reference numbers and money,
    the way Supabase renders uuid/ref columns. Apply .mono or .cell-mono in
    table cells that hold an id/number. */
 .mono, .cell-mono, .data-table .id, .data-table .cell-id {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
 }
 .money, .tabular-nums { font-variant-numeric: tabular-nums; }
@@ -591,7 +637,11 @@ select.badge option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-md) var(--space-base);
+  padding: 4px 10px;
+  border-top: 1px solid var(--border-color);
+  background: var(--card-bg);
+  margin-top: auto;
+  flex-shrink: 0;
 }
 .pagination-info {
   font-size: var(--font-size-sm);

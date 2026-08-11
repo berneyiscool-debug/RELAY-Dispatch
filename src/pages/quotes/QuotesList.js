@@ -4,6 +4,8 @@ import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderQuotesList(container, params) {
   const customerId = params?.customerId;
@@ -13,30 +15,18 @@ export function renderQuotesList(container, params) {
   const canCreate = hasPermission('Quotes', 'create');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Quotes — ${escapeHTML(customer.company)}` : 'Quotes'}</h1>
-      ${canCreate ? `
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-quote" data-tooltip="Draft a new pricing proposal or project estimation for a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Quote</button>
-      </div>` : ''}
-    </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
-        <button class="toolbar-filter active" data-filter="all">All (${quotes.length})</button>
-        <button class="toolbar-filter" data-filter="Draft">Draft</button>
-        <button class="toolbar-filter" data-filter="Finalised">Finalised</button>
-        <button class="toolbar-filter" data-filter="Sent">Sent</button>
-        <button class="toolbar-filter" data-filter="Accepted">Accepted</button>
-        <button class="toolbar-filter" data-filter="Declined">Declined</button>
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex:0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search quotes..." id="quotes-search" />
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div id="date-range-mount"></div>
+        <select id="filter-status-select" class="form-select" style="width:160px;">
+          <option value="all">All Statuses (${quotes.length})</option>
+          ${['Draft','Finalised','Sent','Accepted','Declined'].map(s => `<option value="${s}">${s} (${quotes.filter(q => q.status === s).length})</option>`).join('')}
+        </select>
+        ${canCreate ? `
+          <button class="btn btn-primary btn-sm" id="btn-new-quote">
+            <span class="material-icons-outlined" style="font-size:14px;">add</span> New Quote
+          </button>` : ''}
       </div>
     </div>
     <div id="quotes-table-container"></div>
@@ -301,27 +291,14 @@ export function renderQuotesList(container, params) {
     table.updateData(filtered);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeStatusFilter = btn.dataset.filter;
-      applyFilters();
-    });
-  });
-
-  container.querySelector('#quotes-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeStatusFilter = e.target.value;
     applyFilters();
   });
 
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
+  // Table search box removed — the top bar's ⌘K search filters this list while it's open.
+  setListSearch((q) => { searchQuery = q; applyFilters(); }, 'quotes');
 
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
-    applyFilters();
-  });
+  const dateMount = container.querySelector('#date-range-mount');
+  if (dateMount) dateMount.replaceWith(createDateRangeFilter({ onChange: (s, e) => { filterStartDate = s; filterEndDate = e; applyFilters(); } }));
 }
