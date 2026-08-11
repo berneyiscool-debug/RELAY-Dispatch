@@ -7,6 +7,8 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderLeadsList(container) {
   const leads = store.getAll('leads');
@@ -24,32 +26,14 @@ export function renderLeadsList(container) {
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Leads</h1>
-      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Leads">
-          <option value="createdAt_desc">Sort: Newest First</option>
-          <option value="createdAt_asc">Sort: Oldest First</option>
-          <option value="estimatedValue_desc">Sort: Value (High-Low)</option>
-          <option value="status_asc">Sort: Status</option>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${leads.length})</option>
+          ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${leads.filter(l => l.status === s).length})</option>`).join('')}
         </select>
-        <div style="display:flex; align-items:center; gap:4px;">
-          <input type="date" class="form-input" id="filter-date-start" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
-          <span style="font-size:11px; color:var(--text-secondary)">to</span>
-          <input type="date" class="form-input" id="filter-date-end" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
-        </div>
-        <select id="filter-status-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:120px;">
-          <option value="all">All Statuses</option>
-          <option value="New">New</option>
-          <option value="Contacted">Contacted</option>
-          <option value="Qualified">Qualified</option>
-          <option value="Won">Won</option>
-          <option value="Lost">Lost</option>
-        </select>
-        <div class="toolbar-search">
-          <span class="material-icons-outlined">search</span>
-          <input type="text" placeholder="Search leads..." id="leads-search" style="height:26px; font-size:11px; width:150px;" />
-        </div>
-        <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:26px; font-size:11px; padding:0 10px;">
-          <span class="material-icons-outlined" style="font-size:14px;">add</span> New Lead
+        <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Lead</span>
         </button>
       </div>
     </div>
@@ -274,29 +258,22 @@ export function renderLeadsList(container) {
     table.updateData(filtered);
   }
 
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
+      applyFilters();
+    }
+  });
+
+  setListSearch('Search leads...', (q) => {
+    searchQuery = q;
+    applyFilters();
+  });
+
   container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
     activeStatusFilter = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    const [key, dir] = val.split('_');
-    table.setSort(key, dir);
-  });
-
-  container.querySelector('#leads-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
     applyFilters();
   });
 }

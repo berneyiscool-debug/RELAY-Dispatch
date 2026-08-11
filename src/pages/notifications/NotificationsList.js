@@ -5,11 +5,15 @@ import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderNotificationsList(container, params) {
   const allNotifications = store.getAll('notifications') || [];
   let searchTerm = '';
   let activeFilter = 'all';
+  let filterStartDate = '';
+  let filterEndDate = '';
   
   function getFilteredData() {
     return allNotifications.filter(n => {
@@ -22,38 +26,31 @@ export function renderNotificationsList(container, params) {
         n.priority?.toLowerCase().includes(search)
       );
       const matchesFilter = (activeFilter === 'all') || (n.status === activeFilter);
+
+      if (filterStartDate || filterEndDate) {
+        const nDateStr = n.createdAt ? n.createdAt.split('T')[0] : '';
+        if (filterStartDate && nDateStr < filterStartDate) return false;
+        if (filterEndDate && nDateStr > filterEndDate) return false;
+      }
+
       return matchesSearch && matchesFilter;
     });
   }
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Notifications</h1>
-      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px;">
-        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Notifications">
-          <option value="createdAt_desc">Sort: Newest First</option>
-          <option value="createdAt_asc">Sort: Oldest First</option>
-          <option value="priority_asc">Sort: Priority</option>
-          <option value="status_asc">Sort: Status</option>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${allNotifications.length})</option>
+          ${['Pending','Converted','Dismissed'].map(s => `<option value="${s}">${s} (${allNotifications.filter(n => n.status === s).length})</option>`).join('')}
         </select>
-        <button class="btn btn-primary" id="btn-raise-notification">
-          <span class="material-icons-outlined">campaign</span> Raise Notification
+        <button class="btn btn-primary btn-sm" id="btn-raise-notification" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">campaign</span> <span class="btn-label">Raise Notification</span>
         </button>
       </div>
     </div>
-
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter ${activeFilter === 'all' ? 'active' : ''}" data-filter="all">All (${allNotifications.length})</button>
-        <button class="toolbar-filter ${activeFilter === 'Pending' ? 'active' : ''}" data-filter="Pending">Pending (${allNotifications.filter(n => n.status === 'Pending').length})</button>
-        <button class="toolbar-filter ${activeFilter === 'Converted' ? 'active' : ''}" data-filter="Converted">Converted (${allNotifications.filter(n => n.status === 'Converted').length})</button>
-      </div>
-      <div class="toolbar-search">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" id="notif-search" placeholder="Search notifications..." value="${escapeHTML(searchTerm)}" />
-      </div>
-    </div>
-    
     <div id="notifications-table-container"></div>
   `;
 
@@ -280,27 +277,26 @@ export function renderNotificationsList(container, params) {
 
   container.querySelector('#notifications-table-container').appendChild(table);
 
-  const searchInput = container.querySelector('#notif-search');
-  searchInput.addEventListener('input', (e) => {
-    searchTerm = e.target.value;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
+      table.updateData(getFilteredData());
+    }
+  });
+
+  setListSearch('Search notifications...', (q) => {
+    searchTerm = q;
     table.updateData(getFilteredData());
   });
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeFilter = btn.dataset.filter;
-      table.updateData(getFilteredData());
-    });
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeFilter = e.target.value;
+    table.updateData(getFilteredData());
   });
 
-  container.querySelector('#btn-raise-notification').addEventListener('click', () => openNotificationFormDrawer());
-  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    const [key, dir] = val.split('_');
-    table.setSort(key, dir);
-  });
+  container.querySelector('#btn-raise-notification')?.addEventListener('click', () => openNotificationFormDrawer());
 
   table.addEventListener('click', (e) => {
     const btn = e.target.closest('button');

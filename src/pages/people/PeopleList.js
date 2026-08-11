@@ -8,7 +8,8 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
-import { createToolbarFilters } from '../../components/ToolbarFilters.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderPeopleList(container) {
   const customers = store.getAll('customers');
@@ -16,26 +17,18 @@ export function renderPeopleList(container) {
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Customers</h1>
-      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Customers">
-          <option value="company_asc">Sort: Company (A-Z)</option>
-          <option value="company_desc">Sort: Company (Z-A)</option>
-          <option value="status_asc">Sort: Status</option>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="people-status-filter" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Customers (${customers.length})</option>
+          <option value="Active">Active (${customers.filter(c => c.status === 'Active').length})</option>
+          <option value="Inactive">Inactive (${customers.filter(c => c.status === 'Inactive').length})</option>
         </select>
-        <select id="people-status-filter" class="form-select" style="width:120px; height:26px; font-size:11px; padding:0 20px 0 6px;">
-          <option value="all">All Customers</option>
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-        </select>
-        <div class="toolbar-search">
-          <span class="material-icons-outlined">search</span>
-          <input type="text" placeholder="Search customers..." id="people-search" style="height:26px; font-size:11px; width:150px;" />
-        </div>
-        <button class="btn btn-secondary btn-sm" id="btn-export-people" style="height:26px; font-size:11px; padding:0 10px;">
-          <span class="material-icons-outlined" style="font-size:14px;">download</span> Export
+        <button class="btn btn-secondary btn-sm" id="btn-export-people" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">download</span> Export
         </button>
-        <button class="btn btn-primary btn-sm" id="btn-new-person" style="height:26px; font-size:11px; padding:0 10px;">
-          <span class="material-icons-outlined" style="font-size:14px;">add</span> New Customer
+        <button class="btn btn-primary btn-sm" id="btn-new-person" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Customer</span>
         </button>
       </div>
     </div>
@@ -185,20 +178,23 @@ export function renderPeopleList(container) {
     table.updateData(filtered);
   }
 
-  container.querySelector('#people-status-filter')?.addEventListener('change', (e) => {
-    selectedStatus = e.target.value;
+  let searchQuery = '';
+
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      // Customers filter if needed
+      applyFilters();
+    }
+  });
+
+  setListSearch('Search customers...', (q) => {
+    searchQuery = q;
     applyFilters();
   });
 
-  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    const [key, dir] = val.split('_');
-    table.setSort(key, dir);
-  });
-
-  // Search
-  container.querySelector('#people-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
+  container.querySelector('#people-status-filter')?.addEventListener('change', (e) => {
+    selectedStatus = e.target.value;
     applyFilters();
   });
 }

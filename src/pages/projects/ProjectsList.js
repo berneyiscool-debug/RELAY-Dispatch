@@ -8,6 +8,8 @@ import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { isWithinDateRange } from '../../utils/dateUtils.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderProjectsList(container) {
   const projects = store.getAll('projects') || [];
@@ -64,34 +66,16 @@ export function renderProjectsList(container) {
 
       <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h1>Projects</h1>
-        <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-          <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Projects">
-            <option value="startDate_desc">Sort: Newest First</option>
-            <option value="startDate_asc">Sort: Oldest First</option>
-            <option value="name_asc">Sort: Name (A-Z)</option>
-            <option value="status_asc">Sort: Status</option>
+        <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+          <select id="projects-status-filter" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+            <option value="all" ${currentFilter === 'all' ? 'selected' : ''}>All Statuses (${projects.length})</option>
+            <option value="In Progress" ${currentFilter === 'In Progress' ? 'selected' : ''}>In Progress (${projects.filter(p => p.status === 'In Progress').length})</option>
+            <option value="Completed" ${currentFilter === 'Completed' ? 'selected' : ''}>Completed (${projects.filter(p => p.status === 'Completed').length})</option>
+            <option value="Cancelled" ${currentFilter === 'Cancelled' ? 'selected' : ''}>Cancelled (${projects.filter(p => p.status === 'Cancelled').length})</option>
           </select>
-          <select id="projects-date-range" class="form-select" style="width:115px; height:26px; font-size:11px; padding:0 20px 0 6px;">
-            <option value="all-time" ${currentDateRange === 'all-time' ? 'selected' : ''}>All Time</option>
-            <option value="today" ${currentDateRange === 'today' ? 'selected' : ''}>Today</option>
-            <option value="this-week" ${currentDateRange === 'this-week' ? 'selected' : ''}>This Week</option>
-            <option value="last-week" ${currentDateRange === 'last-week' ? 'selected' : ''}>Last Week</option>
-            <option value="this-month" ${currentDateRange === 'this-month' ? 'selected' : ''}>This Month</option>
-            <option value="last-month" ${currentDateRange === 'last-month' ? 'selected' : ''}>Last Month</option>
-            <option value="this-year" ${currentDateRange === 'this-year' ? 'selected' : ''}>This Year</option>
-          </select>
-          <select id="projects-status-filter" class="form-select" style="width:120px; height:26px; font-size:11px; padding:0 20px 0 6px;">
-            <option value="all" ${currentFilter === 'all' ? 'selected' : ''}>All Statuses</option>
-            <option value="In Progress" ${currentFilter === 'In Progress' ? 'selected' : ''}>In Progress</option>
-            <option value="Completed" ${currentFilter === 'Completed' ? 'selected' : ''}>Completed</option>
-            <option value="Cancelled" ${currentFilter === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
-          </select>
-          <div class="toolbar-search">
-            <span class="material-icons-outlined">search</span>
-            <input type="text" placeholder="Search projects..." id="projects-search" value="${escapeHTML(searchQuery)}" style="height:26px; font-size:11px; width:150px;" />
-          </div>
-          <button class="btn btn-primary btn-sm" id="btn-new-project" style="height:26px; font-size:11px; padding:0 10px;">
-            <span class="material-icons-outlined" style="font-size:14px;">add</span> New Project
+          <button class="btn btn-primary btn-sm" id="btn-new-project" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Project</span>
           </button>
         </div>
       </div>
@@ -196,16 +180,18 @@ export function renderProjectsList(container) {
       searchInput.setSelectionRange(len, len);
     }
 
-    // Date Range listener
-    const dateRangeSelect = container.querySelector('#projects-date-range');
-    if (dateRangeSelect) {
-      dateRangeSelect.addEventListener('change', (e) => {
-        currentDateRange = e.target.value;
+    createDateRangeFilter({
+      container: container.querySelector('#date-range-mount'),
+      onChange: (start, end) => {
         render();
-      });
-    }
+      }
+    });
 
-    // Filter status select
+    setListSearch('Search projects...', (q) => {
+      searchQuery = q;
+      render();
+    });
+
     const statusSelect = container.querySelector('#projects-status-filter');
     if (statusSelect) {
       statusSelect.addEventListener('change', (e) => {
@@ -213,12 +199,6 @@ export function renderProjectsList(container) {
         render();
       });
     }
-
-    container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
-      const val = e.target.value;
-      const [key, dir] = val.split('_');
-      table.setSort(key, dir);
-    });
   };
 
   const openNewProjectModal = () => {

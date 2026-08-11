@@ -17,15 +17,15 @@ export function renderQuotesList(container, params) {
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Quotes — ${escapeHTML(customer.company)}` : 'Quotes'}</h1>
-      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <div id="date-range-mount"></div>
-        <select id="filter-status-select" class="form-select" style="width:160px;">
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
           <option value="all">All Statuses (${quotes.length})</option>
           ${['Draft','Finalised','Sent','Accepted','Declined'].map(s => `<option value="${s}">${s} (${quotes.filter(q => q.status === s).length})</option>`).join('')}
         </select>
         ${canCreate ? `
-          <button class="btn btn-primary btn-sm" id="btn-new-quote">
-            <span class="material-icons-outlined" style="font-size:14px;">add</span> New Quote
+          <button class="btn btn-primary btn-sm" id="btn-new-quote" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Quote</span>
           </button>` : ''}
       </div>
     </div>

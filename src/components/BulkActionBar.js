@@ -12,10 +12,11 @@ export function createBulkActionBar({ container, selectedIds, actions, onClear }
   const host = bcActions || container;
   const existing = host.querySelector('.bulk-action-bar');
 
-  // No selection → remove the bar; the filters were never hidden.
+  // No selection → remove the bar; restore filters and create buttons.
   if (!selectedIds || selectedIds.length === 0) {
     if (existing) existing.remove();
     if (bcActions) bcActions.classList.remove('has-bulk');
+    document.querySelectorAll('.page-header, .page-header-actions').forEach(el => el.classList.remove('has-bulk'));
     return;
   }
 
@@ -54,6 +55,7 @@ export function createBulkActionBar({ container, selectedIds, actions, onClear }
   if (isFirst) {
     host.appendChild(bar);
     if (bcActions) bcActions.classList.add('has-bulk');
+    document.querySelectorAll('.page-header, .page-header-actions').forEach(el => el.classList.add('has-bulk'));
   }
   return bar;
 }

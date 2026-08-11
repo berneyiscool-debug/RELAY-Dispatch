@@ -4,8 +4,9 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
-import { createToolbarFilters } from '../../components/ToolbarFilters.js';
 import { calculateBillableMaterialPrice, calculateTotalBillableMaterials } from '../../utils/pricing.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderJobsList(container, params) {
   const customerId = params?.customerId;
@@ -17,36 +18,15 @@ export function renderJobsList(container, params) {
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs'}</h1>
-      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Jobs">
-          <option value="createdAt_desc">Sort: Newest First</option>
-          <option value="createdAt_asc">Sort: Oldest First</option>
-          <option value="number_asc">Sort: Job #</option>
-          <option value="title_asc">Sort: Title (A-Z)</option>
-          <option value="status_asc">Sort: Status</option>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="">All Statuses (${jobs.length})</option>
+          ${['Pending','Scheduled','In Progress','Completed','On Hold','Invoiced','Recurring Template'].map(s => `<option value="${s}">${s} (${jobs.filter(j => s === 'Recurring Template' ? j.isRecurring : j.status === s).length})</option>`).join('')}
         </select>
-        <div style="display:flex; align-items:center; gap:4px;">
-          <input type="date" class="form-input" id="filter-date-start" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
-          <span style="font-size:11px; color:var(--text-secondary)">to</span>
-          <input type="date" class="form-input" id="filter-date-end" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
-        </div>
-        <select id="filter-status-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:125px;">
-          <option value="">All Statuses</option>
-          <option value="Pending">Pending</option>
-          <option value="Scheduled">Scheduled</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Completed">Completed</option>
-          <option value="On Hold">On Hold</option>
-          <option value="Invoiced">Invoiced</option>
-          <option value="Recurring Template">Recurring Template</option>
-        </select>
-        <div class="toolbar-search">
-          <span class="material-icons-outlined">search</span>
-          <input type="text" placeholder="Search jobs..." id="jobs-search" style="height:26px; font-size:11px; width:150px;" />
-        </div>
         ${canCreate ? `
-          <button class="btn btn-primary btn-sm" id="btn-new-job" style="height:26px; font-size:11px; padding:0 10px;">
-            <span class="material-icons-outlined" style="font-size:14px;">add</span> New Job
+          <button class="btn btn-primary btn-sm" id="btn-new-job" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Job</span>
           </button>` : ''}
       </div>
     </div>
@@ -583,29 +563,22 @@ export function renderJobsList(container, params) {
     table.updateData(filtered);
   }
 
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
+      applyFilters();
+    }
+  });
+
+  setListSearch('Search jobs...', (q) => {
+    searchQuery = q;
+    applyFilters();
+  });
+
   container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
     selectedStatus = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    const [key, dir] = val.split('_');
-    table.setSort(key, dir);
-  });
-
-  container.querySelector('#jobs-search')?.addEventListener('input', (e) => {
-    searchQuery = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
     applyFilters();
   });
 

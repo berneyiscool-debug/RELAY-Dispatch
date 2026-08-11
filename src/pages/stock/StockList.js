@@ -11,7 +11,7 @@ import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { parseCSV } from '../../utils/csvParser.js';
-import { createToolbarFilters } from '../../components/ToolbarFilters.js';
+import { setListSearch } from '../../utils/listSearch.js';
 
 export function renderStockList(container, params) {
   let activeTab = params?.tab === 'kits' ? 'kits' : 'items';
@@ -82,9 +82,13 @@ export function renderStockList(container, params) {
     if (activeTab === 'items') {
       // 1. Actions Header for Items
       actionsContainer.innerHTML = `
-        <button class="btn btn-secondary" id="btn-transfer-stock" data-tooltip="Move stock quantities between warehouse locations or technician vehicles" data-tooltip-pos="left"><span class="material-icons-outlined">swap_horiz</span> Transfer</button>
-        <button class="btn btn-secondary" id="btn-import-stock" data-tooltip="Upload a supplier CSV parts list files directly to catalog inventory" data-tooltip-pos="left"><span class="material-icons-outlined">file_upload</span> Import</button>
-        <button class="btn btn-primary" id="btn-new-stock" data-tooltip="Manually add a single new catalog item" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Item</button>
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select class="form-select" id="location-filter" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Locations</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" id="btn-transfer-stock" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Move stock quantities between warehouse locations or technician vehicles"><span class="material-icons-outlined" style="font-size:13px;">swap_horiz</span> Transfer</button>
+        <button class="btn btn-secondary btn-sm" id="btn-import-stock" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Upload a supplier CSV parts list files directly to catalog inventory"><span class="material-icons-outlined" style="font-size:13px;">file_upload</span> Import</button>
+        <button class="btn btn-primary btn-sm" id="btn-new-stock" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Manually add a single new catalog item"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Item</span></button>
       `;
 
       // 2. Toolbar for Items

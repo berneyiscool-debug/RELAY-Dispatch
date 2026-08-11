@@ -717,11 +717,12 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
-  padding: 4px var(--space-xl);
+  padding: 0 var(--space-xl);
   font-size: var(--font-size-sm);
   border-bottom: 1px solid var(--border-color);
   background: var(--topbar-bg);
-  min-height: 34px;
+  height: var(--topbar-height);
+  min-height: var(--topbar-height);
 }
 .breadcrumb-item {
   color: var(--text-tertiary);
@@ -788,11 +789,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 16px;
+  height: var(--topbar-height);
+  min-height: var(--topbar-height);
+  padding: 0 16px;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border-color);
   margin-bottom: 0 !important; /* kill the inline margin-bottom:8px the pages hard-code — flush with the table */
-  min-height: 28px;
 }
 .page-header h1 {
   font-size: var(--font-size-lg);
@@ -805,10 +807,7 @@
   gap: var(--space-xs);
 }
 
-/* ---- Consistent list-toolbar controls ----
-   Pages hard-code per-control inline sizing (height:26px/font:11px/varied widths),
-   which drifts. Normalise every button/select/input in the toolbar (both before
-   and after main.js relocates them into #breadcrumb-actions) to one size. */
+/* ---- Consistent list-toolbar controls ---- */
 #breadcrumb-actions .btn,
 #breadcrumb-actions .form-select,
 #breadcrumb-actions .form-input,
@@ -817,8 +816,8 @@
 .page-header-actions .form-select,
 .page-header-actions .form-input,
 .page-header-actions .toolbar-search input {
-  height: 28px !important;
-  font-size: var(--font-size-sm) !important;
+  height: 25px !important;
+  font-size: 11px !important;
 }
 /* Compact date-range inputs */
 #breadcrumb-actions #filter-date-start,
@@ -828,18 +827,69 @@
   width: 104px !important;
 }
 
-/* ---- Multi-select bar lives in the breadcrumb row ----
-   While rows are selected, show "N selected" + icon actions on the right and
-   hide the page's filters; clearing the selection restores them. */
-.breadcrumb.bulk-active #breadcrumb-actions { display: none !important; }
-.breadcrumb .bulk-action-bar { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.breadcrumb .bulk-action-bar .bulk-count { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
-.breadcrumb .bulk-action-bar .bulk-actions-separator { width: 1px; height: 18px; background: var(--border-color); margin: 0 2px; }
+/* ---- Multi-select bar slides into the breadcrumb action group ----
+   Filters stay visible; the bulk actions slide in from the right beside them. */
+#breadcrumb-actions .bulk-action-bar {
+  /* Override the old floating-bottom-bar rule (.bulk-action-bar is position:fixed) */
+  position: static;
+  inset: auto;
+  transform: none;
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  z-index: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bulk-action-bar.slide-in-right { animation: bulk-slide-in 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes bulk-slide-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: translateX(0); } }
+#breadcrumb-actions .bulk-action-bar .bulk-count { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+#breadcrumb-actions .bulk-action-bar .bulk-actions-separator { width: 1px; height: 18px; background: var(--border-color); margin: 0 2px; }
+
+#breadcrumb-actions.has-bulk > *:not(.bulk-action-bar),
+.page-header-actions.has-bulk > *:not(.bulk-action-bar),
+.page-header.has-bulk .page-header-actions,
+.has-bulk button[id^="btn-new"] {
+  display: none !important;
+}
+/* Size the bulk icon buttons to the 28px filter-control height so the breadcrumb
+   row height never jumps when the bar slides in. */
+#breadcrumb-actions .bulk-action-bar .btn-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: var(--border-radius); /* 6px — match the New button / other toolbar buttons */
+  /* Reset the native <button> chrome (2px outset border + grey fill = the 3D look) */
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+#breadcrumb-actions .bulk-action-bar .btn-icon:hover {
+  background: #f2f3f5;
+  color: var(--text-primary);
+}
+/* Keep the danger (delete) action solid-red */
+#breadcrumb-actions .bulk-action-bar .btn-icon.btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+#breadcrumb-actions .bulk-action-bar .btn-icon.btn-danger:hover {
+  background: #b91c1c;
+}
 
 /* ---- Compact Date range filter (replaces the two wide native date inputs) ---- */
 .date-range-filter { position: relative; }
 .date-range-filter.active .date-range-trigger { border-color: var(--color-primary); color: var(--color-primary-ink); }
-.date-range-trigger { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.date-range-trigger { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; height: 25px; font-size: 11px; padding: 0 8px; }
 .date-range-pop {
   position: absolute; top: calc(100% + 4px); right: 0; z-index: var(--z-dropdown);
   background: var(--card-bg); border: 1px solid var(--card-border);

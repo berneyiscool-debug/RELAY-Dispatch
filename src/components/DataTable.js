@@ -106,14 +106,19 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     html += `<div class="pagination">
       <div class="pagination-info" style="display:flex; align-items:center; gap:12px;">
         <span>Showing ${start + 1}–${Math.min(start + pageSize, sorted.length)} of ${sorted.length}</span>
-        <div class="pagination-page-size" style="display:inline-flex; align-items:center; gap:4px; font-size:11px;">
+        <div class="pagination-page-size" style="position:relative; display:inline-flex; align-items:center; gap:4px; font-size:11px;">
           <span style="color:var(--text-secondary)">Per page:</span>
-          <select class="dt-page-size-select form-select" style="height:22px; padding:0 18px 0 6px; font-size:11px; width:58px;">
-            <option value="15" ${pageSize === 15 ? 'selected' : ''}>15</option>
-            <option value="30" ${pageSize === 30 ? 'selected' : ''}>30</option>
-            <option value="45" ${pageSize === 45 ? 'selected' : ''}>45</option>
-            <option value="60" ${pageSize === 60 ? 'selected' : ''}>60</option>
-          </select>
+          <button type="button" class="btn btn-secondary btn-sm dt-page-size-trigger" style="height:22px; padding:0 6px; font-size:11px; display:inline-flex; align-items:center; gap:2px;">
+            <span>${pageSize}</span>
+            <span class="material-icons-outlined" style="font-size:13px">unfold_more</span>
+          </button>
+          <div class="dt-page-size-pop" hidden style="position:absolute; bottom:calc(100% + 4px); left:46px; background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--border-radius); box-shadow:var(--shadow-lg); padding:4px 0; z-index:1000; min-width:64px;">
+            ${[15, 30, 45, 60].map(sz => `
+              <div class="dt-page-size-opt ${sz === pageSize ? 'active' : ''}" data-val="${sz}" style="padding:4px 10px; cursor:pointer; font-size:11px; background:${sz === pageSize ? 'var(--color-primary-light)' : 'transparent'}; color:${sz === pageSize ? 'var(--color-primary)' : 'var(--text-primary)'}; font-weight:${sz === pageSize ? '600' : '400'};">
+                ${sz}
+              </div>
+            `).join('')}
+          </div>
         </div>
       </div>
       <div class="pagination-controls">
@@ -133,18 +138,34 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
     wrapper.innerHTML = html;
 
-    // Event: page size select
-    const sizeSelect = wrapper.querySelector('.dt-page-size-select');
-    if (sizeSelect) {
-      sizeSelect.addEventListener('change', (e) => {
-        pageSize = parseInt(e.target.value, 10);
-        localStorage.setItem(STORAGE_KEY, String(pageSize));
-        currentPage = 1;
-        render();
+    // Event: upward page size popover
+    const sizeTrigger = wrapper.querySelector('.dt-page-size-trigger');
+    const sizePop = wrapper.querySelector('.dt-page-size-pop');
+    if (sizeTrigger && sizePop) {
+      sizeTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sizePop.hidden = !sizePop.hidden;
+      });
+
+      sizePop.querySelectorAll('.dt-page-size-opt').forEach(opt => {
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = parseInt(opt.dataset.val, 10);
+          if (val) {
+            pageSize = val;
+            localStorage.setItem(STORAGE_KEY, String(pageSize));
+            currentPage = 1;
+            render();
+          }
+        });
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!sizeTrigger.contains(e.target) && !sizePop.contains(e.target)) {
+          sizePop.hidden = true;
+        }
       });
     }
-
-    wrapper.innerHTML = html;
 
     // Event: sort (pointer + keyboard — headers are role=button, tabindex=0)
     wrapper.querySelectorAll('th[data-key]').forEach(th => {

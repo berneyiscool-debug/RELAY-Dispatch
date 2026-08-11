@@ -7,6 +7,8 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
@@ -14,33 +16,14 @@ export function renderInvoicesList(container) {
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Invoices</h1>
-      <div class="page-header-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <select id="filter-sort-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:135px;" title="Sort Invoices">
-          <option value="issueDate_desc">Sort: Newest First</option>
-          <option value="issueDate_asc">Sort: Oldest First</option>
-          <option value="number_asc">Sort: Invoice #</option>
-          <option value="total_desc">Sort: Total (High-Low)</option>
-          <option value="status_asc">Sort: Status</option>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${invoices.length})</option>
+          ${['Draft','Sent','Paid','Overdue','Void'].map(s => `<option value="${s}">${s} (${invoices.filter(i => i.status === s).length})</option>`).join('')}
         </select>
-        <div style="display:flex; align-items:center; gap:4px;">
-          <input type="date" class="form-input" id="filter-date-start" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
-          <span style="font-size:11px; color:var(--text-secondary)">to</span>
-          <input type="date" class="form-input" id="filter-date-end" style="width:115px; height:26px; padding:0 4px; font-size:11px;" />
-        </div>
-        <select id="filter-status-select" class="form-select" style="height:26px; font-size:11px; padding:0 20px 0 6px; width:120px;">
-          <option value="all">All Statuses</option>
-          <option value="Draft">Draft</option>
-          <option value="Sent">Sent</option>
-          <option value="Paid">Paid</option>
-          <option value="Overdue">Overdue</option>
-          <option value="Void">Void</option>
-        </select>
-        <div class="toolbar-search">
-          <span class="material-icons-outlined">search</span>
-          <input type="text" placeholder="Search invoices..." id="invoices-search" style="height:26px; font-size:11px; width:150px;" />
-        </div>
-        <button class="btn btn-outline btn-sm" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none; height:26px; font-size:11px; padding:0 10px;"><span class="material-icons-outlined" style="font-size:14px;">download</span> Export</button>
-        <button class="btn btn-primary btn-sm" id="btn-new-invoice" style="height:26px; font-size:11px; padding:0 10px;"><span class="material-icons-outlined" style="font-size:14px;">add</span> New Invoice</button>
+        <button class="btn btn-outline btn-sm" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none; height:25px; font-size:11px; padding:0 10px; align-self:center;"><span class="material-icons-outlined" style="font-size:13px;">download</span> Export</button>
+        <button class="btn btn-primary btn-sm" id="btn-new-invoice" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Invoice</span></button>
       </div>
     </div>
     <div id="invoices-table-container"></div>
@@ -377,15 +360,23 @@ export function renderInvoicesList(container) {
     updateExportButtonVisibility(filteredData);
   }
 
-  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
-    activeStatusFilter = e.target.value;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
+      applyFilters();
+    }
+  });
+
+  setListSearch('Search invoices...', (q) => {
+    searchQuery = q;
     applyFilters();
   });
 
-  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    const [key, dir] = val.split('_');
-    table.setSort(key, dir);
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeStatusFilter = e.target.value;
+    applyFilters();
   });
 
   btnExport.addEventListener('click', () => {
@@ -421,20 +412,5 @@ export function renderInvoicesList(container) {
     import('../../components/Notifications.js').then(({ showToast }) => {
       showToast(`Exported ${paidInvoices.length} paid invoices`, 'success');
     });
-  });
-
-  container.querySelector('#invoices-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
-    applyFilters();
   });
 }

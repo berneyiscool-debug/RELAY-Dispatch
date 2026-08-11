@@ -532,7 +532,26 @@ select.badge option {
   box-shadow: none;
   background: var(--card-bg);
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
+}
+
+/* ---- Pagination ---- */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px 10px 12px;
+  border-top: 1px solid var(--border-color);
+  background: var(--card-bg);
+  margin-top: auto;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+.dt-page-size-select {
+  position: relative;
+  z-index: 20;
+  cursor: pointer;
 }
 .data-table-wrapper {
   flex: 1;
@@ -577,12 +596,12 @@ select.badge option {
   color: var(--color-primary);
 }
 .data-table td {
-  padding: 4px 8px; /* 15% taller rows (28px height) */
+  padding: 5px 8px; /* ~10% taller rows (31px height) */
   border-bottom: 1px solid var(--border-color);
   font-size: var(--font-size-base);
   color: var(--text-primary);
   vertical-align: middle;
-  height: 28px;
+  height: 31px;
 }
 .data-table tr:last-child td {
   border-bottom: none;
