@@ -498,6 +498,26 @@ describe('Job Recurring Scheduling Integrations', () => {
     const updatedOrphan = store.getById('jobs', orphanWithSuffix.id);
     assert.strictEqual(updatedOrphan.title, 'Chiller Inspection');
   });
+
+  test('materializeVirtualOccurrence idempotency prevents double spawning duplicate child jobs', async () => {
+    const { materializeVirtualOccurrence } = await import('../../utils/maintenanceEngine.js');
+    const parent = store.create('jobs', {
+      number: 'J-100',
+      title: 'Bi-Weekly Inspection',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', interval: 2, start: '2026-08-01' }
+    });
+
+    const firstSpawn = materializeVirtualOccurrence(parent.id, '2026-08-15');
+    assert.strictEqual(firstSpawn.number, 'J-100.1');
+
+    const secondSpawn = materializeVirtualOccurrence(parent.id, '2026-08-15');
+    assert.strictEqual(secondSpawn.id, firstSpawn.id, 'Second call for same date should return existing child job without spawning a duplicate');
+    assert.strictEqual(secondSpawn.number, 'J-100.1');
+
+    const allChildren = store.getAll('jobs').filter(j => j.parentJobId === parent.id);
+    assert.strictEqual(allChildren.length, 1, 'Only one child job should exist for the date occurrence');
+  });
 });
 
 

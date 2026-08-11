@@ -176,23 +176,52 @@ export function renderNotificationsList(container, params) {
     },
     {
       key: 'actions',
-      label: '',
+      label: 'Actions',
       render: (n) => {
-        const isReadOnly = (!n.createdBy || n.createdBy === 'System' || n.createdBy === 'System Engine' || n.createdBy === 'System Notification' || n.createdBy === 'System Scheduler') && n.createdBy !== 'Assistant';
-        return `
-          <div style="text-align:right">
-            ${(!isReadOnly && n.status !== 'Converted') ? `
-              <button class="btn btn-sm btn-ghost btn-convert-quote" data-id="${n.id}" title="Convert to Quote"><span class="material-icons-outlined">request_quote</span></button>
-              <button class="btn btn-sm btn-ghost btn-convert-job" data-id="${n.id}" title="Convert to Job"><span class="material-icons-outlined">build</span></button>
-            ` : ''}
-            <button class="btn btn-sm btn-ghost btn-view-notification" data-id="${n.id}" title="View Details"><span class="material-icons-outlined">visibility</span></button>
-            ${!isReadOnly ? `
-              <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit"><span class="material-icons-outlined">edit</span></button>
-            ` : ''}
-          </div>
+        const isConverted = n.status === 'Converted';
+        const linkedJobId = n.jobId || (n.link && n.link.startsWith('/jobs/') ? n.link.split('/').pop() : null);
+        const linkedQuoteId = n.quoteId || (n.link && n.link.startsWith('/quotes/') ? n.link.split('/').pop() : null);
+
+        let actionButtons = '';
+
+        if (isConverted || linkedJobId || linkedQuoteId) {
+          if (linkedJobId) {
+            actionButtons += `
+              <button class="btn btn-sm btn-secondary btn-view-job" data-job-id="${linkedJobId}" title="View Converted Job" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
+                <span class="material-icons-outlined" style="font-size:13px;color:var(--color-primary)">build</span> View Job
+              </button>
+            `;
+          }
+          if (linkedQuoteId) {
+            actionButtons += `
+              <button class="btn btn-sm btn-secondary btn-view-quote" data-quote-id="${linkedQuoteId}" title="View Converted Quote" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
+                <span class="material-icons-outlined" style="font-size:13px;color:var(--color-primary)">request_quote</span> View Quote
+              </button>
+            `;
+          }
+        } else {
+          actionButtons += `
+            <button class="btn btn-sm btn-primary btn-convert-job" data-id="${n.id}" title="Convert to Job" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
+              <span class="material-icons-outlined" style="font-size:13px;">build</span> Convert to Job
+            </button>
+            <button class="btn btn-sm btn-secondary btn-convert-quote" data-id="${n.id}" title="Convert to Quote" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
+              <span class="material-icons-outlined" style="font-size:13px;">request_quote</span> Quote
+            </button>
+          `;
+        }
+
+        actionButtons += `
+          <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit Notification" style="height:25px;padding:0 4px;">
+            <span class="material-icons-outlined" style="font-size:16px;">edit</span>
+          </button>
+          <button class="btn btn-sm btn-ghost btn-delete-notification" data-id="${n.id}" title="Delete Notification" style="height:25px;padding:0 4px;color:var(--color-danger)">
+            <span class="material-icons-outlined" style="font-size:16px;">delete</span>
+          </button>
         `;
+
+        return `<div style="display:flex;align-items:center;justify-content:flex-end;">${actionButtons}</div>`;
       },
-      width: '150px'
+      width: '240px'
     }
   ];
 
@@ -314,6 +343,30 @@ export function renderNotificationsList(container, params) {
       convertToQuote(id);
     } else if (btn.classList.contains('btn-convert-job')) {
       convertToJob(id);
+    } else if (btn.classList.contains('btn-view-job')) {
+      const jobId = btn.dataset.jobId;
+      if (jobId) router.navigate(`/jobs/${jobId}`);
+    } else if (btn.classList.contains('btn-view-quote')) {
+      const quoteId = btn.dataset.quoteId;
+      if (quoteId) router.navigate(`/quotes/${quoteId}`);
+    } else if (btn.classList.contains('btn-delete-notification')) {
+      import('../../components/Modal.js').then(({ showModal }) => {
+        const content = document.createElement('div');
+        content.innerHTML = `<p>Are you sure you want to delete this notification?</p>`;
+        showModal({
+          title: 'Delete Notification',
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            { label: 'Delete', className: 'btn-danger', onClick: c => {
+              store.delete('notifications', id);
+              renderNotificationsList(container);
+              showToast('Notification deleted', 'success');
+              c();
+            }}
+          ]
+        });
+      });
     }
   });
 

@@ -627,8 +627,9 @@ export function checkRecurringJobs() {
       const occurrenceDate = new Date(yr, mo - 1, dy);
       
       if (occurrenceDate >= today && occurrenceDate <= next7Days) {
-        // Check if there is already a spawned job for this occurrence
-        const hasJob = jobs.some(j => 
+        // Re-read latest jobs from store on each iteration so newly created sibling jobs in the loop are detected
+        const currentJobs = store.getAll('jobs') || [];
+        const hasJob = currentJobs.some(j => 
           (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) && 
           (j.templateDate === dateStr || j.scheduledDate === dateStr)
         );
@@ -996,11 +997,20 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
   const parentJob = store.getById('jobs', parentJobId);
   if (!parentJob) return null;
 
+  // Idempotency: check if a child job for this occurrence date already exists before materializing a new one
+  const latestJobs = store.getAll('jobs') || [];
+  const existingChild = latestJobs.find(j =>
+    (j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))) &&
+    (j.templateDate === dateStr || j.scheduledDate === dateStr)
+  );
+  if (existingChild) {
+    return existingChild;
+  }
+
   const [yr, mo, dy] = dateStr.split('-').map(Number);
   const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
   const childTitle = `${parentJob.title || parentJob.number}`;
 
-  const latestJobs = store.getAll('jobs') || [];
   const siblingJobs = latestJobs.filter(j => j.parentJobId === parentJob.id);
   let maxSuffix = 0;
   const prefix = `${parentJob.number}.`;
