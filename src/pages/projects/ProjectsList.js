@@ -272,8 +272,8 @@ export function renderProjectsList(container) {
           const customerId = document.getElementById('p-customer').value;
           const siteAddress = document.getElementById('p-site').value;
           const description = document.getElementById('p-desc').value.trim();
-          const startDate = document.getElementById('p-start-date').value;
-          const endDate = document.getElementById('p-end-date').value;
+          const startDate = document.getElementById('p-start-date').value || null;
+          const endDate = document.getElementById('p-end-date').value || null;
 
           if (!name) { showToast('Project Name is required', 'error'); return; }
           if (!customerId) { showToast('Customer selection is required', 'error'); return; }

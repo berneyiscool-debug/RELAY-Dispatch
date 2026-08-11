@@ -114,7 +114,7 @@ export function renderQuotesList(container, params) {
                           }));
 
                           const newJob = store.create('jobs', {
-                            number: `J-${Date.now().toString().slice(-6)}`,
+                            number: store.getNextNumber('JOB-', 'jobs'),
                             customerId: quote.customerId,
                             customerName: quote.customerName,
                             contactName: quote.contactName || '',

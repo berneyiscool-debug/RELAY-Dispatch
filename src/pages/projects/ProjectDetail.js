@@ -537,8 +537,8 @@ export function renderProjectDetail(container, params) {
           const name = document.getElementById('p-name').value.trim();
           const status = document.getElementById('p-status').value;
           const description = document.getElementById('p-desc').value.trim();
-          const startDate = document.getElementById('p-start-date').value;
-          const endDate = document.getElementById('p-end-date').value;
+          const startDate = document.getElementById('p-start-date').value || null;
+          const endDate = document.getElementById('p-end-date').value || null;
 
           if (!name) { showToast('Project Name is required', 'error'); return; }
 

@@ -2186,6 +2186,15 @@ class DataStore {
       });
     }
 
+    // Convert empty string date/timestamp fields to null to prevent PostgreSQL "invalid input syntax for type date: """ errors
+    Object.keys(record).forEach(key => {
+      if (typeof record[key] === 'string' && record[key].trim() === '') {
+        if (key.includes('date') || key.includes('_at') || key.endsWith('At') || key.includes('until') || key === 'start_time' || key === 'finish_time') {
+          record[key] = null;
+        }
+      }
+    });
+
     return record;
   }
 
@@ -2285,7 +2294,7 @@ class DataStore {
       item.number = this.getNextNumber('Q-', 'quotes');
     }
     if (collection === 'jobs' && !item.number) {
-      item.number = this.getNextNumber('J-', 'jobs');
+      item.number = this.getNextNumber('JOB-', 'jobs');
     }
     if (collection === 'purchaseOrders' && !item.number) {
       item.number = this.getNextNumber('PO-', 'purchaseOrders');
@@ -2679,17 +2688,30 @@ class DataStore {
       prefix = dt.quotePrefix !== undefined ? dt.quotePrefix : 'Q-';
       startingNum = dt.quoteStartingNumber !== undefined ? parseInt(dt.quoteStartingNumber, 10) : 1;
       if (isNaN(startingNum)) startingNum = 1;
+    } else if (collection === 'jobs') {
+      prefix = dt.jobPrefix !== undefined ? dt.jobPrefix : (defaultPrefix || 'JOB-');
+      startingNum = dt.jobStartingNumber !== undefined ? parseInt(dt.jobStartingNumber, 10) : 1;
+      if (isNaN(startingNum)) startingNum = 1;
     }
 
     const items = this.getAll(collection) || [];
     let maxNum = startingNum - 1;
 
     items.forEach(item => {
-      if (item.number && typeof item.number === 'string' && item.number.startsWith(prefix)) {
-        const numStr = item.number.slice(prefix.length);
-        const num = parseInt(numStr, 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
+      if (item.number && typeof item.number === 'string') {
+        let numStr = null;
+        if (item.number.startsWith(prefix)) {
+          numStr = item.number.slice(prefix.length);
+        } else if (collection === 'jobs' && (item.number.startsWith('JOB-') || item.number.startsWith('J-'))) {
+          numStr = item.number.replace(/^(JOB-|J-)/, '');
+        }
+
+        if (numStr) {
+          const num = parseInt(numStr, 10);
+          // Ignore 6-digit pseudo-timestamp anomalies (e.g. from Date.now().toString().slice(-6))
+          if (!isNaN(num) && num < 50000 && num > maxNum) {
+            maxNum = num;
+          }
         }
       }
     });

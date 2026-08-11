@@ -725,7 +725,7 @@ export function renderNotificationsList(container, params) {
     const cleanedTitle = cleanTitle(n.title);
 
     let jobData = {
-      number: `J-${Date.now().toString().slice(-6)}`,
+      number: store.getNextNumber('JOB-', 'jobs'),
       title: cleanedTitle,
       description: n.description,
       priority: n.priority,
