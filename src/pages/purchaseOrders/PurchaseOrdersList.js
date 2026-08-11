@@ -37,7 +37,7 @@ export function renderPurchaseOrdersList(container) {
     { key: 'number', label: 'PO Number', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '120px' },
     { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplierName || '—')}</span>` },
     { key: 'job', label: 'Job Ref', render: (r) => r.jobId ? `<a href="#/jobs/${r.jobId}" class="cell-link">${escapeHTML(r.jobNumber)}</a>` : '<span class="text-secondary">—</span>' },
-    { key: 'date', label: 'Issue Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', width: '120px' },
+    { key: 'date', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', width: '120px' },
     { key: 'total', label: 'Total', render: (r) => `$${(r.total || 0).toFixed(2)}`, width: '100px' },
     { key: 'status', label: 'Status', render: (r) => {
       const b = { 'Draft':'badge-draft', 'Issued':'badge-primary', 'Received':'badge-success', 'Cancelled':'badge-danger' };

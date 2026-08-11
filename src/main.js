@@ -96,6 +96,17 @@ window.addEventListener('simpro-settings-updated', () => {
 
 // Global keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+  // 1. Focus Search Bar: Ctrl + K or Cmd + K (intercepts Chrome address bar default)
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    const searchInput = document.getElementById('global-search');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
+
   const activeEl = document.activeElement;
   const isInputField = activeEl && (
     activeEl.tagName === 'INPUT' || 
@@ -111,7 +122,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // 1. Focus Search Bar: '/' key or Ctrl + '/'
+  // 2. Focus Search Bar: '/' key or Ctrl + '/'
   if (e.key === '/' || (e.ctrlKey && e.key === '/')) {
     e.preventDefault();
     const searchInput = document.getElementById('global-search');
@@ -121,7 +132,7 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // 2. Toggle Deputy Assistant: Shift + D
+  // 3. Toggle Deputy Assistant: Shift + D
   if (e.shiftKey && (e.key === 'D' || e.key === 'd')) {
     e.preventDefault();
     import('./components/RelayAssistant.js').then(({ toggleRelay }) => {

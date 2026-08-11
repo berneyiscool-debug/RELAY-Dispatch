@@ -38,7 +38,7 @@ export function renderInvoicesList(container) {
     { key: 'jobNumber', label: 'Job Ref', render: (r) => r.jobNumber ? `<span class="text-secondary">${escapeHTML(r.jobNumber)}</span>` : '—', width: '100px' },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '100px' },
     { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '110px' },
-    { key: 'issueDate', label: 'Issue Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '100px' },
+    { key: 'issueDate', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '100px' },
     { key: 'dueDate', label: 'Due Date', render: (r) => r.dueDate ? new Date(r.dueDate).toLocaleDateString() : '—', getValue: (r) => r.dueDate ? new Date(r.dueDate).getTime() : 0, width: '100px' },
   ];
 

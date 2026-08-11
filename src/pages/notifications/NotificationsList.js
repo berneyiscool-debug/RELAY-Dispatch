@@ -137,7 +137,7 @@ export function renderNotificationsList(container, params) {
     },
     { 
       key: 'createdAt', 
-      label: 'Date Created', 
+      label: 'Date', 
       render: (n) => n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—',
       getValue: (n) => n.createdAt ? new Date(n.createdAt).getTime() : 0,
       width: '110px'

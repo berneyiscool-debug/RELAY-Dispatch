@@ -90,7 +90,7 @@ export function renderProjectsList(container) {
                 <th>Project Name</th>
                 <th>Customer</th>
                 <th style="width:130px">Status</th>
-                <th style="width:120px">Start Date</th>
+                <th style="width:120px">Date</th>
                 <th style="width:140px; text-align:center">Progress</th>
                 <th style="width:120px; text-align:right">Value</th>
                 <th style="width:120px; text-align:right">Invoiced</th>
