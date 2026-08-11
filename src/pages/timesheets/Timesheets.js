@@ -10,6 +10,8 @@ import { showTimesheetEditModal } from '../../utils/timesheetModals.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { setListSearch } from '../../utils/listSearch.js';
 
 export function renderTimesheetsList(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
@@ -122,53 +124,19 @@ export function renderTimesheetsList(container) {
     const jobMap = new Map(allJobs.map(j => [j.id, j]));
 
     container.innerHTML = `
-      <div class="page-header">
+      <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h1>Timesheets & Approval</h1>
-        <div class="page-header-actions">
-          ${hasPermission('Timesheets', 'export') ? `
-            <button class="btn btn-sm ${selectedIds.length > 0 ? 'btn-primary' : 'btn-secondary'}" id="btn-export-selected" ${selectedIds.length === 0 ? 'disabled' : ''} data-tooltip="Export selected timesheets to a payroll-ready CSV spreadsheet" data-tooltip-pos="left" style="margin-right:8px">
-              <span class="material-icons-outlined">download</span> Export
-            </button>
-          ` : ''}
-          ${hasPermission('Timesheets', 'create') ? `
-            <button class="btn btn-sm ${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'btn-primary' : 'btn-secondary'}" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="margin-right:8px">
-              <span class="material-icons-outlined">add</span> Log Time
-            </button>
-          ` : ''}
-          ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
-            <button class="btn btn-sm btn-primary" id="btn-approve-all-pending" data-tooltip="Instantly approve all pending timesheets in the active filtered view" data-tooltip-pos="left" ${!visibleTimesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
-              <span class="material-icons-outlined">done_all</span> Approve All Pending
-            </button>
-          ` : ''}
-        </div>
-      </div>
-      
-      <div class="grid-4" style="margin-bottom:var(--space-lg)">
-        <div class="stat-card">
-          <div class="stat-label">Pending Approval</div>
-          <div class="stat-value" style="color:var(--color-warning)">${totalPending.toFixed(2)} <span style="font-size:14px;color:var(--text-secondary)">hrs</span></div>
-        </div>
-      </div>
-      <!-- Filters & Controls -->
-      <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-        <div id="timesheets-filters-carousel-container" style="flex: 1 1 auto; overflow:hidden">
-          <div class="filters-carousel-container">
-            <div class="filters-carousel" style="margin:0;">
-              <button class="pill-tab ${filterStatus === 'All' ? 'active' : ''} toolbar-filter" data-status="All">All (${visibleTimesheets.length})</button>
-              <button class="pill-tab ${filterStatus === 'Pending' ? 'active' : ''} toolbar-filter" data-status="Pending">Pending (${visibleTimesheets.filter(t => t.status === 'Pending').length})</button>
-              <button class="pill-tab ${filterStatus === 'Approved' ? 'active' : ''} toolbar-filter" data-status="Approved">Approved (${visibleTimesheets.filter(t => t.status === 'Approved').length})</button>
-              <button class="pill-tab ${filterStatus === 'Rejected' ? 'active' : ''} toolbar-filter" data-status="Rejected">Rejected (${visibleTimesheets.filter(t => t.status === 'Rejected').length})</button>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px; flex: 0 0 auto;">
-          <input type="date" class="form-input" id="filter-date-start" value="${filterStartDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-          <span style="font-size:12px; color:var(--text-secondary)">to</span>
-          <input type="date" class="form-input" id="filter-date-end" value="${filterEndDate}" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        </div>
-        ${(currentUser.role === 'admin' || currentUser.role === 'manager' || isLocalAdmin) ? `
-        <div style="display:flex; align-items:center; gap:4px; flex: 0 0 auto;">
-          <select class="form-select" id="filter-tech" style="width:auto; min-width:180px; height:32px; padding:0 8px; font-size:13px;">
+        <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+          <select id="filter-sort-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;" title="Sort Timesheets">
+            <option value="date_desc">Sort: Newest First</option>
+            <option value="date_asc">Sort: Oldest First</option>
+            <option value="technician_asc">Sort: Technician (A-Z)</option>
+            <option value="hours_desc">Sort: Hours (High-Low)</option>
+            <option value="status_asc">Sort: Status</option>
+          </select>
+          ${(currentUser.role === 'admin' || currentUser.role === 'manager' || isLocalAdmin) ? `
+          <select class="form-select" id="filter-tech" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
             <option value="All" ${filterTechId === 'All' ? 'selected' : ''}>All Technicians</option>
             ${(() => {
               const hasCurrentUser = technicians.some(t => t.id === currentUser.id);
@@ -179,8 +147,24 @@ export function renderTimesheetsList(container) {
               html += technicians.map(t => '<option value="' + t.id + '" ' + (filterTechId === t.id ? 'selected' : '') + '>' + t.name + '</option>').join('');
               return html;
             })()}
+          </select>` : ''}
+          <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+            <option value="All" ${filterStatus === 'All' ? 'selected' : ''}>All Statuses (${visibleTimesheets.length})</option>
+            <option value="Pending" ${filterStatus === 'Pending' ? 'selected' : ''}>Pending (${visibleTimesheets.filter(t => t.status === 'Pending').length})</option>
+            <option value="Approved" ${filterStatus === 'Approved' ? 'selected' : ''}>Approved (${visibleTimesheets.filter(t => t.status === 'Approved').length})</option>
+            <option value="Rejected" ${filterStatus === 'Rejected' ? 'selected' : ''}>Rejected (${visibleTimesheets.filter(t => t.status === 'Rejected').length})</option>
           </select>
-        </div>` : ''}
+          ${hasPermission('Timesheets', 'create') ? `
+            <button class="btn btn-sm btn-primary" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+              <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">Log Time</span>
+            </button>
+          ` : ''}
+          ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
+            <button class="btn btn-sm btn-primary" id="btn-approve-all-pending" data-tooltip="Instantly approve all pending timesheets in the active filtered view" data-tooltip-pos="left" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" ${!visibleTimesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
+              <span class="material-icons-outlined" style="font-size:13px;">done_all</span> <span class="btn-label">Approve All</span>
+            </button>
+          ` : ''}
+        </div>
       </div>
 
       <div class="data-table-wrapper">
@@ -273,17 +257,31 @@ export function renderTimesheetsList(container) {
     `;
 
     // Filter events
-    container.querySelectorAll('.toolbar-filter').forEach(btn => {
-      btn.addEventListener('click', () => {
-        filterStatus = btn.dataset.status;
-        render();
-      });
+    container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+      filterStatus = e.target.value;
+      render();
     });
 
     container.querySelector('#filter-tech')?.addEventListener('change', (e) => {
       filterTechId = e.target.value;
       render();
     });
+
+    setListSearch((q) => {
+      render();
+    }, 'timesheets');
+
+    const dateMount = container.querySelector('#date-range-mount');
+    if (dateMount) {
+      createDateRangeFilter({
+        container: dateMount,
+        onChange: (start, end) => {
+          filterStartDate = start;
+          filterEndDate = end;
+          render();
+        }
+      });
+    }
 
     const techOptions = ['All', ...technicians.map(t => String(t.id))];
 
