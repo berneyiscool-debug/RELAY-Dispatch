@@ -70,7 +70,7 @@ export function renderNotificationsList(container, params) {
     },
     { 
       key: 'title', 
-      label: 'Title / Details', 
+      label: 'Title', 
       render: (n) => {
         const isPortal = n.source === 'customer_portal' || 
                         (n.message && n.message.toLowerCase().includes('via portal')) ||
@@ -78,45 +78,13 @@ export function renderNotificationsList(container, params) {
                         (n.title && n.title.toLowerCase().includes('via portal'));
         
         const portalIcon = isPortal 
-          ? `<span class="material-icons-outlined" style="font-size:18px;color:var(--color-primary);margin-right:6px;vertical-align:middle;" title="Submitted via Customer Portal">open_in_browser</span>` 
+          ? `<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary);margin-right:4px;vertical-align:middle;" title="Submitted via Customer Portal">open_in_browser</span>` 
           : '';
 
-        const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
-        const linkedPlan = n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId) : null;
-        
         return `
-          <div style="font-weight:500;display:flex;align-items:center;">
+          <div style="font-weight:500;display:inline-flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
             ${portalIcon}<span>${escapeHTML(n.title)}</span>
           </div>
-          <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description || n.message || '')}</div>
-          ${n.type === 'Recurring Job Due' ? `
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:11px">
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);background:var(--bg-color);padding:2px 6px;border-radius:4px;border:1px solid var(--border-color)">
-                <span class="material-icons-outlined" style="font-size:12px">precision_manufacturing</span>
-                ${escapeHTML(linkedAsset?.name || 'Asset')}
-              </span>
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);background:var(--bg-color);padding:2px 6px;border-radius:4px;border:1px solid var(--border-color)">
-                <span class="material-icons-outlined" style="font-size:12px">place</span>
-                ${escapeHTML(linkedAsset?.site || 'Main Office')}
-              </span>
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--color-primary-dark);background:var(--color-primary-light);padding:2px 6px;border-radius:4px;font-weight:600">
-                <span class="material-icons-outlined" style="font-size:12px">calendar_month</span>
-                Due: ${n.targetServiceDate 
-                  ? new Date(n.targetServiceDate).toLocaleDateString('en-AU')
-                  : n.currentMeterAtTrigger 
-                    ? `${parseFloat(n.currentMeterAtTrigger) + (linkedPlan ? parseFloat(linkedPlan.meterInterval || 0) : 0)} ${escapeHTML(linkedAsset?.meterUnit || 'hrs')}`
-                    : '—'}
-              </span>
-            </div>
-          ` : ''}
-          ${n.type === 'Recurring Job Created' ? `
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:11px">
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--color-primary-dark);background:var(--color-primary-light);padding:2px 6px;border-radius:4px;font-weight:600">
-                <span class="material-icons-outlined" style="font-size:12px">build</span>
-                Job Spawned: Due ${n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-AU') : '—'}
-              </span>
-            </div>
-          ` : ''}
         `;
       }
     },
