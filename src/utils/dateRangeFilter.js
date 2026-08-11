@@ -5,7 +5,7 @@
 // popover with From/To inputs — replaces the two wide native date inputs in the
 // list toolbars. Calls onChange(startISO, endISO) ('' when cleared).
 
-export function createDateRangeFilter({ onChange, label = 'Date' } = {}) {
+export function createDateRangeFilter({ container = null, onChange, label = 'Date' } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'date-range-filter';
   wrap.innerHTML = `
@@ -43,6 +43,11 @@ export function createDateRangeFilter({ onChange, label = 'Date' } = {}) {
     start = ''; end = ''; startI.value = ''; endI.value = ''; refresh(); emit(); pop.hidden = true;
   });
   document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) pop.hidden = true; });
+
+  if (container) {
+    if (container.replaceWith) container.replaceWith(wrap);
+    else container.appendChild(wrap);
+  }
 
   return wrap;
 }

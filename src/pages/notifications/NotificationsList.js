@@ -177,51 +177,17 @@ export function renderNotificationsList(container, params) {
     {
       key: 'actions',
       label: 'Actions',
-      render: (n) => {
-        const isConverted = n.status === 'Converted';
-        const linkedJobId = n.jobId || (n.link && n.link.startsWith('/jobs/') ? n.link.split('/').pop() : null);
-        const linkedQuoteId = n.quoteId || (n.link && n.link.startsWith('/quotes/') ? n.link.split('/').pop() : null);
-
-        let actionButtons = '';
-
-        if (isConverted || linkedJobId || linkedQuoteId) {
-          if (linkedJobId) {
-            actionButtons += `
-              <button class="btn btn-sm btn-secondary btn-view-job" data-job-id="${linkedJobId}" title="View Converted Job" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
-                <span class="material-icons-outlined" style="font-size:13px;color:var(--color-primary)">build</span> View Job
-              </button>
-            `;
-          }
-          if (linkedQuoteId) {
-            actionButtons += `
-              <button class="btn btn-sm btn-secondary btn-view-quote" data-quote-id="${linkedQuoteId}" title="View Converted Quote" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
-                <span class="material-icons-outlined" style="font-size:13px;color:var(--color-primary)">request_quote</span> View Quote
-              </button>
-            `;
-          }
-        } else {
-          actionButtons += `
-            <button class="btn btn-sm btn-primary btn-convert-job" data-id="${n.id}" title="Convert to Job" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
-              <span class="material-icons-outlined" style="font-size:13px;">build</span> Convert to Job
-            </button>
-            <button class="btn btn-sm btn-secondary btn-convert-quote" data-id="${n.id}" title="Convert to Quote" style="height:25px;font-size:11px;padding:0 8px;display:inline-flex;align-items:center;gap:3px;margin-right:4px;">
-              <span class="material-icons-outlined" style="font-size:13px;">request_quote</span> Quote
-            </button>
-          `;
-        }
-
-        actionButtons += `
-          <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit Notification" style="height:25px;padding:0 4px;">
+      render: (n) => `
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;">
+          <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit Notification" style="height:25px;padding:0 6px;">
             <span class="material-icons-outlined" style="font-size:16px;">edit</span>
           </button>
-          <button class="btn btn-sm btn-ghost btn-delete-notification" data-id="${n.id}" title="Delete Notification" style="height:25px;padding:0 4px;color:var(--color-danger)">
+          <button class="btn btn-sm btn-ghost btn-delete-notification" data-id="${n.id}" title="Delete Notification" style="height:25px;padding:0 6px;color:var(--color-danger)">
             <span class="material-icons-outlined" style="font-size:16px;">delete</span>
           </button>
-        `;
-
-        return `<div style="display:flex;align-items:center;justify-content:flex-end;">${actionButtons}</div>`;
-      },
-      width: '240px'
+        </div>
+      `,
+      width: '90px'
     }
   ];
 
@@ -644,34 +610,25 @@ export function renderNotificationsList(container, params) {
         </div>
       `,
       actions: (() => {
-        const isReadOnly = (!n.createdBy || n.createdBy === 'System' || n.createdBy === 'System Engine' || n.createdBy === 'System Notification' || n.createdBy === 'System Scheduler') && n.createdBy !== 'Assistant';
-        if (n.type === 'Recurring Job Created' || (isReadOnly && n.jobId)) {
-          return [
-            { label: 'Close', className: 'btn-secondary', onClick: close => close() },
-            { label: 'View Job', className: 'btn-primary', onClick: close => { close(); router.navigate(`/jobs/${n.jobId}`); } }
-          ];
-        }
-        if (isReadOnly) {
+        const linkedJobId = n.jobId || (n.link && n.link.startsWith('/jobs/') ? n.link.split('/').pop() : null);
+        const linkedQuoteId = n.quoteId || (n.link && n.link.startsWith('/quotes/') ? n.link.split('/').pop() : null);
+
+        if (n.status === 'Converted' || linkedJobId || linkedQuoteId) {
           const acts = [{ label: 'Close', className: 'btn-secondary', onClick: close => close() }];
-          if (n.link && n.link.startsWith('/quotes/')) {
-            const qId = n.link.split('/').pop();
-            acts.push({ label: 'View Quote', className: 'btn-primary', onClick: close => { close(); router.navigate(`/quotes/${qId}`); } });
-          } else if (n.link && n.link.startsWith('/jobs/')) {
-            const jId = n.link.split('/').pop();
-            acts.push({ label: 'View Job', className: 'btn-primary', onClick: close => { close(); router.navigate(`/jobs/${jId}`); } });
+          if (linkedQuoteId) {
+            acts.push({ label: 'View Quote', className: 'btn-secondary', onClick: close => { close(); router.navigate(`/quotes/${linkedQuoteId}`); } });
+          }
+          if (linkedJobId) {
+            acts.push({ label: 'View Job', className: 'btn-primary', onClick: close => { close(); router.navigate(`/jobs/${linkedJobId}`); } });
           }
           return acts;
         }
-        if (n.status !== 'Converted') {
-          return [
-            { label: 'Close', className: 'btn-secondary', onClick: close => close() },
-            { label: 'Edit', className: 'btn-secondary', onClick: close => { close(); openNotificationFormDrawer(n); } },
-            { label: 'Convert to Quote', className: 'btn-secondary', onClick: close => { close(); convertToQuote(n.id); } },
-            { label: 'Convert to Job', className: 'btn-primary', onClick: close => { close(); convertToJob(n.id); } }
-          ];
-        }
+
         return [
-          { label: 'Close', className: 'btn-secondary', onClick: close => close() }
+          { label: 'Close', className: 'btn-secondary', onClick: close => close() },
+          { label: 'Edit', className: 'btn-secondary', onClick: close => { close(); openNotificationFormDrawer(n); } },
+          { label: 'Convert to Quote', className: 'btn-secondary', onClick: close => { close(); convertToQuote(n.id); } },
+          { label: 'Convert to Job', className: 'btn-primary', onClick: close => { close(); convertToJob(n.id); } }
         ];
       })(),
       onMount: (drawerEl) => {
