@@ -38,6 +38,14 @@ export function renderTimesheetsList(container) {
 
   let selectedIds = [];
 
+  // Pagination — shares the global page-size preference key with the DataTable component
+  // so the footer looks and behaves identically to the other list pages.
+  const PAGE_SIZE_KEY = 'relay_table_page_size';
+  const savedPageSize = parseInt(localStorage.getItem(PAGE_SIZE_KEY) || '15', 10);
+  let pageSize = [15, 30, 45, 60].includes(savedPageSize) ? savedPageSize : 15;
+  let currentPage = 1;
+  let closePageSizePop = null; // outside-click handler, removed before each re-attach
+
   function getCombinedTimesheets() {
     const rawTimesheets = store.getAll('timesheets') || [];
     const schedules = store.getAll('schedule') || [];
@@ -82,24 +90,21 @@ export function renderTimesheetsList(container) {
       visibleTimesheets = [];
     }
 
-    let filteredData = filterStatus === 'All' ? [...visibleTimesheets] : visibleTimesheets.filter(t => t.status === filterStatus);
-    
+    // Apply the tech + date-range filters first (across all statuses). This is the base
+    // set the status-count chips are computed from, so their numbers match what the table
+    // actually shows for the current tech/date window. The status filter is layered on top.
+    let dateTechFiltered = [...visibleTimesheets];
     if (canViewAll && filterTechId !== 'All') {
-      filteredData = filteredData.filter(t => String(t.technicianId) === String(filterTechId));
+      dateTechFiltered = dateTechFiltered.filter(t => String(t.technicianId) === String(filterTechId));
     }
-
     if (filterStartDate) {
-      filteredData = filteredData.filter(t => {
-        const tDate = t.date ? t.date.split('T')[0] : '';
-        return tDate >= filterStartDate;
-      });
+      dateTechFiltered = dateTechFiltered.filter(t => (t.date ? t.date.split('T')[0] : '') >= filterStartDate);
     }
     if (filterEndDate) {
-      filteredData = filteredData.filter(t => {
-        const tDate = t.date ? t.date.split('T')[0] : '';
-        return tDate <= filterEndDate;
-      });
+      dateTechFiltered = dateTechFiltered.filter(t => (t.date ? t.date.split('T')[0] : '') <= filterEndDate);
     }
+
+    let filteredData = filterStatus === 'All' ? [...dateTechFiltered] : dateTechFiltered.filter(t => t.status === filterStatus);
 
     const totalPending = filteredData.filter(t => t.status === 'Pending').reduce((s, t) => s + (t.hours || 0), 0);
 
@@ -107,9 +112,18 @@ export function renderTimesheetsList(container) {
     const allSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedIds.includes(id));
     const showBulk = selectedIds.length > 0;
 
-    // Group by date
+    // Paginate the flat (already date-sorted) entry list; grouping is applied to the
+    // current page only. "Showing X–Y of Z" therefore counts individual entries, just
+    // like the shared DataTable footer.
+    const totalRows = filteredData.length;
+    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const pageStart = (currentPage - 1) * pageSize;
+    const pagedData = filteredData.slice(pageStart, pageStart + pageSize);
+
+    // Group by date (current page only)
     const groups = [];
-    filteredData.forEach(t => {
+    pagedData.forEach(t => {
       const d = new Date(t.date);
       const dateStr = d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
       let group = groups.find(g => g.dateStr === dateStr);
@@ -122,6 +136,44 @@ export function renderTimesheetsList(container) {
     });
     const allJobs = store.getAll('jobs') || [];
     const jobMap = new Map(allJobs.map(j => [j.id, j]));
+
+    // Pagination footer — markup mirrors the shared DataTable component so it inherits
+    // the same .pagination / .pagination-controls / .dt-page-size-* styling and behaviour.
+    const paginationHTML = `
+      <div class="pagination">
+        <div class="pagination-info" style="display:flex; align-items:center; gap:12px;">
+          <span>Showing ${totalRows === 0 ? 0 : pageStart + 1}–${Math.min(pageStart + pageSize, totalRows)} of ${totalRows}</span>
+          <div class="pagination-page-size" style="position:relative; display:inline-flex; align-items:center; gap:4px; font-size:11px;">
+            <span style="color:var(--text-secondary)">Per page:</span>
+            <button type="button" class="btn btn-secondary btn-sm dt-page-size-trigger" style="height:22px; padding:0 6px; font-size:11px; display:inline-flex; align-items:center; gap:2px;">
+              <span>${pageSize}</span>
+              <span class="material-icons-outlined" style="font-size:13px">unfold_more</span>
+            </button>
+            <div class="dt-page-size-pop" hidden style="position:absolute; bottom:calc(100% + 4px); left:46px; background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--border-radius); box-shadow:var(--shadow-lg); padding:4px 0; z-index:1000; min-width:64px;">
+              ${[15, 30, 45, 60].map(sz => `
+                <div class="dt-page-size-opt ${sz === pageSize ? 'active' : ''}" data-val="${sz}" style="padding:4px 10px; cursor:pointer; font-size:11px; background:${sz === pageSize ? 'var(--color-primary-light)' : 'transparent'}; color:${sz === pageSize ? 'var(--color-primary)' : 'var(--text-primary)'}; font-weight:${sz === pageSize ? '600' : '400'};">
+                  ${sz}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="pagination-controls">
+          <button ${currentPage === 1 ? 'disabled' : ''} data-page="prev">‹</button>
+          ${(() => {
+            let s = '';
+            for (let p = 1; p <= totalPages; p++) {
+              if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - currentPage) > 1) {
+                if (p === 3 || p === totalPages - 2) s += '<button disabled>…</button>';
+                continue;
+              }
+              s += `<button class="${p === currentPage ? 'page-active' : ''}" data-page="${p}">${p}</button>`;
+            }
+            return s;
+          })()}
+          <button ${currentPage === totalPages || totalPages === 0 ? 'disabled' : ''} data-page="next">›</button>
+        </div>
+      </div>`;
 
     container.innerHTML = `
       <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -149,10 +201,10 @@ export function renderTimesheetsList(container) {
             })()}
           </select>` : ''}
           <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
-            <option value="All" ${filterStatus === 'All' ? 'selected' : ''}>All Statuses (${visibleTimesheets.length})</option>
-            <option value="Pending" ${filterStatus === 'Pending' ? 'selected' : ''}>Pending (${visibleTimesheets.filter(t => t.status === 'Pending').length})</option>
-            <option value="Approved" ${filterStatus === 'Approved' ? 'selected' : ''}>Approved (${visibleTimesheets.filter(t => t.status === 'Approved').length})</option>
-            <option value="Rejected" ${filterStatus === 'Rejected' ? 'selected' : ''}>Rejected (${visibleTimesheets.filter(t => t.status === 'Rejected').length})</option>
+            <option value="All" ${filterStatus === 'All' ? 'selected' : ''}>All Statuses (${dateTechFiltered.length})</option>
+            <option value="Pending" ${filterStatus === 'Pending' ? 'selected' : ''}>Pending (${dateTechFiltered.filter(t => t.status === 'Pending').length})</option>
+            <option value="Approved" ${filterStatus === 'Approved' ? 'selected' : ''}>Approved (${dateTechFiltered.filter(t => t.status === 'Approved').length})</option>
+            <option value="Rejected" ${filterStatus === 'Rejected' ? 'selected' : ''}>Rejected (${dateTechFiltered.filter(t => t.status === 'Rejected').length})</option>
           </select>
           ${hasPermission('Timesheets', 'create') ? `
             <button class="btn btn-sm btn-primary" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
@@ -167,8 +219,17 @@ export function renderTimesheetsList(container) {
         </div>
       </div>
 
-      <div class="data-table-wrapper">
-        <table class="data-table">
+      <div id="timesheets-table-container">
+      <div class="card data-table-card">
+        ${groups.length === 0 ? `
+        <div class="empty-state">
+          <span class="material-icons-outlined">schedule</span>
+          <h3>No timesheets found</h3>
+          <p>Try adjusting your filters or log a new time entry.</p>
+        </div>
+        ` : `
+        <div class="data-table-wrapper">
+          <table class="data-table">
             <thead>
               <tr>
                 <th style="width:40px; text-align:center;"><input type="checkbox" id="th-select-all" ${allSelected ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px; margin:0;" /></th>
@@ -176,17 +237,16 @@ export function renderTimesheetsList(container) {
                 <th>Technician</th>
                 <th>Job</th>
                 <th>Task</th>
-                <th>Description</th>
                 <th style="text-align:right; width:80px">Hours</th>
                 <th style="width:110px">Status</th>
-                <th style="width:60px; text-align:right">Actions</th>
+                <th style="width:104px; text-align:right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${groups.length === 0 ? '<tr><td colspan="9" class="text-secondary" style="text-align:center;padding:40px">No timesheets found</td></tr>' : groups.map(group => `
+              ${groups.map(group => `
                 <tr class="group-header" style="background:var(--content-bg); font-weight:600;">
                   <td></td>
-                  <td colspan="5" style="color:var(--text-primary)">${group.dateStr}</td>
+                  <td colspan="4" style="color:var(--text-primary)">${group.dateStr}</td>
                   <td style="text-align:right; color:var(--color-primary)">${group.total.toFixed(2)} hrs</td>
                   <td></td>
                   <td></td>
@@ -219,31 +279,30 @@ export function renderTimesheetsList(container) {
                     <td><span class="font-medium">${escapeHTML(t.technicianName)}</span></td>
                     <td><a href="#/jobs/${t.jobId}" class="cell-link" title="${escapeHTML(jobLabel)}">${escapeHTML(jobLabel)}</a></td>
                     <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || t.phaseName || t.task_name || '—')}</span></td>
-                    <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.description || '—')}</span></td>
                     <td style="text-align:right; font-weight:600">${(t.hours ?? t.durationHours ?? t.duration_hours ?? 0).toFixed(2)}</td>
                     <td>
                       <span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">
                         ${escapeHTML(t.status)}
                       </span>
                     </td>
-                    <td style="text-align:right">
-                      <div style="display:flex; justify-content:flex-end; gap:4px;">
+                    <td style="text-align:right; padding-top:2px; padding-bottom:2px">
+                      <div style="display:flex; align-items:center; justify-content:flex-end; gap:2px;">
                         ${canEdit ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-edit-timesheet" data-id="${t.id}" data-tooltip="Edit timesheet entry" data-tooltip-pos="left">
-                            <span class="material-icons-outlined" style="font-size:18px">edit</span>
+                          <button class="btn btn-sm btn-ghost btn-edit-timesheet" data-id="${t.id}" data-tooltip="Edit timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;">
+                            <span class="material-icons-outlined" style="font-size:16px">edit</span>
                           </button>
                         ` : ''}
                         ${canDelete ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-delete-timesheet" data-id="${t.id}" data-tooltip="Delete timesheet entry" data-tooltip-pos="left" style="color:var(--color-danger)">
-                            <span class="material-icons-outlined" style="font-size:18px">delete</span>
+                          <button class="btn btn-sm btn-ghost btn-delete-timesheet" data-id="${t.id}" data-tooltip="Delete timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;color:var(--color-danger)">
+                            <span class="material-icons-outlined" style="font-size:16px">delete</span>
                           </button>
                         ` : ''}
                         ${['admin', 'manager'].includes(currentUser.role) && t.status === 'Pending' ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-approve-single" data-id="${t.id}" data-tooltip="Approve timesheet entry" data-tooltip-pos="left" style="color:var(--color-success)">
-                            <span class="material-icons-outlined" style="font-size:18px">check</span>
+                          <button class="btn btn-sm btn-ghost btn-approve-single" data-id="${t.id}" data-tooltip="Approve timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;color:var(--color-success)">
+                            <span class="material-icons-outlined" style="font-size:16px">check</span>
                           </button>
-                          <button class="btn btn-ghost btn-sm btn-icon btn-reject-single" data-id="${t.id}" data-tooltip="Reject timesheet entry" data-tooltip-pos="left" style="color:var(--color-danger)">
-                            <span class="material-icons-outlined" style="font-size:18px">close</span>
+                          <button class="btn btn-sm btn-ghost btn-reject-single" data-id="${t.id}" data-tooltip="Reject timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;color:var(--color-danger)">
+                            <span class="material-icons-outlined" style="font-size:16px">close</span>
                           </button>
                         ` : ''}
                       </div>
@@ -252,7 +311,11 @@ export function renderTimesheetsList(container) {
                 `;}).join('')}
               `).join('')}
             </tbody>
-        </table>
+          </table>
+        </div>
+        ${paginationHTML}
+        `}
+      </div>
       </div>
     `;
 
@@ -336,7 +399,52 @@ export function renderTimesheetsList(container) {
         render();
       });
     });
-    if (selectedIds.length > 0) {
+
+    // Pagination: per-page popover (opens upward, mirrors the DataTable component)
+    const sizeTrigger = container.querySelector('.dt-page-size-trigger');
+    const sizePop = container.querySelector('.dt-page-size-pop');
+    if (sizeTrigger && sizePop) {
+      sizeTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sizePop.hidden = !sizePop.hidden;
+      });
+      sizePop.querySelectorAll('.dt-page-size-opt').forEach(opt => {
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = parseInt(opt.dataset.val, 10);
+          if (val) {
+            pageSize = val;
+            localStorage.setItem(PAGE_SIZE_KEY, String(pageSize));
+            currentPage = 1;
+            render();
+          }
+        });
+      });
+      // Re-attach a single outside-click closer (avoids piling up listeners across renders)
+      if (closePageSizePop) document.removeEventListener('click', closePageSizePop);
+      closePageSizePop = (e) => {
+        if (!sizeTrigger.contains(e.target) && !sizePop.contains(e.target)) sizePop.hidden = true;
+      };
+      document.addEventListener('click', closePageSizePop);
+    }
+
+    // Pagination: prev / next / numbered page controls
+    container.querySelectorAll('.pagination-controls button[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const page = btn.dataset.page;
+        if (page === 'prev') currentPage--;
+        else if (page === 'next') currentPage++;
+        else currentPage = parseInt(page, 10);
+        render();
+      });
+    });
+
+    // Reconcile the shared bulk-action bar. Called (deferred) on every render so an
+    // empty selection cleans up too. It MUST run after the app shell's page-header
+    // relocation (a MutationObserver microtask that clears #breadcrumb-actions on each
+    // re-render) — otherwise that relocation wipes the bar and leaves the filters hidden
+    // by the lingering `has-bulk` class. A macrotask (setTimeout 0) runs after microtasks.
+    const syncBulkBar = () => {
       const actions = [];
       if (currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) {
         actions.push({
@@ -418,7 +526,8 @@ export function renderTimesheetsList(container) {
           render();
         }
       });
-    }
+    };
+    setTimeout(syncBulkBar, 0);
 
     const triggerExportSelected = () => {
       if (selectedIds.length === 0) return;
