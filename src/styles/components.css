@@ -135,19 +135,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-base) var(--space-lg);
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border-color);
 }
 .card-header h3,
 .card-header h4 {
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .card-body {
-  padding: var(--space-lg);
+  padding: 14px;
 }
 .card-footer {
-  padding: var(--space-base) var(--space-lg);
+  padding: 10px 14px;
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
@@ -163,13 +164,17 @@
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 10px;
+  justify-content: center;
+  padding: 2px 12px;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   border-radius: 9999px; /* Modern pill status shape */
   text-transform: uppercase;
   letter-spacing: 0.6px; /* Elegant tracking spacing */
   line-height: 1.5;
+  white-space: nowrap !important;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 .badge-primary {
   background: var(--color-primary-light);
@@ -359,9 +364,9 @@ select.badge option {
   gap: 0;
 }
 .tab {
-  padding: 10px 18px;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-secondary);
   background: none;
   border: none;
@@ -378,7 +383,7 @@ select.badge option {
   border-bottom-color: var(--color-primary);
 }
 .tab-content {
-  padding: var(--space-lg) 0;
+  padding: 12px 0;
 }
 
 /* ---- Disabled State for Local Mode ---- */
@@ -532,7 +537,10 @@ select.badge option {
   box-shadow: none;
   background: var(--card-bg);
   margin: 0;
-  overflow: visible;
+  overflow: hidden !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
 }
 
 /* ---- Pagination ---- */
@@ -556,52 +564,73 @@ select.badge option {
 .data-table-wrapper {
   flex: 1;
   min-height: 0;
-  overflow-x: auto;
+  overflow-x: hidden !important;
   overflow-y: auto;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
 }
 .data-table {
-  width: 100%;
+  width: 100% !important;
+  max-width: 100% !important;
+  table-layout: fixed !important;                   /* columns fill the width exactly — never overflow the page */
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;   /* aligned figures, Supabase-style */
+  box-sizing: border-box;
 }
 .data-table th {
   position: sticky;
   top: 0;
   z-index: 5;
-  padding: 3px 8px;
-  font-size: 10px;
-  font-weight: var(--font-weight-semibold);
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em; /* Category trackers */
+  letter-spacing: 0.03em;
   color: var(--text-secondary);
   text-align: left;
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
   user-select: none;
   transition: color var(--transition-fast);
-  background: var(--bg-color); /* subtle opaque header */
-  height: 25px;
+  background: var(--bg-color);
+  height: 36px;
+  box-sizing: border-box;
 }
 .data-table th:hover {
   color: var(--text-primary);
 }
+/* Sort glyphs stay hidden until the column is hovered or is the active sort, so
+   the header row reads as labels instead of a wall of faint icons. */
 .data-table th .sort-icon {
-  font-size: 11px;
+  font-size: 13px;
   margin-left: 2px;
-  opacity: 0.4;
+  opacity: 0;
+  vertical-align: middle;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+.data-table th:hover .sort-icon {
+  opacity: 0.5;
 }
 .data-table th.sorted .sort-icon {
   opacity: 1;
   color: var(--color-primary);
 }
 .data-table td {
-  padding: 5px 8px; /* ~10% taller rows (31px height) */
+  padding: 8px 8px;
   border-bottom: 1px solid var(--border-color);
   font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);  /* uniform weight — money is the only emphasis */
   color: var(--text-primary);
   vertical-align: middle;
-  height: 31px;
+  height: 40px;                            /* comfortable, consistent row rhythm */
+  white-space: nowrap;                     /* single-line rows keep the rhythm even */
+  overflow: hidden;
+  text-overflow: ellipsis;                 /* long values truncate instead of overflowing the page */
+  box-sizing: border-box;
 }
 .data-table tr:last-child td {
   border-bottom: none;
@@ -609,7 +638,7 @@ select.badge option {
 @media (max-width: 768px) {
   /* Mobile technician lists keep larger row targets */
   .data-table td {
-    padding: 6px 8px;
+    padding: 10px 12px;
   }
 }
 .data-table tr:hover td {
@@ -618,25 +647,58 @@ select.badge option {
 .data-table tr.selected td {
   background: var(--color-primary-light);
 }
+/* Links carry meaning by colour, not weight, to preserve the one uniform voice. */
 .data-table td .cell-link {
   color: var(--color-primary);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-normal);
   cursor: pointer;
 }
 .data-table td .cell-link:hover {
   text-decoration: underline;
 }
+/* Numeric columns: right-aligned with tabular figures (set col.align:'right'). */
+.data-table td.num,
+.data-table th.num {
+  text-align: right;
+}
+/* Money is the single emphasised value in a table — the one bold. Apply
+   .cell-amount to a currency cell's value span. */
+.data-table td .cell-amount,
+.data-table td.cell-amount {
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+/* Selection checkbox column — hard-locked to one width so it never shifts
+   between pages regardless of how many columns a table has. width alone is only
+   a hint under table-layout:auto, so min/max pin it. */
+.data-table th.dt-select-col,
+.data-table td.dt-select-cell {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
 
 /* Status badges inside data tables */
 .data-table .badge, select.badge {
-  padding: 1px 6px;
+  padding: 2px 12px;
   font-size: 10px;
-  height: 20px;
+  height: 22px;
   line-height: 18px;
+  white-space: nowrap !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  border-radius: 9999px;
 }
 select.badge {
-  padding: 1px 16px 1px 6px;
-  background-position: right 4px center;
+  padding: 2px 20px 2px 12px;
+  background-position: right 6px center;
   background-size: 8px;
 }
 
@@ -3695,6 +3757,31 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   background: #18181b;
   border-color: #27272a;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ---- Info Key-Value Grid ---- */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px 24px;
+  padding: 16px 20px;
+}
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.info-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.info-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 

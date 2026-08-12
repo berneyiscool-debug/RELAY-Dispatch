@@ -7,6 +7,7 @@ import { escapeHTML } from '../utils/security.js';
 export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc' }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'card data-table-card';
+  wrapper.style.cssText = 'width:100%; max-width:100%; overflow:hidden;';
 
   const STORAGE_KEY = 'relay_table_page_size';
   const savedSize = parseInt(localStorage.getItem(STORAGE_KEY) || '15', 10);
@@ -66,7 +67,41 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     // Select All Checkbox
     if (selectable) {
       const allSelectedOnPage = paged.length > 0 && paged.every(r => selectedIds.has(String(getId ? getId(r) : r.id)));
-      html += `<th style="width: 40px; text-align: center;"><input type="checkbox" class="dt-select-all" ${allSelectedOnPage ? 'checked' : ''}></th>`;
+      html += `<th class="dt-select-col"><input type="checkbox" class="dt-select-all" ${allSelectedOnPage ? 'checked' : ''}></th>`;
+    }
+
+    function getColumnMinWidth(col) {
+      const k = (col.key || '').toLowerCase();
+      const label = (col.label || '').toLowerCase();
+      
+      let calculated = '130px';
+      if (['date', 'createdat', 'issuedate', 'duedate', 'scheduleddate', 'startdate'].some(x => k.includes(x) || label.includes(x))) {
+        calculated = '115px';
+      } else if (['status', 'owner', 'priority', 'compliance', 'service', 'category', 'type'].some(x => k.includes(x) || label.includes(x))) {
+        calculated = '125px';
+      } else if (k.includes('progress') || label.includes('progress')) {
+        calculated = '165px';
+      } else if (['number', 'id', 'code', 'sku', 'ref', 'po'].some(x => k.includes(x) || label.includes(x))) {
+        calculated = '100px';
+      } else if (['total', 'value', 'price', 'amount', 'cost'].some(x => k.includes(x) || label.includes(x))) {
+        calculated = '95px';
+      } else if (['qty', 'quantity', 'hours'].some(x => k.includes(x) || label.includes(x))) {
+        calculated = '75px';
+      }
+      
+      // Ensure header title text + sort icon + cell padding fits cleanly
+      const labelNeededPx = (col.label || '').length * 9 + 36;
+      let numericCalc = parseInt(calculated, 10) || 0;
+      if (labelNeededPx > numericCalc) {
+        calculated = labelNeededPx + 'px';
+        numericCalc = labelNeededPx;
+      }
+
+      if (col.minWidth) {
+        const numericColMin = parseInt(col.minWidth, 10) || 0;
+        return (numericColMin > numericCalc ? col.minWidth : calculated);
+      }
+      return calculated;
     }
 
     columns.forEach(col => {
@@ -74,7 +109,9 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
       const sortClass = isSorted ? ' sorted' : '';
       const sortIcon = isSorted ? (sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more';
       const ariaSort = isSorted ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
-      html += `<th class="${sortClass}" data-key="${col.key}" role="button" tabindex="0" aria-sort="${ariaSort}" style="${col.width ? 'width:' + col.width : ''}">
+      const alignClass = col.align === 'right' ? ' num' : '';
+      const minWidth = getColumnMinWidth(col);
+      html += `<th class="${sortClass}${alignClass}" data-key="${col.key}" role="button" tabindex="0" aria-sort="${ariaSort}" style="${col.width ? 'width:' + col.width + ';' : ''} min-width:${minWidth};">
         ${escapeHTML(col.label)}
         <span class="material-icons-outlined sort-icon" aria-hidden="true">${sortIcon}</span>
       </th>`;
@@ -88,14 +125,14 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
       html += `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}">`;
       
       if (selectable) {
-        html += `<td style="width: 40px; text-align: center;" class="dt-select-cell">
+        html += `<td class="dt-select-cell">
           <input type="checkbox" class="dt-select-row" value="${escapeHTML(rowId)}" ${isSelected ? 'checked' : ''}>
         </td>`;
       }
 
       columns.forEach(col => {
         const value = col.render ? col.render(row) : escapeHTML(row[col.key] ?? '');
-        html += `<td>${value}</td>`;
+        html += `<td class="${col.align === 'right' ? 'num' : ''}">${value}</td>`;
       });
       html += '</tr>';
     });
