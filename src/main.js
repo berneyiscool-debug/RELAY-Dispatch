@@ -424,7 +424,7 @@ function adjustPageToolbarLayout(container) {
         }
       });
       pageToolbar.style.display = 'flex';
-      pageToolbar.style.marginBottom = 'var(--space-lg)';
+      pageToolbar.style.marginBottom = '0';
     } else {
       pageToolbar.style.display = 'none';
       pageToolbar.style.marginBottom = '0';

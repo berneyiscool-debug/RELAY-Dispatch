@@ -64,6 +64,7 @@ export function renderContractorDetail(container, params) {
 
   function render() {
     const compliance = getContractorCompliance(contractor);
+    const compBadge = compliance.status === 'Compliant' ? 'badge-success' : compliance.status === 'Expiring Soon' ? 'badge-warning' : 'badge-danger';
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -75,16 +76,18 @@ export function renderContractorDetail(container, params) {
           <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(contractor.contactName)}</span>
           <span><span class="material-icons-outlined" style="font-size:14px">email</span> ${escapeHTML(contractor.email || '—')}</span>
           <span><span class="material-icons-outlined" style="font-size:14px">phone</span> ${escapeHTML(contractor.phone || '—')}</span>
-          <span class="badge ${compliance.badgeClass}" title="${escapeHTML(compliance.reason || compliance.label)}" style="cursor:help">
-            Compliance: ${escapeHTML(compliance.label)}
-          </span>
-          <span class="badge ${contractor.active ? 'badge-success' : 'badge-neutral'}">${contractor.active ? 'Active' : 'Inactive'}</span>
+          <span class="badge ${compBadge}">${escapeHTML(compliance.status)}</span>
         `,
         actionsHtml: `
-          <button class="btn btn-secondary" id="btn-edit-contractor">
+          ${emailEnabledFor('contractor_invite') ? `
+            <button class="btn btn-secondary" id="btn-invite-portal" data-tooltip="Email an automated magic-link sign in key to the contractor portal" data-tooltip-pos="left">
+              <span class="material-icons-outlined">mail</span> Invite to Portal
+            </button>
+          ` : ''}
+          <button class="btn btn-secondary" id="btn-edit-contractor" data-tooltip="Modify contractor details, contact information, or trade category" data-tooltip-pos="left">
             <span class="material-icons-outlined">edit</span> Edit
           </button>
-          <button class="btn btn-danger" id="btn-delete-contractor">
+          <button class="btn btn-danger" id="btn-delete-contractor" data-tooltip="Permanently delete this contractor record" data-tooltip-pos="left">
             <span class="material-icons-outlined">delete</span> Delete
           </button>
         `

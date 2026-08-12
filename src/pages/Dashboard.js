@@ -46,8 +46,8 @@ const ZOOM_STEP = 0.05;     // zoom changes in clean 5% increments
 // recalled view clears the floating .dash-topbar (top) and the viewport edge (left),
 // instead of landing at (0,0) where the topbar gradient clips its top-left. Applied to
 // BOTH capture and recall so newly-saved views stay idempotent.
-const VIEW_INSET_X = 24;
-const VIEW_INSET_Y = 64;
+const VIEW_INSET_X = 20;
+const VIEW_INSET_Y = 20;
 
 // Default pixel sizes derived from a widget's declared width/height class
 const W_PX = { S: 300, M: 460, L: 680, XL: 680 };
@@ -335,14 +335,14 @@ function subscribeWidgetRefresh() {
 
 // ── Role-based default layouts (world px coordinates) ────────────────────────────
 const ADMIN_DEFAULT = [
-  { id: 'kpi-cards',        x: 40,  y: 40,  w: 680, h: 150 },
-  { id: 'job-status-chart', x: 40,  y: 220, w: 420, h: 320 },
-  { id: 'cash-flow',        x: 480, y: 220, w: 240, h: 320 },
-  { id: 'today-schedule',   x: 760, y: 40,  w: 440, h: 300 },
-  { id: 'recent-activity',  x: 760, y: 360, w: 440, h: 300 },
-  { id: 'recent-leads',     x: 40,  y: 560, w: 420, h: 280 },
-  { id: 'tech-map',         x: 480, y: 560, w: 240, h: 280 },
-  { id: 'deputy-asks-widget', x: 740, y: 560, w: 440, h: 280 },
+  { id: 'kpi-cards',          x: 40,  y: 40,  w: 680, h: 130 },
+  { id: 'job-status-chart',   x: 40,  y: 190, w: 420, h: 320 },
+  { id: 'cash-flow',          x: 480, y: 190, w: 240, h: 320 },
+  { id: 'recent-leads',       x: 40,  y: 530, w: 420, h: 290 },
+  { id: 'tech-map',           x: 480, y: 530, w: 240, h: 290 },
+  { id: 'today-schedule',     x: 740, y: 40,  w: 440, h: 240 },
+  { id: 'recent-activity',    x: 740, y: 300, w: 440, h: 250 },
+  { id: 'deputy-asks-widget', x: 740, y: 570, w: 440, h: 250 },
 ];
 
 const TECH_DEFAULT = [
@@ -368,13 +368,13 @@ function defaultLayoutForUser() {
 // The default "Home" saved view — centred on the widget cluster. It's seeded for new
 // users but is an ordinary view: movable, editable AND removable once they customise.
 function makeHomeView(widgets) {
-  // Top-left of the widget cluster (with a small margin) — views anchor by top-left now
-  let x = 0, y = 0;
+  // Top-left of the widget cluster — views anchor cleanly by top-left
+  let x = 40, y = 40;
   if (widgets && widgets.length) {
     let minX = Infinity, minY = Infinity;
     widgets.forEach(w => { minX = Math.min(minX, w.x); minY = Math.min(minY, w.y); });
-    x = snap(minX - 40);
-    y = snap(minY - 40);
+    x = minX;
+    y = minY;
   }
   return { id: 'view_home', x, y, zoom: 1, color: '#FF5C00', icon: 'home', label: 'Home' };
 }
@@ -2036,11 +2036,40 @@ function wireWidgetControls(grid, data) {
 }
 
 // ── Edit-mode header (Add Widget · Drop Pin · Reset View · Reset Default · Cancel · Save) ──
+function tidyDashboardLayout() {
+  if (!live || !live.widgets || live.widgets.length === 0) return;
+  live.widgets.forEach(w => {
+    w.x = snap(w.x);
+    w.y = snap(w.y);
+    w.w = snap(w.w);
+    w.h = snap(w.h);
+  });
+  live.widgets.sort((a, b) => a.y - b.y || a.x - b.x);
+  const placed = [];
+  live.widgets.forEach(w => {
+    let collides = true;
+    while (collides) {
+      collides = placed.some(p =>
+        w.x < p.x + p.w && w.x + w.w > p.x &&
+        w.y < p.y + p.h && w.y + w.h > p.y
+      );
+      if (collides) {
+        w.y += GRID;
+      }
+    }
+    placed.push(w);
+  });
+  live.widgets = placed;
+}
+
 function showEditHeader(container, viewport, world, guides, data) {
   const headerActions = container.querySelector('#dashboard-header-actions');
   headerActions.innerHTML = `
     <button class="btn btn-secondary btn-sm" id="btn-add-widget">
       <span class="material-icons-outlined" style="font-size:16px;">add</span> Add Widget
+    </button>
+    <button class="btn btn-secondary btn-sm" id="btn-auto-align" title="Auto-align and organize all widgets on the grid without overlap">
+      <span class="material-icons-outlined" style="font-size:16px;">grid_view</span> Auto-Align
     </button>
     <button class="btn btn-secondary btn-sm" id="btn-save-view" title="Save the current centre + zoom as a quick-jump view">
       <span class="material-icons-outlined" style="font-size:16px;">bookmark_add</span> Save View
@@ -2060,16 +2089,29 @@ function showEditHeader(container, viewport, world, guides, data) {
     renderPins(world);
     updateGuides(viewport, guides);
     _ctxVisibleSig = null;
-    updateContextActions(viewport, true); // restore contextual actions
-    applyGluedWidths(viewport);           // re-apply glue fill now we're back in view mode
-    updateGlueAffordance(viewport);       // hide the glue toggle (edit-mode only)
+    updateContextActions(viewport, true);
+    applyGluedWidths(viewport);
+    updateGlueAffordance(viewport);
   };
 
-  headerActions.querySelector('#btn-save-view').addEventListener('click', () => {
-    openPinEditor(viewport, world, guides, {}); // captures the current centre + zoom
+  headerActions.querySelector('#btn-add-widget')?.addEventListener('click', () => {
+    openAddWidgetModal(container, viewport, world, guides, data);
   });
 
-  headerActions.querySelector('#btn-reset-default').addEventListener('click', () => {
+  headerActions.querySelector('#btn-auto-align')?.addEventListener('click', () => {
+    tidyDashboardLayout();
+    renderWidgets(world, data);
+    renderPins(world);
+    updateGuides(viewport, guides);
+    updateGlueAffordance(viewport);
+    resetView(viewport);
+  });
+
+  headerActions.querySelector('#btn-save-view')?.addEventListener('click', () => {
+    openPinEditor(viewport, world, guides, {});
+  });
+
+  headerActions.querySelector('#btn-reset-default')?.addEventListener('click', () => {
     if (confirm('Reset your dashboard to the default layout? This clears your widgets and saved views.')) {
       live.widgets = defaultLayoutForUser();
       live.pins = [makeHomeView(live.widgets)];

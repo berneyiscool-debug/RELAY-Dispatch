@@ -293,21 +293,13 @@ export function renderJobForm(container, params) {
               <input class="form-input" name="title" value="${escapeHTML(job.title || '')}" required placeholder="e.g. Electrical fault repair — Main Office" />
             </div>
 
-            <!-- Customer + Type -->
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Customer *</label>
-                <select class="form-select" id="jf-customer" name="customerId" required>
-                  <option value="">Select customer...</option>
-                  ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Type</label>
-                <select class="form-select" name="type">
-                  ${jobTypes.map(t => `<option ${job.type === t ? 'selected' : ''}>${escapeHTML(t)}</option>`).join('')}
-                </select>
-              </div>
+            <!-- Customer -->
+            <div class="form-group">
+              <label class="form-label">Customer *</label>
+              <select class="form-select" id="jf-customer" name="customerId" required>
+                <option value="">Select customer...</option>
+                ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+              </select>
             </div>
 
             <!-- Jobsite -->

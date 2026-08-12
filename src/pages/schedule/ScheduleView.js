@@ -19,6 +19,7 @@ export function renderScheduleView(container) {
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
   container.style.overflow = 'hidden';
+  container.style.padding = '0';
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const loginMode = localStorage.getItem('relay_login_mode');
@@ -633,21 +634,22 @@ export function renderScheduleView(container) {
     const menuBg = isDark ? '#1e293b' : '#ffffff';
 
     container.innerHTML = `
-      <div class="page-header">
+      <div id="schedule-view" class="schedule-container schedule-page-view" style="display:flex; flex-direction:column; flex:1; min-height:0; height:100%; width:100%;">
+        <div class="page-header">
         <h1>Schedule</h1>
         <div class="page-header-actions">
           <div class="flex gap-sm items-center">
-            <button class="btn btn-secondary btn-sm" id="btn-prev"><span class="material-icons-outlined" style="pointer-events: none;">chevron_left</span></button>
+            <button class="btn btn-secondary btn-sm" id="btn-prev" style="width:25px;height:25px;padding:0;display:inline-flex;align-items:center;justify-content:center;"><span class="material-icons-outlined" style="pointer-events:none;font-size:16px;">chevron_left</span></button>
             <button class="btn btn-secondary btn-sm" id="btn-today">Today</button>
-            <button class="btn btn-secondary btn-sm" id="btn-next"><span class="material-icons-outlined" style="pointer-events: none;">chevron_right</span></button>
-            <span style="font-weight:600;font-size:var(--font-size-md);margin:0 8px">
+            <button class="btn btn-secondary btn-sm" id="btn-next" style="width:25px;height:25px;padding:0;display:inline-flex;align-items:center;justify-content:center;"><span class="material-icons-outlined" style="pointer-events:none;font-size:16px;">chevron_right</span></button>
+            <span style="font-weight:600;font-size:12px;margin:0 4px">
               ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}
             </span>
           </div>
-          <div class="flex gap-sm items-center" style="margin-left:auto;margin-right:16px">
+          <div class="flex gap-sm items-center" style="margin-left:auto">
             ${!isTechnician ? '' : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${currentUser.name}</span>`}
           </div>
-          <div class="flex gap-xs" style="margin-right:16px;">
+          <div class="flex gap-xs">
             <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
             <button class="toolbar-filter ${calendarType === 'activity' ? 'active' : ''}" data-cal="activity">Activities</button>
           </div>
@@ -659,16 +661,16 @@ export function renderScheduleView(container) {
       </div>
 
       <!-- Schedule Page Toolbar -->
-      <div class="page-toolbar" style="margin-bottom: 16px;">
+      <div class="page-toolbar">
         <div class="toolbar-selectors flex gap-sm items-center">
           <!-- Quick Add Button with Dropdown -->
-          <div style="position:relative;">
-            <button class="btn btn-primary btn-sm btn-icon" id="btn-action-menu-trigger" title="Add to Schedule" style="width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center;">
-              <span class="material-icons-outlined" style="font-size:18px">add</span>
+          <div style="position:relative;display:inline-flex;align-items:center;">
+            <button class="btn btn-primary btn-sm btn-icon" id="btn-action-menu-trigger" title="Add to Schedule" style="width:25px; height:25px; padding:0; display:inline-flex; align-items:center; justify-content:center;">
+              <span class="material-icons-outlined" style="font-size:16px">add</span>
             </button>
             ${isActionMenuOpen ? `
               <!-- Action Dropdown Menu -->
-              <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:36px; left:0; width:220px; z-index:var(--z-dropdown); display:flex; flex-direction:column; overflow:hidden;">
+              <div id="action-dropdown-menu" class="sidebar-collapsed-flyout" style="position:absolute; top:32px; left:0; width:220px; z-index:var(--z-dropdown); display:flex; flex-direction:column; overflow:hidden;">
                 <button class="sidebar-nav-item sub-item action-menu-opt" data-action="job" style="margin:2px 0; width:100%; border:none; background:none; cursor:pointer; display:flex !important; align-items:center !important;">
                   <span class="nav-icon"><span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px">assignment</span></span>
                   <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">Add Job Schedule</span>
@@ -691,13 +693,13 @@ export function renderScheduleView(container) {
 
           <!-- Team / Technician Filter Button & Dropdown -->
           ${(!isTechnician || isLocalAdminTechView) && !isLocalAdmin ? `
-            <div style="position:relative;">
-              <button class="btn btn-secondary btn-sm btn-icon" id="btn-tech-filter-trigger" title="Visible Team (${visibleTechIds.size})" style="position:relative; width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center;">
-                <span class="material-icons-outlined" style="font-size:18px">people</span>
-                <span style="position:absolute; top:-6px; right:-6px; background:var(--color-primary); color:white; font-size:9px; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:1.5px solid var(--content-bg); font-family:var(--font-family); line-height:1; box-sizing:border-box;">${visibleTechIds.size}</span>
+            <div style="position:relative;display:inline-flex;align-items:center;">
+              <button class="btn btn-secondary btn-sm btn-icon" id="btn-tech-filter-trigger" title="Visible Team (${visibleTechIds.size})" style="position:relative; width:25px; height:25px; padding:0; display:inline-flex; align-items:center; justify-content:center;">
+                <span class="material-icons-outlined" style="font-size:16px">people</span>
+                <span style="position:absolute; top:-4px; right:-4px; background:var(--color-primary); color:white; font-size:9px; border-radius:50%; width:14px; height:14px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:1.5px solid var(--content-bg); font-family:var(--font-family); line-height:1; box-sizing:border-box;">${visibleTechIds.size}</span>
               </button>
               ${isTechsPanelOpen ? `
-                <div id="tech-filter-dropdown" class="sidebar-collapsed-flyout" style="position:absolute; top:36px; left:0; width:240px; z-index:var(--z-dropdown); display:flex; flex-direction:column; padding:12px; gap:8px;">
+                <div id="tech-filter-dropdown" class="sidebar-collapsed-flyout" style="position:absolute; top:32px; left:0; width:240px; z-index:var(--z-dropdown); display:flex; flex-direction:column; padding:12px; gap:8px;">
                   <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:4px;">Toggle Visibility</div>
                   ${technicians.map(t => `
                     <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer; padding:4px 0;">
@@ -725,7 +727,7 @@ export function renderScheduleView(container) {
       </div>
 
       <!-- Calendar Grid (Full Width) -->
-      <div class="card" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;border:none;border-radius:0;box-shadow:none;">
         <div style="display:flex;flex:1;min-height:0;overflow:hidden">
           
           <!-- Calendar -->
@@ -828,6 +830,7 @@ export function renderScheduleView(container) {
             `}
           </div>
         </div>
+      </div>
       </div>
     `;
 

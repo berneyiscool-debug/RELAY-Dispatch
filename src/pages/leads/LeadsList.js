@@ -49,22 +49,14 @@ export function renderLeadsList(container) {
   const priorityBadges = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger' };
 
   const columns = [
-    { key: 'number', label: 'Lead #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number || 'LD-' + (r.id.includes('_') ? r.id.split('_')[1].padStart(5, '0') : r.id.substring(0, 5).toUpperCase()))}</span>`, getValue: (r) => r.number || r.id, width: '100px' },
-    { key: 'title', label: 'Lead', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.title)}</span>` },
-    { key: 'customerName', label: 'Customer', render: (r) => `<span class="text-secondary">${escapeHTML(r.customerName)}</span>` },
-    { key: 'source', label: 'Source', render: (r) => `<span class="text-secondary">${escapeHTML(r.source)}</span>` },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${statusBadges[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>` },
-    { key: 'likelihood', label: 'Likelihood', render: (r) => {
-        const prob = likelihoods[r.status] ?? 0;
-        let color = 'var(--text-tertiary)';
-        if (prob >= 80) color = 'var(--color-success)';
-        else if (prob >= 50) color = 'var(--color-primary)';
-        else if (prob >= 30) color = 'var(--color-warning-dark)';
-        return `<span style="font-weight:700; color:${color}">${prob}%</span>`;
-      }, getValue: (r) => likelihoods[r.status] || 0, width: '100px' },
-    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${priorityBadges[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>` },
-    { key: 'value', label: 'Value', render: (r) => `<span class="font-medium">$${(r.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`, getValue: (r) => r.value },
-    { key: 'createdAt', label: 'Date', render: (r) => `<span class="text-secondary">${new Date(r.createdAt).toLocaleDateString()}</span>`, getValue: (r) => new Date(r.createdAt).getTime() },
+    { key: 'number', label: 'Lead #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number || 'LD-' + (r.id.includes('_') ? r.id.split('_')[1].padStart(5, '0') : r.id.substring(0, 5).toUpperCase()))}</span>`, getValue: (r) => r.number || r.id, width: '11%' },
+    { key: 'title', label: 'Lead', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.title)}</span>`, width: '24%' },
+    { key: 'customerName', label: 'Customer', render: (r) => `<span class="text-secondary">${escapeHTML(r.customerName)}</span>`, width: '18%' },
+    { key: 'source', label: 'Source', render: (r) => `<span class="text-secondary">${escapeHTML(r.source)}</span>`, width: '10%' },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${statusBadges[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '11%' },
+    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${priorityBadges[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '10%' },
+    { key: 'value', label: 'Value', render: (r) => `<span class="font-medium">$${(r.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`, getValue: (r) => r.value, width: '10%' },
+    { key: 'createdAt', label: 'Date', render: (r) => `<span class="text-secondary">${r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-AU') : '—'}</span>`, getValue: (r) => r.createdAt ? new Date(r.createdAt).getTime() : 0, width: '14%' },
   ];
 
   const table = createDataTable({

@@ -37,10 +37,10 @@ export function renderContractorsList(container) {
   let filteredData = [...contractors];
 
   const columns = [
-    { key: 'businessName', label: 'Business Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.businessName)}</span>` },
-    { key: 'contactName', label: 'Contact Name' },
-    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—') },
-    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—') },
+    { key: 'businessName', label: 'Business', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.businessName)}</span>`, width: '24%' },
+    { key: 'contactName', label: 'Contact', width: '19%' },
+    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—'), width: '22%' },
+    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—'), width: '13%' },
     { 
       key: 'compliance', 
       label: 'Compliance', 
@@ -48,10 +48,9 @@ export function renderContractorsList(container) {
         const comp = getContractorCompliance(r);
         const tooltipText = comp.reason ? comp.reason : comp.label;
         return `<span class="badge ${comp.badgeClass}" data-tooltip="${escapeHTML(tooltipText)}" style="cursor:help">${escapeHTML(comp.label)}</span>`;
-      }
+      }, width: '12%'
     },
-    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>` },
-    { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm contractor-edit-btn" data-id="${r.id}" data-tooltip="Edit contractor profile" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
+    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>`, width: '10%' }
   ];
 
   const table = createDataTable({ 

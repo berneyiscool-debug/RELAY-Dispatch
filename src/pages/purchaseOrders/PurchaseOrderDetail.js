@@ -49,10 +49,13 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
   function render() {
     container.innerHTML = `
       ${renderDetailHeader({
-        title: po.number || 'New Purchase Order',
+        title: escapeHTML(po.number || 'New Purchase Order'),
         icon: 'shopping_cart',
+        iconBgColor: 'var(--color-primary-light)',
+        iconTextColor: 'var(--color-primary)',
         metaHtml: `
-          <span class="badge ${po.status === 'Draft' ? 'badge-neutral' : po.status === 'Issued' ? 'badge-primary' : po.status === 'Received' ? 'badge-success' : 'badge-danger'}">${po.status}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">store</span> ${escapeHTML(po.supplierName || 'General Supplier')}</span>
+          <span class="badge ${po.status === 'Draft' ? 'badge-neutral' : po.status === 'Issued' ? 'badge-primary' : po.status === 'Received' ? 'badge-success' : 'badge-danger'}">${escapeHTML(po.status || 'Draft')}</span>
         `,
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-cancel">Cancel</button>

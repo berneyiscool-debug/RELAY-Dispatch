@@ -751,7 +751,23 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0; /* Full-width edge-to-edge Supabase workspace canvas */
+  padding: 20px 24px; /* Standard breathing room for all detail pages, forms, settings, and tabs */
+  box-sizing: border-box;
+}
+
+/* Full-bleed exception for table list views, schedule views & dashboard canvas */
+.main-content:has([id$="-table-container"]),
+.main-content:has(#dashboard-viewport),
+.main-content:has(#dash-viewport),
+.main-content:has(#dashboard-canvas),
+.main-content:has(.dashboard-view),
+.main-content:has(#table-container-wrapper),
+.main-content:has(#schedule-view),
+.main-content:has(.schedule-container),
+.main-content:has(.schedule-page-view),
+.main-content:has(#activity-calendar-view),
+.main-content:has(#route-panel-view) {
+  padding: 0 !important;
 }
 
 /* ---- Page content wrapper ---- */
@@ -776,12 +792,16 @@
 #assets-table-container,
 #people-table-container,
 #stock-table-container,
-#notifications-table-container {
+#notifications-table-container,
+#timesheets-table-container {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: hidden !important;
 }
 
 /* ---- Page Header ---- */
@@ -808,16 +828,36 @@
 }
 
 /* ---- Consistent list-toolbar controls ---- */
+#breadcrumb-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  height: 100% !important;
+}
+#breadcrumb-actions > * {
+  display: inline-flex !important;
+  align-items: center !important;
+}
 #breadcrumb-actions .btn,
 #breadcrumb-actions .form-select,
 #breadcrumb-actions .form-input,
 #breadcrumb-actions .toolbar-search input,
+#breadcrumb-actions .toolbar-filter,
 .page-header-actions .btn,
 .page-header-actions .form-select,
 .page-header-actions .form-input,
-.page-header-actions .toolbar-search input {
+.page-header-actions .toolbar-search input,
+.page-header-actions .toolbar-filter {
   height: 25px !important;
+  min-height: 25px !important;
+  max-height: 25px !important;
   font-size: 11px !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  margin: 0 !important;
 }
 /* Compact date-range inputs */
 #breadcrumb-actions #filter-date-start,
@@ -1042,34 +1082,38 @@
 /* ---- Detail Page Layout ---- */
 .detail-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: var(--space-xl);
-  background: white;
-  border: 1px solid var(--card-border);
-  border-radius: var(--border-radius-md);
-  margin-bottom: var(--space-lg);
+  padding: 10px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
 }
 .detail-header-info {
   display: flex;
-  gap: var(--space-lg);
+  align-items: center;
+  gap: 12px;
 }
 .detail-header-icon {
-  width: 45px;
-  height: 45px;
-  border-radius: var(--border-radius-lg);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--border-radius);
   background: var(--color-primary-light);
   color: var(--color-primary);
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 .detail-header-icon .material-icons-outlined {
-  font-size: 28px;
+  font-size: 20px;
 }
 .detail-header-text h2 {
-  font-size: var(--font-size-xl);
-  margin-bottom: var(--space-xs);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 .detail-header-meta {
   display: flex;

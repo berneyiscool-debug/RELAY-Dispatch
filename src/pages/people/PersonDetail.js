@@ -39,6 +39,11 @@ export function renderPersonDetail(container, { id, tab }) {
   let activeTab = tab || 'details';
 
   function render() {
+    const totalBilled = invoices.reduce((sum, i) => sum + (i.total || 0), 0);
+    const totalJobsCount = jobs.length;
+    const totalQuotesCount = quotes.length;
+    const customerAssetsCount = store.getAll('assets').filter(a => a.ownerType === 'Customer' && a.customerId === id).length;
+
     container.innerHTML = `
       ${renderDetailHeader({
         title: escapeHTML(person.company),
@@ -65,13 +70,13 @@ export function renderPersonDetail(container, { id, tab }) {
         <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Details</button>
         <button class="tab ${activeTab === 'contacts' ? 'active' : ''}" data-tab="contacts">Contacts (${(person.contacts || []).length})</button>
         <button class="tab ${activeTab === 'sites' ? 'active' : ''}" data-tab="sites">Sites (${(person.sites || []).length})</button>
-        <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets (${store.getAll('assets').filter(a => a.ownerType === 'Customer' && a.customerId === id).length})</button>
+        <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets (${customerAssetsCount})</button>
         <button class="tab ${activeTab === 'jobs' ? 'active' : ''}" data-tab="jobs">Jobs (${jobs.length})</button>
         <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes (${quotes.length})</button>
         <button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices">Invoices (${invoices.length})</button>
       </div>
 
-      <div class="tab-content" id="tab-content"></div>
+      <div class="tab-content" id="tab-content" style="padding-top:12px;"></div>
     `;
 
     renderTabContent();

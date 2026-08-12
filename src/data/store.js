@@ -3043,10 +3043,10 @@ class DataStore {
     const officeTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_office` : 'ut_office';
 
     const defaultTechs = [
-      { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445', username: 'jake', password: '123456' },
-      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: managerTypeId, payRate: 85.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556', username: 'ryan', password: '123456' },
-      { id: `${companyId}_tech_3`, name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: techTypeId,    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667', username: 'sandra', password: '123456' },
-      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: officeTypeId,  payRate: 50.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778', username: 'dean', password: '123456' }
+      { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.local',  phone: '0491 570 001', username: 'jake', password: '123456' },
+      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: managerTypeId, payRate: 85.00,  email: 'ryan@apexpowerservices.local',  phone: '0491 570 002', username: 'ryan', password: '123456' },
+      { id: `${companyId}_tech_3`, name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: techTypeId,    payRate: 80.00,  email: 'sandra@apexpowerservices.local', phone: '0491 570 003', username: 'sandra', password: '123456' },
+      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: officeTypeId,  payRate: 50.00,  email: 'dean@apexpowerservices.local',  phone: '0491 570 004', username: 'dean', password: '123456' }
     ];
 
     this.cache.technicians = defaultTechs;

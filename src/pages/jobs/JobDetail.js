@@ -371,6 +371,7 @@ export function renderJobDetail(container, { id }) {
           ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job" data-tooltip="Permanently delete this job" data-tooltip-pos="left"><span class="material-icons-outlined">delete</span></button>` : ''}
         </div>
       </div>
+
       <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
         <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview" data-tooltip="General details, technician assignments, site address, and custom fields">Overview</button>
         <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks" data-tooltip="View, track, and complete hierarchical task lists for this job">Tasklists</button>
@@ -425,21 +426,20 @@ export function renderJobDetail(container, { id }) {
       }
 
       const techNames = job.technicians && job.technicians.length > 0
-        ? job.technicians.map(t => `${escapeHTML(t.name)} (${t.hours}h)`).join(', ')
+        ? job.technicians.map(t => `${escapeHTML(t.name)}${t.hours !== undefined && t.hours !== null && t.hours !== '' ? ` (${t.hours}h)` : ''}`).join(', ')
         : escapeHTML(job.technicianName || 'Unassigned');
 
       tc.innerHTML = `
-        <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+        <div style="display:flex; flex-direction:column; gap:16px">
           
           <!-- Original Grid details -->
-          <div class="grid-3" style="align-items: start;">
+          <div class="grid-3" style="align-items: start; gap:16px;">
             <div class="card" style="grid-column: span 1">
-              <div class="card-header"><h4>Job Information</h4></div>
-              <div class="card-body">
-                <div style="display:flex;flex-direction:column;gap:12px">
+              <div class="card-header" style="padding:10px 14px"><h4 style="margin:0; font-size:13px; font-weight:700">Job Information</h4></div>
+              <div class="card-body" style="padding:12px 14px">
+                <div style="display:flex; flex-direction:column; gap:2px">
                   ${r('Job Number', escapeHTML(job.number))}
                   ${r('Title', escapeHTML(job.title))}
-                  ${r('Type', escapeHTML(job.type))}
                   ${r('Status', escapeHTML(job.status))}
                   ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
                   ${r('Priority', escapeHTML(job.priority))}
@@ -569,16 +569,16 @@ export function renderJobDetail(container, { id }) {
             </div>
             ` : `
             <div class="card" style="grid-column: span 2">
-              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-                <h4 style="margin:0">Schedule & Assignment</h4>
+              <div class="card-header" style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
+                <h4 style="margin:0; font-size:13px; font-weight:700">Schedule & Assignment</h4>
                 ${hasPermission('Schedule', 'edit') ? `
                 <button class="btn btn-ghost btn-sm" id="btn-add-schedule" style="font-size:12px;padding:4px 8px">
                   <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">calendar_month</span> Add to Schedule
                 </button>
                 ` : ''}
               </div>
-              <div class="card-body">
-                <div style="display:flex;flex-direction:column;gap:12px">
+              <div class="card-body" style="padding:12px 14px">
+                <div style="display:flex; flex-direction:column; gap:2px">
                   ${r('Technicians', techNames)}
                   ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
                   ${r('Est. Hours', job.estimatedHours || '—')}
@@ -3197,7 +3197,12 @@ export function renderJobDetail(container, { id }) {
   render();
 
   function r(label, value) {
-    return `<div style="display:flex;gap:8px"><span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span><span>${value}</span></div>`;
+    return `
+      <div class="kv-row" style="display:flex; align-items:flex-start; gap:12px; padding:4px 0; border-bottom:1px dashed rgba(0,0,0,0.05);">
+        <span class="kv-label" style="width:110px; min-width:110px; flex-shrink:0; font-size:11px; font-weight:600; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.4px; line-height:1.5;">${label}</span>
+        <span class="kv-value" style="flex:1; min-width:0; font-size:13px; font-weight:600; color:var(--text-primary); line-height:1.5; word-break:break-word;">${value}</span>
+      </div>
+    `;
   }
   function renderFormsTab(tc) {
     const instances = store.getAll('formInstances').filter(fi => fi.jobId === id);

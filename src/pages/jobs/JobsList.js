@@ -38,15 +38,15 @@ export function renderJobsList(container, params) {
   const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
 
   const columns = [
-    { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '100px' },
-    { key: 'title', label: 'Title', render: (r) => `<span class="truncate" style="max-width:200px;display:inline-block">${escapeHTML(r.title)}</span>` },
-    { key: 'customerName', label: 'Customer' },
+    { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '11%' },
+    { key: 'title', label: 'Title', render: (r) => `<span class="text-primary font-medium">${escapeHTML(r.title)}</span>`, width: '25%' },
+    { key: 'customerName', label: 'Customer', width: '21%' },
     { key: 'asset', label: 'Asset', render: (r) => {
         const asset = r.assetId ? store.getById('assets', r.assetId) : null;
         const name = r.assetName || (asset ? asset.name : '');
         if (!name) return '<span class="text-tertiary">—</span>';
-        return `<span class="text-primary font-medium truncate" style="max-width:140px;display:inline-flex;align-items:center;gap:4px;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
-      }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '130px' },
+        return `<span class="text-primary font-medium" style="display:inline-flex;align-items:center;gap:4px;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
+      }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '15%' },
     { key: 'status', label: 'Status', render: (r) => r.isRecurring ? `
       <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
     ` : `
@@ -55,9 +55,9 @@ export function renderJobsList(container, params) {
           <option value="${s}" ${r.status === s ? 'selected' : ''}>${s}</option>
         `).join('')}
       </select>
-    `, width: '120px' },
-    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${pb[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '90px' },
-    { key: 'scheduledDate', label: 'Date', render: (r) => r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : '—', getValue: (r) => r.scheduledDate ? new Date(r.scheduledDate).getTime() : 0, width: '100px' },
+    `, width: '10%' },
+    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${pb[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '10%' },
+    { key: 'scheduledDate', label: 'Date', render: (r) => r.scheduledDate ? new Date(r.scheduledDate.includes('T') ? r.scheduledDate : r.scheduledDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.scheduledDate ? new Date(r.scheduledDate).getTime() : 0, width: '10%' },
   ];
 
   const table = createDataTable({ 

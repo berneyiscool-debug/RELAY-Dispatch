@@ -39,23 +39,14 @@ export function renderSuppliersList(container) {
   let filteredData = [...suppliers];
 
   const columns = [
-    { key: 'name', label: 'Supplier Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
-    { key: 'contactName', label: 'Contact Person', render: (r) => escapeHTML(r.contactName || '—') },
-    { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>` },
-    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—') },
-    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—') },
-    { key: 'paymentTerms', label: 'Payment Terms', render: (r) => escapeHTML(r.paymentTerms || '—') },
-    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>` },
+    { key: 'name', label: 'Supplier', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>`, width: '24%' },
+    { key: 'contactName', label: 'Contact', render: (r) => escapeHTML(r.contactName || '—'), width: '18%' },
+    { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '14%' },
+    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—'), width: '18%' },
+    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—'), width: '12%' },
+    { key: 'paymentTerms', label: 'Terms', render: (r) => escapeHTML(r.paymentTerms || '—'), width: '10%' },
+    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>`, width: '10%' },
   ];
-
-  if (canEdit) {
-    columns.push({ 
-      key: 'actions', 
-      label: '', 
-      width: '80px', 
-      render: (r) => `<button class="btn btn-ghost btn-sm supplier-edit-btn" data-id="${r.id}" data-tooltip="Edit supplier details" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` 
-    });
-  }
 
   const table = createDataTable({ 
     columns, 

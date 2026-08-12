@@ -103,8 +103,8 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         iconBgColor: 'var(--color-warning-bg)',
         iconTextColor: 'var(--color-warning)',
         metaHtml: isTemplate ? '' : `
-          ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${quote.customerName}</span>` : ''}
-          <span class="badge ${sb[quote.status] || 'badge-neutral'}">${quote.status}</span>
+          ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(quote.customerName)}</span>` : ''}
+          <span class="badge ${sb[quote.status] || 'badge-neutral'}">${escapeHTML(quote.status || 'Draft')}</span>
         `,
         actionsHtml: isTemplate ? `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-delete-template" style="color:var(--color-danger)"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
@@ -116,9 +116,9 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote" data-tooltip="Email professional proposal to primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
-             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:var(--z-dropdown);min-width:160px">
-                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Import Template</a>` : ''}
-                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Save as Template</a>` : ''}
+             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px;box-shadow:var(--shadow-md);z-index:var(--z-dropdown);min-width:160px">
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Import Template</a>` : ''}
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Save as Template</a>` : ''}
                 ${!isNew && hasPermission('Quotes', 'delete') ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Quote</a>` : ''}
              </div>
           </div>

@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderProjectDetail(container, params) {
   const { id } = params;
@@ -136,33 +137,20 @@ export function renderProjectDetail(container, params) {
         }
       </style>
 
-      <div style="margin-bottom:16px">
-        <a href="#/projects" style="display:inline-flex; align-items:center; gap:4px; font-weight:700; color:var(--text-secondary); text-decoration:none">
-          <span class="material-icons-outlined" style="font-size:16px">arrow_back</span> Back to Projects
-        </a>
-      </div>
-
-      <div class="page-header" style="margin-bottom:16px">
-        <div>
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px">
-            <span style="font-size:13px; font-weight:700; color:var(--text-tertiary); letter-spacing:0.5px">${escapeHTML(project.number)}</span>
-            <span class="badge ${statusClass}">${escapeHTML(project.status)}</span>
-          </div>
-          <h1>${escapeHTML(project.name)}</h1>
-          <div style="font-size:14px; color:var(--text-secondary); margin-top:4px">
-            Customer: <strong style="color:var(--text-primary)">${escapeHTML(project.customerName || 'N/A')}</strong>
-            ${project.siteAddress ? ` &bull; Site: <strong>${escapeHTML(project.siteAddress)}</strong>` : ''}
-          </div>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-edit-project" style="display:flex; align-items:center; gap:6px">
-            <span class="material-icons-outlined" style="font-size:18px">edit</span> Edit
-          </button>
-          <button class="btn btn-danger-outline" id="btn-delete-project" style="display:flex; align-items:center; gap:6px">
-            <span class="material-icons-outlined" style="font-size:18px">delete</span>
-          </button>
-        </div>
-      </div>
+      ${renderDetailHeader({
+        title: escapeHTML(project.name),
+        icon: 'folder_copy',
+        iconBgColor: 'var(--color-primary-light)',
+        iconTextColor: 'var(--color-primary)',
+        metaHtml: `
+          <span style="font-family:monospace">${escapeHTML(project.number)}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(project.customerName || 'N/A')}</span>
+          <span class="badge ${statusClass}">${escapeHTML(project.status || 'In Progress')}</span>
+        `,
+        actionsHtml: `
+          <button class="btn btn-secondary" id="btn-edit-project" data-tooltip="Modify project details, timeline, or customer"><span class="material-icons-outlined">edit</span> Edit Project</button>
+        `
+      })}
 
       <!-- TABS -->
       <div class="proj-tabs" id="project-tabs">

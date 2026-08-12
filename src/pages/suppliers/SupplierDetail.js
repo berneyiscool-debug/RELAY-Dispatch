@@ -32,6 +32,8 @@ export function renderSupplierDetail(container, params) {
   let activeTab = 'overview';
 
   function render() {
+    const totalPoSpend = purchaseOrders.reduce((sum, po) => sum + (po.total || 0), 0);
+
     container.innerHTML = `
       ${renderDetailHeader({
         title: escapeHTML(supplier.name),

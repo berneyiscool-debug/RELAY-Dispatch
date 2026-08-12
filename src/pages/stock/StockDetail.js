@@ -38,13 +38,13 @@ export function renderStockDetail(container, { id }) {
 
   container.innerHTML = `
     ${renderDetailHeader({
-      title: item.name,
+      title: escapeHTML(item.name),
       icon: 'inventory_2',
       iconBgColor: isLow ? 'var(--color-danger-bg)' : 'var(--color-success-bg)',
       iconTextColor: isLow ? 'var(--color-danger)' : 'var(--color-success)',
       metaHtml: `
-        <span style="font-family:monospace">${item.sku}</span>
-        <span class="badge badge-neutral">${item.category}</span>
+        <span style="font-family:monospace">${escapeHTML(item.sku)}</span>
+        <span class="badge badge-neutral">${escapeHTML(item.category)}</span>
         ${isLow ? '<span class="badge badge-danger">LOW STOCK</span>' : '<span class="badge badge-success">IN STOCK</span>'}
       `,
       actionsHtml: `
@@ -52,24 +52,6 @@ export function renderStockDetail(container, { id }) {
         <button class="btn btn-danger btn-icon" id="btn-delete-stock"><span class="material-icons-outlined">delete</span></button>
       `
     })}
-
-    <div class="grid-3" style="margin-bottom:var(--space-lg)">
-      <div class="stat-card">
-        <div class="stat-label">Consolidated Stock</div>
-        <div class="stat-value" style="color:${isLow ? 'var(--color-danger)' : 'var(--text-primary)'}">${totalQty}</div>
-        <div class="text-sm text-secondary">Reorder at ${item.reorderLevel} ${item.unit}s</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Unit Price</div>
-        <div class="stat-value">$${item.unitPrice.toFixed(2)}</div>
-        <div class="text-sm text-secondary">Cost: $${item.costPrice.toFixed(2)}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Profit Margin</div>
-        <div class="stat-value">${margin}%</div>
-        <div class="text-sm text-secondary">Stock Value (Cost): $${(totalQty * item.costPrice).toFixed(2)}</div>
-      </div>
-    </div>
 
     <div class="grid-3" style="align-items: start;">
       <div style="grid-column: span 2; display:flex; flex-direction:column; gap:20px">

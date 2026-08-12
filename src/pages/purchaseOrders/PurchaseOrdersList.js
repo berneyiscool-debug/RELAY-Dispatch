@@ -34,15 +34,15 @@ export function renderPurchaseOrdersList(container) {
   let filteredData = [...pos];
 
   const columns = [
-    { key: 'number', label: 'PO Number', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '120px' },
-    { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplierName || '—')}</span>` },
-    { key: 'job', label: 'Job Ref', render: (r) => r.jobId ? `<a href="#/jobs/${r.jobId}" class="cell-link">${escapeHTML(r.jobNumber)}</a>` : '<span class="text-secondary">—</span>' },
-    { key: 'date', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', width: '120px' },
-    { key: 'total', label: 'Total', render: (r) => `$${(r.total || 0).toFixed(2)}`, width: '100px' },
+    { key: 'number', label: 'PO #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '13%' },
+    { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplierName || '—')}</span>`, width: '28%' },
+    { key: 'job', label: 'Job Ref', render: (r) => r.jobId ? `<a href="#/jobs/${r.jobId}" class="cell-link">${escapeHTML(r.jobNumber)}</a>` : '<span class="text-secondary">—</span>', width: '22%' },
+    { key: 'total', label: 'Total', render: (r) => `$${(r.total || 0).toFixed(2)}`, width: '12%' },
     { key: 'status', label: 'Status', render: (r) => {
       const b = { 'Draft':'badge-draft', 'Issued':'badge-primary', 'Received':'badge-success', 'Cancelled':'badge-danger' };
       return `<span class="badge ${b[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`;
-    }, width: '110px' }
+    }, width: '11%' },
+    { key: 'date', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString('en-AU') : '—', width: '14%' }
   ];
 
   const table = createDataTable({ 

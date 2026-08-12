@@ -82,19 +82,22 @@ export function renderInvoiceDetail(container, { id }) {
   const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
   function render() {
+    const paidAmount = (invoice.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+    const balanceDue = Math.max(0, (invoice.total || 0) - paidAmount);
+
     container.innerHTML = `
       ${renderDetailHeader({
         title: `
-          ${isNew ? 'New Invoice' : invoice.number}
-          ${invoice.invoiceType === 'CreditNote' ? '<span class="badge badge-danger">CREDIT NOTE</span>' : invoice.invoiceType && invoice.invoiceType !== 'Standard' ? `<span class="badge badge-primary">${invoice.invoiceType.toUpperCase()}</span>` : ''}
+          ${isNew ? 'New Invoice' : escapeHTML(invoice.number)}
+          ${invoice.invoiceType === 'CreditNote' ? '<span class="badge badge-danger">CREDIT NOTE</span>' : invoice.invoiceType && invoice.invoiceType !== 'Standard' ? `<span class="badge badge-primary">${escapeHTML(invoice.invoiceType.toUpperCase())}</span>` : ''}
         `,
         icon: 'receipt_long',
         iconBgColor: 'var(--color-success-bg)',
         iconTextColor: 'var(--color-success)',
         metaHtml: `
-          ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${invoice.customerName}</span>` : ''}
-          ${invoice.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${invoice.jobNumber}</span>` : ''}
-          <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${invoice.status}</span>
+          ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(invoice.customerName)}</span>` : ''}
+          ${invoice.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${escapeHTML(invoice.jobNumber)}</span>` : ''}
+          <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${escapeHTML(invoice.status || 'Draft')}</span>
         `,
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
@@ -106,8 +109,8 @@ export function renderInvoiceDetail(container, { id }) {
           ${!isNew && invoice.status === 'Paid' && emailEnabledFor('receipt') ? `<button class="btn btn-primary" id="btn-send-receipt" data-tooltip="Email a payment receipt for this invoice to the customer" data-tooltip-pos="left"><span class="material-icons-outlined">receipt</span> Send Receipt</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
-             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:var(--z-dropdown);min-width:160px">
-                <a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Import from Quote</a>
+             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px;box-shadow:var(--shadow-md);z-index:var(--z-dropdown);min-width:160px">
+                <a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Import from Quote</a>
                 ${!isNew ? `<a href="#" class="dropdown-item" id="btn-delete-invoice" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Invoice</a>` : ''}
              </div>
           </div>

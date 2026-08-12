@@ -40,33 +40,39 @@ export function renderPeopleList(container) {
   const columns = [
     {
       key: 'company',
-      label: 'Company / Name',
+      label: 'Customer',
       render: (row) => `<span class="cell-link font-medium">${escapeHTML(row.company || `${row.firstName || ''} ${row.lastName || ''}`.trim() || 'Unnamed Customer')}</span>`,
+      width: '25%'
     },
     {
       key: 'contact',
       label: 'Contact',
       render: (row) => `${escapeHTML(row.firstName)} ${escapeHTML(row.lastName)}`,
+      width: '18%'
     },
     {
       key: 'email',
       label: 'Email',
       render: (row) => `<span class="text-secondary">${escapeHTML(row.email)}</span>`,
+      width: '22%'
     },
     {
       key: 'phone',
       label: 'Phone',
       render: (row) => `<span class="text-secondary">${escapeHTML(row.phone)}</span>`,
+      width: '13%'
     },
     {
       key: 'type',
       label: 'Type',
       render: (row) => `<span class="badge badge-neutral">${escapeHTML(row.type)}</span>`,
+      width: '11%'
     },
     {
       key: 'status',
       label: 'Status',
       render: (row) => `<span class="badge ${row.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(row.status)}</span>`,
+      width: '11%'
     },
   ];
 
