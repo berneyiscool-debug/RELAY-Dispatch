@@ -42,6 +42,12 @@ const GRID = 20;            // snap grid in world px
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 2;
 const ZOOM_STEP = 0.05;     // zoom changes in clean 5% increments
+// Saved views anchor by top-left. Inset that anchor from the raw viewport corner so a
+// recalled view clears the floating .dash-topbar (top) and the viewport edge (left),
+// instead of landing at (0,0) where the topbar gradient clips its top-left. Applied to
+// BOTH capture and recall so newly-saved views stay idempotent.
+const VIEW_INSET_X = 24;
+const VIEW_INSET_Y = 64;
 
 // Default pixel sizes derived from a widget's declared width/height class
 const W_PX = { S: 300, M: 460, L: 680, XL: 680 };
@@ -494,10 +500,11 @@ export async function renderDashboard(container) {
     if (loaded.pins && loaded.pins.length > 0) {
       const firstPin = loaded.pins[0];
       const targetZoom = typeof firstPin.zoom === 'number' ? firstPin.zoom : 1;
+      // Match flyTo()'s anchoring so the first-paint framing equals clicking the view.
       loaded.view = {
         zoom: targetZoom,
-        panX: -firstPin.x * targetZoom,
-        panY: -firstPin.y * targetZoom
+        panX: VIEW_INSET_X - firstPin.x * targetZoom,
+        panY: VIEW_INSET_Y - firstPin.y * targetZoom
       };
     }
     live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins };
@@ -1197,8 +1204,10 @@ function renderViewsSection() {
 function flyTo(viewport, wx, wy, targetZoom) {
   if (typeof targetZoom === 'number') live.view.zoom = clamp(targetZoom, ZOOM_MIN, ZOOM_MAX);
   const { zoom } = live.view;
-  live.view.panX = -wx * zoom;
-  live.view.panY = -wy * zoom;
+  // Land the saved world point at (VIEW_INSET_X, VIEW_INSET_Y) so it clears the topbar,
+  // not at the raw (0,0) corner. Kept in sync with currentViewCentre()'s capture inset.
+  live.view.panX = VIEW_INSET_X - wx * zoom;
+  live.view.panY = VIEW_INSET_Y - wy * zoom;
   const world = viewport.querySelector('#dash-world');
   const guides = viewport.querySelector('#dash-guides');
   world.style.transition = 'transform 0.35s cubic-bezier(0.16,1,0.3,1)';
@@ -1461,9 +1470,11 @@ function showCanvasContextMenu(clientX, clientY, ctx) {
 // saved view stores, so it re-snaps to the same top-left when recalled.
 function currentViewCentre(viewport) {
   const { panX, panY, zoom } = live.view;
+  // Capture the world point currently at (VIEW_INSET_X, VIEW_INSET_Y) — the same anchor
+  // flyTo() re-snaps to on recall — so a saved-then-recalled view reproduces exactly.
   return {
-    x: snap(-panX / zoom),
-    y: snap(-panY / zoom),
+    x: snap((VIEW_INSET_X - panX) / zoom),
+    y: snap((VIEW_INSET_Y - panY) / zoom),
     zoom,
   };
 }

@@ -595,8 +595,8 @@ export function renderJobDetail(container, { id }) {
       `;
 
       tc.querySelector('#btn-add-schedule')?.addEventListener('click', () => {
-        const techs = store.getAll('technicians').filter(t => !t.deactivated || job.technicianId === t.id || existingSchedules.some(s => s.techIds?.includes(t.id)));
         const existingSchedules = store.getAll('schedule').filter(t => t.jobId === id);
+        const techs = store.getAll('technicians').filter(t => !t.deactivated || job.technicianId === t.id || existingSchedules.some(s => s.techIds?.includes(t.id)));
 
         // Build the modal content element
         const content = document.createElement('div');
