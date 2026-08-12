@@ -37,11 +37,12 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
   const days = getWeekDays();
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-  const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id);
 
-  // Filter state
+  // Filter state (declared before `technicians` — filterTechId is referenced in that filter)
   let filterStatus = 'active'; // 'all' | 'active' | 'completed' | 'overdue'
   let filterTechId = isTechnician ? currentUser.id : 'all';
+
+  const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id);
 
   function getFilteredActivities() {
     let acts = store.getAll('activities');
