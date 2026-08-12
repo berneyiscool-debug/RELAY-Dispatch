@@ -1252,7 +1252,7 @@ Action parameters can be passed as structured JSON objects OR pipe-separated str
 - To fit canvas: [ACTION: FIT_CANVAS]
 - To lock/unlock canvas: [ACTION: LOCK_CANVAS, true] or [ACTION: LOCK_CANVAS, false]
 - To navigate to a page or open a specific record: [ACTION: NAVIGATE, PageNameOrPath] (e.g. jobs, invoices, invoices/INV-00001, jobs/JOB-123, customers/CUST-100, etc.)
-- To create customer: [ACTION: CREATE_CUSTOMER, {"type": "Commercial", "firstName": "Barry", "lastName": "Buttons", "companyName": "Buttons Plumbing", "email": "barry@buttons.com"}]
+- To create customer: [ACTION: CREATE_CUSTOMER, {"type": "Commercial", "firstName": "Barry", "lastName": "Buttons", "companyName": "Buttons Plumbing", "email": "barry@buttons.example.com"}]
 - To create job: [ACTION: CREATE_JOB, {"title": "Fix Tap", "status": "Scheduled", "customerName": "Barry Buttons", "technicianName": "John Doe", "scheduledDate": "2026-07-25"}]
 - To create quote: [ACTION: CREATE_QUOTE, {"title": "Proposal", "status": "Draft", "customerName": "Barry Buttons", "total": 1100, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 100}]}]
 - To create invoice: [ACTION: CREATE_INVOICE, {"title": "Invoice", "status": "Sent", "jobNum": "1005", "customerName": "Barry Buttons", "total": 165, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 150}]}]
