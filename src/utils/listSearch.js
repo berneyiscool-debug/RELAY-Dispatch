@@ -10,9 +10,17 @@
 let handler = null;
 let label = '';
 
-export function setListSearch(fn, listLabel = '') {
-  handler = typeof fn === 'function' ? fn : null;
-  label = listLabel || '';
+export function setListSearch(arg1, arg2) {
+  if (typeof arg1 === 'function') {
+    handler = arg1;
+    label = typeof arg2 === 'string' ? arg2 : '';
+  } else if (typeof arg2 === 'function') {
+    handler = arg2;
+    label = typeof arg1 === 'string' ? arg1 : '';
+  } else {
+    handler = null;
+    label = '';
+  }
   window.dispatchEvent(new CustomEvent('relay-list-search-changed'));
 }
 

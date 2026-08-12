@@ -76,17 +76,17 @@ export function renderAssetList(container, params) {
   let filteredData = [...assets];
 
   const columns = [
-    { key: 'name', label: 'Name / ID', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
-    { key: 'owner', label: 'Owner Type', render: (r) => {
+    { key: 'name', label: 'Asset', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>`, width: '24%' },
+    { key: 'owner', label: 'Owner', render: (r) => {
         if (r.ownerType === 'Customer' && r.customerId) {
           const cust = store.getById('customers', r.customerId);
           return cust ? `<span class="badge badge-neutral">${escapeHTML(cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Unnamed Customer')}</span>` : 'Customer';
         }
         return `<span class="badge badge-primary">My Business</span>`;
-      } 
+      }, width: '16%'
     },
-    { key: 'type', label: 'Category', render: (r) => escapeHTML(r.type || '—') },
-    { key: 'service', label: 'Service Status', render: (r) => {
+    { key: 'type', label: 'Category', render: (r) => escapeHTML(r.type || '—'), width: '15%' },
+    { key: 'service', label: 'Service', render: (r) => {
         const logs = r.logs || [];
         const lastS = logs.filter(l => l.type === 'Service').sort((a,b) => new Date(b.date) - new Date(a.date))[0];
         if (!lastS || !r.serviceIntervalMonths) return '<span class="text-tertiary" style="font-size:12px">Not Scheduled</span>';
@@ -107,17 +107,16 @@ export function renderAssetList(container, params) {
           badgeHtml = `<span class="badge badge-success">OK</span>`;
         }
         
-        return `<div style="display:inline-flex;align-items:center;gap:8px">${badgeHtml}<span class="text-secondary" style="font-size:12px">${d.toLocaleDateString()}</span></div>`;
-      }
+        return `<div style="display:inline-flex;align-items:center;gap:8px">${badgeHtml}<span class="text-secondary" style="font-size:12px">${d.toLocaleDateString('en-AU')}</span></div>`;
+      }, width: '21%'
     },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>` },
-    { key: 'assignedTo', label: 'Assigned To', render: (r) => {
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>`, width: '11%' },
+    { key: 'assignedTo', label: 'Assigned', render: (r) => {
         if (!r.assignedToId) return '—';
         const tech = store.getById('technicians', r.assignedToId);
         return tech ? escapeHTML(tech.name) : '—';
-      }
-    },
-    { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm asset-edit-btn" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
+      }, width: '13%'
+    }
   ];
 
   const table = createDataTable({ 
@@ -274,13 +273,5 @@ export function renderAssetList(container, params) {
   container.querySelector('#asset-status-filter')?.addEventListener('change', (e) => {
     activeFilter = e.target.value;
     updateFilteredData();
-  });
-
-  container.addEventListener('click', (e) => {
-    const editBtn = e.target.closest('.asset-edit-btn');
-    if (editBtn) {
-      e.stopPropagation();
-      router.navigate(`/assets/${editBtn.dataset.id}/edit`);
-    }
   });
 }

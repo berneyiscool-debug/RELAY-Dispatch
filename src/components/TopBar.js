@@ -9,6 +9,7 @@ import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssista
 import { showModal } from './Modal.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
+import { escapeHTML } from '../utils/security.js';
 
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
@@ -63,26 +64,40 @@ export function createTopBar() {
     const val = e.target.value;
     const listHandler = getListSearch();
     if (listHandler) {
-      hideSearchResults();
       listHandler(val.trim());
-      return;
     }
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       const query = val.trim();
-      if (query.length >= 2) {
+      if (query.length >= 1) {
         showSearchResults(query);
       } else {
         hideSearchResults();
       }
-    }, 300);
+    }, 180);
   });
 
   // Reflect the context in the placeholder, and clear the box when leaving a list.
-  window.addEventListener('relay-list-search-changed', () => {
-    searchInput.placeholder = getListSearch() ? `Filter ${getListSearchLabel() || 'list'}…` : 'Search…';
-    if (!getListSearch()) searchInput.value = '';
-  });
+  function updateSearchPlaceholder() {
+    const rawLabel = getListSearchLabel();
+    const hasSearch = !!getListSearch();
+    if (hasSearch && rawLabel) {
+      let clean = rawLabel.trim();
+      clean = clean.replace(/^(search|filter)\s+/i, '').replace(/[\.\…]+$/g, '').trim();
+      if (clean) {
+        clean = clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        searchInput.placeholder = `Search ${clean}...`;
+      } else {
+        searchInput.placeholder = 'Search...';
+      }
+    } else {
+      searchInput.placeholder = 'Search...';
+    }
+    if (!hasSearch) searchInput.value = '';
+  }
+
+  window.addEventListener('relay-list-search-changed', updateSearchPlaceholder);
+  updateSearchPlaceholder();
 
   searchInput.addEventListener('blur', () => {
     setTimeout(hideSearchResults, 200);
@@ -354,14 +369,43 @@ function toggleNotificationsDropdown(btn) {
 function showSearchResults(query) {
   hideSearchResults();
 
-  const { store } = window.__fieldForge || {};
-  if (!store) return;
+  const storeObj = store || window.__fieldForge?.store;
+  if (!storeObj) return;
 
   const results = [];
   const q = query.toLowerCase();
 
-  // Search customers
-  store.getAll('customers').forEach(c => {
+  // Search projects
+  (storeObj.getAll('projects') || []).forEach(p => {
+    const num = p.number || '';
+    const name = p.name || '';
+    const custName = p.customerName || '';
+    if (num.toLowerCase().includes(q) || name.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
+      results.push({ type: 'Project', label: `${num} — ${name}`, icon: 'folder', path: `/projects/${p.id}` });
+    }
+  });
+
+  // Search stock
+  (storeObj.getAll('stock') || []).forEach(st => {
+    const code = st.code || '';
+    const name = st.name || '';
+    const cat = st.category || '';
+    if (code.toLowerCase().includes(q) || name.toLowerCase().includes(q) || cat.toLowerCase().includes(q)) {
+      results.push({ type: 'Stock', label: `${code ? `${code} — ` : ''}${name}`, icon: 'inventory_2', path: `/stock/${st.id}` });
+    }
+  });
+
+  // Search kits
+  (storeObj.getAll('kits') || []).forEach(k => {
+    const name = k.name || '';
+    const desc = k.description || '';
+    if (name.toLowerCase().includes(q) || desc.toLowerCase().includes(q)) {
+      results.push({ type: 'Kit', label: name, icon: 'card_giftcard', path: `/stock` });
+    }
+  });
+
+  // Search customers / people
+  (storeObj.getAll('customers') || []).forEach(c => {
     const company = c.company || '';
     const firstName = c.firstName || '';
     const lastName = c.lastName || '';
@@ -372,7 +416,7 @@ function showSearchResults(query) {
   });
 
   // Search jobs
-  store.getAll('jobs').forEach(j => {
+  (storeObj.getAll('jobs') || []).forEach(j => {
     const num = j.number || '';
     const title = j.title || '';
     const custName = j.customerName || '';
@@ -382,48 +426,94 @@ function showSearchResults(query) {
   });
 
   // Search quotes
-  store.getAll('quotes').forEach(qt => {
+  (storeObj.getAll('quotes') || []).forEach(qt => {
     const num = qt.number || '';
     const title = qt.title || '';
     const custName = qt.customerName || '';
     if (num.toLowerCase().includes(q) || title.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
-      results.push({ type: 'Quote', label: `${num} — ${custName || 'Unnamed Customer'}`, icon: 'request_quote', path: `/quotes/${qt.id}` });
+      results.push({ type: 'Quote', label: `${num} — ${custName || title || 'Quote'}`, icon: 'request_quote', path: `/quotes/${qt.id}` });
     }
   });
 
   // Search invoices
-  store.getAll('invoices').forEach(inv => {
+  (storeObj.getAll('invoices') || []).forEach(inv => {
     const num = inv.number || '';
     const custName = inv.customerName || '';
     if (num.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
-      results.push({ type: 'Invoice', label: `${num} — ${custName || 'Unnamed Customer'}`, icon: 'receipt_long', path: `/invoices/${inv.id}` });
+      results.push({ type: 'Invoice', label: `${num} — ${custName || 'Invoice'}`, icon: 'receipt_long', path: `/invoices/${inv.id}` });
+    }
+  });
+
+  // Search suppliers
+  (storeObj.getAll('suppliers') || []).forEach(sup => {
+    const name = sup.name || '';
+    const contact = sup.contactName || '';
+    if (name.toLowerCase().includes(q) || contact.toLowerCase().includes(q)) {
+      results.push({ type: 'Supplier', label: name, icon: 'local_shipping', path: `/suppliers/${sup.id}` });
+    }
+  });
+
+  // Search purchase orders
+  (storeObj.getAll('purchaseOrders') || []).forEach(po => {
+    const num = po.number || '';
+    const supName = po.supplierName || '';
+    if (num.toLowerCase().includes(q) || supName.toLowerCase().includes(q)) {
+      results.push({ type: 'PO', label: `${num} — ${supName || 'PO'}`, icon: 'shopping_bag', path: `/purchase-orders/${po.id}` });
+    }
+  });
+
+  // Search assets
+  (storeObj.getAll('assets') || []).forEach(ast => {
+    const name = ast.name || '';
+    const tag = ast.assetTag || '';
+    if (name.toLowerCase().includes(q) || tag.toLowerCase().includes(q)) {
+      results.push({ type: 'Asset', label: `${tag ? `${tag} — ` : ''}${name}`, icon: 'precision_manufacturing', path: `/assets/${ast.id}` });
     }
   });
 
   if (results.length === 0) return;
 
+  const currentLabel = (getListSearchLabel() || '').toLowerCase();
+  if (currentLabel) {
+    results.sort((a, b) => {
+      const aMatchesCurrent = a.type.toLowerCase().includes(currentLabel) || currentLabel.includes(a.type.toLowerCase());
+      const bMatchesCurrent = b.type.toLowerCase().includes(currentLabel) || currentLabel.includes(b.type.toLowerCase());
+      if (aMatchesCurrent && !bMatchesCurrent) return -1;
+      if (!aMatchesCurrent && bMatchesCurrent) return 1;
+      return 0;
+    });
+  }
+
   const dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'search-results';
-  dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;margin-top:4px;max-height:320px;overflow-y:auto;';
+  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050; background:var(--bg-card, #fff); border:1px solid var(--border-color, #e0e0e0); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:4px 0;';
 
-  results.slice(0, 12).forEach(r => {
+  results.slice(0, 10).forEach(r => {
     const item = document.createElement('button');
     item.className = 'dropdown-item';
+    item.style.cssText = 'display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:none; background:none; text-align:left; cursor:pointer; font-size:13px; color:var(--text-primary); transition:background 0.15s ease;';
     item.innerHTML = `
-      <span class="material-icons-outlined" style="font-size:16px;color:var(--text-tertiary)">${r.icon}</span>
-      <span style="flex:1" class="truncate">${r.label}</span>
-      <span class="badge badge-neutral" style="font-size:10px">${r.type}</span>
+      <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary)">${r.icon}</span>
+      <span style="flex:1" class="truncate">${escapeHTML(r.label)}</span>
+      <span class="badge badge-neutral" style="font-size:10px; padding:2px 6px">${escapeHTML(r.type)}</span>
     `;
+    item.addEventListener('mouseenter', () => { item.style.background = 'var(--bg-hover, rgba(0,0,0,0.04))'; });
+    item.addEventListener('mouseleave', () => { item.style.background = 'none'; });
     item.addEventListener('click', () => {
       router.navigate(r.path);
       hideSearchResults();
-      document.querySelector('#global-search').value = '';
+      const sInput = document.querySelector('#global-search');
+      if (sInput) sInput.value = '';
     });
     dropdown.appendChild(item);
   });
 
-  document.querySelector('.topbar-search').appendChild(dropdown);
+  const searchContainer = document.querySelector('.topbar-search');
+  if (searchContainer) {
+    searchContainer.style.position = 'relative';
+    searchContainer.appendChild(dropdown);
+  }
 }
 
 function hideSearchResults() {

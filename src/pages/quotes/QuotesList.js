@@ -36,12 +36,12 @@ export function renderQuotesList(container, params) {
   const sb = { 'Draft': 'badge-draft', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger' };
 
   const columns = [
-    { key: 'number', label: 'Quote #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '110px' },
-    { key: 'customerName', label: 'Customer' },
-    { key: 'title', label: 'Description', render: (r) => `<span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(r.title || '')}</span>` },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '100px' },
-    { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '110px' },
-    { key: 'createdAt', label: 'Date', render: (r) => new Date(r.createdAt).toLocaleDateString(), getValue: (r) => new Date(r.createdAt).getTime(), width: '100px' },
+    { key: 'number', label: 'Quote #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '12%' },
+    { key: 'customerName', label: 'Customer', width: '26%' },
+    { key: 'title', label: 'Description', render: (r) => `<span class="text-secondary">${escapeHTML(r.title || '')}</span>`, width: '32%' },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '10%' },
+    { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '10%' },
+    { key: 'createdAt', label: 'Date', render: (r) => r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-AU') : '—', getValue: (r) => r.createdAt ? new Date(r.createdAt).getTime() : 0, width: '12%' },
   ];
 
   const table = createDataTable({ 
@@ -50,6 +50,8 @@ export function renderQuotesList(container, params) {
     onRowClick: (id) => router.navigate(`/quotes/${id}`), 
     emptyMessage: 'No quotes found', 
     emptyIcon: 'request_quote',
+    defaultSortKey: 'createdAt',
+    defaultSortDir: 'desc',
     selectable: true,
     onSelectionChange: (selectedIds) => {
       createBulkActionBar({
