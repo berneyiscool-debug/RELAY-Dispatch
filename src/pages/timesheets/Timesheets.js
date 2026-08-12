@@ -232,19 +232,19 @@ export function renderTimesheetsList(container) {
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width:40px; text-align:center;"><input type="checkbox" id="th-select-all" ${allSelected ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px; margin:0;" /></th>
-                <th style="width:120px">Date</th>
-                <th>Technician</th>
-                <th>Job</th>
-                <th>Task</th>
-                <th style="text-align:right; width:80px">Hours</th>
-                <th style="width:110px">Status</th>
-                <th style="width:104px; text-align:right">Actions</th>
+                <th class="dt-select-col" style="width:36px"><input type="checkbox" id="th-select-all" ${allSelected ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px; margin:0;" /></th>
+                <th style="width:12%">Date</th>
+                <th style="width:18%">Tech</th>
+                <th style="width:26%">Job</th>
+                <th style="width:18%">Task</th>
+                <th class="num" style="width:8%">Hrs</th>
+                <th style="width:9%">Status</th>
+                <th style="width:9%; text-align:right">Actions</th>
               </tr>
             </thead>
             <tbody>
               ${groups.map(group => `
-                <tr class="group-header" style="background:var(--content-bg); font-weight:600;">
+                <tr class="group-header" style="background:var(--content-bg);">
                   <td></td>
                   <td colspan="4" style="color:var(--text-primary)">${group.dateStr}</td>
                   <td style="text-align:right; color:var(--color-primary)">${group.total.toFixed(2)} hrs</td>
@@ -272,20 +272,20 @@ export function renderTimesheetsList(container) {
 
                   return `
                   <tr>
-                    <td style="width:40px; text-align:center;">
+                    <td class="dt-select-cell">
                       <input type="checkbox" class="row-checkbox" data-id="${t.id}" ${isRowChecked ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px; margin:0;" />
                     </td>
-                    <td class="text-secondary" style="font-size:12px">${new Date(t.date).toLocaleDateString()}</td>
-                    <td><span class="font-medium">${escapeHTML(t.technicianName)}</span></td>
+                    <td class="text-secondary">${new Date(t.date).toLocaleDateString()}</td>
+                    <td>${escapeHTML(t.technicianName)}</td>
                     <td><a href="#/jobs/${t.jobId}" class="cell-link" title="${escapeHTML(jobLabel)}">${escapeHTML(jobLabel)}</a></td>
                     <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || t.phaseName || t.task_name || '—')}</span></td>
-                    <td style="text-align:right; font-weight:600">${(t.hours ?? t.durationHours ?? t.duration_hours ?? 0).toFixed(2)}</td>
+                    <td class="num">${(t.hours ?? t.durationHours ?? t.duration_hours ?? 0).toFixed(2)}</td>
                     <td>
                       <span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">
                         ${escapeHTML(t.status)}
                       </span>
                     </td>
-                    <td style="text-align:right; padding-top:2px; padding-bottom:2px">
+                    <td class="num" style="padding:2px 8px">
                       <div style="display:flex; align-items:center; justify-content:flex-end; gap:2px;">
                         ${canEdit ? `
                           <button class="btn btn-sm btn-ghost btn-edit-timesheet" data-id="${t.id}" data-tooltip="Edit timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;">
