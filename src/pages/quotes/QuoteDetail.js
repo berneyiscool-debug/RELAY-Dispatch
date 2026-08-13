@@ -208,8 +208,8 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:stretch; flex-wrap:wrap">
         <!-- Internal Estimation (Only for internal use) -->
         ${quote.status !== 'Archived' && !isTemplate ? `
-        <div class="card" style="width:280px; margin:0; border:1px dashed var(--border-color); background:var(--bg-color); display:flex; flex-direction:column">
-          <div class="card-header" style="padding:10px 16px; border-bottom:1px dashed var(--border-color)">
+        <div class="card" style="width:280px; margin:0; border:1px solid var(--border-color); background:var(--bg-color); display:flex; flex-direction:column">
+          <div class="card-header" style="padding:10px 16px; border-bottom:1px solid var(--border-color)">
             <h5 style="margin:0; font-size:13px; color:var(--text-secondary)">Internal Estimation</h5>
           </div>
           <div class="card-body" style="padding:12px 16px; flex:1; display:flex; flex-direction:column; justify-content:center">
@@ -217,7 +217,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
               <span class="text-secondary">Est. Cost</span>
               <span>$${(quote.totalInternalCost || 0).toFixed(2)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; font-weight:600; color:${(quote.subtotal - (quote.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; color:${(quote.subtotal - (quote.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
               <span>Est. Margin</span>
               <span>$${(quote.subtotal - (quote.totalInternalCost || 0)).toFixed(2)} (${quote.subtotal > 0 ? Math.round(((quote.subtotal - quote.totalInternalCost) / quote.subtotal) * 100) : 0}%)</span>
             </div>
@@ -245,7 +245,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
                 <div style="margin-top:2px"><strong>Signed At:</strong> ${quote.signedAt ? new Date(quote.signedAt).toLocaleString() : '—'}</div>
               </div>
               <div style="border:1px solid var(--border-color); background:var(--bg-color); height:60px; border-radius:4px; display:flex; align-items:center; justify-content:center; margin-top:4px">
-                <span style="font-family:'Brush Script MT', cursive; font-size:26px; color:#1B6DE0; font-style:italic; font-weight:500">${escapeHTML(quote.signatureData || 'Client Signature')}</span>
+                <span style="font-family:'Brush Script MT', cursive; font-size:26px; color:var(--color-primary); font-style:italic; font-weight:500">${escapeHTML(quote.signatureData || 'Client Signature')}</span>
               </div>
             ` : quote.status === 'Declined' ? `
               <div style="display:flex; align-items:center; gap:8px; color:var(--color-danger); font-weight:700; font-size:14px">
@@ -357,7 +357,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         </select></td>
         <td><input class="form-input item-input" style="padding:4px 8px" type="number" value="${item.qty || 1}" data-field="qty" min="1" ${isArchived ? 'disabled' : ''}/></td>
         <td><input class="form-input item-input" style="padding:4px 8px" type="number" value="${item.rate || 0}" data-field="rate" step="0.01" ${isArchived ? 'disabled' : ''}/></td>
-        <td style="font-weight:600" class="item-total-cell">$${(item.total || 0).toFixed(2)}</td>
+        <td class="item-total-cell">$${(item.total || 0).toFixed(2)}</td>
         <td>${!isArchived ? `<button class="btn btn-ghost btn-icon btn-sm btn-remove-line" data-sidx="${sIdx}" data-index="${index}"><span class="material-icons-outlined" style="font-size:16px">close</span></button>` : ''}</td>
       </tr>
     `;
@@ -437,7 +437,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     }));
 
     const newJob = store.create('jobs', {
-      number: store.getNextNumber('JOB-', 'jobs'),
+      number: store.getNextNumber('J-', 'jobs'),
       customerId: quote.customerId,
       customerName: quote.customerName,
       contactName: quote.contactName,
@@ -1028,7 +1028,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           </div>
           <div style="border:1px solid var(--border-color); background:var(--bg-color); height:100px; border-radius:6px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden">
             <div style="position:absolute; top:8px; left:12px; font-size:10px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Handwritten Signature Preview</div>
-            <span id="sig-preview" style="font-family:'Brush Script MT', cursive; font-size:36px; color:#1B6DE0; font-style:italic; font-weight:500; transition:all 0.15s">Client Signature</span>
+            <span id="sig-preview" style="font-family:'Brush Script MT', cursive; font-size:36px; color:var(--color-primary); font-style:italic; font-weight:500; transition:all 0.15s">Client Signature</span>
           </div>
           <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; line-height:1.4; cursor:pointer; margin:0">
             <input type="checkbox" id="sig-consent" style="width:16px; height:16px; margin-top:2px; cursor:pointer" />

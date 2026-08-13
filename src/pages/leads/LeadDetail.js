@@ -36,11 +36,11 @@ export function renderLeadDetail(container, { id }) {
   const prob = likelihoods[lead.status] ?? 0;
   const weightedValue = (lead.value || 0) * (prob / 100);
 
-  function r(label, value) {
+  function r(label, value, opts = {}) {
     return `
-      <div style="display:flex; align-items:baseline; padding: 4px 0; border-bottom: 1px dashed var(--border-color); font-size: 12px;">
-        <span style="width:110px; min-width:110px; flex-shrink:0; font-size:11px; color:var(--text-tertiary); font-weight:500;">${label}</span>
-        <span style="color:var(--text-primary); font-weight:600; overflow-wrap:anywhere;">${value || '—'}</span>
+      <div class="detail-row">
+        <span class="detail-row-label">${label}</span>
+        <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${value || '—'}</span>
       </div>`;
   }
 
@@ -73,7 +73,7 @@ export function renderLeadDetail(container, { id }) {
       })}
 
       <!-- Slim Pipeline Tracker -->
-      <div class="pipeline-tracker" style="display:flex; border-radius:6px; overflow:hidden; background:var(--content-bg); border:1px solid var(--border-color); margin-bottom:12px; box-shadow:var(--shadow-sm); height:28px;">
+      <div class="pipeline-tracker" style="display:flex; border-radius:6px; overflow:hidden; background:var(--content-bg); border:1px solid var(--border-color); margin-bottom:12px; height:28px;">
         ${['New','Contacted','Qualified','Proposal','Negotiation','Won','Lost'].map((s, idx) => {
           const isActive = lead.status === s;
           const isPast = ['New','Contacted','Qualified','Proposal','Negotiation','Won','Lost'].indexOf(lead.status) >= idx;
@@ -87,12 +87,12 @@ export function renderLeadDetail(container, { id }) {
             else if (s === 'Qualified' || s === 'Proposal') { bg = 'var(--color-warning)'; color = 'var(--color-warning-dark)'; }
             else { bg = 'var(--color-primary)'; color = '#fff'; }
           } else if (isPast && lead.status !== 'Lost' && s !== 'Lost') {
-            bg = 'rgba(27, 109, 224, 0.05)';
+            bg = 'var(--color-primary-light)';
             color = 'var(--color-primary-dark)';
           }
           
           return `
-            <div class="pipeline-step" data-status="${s}" style="flex:1; display:flex; align-items:center; justify-content:center; padding:0 4px; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; background:${bg}; color:${color}; border-right:${borderRight}; cursor:pointer; transition:all 0.15s;" title="Click to transition to ${s}">
+            <div class="pipeline-step" data-status="${s}" style="flex:1; display:flex; align-items:center; justify-content:center; padding:0 4px; font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; background:${bg}; color:${color}; border-right:${borderRight}; cursor:pointer; transition:all 0.15s;" title="Click to transition to ${s}">
               ${s}
             </div>
           `;

@@ -752,9 +752,9 @@ export function renderPersonDetail(container, { id, tab }) {
 
 function detailRow(label, value) {
   return `
-    <div style="display:flex;gap:8px">
-      <span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${escapeHTML(label)}</span>
-      <span style="font-size:var(--font-size-base)">${escapeHTML(value)}</span>
+    <div class="detail-row">
+      <span class="detail-row-label">${escapeHTML(label)}</span>
+      <span class="detail-row-value">${escapeHTML(value)}</span>
     </div>
   `;
 }

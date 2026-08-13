@@ -681,6 +681,38 @@ select.badge option {
   text-align: center;
 }
 
+/* ---- Detail-page key/value rows ----
+   One uniform voice, matching the list-table aesthetic: solid hairline
+   separators (not dashed), quiet secondary-colour labels, uniform 400 weight.
+   .detail-row-value--amount is the single emphasised (money) value per record. */
+.detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-size-base);
+}
+.detail-row:last-child {
+  border-bottom: none;
+}
+.detail-row-label {
+  width: 120px;
+  min-width: 120px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-normal);
+}
+.detail-row-value {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-normal);
+  overflow-wrap: anywhere;
+}
+.detail-row-value--amount {
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Status badges inside data tables */
 .data-table .badge, select.badge {
   padding: 2px 12px;

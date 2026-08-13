@@ -175,7 +175,7 @@ export function renderContractorDetail(container, params) {
           </div>
         </div>
 
-        <div class="card" style="margin-top: var(--space-lg); border: 1px solid var(--color-primary-light); background: linear-gradient(135deg, white, rgba(27,109,224,0.015));">
+        <div class="card" style="margin-top: var(--space-lg); border: 1px solid var(--color-primary-light); background: var(--content-bg);">
           <div class="card-header" style="border-bottom: 1px solid var(--border-color); display:flex; align-items:center; gap:8px;">
             <span class="material-icons-outlined text-primary" style="font-size:20px;">vpn_key</span>
             <h4 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px;">
@@ -765,7 +765,7 @@ export function renderContractorDetail(container, params) {
                   <div style="width:60px; background:var(--border-color); height:12px; border-radius:6px; overflow:hidden; position:relative; display:inline-block" title="${task.progress}% completed">
                     <div style="width:${task.progress}%; background:var(--color-primary); height:100%"></div>
                   </div>
-                  <span style="font-size:11px; font-weight:600; color:var(--text-secondary)">${task.progress}%</span>
+                  <span style="font-size:11px; font-weight:400; color:var(--text-secondary)">${task.progress}%</span>
                 </div>
               </td>
             </tr>
@@ -776,15 +776,15 @@ export function renderContractorDetail(container, params) {
                   <div style="border-left:2px solid var(--border-color); padding-left:16px; display:flex; flex-direction:column; gap:8px">
                     <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">Subtasks Breakdown</div>
                     ${task.subTasks.map(sub => `
-                      <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:6px 0; border-bottom:1px dashed var(--border-color)">
+                      <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:6px 0; border-bottom:1px solid var(--border-color)">
                         <div style="display:flex; align-items:center; gap:6px">
                           <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary)">subdirectory_arrow_right</span>
-                          <span style="font-weight:600">${escapeHTML(sub.name)}</span>
+                          <span style="font-weight:400">${escapeHTML(sub.name)}</span>
                         </div>
                         <div style="display:flex; align-items:center; gap:16px">
                           <span style="color:var(--text-tertiary); font-size:12px">${sub.estimatedHours || '—'} hrs</span>
                           <span class="badge ${statusClasses[sub.status] || 'badge-neutral'}" style="margin:0">${escapeHTML(sub.status || 'Not Started')}</span>
-                          <span style="font-weight:600; font-size:12px; color:var(--text-secondary)">${sub.progress || 0}%</span>
+                          <span style="font-weight:400; font-size:12px; color:var(--text-secondary)">${sub.progress || 0}%</span>
                         </div>
                       </div>
                     `).join('')}
@@ -815,9 +815,9 @@ export function renderContractorDetail(container, params) {
 
   function detailRow(label, value) {
     return `
-      <div style="display:flex;gap:8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
-        <span style="width:140px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${escapeHTML(label)}</span>
-        <span style="font-size:var(--font-size-base); font-weight:500;">${escapeHTML(String(value))}</span>
+      <div class="detail-row">
+        <span class="detail-row-label">${escapeHTML(label)}</span>
+        <span class="detail-row-value">${escapeHTML(String(value))}</span>
       </div>
     `;
   }

@@ -468,15 +468,15 @@ export function renderJobDetail(container, { id }) {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border-color)">
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Frequency</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${escapeHTML(job.recurringConfig?.freq || '—')}</div>
+                    <div style="font-size:14px;margin-top:2px">${escapeHTML(job.recurringConfig?.freq || '—')}</div>
                   </div>
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Date Range</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${job.recurringConfig?.start ? new Date(job.recurringConfig.start).toLocaleDateString() : '—'} to ${job.recurringConfig?.end ? new Date(job.recurringConfig.end).toLocaleDateString() : '—'}</div>
+                    <div style="font-size:14px;margin-top:2px">${job.recurringConfig?.start ? new Date(job.recurringConfig.start).toLocaleDateString() : '—'} to ${job.recurringConfig?.end ? new Date(job.recurringConfig.end).toLocaleDateString() : '—'}</div>
                   </div>
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Preferred Days</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${escapeHTML((() => {
+                    <div style="font-size:14px;margin-top:2px">${escapeHTML((() => {
                       if (!job.recurringConfig) return '—';
                       if (job.recurringConfig.freq === 'Weekly') {
                         const daysMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
@@ -498,7 +498,7 @@ export function renderJobDetail(container, { id }) {
                   </div>
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Total Occurrences</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))).length} spawned</div>
+                    <div style="font-size:14px;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))).length} spawned</div>
                   </div>
                   <div style="grid-column: span 2">
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Default Technician</div>
@@ -519,7 +519,7 @@ export function renderJobDetail(container, { id }) {
                   const genJobs = (store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.')));
                   if (genJobs.length === 0) {
                     return `
-                      <div style="font-size:12px;color:var(--text-tertiary);font-style:italic;padding:12px;background:var(--bg-color);border:1px dashed var(--border-color);border-radius:6px;text-align:center">
+                      <div style="font-size:12px;color:var(--text-tertiary);font-style:italic;padding:12px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:6px;text-align:center">
                         No job tickets generated yet.
                       </div>
                     `;
@@ -3196,13 +3196,12 @@ export function renderJobDetail(container, { id }) {
 
   render();
 
-  function r(label, value) {
+  function r(label, value, opts = {}) {
     return `
-      <div class="kv-row" style="display:flex; align-items:flex-start; gap:12px; padding:4px 0; border-bottom:1px dashed rgba(0,0,0,0.05);">
-        <span class="kv-label" style="width:110px; min-width:110px; flex-shrink:0; font-size:11px; font-weight:600; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.4px; line-height:1.5;">${label}</span>
-        <span class="kv-value" style="flex:1; min-width:0; font-size:13px; font-weight:600; color:var(--text-primary); line-height:1.5; word-break:break-word;">${value}</span>
-      </div>
-    `;
+      <div class="detail-row">
+        <span class="detail-row-label">${label}</span>
+        <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${value || '—'}</span>
+      </div>`;
   }
   function renderFormsTab(tc) {
     const instances = store.getAll('formInstances').filter(fi => fi.jobId === id);
@@ -3463,7 +3462,7 @@ export function renderJobDetail(container, { id }) {
 
         if (f.type === 'info') {
           return `
-          <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:rgba(27, 109, 224, 0.05); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
+          <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:var(--color-primary-light); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
             <div style="display:flex; gap:12px; align-items:flex-start">
               <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px; margin-top:2px">info</span>
               <div>${escapeHTML(f.label).replace(/\n/g, '<br/>')}</div>

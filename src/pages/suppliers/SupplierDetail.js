@@ -312,7 +312,7 @@ export function renderSupplierDetail(container, params) {
                         <strong style="color: ${item.quantity <= (item.reorderLevel || 0) ? 'var(--color-danger)' : 'inherit'}">
                           ${item.quantity || 0} units
                         </strong>
-                        ${item.quantity <= (item.reorderLevel || 0) ? `<span style="font-size:10px; color:var(--color-danger); font-weight:600; display:block">REORDER LEVEL REACHED</span>` : ''}
+                        ${item.quantity <= (item.reorderLevel || 0) ? `<span style="font-size:10px; color:var(--color-danger); display:block">REORDER LEVEL REACHED</span>` : ''}
                       </td>
                     </tr>
                   `;
@@ -373,9 +373,9 @@ export function renderSupplierDetail(container, params) {
 
   function detailRow(label, value) {
     return `
-      <div style="display:flex;gap:8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
-        <span style="width:140px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${escapeHTML(label)}</span>
-        <span style="font-size:var(--font-size-base); font-weight:500;">${escapeHTML(String(value))}</span>
+      <div class="detail-row">
+        <span class="detail-row-label">${escapeHTML(label)}</span>
+        <span class="detail-row-value">${escapeHTML(String(value))}</span>
       </div>
     `;
   }

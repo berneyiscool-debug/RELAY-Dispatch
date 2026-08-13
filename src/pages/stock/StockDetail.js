@@ -29,9 +29,9 @@ export function renderStockDetail(container, { id }) {
       <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border-color)">
         <div style="display:flex; align-items:center; gap:8px">
           <span class="material-icons-outlined" style="font-size:20px; color:var(--text-tertiary)">${isVehicle ? 'local_shipping' : 'warehouse'}</span>
-          <span class="text-secondary" style="font-weight:500">${escapeHTML(loc.location)}</span>
+          <span class="text-secondary" style="font-weight:400">${escapeHTML(loc.location)}</span>
         </div>
-        <span style="font-weight:600; font-size:14px; color:var(--text-primary)">${loc.quantity} ${escapeHTML(item.unit || 'each')}s</span>
+        <span style="font-weight:400; font-size:14px; color:var(--text-primary)">${loc.quantity} ${escapeHTML(item.unit || 'each')}s</span>
       </div>
     `;
   }).join('') || '<div class="text-tertiary" style="padding:12px 0">No stock in any location</div>';
@@ -89,7 +89,7 @@ export function renderStockDetail(container, { id }) {
                     <div class="kit-link-row" data-kit-id="${k.id}" style="display:flex; justify-content:space-between; align-items:center; padding:14px var(--space-lg); ${isLast ? '' : 'border-bottom:1px solid var(--border-color);'} cursor:pointer; transition:background var(--transition-fast)">
                       <div style="display:flex; align-items:center; gap:12px">
                         <span class="material-icons-outlined kit-icon" style="font-size:20px; color:var(--text-tertiary); transition:color var(--transition-fast)">widgets</span>
-                        <span class="kit-name font-medium" style="font-weight:600; color:var(--color-primary); transition:text-decoration var(--transition-fast)">${escapeHTML(k.name)}</span>
+                        <span class="kit-name font-medium" style="font-weight:400; color:var(--color-primary); transition:text-decoration var(--transition-fast)">${escapeHTML(k.name)}</span>
                         <span class="badge badge-neutral" style="font-size:10px">${escapeHTML(k.category || 'General')}</span>
                       </div>
                       <span class="material-icons-outlined chevron-icon" style="font-size:18px; color:var(--text-tertiary); transition:transform var(--transition-fast), color var(--transition-fast)">chevron_right</span>
@@ -109,7 +109,7 @@ export function renderStockDetail(container, { id }) {
             ${r('Cost Price', `$${item.costPrice.toFixed(2)}`)}
             ${r('Sell Price', `$${item.unitPrice.toFixed(2)}`)}
             ${r('Margin', `${margin}%`)}
-            ${r('Consolidated Value (Sell)', `$${(totalQty * item.unitPrice).toFixed(2)}`)}
+            ${r('Consolidated Value (Sell)', `$${(totalQty * item.unitPrice).toFixed(2)}`, { amount: true })}
             ${r('Consolidated Value (Cost)', `$${(totalQty * item.costPrice).toFixed(2)}`)}
           </div>
         </div>
@@ -165,6 +165,10 @@ export function renderStockDetail(container, { id }) {
   });
 }
 
-function r(label, value) {
-  return `<div style="display:flex;gap:8px"><span style="width:180px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span><span style="font-weight:600">${value}</span></div>`;
+function r(label, value, opts = {}) {
+  return `
+    <div class="detail-row">
+      <span class="detail-row-label">${label}</span>
+      <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${value || '—'}</span>
+    </div>`;
 }

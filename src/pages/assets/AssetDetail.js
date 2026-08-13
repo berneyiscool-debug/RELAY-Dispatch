@@ -14,6 +14,14 @@ export function renderAssetDetail(container, params) {
 
   let activeTab = 'history'; // 'history' or 'maint'
 
+  function r(label, value, opts = {}) {
+    return `
+      <div class="detail-row"${opts.style ? ` style="${opts.style}"` : ''}>
+        <span class="detail-row-label">${label}</span>
+        <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}"${opts.valueStyle ? ` style="${opts.valueStyle}"` : ''}>${value || '—'}</span>
+      </div>`;
+  }
+
   function render() {
     // Re-fetch fresh asset data in case of updates
     const currentAsset = store.getById('assets', params.id);
@@ -87,33 +95,13 @@ export function renderAssetDetail(container, params) {
           <div class="card">
             <div class="card-header"><h4>Asset Information</h4></div>
             <div class="card-body">
-              <div style="display: flex; flex-direction: column; gap: 12px;">
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Category</span>
-                  <span class="font-medium">${escapeHTML(currentAsset.type || '-')}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Owner</span>
-                  <span class="font-medium">${escapeHTML(ownerName)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Assigned To</span>
-                  <span class="font-medium">${escapeHTML(assigneeName)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Location</span>
-                  <span class="font-medium">${escapeHTML(currentAsset.site || 'Main Office')}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Interval</span>
-                  <span class="font-medium">${currentAsset.serviceIntervalMonths || 6} Months</span>
-                </div>
-                ${currentAsset.ownerType === 'Business' ? `
-                  <div style="display:flex; justify-content:space-between; padding-top:12px; border-top:1px solid var(--border-color); margin-top:4px">
-                    <span class="text-secondary">Recovery Rate</span>
-                    <span class="font-medium" style="color:var(--color-primary)">$${(currentAsset.recoveryRate || 0).toFixed(2)}/hr</span>
-                  </div>
-                ` : ''}
+              <div style="display: flex; flex-direction: column;">
+                ${r('Category', escapeHTML(currentAsset.type || '-'))}
+                ${r('Owner', escapeHTML(ownerName))}
+                ${r('Assigned To', escapeHTML(assigneeName))}
+                ${r('Location', escapeHTML(currentAsset.site || 'Main Office'))}
+                ${r('Interval', `${currentAsset.serviceIntervalMonths || 6} Months`)}
+                ${currentAsset.ownerType === 'Business' ? r('Recovery Rate', `$${(currentAsset.recoveryRate || 0).toFixed(2)}/hr`, { amount: true, valueStyle: 'color:var(--color-primary)' }) : ''}
               </div>
             </div>
           </div>
@@ -180,7 +168,7 @@ export function renderAssetDetail(container, params) {
                     </span>
                   </td>
                   <td><span class="text-secondary" style="font-size:13px">${escapeHTML(log.notes || '—')}</span></td>
-                  <td style="text-align:right; font-weight:600">${log.cost > 0 ? `$${parseFloat(log.cost).toFixed(2)}` : '—'}</td>
+                  <td style="text-align:right">${log.cost > 0 ? `$${parseFloat(log.cost).toFixed(2)}` : '—'}</td>
                 </tr>
               `).join('')
             }

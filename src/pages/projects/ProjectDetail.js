@@ -168,14 +168,14 @@ export function renderProjectDetail(container, params) {
       <!-- TAB CONTENT: OVERVIEW -->
       <div id="tab-overview" class="tab-content" style="display:block;">
         
-        <div class="card" style="margin-bottom:24px; border-top:4px solid var(--color-primary); box-shadow:var(--shadow-sm);">
+        <div class="card" style="margin-bottom:24px; border-top:4px solid var(--color-primary);">
           <div class="card-body">
             <h4 style="margin:0 0 8px 0;">Project Progress</h4>
             <div class="progress-indicator">
               <div class="progress-bar-container">
                 <div class="progress-bar-fill" style="width:${metrics.progressPct}%; background-color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--color-primary)'};"></div>
               </div>
-              <div style="font-weight:700; font-size:18px; color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--text-primary)'}">
+              <div style="font-weight:400; font-size:18px; color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--text-primary)'}">
                 ${metrics.progressPct}%
               </div>
             </div>
@@ -186,37 +186,37 @@ export function renderProjectDetail(container, params) {
         </div>
 
         <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px">
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Description &amp; Scope</h4></div>
             <div class="card-body">
               <div style="font-size:14px; line-height:1.6; color:var(--text-primary); white-space:pre-wrap">${escapeHTML(project.description || 'No description provided.')}</div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; padding-top:20px; border-top:1px solid var(--border-color)">
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Start Date</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.startDate ? project.startDate : 'Not scheduled'}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Start Date</div>
+                  <div style="font-size:14px; font-weight:400; color:var(--text-primary); margin-top:4px">${project.startDate ? project.startDate : 'Not scheduled'}</div>
                 </div>
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Target Completion</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.endDate ? project.endDate : 'Not scheduled'}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Target Completion</div>
+                  <div style="font-size:14px; font-weight:400; color:var(--text-primary); margin-top:4px">${project.endDate ? project.endDate : 'Not scheduled'}</div>
                 </div>
               </div>
             </div>
           </div>
           
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Quick Financials</h4></div>
             <div class="card-body">
                <div style="margin-bottom:16px;">
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
-                  <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
+                  <div style="font-size:24px; font-weight:600; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                </div>
                <div style="margin-bottom:16px;">
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Invoiced to Date</div>
-                  <div style="font-size:18px; font-weight:800; color:var(--color-success-dark); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Invoiced to Date</div>
+                  <div style="font-size:18px; font-weight:400; color:var(--color-success-dark); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                </div>
                <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
-                  <div style="font-size:18px; font-weight:800; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
+                  <div style="font-size:18px; font-weight:400; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                </div>
                <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-color); text-align:center;">
                  <button class="btn btn-secondary btn-sm" id="btn-goto-financials">View Detailed Financials</button>
@@ -228,7 +228,7 @@ export function renderProjectDetail(container, params) {
 
       <!-- TAB CONTENT: STAGES -->
       <div id="tab-stages" class="tab-content" style="display:none;">
-        <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+        <div class="card" style="margin:0">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
               <h4 style="margin:0">Project Stages (Jobs)</h4>
               <div style="display:flex; gap:10px">
@@ -286,21 +286,21 @@ export function renderProjectDetail(container, params) {
                           <input type="checkbox" class="select-stage-checkbox" data-id="${job.id}" ${isSelected ? 'checked' : ''} />
                         </td>
                         <td>
-                          <a href="#/jobs/${job.id}" style="font-weight:600; color:var(--color-primary); text-decoration:none">${escapeHTML(job.number)}</a>
+                          <a href="#/jobs/${job.id}" style="font-weight:400; color:var(--color-primary); text-decoration:none">${escapeHTML(job.number)}</a>
                         </td>
                         <td>
-                          <a href="#/jobs/${job.id}" style="font-weight:700; color:var(--text-primary); text-decoration:none; display:block">${escapeHTML(job.title)}</a>
+                          <a href="#/jobs/${job.id}" style="font-weight:400; color:var(--text-primary); text-decoration:none; display:block">${escapeHTML(job.title)}</a>
                         </td>
                         <td>
-                          <span style="font-size:12px; font-weight:600; color:var(--text-secondary)">
+                          <span style="font-size:12px; font-weight:400; color:var(--text-secondary)">
                             ${cc ? `${escapeHTML(cc.code)} — ${escapeHTML(cc.name)}` : 'Unassigned'}
                           </span>
                         </td>
                         <td>
                           <span class="badge ${statusClass}">${escapeHTML(job.status)}</span>
                         </td>
-                        <td style="text-align:right; font-weight:600">$${stageVal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td style="text-align:right; font-weight:600; color:var(--color-success-dark)">$${stageBilled.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style="text-align:right; font-weight:400">$${stageVal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style="text-align:right; font-weight:400; color:var(--color-success-dark)">$${stageBilled.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td style="text-align:right; padding-right:16px">
                           <button class="btn btn-ghost btn-sm btn-unlink-stage" data-id="${job.id}" title="Unlink from project" style="color:var(--color-danger); padding:4px">
                             <span class="material-icons-outlined" style="font-size:18px">link_off</span>
@@ -329,21 +329,21 @@ export function renderProjectDetail(container, params) {
       <div id="tab-financials" class="tab-content" style="display:none;">
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-bottom:24px;">
           <!-- SUMMARY -->
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Financial Summary</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
               <div>
-                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
-                <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
+                <div style="font-size:24px; font-weight:600; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
               </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding-top:12px; border-top:1px solid var(--border-color)">
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Est. Cost</div>
-                  <div style="font-size:16px; font-weight:700; color:var(--text-secondary); margin-top:4px">$${metrics.totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Est. Cost</div>
+                  <div style="font-size:16px; font-weight:400; color:var(--text-secondary); margin-top:4px">$${metrics.totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Gross Profit</div>
-                  <div style="font-size:16px; font-weight:700; color:${metrics.profit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}; margin-top:4px">
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Gross Profit</div>
+                  <div style="font-size:16px; font-weight:400; color:${metrics.profit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}; margin-top:4px">
                     $${metrics.profit.toLocaleString('en-AU', { minimumFractionDigits: 2 })}
                   </div>
                   <span style="font-size:11px; color:var(--text-secondary)">Margin: ${metrics.margin.toFixed(1)}%</span>
@@ -353,28 +353,28 @@ export function renderProjectDetail(container, params) {
           </div>
           
           <!-- BILLING -->
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Billing & Invoicing</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
               <div>
-                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Invoiced</div>
-                <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Invoiced</div>
+                <div style="font-size:24px; font-weight:400; color:var(--text-primary); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
               </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding-top:12px; border-top:1px solid var(--border-color)">
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Amount Paid</div>
-                  <div style="font-size:16px; font-weight:700; color:var(--color-success-dark); margin-top:4px">$${metrics.totalPaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Amount Paid</div>
+                  <div style="font-size:16px; font-weight:400; color:var(--color-success-dark); margin-top:4px">$${metrics.totalPaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
-                  <div style="font-size:16px; font-weight:700; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
+                  <div style="font-size:16px; font-weight:400; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+        <div class="card" style="margin:0">
             <div class="card-header"><h4>Cost Center Split</h4></div>
             <div class="card-body" style="padding:0">
               <table class="data-table table-hover" style="font-size:13px">
@@ -396,11 +396,11 @@ export function renderProjectDetail(container, params) {
                     const ccMargin = ccM.value > 0 ? (ccProfit / ccM.value) * 100 : 0;
                     return `
                       <tr>
-                        <td style="padding-left:16px; font-weight:600">
+                        <td style="padding-left:16px; font-weight:400">
                           ${cc ? escapeHTML(cc.code) : 'Unassigned'}
                         </td>
-                        <td style="text-align:right; font-weight:600">$${ccM.value.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</td>
-                        <td style="text-align:right; padding-right:16px; font-weight:700; color:${ccProfit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}">
+                        <td style="text-align:right; font-weight:400">$${ccM.value.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</td>
+                        <td style="text-align:right; padding-right:16px; font-weight:400; color:${ccProfit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}">
                           ${ccMargin.toFixed(0)}%
                         </td>
                       </tr>

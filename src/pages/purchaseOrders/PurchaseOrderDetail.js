@@ -139,7 +139,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
                     <td style="text-align:right">
                       ${po.status === 'Draft' ? `<input type="number" class="form-input item-qty" style="width:80px;text-align:right;margin-left:auto" value="${item.quantity || 1}" min="1" step="1" />` : item.quantity}
                     </td>
-                    <td style="text-align:right;font-weight:600" class="item-total">
+                    <td style="text-align:right" class="item-total">
                       $${((item.unitCost || 0) * (item.quantity || 1)).toFixed(2)}
                     </td>
                     ${po.status === 'Draft' ? `
@@ -151,8 +151,8 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="4" style="text-align:right;font-weight:600">Total:</td>
-                  <td style="text-align:right;font-weight:700;font-size:var(--font-size-lg)" id="po-total">$${(po.total || 0).toFixed(2)}</td>
+                  <td colspan="4" style="text-align:right">Total:</td>
+                  <td style="text-align:right;font-weight:600;font-size:var(--font-size-lg)" id="po-total">$${(po.total || 0).toFixed(2)}</td>
                   ${po.status === 'Draft' ? '<td></td>' : ''}
                 </tr>
               </tfoot>

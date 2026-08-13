@@ -119,11 +119,11 @@ export function renderInvoiceDetail(container, { id }) {
 
       <!-- Linked Quote alert header if present -->
       ${invoice.originalQuoteNumber ? `
-        <div class="card" style="margin-bottom:var(--space-lg); border-left: 4px solid var(--color-primary); background: var(--color-primary-light); padding: 16px var(--space-lg); display:flex; justify-content:space-between; align-items:center; box-shadow:var(--shadow-sm); border-radius:8px">
+        <div class="card" style="margin-bottom:var(--space-lg); border-left: 4px solid var(--color-primary); background: var(--color-primary-light); padding: 16px var(--space-lg); display:flex; justify-content:space-between; align-items:center; border-radius:8px">
           <div style="display:flex; align-items:center; gap:10px">
             <span class="material-icons-outlined" style="color:var(--color-primary); font-size:24px">request_quote</span>
             <div>
-              <div style="font-weight:700; color:var(--color-primary-dark); font-size:14px">Linked Quote: <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:800; color:inherit">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
+              <div style="font-weight:normal; color:var(--color-primary-dark); font-size:14px">Linked Quote: <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:normal; color:inherit">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
               <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Original Quote Subtotal: <strong>$${(invoice.originalSubtotal || 0).toFixed(2)}</strong></div>
             </div>
           </div>
@@ -208,8 +208,8 @@ export function renderInvoiceDetail(container, { id }) {
       <!-- Totals & Margin Analysis -->
       <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:flex-start">
         <!-- Staff Margin Analysis -->
-        <div class="card" style="width:300px; border:1px dashed var(--border-color); background:var(--bg-color)">
-          <div class="card-header" style="padding:10px 16px; border-bottom:1px dashed var(--border-color)">
+        <div class="card" style="width:300px; border:1px solid var(--border-color); background:var(--bg-color)">
+          <div class="card-header" style="padding:10px 16px; border-bottom:1px solid var(--border-color)">
             <h5 style="margin:0; font-size:13px; color:var(--text-secondary)">Margin Analysis</h5>
           </div>
           <div class="card-body" style="padding:12px 16px">
@@ -217,7 +217,7 @@ export function renderInvoiceDetail(container, { id }) {
               <span class="text-secondary">Actual Cost</span>
               <span>$${(invoice.totalInternalCost || 0).toFixed(2)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; font-weight:600; color:${(invoice.subtotal - (invoice.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; font-weight:normal; color:${(invoice.subtotal - (invoice.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
               <span>Invoice Margin</span>
               <span>$${(invoice.subtotal - (invoice.totalInternalCost || 0)).toFixed(2)} (${invoice.subtotal > 0 ? Math.round(((invoice.subtotal - invoice.totalInternalCost) / invoice.subtotal) * 100) : 0}%)</span>
             </div>
@@ -232,12 +232,12 @@ export function renderInvoiceDetail(container, { id }) {
               <span>$${((invoice.originalSubtotal || 0)).toFixed(2)}</span>
             </div>
             ${(invoice.approvedVariationsSum || 0) > 0 ? `
-              <div style="display:flex;justify-content:space-between;font-size:var(--font-size-md); color:var(--color-success); font-weight:600">
+              <div style="display:flex;justify-content:space-between;font-size:var(--font-size-md); color:var(--color-success); font-weight:normal">
                 <span>Approved Variations</span>
                 <span>+$${(invoice.approvedVariationsSum || 0).toFixed(2)}</span>
               </div>
             ` : ''}
-            <div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px dashed var(--border-color);font-size:var(--font-size-md);font-weight:700; color:var(--text-primary)">
+            <div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--border-color);font-size:var(--font-size-md);font-weight:normal; color:var(--text-primary)">
               <span>Invoice Subtotal</span>
               <span id="inv-subtotal">$${(invoice.subtotal || 0).toFixed(2)}</span>
             </div>
@@ -251,8 +251,8 @@ export function renderInvoiceDetail(container, { id }) {
             </div>
             ${(invoice.pendingVariationsSum || 0) > 0 ? `
               <div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);border-radius:4px;font-size:12px;color:var(--color-warning-dark);margin-top:4px">
-                <span style="font-weight:700">Pending Variations (Excluded)</span>
-                <span style="font-weight:800">$${(invoice.pendingVariationsSum || 0).toFixed(2)}</span>
+                <span style="font-weight:normal">Pending Variations (Excluded)</span>
+                <span style="font-weight:normal">$${(invoice.pendingVariationsSum || 0).toFixed(2)}</span>
               </div>
             ` : ''}
           </div>

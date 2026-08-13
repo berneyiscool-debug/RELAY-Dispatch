@@ -96,7 +96,7 @@ export function renderKitDetail(container, { id }) {
               </div>
               <div style="display:flex; align-items:center; gap:8px; margin-top:16px">
                 <input type="checkbox" id="kit-active" ${kit.active ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer" />
-                <label for="kit-active" style="margin:0; font-weight:600; font-size:13.5px; cursor:pointer; color:var(--text-primary)">Active Kit</label>
+                <label for="kit-active" style="margin:0; font-weight:normal; font-size:13.5px; cursor:pointer; color:var(--text-primary)">Active Kit</label>
                 <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:help" title="Makes this kit bundle active and available to select/use in Quotes and Purchase Orders.">help_outline</span>
               </div>
             </div>
@@ -159,7 +159,7 @@ export function renderKitDetail(container, { id }) {
                         <td>
                           <input type="number" class="form-input item-sell-input" value="${(item.unitPrice || 0).toFixed(2)}" min="0" step="0.01" style="padding:4px 8px; text-align:right; width:100%" />
                         </td>
-                        <td style="text-align:right; font-weight:600; padding-right:12px">
+                        <td style="text-align:right; padding-right:12px">
                           $${lineSellTotal.toFixed(2)}
                         </td>
                         <td style="text-align:center">
@@ -173,11 +173,11 @@ export function renderKitDetail(container, { id }) {
                 </tbody>
                 ${kit.items.length > 0 ? `
                   <tfoot>
-                    <tr style="background:var(--bg-secondary); font-weight:600">
+                    <tr style="background:var(--bg-secondary)">
                       <td colspan="4" style="text-align:right; padding:12px">Total Cost & Sell:</td>
                       <td style="text-align:right; padding:12px">$${(kit.totalCost || 0).toFixed(2)}</td>
                       <td style="text-align:right; padding:12px">$${(kit.totalPrice || 0).toFixed(2)}</td>
-                      <td style="text-align:right; padding:12px; font-weight:700">$${(kit.totalPrice || 0).toFixed(2)}</td>
+                      <td style="text-align:right; padding:12px">$${(kit.totalPrice || 0).toFixed(2)}</td>
                       <td></td>
                     </tr>
                   </tfoot>
@@ -191,30 +191,30 @@ export function renderKitDetail(container, { id }) {
         <div class="card" style="position:sticky; top:24px">
           <div class="card-header"><h4>Kit Summary</h4></div>
           <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:12px">
-              <span style="color:var(--text-secondary)">Total Items</span>
-              <span style="font-weight:600; font-size:16px">${kit.itemCount || 0}</span>
+            <div class="detail-row">
+              <span class="detail-row-label">Total Items</span>
+              <span class="detail-row-value">${kit.itemCount || 0}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:12px">
-              <span style="color:var(--text-secondary)">Total Cost</span>
-              <span style="font-weight:600; font-size:16px">$${(kit.totalCost || 0).toFixed(2)}</span>
+            <div class="detail-row">
+              <span class="detail-row-label">Total Cost</span>
+              <span class="detail-row-value">$${(kit.totalCost || 0).toFixed(2)}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:12px">
-              <span style="color:var(--text-secondary)">Total Sell Price</span>
-              <span style="font-weight:700; font-size:18px; color:var(--color-primary)">$${(kit.totalPrice || 0).toFixed(2)}</span>
+            <div class="detail-row">
+              <span class="detail-row-label">Total Sell Price</span>
+              <span class="detail-row-value detail-row-value--amount" style="color:var(--color-primary)">$${(kit.totalPrice || 0).toFixed(2)}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:12px">
-              <span style="color:var(--text-secondary)">Margin ($)</span>
-              <span style="font-weight:600; font-size:16px; color:${marginColor}">$${marginDollar.toFixed(2)}</span>
+            <div class="detail-row">
+              <span class="detail-row-label">Margin ($)</span>
+              <span class="detail-row-value" style="color:${marginColor}">$${marginDollar.toFixed(2)}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center">
-              <span style="color:var(--text-secondary)">Margin (%)</span>
-              <span style="font-weight:700; font-size:20px; color:${marginColor}">${margin.toFixed(1)}%</span>
+            <div class="detail-row">
+              <span class="detail-row-label">Margin (%)</span>
+              <span class="detail-row-value" style="color:${marginColor}">${margin.toFixed(1)}%</span>
             </div>
             <div style="border-top:1px solid var(--border-color); padding-top:12px; margin-top:4px">
               <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px">
                 <input type="checkbox" id="kit-margin-override-enable" ${kit.marginOverrideEnabled ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer" />
-                <label for="kit-margin-override-enable" style="margin:0; font-size:13px; font-weight:600; cursor:pointer">Override Margin</label>
+                <label for="kit-margin-override-enable" style="margin:0; font-size:13px; font-weight:normal; cursor:pointer">Override Margin</label>
                 <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:help" title="Lock the kit profit margin manually. When imported to quotes, stock item sell rates scale proportionally to match this exact target margin.">help_outline</span>
               </div>
               <div id="override-input-wrapper" style="display:${kit.marginOverrideEnabled ? 'block' : 'none'}">
