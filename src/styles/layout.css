@@ -1815,7 +1815,7 @@
   color: #fff; display: flex; align-items: center; justify-content: center;
 }
 .relay-avatar .material-icons-outlined { font-size: 19px; }
-.relay-name { font-weight: 700; font-size: 14px; color: var(--text-primary); line-height: 1.1; }
+.relay-name { font-weight: 600; font-size: 14px; color: var(--text-primary); line-height: 1.1; }
 .relay-sub { font-size: 11px; color: var(--text-tertiary); }
 .relay-close {
   width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent;
@@ -2183,8 +2183,8 @@
   padding: 18px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 16px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
+  border-radius: var(--border-radius-md);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2197,18 +2197,23 @@
   gap: 12px;
 }
 .relay-intro-emoji {
-  font-size: 28px;
-  animation: relayWave 1.5s ease-in-out infinite alternate;
-  transform-origin: 70% 70%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--border-radius);
+  background: var(--color-primary-light);
 }
-@keyframes relayWave {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(15deg); }
+.relay-intro-emoji .material-icons-outlined {
+  font-size: 20px;
+  color: var(--color-primary);
 }
 .relay-intro-welcome h3 {
   margin: 0 0 4px;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-primary);
 }
 .relay-intro-welcome p {
@@ -2226,7 +2231,7 @@
 .relay-stat-item {
   background: var(--body-bg);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--border-radius-md);
   padding: 10px 8px;
   display: flex;
   flex-direction: column;
@@ -2237,21 +2242,19 @@
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .relay-stat-item:hover {
-  transform: translateY(-2px);
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
   background: var(--color-primary-light, rgba(255, 92, 0, 0.04));
 }
 .relay-stat-num {
   font-size: 18px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--color-primary);
   line-height: 1.1;
   margin-bottom: 2px;
 }
 .relay-stat-label {
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text-secondary);
 }
 
@@ -2259,7 +2262,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-top: 1px dashed var(--border-color);
+  border-top: 1px solid var(--border-color);
   padding-top: 12px;
 }
 .relay-suggestions-title {
@@ -2277,10 +2280,10 @@
 .relay-chip-btn {
   background: var(--body-bg);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--border-radius-md);
   padding: 8px 12px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text-secondary);
   text-align: left;
   cursor: pointer;
@@ -2294,8 +2297,14 @@
   background: var(--color-primary-light, rgba(255, 92, 0, 0.06));
   border-color: var(--color-primary);
   color: var(--color-primary);
-  transform: translateX(2px);
 }
+.relay-chip-btn .chip-ico {
+  font-size: 16px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.relay-chip-btn:hover .chip-ico { color: var(--color-primary); }
+.relay-chip-btn.warning-chip .chip-ico { color: var(--color-warning); }
 
 /* Allow the latest greeting/onboarding card to scroll all the way to the top when history exists above it */
 .relay-thread-has-history .relay-intro-card.assistant-intro:last-child {
