@@ -518,6 +518,45 @@ describe('Job Recurring Scheduling Integrations', () => {
     const allChildren = store.getAll('jobs').filter(j => j.parentJobId === parent.id);
     assert.strictEqual(allChildren.length, 1, 'Only one child job should exist for the date occurrence');
   });
+
+  test('repairAnomalousJobNumbers renumbers affected high-number jobs and their child recurring jobs', async () => {
+    const { repairAnomalousJobNumbers } = await import('../../utils/maintenanceEngine.js');
+
+    // Create normal jobs
+    const job1 = store.create('jobs', { number: 'J-00001', title: 'Normal Job 1' });
+    const job2 = store.create('jobs', { number: 'J-00002', title: 'Normal Job 2' });
+
+    // Create anomalous job created during bug
+    const anomalousParent = store.create('jobs', { 
+      number: 'JOB-01001', 
+      title: 'Anomalous Recurring Master',
+      isRecurring: true 
+    });
+
+    const anomalousChild = store.create('jobs', {
+      number: 'JOB-01001.1',
+      title: 'Anomalous Recurring Child',
+      parentJobId: anomalousParent.id,
+      notes: 'Generated from template job JOB-01001'
+    });
+
+    // Create linked invoice and schedule block
+    const invoice = store.create('invoices', { number: 'INV-00001', jobId: anomalousParent.id, jobNumber: 'JOB-01001' });
+    const scheduleBlock = store.create('schedule', { id: 'sch_1', jobId: anomalousChild.id, jobNumber: 'JOB-01001.1' });
+
+    const repairedCount = repairAnomalousJobNumbers();
+    assert.ok(repairedCount >= 2, 'Should renumber both parent and child anomalous jobs');
+
+    const updatedParent = store.getById('jobs', anomalousParent.id);
+    const updatedChild = store.getById('jobs', anomalousChild.id);
+    const updatedInvoice = store.getById('invoices', invoice.id);
+    const updatedBlock = store.getById('schedule', scheduleBlock.id);
+
+    assert.strictEqual(updatedParent.number, 'J-00003', 'Master job should be renumbered to next sequential number J-00003');
+    assert.strictEqual(updatedChild.number, 'J-00003.1', 'Child recurring job should be renumbered to match updated parent number J-00003.1');
+    assert.strictEqual(updatedInvoice.jobNumber, 'J-00003', 'Linked invoice jobNumber should be updated to J-00003');
+    assert.strictEqual(updatedBlock.jobNumber, 'J-00003.1', 'Linked schedule block jobNumber should be updated to J-00003.1');
+  });
 });
 
 

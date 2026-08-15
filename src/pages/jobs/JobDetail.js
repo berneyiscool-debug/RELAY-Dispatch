@@ -16,7 +16,7 @@ import { hasPermission } from '../../utils/permissions.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 import { parsePreferredTime } from '../../utils/dateUtils.js';
 
-export function renderJobDetail(container, { id }) {
+export function renderJobDetail(container, { id, tab }) {
   const job = store.getById('jobs', id);
   if (!job) {
     container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Job not found</h3></div>';
@@ -27,14 +27,13 @@ export function renderJobDetail(container, { id }) {
 
   const sb = { 'Pending': 'badge-warning', 'Scheduled': 'badge-info', 'In Progress': 'badge-primary', 'On Hold': 'badge-neutral', 'Completed': 'badge-success', 'Invoiced': 'badge-primary', 'Recurring Template': 'badge-purple' };
   const pb = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger', 'Urgent': 'badge-danger' };
-  let activeTab = 'overview';
+  let activeTab = tab || 'overview';
   let taskExpandedPath = [0];
   let taskViewPath = [];
   let isInfoPanelEditing = false;
   let isRecordingValues = false;
   let cachedStockOptionsHtml = null;
   let stagedFiles = [];
-  let activeActivitySubTab = 'staff';
 
   function getJobTasklistHours(tasks) {
     if (!tasks || tasks.length === 0) return 0;
@@ -372,22 +371,316 @@ export function renderJobDetail(container, { id }) {
         </div>
       </div>
 
-      <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
-        <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview" data-tooltip="General details, technician assignments, site address, and custom fields">Overview</button>
-        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks" data-tooltip="View, track, and complete hierarchical task lists for this job">Tasklists</button>
-        ${hasPermission('Jobs', 'view_costs') ? `<button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs" data-tooltip="Track catalog parts, external supplier costs, and calculate profit margins">Costs</button>` : ''}
-        ${hasPermission('Jobs', 'view_quotes_tab') ? `<button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes" data-tooltip="Draft proposals, revisions, and status records linked to this job">Quotes</button>` : ''}
-        <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms" data-tooltip="Complete JSA, safety audits, and customer sign-off compliance documents">Forms</button>
-        ${hasPermission('Jobs', 'view_pos_tab') ? `<button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos" data-tooltip="Issue purchase orders to external suppliers for job materials">POs</button>` : ''}
-        <button class="tab ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity" data-tooltip="Audit trail logs tracking status updates and user modifications">Activity</button>
-        ${hasPermission('Jobs', 'view_timesheets_tab') ? `<button class="tab ${activeTab === 'timesheets' ? 'active' : ''}" data-tab="timesheets" data-tooltip="Technician hours logged on-site vs calculated travel/work segments">Timesheets</button>` : ''}
-        ${hasPermission('Jobs', 'view_invoices_tab') ? `<button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices" data-tooltip="Progress, standard, deposit, or variation client invoices linked to this job">Invoices</button>` : ''}
-      </div>
-      <div class="tab-content" id="tab-content"></div>
+      <div class="tab-content" id="tab-content" style="padding-top:4px;"></div>
     `;
 
     renderTabContent();
     bindEvents();
+  }
+
+  function openAddDispatchModal() {
+    const existingSchedules = store.getAll('schedule').filter(t => t.jobId === id);
+    const techs = store.getAll('technicians').filter(t => !t.deactivated || job.technicianId === t.id || existingSchedules.some(s => s.techIds?.includes(t.id)));
+
+    const content = document.createElement('div');
+
+    if (!job.tasks || job.tasks.length === 0) {
+      job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
+      store.update('jobs', id, { tasks: job.tasks });
+    }
+
+    function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
+      let result = [];
+      if (!tasks) return result;
+      tasks.forEach((p, i) => {
+        const path = [...currentPath, i].join('-');
+        const namePath = [...currentNamePath, p.name].join(' > ');
+        result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
+        if (p.subTasks) {
+          result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
+        }
+      });
+      return result;
+    }
+    const flatTasks = getFlatTasks(job.tasks);
+
+    function renderEntries(entries) {
+      let html = '';
+      entries.forEach((e, i) => {
+        html += '<div class="sched-entry" data-index="' + i + '" style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+        html += '<span style="font-weight:600;font-size:13px;color:var(--text-secondary)">Entry ' + (i + 1) + '</span>';
+        if (entries.length > 1) {
+          html += '<button type="button" class="btn btn-sm btn-danger btn-remove-entry" data-index="' + i + '" style="padding:2px 8px">\u2715 Remove</button>';
+        }
+        html += '</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
+        html += '<div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">Task (Optional)</label>';
+        html += '<select class="form-select sched-task" style="width:100%">';
+        html += '<option value="">-- Whole Job / General --</option>';
+        flatTasks.forEach(t => {
+          html += `<option value="${t.path}" ${e.taskPath === t.path ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
+        });
+        html += '</select></div>';
+        html += '<div class="form-group" style="margin:0"><label class="form-label">Start</label>';
+        html += '<input type="datetime-local" class="form-input sched-start" value="' + e.start + '"></div>';
+        html += '<div class="form-group" style="margin:0"><label class="form-label">Finish</label>';
+        html += '<input type="datetime-local" class="form-input sched-finish" value="' + e.finish + '"></div>';
+        html += '</div>';
+
+        html += '<div class="form-group" style="margin:12px 0 0 0"><label class="form-label">Technicians</label>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="tech-chips">';
+        techs.forEach(t => {
+          const active = e.techIds.includes(t.id);
+          const border = active ? 'var(--color-primary)' : 'var(--border-color)';
+          const bg = active ? 'var(--color-primary-light)' : 'transparent';
+          const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
+          html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
+          html += '<input type="checkbox" class="tech-check" data-tech-id="' + t.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
+          html += '<span class="material-icons-outlined" style="font-size:14px">person</span>';
+          html += escapeHTML(t.name);
+          html += '</label>';
+        });
+        html += '</div></div>';
+
+        const assets = store.getAll('assets').filter(a => a.category === 'Business');
+        html += '<div class="form-group" style="margin:16px 0 0 0"><label class="form-label">Business Assets / Tools</label>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="asset-chips">';
+        assets.forEach(a => {
+          const active = e.assetIds && e.assetIds.includes(a.id);
+          const border = active ? 'var(--color-primary)' : 'var(--border-color)';
+          const bg = active ? 'var(--color-primary-light)' : 'transparent';
+          const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
+          html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
+          html += '<input type="checkbox" class="asset-check" data-asset-id="' + a.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
+          html += '<span class="material-icons-outlined" style="font-size:14px">handyman</span>';
+          html += escapeHTML(a.name);
+          html += '</label>';
+        });
+        if (assets.length === 0) html += '<span class="text-tertiary" style="font-size:12px">No business assets configured.</span>';
+        html += '</div></div></div>';
+      });
+      return html;
+    }
+
+    function renderModal(entries) {
+      if (!document.getElementById('sched-modal-styles')) {
+        const s = document.createElement('style');
+        s.id = 'sched-modal-styles';
+        s.textContent = '.sched-summary-row{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;align-items:center}.sched-summary-row:last-child{border-bottom:none}';
+        document.head.appendChild(s);
+      }
+
+      let html = '';
+
+      if (existingSchedules.length > 0) {
+        html += '<div style="margin-bottom:16px">';
+        html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Current Schedule</div>';
+        existingSchedules.forEach(s => {
+          const dt = new Date(s.startTime || s.date).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          html += '<div class="sched-summary-row" style="flex-wrap:wrap">';
+          html += '<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">schedule</span>';
+          html += '<span style="font-weight:500">' + escapeHTML(s.technicianName) + '</span>';
+          html += '<span style="color:var(--text-tertiary);font-size:12px;margin-left:8px;padding-left:8px;border-left:1px solid var(--border-color)">' + escapeHTML(s.taskName || 'General Task') + '</span>';
+          html += '<span style="color:var(--text-tertiary);margin-left:auto">' + dt + '</span>';
+          html += '<span style="font-weight:600;margin-left:12px">' + s.hours + 'h</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+        html += '<hr style="border-color:var(--border-color);margin-bottom:16px">';
+      }
+
+      html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">New Schedule Entries</div>';
+      html += '<div id="sched-entries">' + renderEntries(entries) + '</div>';
+      html += '<button type="button" id="btn-add-entry" class="btn btn-secondary btn-sm" style="width:100%;margin-top:4px">';
+      html += '<span class="material-icons-outlined" style="font-size:16px">add</span> Add Another Entry</button>';
+
+      content.innerHTML = html;
+
+      content.querySelectorAll('.tech-check').forEach(chk => {
+        const label = chk.closest('label');
+        chk.addEventListener('change', () => {
+          if (chk.checked) {
+            label.style.borderColor = 'var(--color-primary)';
+            label.style.background = 'var(--color-primary-light)';
+            label.style.color = 'var(--color-primary)';
+          } else {
+            label.style.borderColor = 'var(--border-color)';
+            label.style.background = 'transparent';
+            label.style.color = 'var(--text-secondary)';
+          }
+        });
+      });
+
+      content.querySelectorAll('.asset-check').forEach(chk => {
+        const label = chk.closest('label');
+        chk.addEventListener('change', () => {
+          if (chk.checked) {
+            label.style.borderColor = 'var(--color-primary)';
+            label.style.background = 'var(--color-primary-light)';
+            label.style.color = 'var(--color-primary)';
+          } else {
+            label.style.borderColor = 'var(--border-color)';
+            label.style.background = 'transparent';
+            label.style.color = 'var(--text-secondary)';
+          }
+        });
+      });
+
+      content.querySelectorAll('.btn-remove-entry').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const current = readCurrentEntries();
+          current.splice(parseInt(btn.dataset.index), 1);
+          renderModal(current);
+        });
+      });
+
+      content.querySelector('#btn-add-entry').addEventListener('click', () => {
+        const current = readCurrentEntries();
+        const p = n => n.toString().padStart(2, '0');
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        const ds = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        current.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
+        renderModal(current);
+      });
+    }
+
+    const p = n => n.toString().padStart(2, '0');
+    const now2 = new Date();
+    const ds = `${now2.getFullYear()}-${p(now2.getMonth() + 1)}-${p(now2.getDate())}`;
+    const defaultTechIds = job.technicianId ? [job.technicianId] : [];
+    let startTime = "08:00";
+    let finishTime = "16:00";
+    if (job.preferredTime) {
+      const parsed = parsePreferredTime(job.preferredTime);
+      if (parsed) {
+        startTime = `${p(parsed.hours)}:${p(parsed.minutes)}`;
+        const fh = (parsed.hours + 2) % 24;
+        finishTime = `${p(fh)}:${p(parsed.minutes)}`;
+      }
+    }
+    const entries = [{ taskPath: '', start: `${ds}T${startTime}`, finish: `${ds}T${finishTime}`, techIds: defaultTechIds, assetIds: [] }];
+    renderModal(entries);
+
+    function readCurrentEntries() {
+      const result = [];
+      content.querySelectorAll('.sched-entry').forEach((el, i) => {
+        const taskPath = el.querySelector('.sched-task')?.value;
+        const start = el.querySelector('.sched-start')?.value;
+        const finish = el.querySelector('.sched-finish')?.value;
+        const techIds = [...el.querySelectorAll('.tech-check:checked')].map(c => c.dataset.techId);
+        const assetIds = [...el.querySelectorAll('.asset-check:checked')].map(c => c.dataset.assetId);
+        result.push({ taskPath, start, finish, techIds, assetIds });
+      });
+      return result;
+    }
+
+    showModal({
+      title: `Schedule Job: ${escapeHTML(job.title || job.number)}`,
+      content,
+      size: 'modal-70',
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: close => close() },
+        {
+          label: 'Save Schedule', className: 'btn-primary', onClick: close => {
+            const currentEntries = readCurrentEntries();
+            let saved = 0;
+            let errors = [];
+
+            currentEntries.forEach((e, i) => {
+              if (!e.start || !e.finish) { errors.push(`Entry ${i + 1}: missing start or finish`); return; }
+              const startDate = new Date(e.start);
+              const finishDate = new Date(e.finish);
+              if (finishDate <= startDate) { errors.push(`Entry ${i + 1}: finish must be after start`); return; }
+              if (e.techIds.length === 0) { errors.push(`Entry ${i + 1}: select at least one technician`); return; }
+            });
+
+            if (errors.length) {
+              showToast(errors[0], 'error');
+              return;
+            }
+
+            currentEntries.forEach((e) => {
+              const startDate = new Date(e.start);
+              const finishDate = new Date(e.finish);
+              const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
+              const selectedTask = flatTasks.find(t => t.path === e.taskPath);
+              const taskName = selectedTask ? selectedTask.name : 'Whole Job';
+
+              e.techIds.forEach(techId => {
+                const tech = store.getById('technicians', techId);
+                if (!tech) return;
+                store.create('schedule', {
+                  jobId: id,
+                  jobNumber: job.number,
+                  taskPath: e.taskPath || null,
+                  taskName: taskName,
+                  technicianId: techId,
+                  technicianName: tech.name,
+                  date: e.start.split('T')[0],
+                  startTime: e.start,
+                  finishTime: e.finish,
+                  hours
+                });
+                saved++;
+              });
+
+              if (e.assetIds && e.assetIds.length > 0) {
+                e.assetIds.forEach(assetId => {
+                  const asset = store.getById('assets', assetId);
+                  if (!asset) return;
+                  store.create('assetUsage', {
+                    jobId: id,
+                    assetId: assetId,
+                    assetName: asset.name,
+                    taskPath: e.taskPath,
+                    taskName: taskName,
+                    startTime: e.start,
+                    finishTime: e.finish,
+                    hours,
+                    recoveryRate: asset.recoveryRate || 0
+                  });
+                });
+              }
+            });
+
+            if (currentEntries.length > 0 && currentEntries[0].start) {
+              const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
+              const jobTechs = allTechIds.map(tid => {
+                const t = store.getById('technicians', tid);
+                const totalHours = currentEntries
+                  .filter(e => e.techIds.includes(tid))
+                  .reduce((sum, e) => {
+                    const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
+                    return sum + (isNaN(h) ? 0 : h);
+                  }, 0);
+                return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
+              });
+              store.update('jobs', id, {
+                scheduledDate: currentEntries[0].start.split('T')[0],
+                technicians: jobTechs,
+                technicianName: jobTechs.map(t => t.name).join(', ')
+              });
+
+              import('../../components/Notifications.js').then(({ addSystemNotification }) => {
+                jobTechs.forEach(t => {
+                  addSystemNotification(
+                    'New Schedule Assignment',
+                    `You have been scheduled for Job ${job.number} (${job.title}) starting ${currentEntries[0].start.replace('T', ' ')} (${t.hours} hrs total).`,
+                    `/jobs/${id}`
+                  );
+                });
+              });
+            }
+
+            showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
+            close();
+            renderTabContent();
+          }
+        }
+      ]
+    });
   }
 
   function renderTabContent() {
@@ -396,7 +689,7 @@ export function renderJobDetail(container, { id }) {
       activeTab = 'overview';
     } else if (activeTab === 'quotes' && !hasPermission('Jobs', 'view_quotes_tab')) {
       activeTab = 'overview';
-    } else if (activeTab === 'pos' && !hasPermission('Jobs', 'view_pos_tab')) {
+    } else if (activeTab === 'materials' && !hasPermission('Jobs', 'view_materials_tab')) {
       activeTab = 'overview';
     } else if (activeTab === 'timesheets' && !hasPermission('Jobs', 'view_timesheets_tab')) {
       activeTab = 'overview';
@@ -412,6 +705,156 @@ export function renderJobDetail(container, { id }) {
       return;
     }
 
+    if (activeTab === 'schedule') {
+      const schedules = store.getAll('schedule').filter(t => t.jobId === id);
+      const techs = store.getAll('technicians').filter(t => !t.deactivated);
+      
+      let totalScheduled = 0;
+      schedules.forEach(s => totalScheduled += (parseFloat(s.hours) || 0));
+      const tasklistHours = getJobTasklistHours(job.tasks);
+      const estHours = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 0);
+      const hoursColor = (totalScheduled > estHours && estHours > 0) ? 'var(--color-danger)' : 'var(--text-primary)';
+
+      let scheduleListHtml = '';
+      if (schedules.length === 0) {
+        scheduleListHtml = `
+          <div class="empty-state" style="padding:48px 24px; text-align:center">
+            <span class="material-icons-outlined" style="font-size:48px;color:var(--text-tertiary);margin-bottom:16px">event_busy</span>
+            <h3>No Scheduled Dispatches</h3>
+            <p class="text-secondary" style="margin-top:8px">This job hasn't been scheduled yet.</p>
+          </div>
+        `;
+      } else {
+        scheduleListHtml = `
+          <table class="data-table" style="width:100%; font-size:13px">
+            <thead>
+              <tr>
+                <th style="padding:8px 16px;text-align:left">Date</th>
+                <th style="padding:8px 16px;text-align:left">Technician</th>
+                <th style="padding:8px 16px;text-align:left">Task</th>
+                <th style="padding:8px 16px;text-align:left">Times</th>
+                <th style="padding:8px 16px;text-align:right">Hours</th>
+                <th style="padding:8px 16px;text-align:right"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${schedules.map(s => {
+                const sDate = new Date(s.startTime || s.date);
+                const fDate = s.finishTime ? new Date(s.finishTime) : null;
+                const timeString = fDate 
+                  ? `${sDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${fDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+                  : sDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                return `
+                  <tr>
+                    <td style="padding:12px 16px;font-weight:500">${sDate.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})}</td>
+                    <td style="padding:12px 16px">${escapeHTML(s.technicianName)}</td>
+                    <td style="padding:12px 16px;color:var(--text-secondary)">${escapeHTML(s.taskName || 'General Task')}</td>
+                    <td style="padding:12px 16px;color:var(--text-secondary)">${timeString}</td>
+                    <td style="padding:12px 16px;text-align:right;font-weight:600">${s.hours}h</td>
+                    <td style="padding:12px 16px;text-align:right">
+                      ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-ghost btn-remove-dispatch" data-id="${s.id}" style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+
+      tc.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:16px">
+           <div class="grid-3" style="gap:16px; align-items:start">
+              <div class="card" style="grid-column: span 1">
+                <div class="card-header" style="padding:12px 16px">
+                  <h4 style="margin:0; font-size:14px; font-weight:700">Roster & Budget</h4>
+                </div>
+                <div class="card-body" style="padding:16px">
+                   <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+                     <span style="color:var(--text-secondary)">Estimated Hours:</span>
+                     <span style="font-weight:600">${estHours > 0 ? estHours + 'h' : '—'}</span>
+                   </div>
+                   <div style="display:flex; justify-content:space-between; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border-color)">
+                     <span style="color:var(--text-secondary)">Scheduled Hours:</span>
+                     <span style="font-weight:600; color:${hoursColor}">${totalScheduled}h</span>
+                   </div>
+                   <div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:8px">Assigned Techs</div>
+                   ${job.technicians && job.technicians.length > 0 ? job.technicians.map(t => `
+                     <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0">
+                       <div style="display:flex; align-items:center; gap:8px">
+                         <div style="width:24px;height:24px;border-radius:12px;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">
+                           ${t.name.charAt(0).toUpperCase()}
+                         </div>
+                         <span style="font-size:13px">${escapeHTML(t.name)}</span>
+                       </div>
+                       <span style="font-size:12px;font-weight:600">${t.hours}h</span>
+                     </div>
+                   `).join('') : '<div style="font-size:13px;color:var(--text-tertiary)">No technicians assigned</div>'}
+                </div>
+              </div>
+              
+              <div class="card" style="grid-column: span 2">
+                 <div class="card-header" style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center">
+                    <h4 style="margin:0; font-size:14px; font-weight:700">Dispatch Schedule</h4>
+                    ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-primary" id="btn-add-schedule"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Add Dispatch</button>` : ''}
+                 </div>
+                 <div class="card-body">
+                    ${scheduleListHtml}
+                 </div>
+              </div>
+           </div>
+        </div>
+      `;
+
+      tc.querySelectorAll('.btn-remove-dispatch').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dispatchId = btn.dataset.id;
+          showModal({
+            title: 'Remove Dispatch Entry',
+            content: `
+              <div style="padding: 8px 0;">
+                <p style="margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 500;">Are you sure you want to remove this dispatch entry?</p>
+                <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 13px;">This will remove the technician dispatch schedule entry from the job.</p>
+              </div>
+            `,
+            actions: [
+              {
+                label: 'Cancel',
+                className: 'btn-secondary',
+                onClick: (close) => close()
+              },
+              {
+                label: 'Remove Dispatch',
+                className: 'btn-danger',
+                onClick: (close) => {
+                  store.delete('schedule', dispatchId);
+                  
+                  // Recompute job technicians aggregate
+                  const currentEntries = store.getAll('schedule').filter(t => t.jobId === id);
+                  const allTechIds = [...new Set(currentEntries.map(e => e.technicianId))];
+                  const jobTechs = allTechIds.map(tid => {
+                    const t = store.getById('technicians', tid);
+                    const th = currentEntries.filter(e => e.technicianId === tid).reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
+                    return { id: tid, name: t?.name || '', hours: Math.round(th * 100) / 100 };
+                  });
+                  store.update('jobs', id, {
+                    technicians: jobTechs,
+                    technicianName: jobTechs.map(t => t.name).join(', ')
+                  });
+                  
+                  showToast('Dispatch entry removed', 'info');
+                  close();
+                  renderTabContent();
+                }
+              }
+            ]
+          });
+        });
+      });
+
+      tc.querySelector('#btn-add-schedule')?.addEventListener('click', openAddDispatchModal);
+    }
+
     if (activeTab === 'overview') {
       let jobProgress = 0;
       if (job.tasks && job.tasks.length > 0) {
@@ -425,15 +868,16 @@ export function renderJobDetail(container, { id }) {
         jobProgress = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
       }
 
-      const techNames = job.technicians && job.technicians.length > 0
-        ? job.technicians.map(t => `${escapeHTML(t.name)}${t.hours !== undefined && t.hours !== null && t.hours !== '' ? ` (${t.hours}h)` : ''}`).join(', ')
-        : escapeHTML(job.technicianName || 'Unassigned');
+      const tasklistHours = getJobTasklistHours(job.tasks);
+      const estHours = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 0);
+      const estHoursDisplay = estHours > 0 ? `${estHours}h` : '—';
 
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:16px">
           
-          <!-- Original Grid details -->
+          <!-- Grid details -->
           <div class="grid-3" style="align-items: start; gap:16px;">
+            ${job.isRecurring === true ? `
             <div class="card" style="grid-column: span 1">
               <div class="card-header" style="padding:10px 14px"><h4 style="margin:0; font-size:13px; font-weight:700">Job Information</h4></div>
               <div class="card-body" style="padding:12px 14px">
@@ -443,8 +887,11 @@ export function renderJobDetail(container, { id }) {
                   ${r('Status', escapeHTML(job.status))}
                   ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
                   ${r('Priority', escapeHTML(job.priority))}
+                  ${r('Est. Hours', estHoursDisplay)}
                   ${r('Customer', escapeHTML(job.customerName))}
                   ${r('Contact', escapeHTML(job.contactName || '—'))}
+                  ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
+                  ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
                   ${(() => {
                     const assetObj = job.assetId ? store.getById('assets', job.assetId) : null;
                     const aName = job.assetName || (assetObj ? assetObj.name : '');
@@ -453,10 +900,10 @@ export function renderJobDetail(container, { id }) {
                     return r('Linked Asset', `<a href="#/assets/${assetId}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(aName)} ${assetObj?.serial ? `<span class="text-tertiary" style="font-weight:normal;">(S/N: ${escapeHTML(assetObj.serial)})</span>` : ''}</a>`);
                   })()}
                   ${job.preferredTime ? r('Preferred Time', escapeHTML(job.preferredTime)) : ''}
+                  ${r('Created', new Date(job.createdAt).toLocaleDateString())}
                 </div>
               </div>
             </div>
-            ${job.isRecurring === true ? `
             <div class="card" style="grid-column: span 2">
               <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
                 <h4 style="margin:0;display:flex;align-items:center;gap:6px">
@@ -537,7 +984,7 @@ export function renderJobDetail(container, { id }) {
 
                   return `
                     <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px">
-                      <table class="table" style="width:100%;font-size:12px;margin:0">
+                      <table class="data-table" style="width:100%;font-size:12px;margin:0">
                         <thead>
                           <tr>
                             <th style="padding:6px 12px;text-align:left">Job #</th>
@@ -568,346 +1015,137 @@ export function renderJobDetail(container, { id }) {
               </div>
             </div>
             ` : `
-            <div class="card" style="grid-column: span 2">
-              <div class="card-header" style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
-                <h4 style="margin:0; font-size:13px; font-weight:700">Schedule & Assignment</h4>
-                ${hasPermission('Schedule', 'edit') ? `
-                <button class="btn btn-ghost btn-sm" id="btn-add-schedule" style="font-size:12px;padding:4px 8px">
-                  <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">calendar_month</span> Add to Schedule
-                </button>
-                ` : ''}
-              </div>
+            <div class="card" style="grid-column: 1 / -1">
+              <div class="card-header" style="padding:10px 14px"><h4 style="margin:0; font-size:13px; font-weight:700">Job Information</h4></div>
               <div class="card-body" style="padding:12px 14px">
-                <div style="display:flex; flex-direction:column; gap:2px">
-                  ${r('Technicians', techNames)}
-                  ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
-                  ${r('Est. Hours', job.estimatedHours || '—')}
-                  ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
-                  ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
-                  ${r('Created', new Date(job.createdAt).toLocaleDateString())}
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 32px">
+                  <div style="display:flex; flex-direction:column; gap:2px">
+                    ${r('Job Number', escapeHTML(job.number))}
+                    ${r('Title', escapeHTML(job.title))}
+                    ${r('Status', escapeHTML(job.status))}
+                    ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
+                    ${r('Priority', escapeHTML(job.priority))}
+                    ${r('Est. Hours', estHoursDisplay)}
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:2px">
+                    ${r('Customer', escapeHTML(job.customerName))}
+                    ${r('Contact', escapeHTML(job.contactName || '—'))}
+                    ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
+                    ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
+                    ${(() => {
+                      const assetObj = job.assetId ? store.getById('assets', job.assetId) : null;
+                      const aName = job.assetName || (assetObj ? assetObj.name : '');
+                      if (!aName && !assetObj) return '';
+                      const assetId = assetObj ? assetObj.id : job.assetId;
+                      return r('Linked Asset', `<a href="#/assets/${assetId}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(aName)} ${assetObj?.serial ? `<span class="text-tertiary" style="font-weight:normal;">(S/N: ${escapeHTML(assetObj.serial)})</span>` : ''}</a>`);
+                    })()}
+                    ${job.preferredTime ? r('Preferred Time', escapeHTML(job.preferredTime)) : ''}
+                    ${r('Created', new Date(job.createdAt).toLocaleDateString())}
+                  </div>
                 </div>
               </div>
             </div>
             `}
+            <div class="card" style="grid-column: 1 / -1; margin-top: 16px;">
+              <div class="card-header" style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px">
+                  <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">history</span>
+                  <h4 style="margin:0; font-size:13px; font-weight:700">Recent Job History</h4>
+                </div>
+                <button class="btn btn-ghost btn-sm" id="btn-view-all-history" style="font-size:12px;padding:4px 8px; display:flex; align-items:center; gap:4px">
+                  <span class="material-icons-outlined" style="font-size:14px">history</span> View Full History
+                </button>
+              </div>
+              <div class="card-body" style="padding:12px 14px">
+                ${(() => {
+                  if (!job.historyLog) job.historyLog = [];
+                  if (!job.activityLog) job.activityLog = [];
+                  const sysEntries = job.activityLog.filter(l => l.type === 'system');
+                  if (sysEntries.length > 0) {
+                    job.historyLog = [...sysEntries, ...job.historyLog];
+                    job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+                    job.activityLog = job.activityLog.filter(l => l.type !== 'system');
+                    store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
+                  }
+
+                  const historyLog = job.historyLog.slice(0, 5);
+                  if (historyLog.length === 0) {
+                    return '<div style="font-size:13px; color:var(--text-tertiary); font-style:italic">No job history recorded yet. Actions like task completion, contractor allocations, and status changes will appear here.</div>';
+                  }
+                  return '<div style="display:flex; flex-direction:column; gap:12px;">' + historyLog.map(log => {
+                    let icon = 'history';
+                    let color = 'var(--color-primary)';
+                    if (log.action === 'task_completed') { icon = 'check_circle'; color = 'var(--color-success)'; }
+                    else if (log.action === 'task_uncompleted') { icon = 'radio_button_unchecked'; color = 'var(--text-tertiary)'; }
+                    else if (log.action === 'contractor_assigned') { icon = 'engineering'; color = 'var(--color-warning)'; }
+                    else if (log.action === 'status_changed') { icon = 'flag'; color = 'var(--color-info)'; }
+
+                    return `
+                      <div style="display:flex; gap:12px; align-items:flex-start">
+                        <div style="width:24px; height:24px; border-radius:50%; background:var(--content-bg); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:${color}; border:1px solid var(--border-color); margin-top:2px">
+                          <span class="material-icons-outlined" style="font-size:14px">${icon}</span>
+                        </div>
+                        <div>
+                          <div style="font-size:13px; color:var(--text-primary); margin-bottom:2px; font-weight:500">${escapeHTML(log.content || 'Update')}</div>
+                          <div style="font-size:11px; color:var(--text-tertiary)">
+                            <span style="font-weight:600">${escapeHTML(log.author || 'System')}</span> • ${new Date(log.date).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('') + '</div>';
+                })()}
+              </div>
+            </div>
           </div>
 
         </div>
       `;
 
-      tc.querySelector('#btn-add-schedule')?.addEventListener('click', () => {
-        const existingSchedules = store.getAll('schedule').filter(t => t.jobId === id);
-        const techs = store.getAll('technicians').filter(t => !t.deactivated || job.technicianId === t.id || existingSchedules.some(s => s.techIds?.includes(t.id)));
-
-        // Build the modal content element
+      tc.querySelector('#btn-view-all-history')?.addEventListener('click', () => {
+        const historyLog = job.historyLog || [];
         const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="max-height:450px; overflow-y:auto; padding:4px;">
+            ${historyLog.length === 0 ? '<div class="text-tertiary text-center p-4">No job history recorded yet.</div>' : `
+              <div style="display:flex; flex-direction:column; gap:16px;">
+                ${historyLog.map(log => {
+                  let icon = 'history';
+                  let color = 'var(--color-primary)';
+                  if (log.action === 'task_completed') { icon = 'check_circle'; color = 'var(--color-success)'; }
+                  else if (log.action === 'task_uncompleted') { icon = 'radio_button_unchecked'; color = 'var(--text-tertiary)'; }
+                  else if (log.action === 'contractor_assigned') { icon = 'engineering'; color = 'var(--color-warning)'; }
+                  else if (log.action === 'status_changed') { icon = 'flag'; color = 'var(--color-info)'; }
 
-        // Ensure job tasks are initialized
-        if (!job.tasks || job.tasks.length === 0) {
-          job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
-          store.update('jobs', id, { tasks: job.tasks });
-        }
-
-        function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
-          let result = [];
-          if (!tasks) return result;
-          tasks.forEach((p, i) => {
-            const path = [...currentPath, i].join('-');
-            const namePath = [...currentNamePath, p.name].join(' > ');
-            result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
-            if (p.subTasks) {
-              result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
-            }
-          });
-          return result;
-        }
-        const flatTasks = getFlatTasks(job.tasks);
-
-        function renderEntries(entries) {
-          let html = '';
-          entries.forEach((e, i) => {
-            html += '<div class="sched-entry" data-index="' + i + '" style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px">';
-            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
-            html += '<span style="font-weight:600;font-size:13px;color:var(--text-secondary)">Entry ' + (i + 1) + '</span>';
-            if (entries.length > 1) {
-              html += '<button type="button" class="btn btn-sm btn-danger btn-remove-entry" data-index="' + i + '" style="padding:2px 8px">\u2715 Remove</button>';
-            }
-            html += '</div>';
-            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
-            html += '<div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">Task (Optional)</label>';
-            html += '<select class="form-select sched-task" style="width:100%">';
-            html += '<option value="">-- Whole Job / General --</option>';
-            flatTasks.forEach(t => {
-              html += `<option value="${t.path}" ${e.taskPath === t.path ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
-            });
-            html += '</select></div>';
-            html += '<div class="form-group" style="margin:0"><label class="form-label">Start</label>';
-            html += '<input type="datetime-local" class="form-input sched-start" value="' + e.start + '"></div>';
-            html += '<div class="form-group" style="margin:0"><label class="form-label">Finish</label>';
-            html += '<input type="datetime-local" class="form-input sched-finish" value="' + e.finish + '"></div>';
-            html += '</div>';
-
-            html += '<div class="form-group" style="margin:12px 0 0 0"><label class="form-label">Technicians</label>';
-            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="tech-chips">';
-            techs.forEach(t => {
-              const active = e.techIds.includes(t.id);
-              const border = active ? 'var(--color-primary)' : 'var(--border-color)';
-              const bg = active ? 'var(--color-primary-light)' : 'transparent';
-              const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
-              html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
-              html += '<input type="checkbox" class="tech-check" data-tech-id="' + t.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
-              html += '<span class="material-icons-outlined" style="font-size:14px">person</span>';
-              html += escapeHTML(t.name);
-              html += '</label>';
-            });
-            html += '</div></div>';
-
-            // Assets Section
-            const assets = store.getAll('assets').filter(a => a.category === 'Business');
-            html += '<div class="form-group" style="margin:16px 0 0 0"><label class="form-label">Business Assets / Tools</label>';
-            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="asset-chips">';
-            assets.forEach(a => {
-              const active = e.assetIds && e.assetIds.includes(a.id);
-              const border = active ? 'var(--color-primary)' : 'var(--border-color)';
-              const bg = active ? 'var(--color-primary-light)' : 'transparent';
-              const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
-              html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
-              html += '<input type="checkbox" class="asset-check" data-asset-id="' + a.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
-              html += '<span class="material-icons-outlined" style="font-size:14px">handyman</span>';
-              html += escapeHTML(a.name);
-              html += '</label>';
-            });
-            if (assets.length === 0) html += '<span class="text-tertiary" style="font-size:12px">No business assets configured.</span>';
-            html += '</div></div></div>';
-          });
-          return html;
-        }
-
-
-        function renderModal(entries) {
-          // Inject scoped styles once
-          if (!document.getElementById('sched-modal-styles')) {
-            const s = document.createElement('style');
-            s.id = 'sched-modal-styles';
-            s.textContent = '.sched-summary-row{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;align-items:center}.sched-summary-row:last-child{border-bottom:none}';
-            document.head.appendChild(s);
-          }
-
-          let html = '';
-
-          if (existingSchedules.length > 0) {
-            html += '<div style="margin-bottom:16px">';
-            html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Current Schedule</div>';
-            existingSchedules.forEach(s => {
-              const dt = new Date(s.startTime || s.date).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-              html += '<div class="sched-summary-row" style="flex-wrap:wrap">';
-              html += '<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">schedule</span>';
-              html += '<span style="font-weight:500">' + escapeHTML(s.technicianName) + '</span>';
-              html += '<span style="color:var(--text-tertiary);font-size:12px;margin-left:8px;padding-left:8px;border-left:1px solid var(--border-color)">' + escapeHTML(s.taskName || 'General Task') + '</span>';
-              html += '<span style="color:var(--text-tertiary);margin-left:auto">' + dt + '</span>';
-              html += '<span style="font-weight:600;margin-left:12px">' + s.hours + 'h</span>';
-              html += '</div>';
-            });
-            html += '</div>';
-            html += '<hr style="border-color:var(--border-color);margin-bottom:16px">';
-          }
-
-          html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">New Schedule Entries</div>';
-          html += '<div id="sched-entries">' + renderEntries(entries) + '</div>';
-          html += '<button type="button" id="btn-add-entry" class="btn btn-secondary btn-sm" style="width:100%;margin-top:4px">';
-          html += '<span class="material-icons-outlined" style="font-size:16px">add</span> Add Another Entry</button>';
-
-          content.innerHTML = html;
-
-          // Tech chip toggles
-          content.querySelectorAll('.tech-check').forEach(chk => {
-            const label = chk.closest('label');
-            chk.addEventListener('change', () => {
-              if (chk.checked) {
-                label.style.borderColor = 'var(--color-primary)';
-                label.style.background = 'var(--color-primary-light)';
-                label.style.color = 'var(--color-primary)';
-              } else {
-                label.style.borderColor = 'var(--border-color)';
-                label.style.background = 'transparent';
-                label.style.color = 'var(--text-secondary)';
-              }
-            });
-          });
-
-          // Asset chip toggles
-          content.querySelectorAll('.asset-check').forEach(chk => {
-            const label = chk.closest('label');
-            chk.addEventListener('change', () => {
-              if (chk.checked) {
-                label.style.borderColor = 'var(--color-primary)';
-                label.style.background = 'var(--color-primary-light)';
-                label.style.color = 'var(--color-primary)';
-              } else {
-                label.style.borderColor = 'var(--border-color)';
-                label.style.background = 'transparent';
-                label.style.color = 'var(--text-secondary)';
-              }
-            });
-          });
-
-          // Remove entry buttons
-          content.querySelectorAll('.btn-remove-entry').forEach(btn => {
-            btn.addEventListener('click', () => {
-              const current = readCurrentEntries();
-              current.splice(parseInt(btn.dataset.index), 1);
-              renderModal(current);
-            });
-          });
-
-          // Add another entry
-          content.querySelector('#btn-add-entry').addEventListener('click', () => {
-            const current = readCurrentEntries();
-            const p = n => n.toString().padStart(2, '0');
-            const d = new Date();
-            d.setDate(d.getDate() + 1);
-            const ds = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-            current.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
-            renderModal(current);
-          });
-        }
-
-        // Default first entry: today 8am-4pm, pre-select job's assigned tech if any, and fall back to preferred time
-        const p = n => n.toString().padStart(2, '0');
-        const now2 = new Date();
-        const ds = `${now2.getFullYear()}-${p(now2.getMonth() + 1)}-${p(now2.getDate())}`;
-        const defaultTechIds = job.technicianId ? [job.technicianId] : [];
-        let startTime = "08:00";
-        let finishTime = "16:00";
-        if (job.preferredTime) {
-          const parsed = parsePreferredTime(job.preferredTime);
-          if (parsed) {
-            startTime = `${p(parsed.hours)}:${p(parsed.minutes)}`;
-            const fh = (parsed.hours + 2) % 24;
-            finishTime = `${p(fh)}:${p(parsed.minutes)}`;
-          }
-        }
-        const entries = [{ taskPath: '', start: `${ds}T${startTime}`, finish: `${ds}T${finishTime}`, techIds: defaultTechIds, assetIds: [] }];
-        renderModal(entries);
-
-        function readCurrentEntries() {
-          const result = [];
-          content.querySelectorAll('.sched-entry').forEach((el, i) => {
-            const taskPath = el.querySelector('.sched-task')?.value;
-            const start = el.querySelector('.sched-start')?.value;
-            const finish = el.querySelector('.sched-finish')?.value;
-            const techIds = [...el.querySelectorAll('.tech-check:checked')].map(c => c.dataset.techId);
-            const assetIds = [...el.querySelectorAll('.asset-check:checked')].map(c => c.dataset.assetId);
-            result.push({ taskPath, start, finish, techIds, assetIds });
-          });
-          return result;
-        }
+                  return `
+                    <div style="display:flex; gap:12px; align-items:flex-start; padding-bottom:12px; border-bottom:1px dashed var(--border-color)">
+                      <div style="width:28px; height:28px; border-radius:50%; background:var(--content-bg); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:${color}; border:1px solid var(--border-color); margin-top:2px">
+                        <span class="material-icons-outlined" style="font-size:16px">${icon}</span>
+                      </div>
+                      <div style="flex:1">
+                        <div style="font-size:13.5px; color:var(--text-primary); font-weight:500; margin-bottom:2px">${escapeHTML(log.content || 'System update')}</div>
+                        <div style="font-size:11px; color:var(--text-tertiary)">
+                          <span style="font-weight:600">${escapeHTML(log.author || 'System')}</span> • ${new Date(log.date).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        `;
 
         showModal({
-          title: `Schedule Job: ${escapeHTML(job.title || job.number)}`,
+          title: 'Job History & Proceedings',
           content,
-          size: 'modal-70',
           actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: close => close() },
-            {
-              label: 'Save Schedule', className: 'btn-primary', onClick: close => {
-                const currentEntries = readCurrentEntries();
-                let saved = 0;
-                let errors = [];
-
-                currentEntries.forEach((e, i) => {
-                  if (!e.start || !e.finish) { errors.push(`Entry ${i + 1}: missing start or finish`); return; }
-                  const startDate = new Date(e.start);
-                  const finishDate = new Date(e.finish);
-                  if (finishDate <= startDate) { errors.push(`Entry ${i + 1}: finish must be after start`); return; }
-                  if (e.techIds.length === 0) { errors.push(`Entry ${i + 1}: select at least one technician`); return; }
-                });
-
-                if (errors.length) {
-                  showToast(errors[0], 'error');
-                  return;
-                }
-
-                currentEntries.forEach((e) => {
-                  const startDate = new Date(e.start);
-                  const finishDate = new Date(e.finish);
-                  const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-                  const selectedTask = flatTasks.find(t => t.path === e.taskPath);
-                  const taskName = selectedTask ? selectedTask.name : 'Whole Job';
-
-                  e.techIds.forEach(techId => {
-                    const tech = techs.find(t => t.id === techId);
-                    if (!tech) return;
-                    store.create('schedule', {
-                      jobId: id,
-                      jobNumber: job.number,
-                      taskPath: e.taskPath || null,
-                      taskName: taskName,
-                      technicianId: techId,
-                      technicianName: tech.name,
-                      date: e.start.split('T')[0],
-                      startTime: e.start,
-                      finishTime: e.finish,
-                      hours
-                    });
-                    saved++;
-                  });
-
-                  if (e.assetIds && e.assetIds.length > 0) {
-                    e.assetIds.forEach(assetId => {
-                      const asset = store.getById('assets', assetId);
-                      if (!asset) return;
-                      store.create('assetUsage', {
-                        jobId: id,
-                        assetId: assetId,
-                        assetName: asset.name,
-                        taskPath: e.taskPath,
-                        taskName: taskName,
-                        startTime: e.start,
-                        finishTime: e.finish,
-                        hours,
-                        recoveryRate: asset.recoveryRate || 0
-                      });
-                    });
-                  }
-                });
-
-                if (currentEntries.length > 0 && currentEntries[0].start) {
-                  const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
-                  const jobTechs = allTechIds.map(tid => {
-                    const t = techs.find(x => x.id === tid);
-                    const totalHours = currentEntries
-                      .filter(e => e.techIds.includes(tid))
-                      .reduce((sum, e) => {
-                        const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
-                        return sum + (isNaN(h) ? 0 : h);
-                      }, 0);
-                    return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
-                  });
-                  store.update('jobs', id, {
-                    scheduledDate: currentEntries[0].start.split('T')[0],
-                    technicians: jobTechs,
-                    technicianName: jobTechs.map(t => t.name).join(', ')
-                  });
-
-                  import('../../components/Notifications.js').then(({ addSystemNotification }) => {
-                    jobTechs.forEach(t => {
-                      addSystemNotification(
-                        'New Schedule Assignment',
-                        `You have been scheduled for Job ${job.number} (${job.title}) starting ${currentEntries[0].start.replace('T', ' ')} (${t.hours} hrs total).`,
-                        `/jobs/${id}`
-                      );
-                    });
-                  });
-                }
-
-                showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
-                close();
-                renderTabContent();
-              }
-            }
+            { label: 'Close', className: 'btn-secondary', onClick: (close) => close() }
           ]
         });
       });
+
+      tc.querySelector('#btn-add-schedule')?.addEventListener('click', openAddDispatchModal);
 
       tc.querySelector('#btn-save-recurring-tech')?.addEventListener('click', () => {
         const newTechId = tc.querySelector('#view-recurring-tech').value || null;
@@ -1109,7 +1347,12 @@ export function renderJobDetail(container, { id }) {
                     </div>
                   </div>
                   <div style="margin-top:16px">
-                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Assigned Subcontractors</div>
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+                      <span>Assigned Subcontractors</span>
+                      <button class="btn btn-ghost btn-sm btn-assign-contractor" data-path="${path.join('-')}" style="padding:2px 6px; font-size:11px; height:auto;">
+                        <span class="material-icons-outlined" style="font-size:14px;">add</span> Allocate
+                      </button>
+                    </div>
                     <div style="display:flex; flex-wrap:wrap; gap:6px">
                       ${(() => {
                         const ids = node.assignedContractorIds || [];
@@ -1242,17 +1485,38 @@ export function renderJobDetail(container, { id }) {
           node.progress = e.target.checked ? 100 : 0;
           node.status = e.target.checked ? 'Completed' : 'Not Started';
           
+          if (!job.historyLog) job.historyLog = [];
+          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+          const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
+          
           if (e.target.checked) {
-            const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-            node.completedBy = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
+            node.completedBy = authorName;
             node.completedAt = new Date().toISOString();
+            
+            job.historyLog.unshift({
+              id: store.generateId(),
+              type: 'system',
+              action: 'task_completed',
+              date: node.completedAt,
+              author: authorName,
+              content: `Task "${node.name}" marked as completed`
+            });
           } else {
             delete node.completedBy;
             delete node.completedAt;
+            
+            job.historyLog.unshift({
+              id: store.generateId(),
+              type: 'system',
+              action: 'task_uncompleted',
+              date: new Date().toISOString(),
+              author: authorName,
+              content: `Task "${node.name}" marked as incomplete`
+            });
           }
           
           updateParentProgress(job.tasks, path);
-          store.update('jobs', id, { tasks: job.tasks });
+          store.update('jobs', id, { tasks: job.tasks, historyLog: job.historyLog });
           renderTabContent();
         });
         chk.addEventListener('click', (e) => e.stopPropagation());
@@ -1266,6 +1530,100 @@ export function renderJobDetail(container, { id }) {
           isInfoPanelEditing = false;
           isRecordingValues = false;
           renderTabContent();
+        });
+      });
+
+      tc.querySelector('.btn-assign-contractor')?.addEventListener('click', (e) => {
+        const path = e.currentTarget.dataset.path.split('-').map(Number);
+        const node = getTaskByPath(job.tasks, path);
+        const activeContractors = store.getAll('contractors').filter(c => c.active);
+        
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-group" style="margin-bottom:12px">
+            <div style="position:relative">
+              <span class="material-icons-outlined" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:18px; color:var(--text-tertiary)">search</span>
+              <input type="text" id="modal-contractor-search" class="form-input" placeholder="Search contractors by name, trade..." style="padding-left:34px; width:100%" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="display:flex; justify-content:space-between; align-items:center">
+              <span>Select Contractors</span>
+              <span class="text-tertiary font-normal" style="font-size:11px" id="contractor-count-label">${activeContractors.length} available</span>
+            </label>
+            <div id="modal-contractor-list" style="display:flex; flex-direction:column; gap:6px; max-height: 250px; overflow-y:auto; padding: 4px;">
+              ${activeContractors.length === 0 ? '<div class="text-tertiary font-italic text-sm">No active contractors found</div>' : ''}
+              ${activeContractors.map(c => `
+                <label class="contractor-item-label" data-search="${escapeHTML(((c.businessName || '') + ' ' + (c.contactName || '') + ' ' + (c.trade || '') + ' ' + (c.email || '')).toLowerCase())}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--content-bg); cursor:pointer;">
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <input type="checkbox" class="contractor-assign-checkbox" value="${c.id}" ${(node.assignedContractorIds || []).includes(c.id) ? 'checked' : ''}>
+                    <div>
+                      <div style="font-weight:500; font-size:13.5px; color:var(--text-primary)">${escapeHTML(c.businessName || c.name || 'Contractor')}</div>
+                      ${c.contactName ? `<div style="font-size:11px; color:var(--text-tertiary)">${escapeHTML(c.contactName)}${c.trade ? ` • ${escapeHTML(c.trade)}` : ''}</div>` : ''}
+                    </div>
+                  </div>
+                  ${c.trade && !c.contactName ? `<span class="badge badge-neutral" style="font-size:10px">${escapeHTML(c.trade)}</span>` : ''}
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        `;
+
+        setTimeout(() => {
+          const searchInput = content.querySelector('#modal-contractor-search');
+          const countLabel = content.querySelector('#contractor-count-label');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.addEventListener('input', (e) => {
+              const q = e.target.value.toLowerCase().trim();
+              let visibleCount = 0;
+              content.querySelectorAll('.contractor-item-label').forEach(label => {
+                const searchStr = label.dataset.search || '';
+                if (!q || searchStr.includes(q)) {
+                  label.style.display = 'flex';
+                  visibleCount++;
+                } else {
+                  label.style.display = 'none';
+                }
+              });
+              if (countLabel) {
+                countLabel.textContent = `${visibleCount} of ${activeContractors.length} showing`;
+              }
+            });
+          }
+        }, 50);
+
+        showModal({
+          title: 'Allocate Subcontractors',
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save Allocation', className: 'btn-primary', onClick: (close) => {
+              const selectedIds = Array.from(content.querySelectorAll('.contractor-assign-checkbox:checked')).map(cb => cb.value);
+              node.assignedContractorIds = selectedIds;
+              
+              if (!job.historyLog) job.historyLog = [];
+              const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+              const assignedNames = selectedIds.map(cid => {
+                const c = store.getById('contractors', cid);
+                return c ? (c.businessName || c.name) : cid;
+              }).join(', ');
+
+              job.historyLog.unshift({
+                id: store.generateId(),
+                type: 'system',
+                action: 'contractor_assigned',
+                date: new Date().toISOString(),
+                author: currentUser.name || currentUser.username || 'System',
+                content: selectedIds.length ? `Assigned task "${node.name}" to contractor(s) [${assignedNames}]` : `Cleared contractor allocation for task "${node.name}"`
+              });
+
+              store.update('jobs', id, { tasks: job.tasks, historyLog: job.historyLog });
+              showToast('Contractor allocation updated', 'success');
+              renderTabContent();
+              close();
+            }}
+          ]
         });
       });
 
@@ -2464,12 +2822,22 @@ export function renderJobDetail(container, { id }) {
         showToast('Draft quote created', 'success', { link: `/quotes/${newQ.id}` });
         router.navigate('/quotes/' + newQ.id);
       });
-    } else if (activeTab === 'activity') {
+    } else if (activeTab === 'activity_staff' || activeTab === 'activity_customer') {
       if (!job.activityLog) job.activityLog = [];
       if (!job.customerActivityLog) job.customerActivityLog = [];
+      if (!job.historyLog) job.historyLog = [];
       
-      // Migrate old logs
-      job.activityLog = job.activityLog.map(l => {
+      // Separate system history from staff notes if any exist
+      const sysEntries = job.activityLog.filter(l => l.type === 'system');
+      if (sysEntries.length > 0) {
+        job.historyLog = [...sysEntries, ...job.historyLog];
+        job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        job.activityLog = job.activityLog.filter(l => l.type !== 'system');
+        store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
+      }
+      
+      // Filter activityLog for Communications (staff notes & attachments)
+      const commsLog = job.activityLog.filter(l => l.type !== 'system').map(l => {
         if (l.type === 'note' || l.type === 'attachment') {
           return {
             id: l.id,
@@ -2483,7 +2851,7 @@ export function renderJobDetail(container, { id }) {
       });
 
       let feedHtml = '';
-      if (activeActivitySubTab === 'staff') {
+      if (activeTab === 'activity_staff') {
         feedHtml = `
           <div style="display:flex;gap:8px;margin-bottom:var(--space-base)">
             <input type="text" class="form-input" id="new-note-input" placeholder="Type an internal note..." style="flex:1" />
@@ -2504,7 +2872,7 @@ export function renderJobDetail(container, { id }) {
           </div>
           
           <div class="activity-feed" style="display:flex;flex-direction:column;gap:16px;margin-top:24px">
-            ${job.activityLog.length ? job.activityLog.map((log, i) => `
+            ${commsLog.length ? commsLog.map((log, i) => `
               <div style="display:flex;gap:12px">
                 <div style="width:36px;height:36px;border-radius:50%;background:var(--content-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-secondary)">
                   <span class="material-icons-outlined" style="font-size:18px">${(log.files && log.files.length) ? 'attachment' : 'chat_bubble_outline'}</span>
@@ -2585,17 +2953,6 @@ export function renderJobDetail(container, { id }) {
 
       tc.innerHTML = `
         <div class="card" style="max-width:800px;margin-bottom:var(--space-lg)">
-          <div class="card-header" style="border-bottom:1px solid var(--border-color);padding:0">
-            <div style="display:flex;gap:4px;padding:8px 16px 0 16px">
-              <button class="tab-btn ${activeActivitySubTab === 'staff' ? 'active' : ''}" id="activity-subtab-staff" style="padding:10px 16px;border:none;background:none;border-bottom:2px solid ${activeActivitySubTab === 'staff' ? 'var(--color-primary)' : 'transparent'};color:${activeActivitySubTab === 'staff' ? 'var(--color-primary)' : 'var(--text-secondary)'};font-weight:${activeActivitySubTab === 'staff' ? '600' : '500'};cursor:pointer;font-size:13.5px">
-                Staff Activity & History
-              </button>
-              <button class="tab-btn ${activeActivitySubTab === 'customer' ? 'active' : ''}" id="activity-subtab-customer" style="padding:10px 16px;border:none;background:none;border-bottom:2px solid ${activeActivitySubTab === 'customer' ? 'var(--color-primary)' : 'transparent'};color:${activeActivitySubTab === 'customer' ? 'var(--color-primary)' : 'var(--text-secondary)'};font-weight:${activeActivitySubTab === 'customer' ? '600' : '500'};cursor:pointer;font-size:13.5px;display:flex;align-items:center;gap:6px">
-                <span class="material-icons-outlined" style="font-size:16px">chat</span> Customer Communications
-                ${job.customerActivityLog?.length ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px">${job.customerActivityLog.length}</span>` : ''}
-              </button>
-            </div>
-          </div>
           <div class="card-body">
             ${feedHtml}
           </div>
@@ -2603,7 +2960,7 @@ export function renderJobDetail(container, { id }) {
       `;
 
       // Show/Hide expand buttons based on staff log content height
-      if (activeActivitySubTab === 'staff') {
+      if (activeTab === 'activity_staff') {
         setTimeout(() => {
           tc.querySelectorAll('.activity-log-item').forEach(item => {
             const wrapper = item.querySelector('.activity-content-wrapper');
@@ -2628,16 +2985,6 @@ export function renderJobDetail(container, { id }) {
           });
         }, 0);
       }
-
-      // Bind Subtab events
-      tc.querySelector('#activity-subtab-staff')?.addEventListener('click', () => {
-        activeActivitySubTab = 'staff';
-        renderTabContent();
-      });
-      tc.querySelector('#activity-subtab-customer')?.addEventListener('click', () => {
-        activeActivitySubTab = 'customer';
-        renderTabContent();
-      });
 
       // Staff Tab Posting
       tc.querySelector('#btn-add-note')?.addEventListener('click', () => {
@@ -3003,33 +3350,230 @@ export function renderJobDetail(container, { id }) {
           ]
         });
       });
-    } else if (activeTab === 'pos') {
+    } else if (activeTab === 'materials') {
       const pos = store.getAll('purchaseOrders').filter(p => p.jobId === id);
+      const allocatedMaterials = store.getAll('jobMaterials').filter(m => m.jobId === id);
+      
+      const totalPoCost = pos.reduce((sum, p) => sum + (p.total || 0), 0);
+      const totalMaterialCost = allocatedMaterials.reduce((sum, m) => sum + (m.totalCost || 0), 0);
+      const grandTotal = totalPoCost + totalMaterialCost;
 
       tc.innerHTML = `
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0">Purchase Orders</h4>
-            <button class="btn btn-sm btn-primary" id="btn-raise-po"><span class="material-icons-outlined" style="font-size:16px;">add_shopping_cart</span> Raise PO</button>
+        <div style="display:flex; flex-direction:column; gap:16px">
+          
+          <div class="card" style="padding:16px; background:var(--bg-color); display:flex; gap:32px; border-left:4px solid var(--color-primary)">
+            <div>
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Total Materials Cost</div>
+              <div style="font-size:24px; font-weight:700; color:var(--text-primary)">$${grandTotal.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">From Stock</div>
+              <div style="font-size:16px; font-weight:600; color:var(--text-secondary)">$${totalMaterialCost.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">From POs</div>
+              <div style="font-size:16px; font-weight:600; color:var(--text-secondary)">$${totalPoCost.toFixed(2)}</div>
+            </div>
           </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th></tr></thead>
-              <tbody>
-                ${pos.length ? pos.map(p => `
-                  <tr>
-                    <td><a href="#/purchase-orders/${escapeHTML(p.id)}">${escapeHTML(p.number)}</a></td>
-                    <td>${escapeHTML(p.supplierName || '—')}</td>
-                    <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
-                    <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
-                    <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
-                  </tr>
-                `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
-              </tbody>
-            </table>
+
+          <div class="card" style="margin-bottom:var(--space-md)">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Allocated Stock & Materials</h4>
+              <button class="btn btn-sm btn-secondary" id="btn-allocate-stock"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">inventory_2</span> Allocate Stock</button>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="data-table">
+                <thead><tr><th>Part / Item</th><th>Quantity</th><th>Unit Cost</th><th>Total Cost</th><th>Date</th></tr></thead>
+                <tbody>
+                  ${allocatedMaterials.length ? allocatedMaterials.map(m => `
+                    <tr>
+                      <td style="font-weight:500">${escapeHTML(m.partName)}</td>
+                      <td>${m.quantity}</td>
+                      <td>$${(m.unitCost || 0).toFixed(2)}</td>
+                      <td style="font-weight:600;">$${(m.totalCost || 0).toFixed(2)}</td>
+                      <td style="color:var(--text-secondary)">${new Date(m.date).toLocaleDateString()}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No stock items allocated to this job.</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:var(--space-lg)">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Purchase Orders</h4>
+              <button class="btn btn-sm btn-primary" id="btn-raise-po"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add_shopping_cart</span> Raise PO</button>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="data-table">
+                <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th></tr></thead>
+                <tbody>
+                  ${pos.length ? pos.map(p => `
+                    <tr>
+                      <td><a href="#/purchase-orders/${escapeHTML(p.id)}">${escapeHTML(p.number)}</a></td>
+                      <td>${escapeHTML(p.supplierName || '—')}</td>
+                      <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
+                      <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
+                      <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       `;
+
+      tc.querySelector('#btn-allocate-stock')?.addEventListener('click', () => {
+        const stockItems = store.getAll('stock');
+        const acceptedQuotes = store.getAll('quotes').filter(q => q.jobId === id && q.status === 'Accepted');
+        
+        let allocItems = [{ id: Date.now().toString(), partId: '', qty: 1 }];
+
+        const renderRows = (container) => {
+          container.innerHTML = allocItems.map((item, idx) => `
+            <div class="alloc-row" data-id="${item.id}" style="display:flex; gap:8px; margin-bottom:8px; align-items:flex-end;">
+              <div class="form-group" style="flex:1; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Search Stock *' : ''}</label>
+                <select class="form-select alloc-part-select" data-id="${item.id}">
+                  <option value="">Select or type...</option>
+                  ${stockItems.map(s => `<option value="${s.id}" ${s.id === item.partId ? 'selected' : ''}>${escapeHTML(s.name)} (In Stock: ${s.quantity || 0}) - $${(s.costPrice || 0).toFixed(2)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group" style="width:100px; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Qty *' : ''}</label>
+                <input type="number" class="form-input alloc-qty-input" data-id="${item.id}" value="${item.qty}" min="1" />
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary btn-remove-row" data-id="${item.id}" style="padding:0 8px; height:32px;"><span class="material-icons-outlined" style="font-size:16px; color:var(--text-danger)">delete</span></button>
+            </div>
+          `).join('');
+
+          // Bind events
+          container.querySelectorAll('.alloc-part-select').forEach(sel => {
+            sel.addEventListener('change', (e) => {
+              const rowId = e.target.getAttribute('data-id');
+              const rowItem = allocItems.find(i => i.id === rowId);
+              if (rowItem) rowItem.partId = e.target.value;
+            });
+          });
+          container.querySelectorAll('.alloc-qty-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const rowId = e.target.getAttribute('data-id');
+              const rowItem = allocItems.find(i => i.id === rowId);
+              if (rowItem) rowItem.qty = parseInt(e.target.value) || 1;
+            });
+          });
+          container.querySelectorAll('.btn-remove-row').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              const rowId = e.currentTarget.getAttribute('data-id');
+              allocItems = allocItems.filter(i => i.id !== rowId);
+              renderRows(container);
+            });
+          });
+        };
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="display:flex; justify-content:space-between; margin-bottom:16px;">
+            <p class="text-secondary" style="font-size:12px; margin:0">
+              Allocating items will deduct them from available stock.
+            </p>
+            ${acceptedQuotes.length ? `
+              <button class="btn btn-sm btn-secondary" id="btn-import-quote" style="padding:4px 8px; font-size:11px;">
+                <span class="material-icons-outlined" style="font-size:14px; margin-right:4px">download</span> Import from Quote
+              </button>
+            ` : ''}
+          </div>
+          <div id="alloc-rows-container"></div>
+          <button class="btn btn-sm btn-secondary" id="btn-add-alloc-row" style="margin-top:8px; width:100%; border-style:dashed;">
+            <span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Add Item
+          </button>
+        `;
+
+        showDrawer({
+          title: 'Allocate Stock to Job',
+          content: content.outerHTML,
+          width: 500,
+          onMount: (drawer) => {
+            const container = drawer.querySelector('#alloc-rows-container');
+            renderRows(container);
+
+            drawer.querySelector('#btn-add-alloc-row')?.addEventListener('click', () => {
+              allocItems.push({ id: Date.now().toString(), partId: '', qty: 1 });
+              renderRows(container);
+            });
+
+            drawer.querySelector('#btn-import-quote')?.addEventListener('click', () => {
+              // We'll use the most recently accepted quote, assuming the first one for simplicity
+              const quote = acceptedQuotes[0];
+              if (quote && quote.items) {
+                let importedCount = 0;
+                quote.items.forEach(qi => {
+                  if (qi.stockId) {
+                    const exists = stockItems.find(s => s.id === qi.stockId);
+                    if (exists) {
+                      allocItems.push({ id: Date.now().toString() + Math.random(), partId: qi.stockId, qty: qi.quantity || 1 });
+                      importedCount++;
+                    }
+                  }
+                });
+                
+                // Remove initial empty row if it's there and we imported stuff
+                if (importedCount > 0 && allocItems[0] && !allocItems[0].partId) {
+                  allocItems.shift();
+                }
+                
+                renderRows(container);
+                showToast(`Imported ${importedCount} linked stock items from Quote ${quote.number}`, 'success');
+              } else {
+                showToast('No items found on accepted quote', 'warning');
+              }
+            });
+          },
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Allocate', className: 'btn-primary', onClick: (close) => {
+                const validItems = allocItems.filter(i => i.partId && i.qty > 0);
+                if (validItems.length === 0) {
+                  showToast('Please add at least one valid item to allocate', 'error');
+                  return;
+                }
+
+                let warningShown = false;
+
+                validItems.forEach(item => {
+                  const part = stockItems.find(s => s.id === item.partId);
+                  if (part) {
+                    const currentQty = parseInt(part.quantity) || 0;
+                    if (item.qty > currentQty && !warningShown) {
+                      showToast('Warning: One or more allocations exceed current stock level', 'warning');
+                      warningShown = true;
+                    }
+
+                    store.create('jobMaterials', {
+                      jobId: id,
+                      jobNumber: job.number,
+                      partId: part.id,
+                      partName: part.name,
+                      quantity: item.qty,
+                      unitCost: part.costPrice || 0,
+                      totalCost: (part.costPrice || 0) * item.qty,
+                      date: new Date().toISOString()
+                    });
+
+                    store.update('stock', part.id, { quantity: currentQty - item.qty });
+                  }
+                });
+
+                showToast(`Allocated ${validItems.length} items to Job ${job.number}`, 'success');
+                renderTabContent();
+                close();
+              }
+            }
+          ]
+        });
+      });
 
       tc.querySelector('#btn-raise-po')?.addEventListener('click', () => {
         const suppliers = store.getAll('suppliers') || [];
@@ -3066,12 +3610,11 @@ export function renderJobDetail(container, { id }) {
 
         showDrawer({
           title: 'Quick Purchase Order',
-          content: content.outerHTML, // Pass HTML string or handle element appending
+          content: content.outerHTML,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
             {
               label: 'Create PO', className: 'btn-primary', onClick: (close) => {
-                // Note: showDrawer content is recreated via innerHTML, so we must query the document
                 const dOverlay = document.querySelector('.drawer-overlay');
                 const supplier = dOverlay.querySelector('#po-supplier').value;
                 const partId = dOverlay.querySelector('#po-part').value;
@@ -3167,10 +3710,23 @@ export function renderJobDetail(container, { id }) {
 
     container.querySelector('#header-job-status-select')?.addEventListener('change', (e) => {
       const newStatus = e.target.value;
-      store.update('jobs', id, { status: newStatus });
-      job.status = newStatus;
-      showToast(`Job status updated to ${newStatus}`, 'success');
-      render();
+      if (job.status !== newStatus) {
+        if (!job.historyLog) job.historyLog = [];
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
+        job.historyLog.unshift({
+          id: store.generateId(),
+          type: 'system',
+          action: 'status_changed',
+          date: new Date().toISOString(),
+          author: authorName,
+          content: `Job status changed from "${job.status}" to "${newStatus}"`
+        });
+        job.status = newStatus;
+        store.update('jobs', id, { status: newStatus, historyLog: job.historyLog });
+        showToast(`Job status updated to ${newStatus}`, 'success');
+        render();
+      }
     });
 
     container.querySelector('#btn-header-generate-invoice')?.addEventListener('click', () => {

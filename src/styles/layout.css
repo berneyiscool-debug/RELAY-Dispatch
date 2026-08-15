@@ -1438,6 +1438,17 @@
 .dash-widget > .card {
   height: 100%;
   width: 100%;
+  border-radius: var(--border-radius-md, 8px) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
+  background: var(--card-bg, #ffffff);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  overflow: hidden;
+}
+.dash-widget > .card > .card-header {
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.025));
+  border-bottom: 1px solid var(--border-color);
+  padding: 8px 14px;
 }
 .dash-widget .card-body {
   flex: 1;
@@ -1836,6 +1847,11 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+/* When the panel opens with no history, centre the lone greeting card.
+   `safe` keeps it top-aligned (scrollable) if it ever exceeds the panel. */
+.relay-thread:not(.relay-thread-has-history):not(:has(.relay-msg)) {
+  justify-content: safe center;
 }
 .relay-msg { display: flex; }
 .relay-msg-user { justify-content: flex-end; }
@@ -2673,6 +2689,66 @@
 .submenu-item .material-icons-outlined { font-size: 18px; }
 .submenu-item:hover { background: #f2f3f5; color: var(--sidebar-text-hover); }
 .submenu-item.active { background: var(--sidebar-active-bg); color: var(--text-primary); font-weight: var(--font-weight-medium); }
+
+/* Contextual Entity Submenu Header */
+.submenu-context-header {
+  padding: 4px 4px 10px 4px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.submenu-context-back-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+}
+.submenu-context-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  transition: color 0.15s, opacity 0.15s;
+}
+.submenu-context-back:hover {
+  background: transparent;
+  color: var(--color-primary);
+  opacity: 0.85;
+}
+.submenu-context-back .material-icons-outlined {
+  font-size: 20px;
+}
+.submenu-context-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  width: 100%;
+}
+.submenu-context-icon {
+  font-size: 20px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.submenu-context-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: center;
+}
 
 /* Rail bottom toggle */
 .sidebar.two-level .sidebar-toggle { border-top: none; color: var(--sidebar-text); }

@@ -86,6 +86,20 @@ initSearchableSelects();
 // Expose app globals for cross-component access
 window.__fieldForge = { router, store };
 
+// Temporary auto-fix for JOB- prefixes in IndexedDB/Supabase
+setTimeout(() => {
+  const allJobs = store.getAll('jobs') || [];
+  let updated = false;
+  allJobs.forEach(j => {
+    if (j.number && j.number.startsWith('JOB-')) {
+      j.number = j.number.replace('JOB-', 'J-');
+      store.update('jobs', j.id, { number: j.number });
+      updated = true;
+    }
+  });
+  if (updated) console.log('Repaired JOB- prefixes to J-');
+}, 3000);
+
 // Initialize body attribute with saved tooltip preference level
 document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPreference || 'full');
 
@@ -344,6 +358,7 @@ function adjustPageToolbarLayout(container) {
 
   const pageToolbar = container.querySelector('.page-toolbar');
   if (pageToolbar) {
+    if (pageToolbar.closest('.tab-content, .card, .modal-content, .drawer-content')) return;
     // 0. Pull out tags containers to be direct children of pageToolbar
     const tagsContainers = pageToolbar.querySelectorAll('.toolbar-filters, [id$="-filters-carousel-container"]');
     tagsContainers.forEach(tc => {

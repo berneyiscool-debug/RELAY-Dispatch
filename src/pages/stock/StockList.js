@@ -29,15 +29,7 @@ export function renderStockList(container, params) {
         </div>
       </div>
 
-      <!-- Segmented Toggle Tab (Items | Kits) -->
-      <div class="stock-tab-toggle" style="display:flex; border-bottom:1px solid var(--border-color); margin-bottom:20px; gap:24px">
-        <button class="stock-tab-btn ${activeTab === 'items' ? 'active' : ''}" data-tab="items" style="background:none; border:none; padding:12px 4px; font-weight:600; font-size:15px; color:${activeTab === 'items' ? 'var(--color-primary)' : 'var(--text-secondary)'}; border-bottom:3px solid ${activeTab === 'items' ? 'var(--color-primary)' : 'transparent'}; cursor:pointer; display:flex; align-items:center; gap:8px">
-          <span class="material-icons-outlined">inventory_2</span> Individual Items
-        </button>
-        <button class="stock-tab-btn ${activeTab === 'kits' ? 'active' : ''}" data-tab="kits" style="background:none; border:none; padding:12px 4px; font-weight:600; font-size:15px; color:${activeTab === 'kits' ? 'var(--color-primary)' : 'var(--text-secondary)'}; border-bottom:3px solid ${activeTab === 'kits' ? 'var(--color-primary)' : 'transparent'}; cursor:pointer; display:flex; align-items:center; gap:8px">
-          <span class="material-icons-outlined">widgets</span> Kit Bundles
-        </button>
-      </div>
+      <!-- Tab functionality migrated to Sidebar.js -->
 
       <!-- Dynamic Toolbar Section -->
       <div class="page-toolbar" id="toolbar-container" style="display:flex; justify-content:space-between; align-items:center;">
@@ -50,35 +42,12 @@ export function renderStockList(container, params) {
       </div>
     `;
 
-    bindTabEvents();
+
     renderActiveTabContent();
   }
 
   function bindTabEvents() {
-    container.querySelectorAll('.stock-tab-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const tab = btn.dataset.tab;
-        if (activeTab !== tab) {
-          activeTab = tab;
-          searchTerm = '';
-          activeLocation = 'all';
-          activeKitCategory = 'All';
-
-          container.querySelectorAll('.stock-tab-btn').forEach(b => {
-            const isActive = b.dataset.tab === activeTab;
-            b.classList.toggle('active', isActive);
-            b.style.color = isActive ? 'var(--color-primary)' : 'var(--text-secondary)';
-            b.style.borderBottomColor = isActive ? 'var(--color-primary)' : 'transparent';
-          });
-
-          renderActiveTabContent();
-          try {
-            history.replaceState(null, '', `#/stock?tab=${activeTab}`);
-          } catch (err) {}
-        }
-      });
-    });
+    // Deprecated: Tab switching is handled by the contextual sidebar menu
   }
 
   function renderActiveTabContent() {

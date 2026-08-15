@@ -45,8 +45,30 @@ export function renderLeadDetail(container, { id }) {
   }
 
   function render() {
+    if (!lead.stageHistory || !Array.isArray(lead.stageHistory)) {
+      lead.stageHistory = [];
+    }
+
     const allActivities = store.getAll('activity') || [];
-    const leadActivities = allActivities.filter(a => a.leadId === id || a.entityId === id).reverse();
+    const globalLeadActivities = allActivities.filter(a => (a.leadId === id || a.entityId === id));
+    
+    // De-duplicate activities by id or timestamp
+    const activityMap = new Map();
+    (lead.stageHistory || []).forEach(a => activityMap.set(a.id || a.timestamp, a));
+    globalLeadActivities.forEach(a => {
+      const key = a.id || a.timestamp;
+      if (!activityMap.has(key)) {
+        activityMap.set(key, {
+          id: a.id,
+          status: a.status || lead.status,
+          text: a.text,
+          user: a.user || 'System',
+          timestamp: a.timestamp
+        });
+      }
+    });
+
+    const leadActivities = Array.from(activityMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -73,7 +95,7 @@ export function renderLeadDetail(container, { id }) {
       })}
 
       <!-- Slim Pipeline Tracker -->
-      <div class="pipeline-tracker" style="display:flex; border-radius:6px; overflow:hidden; background:var(--content-bg); border:1px solid var(--border-color); margin-bottom:12px; height:28px;">
+      <div class="pipeline-tracker" style="display:flex; border-radius:6px; overflow:hidden; background:var(--content-bg); border:1px solid var(--border-color); margin-bottom:12px; box-shadow:var(--shadow-sm); height:28px;">
         ${['New','Contacted','Qualified','Proposal','Negotiation','Won','Lost'].map((s, idx) => {
           const isActive = lead.status === s;
           const isPast = ['New','Contacted','Qualified','Proposal','Negotiation','Won','Lost'].indexOf(lead.status) >= idx;
@@ -87,12 +109,12 @@ export function renderLeadDetail(container, { id }) {
             else if (s === 'Qualified' || s === 'Proposal') { bg = 'var(--color-warning)'; color = 'var(--color-warning-dark)'; }
             else { bg = 'var(--color-primary)'; color = '#fff'; }
           } else if (isPast && lead.status !== 'Lost' && s !== 'Lost') {
-            bg = 'var(--color-primary-light)';
+            bg = 'rgba(27, 109, 224, 0.05)';
             color = 'var(--color-primary-dark)';
           }
           
           return `
-            <div class="pipeline-step" data-status="${s}" style="flex:1; display:flex; align-items:center; justify-content:center; padding:0 4px; font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; background:${bg}; color:${color}; border-right:${borderRight}; cursor:pointer; transition:all 0.15s;" title="Click to transition to ${s}">
+            <div class="pipeline-step" data-status="${s}" style="flex:1; display:flex; align-items:center; justify-content:center; padding:0 4px; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; background:${bg}; color:${color}; border-right:${borderRight}; cursor:pointer; transition:all 0.15s;" title="Click to transition to ${s}">
               ${s}
             </div>
           `;
@@ -125,10 +147,10 @@ export function renderLeadDetail(container, { id }) {
                 <div>
                   ${r('Direct Phone', lead.phone ? `<a href="tel:${escapeHTML(lead.phone)}" style="color:var(--color-primary); font-weight:600;">${escapeHTML(lead.phone)}</a>` : '—')}
                   ${r('Direct Email', lead.email ? `<a href="mailto:${escapeHTML(lead.email)}" style="color:var(--color-primary); font-weight:600;">${escapeHTML(lead.email)}</a>` : '—')}
-                  ${r('Client Budget', lead.budget ? `<strong style="color:var(--text-primary)">$${(lead.budget || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>` : '—')}
-                  ${r('Est. Value', `<strong style="color:var(--color-primary-dark)">$${(lead.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>`)}
+                  ${r('Client Budget', lead.budget ? `$${(lead.budget || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—', { amount: true })}
+                  ${r('Est. Value', `$${(lead.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, { amount: true })}
                   ${lead.budget && lead.value ? r('Budget Variance', `<span style="font-weight:700; color:${(lead.budget - lead.value) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">$${Math.abs(lead.budget - lead.value).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${(lead.budget - lead.value) >= 0 ? 'Under' : 'Over'})</span>`) : ''}
-                  ${r('Weighted Value', `<strong style="color:${prob >= 80 ? 'var(--color-success)' : 'var(--text-primary)'}">$${weightedValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>`)}
+                  ${r('Weighted Value', `$${weightedValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, { amount: true })}
                 </div>
               </div>
             </div>
@@ -199,7 +221,7 @@ export function renderLeadDetail(container, { id }) {
                         <span class="material-icons-outlined" style="font-size:12px; color:var(--color-primary);">swap_horiz</span>
                         <span style="color:var(--text-primary); font-weight:500;">${escapeHTML(a.text || '')}</span>
                       </div>
-                      <span style="color:var(--text-tertiary); font-size:10px; flex-shrink:0;">${new Date(a.timestamp).toLocaleDateString('en-AU', { month:'short', day:'numeric' })}</span>
+                      <span style="color:var(--text-tertiary); font-size:10px; flex-shrink:0; margin-left:6px;">${new Date(a.timestamp).toLocaleDateString('en-AU', { month:'short', day:'numeric' })}</span>
                     </div>
                   `).join('')}
                 </div>
@@ -216,7 +238,7 @@ export function renderLeadDetail(container, { id }) {
   }
 
   function bindEvents() {
-    container.querySelector('#btn-convert-quote').addEventListener('click', () => {
+    container.querySelector('#btn-convert-quote').addEventListener('click', async () => {
       const newQuote = store.create('quotes', {
         number: store.getNextNumber('Q-', 'quotes'),
         customerId: lead.customerId,
@@ -230,7 +252,17 @@ export function renderLeadDetail(container, { id }) {
         total: (lead.value || 0) * (1 + store.getTaxRate()),
         createdAt: new Date().toISOString()
       });
-      store.update('leads', id, { status: 'Won' });
+
+      if (!lead.stageHistory) lead.stageHistory = [];
+      lead.stageHistory.unshift({
+        id: `hist_${Date.now()}`,
+        status: 'Won',
+        text: `Converted to Quote ${newQuote.number} (Status: Won).`,
+        user: JSON.parse(localStorage.getItem('currentUser'))?.name || 'System',
+        timestamp: new Date().toISOString()
+      });
+
+      await store.update('leads', id, { status: 'Won', stageHistory: lead.stageHistory });
       showToast('Lead converted to quote successfully', 'success');
       router.navigate(`/quotes/${newQuote.id}`);
     });
@@ -251,25 +283,42 @@ export function renderLeadDetail(container, { id }) {
     });
 
     container.querySelectorAll('.pipeline-step').forEach(step => {
-      step.addEventListener('click', () => {
+      step.addEventListener('click', async () => {
         const newStatus = step.dataset.status;
         if (lead.status !== newStatus) {
-          store.update('leads', id, { status: newStatus });
+          const oldStatus = lead.status;
           lead.status = newStatus;
-          showToast(`Status updated to ${newStatus}`, 'success');
-          render();
 
-          // Log lead stage transition activity
+          if (!lead.stageHistory) lead.stageHistory = [];
+          const newEntry = {
+            id: `hist_${Date.now()}`,
+            status: newStatus,
+            text: `Lead stage transitioned from "${oldStatus}" to "${newStatus}".`,
+            user: JSON.parse(localStorage.getItem('currentUser'))?.name || 'System',
+            timestamp: new Date().toISOString()
+          };
+          lead.stageHistory.unshift(newEntry);
+
+          // Update store (persists lead object with stageHistory array)
+          await store.update('leads', id, { 
+            status: newStatus, 
+            stageHistory: lead.stageHistory 
+          });
+
+          // Log lead stage transition activity to global activity array
           const activity = store.getAll('activity') || [];
           activity.push({
             id: Date.now(),
             leadId: id,
             type: 'lead_stage_changed',
-            text: `Lead stage transitioned to "${newStatus}".`,
-            user: JSON.parse(localStorage.getItem('currentUser'))?.name || 'System',
-            timestamp: new Date().toISOString()
+            text: newEntry.text,
+            user: newEntry.user,
+            timestamp: newEntry.timestamp
           });
           store.save('activity', activity);
+
+          showToast(`Status updated to ${newStatus}`, 'success');
+          render();
         }
       });
     });

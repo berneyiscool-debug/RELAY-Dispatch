@@ -11,8 +11,8 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { hasPermission } from '../../utils/permissions.js';
 
-export function renderSupplierDetail(container, params) {
-  const supplier = store.getById('suppliers', params.id);
+export function renderSupplierDetail(container, { id, tab }) {
+  const supplier = store.getById('suppliers', id);
   if (!supplier) {
     container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Supplier not found</h3></div>`;
     return;
@@ -24,12 +24,12 @@ export function renderSupplierDetail(container, params) {
   const canDelete = hasPermission('Suppliers', 'delete');
 
   // Load associated Stock Items
-  const stockItems = store.getAll('stock').filter(s => s.supplier === supplier.name);
+  const stockItems = store.getAll('stock').filter(s => s.supplierId === id);
 
   // Load associated Purchase Orders
-  const purchaseOrders = store.getAll('purchaseOrders').filter(po => po.supplierName === supplier.name);
+  const purchaseOrders = store.getAll('purchaseOrders').filter(po => po.supplierId === id);
 
-  let activeTab = 'overview';
+  let activeTab = tab || 'overview';
 
   function render() {
     const totalPoSpend = purchaseOrders.reduce((sum, po) => sum + (po.total || 0), 0);
@@ -60,11 +60,8 @@ export function renderSupplierDetail(container, params) {
         `
       })}
 
-      <div class="tabs" id="supplier-tabs">
-        <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
-        <button class="tab ${activeTab === 'catalogues' ? 'active' : ''}" data-tab="catalogues">Catalogues & Docs (${(supplier.attachments || []).length})</button>
-        <button class="tab ${activeTab === 'stock' ? 'active' : ''}" data-tab="stock">Stock Items (${stockItems.length})</button>
-        <button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos">Purchase Orders (${purchaseOrders.length})</button>
+      <div class="tabs" id="supplier-tabs" style="display:none;">
+        <!-- Tabs migrated to sidebar -->
       </div>
 
       <div class="tab-content" id="tab-content" style="margin-top: var(--space-base);"></div>
@@ -72,15 +69,7 @@ export function renderSupplierDetail(container, params) {
 
     renderTabContent();
 
-    // Tab switching
-    container.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        activeTab = tab.dataset.tab;
-        container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        renderTabContent();
-      });
-    });
+    // Tabs moved to sidebar
 
     // Wire up header actions
     if (canEdit) {

@@ -722,7 +722,7 @@ function renderWidgets(world, data) {
     el.style.width = item.w + 'px';
     el.style.height = item.h + 'px';
     el.innerHTML = `
-      <div class="card ${mod.kpiStrip ? 'kpi-strip' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
+      <div class="card dashboard-card ${mod.kpiStrip ? 'kpi-strip' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
         <div class="card-header dash-drag-handle">
           <span style="font-weight:600;font-size:14px;">${mod.title}</span>
           ${widgetControls}

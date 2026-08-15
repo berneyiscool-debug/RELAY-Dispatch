@@ -647,7 +647,7 @@ export async function seedData(force = false) {
       
       generatedJobs.push({
         id: jobId,
-        number: `JOB-${indexStr}`,
+        number: `J-${indexStr}`,
         quoteId: quoteId,
         customerId: custId,
         customerName: cData.company,

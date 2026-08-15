@@ -17,10 +17,12 @@ import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
 import { hasPermission } from '../../utils/permissions.js';
 
-export function renderQuoteDetail(container, { id, customerId, type }) {
+export function renderQuoteDetail(container, params) {
+  const { id, customerId, type, tab } = params;
   const isTemplate = type === 'template';
   const collection = isTemplate ? 'quoteTemplates' : 'quotes';
   const isNew = id === 'new';
+  const activeTab = tab || 'overview';
   
   const settings = store.getSettings();
   const defaultLaborRate = settings.laborRates.find(r => r.isDefault);
@@ -124,6 +126,18 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           </div>
         `
       })}
+
+      ${activeTab === 'history' ? `
+      <div class="card" style="margin-bottom:var(--space-lg)">
+        <div class="card-header"><h4>Activity History</h4></div>
+        <div class="card-body">
+          <p class="text-secondary" style="font-size:var(--font-size-sm); text-align:center; padding:var(--space-xl)">
+            <span class="material-icons-outlined" style="font-size:32px; color:var(--text-tertiary); margin-bottom:8px; display:block">history</span>
+            No activity history recorded for this quote yet.
+          </p>
+        </div>
+      </div>
+      ` : `
 
       ${isTemplate ? `
       <!-- Template Builder Form -->
@@ -304,6 +318,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn btn-secondary" id="btn-cancel-quote">Back</button>
       </div>`)}
+      `}
     `;
 
     bindEvents();

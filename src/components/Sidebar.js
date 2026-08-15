@@ -156,7 +156,8 @@ export function createSidebar() {
     // Any page link (direct rail page or submenu item).
     const navBtn = e.target.closest('[data-path]');
     if (navBtn) {
-      if (navBtn.classList.contains('disabled-local')) { e.preventDefault(); e.stopPropagation(); return; }
+      e.preventDefault();
+      if (navBtn.classList.contains('disabled-local')) { e.stopPropagation(); return; }
       const path = navBtn.dataset.path;
       if (path) router.navigate(path);
     }
@@ -217,6 +218,343 @@ export function createSidebar() {
   return sidebar;
 }
 
+// Quick HTML escaping helper
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Helper to resolve dynamic entity/settings contextual submenus
+function getContextualMenu(hash) {
+  const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
+  const [pathOnly, queryString] = cleanHash.split('?');
+  const params = new URLSearchParams(queryString || '');
+  const activeTab = params.get('tab');
+
+  const parts = pathOnly.split('/').filter(Boolean);
+  const resource = parts[0];
+  const id = parts[1];
+  const isEdit = parts[2] === 'edit';
+
+  if (!resource || id === 'new' || isEdit) return null;
+
+  // Settings page (/settings)
+  if (resource === 'settings') {
+    const currentTab = activeTab || 'company';
+    return {
+      railId: 'cat-admin',
+      headerTitle: 'Settings & Config',
+      icon: 'settings',
+      items: [
+        { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
+        { id: 'tax', icon: 'payments', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
+        { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
+        { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+        { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
+        { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
+        { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email' },
+        { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal' },
+        { id: 'integrations', icon: 'api', label: 'Integrations', path: '/settings?tab=integrations' }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Stock List (/stock)
+  if (resource === 'stock' && !id) {
+    const currentTab = activeTab || 'items';
+    return {
+      railId: 'cat-materials',
+      headerTitle: 'Stock & Inventory',
+      icon: 'inventory_2',
+      items: [
+        { id: 'items', icon: 'inventory_2', label: 'Individual Items', path: '/stock?tab=items' },
+        { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Documents List (/documents)
+  if (resource === 'documents' && !id) {
+    const currentTab = activeTab || 'All Documents';
+    return {
+      railId: 'cat-admin',
+      headerTitle: 'Document Center',
+      icon: 'folder',
+      items: [
+        { id: 'All Documents', icon: 'dashboard', label: 'All Documents', path: '/documents?tab=All%20Documents' },
+        { id: 'Company Docs', icon: 'domain', label: 'Company Docs', path: '/documents?tab=Company%20Docs' },
+        { id: 'Health & Safety', icon: 'health_and_safety', label: 'Health & Safety', path: '/documents?tab=Health%20&%20Safety' },
+        { id: 'Templates', icon: 'file_copy', label: 'Templates', path: '/documents?tab=Templates' },
+        { id: 'Job Attachments', icon: 'build', label: 'Job Attachments', path: '/documents?tab=Job%20Attachments' },
+        { id: 'Customer Attachments', icon: 'people', label: 'Customer Attachments', path: '/documents?tab=Customer%20Attachments' },
+        { id: 'Digital Forms', icon: 'assignment', label: 'Digital Forms', path: '/documents?tab=Digital%20Forms' },
+        { id: 'Invoices', icon: 'receipt_long', label: 'Invoices', path: '/documents?tab=Invoices' },
+        { id: 'Quotes', icon: 'request_quote', label: 'Quotes', path: '/documents?tab=Quotes' },
+        { id: 'Purchase Orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/documents?tab=Purchase%20Orders' }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Reports List (/reports)
+  if (resource === 'reports' && !id) {
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-admin',
+      headerTitle: 'Reports & Analytics',
+      icon: 'bar_chart',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Business Overview', path: '/reports?tab=overview' },
+        { id: 'revenue', icon: 'trending_up', label: 'Revenue & Profit', path: '/reports?tab=revenue' },
+        { id: 'jobs', icon: 'build', label: 'Job Performance', path: '/reports?tab=jobs' },
+        { id: 'job_costing', icon: 'price_check', label: 'Job Costing', path: '/reports?tab=job_costing' },
+        { id: 'technicians', icon: 'engineering', label: 'Technician Productivity', path: '/reports?tab=technicians' },
+        { id: 'timesheets_labor', icon: 'schedule', label: 'Timesheet & Labor', path: '/reports?tab=timesheets_labor' },
+        { id: 'assets_maintenance', icon: 'settings', label: 'Asset Maintenance', path: '/reports?tab=assets_maintenance' },
+        { id: 'customers', icon: 'people', label: 'Customer Analysis', path: '/reports?tab=customers' },
+        { id: 'inventory', icon: 'inventory_2', label: 'Inventory Report', path: '/reports?tab=inventory' },
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  if (!id) return null;
+
+  // Customer Detail (/people/:id)
+  if (resource === 'people') {
+    const cust = store.getById('customers', id);
+    const custTitle = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : 'Customer Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-people',
+      headerTitle: custTitle,
+      icon: 'people',
+      backPath: '/people',
+      backLabel: 'Back to Customers',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/people/${id}?tab=overview` },
+        { id: 'sites', icon: 'location_on', label: 'Sites / Locations', path: `/people/${id}?tab=sites` },
+        { id: 'financials', icon: 'account_balance', label: 'Financials', path: `/people/${id}?tab=financials` },
+        { id: 'jobs', icon: 'build', label: 'Jobs & Workflow', path: `/people/${id}?tab=jobs` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Project Detail (/projects/:id)
+  if (resource === 'projects') {
+    const project = store.getById('projects', id);
+    const projectTitle = project ? (project.name || `Project #${project.number || id}`) : 'Project Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: projectTitle,
+      icon: 'folder_copy',
+      backPath: '/projects',
+      backLabel: 'Back to Projects',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/projects/${id}?tab=overview` },
+        { id: 'stages', icon: 'view_list', label: 'Stages & Jobs', path: `/projects/${id}?tab=stages` },
+        { id: 'financials', icon: 'payments', label: 'Financials', path: `/projects/${id}?tab=financials` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Job Detail (/jobs/:id)
+  if (resource === 'jobs') {
+    const job = store.getById('jobs', id);
+    const jobTitle = job ? `Job #${job.number}` : 'Job Detail';
+    const currentTab = activeTab || 'overview';
+    const customerCommCount = job?.customerActivityLog?.length || 0;
+    return {
+      railId: 'cat-workflow',
+      headerTitle: jobTitle,
+      icon: 'build',
+      backPath: '/jobs',
+      backLabel: 'Back to Jobs',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/jobs/${id}?tab=overview` },
+        { id: 'schedule', icon: 'event', label: 'Schedule', path: `/jobs/${id}?tab=schedule` },
+        { id: 'tasks', icon: 'checklist', label: 'Tasks', path: `/jobs/${id}?tab=tasks` },
+        { id: 'materials', icon: 'inventory_2', label: 'Materials & POs', path: `/jobs/${id}?tab=materials` },
+        { id: 'financials', icon: 'price_check', label: 'Financials', path: `/jobs/${id}?tab=financials` },
+        { id: 'activity_staff', icon: 'history', label: 'Staff Activity', path: `/jobs/${id}?tab=activity_staff` },
+        { id: 'activity_customer', icon: 'forum', label: 'Customer Portal', path: `/jobs/${id}?tab=activity_customer`, badge: customerCommCount > 0 ? customerCommCount : null }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Asset Detail (/assets/:id)
+  if (resource === 'assets') {
+    const asset = store.getById('assets', id);
+    const assetName = asset ? (asset.name || asset.serialNumber) : 'Asset Detail';
+    const currentTab = activeTab || 'history';
+    return {
+      railId: 'cat-resources',
+      headerTitle: assetName,
+      icon: 'precision_manufacturing',
+      backPath: '/assets',
+      backLabel: 'Back to Assets',
+      items: [
+        { id: 'history', icon: 'history', label: 'Activity History', path: `/assets/${id}?tab=history` },
+        { id: 'maint', icon: 'engineering', label: 'Maintenance Agreements', path: `/assets/${id}?tab=maint` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Contractor Detail (/contractors/:id)
+  if (resource === 'contractors') {
+    const contractor = store.getById('contractors', id);
+    const contractorTitle = contractor ? (contractor.companyName || contractor.name) : 'Contractor Detail';
+    const currentTab = activeTab || 'details';
+    return {
+      railId: 'cat-people',
+      headerTitle: contractorTitle,
+      icon: 'engineering',
+      backPath: '/contractors',
+      backLabel: 'Back to Contractors',
+      items: [
+        { id: 'details', icon: 'engineering', label: 'Overview & Details', path: `/contractors/${id}?tab=details` },
+        { id: 'compliance', icon: 'verified', label: 'Compliance Registry', path: `/contractors/${id}?tab=compliance` },
+        { id: 'rates', icon: 'payments', label: 'Financials & Rates', path: `/contractors/${id}?tab=rates` },
+        { id: 'tasks', icon: 'assignment', label: 'Task Allocations', path: `/contractors/${id}?tab=tasks` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Supplier Detail (/suppliers/:id)
+  if (resource === 'suppliers') {
+    const supplier = store.getById('suppliers', id);
+    const supplierTitle = supplier ? supplier.name : 'Supplier Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-materials',
+      headerTitle: supplierTitle,
+      icon: 'local_shipping',
+      backPath: '/suppliers',
+      backLabel: 'Back to Suppliers',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/suppliers/${id}?tab=overview` },
+        { id: 'catalogues', icon: 'menu_book', label: 'Catalogues & Docs', path: `/suppliers/${id}?tab=catalogues` },
+        { id: 'stock', icon: 'inventory_2', label: 'Stock Items', path: `/suppliers/${id}?tab=stock` },
+        { id: 'pos', icon: 'receipt', label: 'Purchase Orders', path: `/suppliers/${id}?tab=pos` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Quotes Detail (/quotes/:id)
+  if (resource === 'quotes') {
+    const quote = store.getById('quotes', id);
+    const quoteTitle = quote ? `Quote #${quote.number}` : 'Quote Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: quoteTitle,
+      icon: 'request_quote',
+      backPath: '/quotes',
+      backLabel: 'Back to Quotes',
+      items: [
+        { id: 'overview', icon: 'request_quote', label: 'Overview', path: `/quotes/${id}?tab=overview` },
+        { id: 'history', icon: 'history', label: 'Activity History', path: `/quotes/${id}?tab=history` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Invoices Detail (/invoices/:id)
+  if (resource === 'invoices') {
+    const invoice = store.getById('invoices', id);
+    const invoiceTitle = invoice ? `Invoice #${invoice.number}` : 'Invoice Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: invoiceTitle,
+      icon: 'receipt_long',
+      backPath: '/invoices',
+      backLabel: 'Back to Invoices',
+      items: [
+        { id: 'overview', icon: 'receipt_long', label: 'Overview', path: `/invoices/${id}?tab=overview` },
+        { id: 'history', icon: 'history', label: 'Activity History', path: `/invoices/${id}?tab=history` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Purchase Order Detail (/purchase-orders/:id)
+  if (resource === 'purchase-orders') {
+    const po = store.getById('purchaseOrders', id);
+    const poTitle = po ? `PO #${po.number}` : 'PO Detail';
+    return {
+      railId: 'cat-resources',
+      headerTitle: poTitle,
+      icon: 'shopping_cart',
+      backPath: '/purchase-orders',
+      backLabel: 'Back to POs',
+      items: [], // Kept the menu the same without changing it
+      activeTab: ''
+    };
+  }
+
+  // Lead Detail (/leads/:id)
+  if (resource === 'leads') {
+    const lead = store.getById('leads', id);
+    const leadTitle = lead ? (lead.title || `Lead #${lead.number}`) : 'Lead Detail';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: leadTitle,
+      icon: 'contact_mail',
+      backPath: '/leads',
+      backLabel: 'Back to Leads',
+      items: [],
+      activeTab: ''
+    };
+  }
+
+  // Stock Detail (/stock/:id)
+  if (resource === 'stock' && id) {
+    const stock = store.getById('stock', id);
+    const stockTitle = stock ? stock.name : 'Item Detail';
+    return {
+      railId: 'cat-materials',
+      headerTitle: stockTitle,
+      icon: 'inventory_2',
+      backPath: '/stock',
+      backLabel: 'Back to Stock',
+      items: [],
+      activeTab: ''
+    };
+  }
+
+  // Kit Detail (/kits/:id)
+  if (resource === 'kits') {
+    const kit = store.getById('kits', id);
+    const kitTitle = kit ? kit.name : 'Kit Detail';
+    return {
+      railId: 'cat-materials',
+      headerTitle: kitTitle,
+      icon: 'widgets',
+      backPath: '/stock?tab=kits',
+      backLabel: 'Back to Kits',
+      items: [],
+      activeTab: ''
+    };
+  }
+
+  return null;
+}
+
 // Show a section's submenu panel and mark its rail item active.
 function setActiveSection(sidebar, sectionId) {
   sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
@@ -237,6 +575,64 @@ function setActiveSection(sidebar, sectionId) {
 function syncActiveFromRoute(sidebar, path) {
   sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
+
+  const currentHash = window.location.hash || path || '/';
+  const contextual = getContextualMenu(currentHash);
+  const submenuContainer = sidebar.querySelector('#sidebar-submenu');
+
+  if (contextual) {
+    sidebar.querySelectorAll('.rail-item').forEach(r => {
+      r.classList.toggle('active', r.dataset.id === contextual.railId);
+    });
+
+    sidebar.querySelectorAll('.submenu-panel').forEach(p => {
+      if (!p.classList.contains('contextual-panel')) {
+        p.classList.remove('active');
+      }
+    });
+
+    let ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+    if (!ctxPanel) {
+      ctxPanel = document.createElement('div');
+      ctxPanel.className = 'submenu-panel contextual-panel';
+      submenuContainer.appendChild(ctxPanel);
+    }
+
+    ctxPanel.innerHTML = `
+      <div class="submenu-context-header">
+        ${contextual.backPath ? `
+          <div class="submenu-context-back-row">
+            <button class="submenu-context-back" data-path="${contextual.backPath}" title="${escapeHTML(contextual.backLabel || 'Back')}">
+              <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
+            </button>
+          </div>
+        ` : ''}
+        <div class="submenu-context-body">
+          ${contextual.icon ? `<span class="material-icons-outlined submenu-context-icon" aria-hidden="true">${contextual.icon}</span>` : ''}
+          <div class="submenu-context-title" title="${escapeHTML(contextual.headerTitle)}">${escapeHTML(contextual.headerTitle)}</div>
+        </div>
+      </div>
+      <nav class="submenu-nav" style="${contextual.items && contextual.items.length > 0 ? '' : 'display:none;'}">
+        ${contextual.items.map(item => `
+          <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''}" data-path="${item.path}" style="display:flex; align-items:center; width:100%">
+            <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
+            <span class="nav-label">${escapeHTML(item.label)}</span>
+            ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
+          </button>
+        `).join('')}
+      </nav>
+    `;
+
+    ctxPanel.classList.add('active');
+    sidebar.classList.add('submenu-open');
+    return;
+  }
+
+  const ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+  if (ctxPanel) {
+    ctxPanel.remove();
+  }
+
   const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
 
   let sectionId = null;
@@ -304,6 +700,10 @@ export function updateSidebarAccess(sidebarElement) {
 
   // Permission-filter each page link (direct rail pages + submenu items).
   sidebar.querySelectorAll('.rail-page, .submenu-item').forEach(item => {
+    if (item.closest('.contextual-panel')) {
+      item.style.display = '';
+      return;
+    }
     if (item.id === 'btn-logout') { item.style.display = ''; return; }
     const labelEl = item.querySelector('.nav-label');
     if (!labelEl) return;

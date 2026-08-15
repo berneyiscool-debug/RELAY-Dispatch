@@ -20,7 +20,7 @@ export function renderJobsList(container, params) {
       <h1>${customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs'}</h1>
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
-        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:170px; margin:0; align-self:center;">
           <option value="">All Statuses (${jobs.length})</option>
           ${['Pending','Scheduled','In Progress','Completed','On Hold','Invoiced','Recurring Template'].map(s => `<option value="${s}">${s} (${jobs.filter(j => s === 'Recurring Template' ? j.isRecurring : j.status === s).length})</option>`).join('')}
         </select>
@@ -38,26 +38,26 @@ export function renderJobsList(container, params) {
   const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
 
   const columns = [
-    { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '11%' },
-    { key: 'title', label: 'Title', render: (r) => `<span class="text-primary font-medium">${escapeHTML(r.title)}</span>`, width: '25%' },
-    { key: 'customerName', label: 'Customer', width: '21%' },
+    { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '10%' },
+    { key: 'title', label: 'Title', render: (r) => `<span class="text-primary font-medium" style="display:block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHTML(r.title)}">${escapeHTML(r.title)}</span>`, width: '22%' },
+    { key: 'customerName', label: 'Customer', width: '17%' },
     { key: 'asset', label: 'Asset', render: (r) => {
         const asset = r.assetId ? store.getById('assets', r.assetId) : null;
         const name = r.assetName || (asset ? asset.name : '');
         if (!name) return '<span class="text-tertiary">—</span>';
-        return `<span class="text-primary font-medium" style="display:inline-flex;align-items:center;gap:4px;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
-      }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '15%' },
+        return `<span class="text-primary font-medium" style="display:inline-flex;align-items:center;gap:4px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
+      }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '13%' },
     { key: 'status', label: 'Status', render: (r) => r.isRecurring ? `
-      <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
+      <span class="badge badge-purple" style="font-weight:600; padding:2px 8px; font-size:10px; white-space:nowrap; letter-spacing:0.3px;" title="Recurring Template">Recurring Template</span>
     ` : `
       <select class="badge ${sb[r.status] || 'badge-neutral'} job-list-status-select" data-id="${r.id}">
         ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
           <option value="${s}" ${r.status === s ? 'selected' : ''}>${s}</option>
         `).join('')}
       </select>
-    `, width: '10%' },
-    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${pb[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '10%' },
-    { key: 'scheduledDate', label: 'Date', render: (r) => r.scheduledDate ? new Date(r.scheduledDate.includes('T') ? r.scheduledDate : r.scheduledDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.scheduledDate ? new Date(r.scheduledDate).getTime() : 0, width: '10%' },
+    `, width: '17%' },
+    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${pb[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '9%' },
+    { key: 'scheduledDate', label: 'Date', render: (r) => r.scheduledDate ? new Date(r.scheduledDate.includes('T') ? r.scheduledDate : r.scheduledDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.scheduledDate ? new Date(r.scheduledDate).getTime() : 0, width: '12%' },
   ];
 
   const table = createDataTable({ 

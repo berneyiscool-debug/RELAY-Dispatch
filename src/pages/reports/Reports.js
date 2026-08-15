@@ -8,8 +8,8 @@ import { escapeHTML } from '../../utils/security.js';
 
 let reportViewMode = 'detailed'; // Simple vs. Detailed report toggle
 
-export function renderReports(container) {
-  let activeReport = 'overview';
+export function renderReports(container, params) {
+  let activeReport = (params && params.tab) || 'overview';
 
   // Global filters state
   let filterStartDate = '';
@@ -243,27 +243,6 @@ export function renderReports(container) {
       </div>
 
       <div style="display:flex;gap:var(--space-lg)">
-        <!-- Report Sidebar -->
-        <div style="width:220px;flex-shrink:0">
-          <div class="card">
-            <div class="card-body" style="padding:var(--space-sm)">
-              ${reports.map(r => `
-                <button class="report-nav-item ${activeReport === r.id ? 'active' : ''}" data-report="${r.id}" data-tooltip="View ${escapeHTML(r.label)} report" data-tooltip-pos="right" style="
-                  display:flex;align-items:center;gap:10px;padding:10px 14px;width:100%;border:none;
-                  background:${activeReport === r.id ? 'var(--color-primary-light)' : 'transparent'};
-                  color:${activeReport === r.id ? 'var(--color-primary)' : 'var(--text-secondary)'};
-                  border-radius:var(--border-radius);cursor:pointer;font-size:var(--font-size-sm);
-                  font-weight:${activeReport === r.id ? '600' : '500'};transition:all var(--transition-fast);
-                  text-align:left;
-                ">
-                  <span class="material-icons-outlined" style="font-size:18px">${r.icon}</span>
-                  ${r.label}
-                </button>
-              `).join('')}
-            </div>
-          </div>
-        </div>
-
         <!-- Report Content -->
         <div style="flex:1" id="report-content"></div>
       </div>
@@ -310,10 +289,6 @@ export function renderReports(container) {
   }
 
   function bindEvents(d) {
-    container.querySelectorAll('[data-report]').forEach(btn => {
-      btn.addEventListener('click', () => { activeReport = btn.dataset.report; render(); });
-    });
-
     container.querySelector('#btn-export-csv')?.addEventListener('click', () => exportCSV(d));
 
     // Global filters elements

@@ -84,7 +84,7 @@ function renderIntroDashboard(thread, memory) {
   card.className = 'relay-intro-card assistant-intro';
   card.innerHTML = `
     <div class="relay-intro-banner">
-      <div class="relay-intro-emoji">👋</div>
+      <div class="relay-intro-emoji"><span class="material-icons-outlined">waving_hand</span></div>
       <div class="relay-intro-welcome">
         <h3>${timeGreeting}, ${escapeHtml(firstName)}!</h3>
         <p>${welcomeText}</p>
@@ -109,18 +109,19 @@ function renderIntroDashboard(thread, memory) {
     <div class="relay-intro-suggestions">
       <div class="relay-suggestions-title">Quick Commands & Proactive Alerts</div>
       <div class="relay-suggestion-chips">
-        ${unassignedJobs.length > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="assign technicians to unassigned jobs">⚠️ ${unassignedJobs.length} Unassigned Job(s) — Auto Assign</button>` : ''}
-        ${conflictCount > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="optimize today's schedule and resolve conflicts">⚠️ ${conflictCount} Schedule Collision(s) — Optimize</button>` : ''}
-        ${lowStock.length > 0 ? `<button class="relay-chip-btn info-chip" data-cmd="show low stock items and reorder">📦 ${lowStock.length} Low Stock Item(s) — Reorder</button>` : ''}
-        ${FLAGS.maps ? `<button class="relay-chip-btn" data-cmd="What's the best order to run today's jobs, with drive times?">🗺️ Plan Today's Route</button>` : ''}
+        ${unassignedJobs.length > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="assign technicians to unassigned jobs"><span class="material-icons-outlined chip-ico">warning</span> ${unassignedJobs.length} Unassigned Job(s) — Auto Assign</button>` : ''}
+        ${conflictCount > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="optimize today's schedule and resolve conflicts"><span class="material-icons-outlined chip-ico">warning</span> ${conflictCount} Schedule Collision(s) — Optimize</button>` : ''}
+        ${lowStock.length > 0 ? `<button class="relay-chip-btn info-chip" data-cmd="show low stock items and reorder"><span class="material-icons-outlined chip-ico">inventory_2</span> ${lowStock.length} Low Stock Item(s) — Reorder</button>` : ''}
+        ${FLAGS.maps ? `<button class="relay-chip-btn" data-cmd="What's the best order to run today's jobs, with drive times?"><span class="material-icons-outlined chip-ico">map</span> Plan Today's Route</button>` : ''}
+        <button class="relay-chip-btn" data-cmd="What's happening this week?"><span class="material-icons-outlined chip-ico">calendar_month</span> What's Happening This Week</button>
         ${(() => {
             let topChip = { cmd: '', label: '' };
             if (activeJobsCount >= overdueInvoices && activeJobsCount >= pendingQuotes) {
-              topChip = { cmd: 'create a new job', label: '🛠️ Create New Job' };
+              topChip = { cmd: 'create a new job', label: '<span class="material-icons-outlined chip-ico">build</span> Create New Job' };
             } else if (overdueInvoices >= activeJobsCount && overdueInvoices >= pendingQuotes) {
-              topChip = { cmd: `show ${overdueInvoices} overdue invoices`, label: `📄 Overdue Invoices (${overdueInvoices})` };
+              topChip = { cmd: `show ${overdueInvoices} overdue invoices`, label: `<span class="material-icons-outlined chip-ico">receipt_long</span> Overdue Invoices (${overdueInvoices})` };
             } else {
-              topChip = { cmd: `show ${pendingQuotes} pending quotes`, label: `📝 Pending Quotes (${pendingQuotes})` };
+              topChip = { cmd: `show ${pendingQuotes} pending quotes`, label: `<span class="material-icons-outlined chip-ico">request_quote</span> Pending Quotes (${pendingQuotes})` };
             }
             return '<button class="relay-chip-btn" data-cmd="' + topChip.cmd + '">' + topChip.label + '</button>';
           })()}
@@ -231,7 +232,6 @@ export async function openRelay() {
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="relay-toggle-week" title="What's Happening This Week"><span class="material-icons-outlined">calendar_month</span></button>
         <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
         <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button><button class="assistant-reset-memory" title="Reset Assistant Memory"><span class="material-icons-outlined">refresh</span></button>
       </div>
@@ -291,9 +291,20 @@ export async function openRelay() {
   // Scroll so the intro card starts at the top of the viewport
   if (chatHistory.length > 0) {
     thread.classList.add('relay-thread-has-history');
+    // Pin the greeting card's top to the thread's visible top. card.offsetTop is
+    // relative to the positioned panel and includes the header height, so subtract
+    // the thread's own offset to get the card's position WITHIN the scrollable
+    // thread (the old code used the raw offsetTop and over-scrolled by the header,
+    // clipping the card). offsetTop is layout-based, so the card's slide-in
+    // animation doesn't skew it the way getBoundingClientRect would. The delay
+    // lets the history messages finish animating in before we measure — a bare
+    // rAF fires too early, before they have height, and under-scrolls.
     setTimeout(() => {
-      thread.scrollTop = card.offsetTop;
-    }, 50);
+      const cardPos = card.offsetTop - thread.offsetTop;
+      // Centre the greeting card in the visible thread (clamped so it never
+      // over-scrolls past the top).
+      thread.scrollTop = Math.max(0, cardPos - (thread.clientHeight - card.offsetHeight) / 2);
+    }, 60);
   } else {
     thread.classList.remove('relay-thread-has-history');
     thread.scrollTop = 0;
@@ -1461,11 +1472,7 @@ function executeAction(action, param) {
         const stockItem = stockList.find(s => s.id === itemId || s.name?.toLowerCase() === itemId?.toLowerCase());
         const itemName = stockItem ? stockItem.name : (itemId || 'Stock Item');
 
-        const pos = store.getAll('purchaseOrders') || [];
-        const nextNum = pos.reduce((max, po) => {
-          const num = parseInt(po.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('PO-', 'purchaseOrders');
 
         const newPo = {
           id: store.generateId(),
@@ -1601,11 +1608,7 @@ function executeAction(action, param) {
           notes = parts[6] || '';
         }
 
-        const list = store.getAll('jobs') || [];
-        const nextNum = list.reduce((max, j) => {
-          const num = parseInt(j.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('J-', 'jobs');
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase() || c.company?.toLowerCase() === customerName.toLowerCase());
@@ -1665,11 +1668,7 @@ function executeAction(action, param) {
           notes = parts[7] || '';
         }
 
-        const list = store.getAll('quotes') || [];
-        const nextNum = list.reduce((max, q) => {
-          const num = parseInt(q.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('Q-', 'quotes');
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
@@ -1720,11 +1719,7 @@ function executeAction(action, param) {
           notes = parts[8] || '';
         }
 
-        const list = store.getAll('invoices') || [];
-        const nextNum = list.reduce((max, i) => {
-          const num = parseInt(i.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('INV-', 'invoices');
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
@@ -1906,11 +1901,8 @@ function executeAction(action, param) {
 
         if (['jobs', 'quotes', 'invoices', 'purchaseOrders', 'leads'].includes(collection)) {
           if (!newItem.number) {
-            const nextNum = list.reduce((max, item) => {
-              const num = parseInt(item.number) || 0;
-              return num > max ? num : max;
-            }, 1000) + 1;
-            newItem.number = String(nextNum);
+            const pref = collection === 'jobs' ? 'J-' : collection === 'quotes' ? 'Q-' : collection === 'invoices' ? 'INV-' : collection === 'purchaseOrders' ? 'PO-' : 'LD-';
+            newItem.number = store.getNextNumber(pref, collection);
           }
         }
 

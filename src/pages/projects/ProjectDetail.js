@@ -10,7 +10,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderProjectDetail(container, params) {
-  const { id } = params;
+  const { id, tab } = params;
   
   const project = store.getById('projects', id);
   if (!project) {
@@ -110,19 +110,13 @@ export function renderProjectDetail(container, params) {
     if (project.status === 'Completed') statusClass = 'badge-success';
     if (project.status === 'Cancelled') statusClass = 'badge-danger';
 
+    let activeTab = tab || 'overview';
+
     container.innerHTML = `
       <style>
         .proj-tabs {
-          display: flex; gap: 8px; margin-bottom: 24px;
-          border-bottom: 1px solid var(--border-color); padding-bottom: 8px;
+          display: none;
         }
-        .proj-tab {
-          padding: 8px 16px; border-radius: 6px; cursor: pointer;
-          font-weight: 600; font-size: 14px; color: var(--text-secondary);
-          transition: all 0.2s; display: flex; align-items: center; gap: 6px;
-        }
-        .proj-tab:hover { background: var(--bg-color); color: var(--text-primary); }
-        .proj-tab.active { background: var(--color-primary-light); color: var(--color-primary); }
         
         .progress-indicator {
           display: flex; align-items: center; gap: 16px; margin-top: 16px;
@@ -152,21 +146,10 @@ export function renderProjectDetail(container, params) {
         `
       })}
 
-      <!-- TABS -->
-      <div class="proj-tabs" id="project-tabs">
-        <div class="proj-tab active" data-tab="overview">
-          <span class="material-icons-outlined" style="font-size:18px">dashboard</span> Overview
-        </div>
-        <div class="proj-tab" data-tab="stages">
-          <span class="material-icons-outlined" style="font-size:18px">view_list</span> Stages (${metrics.stagesCount})
-        </div>
-        <div class="proj-tab" data-tab="financials">
-          <span class="material-icons-outlined" style="font-size:18px">payments</span> Financials
-        </div>
-      </div>
+      <!-- TABS REMOVED (Migrated to sidebar) -->
 
       <!-- TAB CONTENT: OVERVIEW -->
-      <div id="tab-overview" class="tab-content" style="display:block;">
+      <div id="tab-overview" class="tab-content" style="display:${activeTab === 'overview' ? 'block' : 'none'};">
         
         <div class="card" style="margin-bottom:24px; border-top:4px solid var(--color-primary);">
           <div class="card-body">
@@ -227,7 +210,7 @@ export function renderProjectDetail(container, params) {
       </div>
 
       <!-- TAB CONTENT: STAGES -->
-      <div id="tab-stages" class="tab-content" style="display:none;">
+      <div id="tab-stages" class="tab-content" style="display:${activeTab === 'stages' ? 'block' : 'none'};">
         <div class="card" style="margin:0">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
               <h4 style="margin:0">Project Stages (Jobs)</h4>
@@ -326,7 +309,7 @@ export function renderProjectDetail(container, params) {
       </div>
 
       <!-- TAB CONTENT: FINANCIALS -->
-      <div id="tab-financials" class="tab-content" style="display:none;">
+      <div id="tab-financials" class="tab-content" style="display:${activeTab === 'financials' ? 'block' : 'none'};">
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-bottom:24px;">
           <!-- SUMMARY -->
           <div class="card" style="margin:0">
@@ -413,23 +396,8 @@ export function renderProjectDetail(container, params) {
       </div>
     `;
 
-    // Tabs logic
-    const tabs = container.querySelectorAll('.proj-tab');
-    const contents = container.querySelectorAll('.tab-content');
-    
-    tabs.forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        tabs.forEach(t => t.classList.remove('active'));
-        contents.forEach(c => c.style.display = 'none');
-        
-        const target = e.currentTarget;
-        target.classList.add('active');
-        container.querySelector(`#tab-${target.dataset.tab}`).style.display = 'block';
-      });
-    });
-
     container.querySelector('#btn-goto-financials')?.addEventListener('click', () => {
-      container.querySelector('.proj-tab[data-tab="financials"]').click();
+      router.navigate('/projects/' + project.id + '?tab=financials');
     });
 
     // Hook general actions
@@ -449,8 +417,7 @@ export function renderProjectDetail(container, params) {
       } else {
         selectedJobIds = [];
       }
-      render();
-      container.querySelector('.proj-tab[data-tab="stages"]').click();
+      router.navigate('/projects/' + project.id + '?tab=stages');
     });
 
     container.querySelectorAll('.select-stage-checkbox').forEach(chk => {
@@ -461,8 +428,7 @@ export function renderProjectDetail(container, params) {
         } else {
           selectedJobIds = selectedJobIds.filter(id => id !== jobId);
         }
-        render();
-        container.querySelector('.proj-tab[data-tab="stages"]').click();
+        router.navigate('/projects/' + project.id + '?tab=stages');
       });
     });
 
@@ -474,8 +440,7 @@ export function renderProjectDetail(container, params) {
           if (confirm(`Are you sure you want to unlink Stage "${job.title}" from this project?`)) {
             await store.update('jobs', jobId, { projectId: null });
             showToast('Stage unlinked successfully', 'success');
-            renderProjectDetail(container, params);
-            container.querySelector('.proj-tab[data-tab="stages"]').click();
+            router.navigate('/projects/' + project.id + '?tab=stages');
           }
         }
       });
@@ -534,7 +499,7 @@ export function renderProjectDetail(container, params) {
             await store.update('projects', project.id, { name, status, description, startDate, endDate });
             showToast('Project details updated', 'success');
             c();
-            renderProjectDetail(container, params);
+            router.navigate('/projects/' + project.id + '?tab=' + activeTab);
           } catch (err) {
             console.error('Error saving project:', err);
             showToast('Failed to save project details', 'error');
@@ -592,8 +557,7 @@ export function renderProjectDetail(container, params) {
             await store.update('jobs', jobId, { projectId: project.id });
             showToast('Job linked to project successfully', 'success');
             c();
-            renderProjectDetail(container, params);
-            container.querySelector('.proj-tab[data-tab="stages"]').click();
+            router.navigate('/projects/' + project.id + '?tab=stages');
           } catch (err) {
             console.error('Error linking job:', err);
             showToast('Failed to link job', 'error');

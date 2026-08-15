@@ -37,7 +37,8 @@ const TABLE_MAP = {
   projects: 'projects',
   costCenters: 'cost_centers',
   emailLog: 'email_log',
-  deputyAsks: null
+  deputyAsks: null,
+  jobMaterials: null
 };
 
 const TABLE_COLUMNS = {
@@ -639,7 +640,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 5);
+      const request = window.indexedDB.open(dbName, 6);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1287,7 +1288,7 @@ class DataStore {
       const collections = Object.keys(TABLE_MAP);
       const promises = collections.map(async (col) => {
         const table = TABLE_MAP[col];
-        if (table === 'companies') return;
+        if (!table || table === 'companies') return;
 
         let query = supabase.from(table).select('*');
         
@@ -1783,6 +1784,9 @@ class DataStore {
           record.parentJobId = meta.parentJobId || null;
           record.assetName = meta.assetName || '';
           record.notes = meta.notes || '';
+          if (meta.activityLog !== undefined) record.activityLog = meta.activityLog;
+          if (meta.customerActivityLog !== undefined) record.customerActivityLog = meta.customerActivityLog;
+          if (meta.historyLog !== undefined) record.historyLog = meta.historyLog;
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
         }
@@ -2079,9 +2083,15 @@ class DataStore {
         description: record.description || '',
         parentJobId: record.parentJobId || null,
         assetName: record.assetName || '',
-        notes: record.notes || ''
+        notes: record.notes || '',
+        activityLog: record.activityLog || [],
+        customerActivityLog: record.customerActivityLog || [],
+        historyLog: record.historyLog || []
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
+      delete record.activityLog;
+      delete record.customerActivityLog;
+      delete record.historyLog;
     }
 
     if (collection === 'invoices') {
@@ -2294,7 +2304,7 @@ class DataStore {
       item.number = this.getNextNumber('Q-', 'quotes');
     }
     if (collection === 'jobs' && !item.number) {
-      item.number = this.getNextNumber('JOB-', 'jobs');
+      item.number = this.getNextNumber('J-', 'jobs');
     }
     if (collection === 'purchaseOrders' && !item.number) {
       item.number = this.getNextNumber('PO-', 'purchaseOrders');
@@ -2689,13 +2699,13 @@ class DataStore {
       startingNum = dt.quoteStartingNumber !== undefined ? parseInt(dt.quoteStartingNumber, 10) : 1;
       if (isNaN(startingNum)) startingNum = 1;
     } else if (collection === 'jobs') {
-      prefix = dt.jobPrefix !== undefined ? dt.jobPrefix : (defaultPrefix || 'JOB-');
+      prefix = dt.jobPrefix !== undefined ? dt.jobPrefix : (defaultPrefix || 'J-');
       startingNum = dt.jobStartingNumber !== undefined ? parseInt(dt.jobStartingNumber, 10) : 1;
       if (isNaN(startingNum)) startingNum = 1;
     }
 
     const items = this.getAll(collection) || [];
-    let maxNum = startingNum - 1;
+    const nums = [];
 
     items.forEach(item => {
       if (item.number && typeof item.number === 'string') {
@@ -2704,17 +2714,31 @@ class DataStore {
           numStr = item.number.slice(prefix.length);
         } else if (collection === 'jobs' && (item.number.startsWith('JOB-') || item.number.startsWith('J-'))) {
           numStr = item.number.replace(/^(JOB-|J-)/, '');
+        } else if (/^\d+$/.test(item.number)) {
+          numStr = item.number;
         }
 
         if (numStr) {
-          const num = parseInt(numStr, 10);
-          // Ignore 6-digit pseudo-timestamp anomalies (e.g. from Date.now().toString().slice(-6))
-          if (!isNaN(num) && num < 50000 && num > maxNum) {
-            maxNum = num;
+          const baseNumStr = numStr.split('.')[0];
+          const num = parseInt(baseNumStr, 10);
+          if (!isNaN(num) && num < 50000) {
+            nums.push(num);
           }
         }
       }
     });
+
+    nums.sort((a, b) => a - b);
+
+    let maxNum = startingNum - 1;
+    for (const num of nums) {
+      if (num <= maxNum) continue;
+      // Heal artificial gap jumps to >= 1000 (caused by hardcoded initial reduce/maxNum values)
+      if (num >= 1000 && startingNum < 500 && num > maxNum + 50) {
+        continue;
+      }
+      maxNum = num;
+    }
 
     return prefix + (maxNum + 1).toString().padStart(5, '0');
   }

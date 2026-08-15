@@ -52,7 +52,6 @@ export function renderJobForm(container, params) {
   const projectsList = store.getAll('projects') || [];
   const costCentersList = (store.getAll('costCenters') || []).filter(cc => cc.active || cc.id === job.costCenterId);
   const settings = store.getSettings() || {};
-  const jobTypes = settings.jobTypes || ['Electrical','Plumbing','HVAC','Fire Protection','Security','General Maintenance'];
 
   // Selected tags state
   let selectedTags = job.tags ? [...job.tags] : [];

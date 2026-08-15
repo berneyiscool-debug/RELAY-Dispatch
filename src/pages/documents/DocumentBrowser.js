@@ -9,8 +9,8 @@ import { escapeHTML } from '../../utils/security.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 
-export function renderDocumentBrowser(container) {
-  let currentFolder = 'All Documents';
+export function renderDocumentBrowser(container, params) {
+  let currentFolder = (params && params.tab) || 'All Documents';
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
   
   // Define visibility rules
@@ -255,41 +255,6 @@ export function renderDocumentBrowser(container) {
       </div>
 
       <div style="display:flex; gap:10px; align-items:flex-start; margin-top:10px;">
-        <!-- Sidebar Folders -->
-        <div class="card" style="width:250px; flex-shrink:0; position: sticky; top: 10px;">
-          <div class="card-body" style="padding:12px">
-            <h4 style="margin:0 0 12px 8px; font-size:12px; text-transform:uppercase; color:var(--text-tertiary)">Categories</h4>
-            <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:4px;" id="folder-list">
-              ${folders.map(f => {
-                let icon = 'folder';
-                if (f === 'All Documents') icon = 'dashboard';
-                else if (f === 'Company Docs') icon = 'domain';
-                else if (f === 'Health & Safety') icon = 'health_and_safety';
-                else if (f === 'Templates') icon = 'file_copy';
-                else if (f === 'Job Attachments') icon = 'build';
-                else if (f === 'Customer Attachments') icon = 'people';
-                else if (f === 'Digital Forms') icon = 'assignment';
-                else if (f === 'Invoices') icon = 'receipt_long';
-                else if (f === 'Quotes') icon = 'request_quote';
-                else if (f === 'Purchase Orders') icon = 'shopping_cart';
-                
-                const isActive = currentFolder === f;
-                const count = f === 'All Documents' ? allDocs.length : allDocs.filter(d => d.folder === f).length;
-                
-                return `
-                <li>
-                  <button class="btn btn-ghost ${isActive ? 'active' : ''}" data-folder="${f}" data-tooltip="View documents in ${escapeHTML(f)}" data-tooltip-pos="right" style="width:100%; justify-content:space-between; padding:8px 12px; background:${isActive ? 'var(--color-primary-bg)' : 'transparent'}; color:${isActive ? 'var(--primary-color)' : 'var(--text-primary)'}; font-weight:${isActive ? '600' : '400'}">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                      <span class="material-icons-outlined" style="font-size:18px">${icon}</span> ${f}
-                    </div>
-                    <span class="badge badge-neutral" style="font-size:10px">${count}</span>
-                  </button>
-                </li>
-              `}).join('')}
-            </ul>
-          </div>
-        </div>
-
         <!-- Main Content -->
         <div class="card" style="flex:1; min-width:0;">
           <div class="card-header" style="padding:16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color)">
@@ -305,14 +270,6 @@ export function renderDocumentBrowser(container) {
         </div>
       </div>
     `;
-
-    // Folder switching
-    container.querySelectorAll('#folder-list button').forEach(btn => {
-      btn.addEventListener('click', () => {
-        currentFolder = btn.dataset.folder;
-        render();
-      });
-    });
 
     let filteredData = [...displayDocs];
 

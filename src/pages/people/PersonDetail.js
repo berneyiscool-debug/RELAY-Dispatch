@@ -57,6 +57,9 @@ export function renderPersonDetail(container, { id, tab }) {
           <span class="badge ${person.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(person.status)}</span>
         `,
         actionsHtml: `
+          <button class="btn btn-secondary" id="btn-invite-portal" data-tooltip="Email an automated magic-link sign in key to the customer portal" data-tooltip-pos="left">
+            <span class="material-icons-outlined">vpn_key</span> Send Magic Portal Link
+          </button>
           <button class="btn btn-secondary" id="btn-edit-person" data-tooltip="Modify customer details, contacts, or active site addresses" data-tooltip-pos="left">
             <span class="material-icons-outlined">edit</span> Edit
           </button>
@@ -66,30 +69,28 @@ export function renderPersonDetail(container, { id, tab }) {
         `
       })}
 
-      <div class="tabs" id="person-tabs">
-        <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Details</button>
-        <button class="tab ${activeTab === 'contacts' ? 'active' : ''}" data-tab="contacts">Contacts (${(person.contacts || []).length})</button>
-        <button class="tab ${activeTab === 'sites' ? 'active' : ''}" data-tab="sites">Sites (${(person.sites || []).length})</button>
-        <button class="tab ${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">Assets (${customerAssetsCount})</button>
-        <button class="tab ${activeTab === 'jobs' ? 'active' : ''}" data-tab="jobs">Jobs (${jobs.length})</button>
-        <button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes">Quotes (${quotes.length})</button>
-        <button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices">Invoices (${invoices.length})</button>
-      </div>
-
-      <div class="tab-content" id="tab-content" style="padding-top:12px;"></div>
+      <div class="tab-content" id="tab-content" style="padding-top:4px;"></div>
     `;
 
     renderTabContent();
 
-    // Tab switching
-    container.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        activeTab = tab.dataset.tab;
-        container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        renderTabContent();
+    // Invite Portal
+    const inviteBtn = container.querySelector('#btn-invite-portal');
+    if (inviteBtn) {
+      inviteBtn.addEventListener('click', () => {
+        const sendBtn = container.querySelector('#btn-send-portal-link');
+        if (sendBtn) {
+          sendBtn.click();
+        } else {
+          activeTab = 'details';
+          renderTabContent();
+          setTimeout(() => {
+            const sb = container.querySelector('#btn-send-portal-link');
+            if (sb) sb.click();
+          }, 50);
+        }
       });
-    });
+    }
 
     // Edit
     container.querySelector('#btn-edit-person').addEventListener('click', () => {
@@ -170,17 +171,17 @@ export function renderPersonDetail(container, { id, tab }) {
             <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px; line-height:1.5;">
               Provide this secure token-based magic link to the customer. They can use it to view their open jobs, approve quotes, review invoices, check asset maintenance schedules, and submit callout requests directly from their own portal dashboard — no username or password required.
             </p>
-            <div style="display:flex; gap:12px; align-items:center;">
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
               <input type="text" readonly id="customer-portal-url" class="form-input" 
-                     style="flex:1; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" 
+                     style="flex:1; min-width:260px; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" 
                      value="${window.location.origin}${window.location.pathname}#/portal/customer?token=${person.portalToken}" />
               
               <button class="btn btn-secondary" id="btn-copy-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px;">content_copy</span> Copy Link
               </button>
               
-              <button class="btn btn-secondary" id="btn-send-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
-                <span class="material-icons-outlined" style="font-size:16px;">send</span> Send Link
+              <button class="btn btn-primary" id="btn-send-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <span class="material-icons-outlined" style="font-size:16px;">send</span> Send Magic Portal Link to Customer
               </button>
 
               ${person.portalPasscode ? `

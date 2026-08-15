@@ -5,14 +5,14 @@ import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 
-export function renderAssetDetail(container, params) {
-  const asset = store.getById('assets', params.id);
+export function renderAssetDetail(container, { id, tab }) {
+  const asset = store.getById('assets', id);
   if (!asset) {
     container.innerHTML = `<div class="card"><p>Asset not found.</p></div>`;
     return;
   }
 
-  let activeTab = 'history'; // 'history' or 'maint'
+  let activeTab = tab || 'history'; // 'history' or 'maint'
 
   function r(label, value, opts = {}) {
     return `
@@ -24,7 +24,7 @@ export function renderAssetDetail(container, params) {
 
   function render() {
     // Re-fetch fresh asset data in case of updates
-    const currentAsset = store.getById('assets', params.id);
+    const currentAsset = store.getById('assets', id);
     const settings = store.getSettings();
     
     let assigneeName = 'Unassigned';
@@ -118,9 +118,8 @@ export function renderAssetDetail(container, params) {
 
         <div class="card" style="grid-column: span 2">
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px var(--space-lg); border-bottom: 1px solid var(--border-color)">
-            <div class="tabs" style="border:none; margin:0; padding:0">
-              <button class="tab ${activeTab === 'history' ? 'active' : ''}" id="tab-history" style="padding: 6px 12px; font-size:14px">Activity History</button>
-              <button class="tab ${activeTab === 'maint' ? 'active' : ''}" id="tab-maint" style="padding: 6px 12px; font-size:14px">Maintenance Agreements</button>
+            <div class="tabs" style="border:none; margin:0; padding:0; display:none;">
+              <!-- Tabs migrated to sidebar -->
             </div>
             ${activeTab === 'history' ? `
               <button class="btn btn-sm btn-primary" id="btn-add-log">
@@ -241,19 +240,10 @@ export function renderAssetDetail(container, params) {
 
   function bindEvents(currentAsset) {
     container.querySelector('#btn-edit').addEventListener('click', () => {
-      router.navigate(`/assets/${params.id}/edit`);
+      router.navigate(`/assets/${id}/edit`);
     });
 
-    // Tab toggles
-    container.querySelector('#tab-history').addEventListener('click', () => {
-      activeTab = 'history';
-      render();
-    });
-
-    container.querySelector('#tab-maint').addEventListener('click', () => {
-      activeTab = 'maint';
-      render();
-    });
+    // Tab toggles removed (migrated to sidebar)
 
     // Add log
     container.querySelector('#btn-add-log')?.addEventListener('click', () => {
