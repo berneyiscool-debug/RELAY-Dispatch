@@ -2260,13 +2260,24 @@ function renderKpiCards(data, item) {
 
 function renderJobStatusChart(data, item) {
   const counts = {};
-  data.jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
+  data.jobs.forEach(j => {
+    const s = (j.isRecurring || j.status === 'Recurring Template') ? 'Active Templates' : j.status;
+    counts[s] = (counts[s] || 0) + 1;
+  });
   const total = data.jobs.length || 1;
-  const colors = { 'Pending':'var(--color-warning)','Scheduled':'var(--color-info)','In Progress':'var(--color-primary)','On Hold':'var(--text-tertiary)','Completed':'var(--color-success)','Invoiced':'#8B5CF6' };
+  const colors = { 
+    'Pending': 'var(--color-warning)',
+    'Scheduled': 'var(--color-info)',
+    'In Progress': 'var(--color-primary)',
+    'On Hold': 'var(--text-tertiary)',
+    'Completed': 'var(--color-success)',
+    'Invoiced': '#8B5CF6',
+    'Active Templates': '#9333EA'
+  };
   return `<div style="display:flex;flex-direction:column;gap:10px;padding:4px 0;">
     ${Object.entries(counts).map(([s, c]) => `
       <div style="display:flex;align-items:center;gap:10px;">
-        <span style="width:88px;font-size:12px;color:var(--text-secondary);flex-shrink:0;">${s}</span>
+        <span style="width:105px;font-size:12px;color:var(--text-secondary);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHTML(s)}">${escapeHTML(s)}</span>
         <div style="flex:1;height:20px;background:var(--content-bg);border-radius:4px;overflow:hidden;">
           <div style="width:${(c/total*100).toFixed(1)}%;height:100%;background:${colors[s]||'var(--text-tertiary)'};border-radius:4px;transition:width 0.5s;min-width:${c>0?'6px':'0'};"></div>
         </div>
