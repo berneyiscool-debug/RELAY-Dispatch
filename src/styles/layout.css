@@ -761,6 +761,7 @@
 .main-content:has(#dash-viewport),
 .main-content:has(#dashboard-canvas),
 .main-content:has(.dashboard-view),
+.main-content:has(.dash-page),
 .main-content:has(#table-container-wrapper),
 .main-content:has(#schedule-view),
 .main-content:has(.schedule-container),
@@ -768,6 +769,11 @@
 .main-content:has(#activity-calendar-view),
 .main-content:has(#route-panel-view) {
   padding: 0 !important;
+}
+
+.main-content:has(#dash-viewport),
+.main-content:has(.dash-page) {
+  overflow: hidden !important;
 }
 
 /* ---- Page content wrapper ---- */
@@ -1384,15 +1390,13 @@
    DASHBOARD — INFINITE CANVAS SYSTEM
    ============================================================ */
 .dash-page {
-  /* Break out of the main content padding so the canvas fills the whole area */
-  height: calc(100vh - var(--topbar-height));
-  height: calc(100dvh - var(--topbar-height));
-  min-height: 520px;
+  height: 100%;
+  width: 100%;
   padding: 0 !important;
-  margin: -20px -24px;
-  width: calc(100% + 48px);   /* reclaim the 24px L/R padding */
+  margin: 0 !important;
   position: relative;
   max-width: none;
+  overflow: hidden;
 }
 
 /* Keep every widget title (data + live-page widgets) the same colour */
