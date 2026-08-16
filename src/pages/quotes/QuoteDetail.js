@@ -25,7 +25,7 @@ export function renderQuoteDetail(container, params) {
   const activeTab = tab || 'overview';
   
   const settings = store.getSettings();
-  const defaultLaborRate = settings.laborRates.find(r => r.isDefault);
+  const defaultLaborRate = (settings.laborRates && settings.laborRates.find(r => r.isDefault)) || (settings.laborRates && settings.laborRates[0]);
   const defaultLaborRateId = defaultLaborRate ? defaultLaborRate.id : '';
 
   let quote;
@@ -58,6 +58,10 @@ export function renderQuoteDetail(container, params) {
   if (!quote) {
     container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>${isTemplate ? 'Template' : 'Quote'} not found</h3></div>`;
     return;
+  }
+
+  if (!quote.laborProfileId) {
+    quote.laborProfileId = defaultLaborRateId;
   }
 
   // Data migration for old quotes

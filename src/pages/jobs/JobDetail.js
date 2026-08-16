@@ -246,8 +246,7 @@ export function renderJobDetail(container, { id, tab }) {
 
   function generateInvoiceWithSelectedQuote(type, selectedQuote) {
     if (type === 'Deposit') {
-      const { sections } = getJobInvoiceData(selectedQuote);
-      createDraftInvoice('Deposit', sections, 0, selectedQuote);
+      openDepositInvoiceModal(selectedQuote);
     } else if (type === 'Progress') {
       const content = document.createElement('div');
       content.innerHTML = `
@@ -281,8 +280,278 @@ export function renderJobDetail(container, { id, tab }) {
       });
     } else {
       const { sections, subtotal, worksDescription } = getJobInvoiceData(selectedQuote);
-      createDraftInvoice('Standard', sections, subtotal, selectedQuote, worksDescription);
+
+      // Deduct prior deposit invoices
+      const depositInvoices = store.getAll('invoices').filter(i => 
+        (i.jobId === job.id || String(i.jobId) === String(job.id)) && 
+        i.invoiceType === 'Deposit' && 
+        i.status !== 'Void'
+      );
+      
+      const totalDepositBilled = depositInvoices.reduce((sum, i) => sum + (i.subtotal || 0), 0);
+      
+      if (totalDepositBilled > 0) {
+        const depositItems = depositInvoices.map(dep => ({
+          id: store.generateId(),
+          description: `Less Deposit Billed (${dep.number})`,
+          type: 'other',
+          qty: 1,
+          rate: -(dep.subtotal || 0),
+          total: -(dep.subtotal || 0)
+        }));
+
+        if (sections.length > 0) {
+          sections[sections.length - 1].lineItems.push(...depositItems);
+        } else {
+          sections.push({
+            id: store.generateId(),
+            name: 'Prepayments & Deposits Credit',
+            lineItems: depositItems
+          });
+        }
+
+        const finalSubtotal = Math.max(0, subtotal - totalDepositBilled);
+        createDraftInvoice('Standard', sections, finalSubtotal, selectedQuote, worksDescription);
+      } else {
+        createDraftInvoice('Standard', sections, subtotal, selectedQuote, worksDescription);
+      }
     }
+  }
+
+  function openDepositInvoiceModal(selectedQuote) {
+    const settings = store.getSettings();
+    const quoteToUse = selectedQuote || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+
+    // 1. Quoted Labor Total
+    let quotedLaborTotal = 0;
+    if (quoteToUse) {
+      const qItems = [];
+      if (quoteToUse.sections && Array.isArray(quoteToUse.sections)) {
+        quoteToUse.sections.forEach(sec => {
+          if (sec.lineItems) qItems.push(...sec.lineItems);
+        });
+      }
+      if (quoteToUse.lineItems) qItems.push(...quoteToUse.lineItems);
+      
+      qItems.forEach(i => {
+        if (i.type === 'labor') {
+          quotedLaborTotal += parseFloat(i.total) || ((parseFloat(i.qty) || 0) * (parseFloat(i.rate) || 0));
+        }
+      });
+    }
+    if (quotedLaborTotal === 0) {
+      const taskHours = getJobTasklistHours(job.tasks || []);
+      const defaultRate = (settings.laborRates.find(r => r.isDefault) || settings.laborRates[0] || { rate: 85 }).rate;
+      quotedLaborTotal = taskHours * defaultRate;
+    }
+
+    // 2. Actual Labor Total
+    const timesheets = store.getAll('timesheets').filter(t => t.jobId === job.id);
+    const allTechs = store.getAll('technicians');
+    let actualLaborTotal = 0;
+    timesheets.forEach(t => {
+      const tech = allTechs.find(x => x.id === t.technicianId);
+      const rate = tech ? (tech.payRate || tech.hourlyRate || 45) : 45;
+      actualLaborTotal += (t.hours || 0) * rate;
+    });
+
+    // 3. Quoted Materials Total
+    let quotedMatTotal = 0;
+    if (quoteToUse) {
+      const qItems = [];
+      if (quoteToUse.sections && Array.isArray(quoteToUse.sections)) {
+        quoteToUse.sections.forEach(sec => {
+          if (sec.lineItems) qItems.push(...sec.lineItems);
+        });
+      }
+      if (quoteToUse.lineItems) qItems.push(...quoteToUse.lineItems);
+
+      qItems.forEach(i => {
+        if (i.type === 'material') {
+          quotedMatTotal += parseFloat(i.total) || ((parseFloat(i.qty) || 0) * (parseFloat(i.rate) || 0));
+        }
+      });
+    }
+    if (quotedMatTotal === 0) {
+      quotedMatTotal = parseFloat(job.estimatedMaterialCost || job.materialCost || 0);
+    }
+
+    // 4. Actual Materials & PO Total
+    const pos = store.getAll('purchaseOrders').filter(p => 
+      (p.jobId && (p.jobId === job.id || String(p.jobId) === String(job.id))) || 
+      (p.jobNumber && job && job.number && String(p.jobNumber) === String(job.number))
+    );
+    const totalPoCost = pos.reduce((sum, p) => sum + (p.total || 0), 0);
+    const matCost = (job.materials || []).reduce((sum, m) => sum + ((m.quantity || 1) * (m.unitCost || 0)), 0);
+    const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
+    const actualMatTotal = matCost + additionalMatCost + totalPoCost;
+
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <p style="font-size:13px; color:var(--text-secondary); margin:0">
+          Choose the basis for calculating the Deposit Invoice (Quoted or Actual hours & materials), then specify the deposit percentage.
+        </p>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+          <!-- Labor Source Selector -->
+          <div class="card" style="padding:12px; background:var(--bg-color); border:1px solid var(--border-color); margin-bottom:0">
+            <label class="form-label" style="font-weight:700; margin-bottom:8px; display:block">Labor Basis</label>
+            <div style="display:flex; flex-direction:column; gap:8px">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-labor-source" value="quoted" checked />
+                <span>Quoted Labor ($${quotedLaborTotal.toFixed(2)})</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-labor-source" value="actual" />
+                <span>Actual Timesheets ($${actualLaborTotal.toFixed(2)})</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Materials Source Selector -->
+          <div class="card" style="padding:12px; background:var(--bg-color); border:1px solid var(--border-color); margin-bottom:0">
+            <label class="form-label" style="font-weight:700; margin-bottom:8px; display:block">Materials Basis</label>
+            <div style="display:flex; flex-direction:column; gap:8px">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-mat-source" value="quoted" checked />
+                <span>Quoted Materials ($${quotedMatTotal.toFixed(2)})</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-mat-source" value="actual" />
+                <span>Actual Materials & POs ($${actualMatTotal.toFixed(2)})</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deposit Percentage & Presets -->
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-weight:700">Deposit Percentage (%)</label>
+          <div style="display:flex; gap:8px; align-items:center">
+            <input type="number" id="dep-percentage" class="form-input" min="1" max="100" value="10" step="1" style="width:110px; font-size:15px; font-weight:700" />
+            <div style="display:flex; gap:4px">
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="10">10%</button>
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="20">20%</button>
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="25">25%</button>
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="50">50%</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Calculation Summary Box -->
+        <div class="card" style="padding:16px; background:rgba(37,99,235,0.04); border:1.5px solid var(--color-primary-light); border-radius:8px; margin-bottom:0">
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px">
+            <span style="color:var(--text-secondary)">Selected Basis Subtotal:</span>
+            <span style="font-weight:600" id="dep-calc-basis">$0.00</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px">
+            <span style="color:var(--text-secondary)">Deposit Rate:</span>
+            <span style="font-weight:600; color:var(--color-primary)" id="dep-calc-rate">10%</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border-color); font-size:16px; font-weight:700">
+            <span>Deposit Amount Due:</span>
+            <span style="color:var(--color-primary)" id="dep-calc-total">$0.00</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-tertiary); margin-top:6px; text-align:right">
+            Remaining Unbilled Balance: <strong id="dep-calc-remaining">$0.00</strong>
+          </div>
+        </div>
+      </div>
+    `;
+
+    showModal({
+      title: 'Generate Deposit Invoice',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+        {
+          label: 'Create Deposit Invoice', className: 'btn-primary', onClick: (close) => {
+            const modalEl = document.querySelector('.modal');
+            const laborSrc = modalEl.querySelector('input[name="dep-labor-source"]:checked').value;
+            const matSrc = modalEl.querySelector('input[name="dep-mat-source"]:checked').value;
+            const pct = parseFloat(modalEl.querySelector('#dep-percentage').value) || 0;
+
+            if (pct <= 0 || pct > 100) {
+              showToast('Please enter a valid deposit percentage (1-100%)', 'error');
+              return;
+            }
+
+            const laborVal = laborSrc === 'quoted' ? quotedLaborTotal : actualLaborTotal;
+            const matVal = matSrc === 'quoted' ? quotedMatTotal : actualMatTotal;
+            const basisSubtotal = laborVal + matVal;
+            const depositSubtotal = basisSubtotal * (pct / 100);
+
+            const laborLabel = laborSrc === 'quoted' ? 'Quoted' : 'Actual';
+            const matLabel = matSrc === 'quoted' ? 'Quoted' : 'Actual';
+
+            const sections = [{
+              id: store.generateId(),
+              name: `Deposit (${pct}%)`,
+              lineItems: [{
+                id: store.generateId(),
+                description: `Deposit Payment (${pct}% of ${laborLabel} Labor & ${matLabel} Materials)`,
+                type: 'other',
+                qty: 1,
+                rate: depositSubtotal,
+                total: depositSubtotal
+              }],
+              subtotal: depositSubtotal
+            }];
+
+            // Record deposit on job record for easy tracking
+            job.depositInvoicedAmount = (job.depositInvoicedAmount || 0) + depositSubtotal;
+            job.depositPercentage = pct;
+            store.update('jobs', job.id, {
+              depositInvoicedAmount: job.depositInvoicedAmount,
+              depositPercentage: pct
+            });
+
+            createDraftInvoice('Deposit', sections, depositSubtotal, quoteToUse);
+            close();
+          }
+        }
+      ]
+    });
+
+    // Attach dynamic calculation listeners
+    setTimeout(() => {
+      const modalEl = document.querySelector('.modal');
+      if (!modalEl) return;
+
+      function updateDepositCalc() {
+        const laborSrc = modalEl.querySelector('input[name="dep-labor-source"]:checked')?.value || 'quoted';
+        const matSrc = modalEl.querySelector('input[name="dep-mat-source"]:checked')?.value || 'quoted';
+        const pct = parseFloat(modalEl.querySelector('#dep-percentage')?.value) || 0;
+
+        const laborVal = laborSrc === 'quoted' ? quotedLaborTotal : actualLaborTotal;
+        const matVal = matSrc === 'quoted' ? quotedMatTotal : actualMatTotal;
+        const basisSubtotal = laborVal + matVal;
+        const depositSubtotal = basisSubtotal * (pct / 100);
+        const remaining = Math.max(0, basisSubtotal - depositSubtotal);
+
+        modalEl.querySelector('#dep-calc-basis').textContent = '$' + basisSubtotal.toFixed(2);
+        modalEl.querySelector('#dep-calc-rate').textContent = pct + '%';
+        modalEl.querySelector('#dep-calc-total').textContent = '$' + depositSubtotal.toFixed(2);
+        modalEl.querySelector('#dep-calc-remaining').textContent = '$' + remaining.toFixed(2);
+      }
+
+      modalEl.querySelectorAll('input[name="dep-labor-source"], input[name="dep-mat-source"]').forEach(r => {
+        r.addEventListener('change', updateDepositCalc);
+      });
+
+      const pctInput = modalEl.querySelector('#dep-percentage');
+      pctInput?.addEventListener('input', updateDepositCalc);
+
+      modalEl.querySelectorAll('.btn-dep-preset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          pctInput.value = e.currentTarget.dataset.pct;
+          updateDepositCalc();
+        });
+      });
+
+      updateDepositCalc();
+    }, 50);
   }
 
   function getStockOptionsHtml() {
@@ -685,7 +954,7 @@ export function renderJobDetail(container, { id, tab }) {
 
   function renderTabContent() {
     // Sanitize activeTab based on user permissions
-    if (activeTab === 'costs' && !hasPermission('Jobs', 'view_costs')) {
+    if ((activeTab === 'costs' || activeTab === 'financials') && !hasPermission('Jobs', 'view_costs')) {
       activeTab = 'overview';
     } else if (activeTab === 'quotes' && !hasPermission('Jobs', 'view_quotes_tab')) {
       activeTab = 'overview';
@@ -2227,7 +2496,7 @@ export function renderJobDetail(container, { id, tab }) {
           });
         });
       });
-    } else if (activeTab === 'costs') {
+    } else if (activeTab === 'costs' || activeTab === 'financials') {
       // Auto-pull materials from quote if empty
       if (!job.materials) {
         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
@@ -2291,41 +2560,36 @@ export function renderJobDetail(container, { id, tab }) {
         totalLaborCost += (t.hours * t.rate);
       });
 
-      // ---- NEW: Calculate Asset Recovery Costs ----
-      const assetUsage = store.getAll('assetUsage').filter(au => au.jobId === id);
-      const allAssets = store.getAll('assets');
-      let totalAssetCost = 0;
-      const usageList = assetUsage.map(au => {
-        const asset = allAssets.find(a => a.id === au.assetId);
-        const rate = au.recoveryRate || (asset ? asset.recoveryRate : 0) || 0;
-        const cost = au.hours * rate;
-        totalAssetCost += cost;
-        return { ...au, rate, cost };
-      });
-
-      // Determine material cost (Internal)
+      // Purchase orders & Materials
+      const pos = store.getAll('purchaseOrders').filter(p => 
+        (p.jobId && (p.jobId === id || String(p.jobId) === String(id))) || 
+        (p.jobNumber && job && job.number && String(p.jobNumber) === String(job.number))
+      );
+      const totalPoCost = pos.reduce((sum, p) => sum + (p.total || 0), 0);
       const matCost = job.materials.reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
       const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
-      const totalMatCost = matCost + additionalMatCost;
+      const totalMatCost = matCost + additionalMatCost + totalPoCost;
+
+      // Invoices
+      const jobInvoices = store.getAll('invoices').filter(i => (i.jobId === id || String(i.jobId) === String(id)) && i.status !== 'Void');
+      const totalInvoiced = jobInvoices.reduce((sum, i) => sum + (i.total || 0), 0);
+      const totalPaid = jobInvoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + (i.total || 0), 0);
 
       // Determine billable material cost (with markup tiers)
       const settings = store.getSettings();
       const billableMatTotal = calculateTotalBillableMaterials(job.materials, settings);
-      // For additional costs, we apply the default markup or minimum
       const billableAdditional = calculateBillableMaterialPrice(additionalMatCost, settings);
       const totalBillableMat = billableMatTotal + (additionalMatCost > 0 ? billableAdditional - additionalMatCost : 0) + additionalMatCost;
 
       // Update job properties silently if they changed
-      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost || job.assetCost !== totalAssetCost) {
+      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost) {
         job.laborCost = totalLaborCost;
         job.estimatedHours = totalLoggedHours;
         job.materialCost = totalMatCost;
-        job.assetCost = totalAssetCost;
         store.update('jobs', id, {
           laborCost: totalLaborCost,
           estimatedHours: totalLoggedHours,
-          materialCost: totalMatCost,
-          assetCost: totalAssetCost
+          materialCost: totalMatCost
         });
       }
 
@@ -2334,11 +2598,6 @@ export function renderJobDetail(container, { id, tab }) {
       const minFee = currentProfile ? (currentProfile.minCallOutFee || 0) : 0;
       const finalBillableLabor = Math.max(billableLabor, minFee);
       const billableTotal = finalBillableLabor + totalBillableMat;
-
-      // True Profit = Revenue - (Labor Cost + Material Cost + Asset Recovery)
-      const totalInternalCost = totalLaborCost + totalMatCost + totalAssetCost;
-      const profit = billableTotal - totalInternalCost;
-      const margin = billableTotal > 0 ? (profit / billableTotal) * 100 : 0;
 
       const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id || q.number === job.quoteNumber);
       const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
@@ -2375,15 +2634,56 @@ export function renderJobDetail(container, { id, tab }) {
       const estTotal = estLabor + estMaterial;
       const actLabor = totalLaborCost;
       const actMaterial = totalMatCost;
-      const actAsset = totalAssetCost;
-      const actTotal = actLabor + actMaterial + actAsset;
+      const actTotal = actLabor + actMaterial;
+
+      const contractPrice = acceptedQuote ? (acceptedQuote.total || estTotal) : (job.total || billableTotal || estTotal);
+      const profit = contractPrice - actTotal;
+      const margin = contractPrice > 0 ? (profit / contractPrice) * 100 : 0;
+
       const varianceLabor = actLabor - estLabor;
       const varianceMaterial = actMaterial - estMaterial;
       const varianceTotal = actTotal - estTotal;
 
+      let marginBadgeClass = 'badge-neutral';
+      if (margin >= 35) marginBadgeClass = 'badge-success';
+      else if (margin >= 20) marginBadgeClass = 'badge-info';
+      else if (margin >= 5) marginBadgeClass = 'badge-warning';
+      else marginBadgeClass = 'badge-danger';
+
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
           
+          <!-- Executive KPI Scorecard Grid -->
+          <div class="grid-4" style="gap:16px">
+            <div class="card" style="padding:16px; border-left:4px solid var(--color-primary)">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Contract / Quoted Price</div>
+              <div style="font-size:22px; font-weight:700; color:var(--text-primary)">$${contractPrice.toFixed(2)}</div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">${acceptedQuote ? `From Accepted Quote ${acceptedQuote.number}` : 'Standard Job Pricing'}</div>
+            </div>
+
+            <div class="card" style="padding:16px; border-left:4px solid var(--color-info)">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Invoiced to Date</div>
+              <div style="font-size:22px; font-weight:700; color:var(--color-info)">$${totalInvoiced.toFixed(2)}</div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">Paid: $${totalPaid.toFixed(2)} | Unbilled: $${Math.max(0, contractPrice - totalInvoiced).toFixed(2)}</div>
+            </div>
+
+            <div class="card" style="padding:16px; border-left:4px solid var(--color-warning)">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Total Realized Cost</div>
+              <div style="font-size:22px; font-weight:700; color:var(--text-primary)">$${actTotal.toFixed(2)}</div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">Labor: $${actLabor.toFixed(2)} | Mat & POs: $${actMaterial.toFixed(2)}</div>
+            </div>
+
+            <div class="card" style="padding:16px; border-left:4px solid ${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Gross Profit & Margin</div>
+              <div style="font-size:22px; font-weight:700; color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+                $${profit.toFixed(2)}
+              </div>
+              <div style="margin-top:4px">
+                <span class="badge ${marginBadgeClass}" style="font-weight:700">${margin.toFixed(1)}% Margin</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Budget Deviation Tracker Card -->
           <div class="card" style="border: 1.5px solid ${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success)'}">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; background:${varianceTotal > 0 ? 'rgba(239,68,68,0.02)' : 'rgba(16,185,129,0.02)'}; padding: 12px 16px">
@@ -2458,21 +2758,13 @@ export function renderJobDetail(container, { id, tab }) {
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-weight:600">Material Costs</td>
+                    <td style="font-weight:600">Material & PO Costs</td>
                     <td style="text-align:right; color:var(--text-secondary)">$${estMaterial.toFixed(2)}</td>
                     <td style="text-align:right; font-weight:600">$${actMaterial.toFixed(2)}</td>
                     <td style="text-align:right; font-weight:600; color:${varianceMaterial > 0 ? 'var(--color-danger)' : varianceMaterial < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
                       ${varianceMaterial > 0 ? `+$${varianceMaterial.toFixed(2)}` : varianceMaterial < 0 ? `-$${Math.abs(varianceMaterial).toFixed(2)}` : '$0.00'}
                     </td>
                   </tr>
-                  ${actAsset > 0 ? `
-                    <tr>
-                      <td style="font-weight:600">Asset Recovery (Van/Tools)</td>
-                      <td style="text-align:right; color:var(--text-secondary)">$0.00</td>
-                      <td style="text-align:right; font-weight:600">$${actAsset.toFixed(2)}</td>
-                      <td style="text-align:right; font-weight:600; color:var(--color-danger)">+$${actAsset.toFixed(2)}</td>
-                    </tr>
-                  ` : ''}
                 </tbody>
                 <tfoot>
                   <tr style="border-top: 2px solid var(--border-color); font-weight:700">
@@ -2487,270 +2779,149 @@ export function renderJobDetail(container, { id, tab }) {
               </table>
             </div>
           </div>
-          
-          <div class="grid-2">
+
+          <!-- Quotes & Variations Card -->
           <div class="card">
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-              <h4 style="margin:0">Technicians & Internal Cost</h4>
-              <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
-                Actual Cost (Tech Pay)
-              </div>
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Quotes & Variations</h4>
+              <button class="btn btn-sm btn-primary" id="btn-financials-new-quote"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Create Quote</button>
             </div>
-            <div class="card-body">
-              <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
-                Labor costs are based on individual technician pay rates.
-              </div>
+            <div class="card-body" style="padding:0">
               <table class="data-table" style="font-size:13px">
                 <thead>
                   <tr>
-                    <th>Technician</th>
-                    <th style="width:80px">Hours</th>
-                    <th style="width:80px">Pay Rate</th>
-                    <th style="width:100px">Actual Cost</th>
+                    <th>Quote #</th>
+                    <th>Title</th>
+                    <th>Issue Date</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th style="text-align:right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${autoTechs.map(t => `
+                  ${linkedQuotes.length ? linkedQuotes.map(q => `
                     <tr>
-                      <td>${escapeHTML(t.name)}</td>
-                      <td style="font-weight:600">${t.hours.toFixed(2)}</td>
-                      <td>$${(t.payRate || t.rate).toFixed(2)}</td>
-                      <td style="font-weight:600">$${(t.hours * (t.payRate || t.rate)).toFixed(2)}</td>
+                      <td style="font-weight:600"><a href="#/quotes/${q.id}" class="text-primary">${escapeHTML(q.number)}</a></td>
+                      <td>${escapeHTML(q.title || 'Untitled Quote')}</td>
+                      <td>${q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '-'}</td>
+                      <td><span class="badge ${q.status === 'Accepted' ? 'badge-success' : (q.status === 'Declined' ? 'badge-danger' : (q.status === 'Sent' ? 'badge-info' : 'badge-neutral'))}">${escapeHTML(q.status || 'Draft')}</span></td>
+                      <td style="font-weight:600">$${(q.total || 0).toFixed(2)}</td>
+                      <td style="text-align:right">
+                        <a href="#/quotes/${q.id}" class="btn btn-secondary btn-sm">View</a>
+                      </td>
                     </tr>
-                  `).join('')}
-                  ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet.</td></tr>' : ''}
+                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No quotes linked to this job yet.</td></tr>'}
                 </tbody>
               </table>
             </div>
           </div>
 
+          <!-- Invoicing & Billing Summary Card -->
           <div class="card">
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-              <h4 style="margin:0">Asset Recovery</h4>
-              <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
-                Internal Recovery (Tool/Van)
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Invoices & Progress Billing</h4>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-sm btn-secondary" id="btn-financials-deposit-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">request_quote</span> Deposit Invoice</button>
+                <button class="btn btn-sm btn-secondary" id="btn-financials-progress-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">payments</span> Progress Invoice</button>
+                <button class="btn btn-sm btn-primary" id="btn-financials-final-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">receipt_long</span> Create Invoice</button>
               </div>
             </div>
-            <div class="card-body">
-              <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
-                Calculated as (Asset Recovery Rate × Hours Used).
-              </div>
+            <div class="card-body" style="padding:0">
               <table class="data-table" style="font-size:13px">
-                <thead>
-                  <tr>
-                    <th>Asset</th>
-                    <th style="width:80px">Hours</th>
-                    <th style="width:80px">Rate</th>
-                    <th style="width:100px">Recovery</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Invoice #</th><th>Type</th><th>Issue Date</th><th>Due Date</th><th>Total</th><th>Status</th></tr></thead>
                 <tbody>
-                  ${usageList.map(u => `
+                  ${jobInvoices.length ? jobInvoices.map(i => `
                     <tr>
-                      <td>${escapeHTML(u.assetName)}</td>
-                      <td style="font-weight:600">${u.hours.toFixed(2)}</td>
-                      <td>$${u.rate.toFixed(2)}</td>
-                      <td style="font-weight:600">$${u.cost.toFixed(2)}</td>
+                      <td style="font-weight:600"><a href="#/invoices/${i.id}" class="text-primary">${escapeHTML(i.number)}</a></td>
+                      <td>${escapeHTML(i.type || 'Standard')}</td>
+                      <td>${i.issueDate ? new Date(i.issueDate).toLocaleDateString() : '-'}</td>
+                      <td>${i.dueDate ? new Date(i.dueDate).toLocaleDateString() : '-'}</td>
+                      <td style="font-weight:600">$${(i.total || 0).toFixed(2)}</td>
+                      <td><span class="badge ${i.status === 'Paid' ? 'badge-success' : i.status === 'Overdue' ? 'badge-danger' : 'badge-warning'}">${escapeHTML(i.status || 'Draft')}</span></td>
                     </tr>
-                  `).join('')}
-                  ${usageList.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No asset usage recorded.</td></tr>' : ''}
+                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No invoices issued for this job yet.</td></tr>'}
                 </tbody>
-                ${usageList.length > 0 ? `
-                  <tfoot>
-                    <tr style="border-top:2px solid var(--border-color)">
-                      <td colspan="3" style="text-align:right; font-weight:700">Total Asset Recovery:</td>
-                      <td style="font-weight:700; color:var(--color-primary)">$${totalAssetCost.toFixed(2)}</td>
-                    </tr>
-                  </tfoot>
-                ` : ''}
               </table>
             </div>
           </div>
-          
-          
-          <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+
+          <div class="grid-2">
             <div class="card">
               <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-                <h4 style="margin:0">Material Costs</h4>
-                <button class="btn btn-ghost btn-sm" id="btn-refresh-materials" title="Sync materials with the linked quote">
-                  <span class="material-icons-outlined" style="font-size:16px; margin-right:4px;">sync</span> Sync Quote
-                </button>
+                <h4 style="margin:0">Technicians & Internal Cost</h4>
+                <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
+                  Actual Cost (Tech Pay)
+                </div>
               </div>
               <div class="card-body">
-                <div id="materials-container" style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-                  ${job.materials.map((m, i) => `
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid var(--border-color);border-radius:4px">
-                      <div>
-                        <div class="font-medium">${escapeHTML(m.name)}</div>
-                        <div class="text-secondary" style="font-size:12px">${m.quantity} x $${(m.unitCost || 0).toFixed(2)}</div>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:12px">
-                        <div class="font-medium">$${(m.quantity * (m.unitCost || 0)).toFixed(2)}</div>
-                        <button class="btn btn-ghost btn-sm btn-icon btn-remove-mat" data-index="${i}"><span class="material-icons-outlined" style="color:var(--color-danger);font-size:16px">delete</span></button>
-                      </div>
-                    </div>
-                  `).join('')}
-                  ${(job.materials.length === 0) ? '<div class="text-secondary" style="font-size:14px">No materials added.</div>' : ''}
+                <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
+                  Labor costs are based on individual technician pay rates.
                 </div>
-                <div style="display:flex;gap:8px">
-                  <select class="form-select" id="mat-select" style="flex:2">
-                    <option value="">Select from Stock...</option>
-                    ${getStockOptionsHtml()}
-                  </select>
-                  <input type="number" class="form-input" id="mat-qty" value="1" min="1" style="flex:1" />
-                  <button class="btn btn-primary" id="btn-add-material">Add Item</button>
-                </div>
-                <div class="form-group" style="margin-top:16px;margin-bottom:0">
-                  <label class="form-label">Manual Add. Cost ($) (Permits, Travel, etc.)</label>
-                  <input type="number" class="form-input" id="inp-material-cost" value="${job.additionalMaterialCost || 0}" step="0.01" />
-                </div>
+                <table class="data-table" style="font-size:13px">
+                  <thead>
+                    <tr>
+                      <th>Technician</th>
+                      <th style="width:80px">Hours</th>
+                      <th style="width:80px">Pay Rate</th>
+                      <th style="width:100px">Actual Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${autoTechs.map(t => `
+                      <tr>
+                        <td>${escapeHTML(t.name)}</td>
+                        <td style="font-weight:600">${t.hours.toFixed(2)}</td>
+                        <td>$${(t.payRate || t.rate).toFixed(2)}</td>
+                        <td style="font-weight:600">$${(t.hours * (t.payRate || t.rate)).toFixed(2)}</td>
+                      </tr>
+                    `).join('')}
+                    ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet.</td></tr>' : ''}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             <div class="card">
-              <div class="card-header"><h4>Job Cost Summary</h4></div>
-              <div class="card-body">
-                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Logged Hours</span><span class="font-medium">${totalLoggedHours.toFixed(2)}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Actual Internal Cost</span><span class="font-medium">$${(totalLaborCost + totalMatCost).toFixed(2)}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Total Billable Amount</span><span class="font-medium" style="color:var(--color-primary)">$${billableTotal.toFixed(2)}</span>
-                </div>
-                <div style="margin-top:16px; padding:16px; border-radius:8px; background:${profit >= 0 ? 'var(--color-success-bg)' : 'var(--color-danger-bg)'}; color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}; display:flex; flex-direction:column; align-items:center; gap:4px">
-                  <div style="font-size:12px; opacity:0.8; text-transform:uppercase; letter-spacing:0.5px">Est. Profit / Loss</div>
-                  <div style="font-size:24px; font-weight:700">$${profit.toFixed(2)}</div>
-                  <div style="font-size:14px; font-weight:600">${margin.toFixed(1)}% Margin</div>
-                </div>
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+                <h4 style="margin:0">Direct Overhead & Additional Material Costs</h4>
+                <button class="btn btn-primary btn-sm" id="btn-save-costs"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">save</span> Save Adjustments</button>
               </div>
-              <div class="card-footer">
-                <button class="btn btn-primary" id="btn-save-costs" style="width:100%"><span class="material-icons-outlined">save</span> Save Additional Costs</button>
+              <div class="card-body">
+                <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
+                  Record manual direct job expenses to reflect true job margin.
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">Manual Additional Expenses ($) (Permits, Hire Equipment, Freight, Parking)</label>
+                  <input type="number" class="form-input" id="inp-material-cost" value="${job.additionalMaterialCost || 0}" step="0.01" style="max-width:100%" />
+                </div>
               </div>
             </div>
           </div>
+
         </div>
-      </div>
       `;
 
-      tc.querySelector('#inp-labor-profile')?.addEventListener('change', (e) => {
-        job.laborRateProfileId = e.target.value;
-        store.update('jobs', id, { laborRateProfileId: job.laborRateProfileId });
-        renderTabContent();
-      });
-
-      tc.addEventListener('click', (e) => {
-        const removeMatBtn = e.target.closest('.btn-remove-mat');
-        if (removeMatBtn) {
-          const idx = parseInt(removeMatBtn.dataset.index);
-          job.materials.splice(idx, 1);
-          renderTabContent();
-        }
-      });
-
-      tc.querySelector('#btn-refresh-materials')?.addEventListener('click', () => {
-        const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
-        const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
-
-        if (!acceptedQuote) {
-          showToast('No linked accepted quote found.', 'error');
-          return;
-        }
-
-        const manualItems = (job.materials || []).filter(m => !m.fromQuote);
-        const newQuoteItems = [];
-
-        const items = [];
-        if (acceptedQuote.sections && Array.isArray(acceptedQuote.sections)) {
-          acceptedQuote.sections.forEach(sec => {
-            if (sec.lineItems && Array.isArray(sec.lineItems)) {
-              items.push(...sec.lineItems);
-            }
-          });
-        }
-        if (acceptedQuote.lineItems && Array.isArray(acceptedQuote.lineItems)) {
-          items.push(...acceptedQuote.lineItems);
-        }
-
-        items.forEach(item => {
-          if (item.type === 'material') {
-            const sMatch = store.getAll('stock').find(s => s.name === item.description);
-            newQuoteItems.push({
-              stockId: sMatch ? sMatch.id : null,
-              name: item.description || 'Unknown Material',
-              quantity: item.qty || 1,
-              unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
-              fromQuote: true
-            });
-          }
+      tc.querySelector('#btn-financials-new-quote')?.addEventListener('click', () => {
+        const newQ = store.create('quotes', {
+          customerId: job.customerId,
+          customerName: job.customerName,
+          title: job.title,
+          jobId: job.id,
+          status: 'Draft',
+          version: 1,
+          sections: []
         });
-
-        job.materials = [...newQuoteItems, ...manualItems];
-        store.update('jobs', id, { materials: job.materials });
-        showToast('Materials refreshed from Quote', 'success');
-        renderTabContent();
+        window.location.hash = `#/quotes/${newQ.id}`;
       });
 
-      function updateMaterialCostLive() {
-        const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
-        const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
-        const m = addedMat + addCost;
-        tc.querySelector('#sum-mat').textContent = '$' + m.toFixed(2);
-        tc.querySelector('#sum-total').textContent = '$' + (totalLaborCost + m).toFixed(2);
-      }
-
-      tc.querySelector('#inp-material-cost')?.addEventListener('input', updateMaterialCostLive);
-
-      tc.querySelector('#btn-add-material')?.addEventListener('click', () => {
-        const matSel = tc.querySelector('#mat-select');
-        const qty = parseInt(tc.querySelector('#mat-qty').value) || 1;
-        const val = matSel.value;
-        if (!val) return;
-
-        const [stockId, locationName] = val.split('::');
-        const stockItem = store.getById('stock', stockId);
-        if (!stockItem) return;
-
-        // Find quantity at the specific location
-        let availableQty = 0;
-        let locObj = null;
-        if (stockItem.locations && Array.isArray(stockItem.locations)) {
-          locObj = stockItem.locations.find(l => l.location === locationName);
-          availableQty = locObj ? locObj.quantity : 0;
-        } else {
-          availableQty = stockItem.quantity || 0;
-        }
-
-        if (availableQty < qty) {
-          showToast(`Not enough stock at ${locationName}. Available: ${availableQty}`, 'error');
-          return;
-        }
-
-        // Deduct from stock at the specific location
-        if (locObj) {
-          locObj.quantity -= qty;
-          stockItem.locations = stockItem.locations.filter(l => l.quantity > 0);
-          stockItem.quantity = stockItem.locations.reduce((sum, l) => sum + l.quantity, 0);
-          stockItem.location = stockItem.locations[0]?.location || 'Main Warehouse';
-        } else {
-          stockItem.quantity -= qty;
-        }
-        
-        store.update('stock', stockId, stockItem);
-        cachedStockOptionsHtml = null; // Invalidate cache
-
-        // Add to job materials
-        job.materials.push({
-          stockId: stockItem.id,
-          name: `${stockItem.name} (${locationName})`,
-          quantity: qty,
-          unitCost: stockItem.costPrice || stockItem.unitPrice || 0,
-          fromQuote: false
-        });
-
-        showToast(`Added ${qty}x ${stockItem.name} from ${locationName}`, 'success');
-        renderTabContent();
+      tc.querySelector('#btn-financials-deposit-inv')?.addEventListener('click', () => {
+        triggerInvoiceGenerationFlow('Deposit');
+      });
+      tc.querySelector('#btn-financials-progress-inv')?.addEventListener('click', () => {
+        triggerInvoiceGenerationFlow('Progress');
+      });
+      tc.querySelector('#btn-financials-final-inv')?.addEventListener('click', () => {
+        triggerInvoiceGenerationFlow('Standard');
       });
 
       tc.querySelector('#btn-save-costs')?.addEventListener('click', () => {
@@ -2766,7 +2937,7 @@ export function renderJobDetail(container, { id, tab }) {
           materialCost: mat,
           additionalMaterialCost: addCost
         });
-        showToast('Additional costs saved', 'success');
+        showToast('Direct expenses saved', 'success');
         renderTabContent();
       });
     } else if (activeTab === 'quotes') {
@@ -3351,8 +3522,32 @@ export function renderJobDetail(container, { id, tab }) {
         });
       });
     } else if (activeTab === 'materials') {
-      const pos = store.getAll('purchaseOrders').filter(p => p.jobId === id);
-      const allocatedMaterials = store.getAll('jobMaterials').filter(m => m.jobId === id);
+      const pos = store.getAll('purchaseOrders').filter(p => 
+        (p.jobId && (p.jobId === id || String(p.jobId) === String(id))) || 
+        (p.jobNumber && job && job.number && String(p.jobNumber) === String(job.number))
+      );
+
+      const storeJobMaterials = store.getAll('jobMaterials').filter(m => 
+        (m.jobId && (m.jobId === id || String(m.jobId) === String(id))) || 
+        (m.jobNumber && job && job.number && String(m.jobNumber) === String(job.number))
+      );
+
+      const jobObjMaterials = Array.isArray(job.materials) ? job.materials : [];
+      const materialMap = new Map();
+      [...jobObjMaterials, ...storeJobMaterials].forEach(m => {
+        const key = m.id || `${m.partId || m.name}-${m.date}`;
+        if (!materialMap.has(key)) {
+          materialMap.set(key, {
+            ...m,
+            partName: m.partName || m.name || 'Stock Item',
+            quantity: m.quantity || 1,
+            unitCost: m.unitCost || 0,
+            totalCost: m.totalCost || ((m.quantity || 1) * (m.unitCost || 0)),
+            date: m.date || new Date().toISOString()
+          });
+        }
+      });
+      const allocatedMaterials = Array.from(materialMap.values());
       
       const totalPoCost = pos.reduce((sum, p) => sum + (p.total || 0), 0);
       const totalMaterialCost = allocatedMaterials.reduce((sum, m) => sum + (m.totalCost || 0), 0);
@@ -3379,7 +3574,10 @@ export function renderJobDetail(container, { id, tab }) {
           <div class="card" style="margin-bottom:var(--space-md)">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
               <h4 style="margin:0">Allocated Stock & Materials</h4>
-              <button class="btn btn-sm btn-secondary" id="btn-allocate-stock"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">inventory_2</span> Allocate Stock</button>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-sm btn-secondary" id="btn-import-quote-parts"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">download</span> Import Parts from Quote</button>
+                <button class="btn btn-sm btn-primary" id="btn-allocate-stock"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">inventory_2</span> Allocate Stock</button>
+              </div>
             </div>
             <div class="card-body" style="padding:0">
               <table class="data-table">
@@ -3423,6 +3621,68 @@ export function renderJobDetail(container, { id, tab }) {
           </div>
         </div>
       `;
+
+      tc.querySelector('#btn-import-quote-parts')?.addEventListener('click', () => {
+        const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id || q.number === job.quoteNumber);
+        const targetQuote = linkedQuotes.find(q => q.status === 'Accepted') || linkedQuotes[0] || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+
+        if (!targetQuote) {
+          showToast('No linked quote found for this job.', 'warning');
+          return;
+        }
+
+        const items = [];
+        if (targetQuote.sections && Array.isArray(targetQuote.sections)) {
+          targetQuote.sections.forEach(sec => {
+            if (sec.lineItems && Array.isArray(sec.lineItems)) {
+              items.push(...sec.lineItems);
+            }
+          });
+        }
+        if (targetQuote.lineItems && Array.isArray(targetQuote.lineItems)) {
+          items.push(...targetQuote.lineItems);
+        }
+        if (targetQuote.items && Array.isArray(targetQuote.items)) {
+          items.push(...targetQuote.items);
+        }
+
+        const materialItems = items.filter(i => i.type === 'material' || i.stockId || i.partId || i.type === 'part');
+
+        if (materialItems.length === 0) {
+          showToast(`No material parts found in Quote ${targetQuote.number}`, 'info');
+          return;
+        }
+
+        const stockItems = store.getAll('stock');
+        let importedCount = 0;
+
+        materialItems.forEach(item => {
+          const sMatch = stockItems.find(s => s.id === item.stockId || s.id === item.partId || (s.name && item.description && s.name.toLowerCase() === item.description.toLowerCase()));
+          const newMat = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+            jobId: id,
+            jobNumber: job.number,
+            partId: sMatch ? sMatch.id : (item.partId || item.stockId || null),
+            partName: item.description || item.name || (sMatch ? sMatch.name : 'Stock Item'),
+            name: item.description || item.name || (sMatch ? sMatch.name : 'Stock Item'),
+            quantity: parseFloat(item.qty || item.quantity || 1),
+            unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : (parseFloat(item.costPrice || item.unitCost || item.rate) || 0),
+            totalCost: (parseFloat(item.qty || item.quantity || 1)) * (sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : (parseFloat(item.costPrice || item.unitCost || item.rate) || 0)),
+            date: new Date().toISOString(),
+            fromQuote: true
+          };
+
+          store.create('jobMaterials', newMat);
+
+          if (!Array.isArray(job.materials)) job.materials = [];
+          job.materials.push(newMat);
+          importedCount++;
+        });
+
+        store.update('jobs', id, { materials: job.materials });
+        showToast(`Imported ${importedCount} material items from Quote ${targetQuote.number}`, 'success');
+        renderTabContent();
+      });
 
       tc.querySelector('#btn-allocate-stock')?.addEventListener('click', () => {
         const stockItems = store.getAll('stock');
@@ -3551,16 +3811,25 @@ export function renderJobDetail(container, { id, tab }) {
                       warningShown = true;
                     }
 
-                    store.create('jobMaterials', {
+                    const newMat = {
+                      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
                       jobId: id,
                       jobNumber: job.number,
                       partId: part.id,
                       partName: part.name,
+                      name: part.name,
                       quantity: item.qty,
                       unitCost: part.costPrice || 0,
                       totalCost: (part.costPrice || 0) * item.qty,
                       date: new Date().toISOString()
-                    });
+                    };
+
+                    store.create('jobMaterials', newMat);
+
+                    const existingMats = Array.isArray(job.materials) ? [...job.materials] : [];
+                    existingMats.push(newMat);
+                    job.materials = existingMats;
+                    store.update('jobs', id, { materials: existingMats });
 
                     store.update('stock', part.id, { quantity: currentQty - item.qty });
                   }
@@ -3631,6 +3900,7 @@ export function renderJobDetail(container, { id, tab }) {
                 const po = store.create('purchaseOrders', {
                   number: store.getNextNumber('PO-', 'purchaseOrders'),
                   jobId: id,
+                  jobNumber: job.number,
                   supplierName: supplier,
                   issueDate: new Date().toISOString(),
                   expectedDate: date,

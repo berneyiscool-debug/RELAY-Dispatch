@@ -38,7 +38,7 @@ const TABLE_MAP = {
   costCenters: 'cost_centers',
   emailLog: 'email_log',
   deputyAsks: null,
-  jobMaterials: null
+  jobMaterials: 'job_materials'
 };
 
 const TABLE_COLUMNS = {
@@ -344,11 +344,30 @@ const TABLE_COLUMNS = {
     "id",
     "company_id",
     "number",
+    "job_id",
+    "job_number",
     "supplier_id",
     "supplier_name",
+    "issue_date",
+    "expected_date",
     "status",
     "line_items",
+    "items",
     "total",
+    "created_at",
+    "updated_at"
+  ],
+  job_materials: [
+    "id",
+    "company_id",
+    "job_id",
+    "job_number",
+    "part_id",
+    "part_name",
+    "quantity",
+    "unit_cost",
+    "total_cost",
+    "date",
     "created_at",
     "updated_at"
   ],
@@ -640,7 +659,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 6);
+      const request = window.indexedDB.open(dbName, 7);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1597,9 +1616,33 @@ class DataStore {
       record.jobId = record.job_id;
       delete record.job_id;
     }
+    if (record.part_id !== undefined) {
+      record.partId = record.part_id;
+      delete record.part_id;
+    }
+    if (record.part_name !== undefined) {
+      record.partName = record.part_name;
+      delete record.part_name;
+    }
+    if (record.unit_cost !== undefined) {
+      record.unitCost = parseFloat(record.unit_cost);
+      delete record.unit_cost;
+    }
+    if (record.total_cost !== undefined) {
+      record.totalCost = parseFloat(record.total_cost);
+      delete record.total_cost;
+    }
     if (record.due_date !== undefined) {
       record.dueDate = record.due_date;
       delete record.due_date;
+    }
+    if (record.issue_date !== undefined) {
+      record.issueDate = record.issue_date;
+      delete record.issue_date;
+    }
+    if (record.expected_date !== undefined) {
+      record.expectedDate = record.expected_date;
+      delete record.expected_date;
     }
     if (record.paid_date !== undefined) {
       record.paidDate = record.paid_date;
@@ -1973,9 +2016,33 @@ class DataStore {
       record.job_id = record.jobId;
       delete record.jobId;
     }
+    if (record.partId !== undefined) {
+      record.part_id = record.partId;
+      delete record.partId;
+    }
+    if (record.partName !== undefined) {
+      record.part_name = record.partName;
+      delete record.partName;
+    }
+    if (record.unitCost !== undefined) {
+      record.unit_cost = record.unitCost;
+      delete record.unitCost;
+    }
+    if (record.totalCost !== undefined) {
+      record.total_cost = record.totalCost;
+      delete record.totalCost;
+    }
     if (record.dueDate !== undefined) {
       record.due_date = record.dueDate;
       delete record.dueDate;
+    }
+    if (record.issueDate !== undefined) {
+      record.issue_date = record.issueDate;
+      delete record.issueDate;
+    }
+    if (record.expectedDate !== undefined) {
+      record.expected_date = record.expectedDate;
+      delete record.expectedDate;
     }
     if (record.paidDate !== undefined) {
       record.paid_date = record.paidDate;
@@ -2311,6 +2378,13 @@ class DataStore {
     }
     if (collection === 'projects' && !item.number) {
       item.number = this.getNextNumber('PRJ-', 'projects');
+    }
+    if ((collection === 'quotes' || collection === 'invoices') && !item.laborProfileId) {
+      const settings = this.getSettings();
+      const defaultRateObj = (settings.laborRates && settings.laborRates.find(r => r.isDefault)) || (settings.laborRates && settings.laborRates[0]);
+      if (defaultRateObj) {
+        item.laborProfileId = defaultRateObj.id;
+      }
     }
     item.createdAt = item.createdAt || new Date().toISOString();
     item.updatedAt = new Date().toISOString();
@@ -3199,7 +3273,7 @@ class DataStore {
         'customers', 'assets', 'maintenancePlans', 'taskTemplates', 'quotes', 
         'jobs', 'invoices', 'stock', 'timesheets', 'contractors', 'suppliers', 
         'purchaseOrders', 'notifications', 'formTemplates', 'formInstances', 
-        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog'
+        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog', 'jobMaterials'
       ];
       
       await Promise.all(
