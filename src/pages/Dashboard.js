@@ -47,8 +47,8 @@ const ZOOM_STEP = 0.05;     // zoom changes in clean 5% increments
 // recalled view clears the floating .dash-topbar (top) and the viewport edge (left),
 // instead of landing at (0,0) where the topbar gradient clips its top-left. Applied to
 // BOTH capture and recall so newly-saved views stay idempotent.
-const VIEW_INSET_X = 20;
-const VIEW_INSET_Y = 20;
+const VIEW_INSET_X = 24;
+const VIEW_INSET_Y = 70;
 
 // Default pixel sizes derived from a widget's declared width/height class
 const W_PX = { S: 300, M: 460, L: 680, XL: 680 };
@@ -455,7 +455,7 @@ async function loadLayout() {
 
   return {
     widgets,
-    view: view || { panX: 40, panY: 90, zoom: 1 },
+    view: view || { panX: 24, panY: 70, zoom: 1 },
     pins,
   };
 }
