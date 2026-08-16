@@ -12,6 +12,7 @@
 // ============================================
 import { store } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
+import { escapeHTML } from '../utils/security.js';
 import { calculateTotalBillableMaterials } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 import { FLAGS } from '../utils/flags.js';
