@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — TOAST NOTIFICATIONS
+// RELAY — TOAST NOTIFICATIONS & SYSTEM NOTICES
 // ============================================
 
 import { store } from '../data/store.js';
@@ -17,25 +17,44 @@ function ensureContainer() {
   return container;
 }
 
+function trimNotices() {
+  const allNotices = store.getAll('notices') || [];
+  if (allNotices.length > 40) {
+    // Sort oldest first and trim items beyond 40
+    const sorted = [...allNotices].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+    const toRemove = sorted.slice(0, sorted.length - 40);
+    toRemove.forEach(n => {
+      store.delete('notices', n.id);
+    });
+  }
+}
+
 export function showToast(message, type = 'info', options = {}) {
   const duration = typeof options === 'number' ? options : (options.duration || 3500);
   const link = typeof options === 'object' ? options.link : null;
   const skipBell = typeof options === 'object' ? options.skipBell : false;
 
-  // Integrate clickable toasts into the notification bell automatically
-  if (link && !skipBell) {
-    let title = 'Notification';
-    if (type === 'success') title = 'Success';
-    if (type === 'error') title = 'Error';
-    if (type === 'warning') title = 'Warning';
-    
-    store.create('notifications', {
-      title,
-      message,
-      link,
-      read: false,
-      createdBy: 'System'
-    });
+  // Integrate toasts into the Notices dropdown automatically
+  if (!skipBell) {
+    try {
+      let title = 'System Notice';
+      if (type === 'success') title = 'Success';
+      if (type === 'error') title = 'System Alert';
+      if (type === 'warning') title = 'Warning';
+      
+      store.create('notices', {
+        title,
+        message,
+        link,
+        type,
+        read: false,
+        createdBy: 'System',
+        createdAt: new Date().toISOString()
+      });
+      trimNotices();
+    } catch (e) {
+      console.warn('Failed to log notice:', e);
+    }
   }
 
   const c = ensureContainer();
@@ -80,10 +99,18 @@ export function showToast(message, type = 'info', options = {}) {
   }, duration);
 }
 
-export function addSystemNotification(title, message, link) {
-  store.create('notifications', {
-    title, message, link, read: false,
-    createdBy: 'System'
+export function addSystemNotice(title, message, link, type = 'info') {
+  store.create('notices', {
+    title,
+    message,
+    link,
+    type,
+    read: false,
+    createdBy: 'System',
+    createdAt: new Date().toISOString()
   });
-  showToast(`${title}: ${message}`, 'info', { link, skipBell: true });
+  trimNotices();
+  showToast(`${title}: ${message}`, type, { link, skipBell: true });
 }
+
+export const addSystemNotification = addSystemNotice;

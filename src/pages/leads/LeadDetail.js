@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — LEAD DETAIL PAGE
+// SIMPRO CLONE — LEAD DETAIL PAGE (High Density)
 // ============================================
 
 import { store } from '../../data/store.js';
@@ -36,33 +36,66 @@ export function renderLeadDetail(container, { id }) {
   const prob = likelihoods[lead.status] ?? 0;
   const weightedValue = (lead.value || 0) * (prob / 100);
 
+  function r(label, value, opts = {}) {
+    return `
+      <div class="detail-row">
+        <span class="detail-row-label">${label}</span>
+        <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${value || '—'}</span>
+      </div>`;
+  }
+
   function render() {
+    if (!lead.stageHistory || !Array.isArray(lead.stageHistory)) {
+      lead.stageHistory = [];
+    }
+
+    const allActivities = store.getAll('activity') || [];
+    const globalLeadActivities = allActivities.filter(a => (a.leadId === id || a.entityId === id));
+    
+    // De-duplicate activities by id or timestamp
+    const activityMap = new Map();
+    (lead.stageHistory || []).forEach(a => activityMap.set(a.id || a.timestamp, a));
+    globalLeadActivities.forEach(a => {
+      const key = a.id || a.timestamp;
+      if (!activityMap.has(key)) {
+        activityMap.set(key, {
+          id: a.id,
+          status: a.status || lead.status,
+          text: a.text,
+          user: a.user || 'System',
+          timestamp: a.timestamp
+        });
+      }
+    });
+
+    const leadActivities = Array.from(activityMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
     container.innerHTML = `
       ${renderDetailHeader({
-        title: lead.title,
+        title: escapeHTML(lead.title),
         icon: 'trending_up',
         iconBgColor: 'var(--color-info-bg)',
         iconTextColor: 'var(--color-info)',
         metaHtml: `
           <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(lead.customerName)}</span>
           <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(lead.contactName || '—')}</span>
-          <span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${lead.status}</span>
+          <span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${escapeHTML(lead.status || 'New')}</span>
         `,
         actionsHtml: `
-          <button class="btn btn-primary" id="btn-convert-quote" data-tooltip="Convert this prospective lead into an active sales proposal quote" data-tooltip-pos="left">
-            <span class="material-icons-outlined">request_quote</span> Convert to Quote
+          <button class="btn btn-primary btn-sm" id="btn-convert-quote" data-tooltip="Convert this prospective lead into an active sales proposal quote" data-tooltip-pos="left">
+            <span class="material-icons-outlined" style="font-size:14px">request_quote</span> Convert to Quote
           </button>
-          <button class="btn btn-secondary" id="btn-edit-lead" data-tooltip="Modify lead details, potential value, or assigned representative" data-tooltip-pos="left">
-            <span class="material-icons-outlined">edit</span> Edit
+          <button class="btn btn-secondary btn-sm" id="btn-edit-lead" data-tooltip="Modify lead details, potential value, or assigned representative" data-tooltip-pos="left">
+            <span class="material-icons-outlined" style="font-size:14px">edit</span> Edit
           </button>
-          <button class="btn btn-danger" id="btn-delete-lead" data-tooltip="Permanently delete this lead record" data-tooltip-pos="left">
-            <span class="material-icons-outlined">delete</span>
+          <button class="btn btn-danger btn-sm" id="btn-delete-lead" data-tooltip="Permanently delete this lead record" data-tooltip-pos="left">
+            <span class="material-icons-outlined" style="font-size:14px">delete</span>
           </button>
         `
       })}
 
-      <!-- Interactive Stage Tracker -->
-      <div class="pipeline-tracker" style="display:flex; border-radius:8px; overflow:hidden; background:var(--content-bg); border:1px solid var(--border-color); margin-bottom:24px; box-shadow:var(--shadow-sm)">
+      <!-- Slim Pipeline Tracker -->
+      <div class="pipeline-tracker" style="display:flex; border-radius:6px; overflow:hidden; background:var(--content-bg); border:1px solid var(--border-color); margin-bottom:12px; box-shadow:var(--shadow-sm); height:28px;">
         ${['New','Contacted','Qualified','Proposal','Negotiation','Won','Lost'].map((s, idx) => {
           const isActive = lead.status === s;
           const isPast = ['New','Contacted','Qualified','Proposal','Negotiation','Won','Lost'].indexOf(lead.status) >= idx;
@@ -81,79 +114,123 @@ export function renderLeadDetail(container, { id }) {
           }
           
           return `
-            <div class="pipeline-step" data-status="${s}" style="flex:1; text-align:center; padding:14px 6px; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; background:${bg}; color:${color}; border-right:${borderRight}; cursor:pointer; transition:all 0.2s" title="Click to transition to ${s}">
+            <div class="pipeline-step" data-status="${s}" style="flex:1; display:flex; align-items:center; justify-content:center; padding:0 4px; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.4px; background:${bg}; color:${color}; border-right:${borderRight}; cursor:pointer; transition:all 0.15s;" title="Click to transition to ${s}">
               ${s}
             </div>
           `;
         }).join('')}
-      </div>      <div class="grid-3" style="align-items:stretch">
+      </div>
+
+      <!-- Main High-Density Grid (2 columns: 2fr 1fr) -->
+      <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: start;">
         
-        <!-- Column 1: Lead Information & Contact -->
-        <div style="grid-column: span 1; display:flex; flex-direction:column; gap:24px">
-          <div class="card" style="margin:0; height:100%">
-            <div class="card-header"><h4>Lead Qualification</h4></div>
-            <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
-              ${row('Title', lead.title)}
-              ${row('Customer', lead.customerName)}
-              ${row('Contact Name', lead.contactName || '—')}
-              ${row('Lead Source', lead.source || '—')}
-              ${row('Priority', lead.priority || 'Medium')}
-              ${row('Current Status', `<span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${lead.status}</span>`)}
+        <!-- Left Column: Primary Details & Requirements -->
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          
+          <!-- Lead Overview & Financial Scope Card -->
+          <div class="card" style="margin:0;">
+            <div class="card-header" style="padding: 8px 12px;">
+              <h4 style="font-size:12px; margin:0; display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary);">description</span> Lead Overview & Financial Scope
+              </h4>
+            </div>
+            <div class="card-body" style="padding:12px;">
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 0 16px;">
+                <div>
+                  ${r('Title', escapeHTML(lead.title))}
+                  ${r('Customer', escapeHTML(lead.customerName))}
+                  ${r('Contact Name', escapeHTML(lead.contactName || '—'))}
+                  ${r('Lead Source', escapeHTML(lead.source || '—'))}
+                  ${r('Priority', `<span class="badge ${lead.priority === 'High' ? 'badge-danger' : lead.priority === 'Low' ? 'badge-neutral' : 'badge-warning'}">${escapeHTML(lead.priority || 'Medium')}</span>`)}
+                  ${r('Status', `<span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${escapeHTML(lead.status)}</span>`)}
+                </div>
+                <div>
+                  ${r('Direct Phone', lead.phone ? `<a href="tel:${escapeHTML(lead.phone)}" style="color:var(--color-primary); font-weight:600;">${escapeHTML(lead.phone)}</a>` : '—')}
+                  ${r('Direct Email', lead.email ? `<a href="mailto:${escapeHTML(lead.email)}" style="color:var(--color-primary); font-weight:600;">${escapeHTML(lead.email)}</a>` : '—')}
+                  ${r('Client Budget', lead.budget ? `$${(lead.budget || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—', { amount: true })}
+                  ${r('Est. Value', `$${(lead.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, { amount: true })}
+                  ${lead.budget && lead.value ? r('Budget Variance', `<span style="font-weight:700; color:${(lead.budget - lead.value) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">$${Math.abs(lead.budget - lead.value).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${(lead.budget - lead.value) >= 0 ? 'Under' : 'Over'})</span>`) : ''}
+                  ${r('Weighted Value', `$${weightedValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, { amount: true })}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Column 2: Technical Scope & Financials -->
-        <div style="grid-column: span 1; display:flex; flex-direction:column; gap:24px">
-          <div class="card" style="margin:0; height:100%">
-            <div class="card-header"><h4>Financial Scope & Contact</h4></div>
-            <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
-              ${row('Direct Phone', lead.phone ? `<a href="tel:${lead.phone}" style="color:var(--color-primary); font-weight:600; text-decoration:underline">${escapeHTML(lead.phone)}</a>` : '—')}
-              ${row('Direct Email', lead.email ? `<a href="mailto:${lead.email}" style="color:var(--color-primary); font-weight:600; text-decoration:underline">${escapeHTML(lead.email)}</a>` : '—')}
-              <hr style="border:none; border-top:1px dashed var(--border-color); margin:4px 0" />
-              ${row('Client Budget', lead.budget ? `<strong style="color:var(--text-primary)">$${(lead.budget || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>` : '—')}
-              ${row('Estimated Value', `<strong style="color:var(--color-primary-dark)">$${(lead.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>`)}
-              ${lead.budget && lead.value ? row('Budget Variance', `<span style="font-weight:700; color:${(lead.budget - lead.value) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">$${(lead.budget - lead.value).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${(lead.budget - lead.value) >= 0 ? 'Under' : 'Over'} Budget)</span>`) : ''}
-            </div>
-          </div>
-        </div>
-
-        <!-- Column 3: Sales Forecasting Gauge -->
-        <div style="grid-column: span 1; display:flex; flex-direction:column; gap:24px">
-          <div class="card" style="margin:0; height:100%; border: 1px solid var(--border-color)">
-            <div class="card-header"><h4>Conversion Forecast</h4></div>
-            <div class="card-body" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; text-align:center">
-              <div style="position:relative; width:100px; height:100px; display:flex; align-items:center; justify-content:center">
-                <!-- SVG Circle representation -->
-                <svg width="100" height="100" viewBox="0 0 100 100" style="transform: rotate(-90deg)">
-                  <circle cx="50" cy="50" r="40" stroke="var(--border-color)" stroke-width="8" fill="transparent" />
-                  <circle cx="50" cy="50" r="40" stroke="${prob >= 80 ? 'var(--color-success)' : prob >= 50 ? 'var(--color-primary)' : 'var(--color-warning)'}" stroke-width="8" fill="transparent" 
-                           stroke-dasharray="251.2" stroke-dashoffset="${251.2 - (251.2 * prob) / 100}" stroke-linecap="round" />
-                </svg>
-                <div style="position:absolute; font-size:20px; font-weight:800; color:var(--text-primary)">${prob}%</div>
+          <!-- Requirements & Internal Notes Card (2 Column Split) -->
+          <div class="card" style="margin:0;">
+            <div class="card-body" style="padding:12px; display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div>
+                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:6px; display:flex; align-items:center; gap:4px;">
+                  <span class="material-icons-outlined" style="font-size:14px">assignment</span> Technical Requirements
+                </div>
+                <p style="color:var(--text-primary); line-height:1.4; font-size:12px; white-space:pre-wrap; margin:0; background:var(--content-bg); padding:8px 10px; border-radius:4px; border:1px solid var(--border-color); min-height:60px;">${escapeHTML(lead.requirements || 'No technical specifications provided.')}</p>
               </div>
               <div>
-                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Weighted Value Forecast</div>
-                <div style="font-size:24px; font-weight:800; color:${prob >= 80 ? 'var(--color-success)' : 'var(--text-primary)'}; margin-top:4px">$${weightedValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">Likelihood multiplier applied</div>
+                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:6px; display:flex; align-items:center; gap:4px;">
+                  <span class="material-icons-outlined" style="font-size:14px">sticky_note_2</span> Internal Notes
+                </div>
+                <p style="color:var(--text-secondary); line-height:1.4; font-size:12px; white-space:pre-wrap; margin:0; background:var(--content-bg); padding:8px 10px; border-radius:4px; border:1px solid var(--border-color); min-height:60px;">${escapeHTML(lead.description || 'No internal notes recorded.')}</p>
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div class="card" style="margin-top:24px">
-        <div class="card-header"><h4>Technical / Project Requirements</h4></div>
-        <div class="card-body">
-          <p style="color:var(--text-primary); line-height:1.6; font-size:14px; white-space:pre-wrap">${escapeHTML(lead.requirements || 'No technical specifications or requirements provided.')}</p>
         </div>
-      </div>
 
-      <div class="card" style="margin-top:24px">
-        <div class="card-header"><h4>Internal Notes</h4></div>
-        <div class="card-body">
-          <p style="color:var(--text-secondary); line-height:1.6; font-size:14px; white-space:pre-wrap">${escapeHTML(lead.description || 'No internal notes recorded.')}</p>
+        <!-- Right Column: Conversion Gauge & Stage Activity -->
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          
+          <!-- Conversion Forecast Gauge Card -->
+          <div class="card" style="margin:0;">
+            <div class="card-header" style="padding: 8px 12px;">
+              <h4 style="font-size:12px; margin:0; display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary);">pie_chart</span> Conversion Forecast
+              </h4>
+            </div>
+            <div class="card-body" style="padding:12px; display:flex; align-items:center; gap:16px;">
+              <div style="position:relative; width:64px; height:64px; flex-shrink:0; display:flex; align-items:center; justify-content:center">
+                <svg width="64" height="64" viewBox="0 0 64 64" style="transform: rotate(-90deg)">
+                  <circle cx="32" cy="32" r="26" stroke="var(--border-color)" stroke-width="6" fill="transparent" />
+                  <circle cx="32" cy="32" r="26" stroke="${prob >= 80 ? 'var(--color-success)' : prob >= 50 ? 'var(--color-primary)' : 'var(--color-warning)'}" stroke-width="6" fill="transparent" 
+                           stroke-dasharray="163.3" stroke-dashoffset="${163.3 - (163.3 * prob) / 100}" stroke-linecap="round" />
+                </svg>
+                <div style="position:absolute; font-size:14px; font-weight:800; color:var(--text-primary)">${prob}%</div>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase;">Weighted Forecast</div>
+                <div style="font-size:18px; font-weight:800; color:${prob >= 80 ? 'var(--color-success)' : 'var(--text-primary)'}; margin-top:2px">$${weightedValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style="font-size:10px; color:var(--text-secondary); margin-top:1px">${prob}% win probability applied</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Activity History Card -->
+          <div class="card" style="margin:0;">
+            <div class="card-header" style="padding: 8px 12px;">
+              <h4 style="font-size:12px; margin:0; display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary);">history</span> Stage History
+              </h4>
+            </div>
+            <div class="card-body" style="padding:8px 12px; max-height:200px; overflow-y:auto;">
+              ${leadActivities.length === 0 ? `
+                <div style="font-size:11px; color:var(--text-tertiary); padding:8px 0; text-align:center;">No recent stage changes logged.</div>
+              ` : `
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  ${leadActivities.map(a => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; padding:4px 0; border-bottom:1px dashed var(--border-color);">
+                      <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="material-icons-outlined" style="font-size:12px; color:var(--color-primary);">swap_horiz</span>
+                        <span style="color:var(--text-primary); font-weight:500;">${escapeHTML(a.text || '')}</span>
+                      </div>
+                      <span style="color:var(--text-tertiary); font-size:10px; flex-shrink:0; margin-left:6px;">${new Date(a.timestamp).toLocaleDateString('en-AU', { month:'short', day:'numeric' })}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              `}
+            </div>
+          </div>
+
         </div>
+
       </div>
     `;
 
@@ -161,7 +238,7 @@ export function renderLeadDetail(container, { id }) {
   }
 
   function bindEvents() {
-    container.querySelector('#btn-convert-quote').addEventListener('click', () => {
+    container.querySelector('#btn-convert-quote').addEventListener('click', async () => {
       const newQuote = store.create('quotes', {
         number: store.getNextNumber('Q-', 'quotes'),
         customerId: lead.customerId,
@@ -175,7 +252,17 @@ export function renderLeadDetail(container, { id }) {
         total: (lead.value || 0) * (1 + store.getTaxRate()),
         createdAt: new Date().toISOString()
       });
-      store.update('leads', id, { status: 'Won' });
+
+      if (!lead.stageHistory) lead.stageHistory = [];
+      lead.stageHistory.unshift({
+        id: `hist_${Date.now()}`,
+        status: 'Won',
+        text: `Converted to Quote ${newQuote.number} (Status: Won).`,
+        user: JSON.parse(localStorage.getItem('currentUser'))?.name || 'System',
+        timestamp: new Date().toISOString()
+      });
+
+      await store.update('leads', id, { status: 'Won', stageHistory: lead.stageHistory });
       showToast('Lead converted to quote successfully', 'success');
       router.navigate(`/quotes/${newQuote.id}`);
     });
@@ -196,33 +283,46 @@ export function renderLeadDetail(container, { id }) {
     });
 
     container.querySelectorAll('.pipeline-step').forEach(step => {
-      step.addEventListener('click', () => {
+      step.addEventListener('click', async () => {
         const newStatus = step.dataset.status;
         if (lead.status !== newStatus) {
-          store.update('leads', id, { status: newStatus });
+          const oldStatus = lead.status;
           lead.status = newStatus;
-          showToast(`Status updated to ${newStatus}`, 'success');
-          render();
 
-          // Log lead stage transition activity
+          if (!lead.stageHistory) lead.stageHistory = [];
+          const newEntry = {
+            id: `hist_${Date.now()}`,
+            status: newStatus,
+            text: `Lead stage transitioned from "${oldStatus}" to "${newStatus}".`,
+            user: JSON.parse(localStorage.getItem('currentUser'))?.name || 'System',
+            timestamp: new Date().toISOString()
+          };
+          lead.stageHistory.unshift(newEntry);
+
+          // Update store (persists lead object with stageHistory array)
+          await store.update('leads', id, { 
+            status: newStatus, 
+            stageHistory: lead.stageHistory 
+          });
+
+          // Log lead stage transition activity to global activity array
           const activity = store.getAll('activity') || [];
           activity.push({
             id: Date.now(),
             leadId: id,
             type: 'lead_stage_changed',
-            text: `Lead stage transitioned to "${newStatus}".`,
-            user: JSON.parse(localStorage.getItem('currentUser'))?.name || 'System',
-            timestamp: new Date().toISOString()
+            text: newEntry.text,
+            user: newEntry.user,
+            timestamp: newEntry.timestamp
           });
           store.save('activity', activity);
+
+          showToast(`Status updated to ${newStatus}`, 'success');
+          render();
         }
       });
     });
   }
 
   render();
-}
-
-function row(label, value) {
-  return `<div style="display:flex;gap:8px"><span style="width:130px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span><span>${value}</span></div>`;
 }

@@ -27,6 +27,7 @@ const TABLE_MAP = {
   suppliers: 'suppliers',
   purchaseOrders: 'purchase_orders',
   notifications: 'notifications',
+  notices: null,
   formTemplates: 'form_templates',
   formInstances: 'form_instances',
   kits: 'kits',
@@ -36,7 +37,8 @@ const TABLE_MAP = {
   projects: 'projects',
   costCenters: 'cost_centers',
   emailLog: 'email_log',
-  deputyAsks: null
+  deputyAsks: null,
+  jobMaterials: 'job_materials'
 };
 
 const TABLE_COLUMNS = {
@@ -342,11 +344,30 @@ const TABLE_COLUMNS = {
     "id",
     "company_id",
     "number",
+    "job_id",
+    "job_number",
     "supplier_id",
     "supplier_name",
+    "issue_date",
+    "expected_date",
     "status",
     "line_items",
+    "items",
     "total",
+    "created_at",
+    "updated_at"
+  ],
+  job_materials: [
+    "id",
+    "company_id",
+    "job_id",
+    "job_number",
+    "part_id",
+    "part_name",
+    "quantity",
+    "unit_cost",
+    "total_cost",
+    "date",
     "created_at",
     "updated_at"
   ],
@@ -638,7 +659,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 5);
+      const request = window.indexedDB.open(dbName, 7);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1286,7 +1307,7 @@ class DataStore {
       const collections = Object.keys(TABLE_MAP);
       const promises = collections.map(async (col) => {
         const table = TABLE_MAP[col];
-        if (table === 'companies') return;
+        if (!table || table === 'companies') return;
 
         let query = supabase.from(table).select('*');
         
@@ -1595,9 +1616,33 @@ class DataStore {
       record.jobId = record.job_id;
       delete record.job_id;
     }
+    if (record.part_id !== undefined) {
+      record.partId = record.part_id;
+      delete record.part_id;
+    }
+    if (record.part_name !== undefined) {
+      record.partName = record.part_name;
+      delete record.part_name;
+    }
+    if (record.unit_cost !== undefined) {
+      record.unitCost = parseFloat(record.unit_cost);
+      delete record.unit_cost;
+    }
+    if (record.total_cost !== undefined) {
+      record.totalCost = parseFloat(record.total_cost);
+      delete record.total_cost;
+    }
     if (record.due_date !== undefined) {
       record.dueDate = record.due_date;
       delete record.due_date;
+    }
+    if (record.issue_date !== undefined) {
+      record.issueDate = record.issue_date;
+      delete record.issue_date;
+    }
+    if (record.expected_date !== undefined) {
+      record.expectedDate = record.expected_date;
+      delete record.expected_date;
     }
     if (record.paid_date !== undefined) {
       record.paidDate = record.paid_date;
@@ -1782,6 +1827,9 @@ class DataStore {
           record.parentJobId = meta.parentJobId || null;
           record.assetName = meta.assetName || '';
           record.notes = meta.notes || '';
+          if (meta.activityLog !== undefined) record.activityLog = meta.activityLog;
+          if (meta.customerActivityLog !== undefined) record.customerActivityLog = meta.customerActivityLog;
+          if (meta.historyLog !== undefined) record.historyLog = meta.historyLog;
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
         }
@@ -1968,9 +2016,33 @@ class DataStore {
       record.job_id = record.jobId;
       delete record.jobId;
     }
+    if (record.partId !== undefined) {
+      record.part_id = record.partId;
+      delete record.partId;
+    }
+    if (record.partName !== undefined) {
+      record.part_name = record.partName;
+      delete record.partName;
+    }
+    if (record.unitCost !== undefined) {
+      record.unit_cost = record.unitCost;
+      delete record.unitCost;
+    }
+    if (record.totalCost !== undefined) {
+      record.total_cost = record.totalCost;
+      delete record.totalCost;
+    }
     if (record.dueDate !== undefined) {
       record.due_date = record.dueDate;
       delete record.dueDate;
+    }
+    if (record.issueDate !== undefined) {
+      record.issue_date = record.issueDate;
+      delete record.issueDate;
+    }
+    if (record.expectedDate !== undefined) {
+      record.expected_date = record.expectedDate;
+      delete record.expectedDate;
     }
     if (record.paidDate !== undefined) {
       record.paid_date = record.paidDate;
@@ -2078,9 +2150,15 @@ class DataStore {
         description: record.description || '',
         parentJobId: record.parentJobId || null,
         assetName: record.assetName || '',
-        notes: record.notes || ''
+        notes: record.notes || '',
+        activityLog: record.activityLog || [],
+        customerActivityLog: record.customerActivityLog || [],
+        historyLog: record.historyLog || []
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
+      delete record.activityLog;
+      delete record.customerActivityLog;
+      delete record.historyLog;
     }
 
     if (collection === 'invoices') {
@@ -2185,6 +2263,15 @@ class DataStore {
       });
     }
 
+    // Convert empty string date/timestamp fields to null to prevent PostgreSQL "invalid input syntax for type date: """ errors
+    Object.keys(record).forEach(key => {
+      if (typeof record[key] === 'string' && record[key].trim() === '') {
+        if (key.includes('date') || key.includes('_at') || key.endsWith('At') || key.includes('until') || key === 'start_time' || key === 'finish_time') {
+          record[key] = null;
+        }
+      }
+    });
+
     return record;
   }
 
@@ -2232,7 +2319,8 @@ class DataStore {
       import('../components/Notifications.js')
         .then(({ showToast }) => showToast(
           `Couldn't ${action} ${collection.replace(/s$/, '')} — ${error?.message || 'database error'}`,
-          'error'))
+          'error',
+          { skipBell: true }))
         .catch(() => {});
     } catch (e) {}
   }
@@ -2273,6 +2361,9 @@ class DataStore {
     if (collection === 'notifications' && !item.number) {
       item.number = this.getNextNumber('NT-', 'notifications');
     }
+    if (collection === 'notices' && !item.number) {
+      item.number = this.getNextNumber('NTC-', 'notices');
+    }
     if (collection === 'invoices' && !item.number) {
       item.number = this.getNextNumber('INV-', 'invoices');
     }
@@ -2287,6 +2378,13 @@ class DataStore {
     }
     if (collection === 'projects' && !item.number) {
       item.number = this.getNextNumber('PRJ-', 'projects');
+    }
+    if ((collection === 'quotes' || collection === 'invoices') && !item.laborProfileId) {
+      const settings = this.getSettings();
+      const defaultRateObj = (settings.laborRates && settings.laborRates.find(r => r.isDefault)) || (settings.laborRates && settings.laborRates[0]);
+      if (defaultRateObj) {
+        item.laborProfileId = defaultRateObj.id;
+      }
     }
     item.createdAt = item.createdAt || new Date().toISOString();
     item.updatedAt = new Date().toISOString();
@@ -2674,20 +2772,47 @@ class DataStore {
       prefix = dt.quotePrefix !== undefined ? dt.quotePrefix : 'Q-';
       startingNum = dt.quoteStartingNumber !== undefined ? parseInt(dt.quoteStartingNumber, 10) : 1;
       if (isNaN(startingNum)) startingNum = 1;
+    } else if (collection === 'jobs') {
+      prefix = dt.jobPrefix !== undefined ? dt.jobPrefix : (defaultPrefix || 'J-');
+      startingNum = dt.jobStartingNumber !== undefined ? parseInt(dt.jobStartingNumber, 10) : 1;
+      if (isNaN(startingNum)) startingNum = 1;
     }
 
     const items = this.getAll(collection) || [];
-    let maxNum = startingNum - 1;
+    const nums = [];
 
     items.forEach(item => {
-      if (item.number && typeof item.number === 'string' && item.number.startsWith(prefix)) {
-        const numStr = item.number.slice(prefix.length);
-        const num = parseInt(numStr, 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
+      if (item.number && typeof item.number === 'string') {
+        let numStr = null;
+        if (item.number.startsWith(prefix)) {
+          numStr = item.number.slice(prefix.length);
+        } else if (collection === 'jobs' && (item.number.startsWith('JOB-') || item.number.startsWith('J-'))) {
+          numStr = item.number.replace(/^(JOB-|J-)/, '');
+        } else if (/^\d+$/.test(item.number)) {
+          numStr = item.number;
+        }
+
+        if (numStr) {
+          const baseNumStr = numStr.split('.')[0];
+          const num = parseInt(baseNumStr, 10);
+          if (!isNaN(num) && num < 50000) {
+            nums.push(num);
+          }
         }
       }
     });
+
+    nums.sort((a, b) => a - b);
+
+    let maxNum = startingNum - 1;
+    for (const num of nums) {
+      if (num <= maxNum) continue;
+      // Heal artificial gap jumps to >= 1000 (caused by hardcoded initial reduce/maxNum values)
+      if (num >= 1000 && startingNum < 500 && num > maxNum + 50) {
+        continue;
+      }
+      maxNum = num;
+    }
 
     return prefix + (maxNum + 1).toString().padStart(5, '0');
   }
@@ -3016,10 +3141,10 @@ class DataStore {
     const officeTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_office` : 'ut_office';
 
     const defaultTechs = [
-      { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.com.au',  phone: '0412 233 445', username: 'jake', password: '123456' },
-      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: managerTypeId, payRate: 85.00,  email: 'ryan@apexpowerservices.com.au',  phone: '0423 344 556', username: 'ryan', password: '123456' },
-      { id: `${companyId}_tech_3`, name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: techTypeId,    payRate: 80.00,  email: 'sandra@apexpowerservices.com.au', phone: '0434 455 667', username: 'sandra', password: '123456' },
-      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: officeTypeId,  payRate: 50.00,  email: 'dean@apexpowerservices.com.au',  phone: '0445 566 778', username: 'dean', password: '123456' }
+      { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.local',  phone: '0491 570 001', username: 'jake', password: '123456' },
+      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: managerTypeId, payRate: 85.00,  email: 'ryan@apexpowerservices.local',  phone: '0491 570 002', username: 'ryan', password: '123456' },
+      { id: `${companyId}_tech_3`, name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: techTypeId,    payRate: 80.00,  email: 'sandra@apexpowerservices.local', phone: '0491 570 003', username: 'sandra', password: '123456' },
+      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: officeTypeId,  payRate: 50.00,  email: 'dean@apexpowerservices.local',  phone: '0491 570 004', username: 'dean', password: '123456' }
     ];
 
     this.cache.technicians = defaultTechs;
@@ -3148,7 +3273,7 @@ class DataStore {
         'customers', 'assets', 'maintenancePlans', 'taskTemplates', 'quotes', 
         'jobs', 'invoices', 'stock', 'timesheets', 'contractors', 'suppliers', 
         'purchaseOrders', 'notifications', 'formTemplates', 'formInstances', 
-        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog'
+        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog', 'jobMaterials'
       ];
       
       await Promise.all(

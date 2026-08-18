@@ -3,19 +3,28 @@ import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
-export function renderAssetDetail(container, params) {
-  const asset = store.getById('assets', params.id);
+export function renderAssetDetail(container, { id, tab }) {
+  const asset = store.getById('assets', id);
   if (!asset) {
     container.innerHTML = `<div class="card"><p>Asset not found.</p></div>`;
     return;
   }
 
-  let activeTab = 'history'; // 'history' or 'maint'
+  let activeTab = tab || 'history'; // 'history' or 'maint'
+
+  function r(label, value, opts = {}) {
+    return `
+      <div class="detail-row"${opts.style ? ` style="${opts.style}"` : ''}>
+        <span class="detail-row-label">${label}</span>
+        <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}"${opts.valueStyle ? ` style="${opts.valueStyle}"` : ''}>${value || '—'}</span>
+      </div>`;
+  }
 
   function render() {
     // Re-fetch fresh asset data in case of updates
-    const currentAsset = store.getById('assets', params.id);
+    const currentAsset = store.getById('assets', id);
     const settings = store.getSettings();
     
     let assigneeName = 'Unassigned';
@@ -66,100 +75,33 @@ export function renderAssetDetail(container, params) {
     }
 
     container.innerHTML = `
-      <div class="page-header">
-        <div style="display:flex; align-items:center; gap:12px">
-          <div class="asset-icon-box" style="width:48px; height:48px; background:var(--bg-color); border-radius:10px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color)">
-            <span class="material-icons-outlined" style="color:var(--color-primary)">${currentAsset.type === 'Vehicle' ? 'directions_car' : 'precision_manufacturing'}</span>
-          </div>
-          <div>
-            <h1 style="margin: 0;">${escapeHTML(currentAsset.name)}</h1>
-            <div style="display:flex; align-items:center; gap:8px; margin-top:4px">
-              <span class="badge ${currentAsset.ownerType === 'Business' ? 'badge-primary' : 'badge-neutral'}">${ownerTypeLabel}</span>
-              <span class="text-tertiary" style="font-size:12px">• ${escapeHTML(currentAsset.identifier || currentAsset.serial || 'No ID')}</span>
-            </div>
-          </div>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-edit" data-tooltip="Modify asset details, assignments, or properties" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:18px">edit</span> Edit Details</button>
-        </div>
-      </div>
-
-      <div class="grid-3" style="margin-bottom:var(--space-lg)">
-        <div class="card">
-          <div class="card-body">
-            <div class="text-tertiary" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">Current Status</div>
-            <div style="display:flex; align-items:center; gap:8px">
-              <div style="width:10px; height:10px; border-radius:50%; background:${currentAsset.status === 'Active' ? 'var(--color-success)' : 'var(--color-warning)'}"></div>
-              <span style="font-weight:600; font-size:16px">${currentAsset.status || 'Active'}</span>
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-body">
-            <div class="text-tertiary" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">Next Service Due</div>
-            <div style="font-weight:600; font-size:16px; color:${isOverdue ? 'var(--color-danger)' : 'inherit'}">
-              ${nextServiceDate}
-              ${isOverdue ? `<span style="font-size:11px; margin-left:6px; background:var(--color-danger-bg); color:var(--color-danger); padding:2px 6px; border-radius:4px">${activePlan?.triggerType === 'Meter' ? 'LIMIT MET' : 'OVERDUE'}</span>` : ''}
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-body">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-              <div>
-                <div class="text-tertiary" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">
-                  ${currentAsset.ownerType === 'Business' ? 'Total Maintenance Spend' : 'Current Meter Reading'}
-                </div>
-                <div style="font-weight:600; font-size:16px">
-                  ${currentAsset.ownerType === 'Business' ? `$${totalMaintCost.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${currentAsset.currentMeter || 0} ${currentAsset.meterUnit || 'hrs'}`}
-                </div>
-              </div>
-              <button class="btn btn-xs btn-secondary" id="btn-update-meter" style="padding: 2px 8px; font-size:11px; display:flex; align-items:center; gap:4px; margin-top:2px;">
-                <span class="material-icons-outlined" style="font-size:14px">speed</span> Update Meter
-              </button>
-            </div>
-            ${currentAsset.ownerType === 'Business' ? `
-              <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-color); display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-secondary)">
-                <span>Current Meter:</span>
-                <span class="font-medium">${currentAsset.currentMeter || 0} ${currentAsset.meterUnit || 'hrs'}</span>
-              </div>
-            ` : ''}
-          </div>
-        </div>
-      </div>
+      ${renderDetailHeader({
+        title: escapeHTML(currentAsset.name),
+        icon: currentAsset.type === 'Vehicle' ? 'directions_car' : 'precision_manufacturing',
+        iconBgColor: 'var(--color-primary-light)',
+        iconTextColor: 'var(--color-primary)',
+        metaHtml: `
+          <span class="badge ${currentAsset.ownerType === 'Business' ? 'badge-primary' : 'badge-neutral'}">${escapeHTML(ownerTypeLabel)}</span>
+          <span class="badge ${currentAsset.status === 'Active' ? 'badge-success' : 'badge-warning'}">${escapeHTML(currentAsset.status || 'Active')}</span>
+          <span style="font-family:monospace">• ${escapeHTML(currentAsset.identifier || currentAsset.serial || 'No ID')}</span>
+        `,
+        actionsHtml: `
+          <button class="btn btn-secondary" id="btn-edit" data-tooltip="Modify asset details, assignments, or properties" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit Details</button>
+        `
+      })}
 
       <div class="grid-3" style="align-items: start;">
         <div style="grid-column: span 1; display:flex; flex-direction:column; gap:var(--space-lg)">
           <div class="card">
             <div class="card-header"><h4>Asset Information</h4></div>
             <div class="card-body">
-              <div style="display: flex; flex-direction: column; gap: 12px;">
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Category</span>
-                  <span class="font-medium">${escapeHTML(currentAsset.type || '-')}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Owner</span>
-                  <span class="font-medium">${escapeHTML(ownerName)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Assigned To</span>
-                  <span class="font-medium">${escapeHTML(assigneeName)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Location</span>
-                  <span class="font-medium">${escapeHTML(currentAsset.site || 'Main Office')}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between">
-                  <span class="text-secondary">Interval</span>
-                  <span class="font-medium">${currentAsset.serviceIntervalMonths || 6} Months</span>
-                </div>
-                ${currentAsset.ownerType === 'Business' ? `
-                  <div style="display:flex; justify-content:space-between; padding-top:12px; border-top:1px solid var(--border-color); margin-top:4px">
-                    <span class="text-secondary">Recovery Rate</span>
-                    <span class="font-medium" style="color:var(--color-primary)">$${(currentAsset.recoveryRate || 0).toFixed(2)}/hr</span>
-                  </div>
-                ` : ''}
+              <div style="display: flex; flex-direction: column;">
+                ${r('Category', escapeHTML(currentAsset.type || '-'))}
+                ${r('Owner', escapeHTML(ownerName))}
+                ${r('Assigned To', escapeHTML(assigneeName))}
+                ${r('Location', escapeHTML(currentAsset.site || 'Main Office'))}
+                ${r('Interval', `${currentAsset.serviceIntervalMonths || 6} Months`)}
+                ${currentAsset.ownerType === 'Business' ? r('Recovery Rate', `$${(currentAsset.recoveryRate || 0).toFixed(2)}/hr`, { amount: true, valueStyle: 'color:var(--color-primary)' }) : ''}
               </div>
             </div>
           </div>
@@ -176,9 +118,8 @@ export function renderAssetDetail(container, params) {
 
         <div class="card" style="grid-column: span 2">
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px var(--space-lg); border-bottom: 1px solid var(--border-color)">
-            <div class="tabs" style="border:none; margin:0; padding:0">
-              <button class="tab ${activeTab === 'history' ? 'active' : ''}" id="tab-history" style="padding: 6px 12px; font-size:14px">Activity History</button>
-              <button class="tab ${activeTab === 'maint' ? 'active' : ''}" id="tab-maint" style="padding: 6px 12px; font-size:14px">Maintenance Agreements</button>
+            <div class="tabs" style="border:none; margin:0; padding:0; display:none;">
+              <!-- Tabs migrated to sidebar -->
             </div>
             ${activeTab === 'history' ? `
               <button class="btn btn-sm btn-primary" id="btn-add-log">
@@ -226,7 +167,7 @@ export function renderAssetDetail(container, params) {
                     </span>
                   </td>
                   <td><span class="text-secondary" style="font-size:13px">${escapeHTML(log.notes || '—')}</span></td>
-                  <td style="text-align:right; font-weight:600">${log.cost > 0 ? `$${parseFloat(log.cost).toFixed(2)}` : '—'}</td>
+                  <td style="text-align:right">${log.cost > 0 ? `$${parseFloat(log.cost).toFixed(2)}` : '—'}</td>
                 </tr>
               `).join('')
             }
@@ -299,19 +240,10 @@ export function renderAssetDetail(container, params) {
 
   function bindEvents(currentAsset) {
     container.querySelector('#btn-edit').addEventListener('click', () => {
-      router.navigate(`/assets/${params.id}/edit`);
+      router.navigate(`/assets/${id}/edit`);
     });
 
-    // Tab toggles
-    container.querySelector('#tab-history').addEventListener('click', () => {
-      activeTab = 'history';
-      render();
-    });
-
-    container.querySelector('#tab-maint').addEventListener('click', () => {
-      activeTab = 'maint';
-      render();
-    });
+    // Tab toggles removed (migrated to sidebar)
 
     // Add log
     container.querySelector('#btn-add-log')?.addEventListener('click', () => {

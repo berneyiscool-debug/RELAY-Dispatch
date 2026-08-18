@@ -52,7 +52,6 @@ export function renderJobForm(container, params) {
   const projectsList = store.getAll('projects') || [];
   const costCentersList = (store.getAll('costCenters') || []).filter(cc => cc.active || cc.id === job.costCenterId);
   const settings = store.getSettings() || {};
-  const jobTypes = settings.jobTypes || ['Electrical','Plumbing','HVAC','Fire Protection','Security','General Maintenance'];
 
   // Selected tags state
   let selectedTags = job.tags ? [...job.tags] : [];
@@ -293,21 +292,13 @@ export function renderJobForm(container, params) {
               <input class="form-input" name="title" value="${escapeHTML(job.title || '')}" required placeholder="e.g. Electrical fault repair — Main Office" />
             </div>
 
-            <!-- Customer + Type -->
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Customer *</label>
-                <select class="form-select" id="jf-customer" name="customerId" required>
-                  <option value="">Select customer...</option>
-                  ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Type</label>
-                <select class="form-select" name="type">
-                  ${jobTypes.map(t => `<option ${job.type === t ? 'selected' : ''}>${escapeHTML(t)}</option>`).join('')}
-                </select>
-              </div>
+            <!-- Customer -->
+            <div class="form-group">
+              <label class="form-label">Customer *</label>
+              <select class="form-select" id="jf-customer" name="customerId" required>
+                <option value="">Select customer...</option>
+                ${customers.map(c => `<option value="${c.id}" ${job.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+              </select>
             </div>
 
             <!-- Jobsite -->
@@ -1437,6 +1428,7 @@ export function renderJobForm(container, params) {
   if (jobForm) {
     jobForm.addEventListener('submit', (e) => {
       e.preventDefault();
+      // Optional: trigger save when pressing Enter
       container.querySelector('#btn-save')?.click();
     });
   }

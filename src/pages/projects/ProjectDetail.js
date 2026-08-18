@@ -7,9 +7,10 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderProjectDetail(container, params) {
-  const { id } = params;
+  const { id, tab } = params;
   
   const project = store.getById('projects', id);
   if (!project) {
@@ -109,19 +110,13 @@ export function renderProjectDetail(container, params) {
     if (project.status === 'Completed') statusClass = 'badge-success';
     if (project.status === 'Cancelled') statusClass = 'badge-danger';
 
+    let activeTab = tab || 'overview';
+
     container.innerHTML = `
       <style>
         .proj-tabs {
-          display: flex; gap: 8px; margin-bottom: 24px;
-          border-bottom: 1px solid var(--border-color); padding-bottom: 8px;
+          display: none;
         }
-        .proj-tab {
-          padding: 8px 16px; border-radius: 6px; cursor: pointer;
-          font-weight: 600; font-size: 14px; color: var(--text-secondary);
-          transition: all 0.2s; display: flex; align-items: center; gap: 6px;
-        }
-        .proj-tab:hover { background: var(--bg-color); color: var(--text-primary); }
-        .proj-tab.active { background: var(--color-primary-light); color: var(--color-primary); }
         
         .progress-indicator {
           display: flex; align-items: center; gap: 16px; margin-top: 16px;
@@ -136,58 +131,34 @@ export function renderProjectDetail(container, params) {
         }
       </style>
 
-      <div style="margin-bottom:16px">
-        <a href="#/projects" style="display:inline-flex; align-items:center; gap:4px; font-weight:700; color:var(--text-secondary); text-decoration:none">
-          <span class="material-icons-outlined" style="font-size:16px">arrow_back</span> Back to Projects
-        </a>
-      </div>
+      ${renderDetailHeader({
+        title: escapeHTML(project.name),
+        icon: 'folder_copy',
+        iconBgColor: 'var(--color-primary-light)',
+        iconTextColor: 'var(--color-primary)',
+        metaHtml: `
+          <span style="font-family:monospace">${escapeHTML(project.number)}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(project.customerName || 'N/A')}</span>
+          <span class="badge ${statusClass}">${escapeHTML(project.status || 'In Progress')}</span>
+        `,
+        actionsHtml: `
+          <button class="btn btn-secondary" id="btn-edit-project" data-tooltip="Modify project details, timeline, or customer"><span class="material-icons-outlined">edit</span> Edit Project</button>
+        `
+      })}
 
-      <div class="page-header" style="margin-bottom:16px">
-        <div>
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px">
-            <span style="font-size:13px; font-weight:700; color:var(--text-tertiary); letter-spacing:0.5px">${escapeHTML(project.number)}</span>
-            <span class="badge ${statusClass}">${escapeHTML(project.status)}</span>
-          </div>
-          <h1>${escapeHTML(project.name)}</h1>
-          <div style="font-size:14px; color:var(--text-secondary); margin-top:4px">
-            Customer: <strong style="color:var(--text-primary)">${escapeHTML(project.customerName || 'N/A')}</strong>
-            ${project.siteAddress ? ` &bull; Site: <strong>${escapeHTML(project.siteAddress)}</strong>` : ''}
-          </div>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-edit-project" style="display:flex; align-items:center; gap:6px">
-            <span class="material-icons-outlined" style="font-size:18px">edit</span> Edit
-          </button>
-          <button class="btn btn-danger-outline" id="btn-delete-project" style="display:flex; align-items:center; gap:6px">
-            <span class="material-icons-outlined" style="font-size:18px">delete</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- TABS -->
-      <div class="proj-tabs" id="project-tabs">
-        <div class="proj-tab active" data-tab="overview">
-          <span class="material-icons-outlined" style="font-size:18px">dashboard</span> Overview
-        </div>
-        <div class="proj-tab" data-tab="stages">
-          <span class="material-icons-outlined" style="font-size:18px">view_list</span> Stages (${metrics.stagesCount})
-        </div>
-        <div class="proj-tab" data-tab="financials">
-          <span class="material-icons-outlined" style="font-size:18px">payments</span> Financials
-        </div>
-      </div>
+      <!-- TABS REMOVED (Migrated to sidebar) -->
 
       <!-- TAB CONTENT: OVERVIEW -->
-      <div id="tab-overview" class="tab-content" style="display:block;">
+      <div id="tab-overview" class="tab-content" style="display:${activeTab === 'overview' ? 'block' : 'none'};">
         
-        <div class="card" style="margin-bottom:24px; border-top:4px solid var(--color-primary); box-shadow:var(--shadow-sm);">
+        <div class="card" style="margin-bottom:24px; border-top:4px solid var(--color-primary);">
           <div class="card-body">
             <h4 style="margin:0 0 8px 0;">Project Progress</h4>
             <div class="progress-indicator">
               <div class="progress-bar-container">
                 <div class="progress-bar-fill" style="width:${metrics.progressPct}%; background-color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--color-primary)'};"></div>
               </div>
-              <div style="font-weight:700; font-size:18px; color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--text-primary)'}">
+              <div style="font-weight:400; font-size:18px; color:${metrics.progressPct === 100 ? 'var(--color-success)' : 'var(--text-primary)'}">
                 ${metrics.progressPct}%
               </div>
             </div>
@@ -198,37 +169,37 @@ export function renderProjectDetail(container, params) {
         </div>
 
         <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px">
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Description &amp; Scope</h4></div>
             <div class="card-body">
               <div style="font-size:14px; line-height:1.6; color:var(--text-primary); white-space:pre-wrap">${escapeHTML(project.description || 'No description provided.')}</div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; padding-top:20px; border-top:1px solid var(--border-color)">
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Start Date</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.startDate ? project.startDate : 'Not scheduled'}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Start Date</div>
+                  <div style="font-size:14px; font-weight:400; color:var(--text-primary); margin-top:4px">${project.startDate ? project.startDate : 'Not scheduled'}</div>
                 </div>
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Target Completion</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-top:4px">${project.endDate ? project.endDate : 'Not scheduled'}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Target Completion</div>
+                  <div style="font-size:14px; font-weight:400; color:var(--text-primary); margin-top:4px">${project.endDate ? project.endDate : 'Not scheduled'}</div>
                 </div>
               </div>
             </div>
           </div>
           
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Quick Financials</h4></div>
             <div class="card-body">
                <div style="margin-bottom:16px;">
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
-                  <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
+                  <div style="font-size:24px; font-weight:600; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                </div>
                <div style="margin-bottom:16px;">
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Invoiced to Date</div>
-                  <div style="font-size:18px; font-weight:800; color:var(--color-success-dark); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Invoiced to Date</div>
+                  <div style="font-size:18px; font-weight:400; color:var(--color-success-dark); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                </div>
                <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
-                  <div style="font-size:18px; font-weight:800; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
+                  <div style="font-size:18px; font-weight:400; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                </div>
                <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-color); text-align:center;">
                  <button class="btn btn-secondary btn-sm" id="btn-goto-financials">View Detailed Financials</button>
@@ -239,8 +210,8 @@ export function renderProjectDetail(container, params) {
       </div>
 
       <!-- TAB CONTENT: STAGES -->
-      <div id="tab-stages" class="tab-content" style="display:none;">
-        <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+      <div id="tab-stages" class="tab-content" style="display:${activeTab === 'stages' ? 'block' : 'none'};">
+        <div class="card" style="margin:0">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
               <h4 style="margin:0">Project Stages (Jobs)</h4>
               <div style="display:flex; gap:10px">
@@ -298,21 +269,21 @@ export function renderProjectDetail(container, params) {
                           <input type="checkbox" class="select-stage-checkbox" data-id="${job.id}" ${isSelected ? 'checked' : ''} />
                         </td>
                         <td>
-                          <a href="#/jobs/${job.id}" style="font-weight:600; color:var(--color-primary); text-decoration:none">${escapeHTML(job.number)}</a>
+                          <a href="#/jobs/${job.id}" style="font-weight:400; color:var(--color-primary); text-decoration:none">${escapeHTML(job.number)}</a>
                         </td>
                         <td>
-                          <a href="#/jobs/${job.id}" style="font-weight:700; color:var(--text-primary); text-decoration:none; display:block">${escapeHTML(job.title)}</a>
+                          <a href="#/jobs/${job.id}" style="font-weight:400; color:var(--text-primary); text-decoration:none; display:block">${escapeHTML(job.title)}</a>
                         </td>
                         <td>
-                          <span style="font-size:12px; font-weight:600; color:var(--text-secondary)">
+                          <span style="font-size:12px; font-weight:400; color:var(--text-secondary)">
                             ${cc ? `${escapeHTML(cc.code)} — ${escapeHTML(cc.name)}` : 'Unassigned'}
                           </span>
                         </td>
                         <td>
                           <span class="badge ${statusClass}">${escapeHTML(job.status)}</span>
                         </td>
-                        <td style="text-align:right; font-weight:600">$${stageVal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td style="text-align:right; font-weight:600; color:var(--color-success-dark)">$${stageBilled.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style="text-align:right; font-weight:400">$${stageVal.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style="text-align:right; font-weight:400; color:var(--color-success-dark)">$${stageBilled.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td style="text-align:right; padding-right:16px">
                           <button class="btn btn-ghost btn-sm btn-unlink-stage" data-id="${job.id}" title="Unlink from project" style="color:var(--color-danger); padding:4px">
                             <span class="material-icons-outlined" style="font-size:18px">link_off</span>
@@ -338,24 +309,24 @@ export function renderProjectDetail(container, params) {
       </div>
 
       <!-- TAB CONTENT: FINANCIALS -->
-      <div id="tab-financials" class="tab-content" style="display:none;">
+      <div id="tab-financials" class="tab-content" style="display:${activeTab === 'financials' ? 'block' : 'none'};">
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-bottom:24px;">
           <!-- SUMMARY -->
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Financial Summary</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
               <div>
-                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
-                <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Project Revenue</div>
+                <div style="font-size:24px; font-weight:600; color:var(--text-primary); margin-top:4px">$${metrics.totalValue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
               </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding-top:12px; border-top:1px solid var(--border-color)">
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Est. Cost</div>
-                  <div style="font-size:16px; font-weight:700; color:var(--text-secondary); margin-top:4px">$${metrics.totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Est. Cost</div>
+                  <div style="font-size:16px; font-weight:400; color:var(--text-secondary); margin-top:4px">$${metrics.totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Gross Profit</div>
-                  <div style="font-size:16px; font-weight:700; color:${metrics.profit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}; margin-top:4px">
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Gross Profit</div>
+                  <div style="font-size:16px; font-weight:400; color:${metrics.profit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}; margin-top:4px">
                     $${metrics.profit.toLocaleString('en-AU', { minimumFractionDigits: 2 })}
                   </div>
                   <span style="font-size:11px; color:var(--text-secondary)">Margin: ${metrics.margin.toFixed(1)}%</span>
@@ -365,28 +336,28 @@ export function renderProjectDetail(container, params) {
           </div>
           
           <!-- BILLING -->
-          <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+          <div class="card" style="margin:0">
             <div class="card-header"><h4>Billing & Invoicing</h4></div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
               <div>
-                <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Invoiced</div>
-                <div style="font-size:24px; font-weight:800; color:var(--text-primary); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Invoiced</div>
+                <div style="font-size:24px; font-weight:400; color:var(--text-primary); margin-top:4px">$${metrics.totalBilled.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
               </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding-top:12px; border-top:1px solid var(--border-color)">
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Amount Paid</div>
-                  <div style="font-size:16px; font-weight:700; color:var(--color-success-dark); margin-top:4px">$${metrics.totalPaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Amount Paid</div>
+                  <div style="font-size:16px; font-weight:400; color:var(--color-success-dark); margin-top:4px">$${metrics.totalPaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
                 <div>
-                  <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
-                  <div style="font-size:16px; font-weight:700; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding Balance</div>
+                  <div style="font-size:16px; font-weight:400; color:${metrics.unpaid > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; margin-top:4px">$${metrics.unpaid.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="card" style="margin:0; box-shadow:var(--shadow-sm)">
+        <div class="card" style="margin:0">
             <div class="card-header"><h4>Cost Center Split</h4></div>
             <div class="card-body" style="padding:0">
               <table class="data-table table-hover" style="font-size:13px">
@@ -408,11 +379,11 @@ export function renderProjectDetail(container, params) {
                     const ccMargin = ccM.value > 0 ? (ccProfit / ccM.value) * 100 : 0;
                     return `
                       <tr>
-                        <td style="padding-left:16px; font-weight:600">
+                        <td style="padding-left:16px; font-weight:400">
                           ${cc ? escapeHTML(cc.code) : 'Unassigned'}
                         </td>
-                        <td style="text-align:right; font-weight:600">$${ccM.value.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</td>
-                        <td style="text-align:right; padding-right:16px; font-weight:700; color:${ccProfit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}">
+                        <td style="text-align:right; font-weight:400">$${ccM.value.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</td>
+                        <td style="text-align:right; padding-right:16px; font-weight:400; color:${ccProfit >= 0 ? 'var(--color-success-dark)' : 'var(--color-danger)'}">
                           ${ccMargin.toFixed(0)}%
                         </td>
                       </tr>
@@ -425,23 +396,8 @@ export function renderProjectDetail(container, params) {
       </div>
     `;
 
-    // Tabs logic
-    const tabs = container.querySelectorAll('.proj-tab');
-    const contents = container.querySelectorAll('.tab-content');
-    
-    tabs.forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        tabs.forEach(t => t.classList.remove('active'));
-        contents.forEach(c => c.style.display = 'none');
-        
-        const target = e.currentTarget;
-        target.classList.add('active');
-        container.querySelector(`#tab-${target.dataset.tab}`).style.display = 'block';
-      });
-    });
-
     container.querySelector('#btn-goto-financials')?.addEventListener('click', () => {
-      container.querySelector('.proj-tab[data-tab="financials"]').click();
+      router.navigate('/projects/' + project.id + '?tab=financials');
     });
 
     // Hook general actions
@@ -461,8 +417,7 @@ export function renderProjectDetail(container, params) {
       } else {
         selectedJobIds = [];
       }
-      render();
-      container.querySelector('.proj-tab[data-tab="stages"]').click();
+      router.navigate('/projects/' + project.id + '?tab=stages');
     });
 
     container.querySelectorAll('.select-stage-checkbox').forEach(chk => {
@@ -473,8 +428,7 @@ export function renderProjectDetail(container, params) {
         } else {
           selectedJobIds = selectedJobIds.filter(id => id !== jobId);
         }
-        render();
-        container.querySelector('.proj-tab[data-tab="stages"]').click();
+        router.navigate('/projects/' + project.id + '?tab=stages');
       });
     });
 
@@ -486,8 +440,7 @@ export function renderProjectDetail(container, params) {
           if (confirm(`Are you sure you want to unlink Stage "${job.title}" from this project?`)) {
             await store.update('jobs', jobId, { projectId: null });
             showToast('Stage unlinked successfully', 'success');
-            renderProjectDetail(container, params);
-            container.querySelector('.proj-tab[data-tab="stages"]').click();
+            router.navigate('/projects/' + project.id + '?tab=stages');
           }
         }
       });
@@ -537,8 +490,8 @@ export function renderProjectDetail(container, params) {
           const name = document.getElementById('p-name').value.trim();
           const status = document.getElementById('p-status').value;
           const description = document.getElementById('p-desc').value.trim();
-          const startDate = document.getElementById('p-start-date').value;
-          const endDate = document.getElementById('p-end-date').value;
+          const startDate = document.getElementById('p-start-date').value || null;
+          const endDate = document.getElementById('p-end-date').value || null;
 
           if (!name) { showToast('Project Name is required', 'error'); return; }
 
@@ -546,7 +499,7 @@ export function renderProjectDetail(container, params) {
             await store.update('projects', project.id, { name, status, description, startDate, endDate });
             showToast('Project details updated', 'success');
             c();
-            renderProjectDetail(container, params);
+            router.navigate('/projects/' + project.id + '?tab=' + activeTab);
           } catch (err) {
             console.error('Error saving project:', err);
             showToast('Failed to save project details', 'error');
@@ -604,8 +557,7 @@ export function renderProjectDetail(container, params) {
             await store.update('jobs', jobId, { projectId: project.id });
             showToast('Job linked to project successfully', 'success');
             c();
-            renderProjectDetail(container, params);
-            container.querySelector('.proj-tab[data-tab="stages"]').click();
+            router.navigate('/projects/' + project.id + '?tab=stages');
           } catch (err) {
             console.error('Error linking job:', err);
             showToast('Failed to link job', 'error');

@@ -8,42 +8,39 @@ import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { getContractorCompliance } from '../../utils/compliance.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderContractorsList(container) {
   const contractors = store.getAll('contractors');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Contractors</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-contractor" data-tooltip="Onboard a new subcontractor technician" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Contractor</button>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Contractors (${contractors.length})</option>
+          <option value="active">Active (${contractors.filter(c => c.active === true).length})</option>
+          <option value="inactive">Inactive (${contractors.filter(c => c.active === false).length})</option>
+          <option value="compliant">Compliant (${contractors.filter(c => getContractorCompliance(c).status === 'compliant').length})</option>
+          <option value="non-compliant">Non-Compliant (${contractors.filter(c => getContractorCompliance(c).status !== 'compliant').length})</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-new-contractor" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Onboard a new subcontractor technician">
+          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">Add Contractor</span>
+        </button>
       </div>
     </div>
-    
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter active" data-filter="all">All (${contractors.length})</button>
-        <button class="toolbar-filter" data-filter="active">Active</button>
-        <button class="toolbar-filter" data-filter="inactive">Inactive</button>
-        <button class="toolbar-filter" data-filter="compliant">Compliant</button>
-        <button class="toolbar-filter" data-filter="non-compliant">Non-Compliant</button>
-      </div>
-      <div class="toolbar-search">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search contractors by name, email or specialty..." id="contractors-search" />
-      </div>
-    </div>
-
     <div id="contractors-table-container"></div>
   `;
 
   let filteredData = [...contractors];
 
   const columns = [
-    { key: 'businessName', label: 'Business Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.businessName)}</span>` },
-    { key: 'contactName', label: 'Contact Name' },
-    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—') },
-    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—') },
+    { key: 'businessName', label: 'Business', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.businessName)}</span>`, width: '24%' },
+    { key: 'contactName', label: 'Contact', width: '19%' },
+    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—'), width: '22%' },
+    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—'), width: '13%' },
     { 
       key: 'compliance', 
       label: 'Compliance', 
@@ -51,10 +48,9 @@ export function renderContractorsList(container) {
         const comp = getContractorCompliance(r);
         const tooltipText = comp.reason ? comp.reason : comp.label;
         return `<span class="badge ${comp.badgeClass}" data-tooltip="${escapeHTML(tooltipText)}" style="cursor:help">${escapeHTML(comp.label)}</span>`;
-      }
+      }, width: '12%'
     },
-    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>` },
-    { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm contractor-edit-btn" data-id="${r.id}" data-tooltip="Edit contractor profile" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
+    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>`, width: '10%' }
   ];
 
   const table = createDataTable({ 
@@ -123,6 +119,11 @@ export function renderContractorsList(container) {
   container.querySelector('#contractors-table-container').appendChild(table);
   
   container.querySelector('#btn-new-contractor').addEventListener('click', () => router.navigate('/contractors/new'));
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
+  });
 
   let activeFilter = 'all';
   let searchTerm = '';
@@ -159,17 +160,21 @@ export function renderContractorsList(container) {
     table.updateData(filteredData);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeFilter = btn.dataset.filter;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      // Filter by date if needed
       updateFilteredData();
-    });
+    }
   });
 
-  container.querySelector('#contractors-search').addEventListener('input', (e) => {
-    searchTerm = e.target.value.toLowerCase();
+  setListSearch('Search contractors...', (q) => {
+    searchTerm = q.toLowerCase();
+    updateFilteredData();
+  });
+
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeFilter = e.target.value;
     updateFilteredData();
   });
 

@@ -12,6 +12,7 @@
 // ============================================
 import { store } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
+import { escapeHTML } from '../utils/security.js';
 import { calculateTotalBillableMaterials } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 import { FLAGS } from '../utils/flags.js';
@@ -42,6 +43,12 @@ const GRID = 20;            // snap grid in world px
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 2;
 const ZOOM_STEP = 0.05;     // zoom changes in clean 5% increments
+// Saved views anchor by top-left. Inset that anchor from the raw viewport corner so a
+// recalled view clears the floating .dash-topbar (top) and the viewport edge (left),
+// instead of landing at (0,0) where the topbar gradient clips its top-left. Applied to
+// BOTH capture and recall so newly-saved views stay idempotent.
+const VIEW_INSET_X = 0;
+const VIEW_INSET_Y = 0;
 
 // Default pixel sizes derived from a widget's declared width/height class
 const W_PX = { S: 300, M: 460, L: 680, XL: 680 };
@@ -329,14 +336,14 @@ function subscribeWidgetRefresh() {
 
 // ── Role-based default layouts (world px coordinates) ────────────────────────────
 const ADMIN_DEFAULT = [
-  { id: 'kpi-cards',        x: 40,  y: 40,  w: 680, h: 150 },
-  { id: 'job-status-chart', x: 40,  y: 220, w: 420, h: 320 },
-  { id: 'cash-flow',        x: 480, y: 220, w: 240, h: 320 },
-  { id: 'today-schedule',   x: 760, y: 40,  w: 440, h: 300 },
-  { id: 'recent-activity',  x: 760, y: 360, w: 440, h: 300 },
-  { id: 'recent-leads',     x: 40,  y: 560, w: 420, h: 280 },
-  { id: 'tech-map',         x: 480, y: 560, w: 240, h: 280 },
-  { id: 'deputy-asks-widget', x: 740, y: 560, w: 440, h: 280 },
+  { id: 'kpi-cards',          x: 40,  y: 40,  w: 680, h: 130 },
+  { id: 'job-status-chart',   x: 40,  y: 190, w: 420, h: 320 },
+  { id: 'cash-flow',          x: 480, y: 190, w: 240, h: 320 },
+  { id: 'recent-leads',       x: 40,  y: 530, w: 420, h: 290 },
+  { id: 'tech-map',           x: 480, y: 530, w: 240, h: 290 },
+  { id: 'today-schedule',     x: 740, y: 40,  w: 440, h: 240 },
+  { id: 'recent-activity',    x: 740, y: 300, w: 440, h: 250 },
+  { id: 'deputy-asks-widget', x: 740, y: 570, w: 440, h: 250 },
 ];
 
 const TECH_DEFAULT = [
@@ -362,13 +369,13 @@ function defaultLayoutForUser() {
 // The default "Home" saved view — centred on the widget cluster. It's seeded for new
 // users but is an ordinary view: movable, editable AND removable once they customise.
 function makeHomeView(widgets) {
-  // Top-left of the widget cluster (with a small margin) — views anchor by top-left now
-  let x = 0, y = 0;
+  // Top-left of the widget cluster — views anchor cleanly by top-left
+  let x = 40, y = 40;
   if (widgets && widgets.length) {
     let minX = Infinity, minY = Infinity;
     widgets.forEach(w => { minX = Math.min(minX, w.x); minY = Math.min(minY, w.y); });
-    x = snap(minX - 40);
-    y = snap(minY - 40);
+    x = minX;
+    y = minY;
   }
   return { id: 'view_home', x, y, zoom: 1, color: '#FF5C00', icon: 'home', label: 'Home' };
 }
@@ -448,7 +455,7 @@ async function loadLayout() {
 
   return {
     widgets,
-    view: view || { panX: 40, panY: 90, zoom: 1 },
+    view: view || { panX: 0, panY: 0, zoom: 1 },
     pins,
   };
 }
@@ -494,10 +501,11 @@ export async function renderDashboard(container) {
     if (loaded.pins && loaded.pins.length > 0) {
       const firstPin = loaded.pins[0];
       const targetZoom = typeof firstPin.zoom === 'number' ? firstPin.zoom : 1;
+      // Match flyTo()'s anchoring so the first-paint framing equals clicking the view.
       loaded.view = {
         zoom: targetZoom,
-        panX: -firstPin.x * targetZoom,
-        panY: -firstPin.y * targetZoom
+        panX: VIEW_INSET_X - firstPin.x * targetZoom,
+        panY: VIEW_INSET_Y - firstPin.y * targetZoom
       };
     }
     live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins };
@@ -715,7 +723,7 @@ function renderWidgets(world, data) {
     el.style.width = item.w + 'px';
     el.style.height = item.h + 'px';
     el.innerHTML = `
-      <div class="card ${mod.kpiStrip ? 'kpi-strip' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
+      <div class="card dashboard-card ${mod.kpiStrip ? 'kpi-strip' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
         <div class="card-header dash-drag-handle">
           <span style="font-weight:600;font-size:14px;">${mod.title}</span>
           ${widgetControls}
@@ -1197,8 +1205,10 @@ function renderViewsSection() {
 function flyTo(viewport, wx, wy, targetZoom) {
   if (typeof targetZoom === 'number') live.view.zoom = clamp(targetZoom, ZOOM_MIN, ZOOM_MAX);
   const { zoom } = live.view;
-  live.view.panX = -wx * zoom;
-  live.view.panY = -wy * zoom;
+  // Land the saved world point at (VIEW_INSET_X, VIEW_INSET_Y) so it clears the topbar,
+  // not at the raw (0,0) corner. Kept in sync with currentViewCentre()'s capture inset.
+  live.view.panX = VIEW_INSET_X - wx * zoom;
+  live.view.panY = VIEW_INSET_Y - wy * zoom;
   const world = viewport.querySelector('#dash-world');
   const guides = viewport.querySelector('#dash-guides');
   world.style.transition = 'transform 0.35s cubic-bezier(0.16,1,0.3,1)';
@@ -1461,9 +1471,11 @@ function showCanvasContextMenu(clientX, clientY, ctx) {
 // saved view stores, so it re-snaps to the same top-left when recalled.
 function currentViewCentre(viewport) {
   const { panX, panY, zoom } = live.view;
+  // Capture the world point currently at (VIEW_INSET_X, VIEW_INSET_Y) — the same anchor
+  // flyTo() re-snaps to on recall — so a saved-then-recalled view reproduces exactly.
   return {
-    x: snap(-panX / zoom),
-    y: snap(-panY / zoom),
+    x: snap((VIEW_INSET_X - panX) / zoom),
+    y: snap((VIEW_INSET_Y - panY) / zoom),
     zoom,
   };
 }
@@ -2025,11 +2037,40 @@ function wireWidgetControls(grid, data) {
 }
 
 // ── Edit-mode header (Add Widget · Drop Pin · Reset View · Reset Default · Cancel · Save) ──
+function tidyDashboardLayout() {
+  if (!live || !live.widgets || live.widgets.length === 0) return;
+  live.widgets.forEach(w => {
+    w.x = snap(w.x);
+    w.y = snap(w.y);
+    w.w = snap(w.w);
+    w.h = snap(w.h);
+  });
+  live.widgets.sort((a, b) => a.y - b.y || a.x - b.x);
+  const placed = [];
+  live.widgets.forEach(w => {
+    let collides = true;
+    while (collides) {
+      collides = placed.some(p =>
+        w.x < p.x + p.w && w.x + w.w > p.x &&
+        w.y < p.y + p.h && w.y + w.h > p.y
+      );
+      if (collides) {
+        w.y += GRID;
+      }
+    }
+    placed.push(w);
+  });
+  live.widgets = placed;
+}
+
 function showEditHeader(container, viewport, world, guides, data) {
   const headerActions = container.querySelector('#dashboard-header-actions');
   headerActions.innerHTML = `
     <button class="btn btn-secondary btn-sm" id="btn-add-widget">
       <span class="material-icons-outlined" style="font-size:16px;">add</span> Add Widget
+    </button>
+    <button class="btn btn-secondary btn-sm" id="btn-auto-align" title="Auto-align and organize all widgets on the grid without overlap">
+      <span class="material-icons-outlined" style="font-size:16px;">grid_view</span> Auto-Align
     </button>
     <button class="btn btn-secondary btn-sm" id="btn-save-view" title="Save the current centre + zoom as a quick-jump view">
       <span class="material-icons-outlined" style="font-size:16px;">bookmark_add</span> Save View
@@ -2049,16 +2090,29 @@ function showEditHeader(container, viewport, world, guides, data) {
     renderPins(world);
     updateGuides(viewport, guides);
     _ctxVisibleSig = null;
-    updateContextActions(viewport, true); // restore contextual actions
-    applyGluedWidths(viewport);           // re-apply glue fill now we're back in view mode
-    updateGlueAffordance(viewport);       // hide the glue toggle (edit-mode only)
+    updateContextActions(viewport, true);
+    applyGluedWidths(viewport);
+    updateGlueAffordance(viewport);
   };
 
-  headerActions.querySelector('#btn-save-view').addEventListener('click', () => {
-    openPinEditor(viewport, world, guides, {}); // captures the current centre + zoom
+  headerActions.querySelector('#btn-add-widget')?.addEventListener('click', () => {
+    openAddWidgetModal(container, viewport, world, guides, data);
   });
 
-  headerActions.querySelector('#btn-reset-default').addEventListener('click', () => {
+  headerActions.querySelector('#btn-auto-align')?.addEventListener('click', () => {
+    tidyDashboardLayout();
+    renderWidgets(world, data);
+    renderPins(world);
+    updateGuides(viewport, guides);
+    updateGlueAffordance(viewport);
+    resetView(viewport);
+  });
+
+  headerActions.querySelector('#btn-save-view')?.addEventListener('click', () => {
+    openPinEditor(viewport, world, guides, {});
+  });
+
+  headerActions.querySelector('#btn-reset-default')?.addEventListener('click', () => {
     if (confirm('Reset your dashboard to the default layout? This clears your widgets and saved views.')) {
       live.widgets = defaultLayoutForUser();
       live.pins = [makeHomeView(live.widgets)];
@@ -2207,13 +2261,24 @@ function renderKpiCards(data, item) {
 
 function renderJobStatusChart(data, item) {
   const counts = {};
-  data.jobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
+  data.jobs.forEach(j => {
+    const s = (j.isRecurring || j.status === 'Recurring Template') ? 'Active Templates' : j.status;
+    counts[s] = (counts[s] || 0) + 1;
+  });
   const total = data.jobs.length || 1;
-  const colors = { 'Pending':'var(--color-warning)','Scheduled':'var(--color-info)','In Progress':'var(--color-primary)','On Hold':'var(--text-tertiary)','Completed':'var(--color-success)','Invoiced':'#8B5CF6' };
+  const colors = { 
+    'Pending': 'var(--color-warning)',
+    'Scheduled': 'var(--color-info)',
+    'In Progress': 'var(--color-primary)',
+    'On Hold': 'var(--text-tertiary)',
+    'Completed': 'var(--color-success)',
+    'Invoiced': '#8B5CF6',
+    'Active Templates': '#9333EA'
+  };
   return `<div style="display:flex;flex-direction:column;gap:10px;padding:4px 0;">
     ${Object.entries(counts).map(([s, c]) => `
       <div style="display:flex;align-items:center;gap:10px;">
-        <span style="width:88px;font-size:12px;color:var(--text-secondary);flex-shrink:0;">${s}</span>
+        <span style="width:105px;font-size:12px;color:var(--text-secondary);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHTML(s)}">${escapeHTML(s)}</span>
         <div style="flex:1;height:20px;background:var(--content-bg);border-radius:4px;overflow:hidden;">
           <div style="width:${(c/total*100).toFixed(1)}%;height:100%;background:${colors[s]||'var(--text-tertiary)'};border-radius:4px;transition:width 0.5s;min-width:${c>0?'6px':'0'};"></div>
         </div>

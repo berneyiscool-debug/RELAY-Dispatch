@@ -11,8 +11,8 @@ import { emailEnabledFor, sendEmail } from '../../utils/email.js';
 import { contractorInviteEmail } from '../../utils/emailTemplates.js';
 import { contractorPortalUrl } from '../../utils/portalLinks.js';
 
-export function renderContractorDetail(container, params) {
-  const contractor = store.getById('contractors', params.id);
+export function renderContractorDetail(container, { id, tab }) {
+  const contractor = store.getById('contractors', id);
   if (!contractor) {
     container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Contractor not found</h3></div>`;
     return;
@@ -27,7 +27,7 @@ export function renderContractorDetail(container, params) {
 
   updateBreadcrumbDetail(contractor.businessName);
 
-  const jobs = store.getAll('jobs').filter(j => j.contractorId === params.id);
+  const jobs = store.getAll('jobs').filter(j => j.contractorId === id);
 
   // Scan and compile task allocations where this contractor is assigned
   const allJobs = store.getAll('jobs');
@@ -46,7 +46,7 @@ export function renderContractorDetail(container, params) {
 
   allJobs.forEach(job => {
     if (!job.tasks) return;
-    const parentTasks = job.tasks.filter(task => isContractorAssignedToTask(task, params.id));
+    const parentTasks = job.tasks.filter(task => isContractorAssignedToTask(task, id));
     if (parentTasks.length > 0) {
       jobAllocations.push({
         jobId: job.id,
@@ -60,10 +60,11 @@ export function renderContractorDetail(container, params) {
 
   const totalParentTasks = jobAllocations.reduce((sum, j) => sum + j.parentTasks.length, 0);
 
-  let activeTab = 'details';
+  let activeTab = tab || 'details';
 
   function render() {
     const compliance = getContractorCompliance(contractor);
+    const compBadge = compliance.status === 'Compliant' ? 'badge-success' : compliance.status === 'Expiring Soon' ? 'badge-warning' : 'badge-danger';
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -75,26 +76,25 @@ export function renderContractorDetail(container, params) {
           <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(contractor.contactName)}</span>
           <span><span class="material-icons-outlined" style="font-size:14px">email</span> ${escapeHTML(contractor.email || '—')}</span>
           <span><span class="material-icons-outlined" style="font-size:14px">phone</span> ${escapeHTML(contractor.phone || '—')}</span>
-          <span class="badge ${compliance.badgeClass}" title="${escapeHTML(compliance.reason || compliance.label)}" style="cursor:help">
-            Compliance: ${escapeHTML(compliance.label)}
-          </span>
-          <span class="badge ${contractor.active ? 'badge-success' : 'badge-neutral'}">${contractor.active ? 'Active' : 'Inactive'}</span>
+          <span class="badge ${compBadge}">${escapeHTML(compliance.status)}</span>
         `,
         actionsHtml: `
-          <button class="btn btn-secondary" id="btn-edit-contractor">
+          ${emailEnabledFor('contractor_invite') ? `
+            <button class="btn btn-secondary" id="btn-invite-portal" data-tooltip="Email an automated magic-link sign in key to the contractor portal" data-tooltip-pos="left">
+              <span class="material-icons-outlined">mail</span> Invite to Portal
+            </button>
+          ` : ''}
+          <button class="btn btn-secondary" id="btn-edit-contractor" data-tooltip="Modify contractor details, contact information, or trade category" data-tooltip-pos="left">
             <span class="material-icons-outlined">edit</span> Edit
           </button>
-          <button class="btn btn-danger" id="btn-delete-contractor">
+          <button class="btn btn-danger" id="btn-delete-contractor" data-tooltip="Permanently delete this contractor record" data-tooltip-pos="left">
             <span class="material-icons-outlined">delete</span> Delete
           </button>
         `
       })}
 
-      <div class="tabs" id="contractor-tabs">
-        <button class="tab ${activeTab === 'details' ? 'active' : ''}" data-tab="details">Overview & Details</button>
-        <button class="tab ${activeTab === 'compliance' ? 'active' : ''}" data-tab="compliance">Compliance Registry (${(contractor.complianceDocs || []).length})</button>
-        <button class="tab ${activeTab === 'rates' ? 'active' : ''}" data-tab="rates">Financials & Rates</button>
-        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks">Task Allocations (${totalParentTasks})</button>
+      <div class="tabs" id="contractor-tabs" style="display:none;">
+        <!-- Tabs migrated to sidebar -->
       </div>
 
       <div class="tab-content" id="tab-content" style="margin-top: var(--space-base);"></div>
@@ -102,19 +102,11 @@ export function renderContractorDetail(container, params) {
 
     renderTabContent();
 
-    // Tab switching
-    container.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        activeTab = tab.dataset.tab;
-        container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        renderTabContent();
-      });
-    });
+    // Tabs moved to sidebar
 
     // Edit
     container.querySelector('#btn-edit-contractor').addEventListener('click', () => {
-      router.navigate(`/contractors/${params.id}/edit`);
+      router.navigate(`/contractors/${id}/edit`);
     });
 
     // Delete
@@ -127,7 +119,7 @@ export function renderContractorDetail(container, params) {
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Delete', className: 'btn-danger', onClick: (close) => {
-            store.delete('contractors', params.id);
+            store.delete('contractors', id);
             showToast('Contractor deleted successfully', 'success');
             close();
             router.navigate('/contractors');
@@ -172,7 +164,7 @@ export function renderContractorDetail(container, params) {
           </div>
         </div>
 
-        <div class="card" style="margin-top: var(--space-lg); border: 1px solid var(--color-primary-light); background: linear-gradient(135deg, white, rgba(27,109,224,0.015));">
+        <div class="card" style="margin-top: var(--space-lg); border: 1px solid var(--color-primary-light); background: var(--content-bg);">
           <div class="card-header" style="border-bottom: 1px solid var(--border-color); display:flex; align-items:center; gap:8px;">
             <span class="material-icons-outlined text-primary" style="font-size:20px;">vpn_key</span>
             <h4 style="margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px;">
@@ -630,16 +622,16 @@ export function renderContractorDetail(container, params) {
 
       tabContent.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:12px">
-          <div class="page-toolbar" style="position:static; margin-top:0; margin-left:0; margin-right:0">
-            <div class="toolbar-filters">
-              <button class="toolbar-filter active" data-status="all">All (${totalParentTasks})</button>
-              <button class="toolbar-filter" data-status="Not Started">Not Started</button>
-              <button class="toolbar-filter" data-status="In Progress">In Progress</button>
-              <button class="toolbar-filter" data-status="Completed">Completed</button>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:4px;">
+            <div class="task-status-filters" style="display:flex; gap:6px; flex-wrap:wrap">
+              <button class="btn btn-sm btn-primary task-status-filter active" data-status="all">All (${totalParentTasks})</button>
+              <button class="btn btn-sm btn-secondary task-status-filter" data-status="Not Started">Not Started</button>
+              <button class="btn btn-sm btn-secondary task-status-filter" data-status="In Progress">In Progress</button>
+              <button class="btn btn-sm btn-secondary task-status-filter" data-status="Completed">Completed</button>
             </div>
-            <div class="toolbar-search">
-              <span class="material-icons-outlined">search</span>
-              <input type="text" placeholder="Search tasks..." id="tasks-search" style="font-size:13px" />
+            <div style="position:relative; min-width:240px">
+              <span class="material-icons-outlined" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:18px; color:var(--text-tertiary)">search</span>
+              <input type="text" placeholder="Search tasks..." id="tasks-search" class="form-input" style="padding-left:34px; width:100%; font-size:13px" />
             </div>
           </div>
           <div id="tasks-allocations-list" style="display:flex; flex-direction:column; gap:20px"></div>
@@ -762,7 +754,7 @@ export function renderContractorDetail(container, params) {
                   <div style="width:60px; background:var(--border-color); height:12px; border-radius:6px; overflow:hidden; position:relative; display:inline-block" title="${task.progress}% completed">
                     <div style="width:${task.progress}%; background:var(--color-primary); height:100%"></div>
                   </div>
-                  <span style="font-size:11px; font-weight:600; color:var(--text-secondary)">${task.progress}%</span>
+                  <span style="font-size:11px; font-weight:400; color:var(--text-secondary)">${task.progress}%</span>
                 </div>
               </td>
             </tr>
@@ -773,15 +765,15 @@ export function renderContractorDetail(container, params) {
                   <div style="border-left:2px solid var(--border-color); padding-left:16px; display:flex; flex-direction:column; gap:8px">
                     <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px">Subtasks Breakdown</div>
                     ${task.subTasks.map(sub => `
-                      <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:6px 0; border-bottom:1px dashed var(--border-color)">
+                      <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:6px 0; border-bottom:1px solid var(--border-color)">
                         <div style="display:flex; align-items:center; gap:6px">
                           <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary)">subdirectory_arrow_right</span>
-                          <span style="font-weight:600">${escapeHTML(sub.name)}</span>
+                          <span style="font-weight:400">${escapeHTML(sub.name)}</span>
                         </div>
                         <div style="display:flex; align-items:center; gap:16px">
                           <span style="color:var(--text-tertiary); font-size:12px">${sub.estimatedHours || '—'} hrs</span>
                           <span class="badge ${statusClasses[sub.status] || 'badge-neutral'}" style="margin:0">${escapeHTML(sub.status || 'Not Started')}</span>
-                          <span style="font-weight:600; font-size:12px; color:var(--text-secondary)">${sub.progress || 0}%</span>
+                          <span style="font-weight:400; font-size:12px; color:var(--text-secondary)">${sub.progress || 0}%</span>
                         </div>
                       </div>
                     `).join('')}
@@ -795,10 +787,14 @@ export function renderContractorDetail(container, params) {
 
       updateTaskList();
 
-      tabContent.querySelectorAll('.toolbar-filter').forEach(btn => {
+      tabContent.querySelectorAll('.task-status-filter').forEach(btn => {
         btn.addEventListener('click', () => {
-          tabContent.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
+          tabContent.querySelectorAll('.task-status-filter').forEach(b => {
+            b.classList.remove('btn-primary', 'active');
+            b.classList.add('btn-secondary');
+          });
+          btn.classList.remove('btn-secondary');
+          btn.classList.add('btn-primary', 'active');
           activeStatusFilter = btn.dataset.status;
           updateTaskList();
         });
@@ -812,9 +808,9 @@ export function renderContractorDetail(container, params) {
 
   function detailRow(label, value) {
     return `
-      <div style="display:flex;gap:8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
-        <span style="width:140px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${escapeHTML(label)}</span>
-        <span style="font-size:var(--font-size-base); font-weight:500;">${escapeHTML(String(value))}</span>
+      <div class="detail-row">
+        <span class="detail-row-label">${escapeHTML(label)}</span>
+        <span class="detail-row-value">${escapeHTML(String(value))}</span>
       </div>
     `;
   }

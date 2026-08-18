@@ -1,49 +1,23 @@
-// ============================================
-// FIELDFORGE — PROJECTS LIST PAGE
-// ============================================
-
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
-import { isWithinDateRange } from '../../utils/dateUtils.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { createDataTable } from '../../components/DataTable.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
 
 export function renderProjectsList(container) {
   const projects = store.getAll('projects') || [];
+  const customers = store.getAll('customers') || [];
   const jobs = store.getAll('jobs') || [];
   const invoices = store.getAll('invoices') || [];
-  const customers = store.getAll('customers') || [];
 
   let currentFilter = 'all';
   let searchQuery = '';
-  let currentDateRange = 'all-time';
-
-  const calculateMetrics = (filteredProjs) => {
-    const totalCount = filteredProjs.length;
-    let totalValue = 0;
-    let totalBilled = 0;
-    
-    let totalStages = 0;
-    let completedStages = 0;
-
-    filteredProjs.forEach(proj => {
-      const projJobs = jobs.filter(j => j.projectId === proj.id);
-      totalStages += projJobs.length;
-      completedStages += projJobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
-
-      projJobs.forEach(job => {
-        const matsTotal = (job.materials || []).reduce((s, m) => s + (m.total || 0), 0);
-        const laborTotal = (job.labor || []).reduce((s, l) => s + (l.total || 0), 0);
-        totalValue += (matsTotal + laborTotal);
-
-        const jobInvoices = invoices.filter(inv => inv.jobId === job.id && inv.status !== 'Void');
-        totalBilled += jobInvoices.reduce((s, inv) => s + (inv.total || 0), 0);
-      });
-    });
-
-    return { totalCount, totalValue, totalBilled, totalStages, completedStages };
-  };
+  let filterStartDate = '';
+  let filterEndDate = '';
 
   const getFilteredProjects = () => {
     return projects.filter(proj => {
@@ -53,9 +27,10 @@ export function renderProjectsList(container) {
       }
       
       // Date Range Filter (based on startDate, fallback to createdAt)
-      const projDate = proj.startDate || proj.createdAt;
-      if (projDate && !isWithinDateRange(projDate, currentDateRange)) {
-        return false;
+      if (filterStartDate || filterEndDate) {
+        const projDate = (proj.startDate || proj.createdAt || '').split('T')[0];
+        if (filterStartDate && projDate < filterStartDate) return false;
+        if (filterEndDate && projDate > filterEndDate) return false;
       }
 
       // Search filter
@@ -70,258 +45,141 @@ export function renderProjectsList(container) {
     });
   };
 
-  const render = () => {
-    const filtered = getFilteredProjects();
-    const metrics = calculateMetrics(filtered);
-
-    const activeProjCount = filtered.filter(p => p.status === 'In Progress').length;
-    const completedProjCount = filtered.filter(p => p.status === 'Completed').length;
-    const uninvoiced = metrics.totalValue - metrics.totalBilled;
-
-    container.innerHTML = `
-      <style>
-        .kpi-card {
-          margin: 0;
-          box-shadow: var(--shadow-sm);
-          transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-          border: none;
-          position: relative;
-          overflow: hidden;
-        }
-        .kpi-card:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-md);
-        }
-        .kpi-card::before {
-          content: "";
-          position: absolute;
-          top: 0; left: 0; bottom: 0; width: 4px;
-        }
-        .kpi-card.kpi-primary::before { background: var(--color-primary); }
-        .kpi-card.kpi-success::before { background: var(--color-success); }
-        .kpi-card.kpi-purple::before { background: var(--color-purple); }
-
-        .progress-bar-container {
-          width: 100%;
-          height: 6px;
-          background-color: var(--border-color);
-          border-radius: 4px;
-          overflow: hidden;
-          margin-top: 4px;
-        }
-        .progress-bar-fill {
-          height: 100%;
-          background-color: var(--color-primary);
-          transition: width 0.4s ease;
-        }
-      </style>
-
-      <div class="page-header">
-        <h1>Projects</h1>
-        <div class="page-header-actions">
-          <button class="btn btn-primary" id="btn-new-project" data-tooltip="Create a new parent project" data-tooltip-pos="left">
-            <span class="material-icons-outlined">add</span> New Project
-          </button>
-        </div>
+  container.innerHTML = `
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <h1>Projects</h1>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-sort-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;" title="Sort Projects">
+          <option value="number_desc">Sort: Project # (Newest)</option>
+          <option value="number_asc">Sort: Project # (Oldest)</option>
+          <option value="name_asc">Sort: Name (A-Z)</option>
+          <option value="customerName_asc">Sort: Customer (A-Z)</option>
+        </select>
+        <select id="projects-status-filter" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${projects.length})</option>
+          <option value="In Progress">In Progress (${projects.filter(p => p.status === 'In Progress').length})</option>
+          <option value="Completed">Completed (${projects.filter(p => p.status === 'Completed').length})</option>
+          <option value="Cancelled">Cancelled (${projects.filter(p => p.status === 'Cancelled').length})</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-new-project" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Project</span>
+        </button>
       </div>
+    </div>
+    <div id="projects-table-container"></div>
+  `;
 
-      <!-- Projects KPI Summary Row -->
-      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:16px">
-        
-        <!-- Card 1: Projects Overview -->
-        <div class="card kpi-card kpi-primary">
-          <div class="card-body" style="padding:10px 12px; display:flex; align-items:center; gap:10px">
-            <div style="width:32px; height:32px; border-radius:6px; background:linear-gradient(135deg, var(--color-primary-light), #e0e7ff); color:var(--color-primary); display:flex; align-items:center; justify-content:center; box-shadow: 0 1px 4px rgba(79, 70, 229, 0.1)">
-              <span class="material-icons-outlined" style="font-size:18px">folder_copy</span>
-            </div>
-            <div style="flex:1">
-              <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px">Total Projects</div>
-              <div style="font-size:16px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalCount}</div>
-            </div>
-            <div style="text-align:right; font-size:10px; color:var(--text-secondary); line-height:1.3">
-              <div style="color:var(--color-primary-dark); font-weight:600">${activeProjCount} Active</div>
-              <div>${completedProjCount} Completed</div>
-            </div>
+  const columns = [
+    { key: 'number', label: 'Project #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '13%' },
+    { key: 'name', label: 'Project', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>`, width: '25%' },
+    { key: 'customerName', label: 'Customer', render: (r) => escapeHTML(r.customerName || 'N/A'), width: '20%' },
+    { key: 'progress', label: 'Progress', render: (r) => {
+        const projJobs = jobs.filter(j => j.projectId === r.id);
+        const stagesCount = projJobs.length;
+        const completedStages = projJobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
+        const progressPct = stagesCount === 0 ? 0 : Math.round((completedStages / stagesCount) * 100);
+        return `
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:2px;">
+            <span class="text-secondary">${completedStages}/${stagesCount} Stages</span>
+            <span>${progressPct}%</span>
           </div>
-        </div>
-
-        <!-- Card 2: Portfolio Financials -->
-        <div class="card kpi-card kpi-success">
-          <div class="card-body" style="padding:10px 12px; display:flex; align-items:center; gap:10px">
-            <div style="width:32px; height:32px; border-radius:6px; background:linear-gradient(135deg, var(--color-success-bg), #dcfce7); color:var(--color-success); display:flex; align-items:center; justify-content:center; box-shadow: 0 1px 4px rgba(16, 185, 129, 0.1)">
-              <span class="material-icons-outlined" style="font-size:18px">monetization_on</span>
-            </div>
-            <div style="flex:1">
-              <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px">Portfolio Value</div>
-              <div style="font-size:16px; font-weight:800; color:var(--color-success-dark); margin-top:2px; line-height:1.2">$${metrics.totalValue.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
-            </div>
-            <div style="text-align:right; font-size:10px; color:var(--text-secondary); line-height:1.3">
-              <div>Billed: $${metrics.totalBilled.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
-              <div style="color:${uninvoiced > 0 ? 'var(--color-warning-dark)' : 'var(--text-secondary)'}; font-weight:600">Unbilled: $${Math.max(0, uninvoiced).toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
-            </div>
+          <div style="width:100%; height:6px; background-color:var(--border-color); border-radius:4px; overflow:hidden;">
+            <div style="height:100%; width:${progressPct}%; background-color:${progressPct === 100 ? 'var(--color-success)' : 'var(--color-primary)'}; transition:width 0.4s ease;"></div>
           </div>
-        </div>
+        `;
+      }, width: '20%' },
+    { key: 'status', label: 'Status', render: (r) => {
+        let statusClass = 'badge-neutral';
+        if (r.status === 'In Progress') statusClass = 'badge-primary';
+        if (r.status === 'Completed') statusClass = 'badge-success';
+        if (r.status === 'Cancelled') statusClass = 'badge-danger';
+        return `<span class="badge ${statusClass}">${escapeHTML(r.status)}</span>`;
+      }, width: '12%' },
+    { key: 'startDate', label: 'Date', render: (r) => r.startDate ? new Date(r.startDate.includes('T') ? r.startDate : r.startDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', width: '12%' }
+  ];
 
-        <!-- Card 3: Stage Progress -->
-        <div class="card kpi-card kpi-purple">
-          <div class="card-body" style="padding:10px 12px; display:flex; align-items:center; gap:10px">
-            <div style="width:32px; height:32px; border-radius:6px; background:linear-gradient(135deg, var(--color-purple-light), #f3e8ff); color:var(--color-purple); display:flex; align-items:center; justify-content:center; box-shadow: 0 1px 4px rgba(168, 85, 247, 0.1)">
-              <span class="material-icons-outlined" style="font-size:18px">account_tree</span>
-            </div>
-            <div style="flex:1">
-              <div style="font-size:10px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.3px">Total Stages</div>
-              <div style="font-size:16px; font-weight:800; color:var(--text-primary); margin-top:2px; line-height:1.2">${metrics.totalStages}</div>
-            </div>
-            <div style="text-align:right; font-size:10px; color:var(--text-secondary); line-height:1.3">
-              <div style="color:var(--color-success-dark); font-weight:600">${metrics.completedStages} Completed</div>
-              <div>${metrics.totalStages - metrics.completedStages} Pending</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Filters & Toolbar -->
-      <div class="page-toolbar" style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
-        <div class="toolbar-filters">
-          <button class="toolbar-filter ${currentFilter === 'all' ? 'active' : ''}" data-filter="all">All (${projects.length})</button>
-          <button class="toolbar-filter ${currentFilter === 'In Progress' ? 'active' : ''}" data-filter="In Progress">In Progress</button>
-          <button class="toolbar-filter ${currentFilter === 'Completed' ? 'active' : ''}" data-filter="Completed">Completed</button>
-          <button class="toolbar-filter ${currentFilter === 'Cancelled' ? 'active' : ''}" data-filter="Cancelled">Cancelled</button>
-        </div>
-        <div style="display:flex; gap:12px; align-items:center;">
-          <select id="projects-date-range" class="form-select" style="min-width:160px; height:38px; border-radius:8px;">
-            <option value="all-time" ${currentDateRange === 'all-time' ? 'selected' : ''}>All Time</option>
-            <option value="today" ${currentDateRange === 'today' ? 'selected' : ''}>Today</option>
-            <option value="this-week" ${currentDateRange === 'this-week' ? 'selected' : ''}>This Week</option>
-            <option value="last-week" ${currentDateRange === 'last-week' ? 'selected' : ''}>Last Week</option>
-            <option value="this-month" ${currentDateRange === 'this-month' ? 'selected' : ''}>This Month</option>
-            <option value="last-month" ${currentDateRange === 'last-month' ? 'selected' : ''}>Last Month</option>
-            <option value="this-year" ${currentDateRange === 'this-year' ? 'selected' : ''}>This Year</option>
-          </select>
-          <div class="toolbar-search">
-            <span class="material-icons-outlined">search</span>
-            <input type="text" placeholder="Search projects..." id="projects-search" value="${escapeHTML(searchQuery)}" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Projects Table -->
-      <div class="card" style="padding:0; box-shadow:var(--shadow-sm)">
-        <div class="card-body" style="padding:0">
-          <table class="data-table table-hover">
-            <thead>
-              <tr>
-                <th style="padding-left:16px; width:120px">Project No.</th>
-                <th>Project Name</th>
-                <th>Customer</th>
-                <th style="width:130px">Status</th>
-                <th style="width:120px">Start Date</th>
-                <th style="width:140px; text-align:center">Progress</th>
-                <th style="width:120px; text-align:right">Value</th>
-                <th style="width:120px; text-align:right">Invoiced</th>
-                <th style="width:80px; text-align:right; padding-right:16px">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filtered.length === 0 ? `
-                <tr>
-                  <td colspan="9" style="text-align:center; padding:64px 16px; color:var(--text-secondary)">
-                    <span class="material-icons-outlined" style="font-size:48px; color:var(--border-color); display:block; margin-bottom:12px;">search_off</span>
-                    No projects found matching the criteria.
-                  </td>
-                </tr>
-              ` : filtered.map(proj => {
-                const projJobs = jobs.filter(j => j.projectId === proj.id);
-                const stagesCount = projJobs.length;
-                const completedStages = projJobs.filter(j => j.status === 'Completed' || j.status === 'Invoiced').length;
-                const progressPct = stagesCount === 0 ? 0 : Math.round((completedStages / stagesCount) * 100);
-
-                // Sum project jobs value & invoices
-                let val = 0;
-                let billed = 0;
-                projJobs.forEach(job => {
-                  const mSum = (job.materials || []).reduce((s, m) => s + (m.total || 0), 0);
-                  const lSum = (job.labor || []).reduce((s, l) => s + (l.total || 0), 0);
-                  val += (mSum + lSum);
-
-                  const jobInvs = invoices.filter(inv => inv.jobId === job.id && inv.status !== 'Void');
-                  billed += jobInvs.reduce((s, inv) => s + (inv.total || 0), 0);
-                });
-
-                let statusClass = 'badge-neutral';
-                if (proj.status === 'In Progress') statusClass = 'badge-primary';
-                if (proj.status === 'Completed') statusClass = 'badge-success';
-                if (proj.status === 'Cancelled') statusClass = 'badge-danger';
-
-                return `
-                  <tr>
-                    <td style="padding-left:16px">
-                      <a href="#/projects/${proj.id}" style="font-weight:600; color:var(--color-primary); text-decoration:none">${escapeHTML(proj.number)}</a>
-                    </td>
-                    <td>
-                      <a href="#/projects/${proj.id}" style="font-weight:700; color:var(--text-primary); text-decoration:none; display:block">${escapeHTML(proj.name)}</a>
-                    </td>
-                    <td>${escapeHTML(proj.customerName || 'N/A')}</td>
-                    <td>
-                      <span class="badge ${statusClass}">${escapeHTML(proj.status)}</span>
-                    </td>
-                    <td>${proj.startDate ? proj.startDate : '—'}</td>
-                    <td style="padding-right:24px;">
-                      <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:2px; font-weight:600;">
-                        <span style="color:var(--text-secondary)">${completedStages}/${stagesCount} Stages</span>
-                        <span style="color:${progressPct === 100 ? 'var(--color-success)' : 'var(--text-primary)'}">${progressPct}%</span>
-                      </div>
-                      <div class="progress-bar-container">
-                        <div class="progress-bar-fill" style="width:${progressPct}%; background-color:${progressPct === 100 ? 'var(--color-success)' : 'var(--color-primary)'};"></div>
-                      </div>
-                    </td>
-                    <td style="text-align:right; font-weight:600">$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td style="text-align:right; font-weight:600; color:var(--color-success-dark)">$${billed.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td style="text-align:right; padding-right:16px">
-                      <a href="#/projects/${proj.id}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; justify-content:center; padding:6px 10px; font-weight:600; border-radius:6px;">View</a>
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-
-    // Hook events
-    container.querySelector('#btn-new-project')?.addEventListener('click', () => openNewProjectModal());
-    
-    // Search listener
-    const searchInput = container.querySelector('#projects-search');
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        searchQuery = e.target.value;
-        render();
-      });
-      searchInput.focus();
-      // place cursor at end
-      const len = searchInput.value.length;
-      searchInput.setSelectionRange(len, len);
-    }
-
-    // Date Range listener
-    const dateRangeSelect = container.querySelector('#projects-date-range');
-    if (dateRangeSelect) {
-      dateRangeSelect.addEventListener('change', (e) => {
-        currentDateRange = e.target.value;
-        render();
+  const table = createDataTable({
+    columns,
+    data: getFilteredProjects(),
+    onRowClick: (id) => router.navigate(`/projects/${id}`),
+    emptyMessage: 'No projects found',
+    emptyIcon: 'folder_open',
+    selectable: true,
+    onSelectionChange: (selectedIds) => {
+      createBulkActionBar({
+        container,
+        selectedIds,
+        onClear: () => table.clearSelection(),
+        actions: [
+          {
+            label: 'Delete Selected',
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: (ids) => {
+              showModal({
+                title: 'Confirm Bulk Delete',
+                content: `<p>Are you sure you want to delete ${ids.length} selected project(s)? This action cannot be undone.</p>`,
+                actions: [
+                  { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+                  { label: 'Delete', className: 'btn-danger', onClick: c => {
+                    ids.forEach(id => store.delete('projects', id));
+                    table.clearSelection();
+                    renderProjectsList(container);
+                    showToast(`Deleted ${ids.length} project(s)`, 'success');
+                    c();
+                  }}
+                ]
+              });
+            }
+          }
+        ]
       });
     }
+  });
 
-    // Filter clicks
-    container.querySelectorAll('.toolbar-filter').forEach(btn => {
-      btn.addEventListener('click', () => {
-        currentFilter = btn.dataset.filter;
-        render();
-      });
-    });
+  container.querySelector('#projects-table-container').appendChild(table);
+
+  const applyFilters = () => {
+    table.updateData(getFilteredProjects());
   };
+
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
+      applyFilters();
+    }
+  });
+
+  // Event Delegation for buttons & dropdowns relocated into top breadcrumbs row
+  const handleProjectClick = (e) => {
+    const btnNew = e.target.closest('#btn-new-project');
+    if (btnNew) {
+      e.preventDefault();
+      openNewProjectModal();
+    }
+  };
+
+  const handleProjectChange = (e) => {
+    if (e.target.id === 'projects-status-filter') {
+      currentFilter = e.target.value;
+      applyFilters();
+    } else if (e.target.id === 'filter-sort-select') {
+      const val = e.target.value;
+      const [key, dir] = val.split('_');
+      table.setSort(key, dir);
+    }
+  };
+
+  document.addEventListener('click', handleProjectClick);
+  document.addEventListener('change', handleProjectChange);
+
+  setListSearch((q) => {
+    searchQuery = q;
+    applyFilters();
+  }, 'projects');
 
   const openNewProjectModal = () => {
     const modalContent = document.createElement('div');
@@ -394,8 +252,8 @@ export function renderProjectsList(container) {
           const customerId = document.getElementById('p-customer').value;
           const siteAddress = document.getElementById('p-site').value;
           const description = document.getElementById('p-desc').value.trim();
-          const startDate = document.getElementById('p-start-date').value;
-          const endDate = document.getElementById('p-end-date').value;
+          const startDate = document.getElementById('p-start-date').value || null;
+          const endDate = document.getElementById('p-end-date').value || null;
 
           if (!name) { showToast('Project Name is required', 'error'); return; }
           if (!customerId) { showToast('Customer selection is required', 'error'); return; }
@@ -432,6 +290,4 @@ export function renderProjectsList(container) {
       ]
     });
   };
-
-  render();
 }

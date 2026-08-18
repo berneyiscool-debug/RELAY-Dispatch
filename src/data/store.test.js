@@ -217,7 +217,7 @@ describe('DataStore', () => {
         company_id: 'comp1',
         name: 'Electric Solutions',
         status: 'Active',
-        email: 'electric@sol.com'
+        email: 'electric@example.com'
       };
 
       const result = store.normalizeRecord(dbContractor, 'contractors');
@@ -226,7 +226,7 @@ describe('DataStore', () => {
       assert.strictEqual(result.companyId, 'comp1');
       assert.strictEqual(result.businessName, 'Electric Solutions');
       assert.strictEqual(result.active, true);
-      assert.strictEqual(result.email, 'electric@sol.com');
+      assert.strictEqual(result.email, 'electric@example.com');
       assert.strictEqual(result.name, 'Electric Solutions');
     });
 

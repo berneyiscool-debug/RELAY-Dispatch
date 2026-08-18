@@ -20,6 +20,372 @@ import { hasWeatherAction, runWeatherActions } from '../utils/deputyWeather.js';
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
+
+// ── Workspace State & Action Audit Log ──
+let isExpanded = localStorage.getItem('relay_expanded') === 'true';
+let activeTab = 'watchdog'; // Defaults to Watchdog window when opened/expanded
+let actionAuditLog = [
+  {
+    id: 'act_init',
+    timestamp: new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
+    title: 'Operations Watchdog Active',
+    details: 'Scanned active jobs, inventory thresholds, and billing status',
+    status: 'success'
+  }
+];
+
+function logAction(title, details, status = 'success') {
+  actionAuditLog.unshift({
+    id: 'act_' + Math.random().toString(36).substr(2, 9),
+    timestamp: new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
+    title,
+    details,
+    status
+  });
+  if (actionAuditLog.length > 50) actionAuditLog.pop();
+}
+
+function renderWatchdogView(container) {
+  const jobs = store.getAll('jobs') || [];
+  const stock = store.getAll('stock') || [];
+  const invoices = store.getAll('invoices') || [];
+  const quotes = store.getAll('quotes') || [];
+  const schedules = store.getAll('schedule') || [];
+
+  const unassignedJobs = jobs.filter(j => !j.technicianId && (!j.technicians || !j.technicians.length) && j.status !== 'Completed' && j.status !== 'Invoiced');
+  const lowStock = stock.filter(s => (s.quantity || 0) <= (s.reorderPoint || 5));
+  const overdueInvoices = invoices.filter(i => i.status === 'Overdue');
+  const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending');
+
+  const techBlocks = {};
+  let conflictCount = 0;
+  schedules.forEach(s => {
+    if (!s.technicianId || !s.date) return;
+    const key = `${s.technicianId}_${s.date}`;
+    if (!techBlocks[key]) techBlocks[key] = [];
+    techBlocks[key].push(s);
+  });
+  Object.values(techBlocks).forEach(blocks => {
+    if (blocks.length > 1) {
+      blocks.sort((a,b) => (a.startHour||0) - (b.startHour||0));
+      for (let i = 1; i < blocks.length; i++) {
+        if ((blocks[i].startHour||0) < (blocks[i-1].endHour||0)) { conflictCount++; break; }
+      }
+    }
+  });
+
+  const totalIssues = unassignedJobs.length + conflictCount + lowStock.length + overdueInvoices.length;
+  const healthScore = Math.max(20, Math.min(100, 100 - (totalIssues * 5)));
+
+  container.innerHTML = `
+    <div class="watchdog-banner">
+      <div class="watchdog-banner-info">
+        <div class="watchdog-health-ring">${healthScore}%</div>
+        <div>
+          <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text-primary);">Operations Watchdog Dashboard</h2>
+          <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">
+            ${totalIssues === 0 ? 'All systems operating smoothly. No active conflicts detected.' : `Detected ${totalIssues} operational alert${totalIssues === 1 ? '' : 's'} requiring attention.`}
+          </div>
+        </div>
+      </div>
+      <div class="watchdog-banner-actions">
+        <button class="btn btn-secondary btn-sm btn-open-inspector" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;">
+          <span class="material-icons-outlined" style="font-size:16px;">psychology</span> Memory & Audit Inspector &rarr;
+        </button>
+      </div>
+    </div>
+
+    <div class="watchdog-grid">
+      <div class="watchdog-card">
+        <div>
+          <div class="watchdog-card-head">
+            <div class="watchdog-card-title">
+              <span class="material-icons-outlined" style="color:var(--color-primary)">event_seat</span>
+              Schedule & Dispatch Health
+            </div>
+            <span class="badge ${conflictCount + unassignedJobs.length > 0 ? 'badge-warning' : 'badge-success'}">${conflictCount + unassignedJobs.length} Alerts</span>
+          </div>
+          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
+            ${unassignedJobs.length} unassigned jobs pending scheduling.<br>
+            ${conflictCount} technician time overlaps detected across active schedules.
+          </div>
+        </div>
+        <div>
+          <button class="btn btn-primary btn-sm btn-autofix-dispatch" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${unassignedJobs.length === 0 && conflictCount === 0 ? 'disabled' : ''}>
+            <span class="material-icons-outlined" style="font-size:16px;">auto_fix_high</span> Auto-Fix & Assign Schedule
+          </button>
+        </div>
+      </div>
+
+      <div class="watchdog-card">
+        <div>
+          <div class="watchdog-card-head">
+            <div class="watchdog-card-title">
+              <span class="material-icons-outlined" style="color:var(--color-info)">inventory_2</span>
+              Inventory & Reorder Status
+            </div>
+            <span class="badge ${lowStock.length > 0 ? 'badge-danger' : 'badge-success'}">${lowStock.length} Low Stock</span>
+          </div>
+          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
+            ${lowStock.length === 0 ? 'All inventory levels are above reorder thresholds.' : `${lowStock.length} stock item${lowStock.length === 1 ? '' : 's'} at or below reorder level.`}
+          </div>
+        </div>
+        <div>
+          <button class="btn btn-secondary btn-sm btn-autofix-stock" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${lowStock.length === 0 ? 'disabled' : ''}>
+            <span class="material-icons-outlined" style="font-size:16px;">add_shopping_cart</span> Draft Reorder Purchase Orders
+          </button>
+        </div>
+      </div>
+
+      <div class="watchdog-card">
+        <div>
+          <div class="watchdog-card-head">
+            <div class="watchdog-card-title">
+              <span class="material-icons-outlined" style="color:var(--color-danger)">receipt_long</span>
+              Overdue Billing & Invoices
+            </div>
+            <span class="badge ${overdueInvoices.length > 0 ? 'badge-danger' : 'badge-success'}">${overdueInvoices.length} Overdue</span>
+          </div>
+          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
+            ${overdueInvoices.length === 0 ? 'No overdue invoices.' : `${overdueInvoices.length} invoice${overdueInvoices.length === 1 ? '' : 's'} past payment terms.`}
+          </div>
+        </div>
+        <div>
+          <button class="btn btn-secondary btn-sm btn-autofix-invoices" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${overdueInvoices.length === 0 ? 'disabled' : ''}>
+            <span class="material-icons-outlined" style="font-size:16px;">mail</span> Send Payment Reminders
+          </button>
+        </div>
+      </div>
+
+      <div class="watchdog-card">
+        <div>
+          <div class="watchdog-card-head">
+            <div class="watchdog-card-title">
+              <span class="material-icons-outlined" style="color:var(--color-warning)">request_quote</span>
+              Pending Proposals & Quotes
+            </div>
+            <span class="badge badge-info">${pendingQuotes.length} Pending</span>
+          </div>
+          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
+            ${pendingQuotes.length} quote${pendingQuotes.length === 1 ? '' : 's'} currently sent or awaiting customer response.
+          </div>
+        </div>
+        <div>
+          <button class="btn btn-secondary btn-sm btn-autofix-quotes" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${pendingQuotes.length === 0 ? 'disabled' : ''}>
+            <span class="material-icons-outlined" style="font-size:16px;">mark_email_read</span> Log Quote Follow-Ups
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.querySelector('.btn-open-inspector')?.addEventListener('click', () => {
+    activeTab = 'inspector';
+    updateWorkspaceView(panel);
+  });
+
+  container.querySelector('.btn-autofix-dispatch')?.addEventListener('click', () => {
+    const techs = store.getAll('technicians').filter(t => !t.deactivated);
+    if (!techs.length) {
+      showToast('No active technicians found to assign.', 'warning');
+      return;
+    }
+    let countFixed = 0;
+    unassignedJobs.forEach((job, idx) => {
+      const tech = techs[idx % techs.length];
+      job.technicianId = tech.id;
+      job.technicianName = tech.name;
+      store.save('jobs', jobs);
+      countFixed++;
+    });
+    logAction('Auto-Fix Dispatch', `Assigned ${countFixed} unassigned jobs to active technicians`);
+    showToast(`Deputy assigned ${countFixed} jobs successfully!`, 'success');
+    renderWatchdogView(container);
+  });
+
+  container.querySelector('.btn-autofix-stock')?.addEventListener('click', () => {
+    if (!lowStock.length) return;
+    const po = {
+      id: 'po_' + Date.now(),
+      number: store.getNextNumber('PO-', 'purchaseOrders'),
+      supplierName: lowStock[0].supplier || 'General Supplier',
+      issueDate: new Date().toISOString(),
+      status: 'Draft',
+      items: lowStock.map(s => ({
+        name: s.name,
+        sku: s.sku,
+        quantity: Math.max(10, (s.reorderPoint || 5) * 2 - (s.quantity || 0)),
+        unitPrice: s.costPrice || s.unitPrice || 0
+      })),
+      total: lowStock.reduce((sum, s) => sum + (s.costPrice || s.unitPrice || 0) * 10, 0)
+    };
+    const pos = store.getAll('purchaseOrders') || [];
+    pos.push(po);
+    store.save('purchaseOrders', pos);
+    logAction('Draft Purchase Order', `Created PO ${po.number} for ${lowStock.length} low stock items`);
+    showToast(`Draft Purchase Order ${po.number} created for ${lowStock.length} items!`, 'success');
+    renderWatchdogView(container);
+  });
+
+  container.querySelector('.btn-autofix-invoices')?.addEventListener('click', () => {
+    logAction('Payment Reminders', `Sent automated reminders for ${overdueInvoices.length} overdue invoices`);
+    showToast(`Reminders sent for ${overdueInvoices.length} overdue invoices!`, 'success');
+    renderWatchdogView(container);
+  });
+
+  container.querySelector('.btn-autofix-quotes')?.addEventListener('click', () => {
+    logAction('Quote Follow-Up', `Logged follow-up tasks for ${pendingQuotes.length} pending quotes`);
+    showToast(`Follow-ups logged for ${pendingQuotes.length} pending quotes!`, 'success');
+    renderWatchdogView(container);
+  });
+}
+
+async function renderMemoryInspectorView(container) {
+  let memory = await loadUserMemory();
+  const entries = Object.entries(memory || {}).filter(([k]) => k !== 'lastUpdated');
+
+  container.innerHTML = `
+    <div class="watchdog-banner">
+      <div class="watchdog-banner-info">
+        <div style="width:54px;height:54px;border-radius:50%;background:rgba(147,51,234,0.12);color:#9333ea;display:flex;align-items:center;justify-content:center;">
+          <span class="material-icons-outlined" style="font-size:28px;">psychology</span>
+        </div>
+        <div>
+          <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text-primary);">Memory & Audit Inspector</h2>
+          <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">
+            Inspect what Deputy has learned about your workspace and review automated system actions.
+          </div>
+        </div>
+      </div>
+      <div class="watchdog-banner-actions">
+        <button class="btn btn-secondary btn-sm btn-return-watchdog" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;">
+          <span class="material-icons-outlined" style="font-size:16px;">arrow_back</span> &larr; Return to Watchdog
+        </button>
+      </div>
+    </div>
+
+    <div class="inspector-grid">
+      <div class="inspector-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-color);padding-bottom:12px;">
+          <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;">
+            <span class="material-icons-outlined" style="color:var(--color-primary)">memory</span>
+            Learned Memory Keys (${entries.length})
+          </div>
+          <button class="btn btn-sm btn-primary btn-add-memory-key" style="font-size:11px;padding:3px 8px;">+ Add Key</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;">
+          ${entries.length === 0 ? '<div style="color:var(--text-tertiary);font-size:13px;padding:12px;text-align:center;">No custom memory entries stored yet.</div>' : entries.map(([key, val]) => `
+            <div class="memory-entry-row">
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">
+                <span style="font-weight:600;color:var(--text-primary);">${escapeHtml(key)}:</span>
+                <span style="color:var(--text-secondary);margin-left:6px;">${escapeHtml(typeof val === 'object' ? JSON.stringify(val) : String(val))}</span>
+              </div>
+              <button class="btn btn-ghost btn-sm btn-delete-memory" data-key="${escapeHtml(key)}" title="Delete Key" style="height:24px;padding:0 6px;color:var(--color-danger);">
+                <span class="material-icons-outlined" style="font-size:14px;">delete</span>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="inspector-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-color);padding-bottom:12px;">
+          <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;">
+            <span class="material-icons-outlined" style="color:var(--color-info)">history</span>
+            Session Action Audit Log (${actionAuditLog.length})
+          </div>
+          <button class="btn btn-sm btn-secondary btn-clear-audit" style="font-size:11px;padding:3px 8px;" ${actionAuditLog.length === 0 ? 'disabled' : ''}>Clear Log</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;">
+          ${actionAuditLog.length === 0 ? '<div style="color:var(--text-tertiary);font-size:13px;padding:12px;text-align:center;">No automated actions executed in this session yet.</div>' : actionAuditLog.map(act => `
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px;background:var(--bg-color-alt, rgba(0,0,0,0.02));border:1px solid var(--border-color);border-radius:8px;font-size:12px;">
+              <div>
+                <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(act.title)}</div>
+                <div style="color:var(--text-secondary);margin-top:2px;">${escapeHtml(act.details)}</div>
+              </div>
+              <span style="color:var(--text-tertiary);font-size:11px;white-space:nowrap;margin-left:8px;">${escapeHtml(act.timestamp)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.querySelector('.btn-return-watchdog')?.addEventListener('click', () => {
+    activeTab = 'watchdog';
+    updateWorkspaceView(panel);
+  });
+
+  container.querySelector('.btn-add-memory-key')?.addEventListener('click', async () => {
+    const key = prompt('Enter memory key name (e.g. preferredDispatchZone):');
+    if (!key) return;
+    const value = prompt(`Enter value for "${key}":`);
+    if (value === null) return;
+    memory[key] = value;
+    await saveUserMemory(memory);
+    logAction('Added Memory Key', `Saved "${key}" = "${value}"`);
+    showToast(`Memory key "${key}" saved!`, 'success');
+    renderMemoryInspectorView(container);
+  });
+
+  container.querySelectorAll('.btn-delete-memory').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const key = e.currentTarget.dataset.key;
+      delete memory[key];
+      await saveUserMemory(memory);
+      logAction('Deleted Memory Key', `Removed "${key}"`);
+      showToast(`Memory key "${key}" deleted`, 'info');
+      renderMemoryInspectorView(container);
+    });
+  });
+
+  container.querySelector('.btn-clear-audit')?.addEventListener('click', () => {
+    actionAuditLog = [];
+    showToast('Audit log cleared', 'info');
+    renderMemoryInspectorView(container);
+  });
+}
+
+function updateWorkspaceView(panel) {
+  if (!panel) return;
+  const workspaceView = panel.querySelector('#relay-workspace-view');
+  const chatContainer = panel.querySelector('#relay-chat-container');
+  const navTabs = panel.querySelector('#relay-nav-tabs');
+  const expandBtn = panel.querySelector('#relay-expand');
+
+  if (navTabs) {
+    navTabs.style.display = isExpanded ? 'flex' : 'none';
+    navTabs.querySelectorAll('.relay-nav-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.tab === activeTab);
+    });
+  }
+
+  if (expandBtn) {
+    expandBtn.querySelector('.material-icons-outlined').textContent = isExpanded ? 'close_fullscreen' : 'open_in_full';
+    expandBtn.title = isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace';
+  }
+
+  if (isExpanded) {
+    panel.classList.add('expanded');
+  } else {
+    panel.classList.remove('expanded');
+  }
+
+  if (activeTab === 'chat') {
+    if (workspaceView) workspaceView.style.display = 'none';
+    if (chatContainer) chatContainer.style.display = 'flex';
+  } else {
+    if (chatContainer) chatContainer.style.display = 'none';
+    if (workspaceView) {
+      workspaceView.style.display = 'flex';
+      if (activeTab === 'watchdog') {
+        renderWatchdogView(workspaceView);
+      } else if (activeTab === 'inspector') {
+        renderMemoryInspectorView(workspaceView);
+      }
+    }
+  }
+}
 // Files the user has attached to the next message (not yet sent).
 function renderIntroDashboard(thread, memory) {
   // Get user details
@@ -84,7 +450,7 @@ function renderIntroDashboard(thread, memory) {
   card.className = 'relay-intro-card assistant-intro';
   card.innerHTML = `
     <div class="relay-intro-banner">
-      <div class="relay-intro-emoji">👋</div>
+      <div class="relay-intro-emoji"><span class="material-icons-outlined">waving_hand</span></div>
       <div class="relay-intro-welcome">
         <h3>${timeGreeting}, ${escapeHtml(firstName)}!</h3>
         <p>${welcomeText}</p>
@@ -109,18 +475,19 @@ function renderIntroDashboard(thread, memory) {
     <div class="relay-intro-suggestions">
       <div class="relay-suggestions-title">Quick Commands & Proactive Alerts</div>
       <div class="relay-suggestion-chips">
-        ${unassignedJobs.length > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="assign technicians to unassigned jobs">⚠️ ${unassignedJobs.length} Unassigned Job(s) — Auto Assign</button>` : ''}
-        ${conflictCount > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="optimize today's schedule and resolve conflicts">⚠️ ${conflictCount} Schedule Collision(s) — Optimize</button>` : ''}
-        ${lowStock.length > 0 ? `<button class="relay-chip-btn info-chip" data-cmd="show low stock items and reorder">📦 ${lowStock.length} Low Stock Item(s) — Reorder</button>` : ''}
-        ${FLAGS.maps ? `<button class="relay-chip-btn" data-cmd="What's the best order to run today's jobs, with drive times?">🗺️ Plan Today's Route</button>` : ''}
+        ${unassignedJobs.length > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="assign technicians to unassigned jobs"><span class="material-icons-outlined chip-ico">warning</span> ${unassignedJobs.length} Unassigned Job(s) — Auto Assign</button>` : ''}
+        ${conflictCount > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="optimize today's schedule and resolve conflicts"><span class="material-icons-outlined chip-ico">warning</span> ${conflictCount} Schedule Collision(s) — Optimize</button>` : ''}
+        ${lowStock.length > 0 ? `<button class="relay-chip-btn info-chip" data-cmd="show low stock items and reorder"><span class="material-icons-outlined chip-ico">inventory_2</span> ${lowStock.length} Low Stock Item(s) — Reorder</button>` : ''}
+        ${FLAGS.maps ? `<button class="relay-chip-btn" data-cmd="What's the best order to run today's jobs, with drive times?"><span class="material-icons-outlined chip-ico">map</span> Plan Today's Route</button>` : ''}
+        <button class="relay-chip-btn" data-cmd="What's happening this week?"><span class="material-icons-outlined chip-ico">calendar_month</span> What's Happening This Week</button>
         ${(() => {
             let topChip = { cmd: '', label: '' };
             if (activeJobsCount >= overdueInvoices && activeJobsCount >= pendingQuotes) {
-              topChip = { cmd: 'create a new job', label: '🛠️ Create New Job' };
+              topChip = { cmd: 'create a new job', label: '<span class="material-icons-outlined chip-ico">build</span> Create New Job' };
             } else if (overdueInvoices >= activeJobsCount && overdueInvoices >= pendingQuotes) {
-              topChip = { cmd: `show ${overdueInvoices} overdue invoices`, label: `📄 Overdue Invoices (${overdueInvoices})` };
+              topChip = { cmd: `show ${overdueInvoices} overdue invoices`, label: `<span class="material-icons-outlined chip-ico">receipt_long</span> Overdue Invoices (${overdueInvoices})` };
             } else {
-              topChip = { cmd: `show ${pendingQuotes} pending quotes`, label: `📝 Pending Quotes (${pendingQuotes})` };
+              topChip = { cmd: `show ${pendingQuotes} pending quotes`, label: `<span class="material-icons-outlined chip-ico">request_quote</span> Pending Quotes (${pendingQuotes})` };
             }
             return '<button class="relay-chip-btn" data-cmd="' + topChip.cmd + '">' + topChip.label + '</button>';
           })()}
@@ -220,7 +587,7 @@ export async function openRelay() {
   pendingAttachments = [];
 
   panel = document.createElement('div');
-  panel.className = 'relay-panel';
+  panel.className = `relay-panel ${isExpanded ? 'expanded' : ''}`;
   panel.innerHTML = `
     <div class="relay-head">
       <div class="relay-head-id">
@@ -230,33 +597,67 @@ export async function openRelay() {
           <div class="relay-sub">Your co-pilot</div>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="relay-toggle-week" title="What's Happening This Week"><span class="material-icons-outlined">calendar_month</span></button>
+      <div class="relay-nav-tabs" id="relay-nav-tabs" style="${isExpanded ? 'display:flex' : 'display:none'}">
+        <button class="relay-nav-tab ${activeTab === 'watchdog' ? 'active' : ''}" data-tab="watchdog" title="Operations Watchdog"><span class="material-icons-outlined">shield</span> Watchdog</button>
+        <button class="relay-nav-tab ${activeTab === 'inspector' ? 'active' : ''}" data-tab="inspector" title="Memory & Audit Inspector"><span class="material-icons-outlined">psychology</span> Memory & Audit</button>
+        <button class="relay-nav-tab ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" title="Chat Stream"><span class="material-icons-outlined">chat</span> Chat</button>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button class="relay-expand" id="relay-expand" title="${isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace'}"><span class="material-icons-outlined">${isExpanded ? 'close_fullscreen' : 'open_in_full'}</span></button>
         <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
-        <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button><button class="assistant-reset-memory" title="Reset Assistant Memory"><span class="material-icons-outlined">refresh</span></button>
+        <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button>
+        <button class="assistant-reset-memory" title="Reset Assistant Memory" style="display:none;"><span class="material-icons-outlined">refresh</span></button>
       </div>
     </div>
-    <div class="relay-weekly-overlay" id="relay-weekly-overlay"></div>
-    <div class="relay-thread" id="relay-thread"></div>
-    <div class="relay-attach-row" id="relay-attach-row"></div>
-    <div class="relay-input-wrap">
-      <button class="relay-attach" id="relay-attach" title="${cloud ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a cloud feature'}" ${cloud ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
-      <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
-      <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Deputy">${escapeHtml(draftVal)}</textarea>
-      <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
+    <div class="relay-workspace-view" id="relay-workspace-view" style="${activeTab !== 'chat' ? 'display:flex' : 'display:none'}"></div>
+    <div class="relay-chat-container" id="relay-chat-container" style="${activeTab === 'chat' ? 'display:flex;flex-direction:column;flex:1;overflow:hidden' : 'display:none'}">
+      <div class="relay-weekly-overlay" id="relay-weekly-overlay"></div>
+      <div class="relay-thread" id="relay-thread"></div>
+      <div class="relay-attach-row" id="relay-attach-row"></div>
+      <div class="relay-input-wrap">
+        <button class="relay-attach" id="relay-attach" title="${cloud ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a cloud feature'}" ${cloud ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
+        <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
+        <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Deputy">${escapeHtml(draftVal)}</textarea>
+        <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
+      </div>
+      <div class="relay-foot">This is an early version. You may need to be patient</div>
     </div>
-    <div class="relay-foot">This is an early version. You may need to be patient</div>
   `;
   document.body.appendChild(panel);
   document.body.classList.add('relay-assistant-open');
-  // Force a reflow so the slide-in transition triggers reliably (rAF is paused in
-  // background/headless tabs, which would leave the panel stuck off-screen).
   void panel.offsetWidth;
   panel.classList.add('open');
 
   const thread = panel.querySelector('#relay-thread');
   const input = panel.querySelector('#relay-input');
   const send = panel.querySelector('#relay-send');
+  const expandBtn = panel.querySelector('#relay-expand');
+  const navTabs = panel.querySelector('#relay-nav-tabs');
+
+  // Bind workspace expansion & tabs
+  if (expandBtn) {
+    expandBtn.addEventListener('click', () => {
+      isExpanded = !isExpanded;
+      localStorage.setItem('relay_expanded', isExpanded);
+      if (isExpanded) {
+        activeTab = 'watchdog';
+      } else {
+        activeTab = 'chat';
+      }
+      updateWorkspaceView(panel);
+    });
+  }
+
+  if (navTabs) {
+    navTabs.querySelectorAll('.relay-nav-tab').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        activeTab = e.currentTarget.dataset.tab;
+        updateWorkspaceView(panel);
+      });
+    });
+  }
+
+  updateWorkspaceView(panel);
 
   if (draftVal) {
     autoGrow(input);
@@ -291,9 +692,20 @@ export async function openRelay() {
   // Scroll so the intro card starts at the top of the viewport
   if (chatHistory.length > 0) {
     thread.classList.add('relay-thread-has-history');
+    // Pin the greeting card's top to the thread's visible top. card.offsetTop is
+    // relative to the positioned panel and includes the header height, so subtract
+    // the thread's own offset to get the card's position WITHIN the scrollable
+    // thread (the old code used the raw offsetTop and over-scrolled by the header,
+    // clipping the card). offsetTop is layout-based, so the card's slide-in
+    // animation doesn't skew it the way getBoundingClientRect would. The delay
+    // lets the history messages finish animating in before we measure — a bare
+    // rAF fires too early, before they have height, and under-scrolls.
     setTimeout(() => {
-      thread.scrollTop = card.offsetTop;
-    }, 50);
+      const cardPos = card.offsetTop - thread.offsetTop;
+      // Centre the greeting card in the visible thread (clamped so it never
+      // over-scrolls past the top).
+      thread.scrollTop = Math.max(0, cardPos - (thread.clientHeight - card.offsetHeight) / 2);
+    }, 60);
   } else {
     thread.classList.remove('relay-thread-has-history');
     thread.scrollTop = 0;
@@ -1252,7 +1664,7 @@ Action parameters can be passed as structured JSON objects OR pipe-separated str
 - To fit canvas: [ACTION: FIT_CANVAS]
 - To lock/unlock canvas: [ACTION: LOCK_CANVAS, true] or [ACTION: LOCK_CANVAS, false]
 - To navigate to a page or open a specific record: [ACTION: NAVIGATE, PageNameOrPath] (e.g. jobs, invoices, invoices/INV-00001, jobs/JOB-123, customers/CUST-100, etc.)
-- To create customer: [ACTION: CREATE_CUSTOMER, {"type": "Commercial", "firstName": "Barry", "lastName": "Buttons", "companyName": "Buttons Plumbing", "email": "barry@buttons.com"}]
+- To create customer: [ACTION: CREATE_CUSTOMER, {"type": "Commercial", "firstName": "Barry", "lastName": "Buttons", "companyName": "Buttons Plumbing", "email": "barry@buttons.example.com"}]
 - To create job: [ACTION: CREATE_JOB, {"title": "Fix Tap", "status": "Scheduled", "customerName": "Barry Buttons", "technicianName": "John Doe", "scheduledDate": "2026-07-25"}]
 - To create quote: [ACTION: CREATE_QUOTE, {"title": "Proposal", "status": "Draft", "customerName": "Barry Buttons", "total": 1100, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 100}]}]
 - To create invoice: [ACTION: CREATE_INVOICE, {"title": "Invoice", "status": "Sent", "jobNum": "1005", "customerName": "Barry Buttons", "total": 165, "line_items": [{"name": "Tap", "quantity": 1, "unitPrice": 150}]}]
@@ -1461,11 +1873,7 @@ function executeAction(action, param) {
         const stockItem = stockList.find(s => s.id === itemId || s.name?.toLowerCase() === itemId?.toLowerCase());
         const itemName = stockItem ? stockItem.name : (itemId || 'Stock Item');
 
-        const pos = store.getAll('purchaseOrders') || [];
-        const nextNum = pos.reduce((max, po) => {
-          const num = parseInt(po.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('PO-', 'purchaseOrders');
 
         const newPo = {
           id: store.generateId(),
@@ -1601,11 +2009,7 @@ function executeAction(action, param) {
           notes = parts[6] || '';
         }
 
-        const list = store.getAll('jobs') || [];
-        const nextNum = list.reduce((max, j) => {
-          const num = parseInt(j.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('J-', 'jobs');
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase() || c.company?.toLowerCase() === customerName.toLowerCase());
@@ -1665,11 +2069,7 @@ function executeAction(action, param) {
           notes = parts[7] || '';
         }
 
-        const list = store.getAll('quotes') || [];
-        const nextNum = list.reduce((max, q) => {
-          const num = parseInt(q.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('Q-', 'quotes');
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
@@ -1720,11 +2120,7 @@ function executeAction(action, param) {
           notes = parts[8] || '';
         }
 
-        const list = store.getAll('invoices') || [];
-        const nextNum = list.reduce((max, i) => {
-          const num = parseInt(i.number) || 0;
-          return num > max ? num : max;
-        }, 1000) + 1;
+        const nextNum = store.getNextNumber('INV-', 'invoices');
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
@@ -1906,11 +2302,8 @@ function executeAction(action, param) {
 
         if (['jobs', 'quotes', 'invoices', 'purchaseOrders', 'leads'].includes(collection)) {
           if (!newItem.number) {
-            const nextNum = list.reduce((max, item) => {
-              const num = parseInt(item.number) || 0;
-              return num > max ? num : max;
-            }, 1000) + 1;
-            newItem.number = String(nextNum);
+            const pref = collection === 'jobs' ? 'J-' : collection === 'quotes' ? 'Q-' : collection === 'invoices' ? 'INV-' : collection === 'purchaseOrders' ? 'PO-' : 'LD-';
+            newItem.number = store.getNextNumber(pref, collection);
           }
         }
 

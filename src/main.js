@@ -18,6 +18,8 @@ import { seedData } from './data/seed.js';
 import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenanceEngine.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
+import { initLucideIcons } from './utils/icons.js';
+import { clearListSearch } from './utils/listSearch.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
@@ -84,6 +86,20 @@ initSearchableSelects();
 // Expose app globals for cross-component access
 window.__fieldForge = { router, store };
 
+// Temporary auto-fix for JOB- prefixes in IndexedDB/Supabase
+setTimeout(() => {
+  const allJobs = store.getAll('jobs') || [];
+  let updated = false;
+  allJobs.forEach(j => {
+    if (j.number && j.number.startsWith('JOB-')) {
+      j.number = j.number.replace('JOB-', 'J-');
+      store.update('jobs', j.id, { number: j.number });
+      updated = true;
+    }
+  });
+  if (updated) console.log('Repaired JOB- prefixes to J-');
+}, 3000);
+
 // Initialize body attribute with saved tooltip preference level
 document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPreference || 'full');
 
@@ -94,6 +110,17 @@ window.addEventListener('simpro-settings-updated', () => {
 
 // Global keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+  // 1. Focus Search Bar: Ctrl + K or Cmd + K (intercepts Chrome address bar default)
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    const searchInput = document.getElementById('global-search');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
+
   const activeEl = document.activeElement;
   const isInputField = activeEl && (
     activeEl.tagName === 'INPUT' || 
@@ -109,7 +136,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // 1. Focus Search Bar: '/' key or Ctrl + '/'
+  // 2. Focus Search Bar: '/' key or Ctrl + '/'
   if (e.key === '/' || (e.ctrlKey && e.key === '/')) {
     e.preventDefault();
     const searchInput = document.getElementById('global-search');
@@ -119,7 +146,7 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // 2. Toggle Deputy Assistant: Shift + D
+  // 3. Toggle Deputy Assistant: Shift + D
   if (e.shiftKey && (e.key === 'D' || e.key === 'd')) {
     e.preventDefault();
     import('./components/RelayAssistant.js').then(({ toggleRelay }) => {
@@ -197,12 +224,21 @@ const mainContent = document.createElement('main');
 mainContent.className = 'main-content';
 mainContent.id = 'main-content';
 
-mainWrapper.appendChild(topbar);
 mainWrapper.appendChild(breadcrumbEl);
 mainWrapper.appendChild(mainContent);
 
-app.appendChild(sidebar);
-app.appendChild(mainWrapper);
+// Supabase-style shell: full-width top bar as one piece, with the sidebar
+// (rail + submenu) sitting BELOW it so the submenu panel never splits the bar.
+const appBody = document.createElement('div');
+appBody.className = 'app-body';
+appBody.appendChild(sidebar);
+appBody.appendChild(mainWrapper);
+
+app.appendChild(topbar);
+app.appendChild(appBody);
+
+// Swap Material Icon glyphs for Lucide SVGs (initial pass + live for dynamic content).
+initLucideIcons();
 
 // ---- Page Header to Breadcrumb Actions Relocation ----
 // Override mainContent querySelector/querySelectorAll to find moved buttons inside breadcrumb-actions
@@ -322,6 +358,7 @@ function adjustPageToolbarLayout(container) {
 
   const pageToolbar = container.querySelector('.page-toolbar');
   if (pageToolbar) {
+    if (pageToolbar.closest('.tab-content, .card, .modal-content, .drawer-content')) return;
     // 0. Pull out tags containers to be direct children of pageToolbar
     const tagsContainers = pageToolbar.querySelectorAll('.toolbar-filters, [id$="-filters-carousel-container"]');
     tagsContainers.forEach(tc => {
@@ -402,7 +439,7 @@ function adjustPageToolbarLayout(container) {
         }
       });
       pageToolbar.style.display = 'flex';
-      pageToolbar.style.marginBottom = 'var(--space-lg)';
+      pageToolbar.style.marginBottom = '0';
     } else {
       pageToolbar.style.display = 'none';
       pageToolbar.style.marginBottom = '0';
@@ -450,6 +487,7 @@ function renderPage(handler) {
     mainContent.innerHTML = '';
     mainContent.scrollTop = 0;
     mainContent.removeAttribute('style');
+    clearListSearch(); // drop any previous page's table filter; a list page re-registers on render
     // Document editors take over the content area; clear that here so the class
     // can never outlive the page that set it.
     document.body.classList.remove('rde-immersive');

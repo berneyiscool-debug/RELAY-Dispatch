@@ -4,6 +4,8 @@ import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderQuotesList(container, params) {
   const customerId = params?.customerId;
@@ -13,30 +15,18 @@ export function renderQuotesList(container, params) {
   const canCreate = hasPermission('Quotes', 'create');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Quotes — ${escapeHTML(customer.company)}` : 'Quotes'}</h1>
-      ${canCreate ? `
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-quote" data-tooltip="Draft a new pricing proposal or project estimation for a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Quote</button>
-      </div>` : ''}
-    </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
-        <button class="toolbar-filter active" data-filter="all">All (${quotes.length})</button>
-        <button class="toolbar-filter" data-filter="Draft">Draft</button>
-        <button class="toolbar-filter" data-filter="Finalised">Finalised</button>
-        <button class="toolbar-filter" data-filter="Sent">Sent</button>
-        <button class="toolbar-filter" data-filter="Accepted">Accepted</button>
-        <button class="toolbar-filter" data-filter="Declined">Declined</button>
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex:0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search quotes..." id="quotes-search" />
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${quotes.length})</option>
+          ${['Draft','Finalised','Sent','Accepted','Declined'].map(s => `<option value="${s}">${s} (${quotes.filter(q => q.status === s).length})</option>`).join('')}
+        </select>
+        ${canCreate ? `
+          <button class="btn btn-primary btn-sm" id="btn-new-quote" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Quote</span>
+          </button>` : ''}
       </div>
     </div>
     <div id="quotes-table-container"></div>
@@ -46,12 +36,12 @@ export function renderQuotesList(container, params) {
   const sb = { 'Draft': 'badge-draft', 'Finalised': 'badge-primary', 'Sent': 'badge-info', 'Accepted': 'badge-success', 'Declined': 'badge-danger' };
 
   const columns = [
-    { key: 'number', label: 'Quote #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '110px' },
-    { key: 'customerName', label: 'Customer' },
-    { key: 'title', label: 'Description', render: (r) => `<span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(r.title || '')}</span>` },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '100px' },
-    { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '110px' },
-    { key: 'createdAt', label: 'Date', render: (r) => new Date(r.createdAt).toLocaleDateString(), getValue: (r) => new Date(r.createdAt).getTime(), width: '100px' },
+    { key: 'number', label: 'Quote #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '12%' },
+    { key: 'customerName', label: 'Customer', width: '26%' },
+    { key: 'title', label: 'Description', render: (r) => `<span class="text-secondary">${escapeHTML(r.title || '')}</span>`, width: '32%' },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '10%' },
+    { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '10%' },
+    { key: 'createdAt', label: 'Date', render: (r) => r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-AU') : '—', getValue: (r) => r.createdAt ? new Date(r.createdAt).getTime() : 0, width: '12%' },
   ];
 
   const table = createDataTable({ 
@@ -60,6 +50,8 @@ export function renderQuotesList(container, params) {
     onRowClick: (id) => router.navigate(`/quotes/${id}`), 
     emptyMessage: 'No quotes found', 
     emptyIcon: 'request_quote',
+    defaultSortKey: 'createdAt',
+    defaultSortDir: 'desc',
     selectable: true,
     onSelectionChange: (selectedIds) => {
       createBulkActionBar({
@@ -124,7 +116,7 @@ export function renderQuotesList(container, params) {
                           }));
 
                           const newJob = store.create('jobs', {
-                            number: `J-${Date.now().toString().slice(-6)}`,
+                            number: store.getNextNumber('J-', 'jobs'),
                             customerId: quote.customerId,
                             customerName: quote.customerName,
                             contactName: quote.contactName || '',
@@ -301,27 +293,14 @@ export function renderQuotesList(container, params) {
     table.updateData(filtered);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeStatusFilter = btn.dataset.filter;
-      applyFilters();
-    });
-  });
-
-  container.querySelector('#quotes-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeStatusFilter = e.target.value;
     applyFilters();
   });
 
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
+  // Table search box removed — the top bar's ⌘K search filters this list while it's open.
+  setListSearch((q) => { searchQuery = q; applyFilters(); }, 'quotes');
 
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
-    applyFilters();
-  });
+  const dateMount = container.querySelector('#date-range-mount');
+  if (dateMount) dateMount.replaceWith(createDateRangeFilter({ onChange: (s, e) => { filterStartDate = s; filterEndDate = e; applyFilters(); } }));
 }

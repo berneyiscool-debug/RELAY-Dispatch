@@ -4,8 +4,9 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
-import { createToolbarFilters } from '../../components/ToolbarFilters.js';
 import { calculateBillableMaterialPrice, calculateTotalBillableMaterials } from '../../utils/pricing.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderJobsList(container, params) {
   const customerId = params?.customerId;
@@ -15,23 +16,18 @@ export function renderJobsList(container, params) {
   const canCreate = hasPermission('Jobs', 'create');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs'}</h1>
-      ${canCreate ? `
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-job" data-tooltip="Create a new project or service job record" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Job</button>
-      </div>` : ''}
-    </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div id="jobs-filters-carousel-container" style="flex: 1 1 auto; overflow:hidden"></div>
-      <div style="display:flex; align-items:center; gap:8px; flex: 0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex: 0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search jobs, customers, assets..." id="jobs-search" />
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:170px; margin:0; align-self:center;">
+          <option value="">All Statuses (${jobs.length})</option>
+          ${['Pending','Scheduled','In Progress','Completed','On Hold','Invoiced','Recurring Template'].map(s => `<option value="${s}">${s} (${jobs.filter(j => s === 'Recurring Template' ? j.isRecurring : j.status === s).length})</option>`).join('')}
+        </select>
+        ${canCreate ? `
+          <button class="btn btn-primary btn-sm" id="btn-new-job" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Job</span>
+          </button>` : ''}
       </div>
     </div>
     <div id="jobs-table-container"></div>
@@ -42,35 +38,26 @@ export function renderJobsList(container, params) {
   const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
 
   const columns = [
-    { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '100px' },
-    { key: 'title', label: 'Title', render: (r) => `<span class="truncate" style="max-width:200px;display:inline-block">${escapeHTML(r.title)}</span>` },
-    { key: 'customerName', label: 'Customer' },
+    { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '10%' },
+    { key: 'title', label: 'Title', render: (r) => `<span class="text-primary font-medium" style="display:block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHTML(r.title)}">${escapeHTML(r.title)}</span>`, width: '22%' },
+    { key: 'customerName', label: 'Customer', width: '17%' },
     { key: 'asset', label: 'Asset', render: (r) => {
         const asset = r.assetId ? store.getById('assets', r.assetId) : null;
         const name = r.assetName || (asset ? asset.name : '');
         if (!name) return '<span class="text-tertiary">—</span>';
-        return `<span class="text-primary font-medium truncate" style="max-width:140px;display:inline-flex;align-items:center;gap:4px;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
-      }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '130px' },
-    { key: 'technicians', label: 'Assignee', render: (r) => {
-        if (r.contractorId) {
-          const contractor = store.getById('contractors', r.contractorId);
-          return `<span class="text-primary font-medium truncate" style="max-width:150px;display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">business</span> ${contractor ? escapeHTML(contractor.businessName) : 'Unknown Contractor'}</span>`;
-        }
-        const names = r.technicians && r.technicians.length > 0 ? r.technicians.map(t => escapeHTML(t.name)).join(', ') : escapeHTML(r.technicianName || '—');
-        return `<span class="text-secondary truncate" style="max-width:150px;display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--text-tertiary)">person</span> ${names}</span>`;
-      }
-    },
+        return `<span class="text-primary font-medium" style="display:inline-flex;align-items:center;gap:4px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(name)}"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(name)}</span>`;
+      }, getValue: (r) => r.assetName || (r.assetId ? (store.getById('assets', r.assetId)?.name || '') : ''), width: '13%' },
     { key: 'status', label: 'Status', render: (r) => r.isRecurring ? `
-      <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
+      <span class="badge badge-purple" style="font-weight:600; padding:2px 8px; font-size:10px; white-space:nowrap; letter-spacing:0.3px;" title="Recurring Template">Recurring Template</span>
     ` : `
       <select class="badge ${sb[r.status] || 'badge-neutral'} job-list-status-select" data-id="${r.id}">
         ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
           <option value="${s}" ${r.status === s ? 'selected' : ''}>${s}</option>
         `).join('')}
       </select>
-    `, width: '120px' },
-    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${pb[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '90px' },
-    { key: 'scheduledDate', label: 'Scheduled', render: (r) => r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : '—', getValue: (r) => r.scheduledDate ? new Date(r.scheduledDate).getTime() : 0, width: '100px' },
+    `, width: '17%' },
+    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${pb[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '9%' },
+    { key: 'scheduledDate', label: 'Date', render: (r) => r.scheduledDate ? new Date(r.scheduledDate.includes('T') ? r.scheduledDate : r.scheduledDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.scheduledDate ? new Date(r.scheduledDate).getTime() : 0, width: '12%' },
   ];
 
   const table = createDataTable({ 
@@ -533,14 +520,18 @@ export function renderJobsList(container, params) {
     btnNewJob.addEventListener('click', () => router.navigate('/jobs/new'));
   }
 
-  let tagFilteredData = [...jobs];
+  let selectedStatus = '';
   let searchQuery = '';
   let filterStartDate = '';
   let filterEndDate = '';
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
-    const filtered = tagFilteredData.filter(j => {
+    const filtered = jobs.filter(j => {
+      if (selectedStatus) {
+        if (selectedStatus === 'Recurring Template' && !j.isRecurring) return false;
+        if (selectedStatus !== 'Recurring Template' && j.status !== selectedStatus) return false;
+      }
       if (q) {
         const num = j.number || '';
         const title = j.title || '';
@@ -560,49 +551,34 @@ export function renderJobsList(container, params) {
         }
       }
 
-      // Strictly filter by scheduledDate so jobs without one don't magically appear due to their createdAt date
       if (filterStartDate || filterEndDate) {
-        if (!j.scheduledDate) {
-          return false;
-        }
+        if (!j.scheduledDate) return false;
         const jDateStr = j.scheduledDate.split('T')[0];
-        if (filterStartDate && jDateStr < filterStartDate) {
-          return false;
-        }
-        if (filterEndDate && jDateStr > filterEndDate) {
-          return false;
-        }
+        if (filterStartDate && jDateStr < filterStartDate) return false;
+        if (filterEndDate && jDateStr > filterEndDate) return false;
       }
 
       return true;
     });
-    console.log(`Filtered jobs count: ${filtered.length}. Filter range: ${filterStartDate} to ${filterEndDate}`);
-    console.log(filtered.map(j => ({ id: j.id, title: j.title, scheduledDate: j.scheduledDate, techId: j.technicianId, technicians: j.technicians, status: j.status })));
     table.updateData(filtered);
   }
 
-  createToolbarFilters({
-    container: container.querySelector('#jobs-filters-carousel-container'),
-    originalData: jobs,
-    filterType: 'jobs',
-    onFilterChange: (filtered) => {
-      tagFilteredData = filtered;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
       applyFilters();
     }
   });
 
-  container.querySelector('#jobs-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
+  setListSearch('Search jobs...', (q) => {
+    searchQuery = q;
     applyFilters();
   });
 
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    selectedStatus = e.target.value;
     applyFilters();
   });
 

@@ -4,6 +4,8 @@ import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showAssetQuickAdd } from '../../utils/quickModals.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderAssetList(container, params) {
   const customerId = params?.customerId;
@@ -53,43 +55,38 @@ export function renderAssetList(container, params) {
   }
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Assets — ${escapeHTML(customer.company || `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed Customer')}` : 'Assets Manager'}</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-asset" data-tooltip="Register a new customer or company asset" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Asset</button>
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="asset-status-filter" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Assets (${assets.length})</option>
+          <option value="My Business">My Business (${assets.filter(a => a.ownerType === 'Business').length})</option>
+          <option value="Customer Owned">Customer Owned (${assets.filter(a => a.ownerType === 'Customer').length})</option>
+          <option value="In Maintenance">In Maintenance (${assets.filter(a => a.status === 'In Maintenance').length})</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-new-asset" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">Add Asset</span>
+        </button>
       </div>
     </div>
-    
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter active" data-filter="all">All (${assets.length})</button>
-        <button class="toolbar-filter" data-filter="My Business">My Business (${assets.filter(a => a.ownerType === 'Business').length})</button>
-        <button class="toolbar-filter" data-filter="Customer Owned">Customer Owned (${assets.filter(a => a.ownerType === 'Customer').length})</button>
-        <button class="toolbar-filter" data-filter="In Maintenance">In Maintenance (${assets.filter(a => a.status === 'In Maintenance').length})</button>
-      </div>
-      <div class="toolbar-search">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search assets..." id="asset-search" />
-      </div>
-    </div>
-
     <div id="asset-table-container"></div>
   `;
 
   let filteredData = [...assets];
 
   const columns = [
-    { key: 'name', label: 'Name / ID', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
-    { key: 'owner', label: 'Owner Type', render: (r) => {
+    { key: 'name', label: 'Asset', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>`, width: '24%' },
+    { key: 'owner', label: 'Owner', render: (r) => {
         if (r.ownerType === 'Customer' && r.customerId) {
           const cust = store.getById('customers', r.customerId);
           return cust ? `<span class="badge badge-neutral">${escapeHTML(cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Unnamed Customer')}</span>` : 'Customer';
         }
         return `<span class="badge badge-primary">My Business</span>`;
-      } 
+      }, width: '16%'
     },
-    { key: 'type', label: 'Category', render: (r) => escapeHTML(r.type || '—') },
-    { key: 'service', label: 'Service Status', render: (r) => {
+    { key: 'type', label: 'Category', render: (r) => escapeHTML(r.type || '—'), width: '15%' },
+    { key: 'service', label: 'Service', render: (r) => {
         const logs = r.logs || [];
         const lastS = logs.filter(l => l.type === 'Service').sort((a,b) => new Date(b.date) - new Date(a.date))[0];
         if (!lastS || !r.serviceIntervalMonths) return '<span class="text-tertiary" style="font-size:12px">Not Scheduled</span>';
@@ -110,17 +107,16 @@ export function renderAssetList(container, params) {
           badgeHtml = `<span class="badge badge-success">OK</span>`;
         }
         
-        return `<div style="display:inline-flex;align-items:center;gap:8px">${badgeHtml}<span class="text-secondary" style="font-size:12px">${d.toLocaleDateString()}</span></div>`;
-      }
+        return `<div style="display:inline-flex;align-items:center;gap:8px">${badgeHtml}<span class="text-secondary" style="font-size:12px">${d.toLocaleDateString('en-AU')}</span></div>`;
+      }, width: '21%'
     },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>` },
-    { key: 'assignedTo', label: 'Assigned To', render: (r) => {
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${r.status === 'Active' ? 'badge-success' : (r.status === 'In Maintenance' ? 'badge-warning' : 'badge-neutral')}">${escapeHTML(r.status || 'Active')}</span>`, width: '11%' },
+    { key: 'assignedTo', label: 'Assigned', render: (r) => {
         if (!r.assignedToId) return '—';
         const tech = store.getById('technicians', r.assignedToId);
         return tech ? escapeHTML(tech.name) : '—';
-      }
-    },
-    { key: 'actions', label: '', width: '80px', render: (r) => `<button class="btn btn-ghost btn-sm asset-edit-btn" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` }
+      }, width: '13%'
+    }
   ];
 
   const table = createDataTable({ 
@@ -261,25 +257,21 @@ export function renderAssetList(container, params) {
     });
   });
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeFilter = btn.dataset.filter;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      // Filter by date if needed
       updateFilteredData();
-    });
+    }
   });
 
-  container.querySelector('#asset-search').addEventListener('input', (e) => {
-    searchTerm = e.target.value.toLowerCase();
+  setListSearch('Search assets...', (q) => {
+    searchTerm = q.toLowerCase();
     updateFilteredData();
   });
 
-  container.addEventListener('click', (e) => {
-    const editBtn = e.target.closest('.asset-edit-btn');
-    if (editBtn) {
-      e.stopPropagation();
-      router.navigate(`/assets/${editBtn.dataset.id}/edit`);
-    }
+  container.querySelector('#asset-status-filter')?.addEventListener('change', (e) => {
+    activeFilter = e.target.value;
+    updateFilteredData();
   });
 }

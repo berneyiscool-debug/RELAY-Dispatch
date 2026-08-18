@@ -5,11 +5,15 @@ import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { createDataTable } from '../../components/DataTable.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderNotificationsList(container, params) {
   const allNotifications = store.getAll('notifications') || [];
   let searchTerm = '';
   let activeFilter = 'all';
+  let filterStartDate = '';
+  let filterEndDate = '';
   
   function getFilteredData() {
     return allNotifications.filter(n => {
@@ -22,32 +26,31 @@ export function renderNotificationsList(container, params) {
         n.priority?.toLowerCase().includes(search)
       );
       const matchesFilter = (activeFilter === 'all') || (n.status === activeFilter);
+
+      if (filterStartDate || filterEndDate) {
+        const nDateStr = n.createdAt ? n.createdAt.split('T')[0] : '';
+        if (filterStartDate && nDateStr < filterStartDate) return false;
+        if (filterEndDate && nDateStr > filterEndDate) return false;
+      }
+
       return matchesSearch && matchesFilter;
     });
   }
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Notifications</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-raise-notification">
-          <span class="material-icons-outlined">campaign</span> Raise Notification
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${allNotifications.length})</option>
+          ${['Pending','Converted','Dismissed'].map(s => `<option value="${s}">${s} (${allNotifications.filter(n => n.status === s).length})</option>`).join('')}
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-raise-notification" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">campaign</span> <span class="btn-label">Raise Notification</span>
         </button>
       </div>
     </div>
-
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter ${activeFilter === 'all' ? 'active' : ''}" data-filter="all">All (${allNotifications.length})</button>
-        <button class="toolbar-filter ${activeFilter === 'Pending' ? 'active' : ''}" data-filter="Pending">Pending (${allNotifications.filter(n => n.status === 'Pending').length})</button>
-        <button class="toolbar-filter ${activeFilter === 'Converted' ? 'active' : ''}" data-filter="Converted">Converted (${allNotifications.filter(n => n.status === 'Converted').length})</button>
-      </div>
-      <div class="toolbar-search">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" id="notif-search" placeholder="Search notifications..." value="${escapeHTML(searchTerm)}" />
-      </div>
-    </div>
-    
     <div id="notifications-table-container"></div>
   `;
 
@@ -60,13 +63,6 @@ export function renderNotificationsList(container, params) {
       width: '100px'
     },
     { 
-      key: 'createdAt', 
-      label: 'Date', 
-      render: (n) => n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—',
-      getValue: (n) => n.createdAt ? new Date(n.createdAt).getTime() : 0,
-      width: '100px'
-    },
-    { 
       key: 'type', 
       label: 'Type', 
       render: (n) => `<span class="badge badge-neutral">${escapeHTML(n.type || 'Field Alert')}</span>`,
@@ -74,7 +70,7 @@ export function renderNotificationsList(container, params) {
     },
     { 
       key: 'title', 
-      label: 'Title / Job Name', 
+      label: 'Title', 
       render: (n) => {
         const isPortal = n.source === 'customer_portal' || 
                         (n.message && n.message.toLowerCase().includes('via portal')) ||
@@ -82,47 +78,50 @@ export function renderNotificationsList(container, params) {
                         (n.title && n.title.toLowerCase().includes('via portal'));
         
         const portalIcon = isPortal 
-          ? `<span class="material-icons-outlined" style="font-size:18px;color:var(--color-primary);margin-right:6px;vertical-align:middle;" title="Submitted via Customer Portal">open_in_browser</span>` 
+          ? `<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary);margin-right:4px;vertical-align:middle;" title="Submitted via Customer Portal">open_in_browser</span>` 
           : '';
 
-        const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
-        const linkedPlan = n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId) : null;
-        
         return `
-          <div style="font-weight:500;display:flex;align-items:center;">
+          <div style="font-weight:500;display:inline-flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
             ${portalIcon}<span>${escapeHTML(n.title)}</span>
           </div>
-          <div class="text-tertiary" style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(n.description || n.message || '')}</div>
-          ${n.type === 'Recurring Job Due' ? `
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:11px">
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);background:var(--bg-color);padding:2px 6px;border-radius:4px;border:1px solid var(--border-color)">
-                <span class="material-icons-outlined" style="font-size:12px">precision_manufacturing</span>
-                ${escapeHTML(linkedAsset?.name || 'Asset')}
-              </span>
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);background:var(--bg-color);padding:2px 6px;border-radius:4px;border:1px solid var(--border-color)">
-                <span class="material-icons-outlined" style="font-size:12px">place</span>
-                ${escapeHTML(linkedAsset?.site || 'Main Office')}
-              </span>
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--color-primary-dark);background:var(--color-primary-light);padding:2px 6px;border-radius:4px;font-weight:600">
-                <span class="material-icons-outlined" style="font-size:12px">calendar_month</span>
-                Due: ${n.targetServiceDate 
-                  ? new Date(n.targetServiceDate).toLocaleDateString('en-AU')
-                  : n.currentMeterAtTrigger 
-                    ? `${parseFloat(n.currentMeterAtTrigger) + (linkedPlan ? parseFloat(linkedPlan.meterInterval || 0) : 0)} ${escapeHTML(linkedAsset?.meterUnit || 'hrs')}`
-                    : '—'}
-              </span>
-            </div>
-          ` : ''}
-          ${n.type === 'Recurring Job Created' ? `
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:11px">
-              <span style="display:inline-flex;align-items:center;gap:3px;color:var(--color-primary-dark);background:var(--color-primary-light);padding:2px 6px;border-radius:4px;font-weight:600">
-                <span class="material-icons-outlined" style="font-size:12px">build</span>
-                Job Spawned: Due ${n.dueDate ? new Date(n.dueDate).toLocaleDateString('en-AU') : '—'}
-              </span>
-            </div>
-          ` : ''}
         `;
       }
+    },
+    {
+      key: 'reference',
+      label: 'Reference',
+      render: (n) => {
+        const linkedJob = n.jobId ? store.getById('jobs', n.jobId) : null;
+        if (linkedJob) {
+          return `
+            <a href="#/jobs/${linkedJob.id}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px">
+              <span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">build</span>
+              <span>${escapeHTML(linkedJob.number || linkedJob.title || 'Job')}</span>
+            </a>
+          `;
+        }
+        
+        const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
+        if (linkedAsset) {
+          return `
+            <a href="#/assets/${linkedAsset.id}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px">
+              <span class="material-icons-outlined" style="font-size:14px;color:var(--text-secondary)">precision_manufacturing</span>
+              <span>${escapeHTML(linkedAsset.name || linkedAsset.number || 'Asset')}</span>
+            </a>
+          `;
+        }
+
+        if (n.jobNumber) {
+          return `<span class="font-medium" style="display:inline-flex;align-items:center;gap:4px"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">build</span>${escapeHTML(n.jobNumber)}</span>`;
+        }
+        if (n.assetName) {
+          return `<span class="font-medium" style="display:inline-flex;align-items:center;gap:4px"><span class="material-icons-outlined" style="font-size:14px;color:var(--text-secondary)">precision_manufacturing</span>${escapeHTML(n.assetName)}</span>`;
+        }
+
+        return '<span class="text-tertiary">—</span>';
+      },
+      width: '140px'
     },
     { 
       key: 'priority', 
@@ -133,29 +132,30 @@ export function renderNotificationsList(container, params) {
     { 
       key: 'status', 
       label: 'Status', 
-      render: (n) => `<span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status)}</span>`,
+      render: (n) => `<span class="badge ${n.status === 'Converted' ? 'badge-success' : 'badge-warning'}">${escapeHTML(n.status || 'Pending')}</span>`,
       width: '110px'
     },
-
+    { 
+      key: 'createdAt', 
+      label: 'Date', 
+      render: (n) => n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '—',
+      getValue: (n) => n.createdAt ? new Date(n.createdAt).getTime() : 0,
+      width: '110px'
+    },
     {
       key: 'actions',
-      label: '',
-      render: (n) => {
-        const isReadOnly = (!n.createdBy || n.createdBy === 'System' || n.createdBy === 'System Engine' || n.createdBy === 'System Notification' || n.createdBy === 'System Scheduler') && n.createdBy !== 'Assistant';
-        return `
-          <div style="text-align:right">
-            ${(!isReadOnly && n.status !== 'Converted') ? `
-              <button class="btn btn-sm btn-ghost btn-convert-quote" data-id="${n.id}" title="Convert to Quote"><span class="material-icons-outlined">request_quote</span></button>
-              <button class="btn btn-sm btn-ghost btn-convert-job" data-id="${n.id}" title="Convert to Job"><span class="material-icons-outlined">build</span></button>
-            ` : ''}
-            <button class="btn btn-sm btn-ghost btn-view-notification" data-id="${n.id}" title="View Details"><span class="material-icons-outlined">visibility</span></button>
-            ${!isReadOnly ? `
-              <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit"><span class="material-icons-outlined">edit</span></button>
-            ` : ''}
-          </div>
-        `;
-      },
-      width: '150px'
+      label: 'Actions',
+      render: (n) => `
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;">
+          <button class="btn btn-sm btn-ghost btn-edit-notification" data-id="${n.id}" title="Edit Notification" style="height:25px;padding:0 6px;">
+            <span class="material-icons-outlined" style="font-size:16px;">edit</span>
+          </button>
+          <button class="btn btn-sm btn-ghost btn-delete-notification" data-id="${n.id}" title="Delete Notification" style="height:25px;padding:0 6px;color:var(--color-danger)">
+            <span class="material-icons-outlined" style="font-size:16px;">delete</span>
+          </button>
+        </div>
+      `,
+      width: '90px'
     }
   ];
 
@@ -240,22 +240,26 @@ export function renderNotificationsList(container, params) {
 
   container.querySelector('#notifications-table-container').appendChild(table);
 
-  const searchInput = container.querySelector('#notif-search');
-  searchInput.addEventListener('input', (e) => {
-    searchTerm = e.target.value;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
+      table.updateData(getFilteredData());
+    }
+  });
+
+  setListSearch('Search notifications...', (q) => {
+    searchTerm = q;
     table.updateData(getFilteredData());
   });
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeFilter = btn.dataset.filter;
-      table.updateData(getFilteredData());
-    });
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeFilter = e.target.value;
+    table.updateData(getFilteredData());
   });
 
-  container.querySelector('#btn-raise-notification').addEventListener('click', () => openNotificationFormDrawer());
+  container.querySelector('#btn-raise-notification')?.addEventListener('click', () => openNotificationFormDrawer());
 
   table.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
@@ -273,6 +277,30 @@ export function renderNotificationsList(container, params) {
       convertToQuote(id);
     } else if (btn.classList.contains('btn-convert-job')) {
       convertToJob(id);
+    } else if (btn.classList.contains('btn-view-job')) {
+      const jobId = btn.dataset.jobId;
+      if (jobId) router.navigate(`/jobs/${jobId}`);
+    } else if (btn.classList.contains('btn-view-quote')) {
+      const quoteId = btn.dataset.quoteId;
+      if (quoteId) router.navigate(`/quotes/${quoteId}`);
+    } else if (btn.classList.contains('btn-delete-notification')) {
+      import('../../components/Modal.js').then(({ showModal }) => {
+        const content = document.createElement('div');
+        content.innerHTML = `<p>Are you sure you want to delete this notification?</p>`;
+        showModal({
+          title: 'Delete Notification',
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            { label: 'Delete', className: 'btn-danger', onClick: c => {
+              store.delete('notifications', id);
+              renderNotificationsList(container);
+              showToast('Notification deleted', 'success');
+              c();
+            }}
+          ]
+        });
+      });
     }
   });
 
@@ -550,34 +578,25 @@ export function renderNotificationsList(container, params) {
         </div>
       `,
       actions: (() => {
-        const isReadOnly = (!n.createdBy || n.createdBy === 'System' || n.createdBy === 'System Engine' || n.createdBy === 'System Notification' || n.createdBy === 'System Scheduler') && n.createdBy !== 'Assistant';
-        if (n.type === 'Recurring Job Created' || (isReadOnly && n.jobId)) {
-          return [
-            { label: 'Close', className: 'btn-secondary', onClick: close => close() },
-            { label: 'View Job', className: 'btn-primary', onClick: close => { close(); router.navigate(`/jobs/${n.jobId}`); } }
-          ];
-        }
-        if (isReadOnly) {
+        const linkedJobId = n.jobId || (n.link && n.link.startsWith('/jobs/') ? n.link.split('/').pop() : null);
+        const linkedQuoteId = n.quoteId || (n.link && n.link.startsWith('/quotes/') ? n.link.split('/').pop() : null);
+
+        if (n.status === 'Converted' || linkedJobId || linkedQuoteId) {
           const acts = [{ label: 'Close', className: 'btn-secondary', onClick: close => close() }];
-          if (n.link && n.link.startsWith('/quotes/')) {
-            const qId = n.link.split('/').pop();
-            acts.push({ label: 'View Quote', className: 'btn-primary', onClick: close => { close(); router.navigate(`/quotes/${qId}`); } });
-          } else if (n.link && n.link.startsWith('/jobs/')) {
-            const jId = n.link.split('/').pop();
-            acts.push({ label: 'View Job', className: 'btn-primary', onClick: close => { close(); router.navigate(`/jobs/${jId}`); } });
+          if (linkedQuoteId) {
+            acts.push({ label: 'View Quote', className: 'btn-secondary', onClick: close => { close(); router.navigate(`/quotes/${linkedQuoteId}`); } });
+          }
+          if (linkedJobId) {
+            acts.push({ label: 'View Job', className: 'btn-primary', onClick: close => { close(); router.navigate(`/jobs/${linkedJobId}`); } });
           }
           return acts;
         }
-        if (n.status !== 'Converted') {
-          return [
-            { label: 'Close', className: 'btn-secondary', onClick: close => close() },
-            { label: 'Edit', className: 'btn-secondary', onClick: close => { close(); openNotificationFormDrawer(n); } },
-            { label: 'Convert to Quote', className: 'btn-secondary', onClick: close => { close(); convertToQuote(n.id); } },
-            { label: 'Convert to Job', className: 'btn-primary', onClick: close => { close(); convertToJob(n.id); } }
-          ];
-        }
+
         return [
-          { label: 'Close', className: 'btn-secondary', onClick: close => close() }
+          { label: 'Close', className: 'btn-secondary', onClick: close => close() },
+          { label: 'Edit', className: 'btn-secondary', onClick: close => { close(); openNotificationFormDrawer(n); } },
+          { label: 'Convert to Quote', className: 'btn-secondary', onClick: close => { close(); convertToQuote(n.id); } },
+          { label: 'Convert to Job', className: 'btn-primary', onClick: close => { close(); convertToJob(n.id); } }
         ];
       })(),
       onMount: (drawerEl) => {
@@ -684,7 +703,7 @@ export function renderNotificationsList(container, params) {
     const cleanedTitle = cleanTitle(n.title);
 
     let jobData = {
-      number: `J-${Date.now().toString().slice(-6)}`,
+      number: store.getNextNumber('J-', 'jobs'),
       title: cleanedTitle,
       description: n.description,
       priority: n.priority,
@@ -814,6 +833,8 @@ export function renderNotificationsList(container, params) {
 
         jobData = {
           ...jobData,
+          title: parentJob.title || parentJob.number,
+          parentJobId: parentJob.id,
           customerId: parentJob.customerId || '',
           customerName: parentJob.customerName || '',
           contactName: parentJob.contactName || '',

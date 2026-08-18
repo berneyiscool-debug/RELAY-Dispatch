@@ -1,7 +1,7 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { store } from '../../data/store.js';
-import { checkRecurringJobs } from '../../utils/maintenanceEngine.js';
+import { checkRecurringJobs, cleanOldJobTitles } from '../../utils/maintenanceEngine.js';
 
 // Stub localStorage for Node.js test runs
 globalThis.localStorage = {
@@ -467,6 +467,95 @@ describe('Job Recurring Scheduling Integrations', () => {
       ? new Date(back.startTime).getHours() + new Date(back.startTime).getMinutes() / 60
       : back.startHour;
     assert.strictEqual(renderStartHour, 14, 'spawned block must render at preferredTime, matching the forecast');
+  });
+
+  test('cleanOldJobTitles renames existing jobs with legacy recurring suffixes to clean parent titles', () => {
+    const parent = store.create('jobs', {
+      number: 'J-MASTER',
+      title: 'HVAC Quarterly Maintenance',
+      isRecurring: true
+    });
+
+    const childWithSuffix = store.create('jobs', {
+      number: 'J-MASTER.1',
+      parentJobId: parent.id,
+      title: 'HVAC Quarterly Maintenance — Recurring (15/08/2026)',
+      scheduledDate: '2026-08-15'
+    });
+
+    const orphanWithSuffix = store.create('jobs', {
+      number: 'J-999',
+      title: 'Chiller Inspection — Recurring',
+      scheduledDate: '2026-09-01'
+    });
+
+    const cleanedCount = cleanOldJobTitles();
+    assert.strictEqual(cleanedCount, 2, 'should clean up 2 jobs carrying legacy titles');
+
+    const updatedChild = store.getById('jobs', childWithSuffix.id);
+    assert.strictEqual(updatedChild.title, 'HVAC Quarterly Maintenance');
+
+    const updatedOrphan = store.getById('jobs', orphanWithSuffix.id);
+    assert.strictEqual(updatedOrphan.title, 'Chiller Inspection');
+  });
+
+  test('materializeVirtualOccurrence idempotency prevents double spawning duplicate child jobs', async () => {
+    const { materializeVirtualOccurrence } = await import('../../utils/maintenanceEngine.js');
+    const parent = store.create('jobs', {
+      number: 'J-100',
+      title: 'Bi-Weekly Inspection',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', interval: 2, start: '2026-08-01' }
+    });
+
+    const firstSpawn = materializeVirtualOccurrence(parent.id, '2026-08-15');
+    assert.strictEqual(firstSpawn.number, 'J-100.1');
+
+    const secondSpawn = materializeVirtualOccurrence(parent.id, '2026-08-15');
+    assert.strictEqual(secondSpawn.id, firstSpawn.id, 'Second call for same date should return existing child job without spawning a duplicate');
+    assert.strictEqual(secondSpawn.number, 'J-100.1');
+
+    const allChildren = store.getAll('jobs').filter(j => j.parentJobId === parent.id);
+    assert.strictEqual(allChildren.length, 1, 'Only one child job should exist for the date occurrence');
+  });
+
+  test('repairAnomalousJobNumbers renumbers affected high-number jobs and their child recurring jobs', async () => {
+    const { repairAnomalousJobNumbers } = await import('../../utils/maintenanceEngine.js');
+
+    // Create normal jobs
+    const job1 = store.create('jobs', { number: 'J-00001', title: 'Normal Job 1' });
+    const job2 = store.create('jobs', { number: 'J-00002', title: 'Normal Job 2' });
+
+    // Create anomalous job created during bug
+    const anomalousParent = store.create('jobs', { 
+      number: 'JOB-01001', 
+      title: 'Anomalous Recurring Master',
+      isRecurring: true 
+    });
+
+    const anomalousChild = store.create('jobs', {
+      number: 'JOB-01001.1',
+      title: 'Anomalous Recurring Child',
+      parentJobId: anomalousParent.id,
+      notes: 'Generated from template job JOB-01001'
+    });
+
+    // Create linked invoice and schedule block
+    const invoice = store.create('invoices', { number: 'INV-00001', jobId: anomalousParent.id, jobNumber: 'JOB-01001' });
+    const scheduleBlock = store.create('schedule', { id: 'sch_1', jobId: anomalousChild.id, jobNumber: 'JOB-01001.1' });
+
+    const repairedCount = repairAnomalousJobNumbers();
+    assert.ok(repairedCount >= 2, 'Should renumber both parent and child anomalous jobs');
+
+    const updatedParent = store.getById('jobs', anomalousParent.id);
+    const updatedChild = store.getById('jobs', anomalousChild.id);
+    const updatedInvoice = store.getById('invoices', invoice.id);
+    const updatedBlock = store.getById('schedule', scheduleBlock.id);
+
+    assert.strictEqual(updatedParent.number, 'J-00003', 'Master job should be renumbered to next sequential number J-00003');
+    assert.strictEqual(updatedChild.number, 'J-00003.1', 'Child recurring job should be renumbered to match updated parent number J-00003.1');
+    assert.strictEqual(updatedInvoice.jobNumber, 'J-00003', 'Linked invoice jobNumber should be updated to J-00003');
+    assert.strictEqual(updatedBlock.jobNumber, 'J-00003.1', 'Linked schedule block jobNumber should be updated to J-00003.1');
   });
 });
 

@@ -18,12 +18,14 @@ import { invoiceEmail, receiptEmail, reminderEmail } from '../../utils/emailTemp
 import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
 
-export function renderInvoiceDetail(container, { id }) {
+export function renderInvoiceDetail(container, params) {
+  const { id, tab } = params;
   const isNew = id === 'new';
   const newInvoiceNumber = store.getNextNumber('INV-', 'invoices');
+  const activeTab = tab || 'overview';
   
   const settings = store.getSettings();
-  const defaultLaborRate = settings.laborRates.find(r => r.isDefault);
+  const defaultLaborRate = (settings.laborRates && settings.laborRates.find(r => r.isDefault)) || (settings.laborRates && settings.laborRates[0]);
   const defaultLaborRateId = defaultLaborRate ? defaultLaborRate.id : '';
 
   let invoice = isNew ? {
@@ -42,6 +44,10 @@ export function renderInvoiceDetail(container, { id }) {
   if (!invoice) {
     container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Invoice not found</h3></div>';
     return;
+  }
+
+  if (!invoice.laborProfileId) {
+    invoice.laborProfileId = defaultLaborRateId;
   }
 
   // Data migration for old invoices
@@ -81,20 +87,173 @@ export function renderInvoiceDetail(container, { id }) {
   const stockItems = store.getAll('stock');
   const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
+  function logInvoiceActivity(type, title, description, icon = 'history', badgeClass = 'badge-neutral') {
+    if (!invoice.historyLog) invoice.historyLog = [];
+    const currentUser = store.getCurrentUser();
+    const userName = currentUser ? (currentUser.name || currentUser.email) : 'System';
+
+    invoice.historyLog.unshift({
+      id: store.generateId(),
+      date: new Date().toISOString(),
+      type,
+      title,
+      description,
+      user: userName,
+      icon,
+      badgeClass
+    });
+
+    store.update('invoices', invoice.id, { historyLog: invoice.historyLog });
+  }
+
+  function getInvoiceFullTimeline(inv) {
+    const timeline = [];
+
+    // 1. Creation Entry
+    const creationDate = inv.createdAt || inv.issueDate || inv.created_at;
+    timeline.push({
+      id: 'create-' + (inv.id || '1'),
+      date: creationDate,
+      type: 'Creation',
+      title: 'Invoice Created',
+      description: `Created ${inv.invoiceType || 'Standard'} Invoice ${inv.number} ${inv.customerName ? `for ${inv.customerName}` : ''} (Total: $${(inv.total || 0).toFixed(2)})`,
+      icon: 'add_circle_outline',
+      badgeClass: 'badge-info'
+    });
+
+    // 2. Linked Quote Entry
+    if (inv.originalQuoteNumber) {
+      timeline.push({
+        id: 'quote-' + (inv.id || '1'),
+        date: creationDate,
+        type: 'Origin',
+        title: 'Linked to Quote',
+        description: `Generated from Quote #${inv.originalQuoteNumber} (Original Subtotal: $${(inv.originalSubtotal || 0).toFixed(2)})`,
+        icon: 'request_quote',
+        badgeClass: 'badge-neutral'
+      });
+    }
+
+    // 3. Linked Job Entry
+    if (inv.jobNumber) {
+      timeline.push({
+        id: 'job-' + (inv.id || '1'),
+        date: creationDate,
+        type: 'Origin',
+        title: 'Linked to Job',
+        description: `Created for Job #${inv.jobNumber}`,
+        icon: 'build',
+        badgeClass: 'badge-neutral'
+      });
+    }
+
+    // 4. Status Log Events
+    if (inv.status === 'Sent' || inv.sentAt) {
+      timeline.push({
+        id: 'sent-' + (inv.id || '1'),
+        date: inv.sentAt || inv.issueDate,
+        type: 'Status',
+        title: 'Invoice Issued & Sent',
+        description: `Invoice status updated to Sent (Due: ${inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '30 days'})`,
+        icon: 'send',
+        badgeClass: 'badge-info'
+      });
+    }
+
+    if (inv.status === 'Paid' || inv.paidDate) {
+      timeline.push({
+        id: 'paid-' + (inv.id || '1'),
+        date: inv.paidDate || inv.updatedAt,
+        type: 'Status',
+        title: 'Invoice Settled',
+        description: `Marked as Paid ${inv.paymentMethod ? `via ${inv.paymentMethod}` : ''}`,
+        icon: 'check_circle',
+        badgeClass: 'badge-success'
+      });
+    }
+
+    if (inv.status === 'Overdue') {
+      timeline.push({
+        id: 'overdue-' + (inv.id || '1'),
+        date: inv.dueDate || new Date().toISOString(),
+        type: 'Status',
+        title: 'Payment Overdue',
+        description: `Payment passed due date (${inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : 'Overdue'})`,
+        icon: 'warning',
+        badgeClass: 'badge-danger'
+      });
+    }
+
+    // 5. Payments Array
+    if (inv.payments && Array.isArray(inv.payments)) {
+      inv.payments.forEach((p, idx) => {
+        timeline.push({
+          id: 'pmt-' + idx + '-' + (p.id || Date.now()),
+          date: p.date || p.createdAt || inv.paidDate,
+          type: 'Payment',
+          title: `Payment Received: $${(p.amount || 0).toFixed(2)}`,
+          description: `Method: ${p.method || 'Bank Transfer'}${p.reference ? ` | Ref: ${p.reference}` : ''}`,
+          user: p.recordedBy || 'System',
+          icon: 'payments',
+          badgeClass: 'badge-success'
+        });
+      });
+    }
+
+    // 6. Approved Variations
+    if (inv.variations && Array.isArray(inv.variations)) {
+      inv.variations.forEach((v, idx) => {
+        timeline.push({
+          id: 'var-' + idx + '-' + (v.id || Date.now()),
+          date: v.createdAt || v.approvedAt || creationDate,
+          type: 'Variation',
+          title: `Variation (${v.status || 'Approved'}): ${v.name || 'Adjustment'}`,
+          description: `Amount: $${(v.subtotal || 0).toFixed(2)} ${v.reason ? `| Reason: ${v.reason}` : ''}`,
+          icon: 'history_edu',
+          badgeClass: 'badge-warning'
+        });
+      });
+    }
+
+    // 7. Stored Manual/Automated Log Entries (historyLog)
+    if (inv.historyLog && Array.isArray(inv.historyLog)) {
+      inv.historyLog.forEach(hl => {
+        timeline.push({
+          id: hl.id || store.generateId(),
+          date: hl.date || hl.timestamp || creationDate,
+          type: hl.type || 'Activity',
+          title: hl.title || 'Activity Logged',
+          description: hl.description || hl.text || '',
+          user: hl.user || 'System',
+          icon: hl.icon || 'history',
+          badgeClass: hl.badgeClass || 'badge-neutral'
+        });
+      });
+    }
+
+    // Sort descending (newest at top)
+    timeline.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+    return timeline;
+  }
+
   function render() {
+    const paidAmount = (invoice.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+    const balanceDue = Math.max(0, (invoice.total || 0) - paidAmount);
+
     container.innerHTML = `
       ${renderDetailHeader({
         title: `
-          ${isNew ? 'New Invoice' : invoice.number}
-          ${invoice.invoiceType === 'CreditNote' ? '<span class="badge badge-danger">CREDIT NOTE</span>' : invoice.invoiceType && invoice.invoiceType !== 'Standard' ? `<span class="badge badge-primary">${invoice.invoiceType.toUpperCase()}</span>` : ''}
+          ${isNew ? 'New Invoice' : escapeHTML(invoice.number)}
+          ${invoice.invoiceType === 'CreditNote' ? '<span class="badge badge-danger">CREDIT NOTE</span>' : invoice.invoiceType && invoice.invoiceType !== 'Standard' ? `<span class="badge badge-primary">${escapeHTML(invoice.invoiceType.toUpperCase())}</span>` : ''}
         `,
         icon: 'receipt_long',
         iconBgColor: 'var(--color-success-bg)',
         iconTextColor: 'var(--color-success)',
         metaHtml: `
-          ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${invoice.customerName}</span>` : ''}
-          ${invoice.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${invoice.jobNumber}</span>` : ''}
-          <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${invoice.status}</span>
+          ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(invoice.customerName)}</span>` : ''}
+          ${invoice.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${escapeHTML(invoice.jobNumber)}</span>` : ''}
+          <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${escapeHTML(invoice.status || 'Draft')}</span>
         `,
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-preview-pdf" data-tooltip="Generate and preview a print-ready PDF invoice layout" data-tooltip-pos="left"><span class="material-icons-outlined">picture_as_pdf</span> PDF</button>
@@ -106,21 +265,93 @@ export function renderInvoiceDetail(container, { id }) {
           ${!isNew && invoice.status === 'Paid' && emailEnabledFor('receipt') ? `<button class="btn btn-primary" id="btn-send-receipt" data-tooltip="Email a payment receipt for this invoice to the customer" data-tooltip-pos="left"><span class="material-icons-outlined">receipt</span> Send Receipt</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
-             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:var(--z-dropdown);min-width:160px">
-                <a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Import from Quote</a>
+             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px;box-shadow:var(--shadow-md);z-index:var(--z-dropdown);min-width:160px">
+                <a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Import from Quote</a>
                 ${!isNew ? `<a href="#" class="dropdown-item" id="btn-delete-invoice" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Invoice</a>` : ''}
              </div>
           </div>
         `
       })}
 
+      ${activeTab === 'history' ? (() => {
+        const timeline = getInvoiceFullTimeline(invoice);
+        return `
+        <div class="card" style="margin-bottom:var(--space-lg)">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+            <div style="display:flex; align-items:center; gap:8px">
+              <span class="material-icons-outlined" style="color:var(--color-primary)">history</span>
+              <h4 style="margin:0">Invoice Activity History & Timeline</h4>
+            </div>
+            <span class="badge badge-neutral">${timeline.length} Event${timeline.length === 1 ? '' : 's'}</span>
+          </div>
+          <div class="card-body">
+            
+            <!-- Manual History Note Entry -->
+            <div class="card" style="padding:16px; background:var(--bg-color); border:1px solid var(--border-color); margin-bottom:20px; border-radius:8px">
+              <h5 style="margin:0 0 8px 0; font-size:13px; font-weight:700">Add History Note or Call Log</h5>
+              <div style="display:flex; gap:8px">
+                <input type="text" class="form-input" id="inp-invoice-history-note" placeholder="Log customer interaction, payment follow-up note, or internal memo..." style="flex:1" />
+                <button class="btn btn-primary" id="btn-add-invoice-history-note">
+                  <span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add_comment</span> Add Entry
+                </button>
+              </div>
+            </div>
+
+            <!-- Full Timeline View -->
+            ${timeline.length === 0 ? `
+              <p class="text-secondary" style="font-size:var(--font-size-sm); text-align:center; padding:var(--space-xl)">
+                <span class="material-icons-outlined" style="font-size:32px; color:var(--text-tertiary); margin-bottom:8px; display:block">history</span>
+                No activity history recorded for this invoice yet.
+              </p>
+            ` : `
+              <div class="invoice-timeline" style="display:flex; flex-direction:column; gap:16px; position:relative; padding-left:24px; margin-top:8px">
+                <!-- Vertical Timeline Bar -->
+                <div style="position:absolute; left:7px; top:12px; bottom:12px; width:2px; background:var(--border-color); z-index:1"></div>
+
+                ${timeline.map(item => `
+                  <div class="timeline-item" style="position:relative; z-index:2">
+                    <!-- Timeline Node Icon -->
+                    <div style="position:absolute; left:-24px; top:4px; width:16px; height:16px; border-radius:50%; background:var(--card-bg); border:2px solid var(--color-primary); display:flex; align-items:center; justify-content:center;">
+                      <div style="width:6px; height:6px; border-radius:50%; background:var(--color-primary)"></div>
+                    </div>
+                    
+                    <div class="card" style="padding:14px 18px; margin:0; border:1px solid var(--border-color); background:var(--card-bg); border-radius:8px">
+                      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px">
+                        <div style="display:flex; align-items:center; gap:8px">
+                          <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">${item.icon || 'history'}</span>
+                          <strong style="font-size:14px">${escapeHTML(item.title)}</strong>
+                          ${item.badgeClass ? `<span class="badge ${item.badgeClass}" style="font-size:10px">${escapeHTML(item.type || 'Event')}</span>` : ''}
+                        </div>
+                        <div style="font-size:11px; color:var(--text-tertiary); font-weight:600">
+                          ${item.date ? new Date(item.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                        </div>
+                      </div>
+                      <div style="font-size:13px; color:var(--text-secondary); line-height:1.4">
+                        ${escapeHTML(item.description || '')}
+                      </div>
+                      ${item.user ? `
+                        <div style="font-size:11px; color:var(--text-tertiary); margin-top:6px; font-weight:500">
+                          Logged by: <strong>${escapeHTML(item.user)}</strong>
+                        </div>
+                      ` : ''}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+
+          </div>
+        </div>
+        `;
+      })() : `
+
       <!-- Linked Quote alert header if present -->
       ${invoice.originalQuoteNumber ? `
-        <div class="card" style="margin-bottom:var(--space-lg); border-left: 4px solid var(--color-primary); background: var(--color-primary-light); padding: 16px var(--space-lg); display:flex; justify-content:space-between; align-items:center; box-shadow:var(--shadow-sm); border-radius:8px">
+        <div class="card" style="margin-bottom:var(--space-lg); border-left: 4px solid var(--color-primary); background: var(--color-primary-light); padding: 16px var(--space-lg); display:flex; justify-content:space-between; align-items:center; border-radius:8px">
           <div style="display:flex; align-items:center; gap:10px">
             <span class="material-icons-outlined" style="color:var(--color-primary); font-size:24px">request_quote</span>
             <div>
-              <div style="font-weight:700; color:var(--color-primary-dark); font-size:14px">Linked Quote: <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:800; color:inherit">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
+              <div style="font-weight:normal; color:var(--color-primary-dark); font-size:14px">Linked Quote: <a href="#/quotes/${invoice.originalQuoteId}" style="text-decoration:underline; font-weight:normal; color:inherit">${escapeHTML(invoice.originalQuoteNumber)}</a></div>
               <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Original Quote Subtotal: <strong>$${(invoice.originalSubtotal || 0).toFixed(2)}</strong></div>
             </div>
           </div>
@@ -205,8 +436,8 @@ export function renderInvoiceDetail(container, { id }) {
       <!-- Totals & Margin Analysis -->
       <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:flex-start">
         <!-- Staff Margin Analysis -->
-        <div class="card" style="width:300px; border:1px dashed var(--border-color); background:var(--bg-color)">
-          <div class="card-header" style="padding:10px 16px; border-bottom:1px dashed var(--border-color)">
+        <div class="card" style="width:300px; border:1px solid var(--border-color); background:var(--bg-color)">
+          <div class="card-header" style="padding:10px 16px; border-bottom:1px solid var(--border-color)">
             <h5 style="margin:0; font-size:13px; color:var(--text-secondary)">Margin Analysis</h5>
           </div>
           <div class="card-body" style="padding:12px 16px">
@@ -214,7 +445,7 @@ export function renderInvoiceDetail(container, { id }) {
               <span class="text-secondary">Actual Cost</span>
               <span>$${(invoice.totalInternalCost || 0).toFixed(2)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; font-weight:600; color:${(invoice.subtotal - (invoice.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; font-weight:normal; color:${(invoice.subtotal - (invoice.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
               <span>Invoice Margin</span>
               <span>$${(invoice.subtotal - (invoice.totalInternalCost || 0)).toFixed(2)} (${invoice.subtotal > 0 ? Math.round(((invoice.subtotal - invoice.totalInternalCost) / invoice.subtotal) * 100) : 0}%)</span>
             </div>
@@ -229,12 +460,12 @@ export function renderInvoiceDetail(container, { id }) {
               <span>$${((invoice.originalSubtotal || 0)).toFixed(2)}</span>
             </div>
             ${(invoice.approvedVariationsSum || 0) > 0 ? `
-              <div style="display:flex;justify-content:space-between;font-size:var(--font-size-md); color:var(--color-success); font-weight:600">
+              <div style="display:flex;justify-content:space-between;font-size:var(--font-size-md); color:var(--color-success); font-weight:normal">
                 <span>Approved Variations</span>
                 <span>+$${(invoice.approvedVariationsSum || 0).toFixed(2)}</span>
               </div>
             ` : ''}
-            <div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px dashed var(--border-color);font-size:var(--font-size-md);font-weight:700; color:var(--text-primary)">
+            <div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--border-color);font-size:var(--font-size-md);font-weight:normal; color:var(--text-primary)">
               <span>Invoice Subtotal</span>
               <span id="inv-subtotal">$${(invoice.subtotal || 0).toFixed(2)}</span>
             </div>
@@ -248,8 +479,8 @@ export function renderInvoiceDetail(container, { id }) {
             </div>
             ${(invoice.pendingVariationsSum || 0) > 0 ? `
               <div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);border-radius:4px;font-size:12px;color:var(--color-warning-dark);margin-top:4px">
-                <span style="font-weight:700">Pending Variations (Excluded)</span>
-                <span style="font-weight:800">$${(invoice.pendingVariationsSum || 0).toFixed(2)}</span>
+                <span style="font-weight:normal">Pending Variations (Excluded)</span>
+                <span style="font-weight:normal">$${(invoice.pendingVariationsSum || 0).toFixed(2)}</span>
               </div>
             ` : ''}
           </div>
@@ -260,6 +491,7 @@ export function renderInvoiceDetail(container, { id }) {
         <button class="btn btn-secondary" id="btn-cancel-inv">Cancel</button>
         <button class="btn btn-primary" id="btn-save-inv"><span class="material-icons-outlined">save</span> Save Invoice</button>
       </div>
+      `}
     `;
 
     bindEvents();
@@ -403,6 +635,18 @@ export function renderInvoiceDetail(container, { id }) {
   }
 
   function bindEvents() {
+    container.querySelector('#btn-add-invoice-history-note')?.addEventListener('click', () => {
+      const inp = container.querySelector('#inp-invoice-history-note');
+      const text = (inp ? inp.value : '').trim();
+      if (!text) {
+        showToast('Please enter a note before adding', 'warning');
+        return;
+      }
+      logInvoiceActivity('Note', 'Staff Note Added', text, 'edit_note', 'badge-purple');
+      showToast('Activity note added to timeline', 'success');
+      render();
+    });
+
     container.querySelector('#btn-preview-pdf')?.addEventListener('click', () => {
       showPrintPreview({ type: 'invoice', data: invoice });
     });
@@ -1041,11 +1285,7 @@ export function renderInvoiceDetail(container, { id }) {
             invoice.status = 'Paid';
             invoice.paidDate = paidDate;
             invoice.paymentMethod = paymentMethod;
-            // No receipt is sent here. Marking paid is a bookkeeping action and
-            // used to fire a customer-facing email as a side effect, with no
-            // confirmation and no way to stop it. Once paid, "Mark Paid" is
-            // replaced by an explicit "Send Receipt" button that follows the
-            // same confirm-then-undo flow as every other email action.
+            logInvoiceActivity('Payment', 'Payment Settled', `Payment recorded via ${paymentMethod} on ${paidDate}`, 'check_circle', 'badge-success');
             showToast('Invoice marked as paid', 'success');
             render();
             close();

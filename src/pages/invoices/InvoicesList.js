@@ -7,35 +7,23 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Invoices</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-outline" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none;"><span class="material-icons-outlined">download</span> Export to Accounting</button>
-        <button class="btn btn-primary" id="btn-new-invoice" data-tooltip="Create a new draft invoice to bill a customer" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> New Invoice</button>
-      </div>
-    </div>
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
-        <button class="toolbar-filter active" data-filter="all">All (${invoices.length})</button>
-        <button class="toolbar-filter" data-filter="Draft">Draft</button>
-        <button class="toolbar-filter" data-filter="Sent">Sent</button>
-        <button class="toolbar-filter" data-filter="Paid">Paid</button>
-        <button class="toolbar-filter" data-filter="Overdue">Overdue</button>
-        <button class="toolbar-filter" data-filter="Void">Void</button>
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex:0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search invoices..." id="invoices-search" />
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${invoices.length})</option>
+          ${['Draft','Sent','Paid','Overdue','Void'].map(s => `<option value="${s}">${s} (${invoices.filter(i => i.status === s).length})</option>`).join('')}
+        </select>
+        <button class="btn btn-outline btn-sm" id="btn-export-accounting" data-tooltip="Download Xero/MYOB compatible CSV of paid invoices" data-tooltip-pos="left" style="display:none; height:25px; font-size:11px; padding:0 10px; align-self:center;"><span class="material-icons-outlined" style="font-size:13px;">download</span> Export</button>
+        <button class="btn btn-primary btn-sm" id="btn-new-invoice" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Invoice</span></button>
       </div>
     </div>
     <div id="invoices-table-container"></div>
@@ -45,13 +33,12 @@ export function renderInvoicesList(container) {
   const sb = { 'Draft':'badge-draft','Sent':'badge-info','Paid':'badge-success','Overdue':'badge-danger','Void':'badge-void' };
 
   const columns = [
-    { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '110px' },
-    { key: 'customerName', label: 'Customer' },
-    { key: 'jobNumber', label: 'Job Ref', render: (r) => r.jobNumber ? `<span class="text-secondary">${escapeHTML(r.jobNumber)}</span>` : '—', width: '100px' },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '100px' },
-    { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '110px' },
-    { key: 'issueDate', label: 'Issue Date', render: (r) => r.issueDate ? new Date(r.issueDate).toLocaleDateString() : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '100px' },
-    { key: 'dueDate', label: 'Due Date', render: (r) => r.dueDate ? new Date(r.dueDate).toLocaleDateString() : '—', getValue: (r) => r.dueDate ? new Date(r.dueDate).getTime() : 0, width: '100px' },
+    { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '14%' },
+    { key: 'customerName', label: 'Customer', width: '30%' },
+    { key: 'jobNumber', label: 'Job Ref', render: (r) => r.jobNumber ? `<span class="text-secondary">${escapeHTML(r.jobNumber)}</span>` : '—', width: '14%' },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '12%' },
+    { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '14%' },
+    { key: 'issueDate', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate.includes('T') ? r.issueDate : r.issueDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '16%' },
   ];
 
   const table = createDataTable({ 
@@ -372,13 +359,23 @@ export function renderInvoicesList(container) {
     updateExportButtonVisibility(filteredData);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeStatusFilter = btn.dataset.filter;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
       applyFilters();
-    });
+    }
+  });
+
+  setListSearch('Search invoices...', (q) => {
+    searchQuery = q;
+    applyFilters();
+  });
+
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeStatusFilter = e.target.value;
+    applyFilters();
   });
 
   btnExport.addEventListener('click', () => {
@@ -414,20 +411,5 @@ export function renderInvoicesList(container) {
     import('../../components/Notifications.js').then(({ showToast }) => {
       showToast(`Exported ${paidInvoices.length} paid invoices`, 'success');
     });
-  });
-
-  container.querySelector('#invoices-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
-    applyFilters();
   });
 }

@@ -8,6 +8,16 @@ import { applyTheme, THEMES } from '../utils/theme.js';
 import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssistant.js';
 import { showModal } from './Modal.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
+import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
+import { escapeHTML } from '../utils/security.js';
+
+// Brand lockup for the top bar's left (moved up from the sidebar). Uses the
+// company logo when set, else the Relay mark + wordmark.
+function buildBrandHtml() {
+  const s = store.getSettings() || {};
+  if (s.logo) return `<img src="${s.logo}" class="topbar-brand-logo" alt="Logo" />`;
+  return `<span class="topbar-brand-mark">R</span><span class="topbar-brand-name">Relay — Dispatch</span>`;
+}
 
 export function createTopBar() {
   const topbar = document.createElement('header');
@@ -15,11 +25,15 @@ export function createTopBar() {
   topbar.id = 'topbar';
 
   topbar.innerHTML = `
-    <div class="topbar-search">
-      <span class="material-icons-outlined search-icon">search</span>
-      <input type="text" id="global-search" placeholder="Search customers, jobs, quotes..." autocomplete="off" />
+    <div class="topbar-brand" id="topbar-brand" title="Home" role="button" tabindex="0">
+      ${buildBrandHtml()}
     </div>
     <div class="topbar-actions">
+      <div class="topbar-search">
+        <span class="material-icons-outlined search-icon">search</span>
+        <input type="text" id="global-search" placeholder="Search…" autocomplete="off" />
+        <span class="topbar-search-kbd">Ctrl K</span>
+      </div>
       <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant" style="position: relative;">
         ${relayIcon}
         <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:#FF3B30; color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
@@ -30,39 +44,60 @@ export function createTopBar() {
       <button class="topbar-action-btn" id="btn-help" title="Help">
         <span class="material-icons-outlined">help_outline</span>
       </button>
-      <button class="topbar-action-btn" id="btn-notifications" title="Notifications">
+      <button class="topbar-action-btn" id="btn-notifications" title="Notices">
         <span class="material-icons-outlined">notifications</span>
         <span class="notification-dot"></span>
       </button>
-      <div class="topbar-user" id="topbar-user">
-        <div class="topbar-avatar" id="topbar-avatar">--</div>
-        <div class="topbar-user-info">
-          <span class="topbar-user-name" id="topbar-name">Loading...</span>
-          <span class="topbar-user-role" id="topbar-role">Role</span>
-        </div>
-         <!-- UI Mode Toggle Switch -->
-          <label class="toggle-pill" title="Toggle Simple/Complete Mode">
-            <input type="checkbox" id="ui-mode-toggle" />
-            <span class="slider"></span>
-          </label>
-      </div>
+      <!-- Simple/Complete mode toggle (local-admin only; profile block moved to the sidebar footer) -->
+      <label class="toggle-pill" title="Toggle Simple/Complete Mode" style="display:none;">
+        <input type="checkbox" id="ui-mode-toggle" />
+        <span class="slider"></span>
+      </label>
     </div>
   `;
 
-  // Search functionality
+  // Search functionality — context-aware: on a list page it filters that table
+  // in place; everywhere else it's the global "jump to a record" search.
   const searchInput = topbar.querySelector('#global-search');
   let searchTimeout;
   searchInput.addEventListener('input', (e) => {
+    const val = e.target.value;
+    const listHandler = getListSearch();
+    if (listHandler) {
+      listHandler(val.trim());
+    }
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-      const query = e.target.value.trim();
-      if (query.length >= 2) {
+      const query = val.trim();
+      if (query.length >= 1) {
         showSearchResults(query);
       } else {
         hideSearchResults();
       }
-    }, 300);
+    }, 180);
   });
+
+  // Reflect the context in the placeholder, and clear the box when leaving a list.
+  function updateSearchPlaceholder() {
+    const rawLabel = getListSearchLabel();
+    const hasSearch = !!getListSearch();
+    if (hasSearch && rawLabel) {
+      let clean = rawLabel.trim();
+      clean = clean.replace(/^(search|filter)\s+/i, '').replace(/[\.\…]+$/g, '').trim();
+      if (clean) {
+        clean = clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        searchInput.placeholder = `Search ${clean}...`;
+      } else {
+        searchInput.placeholder = 'Search...';
+      }
+    } else {
+      searchInput.placeholder = 'Search...';
+    }
+    if (!hasSearch) searchInput.value = '';
+  }
+
+  window.addEventListener('relay-list-search-changed', updateSearchPlaceholder);
+  updateSearchPlaceholder();
 
   searchInput.addEventListener('blur', () => {
     setTimeout(hideSearchResults, 200);
@@ -116,13 +151,13 @@ export function createTopBar() {
   // Apply stored theme on load
   applyStoredTheme();
 
-  // Notifications logic
+  // Notices logic
   const notifBtn = topbar.querySelector('#btn-notifications');
   const notifDot = topbar.querySelector('.notification-dot');
 
-  function updateNotificationsDot() {
-    const notifs = store.getAll('notifications');
-    const unread = notifs.filter(n => !n.read).length;
+  function updateNoticesDot() {
+    const notices = store.getAll('notices') || [];
+    const unread = notices.filter(n => !n.read).length;
     if (unread > 0) {
       notifDot.style.display = 'block';
     } else {
@@ -130,8 +165,8 @@ export function createTopBar() {
     }
   }
 
-  store.on('notifications', updateNotificationsDot);
-  updateNotificationsDot();
+  store.on('notices', updateNoticesDot);
+  updateNoticesDot();
 
   // Deputy Asks Notification Badge
   const askBadge = topbar.querySelector('#deputy-ask-badge');
@@ -171,17 +206,17 @@ export function createTopBar() {
   relayBtn.addEventListener('click', () => toggleRelay());
   onRelayToggle(open => relayBtn.classList.toggle('active', open));
 
-  // Navigate to profile on user click
-  const userBtn = topbar.querySelector('#topbar-user');
-  if (userBtn) {
-    userBtn.style.cursor = 'pointer';
-    userBtn.addEventListener('click', (e) => {
-      if (e.target.closest('#ui-mode-toggle') || e.target.closest('.toggle-pill')) {
-        return;
-      }
-      router.navigate('/profile');
-    });
+  // Brand (moved up from the sidebar) → home; refresh when the company logo changes.
+  const brandEl = topbar.querySelector('#topbar-brand');
+  if (brandEl) {
+    brandEl.addEventListener('click', () => router.navigate('/'));
+    const refreshBrand = () => { const el = topbar.querySelector('#topbar-brand'); if (el) el.innerHTML = buildBrandHtml(); };
+    window.addEventListener('simpro-settings-updated', refreshBrand);
+    store.on('settings', refreshBrand);
   }
+
+  // Profile display moved to the sidebar footer (see Sidebar.js). The top bar
+  // now only carries search + Deputy + theme/help/notifications + the mode toggle.
 
   // Update on profile details update
   window.addEventListener('fieldforge-profile-updated', () => {
@@ -218,45 +253,9 @@ export function updateTopbarAccess(topbarEl) {
     }
   }
 
-  // --- Name / role / avatar ---
-  const nameEl = topbar.querySelector('#topbar-name');
-  const roleEl = topbar.querySelector('#topbar-role');
-  const avatarEl = topbar.querySelector('#topbar-avatar');
-
-  if (nameEl) nameEl.textContent = currentUser.name || 'Unknown User';
-  if (roleEl) {
-    // Priority 1: Use the explicit userTypeName from session (set during login)
-    // Priority 2: Look up from userTypes collection
-    // Priority 3: Fallback to roleMap
-    let displayRole = currentUser.userTypeName;
-    
-    if (!displayRole && currentUser.userTypeId) {
-      const ut = store.getById('userTypes', currentUser.userTypeId);
-      if (ut) displayRole = ut.name;
-    }
-
-    if (!displayRole) {
-      const roleMap = { 'admin': 'Administrator', 'manager': 'Manager', 'technician': 'Technician', 'customer': 'Customer' };
-      displayRole = roleMap[currentUser.role] || currentUser.role;
-    }
-
-    // If local admin is using the toggle, show the toggled role instead
-    const loginMode = localStorage.getItem('relay_login_mode');
-    if (loginMode === 'local') {
-      const uiMode = localStorage.getItem('uiMode') || 'admin';
-      const modeMap = { 'admin': 'Complete Mode', 'technician': 'Simple Mode' };
-      displayRole = modeMap[uiMode] || displayRole;
-    }
-
-    roleEl.textContent = displayRole;
-  }
-
-  if (avatarEl) {
-    const nameStr = currentUser.name || '';
-    const initials = nameStr.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
-    avatarEl.textContent = initials;
-    avatarEl.style.backgroundColor = currentUser.color || '#FF5C00';
-  }
+  // Name / role / avatar now render in the sidebar footer
+  // (Sidebar.updateSidebarProfile), refreshed via updateSidebarAccess on login
+  // and the fieldforge-profile-updated event.
 }
 
 function toggleNotificationsDropdown(btn) {
@@ -266,25 +265,19 @@ function toggleNotificationsDropdown(btn) {
     return;
   }
 
-  const notifs = store.getAll('notifications').sort((a, b) => {
-    const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
-    const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
-    return dateB - dateA;
-  });
+  const notices = (store.getAll('notices') || [])
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 40);
   
   dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'notifications-dropdown';
-  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;z-index:var(--z-dropdown);box-shadow:var(--shadow-lg);border-radius:var(--border-radius-md);background:rgba(255,255,255,0.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.08);padding:0;';
-
-  if (document.documentElement.getAttribute('data-theme') === 'dark') {
-    dropdown.style.background = 'rgba(13, 17, 30, 0.92)';
-    dropdown.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-  }
+  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;z-index:var(--z-dropdown);box-shadow:var(--shadow-lg);border-radius:var(--border-radius-md);background:var(--card-bg);border:1px solid var(--card-border);padding:0;';
+  // dark theme handled by [data-theme-mode="dark"] .dropdown-menu in components.css
 
   const header = document.createElement('div');
   header.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center';
-  header.innerHTML = '<h4 style="margin:0;font-size:var(--font-size-md);font-weight:var(--font-weight-semibold);color:var(--text-primary);">Notifications</h4>';
+  header.innerHTML = '<h4 style="margin:0;font-size:var(--font-size-md);font-weight:var(--font-weight-semibold);color:var(--text-primary);">Notices</h4>';
   
   const markAllBtn = document.createElement('button');
   markAllBtn.className = 'btn btn-ghost btn-sm';
@@ -292,9 +285,9 @@ function toggleNotificationsDropdown(btn) {
   markAllBtn.textContent = 'Mark all as read';
   markAllBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const allNotifs = store.getAll('notifications');
+    const allNotices = store.getAll('notices') || [];
     let changed = false;
-    allNotifs.forEach(n => {
+    allNotices.forEach(n => {
       if (!n.read) {
         n.read = true;
         n.updatedAt = new Date().toISOString();
@@ -302,26 +295,26 @@ function toggleNotificationsDropdown(btn) {
       }
     });
     if (changed) {
-      store.save('notifications', allNotifs);
+      store.save('notices', allNotices);
     }
     dropdown.remove();
   });
   header.appendChild(markAllBtn);
   dropdown.appendChild(header);
 
-  if (notifs.length === 0) {
+  if (notices.length === 0) {
     const emptyState = document.createElement('div');
     emptyState.style.cssText = 'padding:32px 16px;text-align:center;color:var(--text-tertiary);font-size:var(--font-size-sm);display:flex;flex-direction:column;align-items:center;gap:8px;';
     emptyState.innerHTML = `
       <span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary);opacity:0.6;">notifications_off</span>
-      <span>No notifications</span>
+      <span>No system notices</span>
     `;
     dropdown.appendChild(emptyState);
   } else {
     const listContainer = document.createElement('div');
     listContainer.className = 'notifications-list';
     
-    notifs.forEach(n => {
+    notices.forEach(n => {
       const item = document.createElement('div');
       item.className = 'dropdown-item';
       item.style.cssText = `padding:12px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;white-space:normal;background:${n.read ? 'transparent' : 'var(--color-info-bg)'};display:flex;align-items:flex-start;transition:background 0.2s;`;
@@ -338,29 +331,18 @@ function toggleNotificationsDropdown(btn) {
       item.innerHTML = `
         ${dotHtml}
         <div style="flex:1">
-          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title || n.type || 'Notification'}</div>
-          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message || n.description || ''}</div>
-          <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${new Date(n.createdAt).toLocaleString()}</div>
+          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title || 'Notice'}</div>
+          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message || ''}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</div>
         </div>
       `;
       
       item.addEventListener('click', (e) => {
         e.stopPropagation();
-        store.update('notifications', n.id, { read: true });
+        store.update('notices', n.id, { read: true });
         
-        let targetLink = n.link;
-        if (!targetLink) {
-          if (n.jobId) {
-            targetLink = `/jobs/${n.jobId}`;
-          } else if (n.assetId) {
-            targetLink = `/assets/${n.assetId}`;
-          } else if (n.type === 'Low Stock' || (n.description && n.description.toLowerCase().includes('low stock'))) {
-            targetLink = '/stock';
-          }
-        }
-
-        if (targetLink) {
-          router.navigate(targetLink);
+        if (n.link) {
+          router.navigate(n.link);
         }
         dropdown.remove();
       });
@@ -387,14 +369,43 @@ function toggleNotificationsDropdown(btn) {
 function showSearchResults(query) {
   hideSearchResults();
 
-  const { store } = window.__fieldForge || {};
-  if (!store) return;
+  const storeObj = store || window.__fieldForge?.store;
+  if (!storeObj) return;
 
   const results = [];
   const q = query.toLowerCase();
 
-  // Search customers
-  store.getAll('customers').forEach(c => {
+  // Search projects
+  (storeObj.getAll('projects') || []).forEach(p => {
+    const num = p.number || '';
+    const name = p.name || '';
+    const custName = p.customerName || '';
+    if (num.toLowerCase().includes(q) || name.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
+      results.push({ type: 'Project', label: `${num} — ${name}`, icon: 'folder', path: `/projects/${p.id}` });
+    }
+  });
+
+  // Search stock
+  (storeObj.getAll('stock') || []).forEach(st => {
+    const code = st.code || '';
+    const name = st.name || '';
+    const cat = st.category || '';
+    if (code.toLowerCase().includes(q) || name.toLowerCase().includes(q) || cat.toLowerCase().includes(q)) {
+      results.push({ type: 'Stock', label: `${code ? `${code} — ` : ''}${name}`, icon: 'inventory_2', path: `/stock/${st.id}` });
+    }
+  });
+
+  // Search kits
+  (storeObj.getAll('kits') || []).forEach(k => {
+    const name = k.name || '';
+    const desc = k.description || '';
+    if (name.toLowerCase().includes(q) || desc.toLowerCase().includes(q)) {
+      results.push({ type: 'Kit', label: name, icon: 'card_giftcard', path: `/stock` });
+    }
+  });
+
+  // Search customers / people
+  (storeObj.getAll('customers') || []).forEach(c => {
     const company = c.company || '';
     const firstName = c.firstName || '';
     const lastName = c.lastName || '';
@@ -405,7 +416,7 @@ function showSearchResults(query) {
   });
 
   // Search jobs
-  store.getAll('jobs').forEach(j => {
+  (storeObj.getAll('jobs') || []).forEach(j => {
     const num = j.number || '';
     const title = j.title || '';
     const custName = j.customerName || '';
@@ -415,48 +426,94 @@ function showSearchResults(query) {
   });
 
   // Search quotes
-  store.getAll('quotes').forEach(qt => {
+  (storeObj.getAll('quotes') || []).forEach(qt => {
     const num = qt.number || '';
     const title = qt.title || '';
     const custName = qt.customerName || '';
     if (num.toLowerCase().includes(q) || title.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
-      results.push({ type: 'Quote', label: `${num} — ${custName || 'Unnamed Customer'}`, icon: 'request_quote', path: `/quotes/${qt.id}` });
+      results.push({ type: 'Quote', label: `${num} — ${custName || title || 'Quote'}`, icon: 'request_quote', path: `/quotes/${qt.id}` });
     }
   });
 
   // Search invoices
-  store.getAll('invoices').forEach(inv => {
+  (storeObj.getAll('invoices') || []).forEach(inv => {
     const num = inv.number || '';
     const custName = inv.customerName || '';
     if (num.toLowerCase().includes(q) || custName.toLowerCase().includes(q)) {
-      results.push({ type: 'Invoice', label: `${num} — ${custName || 'Unnamed Customer'}`, icon: 'receipt_long', path: `/invoices/${inv.id}` });
+      results.push({ type: 'Invoice', label: `${num} — ${custName || 'Invoice'}`, icon: 'receipt_long', path: `/invoices/${inv.id}` });
+    }
+  });
+
+  // Search suppliers
+  (storeObj.getAll('suppliers') || []).forEach(sup => {
+    const name = sup.name || '';
+    const contact = sup.contactName || '';
+    if (name.toLowerCase().includes(q) || contact.toLowerCase().includes(q)) {
+      results.push({ type: 'Supplier', label: name, icon: 'local_shipping', path: `/suppliers/${sup.id}` });
+    }
+  });
+
+  // Search purchase orders
+  (storeObj.getAll('purchaseOrders') || []).forEach(po => {
+    const num = po.number || '';
+    const supName = po.supplierName || '';
+    if (num.toLowerCase().includes(q) || supName.toLowerCase().includes(q)) {
+      results.push({ type: 'PO', label: `${num} — ${supName || 'PO'}`, icon: 'shopping_bag', path: `/purchase-orders/${po.id}` });
+    }
+  });
+
+  // Search assets
+  (storeObj.getAll('assets') || []).forEach(ast => {
+    const name = ast.name || '';
+    const tag = ast.assetTag || '';
+    if (name.toLowerCase().includes(q) || tag.toLowerCase().includes(q)) {
+      results.push({ type: 'Asset', label: `${tag ? `${tag} — ` : ''}${name}`, icon: 'precision_manufacturing', path: `/assets/${ast.id}` });
     }
   });
 
   if (results.length === 0) return;
 
+  const currentLabel = (getListSearchLabel() || '').toLowerCase();
+  if (currentLabel) {
+    results.sort((a, b) => {
+      const aMatchesCurrent = a.type.toLowerCase().includes(currentLabel) || currentLabel.includes(a.type.toLowerCase());
+      const bMatchesCurrent = b.type.toLowerCase().includes(currentLabel) || currentLabel.includes(b.type.toLowerCase());
+      if (aMatchesCurrent && !bMatchesCurrent) return -1;
+      if (!aMatchesCurrent && bMatchesCurrent) return 1;
+      return 0;
+    });
+  }
+
   const dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'search-results';
-  dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;margin-top:4px;max-height:320px;overflow-y:auto;';
+  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050; background:var(--bg-card, #fff); border:1px solid var(--border-color, #e0e0e0); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:4px 0;';
 
-  results.slice(0, 12).forEach(r => {
+  results.slice(0, 10).forEach(r => {
     const item = document.createElement('button');
     item.className = 'dropdown-item';
+    item.style.cssText = 'display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:none; background:none; text-align:left; cursor:pointer; font-size:13px; color:var(--text-primary); transition:background 0.15s ease;';
     item.innerHTML = `
-      <span class="material-icons-outlined" style="font-size:16px;color:var(--text-tertiary)">${r.icon}</span>
-      <span style="flex:1" class="truncate">${r.label}</span>
-      <span class="badge badge-neutral" style="font-size:10px">${r.type}</span>
+      <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary)">${r.icon}</span>
+      <span style="flex:1" class="truncate">${escapeHTML(r.label)}</span>
+      <span class="badge badge-neutral" style="font-size:10px; padding:2px 6px">${escapeHTML(r.type)}</span>
     `;
+    item.addEventListener('mouseenter', () => { item.style.background = 'var(--bg-hover, rgba(0,0,0,0.04))'; });
+    item.addEventListener('mouseleave', () => { item.style.background = 'none'; });
     item.addEventListener('click', () => {
       router.navigate(r.path);
       hideSearchResults();
-      document.querySelector('#global-search').value = '';
+      const sInput = document.querySelector('#global-search');
+      if (sInput) sInput.value = '';
     });
     dropdown.appendChild(item);
   });
 
-  document.querySelector('.topbar-search').appendChild(dropdown);
+  const searchContainer = document.querySelector('.topbar-search');
+  if (searchContainer) {
+    searchContainer.style.position = 'relative';
+    searchContainer.appendChild(dropdown);
+  }
 }
 
 function hideSearchResults() {

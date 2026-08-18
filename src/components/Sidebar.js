@@ -1,253 +1,186 @@
 // ============================================
-// FIELDFORGE — SIDEBAR COMPONENT (CATEGORIZED)
+// RELAY — SIDEBAR COMPONENT (two-level master–detail)
 // ============================================
+// Supabase-style nav: a slim primary rail of top sections + a secondary
+// submenu panel that opens beside it for grouped sections. Keeps the primary
+// rail short (never scrolls); each group's pages live in the second panel.
 
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
 
-// Structured navigation items with collapsible categories
+// Primary sections. Items without `items[]` are direct pages (no submenu);
+// items with `items[]` open a secondary panel.
 const navItems = [
-  // Top Level / Uncollapsed Items
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
   { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
-  
-  // Collapsible Category Groups
   {
-    category: 'Workflow',
-    id: 'cat-workflow',
-    icon: 'account_tree',
+    category: 'Workflow', id: 'cat-workflow', icon: 'account_tree',
     items: [
       { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
       { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
       { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
       { id: 'projects', icon: 'folder_copy', label: 'Projects', path: '/projects' },
       { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
-      { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' }
-    ]
+      { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' },
+    ],
   },
   {
-    category: 'People',
-    id: 'cat-people',
-    icon: 'groups',
+    category: 'People', id: 'cat-people', icon: 'groups',
     items: [
       { id: 'people', icon: 'people', label: 'Customers', path: '/people' },
       { id: 'contractors', icon: 'engineering', label: 'Contractors', path: '/contractors' },
-      { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/suppliers' }
-    ]
+      { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/suppliers' },
+    ],
   },
   {
-    category: 'Resources',
-    id: 'cat-resources',
-    icon: 'widgets',
+    category: 'Resources', id: 'cat-resources', icon: 'widgets',
     items: [
       { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
       { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
       { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
-      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' }
-    ]
+      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
+    ],
   },
   {
-    category: 'Admin',
-    id: 'cat-admin',
-    icon: 'admin_panel_settings',
+    category: 'Admin', id: 'cat-admin', icon: 'admin_panel_settings',
     items: [
       { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
       { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports' },
-      { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' }
-    ]
-  }
+      { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' },
+    ],
+  },
 ];
+
+let sidebarRef = null;
+
+function isLocalMode() {
+  return !store.companyId || String(store.companyId).startsWith('acct_');
+}
+
+function buildLogoHtml(settings, collapsed) {
+  const logoSrc = collapsed ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
+  if (logoSrc) {
+    return `<img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${collapsed ? '32px' : '85%'}; object-fit: contain; display: block; margin: auto;" />`;
+  }
+  return `
+    <div class="logo-icon">R</div>
+    <span class="logo-text">Relay — Dispatch</span>
+  `;
+}
 
 export function createSidebar() {
   const sidebar = document.createElement('aside');
-  sidebar.className = 'sidebar';
+  sidebar.className = 'sidebar two-level';
   sidebar.id = 'sidebar';
+  sidebarRef = sidebar;
 
-  // Check saved expand state
-  const isExpanded = localStorage.getItem('simpro_sidebar_expanded') === 'true';
-  if (isExpanded) sidebar.classList.add('expanded');
+  const railCollapsed = localStorage.getItem('simpro_rail_collapsed') === 'true';
+  if (railCollapsed) sidebar.classList.add('rail-collapsed');
 
   const settings = store.getSettings();
-  const logoSrc = isExpanded 
-    ? (settings.logo || settings.logoSmall) 
-    : (settings.logoSmall || settings.logo);
-  const logoHtml = logoSrc 
-    ? `<img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${isExpanded ? '85%' : '32px'}; object-fit: contain; display: block; margin: auto;" />`
-    : `
-      <div class="logo-icon">R</div>
-      <span class="logo-text" style="${isExpanded ? 'display: block;' : 'display: none;'}">Relay — Dispatch</span>
-    `;
+  const local = isLocalMode();
 
-  let html = `
-    <div class="sidebar-logo ${settings.logo ? 'custom-logo-active' : ''}" id="sidebar-logo">
-      ${logoHtml}
-    </div>
-    <div class="sidebar-scroll-arrow up" id="sidebar-scroll-up">
-      <span class="material-icons-outlined">keyboard_arrow_up</span>
-    </div>
-    <nav class="sidebar-nav" id="sidebar-nav">
-  `;
-
-  // Fetch collapsed states from localStorage
-  let collapsedCats = {};
-  try {
-    collapsedCats = JSON.parse(localStorage.getItem('simpro_sidebar_collapsed_categories') || '{}');
-  } catch (e) {}
-
-  const currentPath = window.location.hash.slice(1) || '/';
-  const basePath = currentPath === '/' ? '/' : '/' + currentPath.split('/').filter(Boolean)[0];
-
-  // Render items loop
+  // --- Primary rail items ---
+  let railHtml = '';
   navItems.forEach(item => {
     if (item.category) {
-      // Auto expand categories that contain the active page
-      const hasActiveChild = item.items.some(child => child.path === basePath);
-      let isCollapsed = collapsedCats[item.id] === true;
-      if (hasActiveChild) {
-        isCollapsed = false; // Override saved collapsed state to keep active paths visible
-      }
-
-      html += `
-        <div class="sidebar-category-container" data-category-id="${item.id}">
-          <button class="sidebar-category-header" data-category-id="${item.id}" id="cat-header-${item.id}" aria-expanded="${!isCollapsed}">
-            <span class="category-chevron">
-              <span class="material-icons-outlined" aria-hidden="true">${isCollapsed ? 'keyboard_arrow_right' : 'expand_more'}</span>
-            </span>
-            <span class="category-icon">
-              <span class="material-icons-outlined" aria-hidden="true">${item.icon}</span>
-            </span>
-            <span class="category-label">${item.category}</span>
-          </button>
-          <div class="sidebar-category-items ${isCollapsed ? 'collapsed' : ''}" id="cat-items-${item.id}">
-      `;
-
-      item.items.forEach(child => {
-        const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
-        const isChildDisabled = isLocalMode && child.id === 'documents';
-        html += `
-          <button class="sidebar-nav-item sub-item ${isChildDisabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${isChildDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
-            <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
-            <span class="nav-label">${child.label}</span>
-          </button>
-        `;
-      });
-
-      html += `
-          </div>
-        </div>
-      `;
+      railHtml += `
+        <button class="rail-item rail-opener" data-section="${item.id}" data-id="${item.id}" id="rail-${item.id}" title="${item.category}">
+          <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
+          <span class="nav-label">${item.category}</span>
+          <span class="rail-caret material-icons-outlined" aria-hidden="true">chevron_right</span>
+        </button>`;
     } else {
-      // Top Level Item
-      const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
-      const isItemDisabled = isLocalMode && item.id === 'documents';
-      html += `
-        <button class="sidebar-nav-item ${isItemDisabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="nav-${item.id}" ${isItemDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
+      const disabled = local && item.id === 'documents';
+      railHtml += `
+        <button class="rail-item rail-page ${disabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="rail-${item.id}" title="${item.label}" ${disabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
           <span class="nav-label">${item.label}</span>
-        </button>
-      `;
+        </button>`;
     }
   });
 
-  html += `
-    </nav>
-    <div class="sidebar-scroll-arrow down" id="sidebar-scroll-down">
-      <span class="material-icons-outlined">keyboard_arrow_down</span>
-    </div>
-    <div style="padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.06);">
-      <button id="btn-logout" class="sidebar-nav-item" style="width: calc(100% - 16px);">
-        <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
-        <span class="nav-label">Logout</span>
+  // --- Secondary submenu panels (one per group, hidden until its section is active) ---
+  let panelsHtml = '';
+  navItems.forEach(item => {
+    if (!item.category) return;
+    let itemsHtml = '';
+    item.items.forEach(child => {
+      const disabled = local && child.id === 'documents';
+      itemsHtml += `
+        <button class="submenu-item ${disabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${disabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
+          <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
+          <span class="nav-label">${child.label}</span>
+        </button>`;
+    });
+    panelsHtml += `
+      <div class="submenu-panel" data-section="${item.id}">
+        <div class="submenu-head">${item.category}</div>
+        <nav class="submenu-nav">${itemsHtml}</nav>
+      </div>`;
+  });
+
+  sidebar.innerHTML = `
+    <div class="sidebar-rail">
+      <nav class="rail-nav" id="rail-nav">${railHtml}</nav>
+      <div class="sidebar-footer">
+        <button class="sidebar-profile" id="sidebar-profile" title="View profile">
+          <span class="sidebar-profile-avatar" id="sidebar-profile-avatar" aria-hidden="true"><span class="material-icons-outlined">account_circle</span></span>
+          <span class="sidebar-profile-info">
+            <span class="sidebar-profile-name" id="sidebar-profile-name">Loading…</span>
+            <span class="sidebar-profile-role" id="sidebar-profile-role">Role</span>
+          </span>
+        </button>
+        <button id="btn-logout" class="rail-item rail-page">
+          <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
+          <span class="nav-label">Logout</span>
+        </button>
+      </div>
+      <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Collapse or expand the menu labels">
+        <span class="material-icons-outlined" id="sidebar-toggle-icon" aria-hidden="true">chevron_left</span>
       </button>
-      <div class="sidebar-version nav-label" style="text-align: center; font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-top: 8px; font-weight: 500; letter-spacing: 0.5px;">v1.2.4</div>
     </div>
-    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Expand or collapse the sidebar">
-      <span class="material-icons-outlined" id="sidebar-toggle-icon" aria-hidden="true">chevron_right</span>
-    </button>
+    <div class="sidebar-submenu" id="sidebar-submenu">${panelsHtml}</div>
   `;
-  
-  sidebar.innerHTML = html;
 
-  // Event listeners
+  // --- Interaction ---
   sidebar.addEventListener('click', (e) => {
-    // 1. Collapsible category header click (only active when expanded)
-    const catHeader = e.target.closest('.sidebar-category-header');
-    if (catHeader) {
-      if (!sidebar.classList.contains('expanded')) return; // Ignore clicks if sidebar is collapsed (hover triggers flyout)
-      
-      const catId = catHeader.dataset.categoryId;
-      const itemsContainer = sidebar.querySelector(`#cat-items-${catId}`);
-      const chevronSpan = catHeader.querySelector('.category-chevron .material-icons-outlined');
+    // Group opener → reveal its submenu panel (does not navigate).
+    const opener = e.target.closest('.rail-opener');
+    if (opener) { setActiveSection(sidebar, opener.dataset.id); return; }
 
-      if (itemsContainer && chevronSpan) {
-        itemsContainer.classList.toggle('collapsed');
-        const isCollapsed = itemsContainer.classList.contains('collapsed');
-        chevronSpan.textContent = isCollapsed ? 'keyboard_arrow_right' : 'expand_more';
+    // Logout handled by its own listener.
+    if (e.target.closest('#btn-logout')) return;
 
-        // Persist collapsed state
-        try {
-          const collapsed = JSON.parse(localStorage.getItem('simpro_sidebar_collapsed_categories') || '{}');
-          collapsed[catId] = isCollapsed;
-          localStorage.setItem('simpro_sidebar_collapsed_categories', JSON.stringify(collapsed));
-        } catch (err) {}
-      }
-      return;
-    }
-
-    // 2. Navigation item click
-    const navItem = e.target.closest('.sidebar-nav-item');
-    if (navItem && navItem.id !== 'btn-logout') {
-      if (navItem.classList.contains('disabled-local')) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      const path = navItem.dataset.path;
+    // Any page link (direct rail page or submenu item).
+    const navBtn = e.target.closest('[data-path]');
+    if (navBtn) {
+      e.preventDefault();
+      if (navBtn.classList.contains('disabled-local')) { e.stopPropagation(); return; }
+      const path = navBtn.dataset.path;
       if (path) router.navigate(path);
     }
   });
 
-  const logoBtn = sidebar.querySelector('#sidebar-logo');
-  logoBtn.addEventListener('click', () => router.navigate('/'));
+  // Profile (footer, above Logout).
+  const profileBtn = sidebar.querySelector('#sidebar-profile');
+  if (profileBtn) profileBtn.addEventListener('click', () => router.navigate('/profile'));
+  window.addEventListener('fieldforge-profile-updated', () => updateSidebarProfile(sidebar));
+  updateSidebarProfile(sidebar);
 
+  // Toggle collapses the primary rail to icons only.
   const toggleBtn = sidebar.querySelector('#sidebar-toggle');
-  toggleBtn.addEventListener('click', () => toggleSidebar(sidebar));
-
-  const nav = sidebar.querySelector('#sidebar-nav');
-  const upArrow = sidebar.querySelector('#sidebar-scroll-up');
-  const downArrow = sidebar.querySelector('#sidebar-scroll-down');
-
-  const updateArrows = () => {
-    if (sidebar.classList.contains('expanded')) {
-      upArrow.classList.remove('visible');
-      downArrow.classList.remove('visible');
-      return;
-    }
-    
-    const { scrollTop, scrollHeight, clientHeight } = nav;
-    upArrow.classList.toggle('visible', scrollTop > 0);
-    downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
-  };
-
-  nav.addEventListener('scroll', updateArrows);
-  
-  upArrow.addEventListener('click', () => {
-    nav.scrollBy({ top: -100, behavior: 'smooth' });
-  });
-  
-  downArrow.addEventListener('click', () => {
-    nav.scrollBy({ top: 100, behavior: 'smooth' });
+  toggleBtn.addEventListener('click', () => {
+    sidebar.classList.toggle('rail-collapsed');
+    localStorage.setItem('simpro_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
   });
 
-  // Call after some delay to ensure layout is done
-  setTimeout(updateArrows, 100);
-
+  // Logout confirm-in-place.
   const logoutBtn = sidebar.querySelector('#btn-logout');
   if (logoutBtn) {
     let confirmState = false;
     let resetTimeout = null;
-
     function resetLogoutBtn() {
       confirmState = false;
       logoutBtn.classList.remove('confirm-logout');
@@ -256,9 +189,8 @@ export function createSidebar() {
       const label = logoutBtn.querySelector('.nav-label');
       if (label) label.textContent = 'Logout';
     }
-
     logoutBtn.addEventListener('click', (e) => {
-      e.stopPropagation(); // Prevent sidebar click handler
+      e.stopPropagation();
       if (!confirmState) {
         confirmState = true;
         logoutBtn.classList.add('confirm-logout');
@@ -266,7 +198,6 @@ export function createSidebar() {
         if (icon) icon.textContent = 'warning';
         const label = logoutBtn.querySelector('.nav-label');
         if (label) label.textContent = 'Confirm';
-        
         if (resetTimeout) clearTimeout(resetTimeout);
         resetTimeout = setTimeout(resetLogoutBtn, 3000);
       } else {
@@ -275,248 +206,532 @@ export function createSidebar() {
         window.dispatchEvent(new CustomEvent('fieldforge-logout'));
       }
     });
-
     logoutBtn.addEventListener('mouseleave', () => {
-      if (confirmState) {
-        if (resetTimeout) clearTimeout(resetTimeout);
-        resetLogoutBtn();
-      }
+      if (confirmState) { if (resetTimeout) clearTimeout(resetTimeout); resetLogoutBtn(); }
     });
   }
 
-  // --- MINIMIZED SIDEBAR HOVER PORTAL FLYOUT MANAGER ---
-  sidebar.querySelectorAll('.sidebar-category-container').forEach(container => {
-    let flyout = null;
-    let keepOpenTimeout = null;
-
-    function removeFlyout() {
-      if (flyout) {
-        flyout.remove();
-        flyout = null;
-      }
-    }
-
-    container.addEventListener('mouseenter', () => {
-      // Only show portal flyouts if the sidebar is collapsed (non-expanded)
-      if (sidebar.classList.contains('expanded')) return;
-      
-      if (keepOpenTimeout) {
-        clearTimeout(keepOpenTimeout);
-        keepOpenTimeout = null;
-      }
-
-      if (flyout) return;
-
-      const catId = container.dataset.categoryId;
-      const catHeader = container.querySelector('.sidebar-category-header');
-      const itemsContainer = container.querySelector('.sidebar-category-items');
-      if (!catHeader || !itemsContainer) return;
-
-      // Extract currently visible items (incorporates permission checks!)
-      const visibleItems = Array.from(itemsContainer.querySelectorAll('.sidebar-nav-item'))
-        .filter(el => el.style.display !== 'none');
-
-      if (visibleItems.length === 0) return;
-
-      // Create floating viewport portal container
-      flyout = document.createElement('div');
-      flyout.className = 'sidebar-collapsed-flyout';
-      flyout.id = `flyout-${catId}`;
-      
-      let subItemsHtml = '';
-      visibleItems.forEach(item => {
-        const isActive = item.classList.contains('active');
-        const isDisabled = item.classList.contains('disabled-local');
-        subItemsHtml += `
-          <button class="sidebar-nav-item sub-item ${isActive ? 'active' : ''} ${isDisabled ? 'disabled-local' : ''}" data-path="${item.dataset.path}" data-id="${item.dataset.id}" ${isDisabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
-            <span class="nav-icon">${item.querySelector('.nav-icon').innerHTML}</span>
-            <span class="nav-label" style="opacity: 1 !important; display: block !important; width: auto !important;">${item.querySelector('.nav-label').textContent}</span>
-          </button>
-        `;
-      });
-      flyout.innerHTML = subItemsHtml;
-
-      document.body.appendChild(flyout);
-
-      // Position popover floating directly next to category group icon
-      const rect = catHeader.getBoundingClientRect();
-      flyout.style.position = 'fixed';
-      flyout.style.left = `${rect.right + 2}px`;
-      flyout.style.top = `${rect.top}px`;
-      flyout.style.zIndex = '99999';
-
-      // Set up navigation click intercepts
-      flyout.addEventListener('click', (e) => {
-        const navItem = e.target.closest('.sidebar-nav-item');
-        if (navItem) {
-          if (navItem.classList.contains('disabled-local')) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-          }
-          const path = navItem.dataset.path;
-          if (path) {
-            router.navigate(path);
-            removeFlyout();
-          }
-        }
-      });
-
-      // Keep flyout alive when cursor enters popover area
-      flyout.addEventListener('mouseenter', () => {
-        if (keepOpenTimeout) {
-          clearTimeout(keepOpenTimeout);
-          keepOpenTimeout = null;
-        }
-      });
-
-      flyout.addEventListener('mouseleave', () => {
-        keepOpenTimeout = setTimeout(removeFlyout, 120);
-      });
-    });
-
-    container.addEventListener('mouseleave', () => {
-      if (sidebar.classList.contains('expanded')) return;
-      keepOpenTimeout = setTimeout(removeFlyout, 120);
-    });
-  });
-
-  const updateSidebarLogo = () => {
-    const s = store.getSettings();
-    const logoContainer = sidebar.querySelector('#sidebar-logo');
-    if (!logoContainer) return;
-    const isExpandedNow = sidebar.classList.contains('expanded');
-    const logoSrc = isExpandedNow 
-      ? (s.logo || s.logoSmall) 
-      : (s.logoSmall || s.logo);
-
-    if (logoSrc) {
-      logoContainer.innerHTML = `
-        <img src="${logoSrc}" class="custom-logo" id="sidebar-logo-img" style="max-height: calc(var(--topbar-height) - 16px); max-width: ${isExpandedNow ? '85%' : '32px'}; object-fit: contain; display: block; margin: auto;" />
-      `;
-    } else {
-      logoContainer.innerHTML = `
-        <div class="logo-icon">R</div>
-        <span class="logo-text" style="${isExpandedNow ? 'display: block;' : 'display: none;'}">Relay — Dispatch</span>
-      `;
-    }
-  };
-
-  // Listen for settings changes (e.g. logo update)
-  window.addEventListener('simpro-settings-updated', updateSidebarLogo);
-  store.on('settings', updateSidebarLogo);
-
-  // Apply initial role-based sidebar link access
+  // Initial access + route sync.
   updateSidebarAccess(sidebar);
+  syncActiveFromRoute(sidebar, window.location.hash.slice(1) || '/');
 
   return sidebar;
 }
 
-export function updateSidebarAccess(sidebarElement) {
-  const sidebar = sidebarElement || document.getElementById('sidebar');
-  if (!sidebar) return;
-
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
-
-  if (currentUser.role === 'customer') {
-    sidebar.style.display = 'none';
-  } else {
-    sidebar.style.display = '';
-    
-    let permissions = null;
-    if (currentUser.userTypeId) {
-      const ut = store.getById('userTypes', currentUser.userTypeId);
-      if (ut && ut.permissions) {
-        permissions = ut.permissions;
-      }
-    }
-
-    // Hide specific items based on permissions
-    sidebar.querySelectorAll('.sidebar-nav-item').forEach(item => {
-      // Never hide the logout button
-      if (item.id === 'btn-logout') {
-        item.style.display = '';
-        return;
-      }
-
-      const labelEl = item.querySelector('.nav-label');
-      if (!labelEl) return;
-      const label = labelEl.textContent.trim();
-
-      // Dashboard and Notifications are always visible to authenticated users
-      if (label === 'Dashboard' || label === 'Notifications') {
-        item.style.display = '';
-        return;
-      }
-
-      // Check if user has permission to view this module (either view or view_own)
-      const canView = hasPermission(label, 'view') || hasPermission(label, 'view_own');
-      if (canView) {
-        item.style.display = '';
-      } else {
-        item.style.display = 'none';
-      }
-    });
-
-    // Hide empty category containers
-    sidebar.querySelectorAll('.sidebar-category-container').forEach(container => {
-      const subItems = container.querySelectorAll('.sidebar-nav-item');
-      let hasVisibleItems = false;
-      subItems.forEach(item => {
-        if (item.style.display !== 'none') {
-          hasVisibleItems = true;
-        }
-      });
-      container.style.display = hasVisibleItems ? '' : 'none';
-    });
-
-    // Update arrows
-    const nav = sidebar.querySelector('#sidebar-nav');
-    const upArrow = sidebar.querySelector('#sidebar-scroll-up');
-    const downArrow = sidebar.querySelector('#sidebar-scroll-down');
-    if (nav && upArrow && downArrow && !sidebar.classList.contains('expanded')) {
-      const { scrollTop, scrollHeight, clientHeight } = nav;
-      upArrow.classList.toggle('visible', scrollTop > 0);
-      downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
-    }
-  }
+// Quick HTML escaping helper
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-export function toggleSidebar(sidebar) {
-  sidebar.classList.toggle('expanded');
-  const isExpanded = sidebar.classList.contains('expanded');
-  localStorage.setItem('simpro_sidebar_expanded', isExpanded);
-  
-  // Toggle branding elements
-  const s = store.getSettings();
-  const customImg = sidebar.querySelector('.custom-logo');
-  
-  if (customImg) {
-    customImg.src = isExpanded 
-      ? (s.logo || s.logoSmall) 
-      : (s.logoSmall || s.logo);
-    customImg.style.maxWidth = isExpanded ? '85%' : '32px';
+// Helper to resolve dynamic entity/settings contextual submenus
+function getContextualMenu(hash) {
+  const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
+  const [pathOnly, queryString] = cleanHash.split('?');
+  const params = new URLSearchParams(queryString || '');
+  const activeTab = params.get('tab');
+
+  const parts = pathOnly.split('/').filter(Boolean);
+  const resource = parts[0];
+  const id = parts[1];
+  const isEdit = parts[2] === 'edit';
+
+  if (!resource || id === 'new' || isEdit) return null;
+
+  // Settings page (/settings)
+  if (resource === 'settings') {
+    const currentTab = activeTab || 'company';
+    return {
+      railId: 'cat-admin',
+      headerTitle: 'Settings & Config',
+      icon: 'settings',
+      items: [
+        { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
+        { id: 'tax', icon: 'payments', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
+        { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
+        { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+        { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
+        { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
+        { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email' },
+        { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal' },
+        { id: 'integrations', icon: 'api', label: 'Integrations', path: '/settings?tab=integrations' }
+      ],
+      activeTab: currentTab
+    };
   }
 
-  // Update arrows state
-  const nav = sidebar.querySelector('#sidebar-nav');
-  const upArrow = sidebar.querySelector('#sidebar-scroll-up');
-  const downArrow = sidebar.querySelector('#sidebar-scroll-down');
-  if (nav && upArrow && downArrow) {
-    if (isExpanded) {
-      upArrow.classList.remove('visible');
-      downArrow.classList.remove('visible');
-    } else {
-      const { scrollTop, scrollHeight, clientHeight } = nav;
-      upArrow.classList.toggle('visible', scrollTop > 0);
-      downArrow.classList.toggle('visible', Math.ceil(scrollTop + clientHeight) < scrollHeight);
-    }
+  // Stock List (/stock)
+  if (resource === 'stock' && !id) {
+    const currentTab = activeTab || 'items';
+    return {
+      railId: 'cat-materials',
+      headerTitle: 'Stock & Inventory',
+      icon: 'inventory_2',
+      items: [
+        { id: 'items', icon: 'inventory_2', label: 'Individual Items', path: '/stock?tab=items' },
+        { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' }
+      ],
+      activeTab: currentTab
+    };
   }
+
+  // Documents List (/documents)
+  if (resource === 'documents' && !id) {
+    const currentTab = activeTab || 'All Documents';
+    return {
+      railId: 'cat-admin',
+      headerTitle: 'Document Center',
+      icon: 'folder',
+      items: [
+        { id: 'All Documents', icon: 'dashboard', label: 'All Documents', path: '/documents?tab=All%20Documents' },
+        { id: 'Company Docs', icon: 'domain', label: 'Company Docs', path: '/documents?tab=Company%20Docs' },
+        { id: 'Health & Safety', icon: 'health_and_safety', label: 'Health & Safety', path: '/documents?tab=Health%20&%20Safety' },
+        { id: 'Templates', icon: 'file_copy', label: 'Templates', path: '/documents?tab=Templates' },
+        { id: 'Job Attachments', icon: 'build', label: 'Job Attachments', path: '/documents?tab=Job%20Attachments' },
+        { id: 'Customer Attachments', icon: 'people', label: 'Customer Attachments', path: '/documents?tab=Customer%20Attachments' },
+        { id: 'Digital Forms', icon: 'assignment', label: 'Digital Forms', path: '/documents?tab=Digital%20Forms' },
+        { id: 'Invoices', icon: 'receipt_long', label: 'Invoices', path: '/documents?tab=Invoices' },
+        { id: 'Quotes', icon: 'request_quote', label: 'Quotes', path: '/documents?tab=Quotes' },
+        { id: 'Purchase Orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/documents?tab=Purchase%20Orders' }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Reports List (/reports)
+  if (resource === 'reports' && !id) {
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-admin',
+      headerTitle: 'Reports & Analytics',
+      icon: 'bar_chart',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Business Overview', path: '/reports?tab=overview' },
+        { id: 'revenue', icon: 'trending_up', label: 'Revenue & Profit', path: '/reports?tab=revenue' },
+        { id: 'jobs', icon: 'build', label: 'Job Performance', path: '/reports?tab=jobs' },
+        { id: 'job_costing', icon: 'price_check', label: 'Job Costing', path: '/reports?tab=job_costing' },
+        { id: 'technicians', icon: 'engineering', label: 'Technician Productivity', path: '/reports?tab=technicians' },
+        { id: 'timesheets_labor', icon: 'schedule', label: 'Timesheet & Labor', path: '/reports?tab=timesheets_labor' },
+        { id: 'assets_maintenance', icon: 'settings', label: 'Asset Maintenance', path: '/reports?tab=assets_maintenance' },
+        { id: 'customers', icon: 'people', label: 'Customer Analysis', path: '/reports?tab=customers' },
+        { id: 'inventory', icon: 'inventory_2', label: 'Inventory Report', path: '/reports?tab=inventory' },
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  if (!id) return null;
+
+  // Customer Detail (/people/:id)
+  if (resource === 'people') {
+    const cust = store.getById('customers', id);
+    const custTitle = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : 'Customer Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-people',
+      headerTitle: custTitle,
+      icon: 'people',
+      backPath: '/people',
+      backLabel: 'Back to Customers',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/people/${id}?tab=overview` },
+        { id: 'sites', icon: 'location_on', label: 'Sites / Locations', path: `/people/${id}?tab=sites` },
+        { id: 'financials', icon: 'account_balance', label: 'Financials', path: `/people/${id}?tab=financials` },
+        { id: 'jobs', icon: 'build', label: 'Jobs & Workflow', path: `/people/${id}?tab=jobs` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Project Detail (/projects/:id)
+  if (resource === 'projects') {
+    const project = store.getById('projects', id);
+    const projectTitle = project ? (project.name || `Project #${project.number || id}`) : 'Project Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: projectTitle,
+      icon: 'folder_copy',
+      backPath: '/projects',
+      backLabel: 'Back to Projects',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/projects/${id}?tab=overview` },
+        { id: 'stages', icon: 'view_list', label: 'Stages & Jobs', path: `/projects/${id}?tab=stages` },
+        { id: 'financials', icon: 'payments', label: 'Financials', path: `/projects/${id}?tab=financials` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Job Detail (/jobs/:id)
+  if (resource === 'jobs') {
+    const job = store.getById('jobs', id);
+    const jobTitle = job ? `Job #${job.number}` : 'Job Detail';
+    const currentTab = activeTab || 'overview';
+    const customerCommCount = job?.customerActivityLog?.length || 0;
+    return {
+      railId: 'cat-workflow',
+      headerTitle: jobTitle,
+      icon: 'build',
+      backPath: '/jobs',
+      backLabel: 'Back to Jobs',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/jobs/${id}?tab=overview` },
+        { id: 'schedule', icon: 'event', label: 'Schedule', path: `/jobs/${id}?tab=schedule` },
+        { id: 'tasks', icon: 'checklist', label: 'Tasks', path: `/jobs/${id}?tab=tasks` },
+        { id: 'materials', icon: 'inventory_2', label: 'Materials & POs', path: `/jobs/${id}?tab=materials` },
+        { id: 'financials', icon: 'price_check', label: 'Financials', path: `/jobs/${id}?tab=financials` },
+        { id: 'activity_staff', icon: 'history', label: 'Staff Activity', path: `/jobs/${id}?tab=activity_staff` },
+        { id: 'activity_customer', icon: 'forum', label: 'Customer Portal', path: `/jobs/${id}?tab=activity_customer`, badge: customerCommCount > 0 ? customerCommCount : null }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Asset Detail (/assets/:id)
+  if (resource === 'assets') {
+    const asset = store.getById('assets', id);
+    const assetName = asset ? (asset.name || asset.serialNumber) : 'Asset Detail';
+    const currentTab = activeTab || 'history';
+    return {
+      railId: 'cat-resources',
+      headerTitle: assetName,
+      icon: 'precision_manufacturing',
+      backPath: '/assets',
+      backLabel: 'Back to Assets',
+      items: [
+        { id: 'history', icon: 'history', label: 'Activity History', path: `/assets/${id}?tab=history` },
+        { id: 'maint', icon: 'engineering', label: 'Maintenance Agreements', path: `/assets/${id}?tab=maint` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Contractor Detail (/contractors/:id)
+  if (resource === 'contractors') {
+    const contractor = store.getById('contractors', id);
+    const contractorTitle = contractor ? (contractor.companyName || contractor.name) : 'Contractor Detail';
+    const currentTab = activeTab || 'details';
+    return {
+      railId: 'cat-people',
+      headerTitle: contractorTitle,
+      icon: 'engineering',
+      backPath: '/contractors',
+      backLabel: 'Back to Contractors',
+      items: [
+        { id: 'details', icon: 'engineering', label: 'Overview & Details', path: `/contractors/${id}?tab=details` },
+        { id: 'compliance', icon: 'verified', label: 'Compliance Registry', path: `/contractors/${id}?tab=compliance` },
+        { id: 'rates', icon: 'payments', label: 'Financials & Rates', path: `/contractors/${id}?tab=rates` },
+        { id: 'tasks', icon: 'assignment', label: 'Task Allocations', path: `/contractors/${id}?tab=tasks` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Supplier Detail (/suppliers/:id)
+  if (resource === 'suppliers') {
+    const supplier = store.getById('suppliers', id);
+    const supplierTitle = supplier ? supplier.name : 'Supplier Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-materials',
+      headerTitle: supplierTitle,
+      icon: 'local_shipping',
+      backPath: '/suppliers',
+      backLabel: 'Back to Suppliers',
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/suppliers/${id}?tab=overview` },
+        { id: 'catalogues', icon: 'menu_book', label: 'Catalogues & Docs', path: `/suppliers/${id}?tab=catalogues` },
+        { id: 'stock', icon: 'inventory_2', label: 'Stock Items', path: `/suppliers/${id}?tab=stock` },
+        { id: 'pos', icon: 'receipt', label: 'Purchase Orders', path: `/suppliers/${id}?tab=pos` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Quotes Detail (/quotes/:id)
+  if (resource === 'quotes') {
+    const quote = store.getById('quotes', id);
+    const quoteTitle = quote ? `Quote #${quote.number}` : 'Quote Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: quoteTitle,
+      icon: 'request_quote',
+      backPath: '/quotes',
+      backLabel: 'Back to Quotes',
+      items: [
+        { id: 'overview', icon: 'request_quote', label: 'Overview', path: `/quotes/${id}?tab=overview` },
+        { id: 'history', icon: 'history', label: 'Activity History', path: `/quotes/${id}?tab=history` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Invoices Detail (/invoices/:id)
+  if (resource === 'invoices') {
+    const invoice = store.getById('invoices', id);
+    const invoiceTitle = invoice ? `Invoice #${invoice.number}` : 'Invoice Detail';
+    const currentTab = activeTab || 'overview';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: invoiceTitle,
+      icon: 'receipt_long',
+      backPath: '/invoices',
+      backLabel: 'Back to Invoices',
+      items: [
+        { id: 'overview', icon: 'receipt_long', label: 'Overview', path: `/invoices/${id}?tab=overview` },
+        { id: 'history', icon: 'history', label: 'Activity History', path: `/invoices/${id}?tab=history` }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Purchase Order Detail (/purchase-orders/:id)
+  if (resource === 'purchase-orders') {
+    const po = store.getById('purchaseOrders', id);
+    const poTitle = po ? `PO #${po.number}` : 'PO Detail';
+    return {
+      railId: 'cat-resources',
+      headerTitle: poTitle,
+      icon: 'shopping_cart',
+      backPath: '/purchase-orders',
+      backLabel: 'Back to POs',
+      items: [], // Kept the menu the same without changing it
+      activeTab: ''
+    };
+  }
+
+  // Lead Detail (/leads/:id)
+  if (resource === 'leads') {
+    const lead = store.getById('leads', id);
+    const leadTitle = lead ? (lead.title || `Lead #${lead.number}`) : 'Lead Detail';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: leadTitle,
+      icon: 'contact_mail',
+      backPath: '/leads',
+      backLabel: 'Back to Leads',
+      items: [],
+      activeTab: ''
+    };
+  }
+
+  // Stock Detail (/stock/:id)
+  if (resource === 'stock' && id) {
+    const stock = store.getById('stock', id);
+    const stockTitle = stock ? stock.name : 'Item Detail';
+    return {
+      railId: 'cat-materials',
+      headerTitle: stockTitle,
+      icon: 'inventory_2',
+      backPath: '/stock',
+      backLabel: 'Back to Stock',
+      items: [],
+      activeTab: ''
+    };
+  }
+
+  // Kit Detail (/kits/:id)
+  if (resource === 'kits') {
+    const kit = store.getById('kits', id);
+    const kitTitle = kit ? kit.name : 'Kit Detail';
+    return {
+      railId: 'cat-materials',
+      headerTitle: kitTitle,
+      icon: 'widgets',
+      backPath: '/stock?tab=kits',
+      backLabel: 'Back to Kits',
+      items: [],
+      activeTab: ''
+    };
+  }
+
+  return null;
+}
+
+// Show a section's submenu panel and mark its rail item active.
+function setActiveSection(sidebar, sectionId) {
+  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.querySelectorAll('.rail-item').forEach(r => {
+    r.classList.toggle('active', r.dataset.id === sectionId);
+  });
+  let hasPanel = false;
+  sidebar.querySelectorAll('.submenu-panel').forEach(p => {
+    const on = p.dataset.section === sectionId;
+    p.classList.toggle('active', on);
+    if (on) hasPanel = true;
+  });
+  sidebar.classList.toggle('submenu-open', hasPanel);
+}
+
+// Sync rail + submenu to the current route.
+function syncActiveFromRoute(sidebar, path) {
+  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+
+  const currentHash = window.location.hash || path || '/';
+  const contextual = getContextualMenu(currentHash);
+  const submenuContainer = sidebar.querySelector('#sidebar-submenu');
+
+  if (contextual) {
+    sidebar.querySelectorAll('.rail-item').forEach(r => {
+      r.classList.toggle('active', r.dataset.id === contextual.railId);
+    });
+
+    sidebar.querySelectorAll('.submenu-panel').forEach(p => {
+      if (!p.classList.contains('contextual-panel')) {
+        p.classList.remove('active');
+      }
+    });
+
+    let ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+    if (!ctxPanel) {
+      ctxPanel = document.createElement('div');
+      ctxPanel.className = 'submenu-panel contextual-panel';
+      submenuContainer.appendChild(ctxPanel);
+    }
+
+    ctxPanel.innerHTML = `
+      <div class="submenu-context-header">
+        ${contextual.backPath ? `
+          <div class="submenu-context-back-row">
+            <button class="submenu-context-back" data-path="${contextual.backPath}" title="${escapeHTML(contextual.backLabel || 'Back')}">
+              <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
+            </button>
+          </div>
+        ` : ''}
+        <div class="submenu-context-body">
+          ${contextual.icon ? `<span class="material-icons-outlined submenu-context-icon" aria-hidden="true">${contextual.icon}</span>` : ''}
+          <div class="submenu-context-title" title="${escapeHTML(contextual.headerTitle)}">${escapeHTML(contextual.headerTitle)}</div>
+        </div>
+      </div>
+      <nav class="submenu-nav" style="${contextual.items && contextual.items.length > 0 ? '' : 'display:none;'}">
+        ${contextual.items.map(item => `
+          <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''}" data-path="${item.path}" style="display:flex; align-items:center; width:100%">
+            <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
+            <span class="nav-label">${escapeHTML(item.label)}</span>
+            ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
+          </button>
+        `).join('')}
+      </nav>
+    `;
+
+    ctxPanel.classList.add('active');
+    sidebar.classList.add('submenu-open');
+    return;
+  }
+
+  const ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+  if (ctxPanel) {
+    ctxPanel.remove();
+  }
+
+  const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
+
+  let sectionId = null;
+  for (const item of navItems) {
+    if (item.category) {
+      if (item.items.some(c => c.path === basePath)) { sectionId = item.id; break; }
+    } else if (item.path === basePath) { sectionId = item.id; break; }
+  }
+  if (sectionId) setActiveSection(sidebar, sectionId);
+
+  // Highlight the exact current page inside the panel.
+  sidebar.querySelectorAll('.submenu-item').forEach(it => {
+    it.classList.toggle('active', it.dataset.path === basePath);
+  });
+}
+
+// Compute the current user's display identity for the sidebar profile block.
+function getSidebarProfileInfo() {
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  const name = currentUser.name || 
+               currentUser.full_name || 
+               currentUser.displayName || 
+               currentUser.user_metadata?.full_name || 
+               currentUser.user_metadata?.name || 
+               (currentUser.email ? currentUser.email.split('@')[0] : null) || 
+               currentUser.username || 
+               'Admin User';
+  let role = currentUser.userTypeName;
+  if (!role && currentUser.userTypeId) {
+    const ut = store.getById('userTypes', currentUser.userTypeId);
+    if (ut) role = ut.name;
+  }
+  if (!role) {
+    const roleMap = { admin: 'Administrator', manager: 'Manager', technician: 'Technician', customer: 'Customer' };
+    role = roleMap[currentUser.role] || currentUser.role || 'User';
+  }
+  if (localStorage.getItem('relay_login_mode') === 'local') {
+    const uiMode = localStorage.getItem('uiMode') || 'admin';
+    role = ({ admin: 'Complete Mode', technician: 'Simple Mode' })[uiMode] || role;
+  }
+  const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
+  return { name, role, initials, color: currentUser.color || '#FF5C00' };
+}
+
+// Fill the footer profile block (avatar / name / role).
+export function updateSidebarProfile(sidebarElement) {
+  const sidebar = sidebarElement || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  // Avatar renders the Lucide circle-user glyph (static markup); only name/role update here.
+  const { name, role } = getSidebarProfileInfo();
+  const nameEl = sidebar.querySelector('#sidebar-profile-name');
+  const roleEl = sidebar.querySelector('#sidebar-profile-role');
+  if (nameEl) nameEl.textContent = name;
+  if (roleEl) roleEl.textContent = role;
+}
+
+export function updateSidebarAccess(sidebarElement) {
+  const sidebar = sidebarElement || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  updateSidebarProfile(sidebar);
+
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
+  if (currentUser.role === 'customer') { sidebar.style.display = 'none'; return; }
+  sidebar.style.display = '';
+
+  // Permission-filter each page link (direct rail pages + submenu items).
+  sidebar.querySelectorAll('.rail-page, .submenu-item').forEach(item => {
+    if (item.closest('.contextual-panel')) {
+      item.style.display = '';
+      return;
+    }
+    if (item.id === 'btn-logout') { item.style.display = ''; return; }
+    const labelEl = item.querySelector('.nav-label');
+    if (!labelEl) return;
+    const label = labelEl.textContent.trim();
+    if (label === 'Dashboard' || label === 'Notifications') { item.style.display = ''; return; }
+    const canView = hasPermission(label, 'view') || hasPermission(label, 'view_own');
+    item.style.display = canView ? '' : 'none';
+  });
+
+  // Hide a group opener + panel if none of its pages are visible.
+  navItems.forEach(item => {
+    if (!item.category) return;
+    const opener = sidebar.querySelector(`.rail-opener[data-section="${item.id}"]`);
+    const panel = sidebar.querySelector(`.submenu-panel[data-section="${item.id}"]`);
+    if (!panel) return;
+    const anyVisible = Array.from(panel.querySelectorAll('.submenu-item')).some(it => it.style.display !== 'none');
+    if (opener) opener.style.display = anyVisible ? '' : 'none';
+  });
+}
+
+// Toggle the primary rail between labeled and icon-only.
+export function toggleSidebar(sidebar) {
+  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.classList.toggle('rail-collapsed');
+  localStorage.setItem('simpro_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
 }
 
 export function updateSidebarActive(path) {
-  const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
-  document.querySelectorAll('.sidebar-nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.path === basePath);
-  });
+  syncActiveFromRoute(null, path || (window.location.hash.slice(1) || '/'));
 }

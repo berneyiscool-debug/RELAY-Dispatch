@@ -19,7 +19,7 @@ export function renderCustomerPortal(container, params) {
   // If customer portal is disabled globally in settings
   if (settings.enableCustomerPortal === false) {
     container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border-color);">
+      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
         <span class="material-icons-outlined text-warning" style="font-size: 64px; margin-bottom: 20px;">lock_clock</span>
         <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Portal Access Offline</h2>
         <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">
@@ -37,7 +37,7 @@ export function renderCustomerPortal(container, params) {
   // If token is invalid or missing
   if (!customer) {
     container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border-color);">
+      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
         <span class="material-icons-outlined text-danger" style="font-size: 64px; margin-bottom: 20px;">gpp_maybe</span>
         <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Invalid Access Link</h2>
         <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">
@@ -63,11 +63,11 @@ export function renderCustomerPortal(container, params) {
         <button class="btn btn-outline btn-sm" id="btn-portal-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
           <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
         </button>
-        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--card-shadow); text-align:center; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-success-bg); display:flex; align-items:center; justify-content:center; color:var(--color-success); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">gpp_good</span>
           </div>
-          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:700; color:var(--text-primary);">Secure Your Portal</h2>
+          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:600; color:var(--text-primary);">Secure Your Portal</h2>
           <p style="margin:0 0 24px 0; font-size:13px; color:var(--text-secondary); line-height:1.5;">
             Welcome, <strong>${escapeHTML(customer.firstName)}</strong>! To protect your invoices, quotes, and schedules, please set a 4-to-6 digit security PIN for this portal access link.
           </p>
@@ -145,11 +145,11 @@ export function renderCustomerPortal(container, params) {
         <button class="btn btn-outline btn-sm" id="btn-portal-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
           <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
         </button>
-        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--card-shadow); text-align:center; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-danger-bg); display:flex; align-items:center; justify-content:center; color:var(--color-danger); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">lock</span>
           </div>
-          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:700; color:var(--text-primary);">Secure Portal</h2>
+          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:600; color:var(--text-primary);">Secure Portal</h2>
           <p style="margin:0 0 24px 0; font-size:13px; color:var(--text-secondary); line-height:1.5;">
             This magic link is protected. Please enter the PIN configured for <strong>${escapeHTML(customer.company)}</strong> to unlock the dashboard.
           </p>
@@ -241,7 +241,7 @@ export function renderCustomerPortal(container, params) {
     container.innerHTML = `
       <style>
         .customer-portal-shell {
-          background: var(--body-bg);
+          background: var(--content-bg);
           min-height: 100vh;
           font-family: var(--font-family);
           color: var(--text-primary);
@@ -249,30 +249,6 @@ export function renderCustomerPortal(container, params) {
           overflow-x: hidden;
         }
 
-        /* Decorative ambient glow orbs behind the glass dashboard */
-        .customer-portal-shell::before {
-          content: '';
-          position: fixed;
-          top: -10%;
-          left: -10%;
-          width: 50%;
-          height: 50%;
-          background: radial-gradient(circle, rgba(255, 92, 0, 0.08) 0%, transparent 70%);
-          z-index: 0;
-          pointer-events: none;
-        }
-        .customer-portal-shell::after {
-          content: '';
-          position: fixed;
-          bottom: -10%;
-          right: -10%;
-          width: 45%;
-          height: 45%;
-          background: radial-gradient(circle, rgba(37, 99, 235, 0.06) 0%, transparent 60%);
-          z-index: 0;
-          pointer-events: none;
-        }
-        
         .portal-header {
           background: var(--topbar-bg);
           border-bottom: 1px solid var(--topbar-border);
@@ -281,8 +257,6 @@ export function renderCustomerPortal(container, params) {
           justify-content: space-between;
           align-items: center;
           box-shadow: var(--topbar-shadow);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
           position: relative;
           z-index: 10;
         }
@@ -296,17 +270,16 @@ export function renderCustomerPortal(container, params) {
         .portal-logo-box {
           width: 42px;
           height: 42px;
-          border-radius: 10px;
+          border-radius: var(--border-radius-md);
           background: var(--color-primary-light);
           display: flex;
           align-items: center;
           justify-content: center;
           color: var(--color-primary);
-          box-shadow: 0 4px 12px rgba(255, 92, 0, 0.1);
         }
 
         .portal-company-name {
-          font-weight: 800;
+          font-weight: 600;
           font-size: 17px;
           color: var(--text-primary);
           line-height: 1.2;
@@ -323,32 +296,29 @@ export function renderCustomerPortal(container, params) {
         }
 
         .portal-nav-bar {
-          background: rgba(255, 255, 255, 0.25);
+          background: var(--card-bg);
           border: 1px solid var(--border-color);
-          border-radius: 12px;
+          border-radius: var(--border-radius-md);
           padding: 6px;
           display: flex;
           gap: 6px;
           margin: 16px auto 28px auto;
           max-width: 1200px;
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          box-shadow: var(--shadow-sm);
         }
         [data-theme="dark"] .portal-nav-bar {
-          background: rgba(24, 24, 27, 0.4);
-          border-color: rgba(255, 255, 255, 0.05);
+          background: var(--card-bg);
+          border-color: var(--border-color);
         }
 
         .portal-nav-tab {
           padding: 10px 18px;
           font-size: 13.5px;
-          font-weight: 500;
+          font-weight: 400;
           color: var(--text-secondary);
           background: none;
           border: none;
           cursor: pointer;
-          border-radius: 8px;
+          border-radius: var(--border-radius);
           white-space: nowrap;
           display: flex;
           align-items: center;
@@ -357,21 +327,19 @@ export function renderCustomerPortal(container, params) {
         }
         .portal-nav-tab:hover {
           color: var(--text-primary);
-          background: rgba(255, 255, 255, 0.15);
+          background: var(--bg-color);
         }
         [data-theme="dark"] .portal-nav-tab:hover {
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--bg-color);
         }
         .portal-nav-tab.active {
           color: var(--text-inverse) !important;
           background: var(--color-primary);
-          box-shadow: 0 4px 14px rgba(255, 92, 0, 0.25);
           font-weight: 600;
         }
         [data-theme="dark"] .portal-nav-tab.active {
           color: var(--text-primary) !important;
           background: var(--color-primary-light);
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
         }
 
         .portal-body {
@@ -385,12 +353,9 @@ export function renderCustomerPortal(container, params) {
         .portal-card {
           background: var(--card-bg);
           border: 1px solid var(--card-border);
-          border-radius: 16px;
-          box-shadow: var(--card-shadow);
+          border-radius: var(--border-radius-md);
           margin-bottom: 24px;
           overflow: hidden;
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -400,7 +365,7 @@ export function renderCustomerPortal(container, params) {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: rgba(0, 0, 0, 0.01);
+          background: var(--card-bg);
           color: var(--text-primary);
         }
 
@@ -418,31 +383,25 @@ export function renderCustomerPortal(container, params) {
         .portal-stat-box {
           background: var(--card-bg);
           border: 1px solid var(--card-border);
-          border-radius: 16px;
+          border-radius: var(--border-radius-md);
           padding: 24px;
           display: flex;
           align-items: center;
           gap: 20px;
-          box-shadow: var(--card-shadow);
           color: var(--text-primary);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          transition: border-color 0.2s ease;
         }
         .portal-stat-box:hover {
-          transform: translateY(-4px);
-          box-shadow: var(--card-shadow-hover);
-          border-color: var(--color-primary-light);
+          border-color: var(--color-primary);
         }
 
         .portal-stat-icon {
           width: 52px;
           height: 52px;
-          border-radius: 12px;
+          border-radius: var(--border-radius-md);
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
         }
 
         .timeline-item {
@@ -481,52 +440,37 @@ export function renderCustomerPortal(container, params) {
           color: var(--text-primary);
         }
         .accordion-header:hover {
-          background-color: rgba(255, 92, 0, 0.03);
+          background-color: var(--bg-color);
         }
         [data-theme="dark"] .accordion-header:hover {
-          background-color: rgba(255, 255, 255, 0.02);
+          background-color: var(--bg-color);
         }
 
         .accordion-body {
           padding: 24px;
           border-top: 1px solid var(--border-color);
-          background: rgba(0, 0, 0, 0.005);
+          background: var(--content-bg);
         }
 
         .customer-portal-hero {
-          background: linear-gradient(135deg, rgba(255, 92, 0, 0.85) 0%, rgba(30, 64, 175, 0.75) 100%);
-          color: #ffffff;
+          background: var(--card-bg);
+          color: var(--text-primary);
           padding: 36px 32px;
-          border-radius: 16px;
+          border-radius: var(--border-radius-md);
           margin-bottom: 28px;
-          box-shadow: 0 20px 40px -15px rgba(255, 92, 0, 0.25);
-          border: 1px solid rgba(255, 255, 255, 0.15);
+          border: 1px solid var(--border-color);
           position: relative;
           overflow: hidden;
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-        }
-        .customer-portal-hero::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-          background-size: 20px 20px;
-          pointer-events: none;
         }
 
         [data-theme="dark"] .customer-portal-hero {
-          background: linear-gradient(135deg, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.75) 100%) !important;
-          border: 1px solid rgba(255, 255, 255, 0.05);
-          box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.4);
+          background: var(--card-bg) !important;
+          border: 1px solid var(--border-color);
         }
 
         .portal-staff-banner {
-          background: rgba(245, 158, 11, 0.15);
-          border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+          background: var(--color-warning-bg);
+          border-bottom: 1px solid var(--color-warning);
           color: var(--color-warning);
           padding: 12px;
           text-align: center;
@@ -536,7 +480,6 @@ export function renderCustomerPortal(container, params) {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          backdrop-filter: blur(8px);
         }
 
         /* Modern theme blanket overrides to dynamically translate inline styles in Dark Mode */
@@ -778,8 +721,8 @@ export function renderCustomerPortal(container, params) {
     return `
       <!-- Welcome Hero -->
       <div class="customer-portal-hero">
-        <h2 style="margin: 0; font-size: 22px; font-weight: 700;">Hello, ${escapeHTML(customer.firstName)}</h2>
-        <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 14px; line-height: 1.5; max-width: 600px;">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 600;">Hello, ${escapeHTML(customer.firstName)}</h2>
+        <p style="margin: 8px 0 0 0; color: var(--text-secondary); font-size: 14px; line-height: 1.5; max-width: 600px;">
           ${escapeHTML(settings.customerPortalWelcome || 'Welcome to your secure customer dashboard. Here you can track your service dispatches, check maintenance, approve quotes, and manage your invoices.')}
         </p>
       </div>
@@ -791,8 +734,8 @@ export function renderCustomerPortal(container, params) {
             <span class="material-icons-outlined">build</span>
           </div>
           <div>
-            <div style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Open Dispatches</div>
-            <div style="font-size:24px; font-weight:700; margin-top:2px;">${openJobs.length}</div>
+            <div style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; font-weight:500;">Open Dispatches</div>
+            <div style="font-size:24px; font-weight:600; margin-top:2px;">${openJobs.length}</div>
             <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">
               ${inProgressCount} active · ${scheduledCount} scheduled
             </div>
@@ -804,8 +747,8 @@ export function renderCustomerPortal(container, params) {
             <span class="material-icons-outlined">payment</span>
           </div>
           <div>
-            <div style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Outstanding Invoices</div>
-            <div style="font-size:24px; font-weight:700; color:var(--color-danger); margin-top:2px;">$${outstandingTotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+            <div style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; font-weight:500;">Outstanding Invoices</div>
+            <div style="font-size:24px; font-weight:600; color:var(--color-danger); margin-top:2px;">$${outstandingTotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
             <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">
               Across ${outstandingInvoices.length} outstanding accounts
             </div>
@@ -817,8 +760,8 @@ export function renderCustomerPortal(container, params) {
             <span class="material-icons-outlined">event_repeat</span>
           </div>
           <div>
-            <div style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Next Maintenance Due</div>
-            <div style="font-size:24px; font-weight:700; margin-top:2px;">${nearestDate}</div>
+            <div style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; font-weight:500;">Next Maintenance Due</div>
+            <div style="font-size:24px; font-weight:600; margin-top:2px;">${nearestDate}</div>
             <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">
               ${nearestPlan ? escapeHTML(nearestPlan.name) : 'All systems covered'}
             </div>
@@ -875,7 +818,7 @@ export function renderCustomerPortal(container, params) {
           </div>
 
           ${settings.phone ? `
-          <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:12px; padding:16px; text-align:center;">
+          <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:16px; text-align:center;">
             <div style="width:36px; height:36px; border-radius:50%; background:var(--bg-color); color:var(--text-secondary); display:flex; align-items:center; justify-content:center; margin:0 auto 10px;">
               <span class="material-icons-outlined" style="font-size:18px;">phone</span>
             </div>
@@ -1051,7 +994,7 @@ export function renderCustomerPortal(container, params) {
                               const isCustomerAuthor = log.isCustomer;
                               const authorName = log.author || (isCustomerAuthor ? 'Customer' : 'Office Staff');
                               return `
-                                <div style="border-bottom:1px dashed var(--border-color); padding-bottom:6px; font-size:11px;">
+                                <div style="border-bottom:1px solid var(--border-color); padding-bottom:6px; font-size:11px;">
                                   <div style="display:flex; justify-content:space-between; font-weight:600; color:var(--text-primary);">
                                     <span style="color:${isCustomerAuthor ? 'var(--color-primary)' : 'var(--color-success)'};">${escapeHTML(authorName)}</span>
                                     <span style="font-weight:400; color:var(--text-tertiary);">${new Date(log.date).toLocaleDateString('en-AU', { hour:'2-digit', minute:'2-digit' })}</span>
@@ -1118,7 +1061,7 @@ export function renderCustomerPortal(container, params) {
 
           <!-- Child nodes list -->
           ${hasChildren && isExpanded ? `
-            <div style="margin-left: 20px; border-left: 1.5px dashed var(--border-color); padding-left: 12px; margin-top: 6px; display:flex; flex-direction:column; gap:8px;">
+            <div style="margin-left: 20px; border-left: 1px solid var(--border-color); padding-left: 12px; margin-top: 6px; display:flex; flex-direction:column; gap:8px;">
               ${renderCustomerTaskNodeList(t.subTasks, job, currentPath)}
             </div>
           ` : ''}
@@ -1330,10 +1273,10 @@ export function renderCustomerPortal(container, params) {
 
     return `
       <!-- Total Outstanding Banner -->
-      <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:12px; padding:20px 24px; display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+      <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:20px 24px; display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
         <div>
           <h3 style="margin:0; font-size:15px; color:var(--text-secondary); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Outstanding Balance</h3>
-          <h1 style="margin:4px 0 0 0; font-size:32px; font-weight:800; color:var(--color-danger);">$${outstandingTotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</h1>
+          <h1 style="margin:4px 0 0 0; font-size:32px; font-weight:600; color:var(--color-danger);">$${outstandingTotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</h1>
         </div>
         <span class="material-icons-outlined" style="font-size:48px; color:var(--color-danger-bg);">account_balance_wallet</span>
       </div>
@@ -1478,8 +1421,8 @@ export function renderCustomerPortal(container, params) {
     return `
       <div style="display:flex; flex-direction:column; gap:16px;">
         ${assets.length === 0 ? `
-          <div class="portal-card" style="text-align:center; padding:40px; color:#64748b;">
-            <span class="material-icons-outlined" style="font-size:48px; color:#cbd5e1; margin-bottom:12px;">precision_manufacturing</span>
+          <div class="portal-card" style="text-align:center; padding:40px; color:var(--text-secondary);">
+            <span class="material-icons-outlined" style="font-size:48px; color:var(--text-tertiary); margin-bottom:12px;">precision_manufacturing</span>
             <h4>No assets tracked</h4>
             <p style="font-size:13px; margin:4px 0 0;">There are no site assets linked to your client profile.</p>
           </div>
@@ -1593,7 +1536,7 @@ export function renderCustomerPortal(container, params) {
   function renderRequestsTab(assets) {
     if (requestSubmitted) {
       return `
-        <div style="max-width: 600px; margin: 40px auto; padding: 40px; text-align: center; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: var(--card-shadow); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+        <div style="max-width: 600px; margin: 40px auto; padding: 40px; text-align: center; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm);">
           <span class="material-icons-outlined text-success" style="font-size: 64px; margin-bottom: 20px;">check_circle</span>
           <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Request Received!</h2>
           <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: 14px;">

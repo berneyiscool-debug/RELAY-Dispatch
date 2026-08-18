@@ -16,7 +16,7 @@ import { hasPermission } from '../../utils/permissions.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 import { parsePreferredTime } from '../../utils/dateUtils.js';
 
-export function renderJobDetail(container, { id }) {
+export function renderJobDetail(container, { id, tab }) {
   const job = store.getById('jobs', id);
   if (!job) {
     container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Job not found</h3></div>';
@@ -27,14 +27,13 @@ export function renderJobDetail(container, { id }) {
 
   const sb = { 'Pending': 'badge-warning', 'Scheduled': 'badge-info', 'In Progress': 'badge-primary', 'On Hold': 'badge-neutral', 'Completed': 'badge-success', 'Invoiced': 'badge-primary', 'Recurring Template': 'badge-purple' };
   const pb = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger', 'Urgent': 'badge-danger' };
-  let activeTab = 'overview';
+  let activeTab = tab || 'overview';
   let taskExpandedPath = [0];
   let taskViewPath = [];
   let isInfoPanelEditing = false;
   let isRecordingValues = false;
   let cachedStockOptionsHtml = null;
   let stagedFiles = [];
-  let activeActivitySubTab = 'staff';
 
   function getJobTasklistHours(tasks) {
     if (!tasks || tasks.length === 0) return 0;
@@ -247,8 +246,7 @@ export function renderJobDetail(container, { id }) {
 
   function generateInvoiceWithSelectedQuote(type, selectedQuote) {
     if (type === 'Deposit') {
-      const { sections } = getJobInvoiceData(selectedQuote);
-      createDraftInvoice('Deposit', sections, 0, selectedQuote);
+      openDepositInvoiceModal(selectedQuote);
     } else if (type === 'Progress') {
       const content = document.createElement('div');
       content.innerHTML = `
@@ -282,8 +280,278 @@ export function renderJobDetail(container, { id }) {
       });
     } else {
       const { sections, subtotal, worksDescription } = getJobInvoiceData(selectedQuote);
-      createDraftInvoice('Standard', sections, subtotal, selectedQuote, worksDescription);
+
+      // Deduct prior deposit invoices
+      const depositInvoices = store.getAll('invoices').filter(i => 
+        (i.jobId === job.id || String(i.jobId) === String(job.id)) && 
+        i.invoiceType === 'Deposit' && 
+        i.status !== 'Void'
+      );
+      
+      const totalDepositBilled = depositInvoices.reduce((sum, i) => sum + (i.subtotal || 0), 0);
+      
+      if (totalDepositBilled > 0) {
+        const depositItems = depositInvoices.map(dep => ({
+          id: store.generateId(),
+          description: `Less Deposit Billed (${dep.number})`,
+          type: 'other',
+          qty: 1,
+          rate: -(dep.subtotal || 0),
+          total: -(dep.subtotal || 0)
+        }));
+
+        if (sections.length > 0) {
+          sections[sections.length - 1].lineItems.push(...depositItems);
+        } else {
+          sections.push({
+            id: store.generateId(),
+            name: 'Prepayments & Deposits Credit',
+            lineItems: depositItems
+          });
+        }
+
+        const finalSubtotal = Math.max(0, subtotal - totalDepositBilled);
+        createDraftInvoice('Standard', sections, finalSubtotal, selectedQuote, worksDescription);
+      } else {
+        createDraftInvoice('Standard', sections, subtotal, selectedQuote, worksDescription);
+      }
     }
+  }
+
+  function openDepositInvoiceModal(selectedQuote) {
+    const settings = store.getSettings();
+    const quoteToUse = selectedQuote || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+
+    // 1. Quoted Labor Total
+    let quotedLaborTotal = 0;
+    if (quoteToUse) {
+      const qItems = [];
+      if (quoteToUse.sections && Array.isArray(quoteToUse.sections)) {
+        quoteToUse.sections.forEach(sec => {
+          if (sec.lineItems) qItems.push(...sec.lineItems);
+        });
+      }
+      if (quoteToUse.lineItems) qItems.push(...quoteToUse.lineItems);
+      
+      qItems.forEach(i => {
+        if (i.type === 'labor') {
+          quotedLaborTotal += parseFloat(i.total) || ((parseFloat(i.qty) || 0) * (parseFloat(i.rate) || 0));
+        }
+      });
+    }
+    if (quotedLaborTotal === 0) {
+      const taskHours = getJobTasklistHours(job.tasks || []);
+      const defaultRate = (settings.laborRates.find(r => r.isDefault) || settings.laborRates[0] || { rate: 85 }).rate;
+      quotedLaborTotal = taskHours * defaultRate;
+    }
+
+    // 2. Actual Labor Total
+    const timesheets = store.getAll('timesheets').filter(t => t.jobId === job.id);
+    const allTechs = store.getAll('technicians');
+    let actualLaborTotal = 0;
+    timesheets.forEach(t => {
+      const tech = allTechs.find(x => x.id === t.technicianId);
+      const rate = tech ? (tech.payRate || tech.hourlyRate || 45) : 45;
+      actualLaborTotal += (t.hours || 0) * rate;
+    });
+
+    // 3. Quoted Materials Total
+    let quotedMatTotal = 0;
+    if (quoteToUse) {
+      const qItems = [];
+      if (quoteToUse.sections && Array.isArray(quoteToUse.sections)) {
+        quoteToUse.sections.forEach(sec => {
+          if (sec.lineItems) qItems.push(...sec.lineItems);
+        });
+      }
+      if (quoteToUse.lineItems) qItems.push(...quoteToUse.lineItems);
+
+      qItems.forEach(i => {
+        if (i.type === 'material') {
+          quotedMatTotal += parseFloat(i.total) || ((parseFloat(i.qty) || 0) * (parseFloat(i.rate) || 0));
+        }
+      });
+    }
+    if (quotedMatTotal === 0) {
+      quotedMatTotal = parseFloat(job.estimatedMaterialCost || job.materialCost || 0);
+    }
+
+    // 4. Actual Materials & PO Total
+    const pos = store.getAll('purchaseOrders').filter(p => 
+      (p.jobId && (p.jobId === job.id || String(p.jobId) === String(job.id))) || 
+      (p.jobNumber && job && job.number && String(p.jobNumber) === String(job.number))
+    );
+    const totalPoCost = pos.reduce((sum, p) => sum + (p.total || 0), 0);
+    const matCost = (job.materials || []).reduce((sum, m) => sum + ((m.quantity || 1) * (m.unitCost || 0)), 0);
+    const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
+    const actualMatTotal = matCost + additionalMatCost + totalPoCost;
+
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <p style="font-size:13px; color:var(--text-secondary); margin:0">
+          Choose the basis for calculating the Deposit Invoice (Quoted or Actual hours & materials), then specify the deposit percentage.
+        </p>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+          <!-- Labor Source Selector -->
+          <div class="card" style="padding:12px; background:var(--bg-color); border:1px solid var(--border-color); margin-bottom:0">
+            <label class="form-label" style="font-weight:700; margin-bottom:8px; display:block">Labor Basis</label>
+            <div style="display:flex; flex-direction:column; gap:8px">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-labor-source" value="quoted" checked />
+                <span>Quoted Labor ($${quotedLaborTotal.toFixed(2)})</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-labor-source" value="actual" />
+                <span>Actual Timesheets ($${actualLaborTotal.toFixed(2)})</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Materials Source Selector -->
+          <div class="card" style="padding:12px; background:var(--bg-color); border:1px solid var(--border-color); margin-bottom:0">
+            <label class="form-label" style="font-weight:700; margin-bottom:8px; display:block">Materials Basis</label>
+            <div style="display:flex; flex-direction:column; gap:8px">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-mat-source" value="quoted" checked />
+                <span>Quoted Materials ($${quotedMatTotal.toFixed(2)})</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer">
+                <input type="radio" name="dep-mat-source" value="actual" />
+                <span>Actual Materials & POs ($${actualMatTotal.toFixed(2)})</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deposit Percentage & Presets -->
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-weight:700">Deposit Percentage (%)</label>
+          <div style="display:flex; gap:8px; align-items:center">
+            <input type="number" id="dep-percentage" class="form-input" min="1" max="100" value="10" step="1" style="width:110px; font-size:15px; font-weight:700" />
+            <div style="display:flex; gap:4px">
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="10">10%</button>
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="20">20%</button>
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="25">25%</button>
+              <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="50">50%</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Calculation Summary Box -->
+        <div class="card" style="padding:16px; background:rgba(37,99,235,0.04); border:1.5px solid var(--color-primary-light); border-radius:8px; margin-bottom:0">
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px">
+            <span style="color:var(--text-secondary)">Selected Basis Subtotal:</span>
+            <span style="font-weight:600" id="dep-calc-basis">$0.00</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px">
+            <span style="color:var(--text-secondary)">Deposit Rate:</span>
+            <span style="font-weight:600; color:var(--color-primary)" id="dep-calc-rate">10%</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border-color); font-size:16px; font-weight:700">
+            <span>Deposit Amount Due:</span>
+            <span style="color:var(--color-primary)" id="dep-calc-total">$0.00</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-tertiary); margin-top:6px; text-align:right">
+            Remaining Unbilled Balance: <strong id="dep-calc-remaining">$0.00</strong>
+          </div>
+        </div>
+      </div>
+    `;
+
+    showModal({
+      title: 'Generate Deposit Invoice',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+        {
+          label: 'Create Deposit Invoice', className: 'btn-primary', onClick: (close) => {
+            const modalEl = document.querySelector('.modal');
+            const laborSrc = modalEl.querySelector('input[name="dep-labor-source"]:checked').value;
+            const matSrc = modalEl.querySelector('input[name="dep-mat-source"]:checked').value;
+            const pct = parseFloat(modalEl.querySelector('#dep-percentage').value) || 0;
+
+            if (pct <= 0 || pct > 100) {
+              showToast('Please enter a valid deposit percentage (1-100%)', 'error');
+              return;
+            }
+
+            const laborVal = laborSrc === 'quoted' ? quotedLaborTotal : actualLaborTotal;
+            const matVal = matSrc === 'quoted' ? quotedMatTotal : actualMatTotal;
+            const basisSubtotal = laborVal + matVal;
+            const depositSubtotal = basisSubtotal * (pct / 100);
+
+            const laborLabel = laborSrc === 'quoted' ? 'Quoted' : 'Actual';
+            const matLabel = matSrc === 'quoted' ? 'Quoted' : 'Actual';
+
+            const sections = [{
+              id: store.generateId(),
+              name: `Deposit (${pct}%)`,
+              lineItems: [{
+                id: store.generateId(),
+                description: `Deposit Payment (${pct}% of ${laborLabel} Labor & ${matLabel} Materials)`,
+                type: 'other',
+                qty: 1,
+                rate: depositSubtotal,
+                total: depositSubtotal
+              }],
+              subtotal: depositSubtotal
+            }];
+
+            // Record deposit on job record for easy tracking
+            job.depositInvoicedAmount = (job.depositInvoicedAmount || 0) + depositSubtotal;
+            job.depositPercentage = pct;
+            store.update('jobs', job.id, {
+              depositInvoicedAmount: job.depositInvoicedAmount,
+              depositPercentage: pct
+            });
+
+            createDraftInvoice('Deposit', sections, depositSubtotal, quoteToUse);
+            close();
+          }
+        }
+      ]
+    });
+
+    // Attach dynamic calculation listeners
+    setTimeout(() => {
+      const modalEl = document.querySelector('.modal');
+      if (!modalEl) return;
+
+      function updateDepositCalc() {
+        const laborSrc = modalEl.querySelector('input[name="dep-labor-source"]:checked')?.value || 'quoted';
+        const matSrc = modalEl.querySelector('input[name="dep-mat-source"]:checked')?.value || 'quoted';
+        const pct = parseFloat(modalEl.querySelector('#dep-percentage')?.value) || 0;
+
+        const laborVal = laborSrc === 'quoted' ? quotedLaborTotal : actualLaborTotal;
+        const matVal = matSrc === 'quoted' ? quotedMatTotal : actualMatTotal;
+        const basisSubtotal = laborVal + matVal;
+        const depositSubtotal = basisSubtotal * (pct / 100);
+        const remaining = Math.max(0, basisSubtotal - depositSubtotal);
+
+        modalEl.querySelector('#dep-calc-basis').textContent = '$' + basisSubtotal.toFixed(2);
+        modalEl.querySelector('#dep-calc-rate').textContent = pct + '%';
+        modalEl.querySelector('#dep-calc-total').textContent = '$' + depositSubtotal.toFixed(2);
+        modalEl.querySelector('#dep-calc-remaining').textContent = '$' + remaining.toFixed(2);
+      }
+
+      modalEl.querySelectorAll('input[name="dep-labor-source"], input[name="dep-mat-source"]').forEach(r => {
+        r.addEventListener('change', updateDepositCalc);
+      });
+
+      const pctInput = modalEl.querySelector('#dep-percentage');
+      pctInput?.addEventListener('input', updateDepositCalc);
+
+      modalEl.querySelectorAll('.btn-dep-preset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          pctInput.value = e.currentTarget.dataset.pct;
+          updateDepositCalc();
+        });
+      });
+
+      updateDepositCalc();
+    }, 50);
   }
 
   function getStockOptionsHtml() {
@@ -315,87 +583,363 @@ export function renderJobDetail(container, { id }) {
     const proj = job.projectId ? store.getById('projects', job.projectId) : null;
 
     container.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-header-info">
-          <div class="detail-header-icon" style="background:var(--color-primary-light);color:var(--color-primary)">
-            <span class="material-icons-outlined">build</span>
-          </div>
-          <div>
-            <div class="detail-header-text" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-              <h2 style="margin:0">${escapeHTML(job.number)} — ${escapeHTML(job.title)}</h2>
-              ${job.parentJobId ? (() => {
-                const parent = store.getById('jobs', job.parentJobId);
-                return parent ? `
-                  <a href="#/jobs/${parent.id}" class="badge badge-info" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; font-weight:600">
-                    <span class="material-icons-outlined" style="font-size:12px">event_repeat</span>
-                    Generated from Service Plan ${escapeHTML(parent.number)}
-                  </a>
-                ` : '';
-              })() : ''}
-            </div>
-            <div class="detail-header-meta" style="margin-top:6px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-              <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(job.customerName)}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
-              ${job.isRecurring ? `
-                <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
-              ` : `
-                <select id="header-job-status-select" class="badge ${sb[job.status] || 'badge-neutral'}">
-                  ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
-                    <option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>
-                  `).join('')}
-                </select>
-              `}
-              <span class="badge ${pb[job.priority] || 'badge-neutral'}">${escapeHTML(job.priority)}</span>
-              ${cc ? `
-                <span class="badge badge-purple" style="display:inline-flex; align-items:center; gap:4px; font-weight:600">
-                  <span class="material-icons-outlined" style="font-size:12px">category</span>
-                  ${escapeHTML(cc.code)}
-                </span>
-              ` : ''}
-              ${proj ? `
-                <span style="font-weight:700; display:inline-flex; align-items:center; gap:4px">
-                  <span class="material-icons-outlined" style="font-size:14px; color:var(--color-primary)">folder_copy</span>
-                  Project: <a href="#/projects/${proj.id}" style="color:var(--color-primary); text-decoration:none">${escapeHTML(proj.number)}</a>
-                </span>
-              ` : ''}
-            </div>
-          </div>
+      <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border-color);">
+        <div class="detail-header-meta" style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; font-size:14px;">
+          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">account_circle</span> ${escapeHTML(job.customerName)}</span>
+          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">person_outline</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
+          ${job.isRecurring ? `
+            <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
+          ` : `
+            <select id="header-job-status-select" class="badge ${sb[job.status] || 'badge-neutral'}" style="border:none; cursor:pointer;">
+              ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
+                <option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>
+              `).join('')}
+            </select>
+          `}
+          <span style="font-weight:700; font-size:12px; color:var(--text-secondary); letter-spacing:0.05em; text-transform:uppercase">${escapeHTML(job.priority)}</span>
+          ${cc ? `
+            <span class="badge badge-purple" style="display:inline-flex; align-items:center; gap:4px; font-weight:600">
+              <span class="material-icons-outlined" style="font-size:14px">category</span>
+              ${escapeHTML(cc.code)}
+            </span>
+          ` : ''}
+          ${proj ? `
+            <span style="font-weight:700; display:inline-flex; align-items:center; gap:4px; color:var(--color-primary);">
+              <span class="material-icons-outlined" style="font-size:16px">folder_copy</span>
+              Project: <a href="#/projects/${proj.id}" style="color:var(--color-primary); text-decoration:none">${escapeHTML(proj.number)}</a>
+            </span>
+          ` : ''}
         </div>
-        <div class="flex gap-sm">
+        <div class="flex gap-sm page-header-actions">
           ${job.status === 'Completed' && !hasInvoice ? `
             <button class="btn btn-success" id="btn-header-generate-invoice" data-tooltip="⚡ Dynamic Billing: splits timesheets into active rate timelines automatically" data-tooltip-pos="left" style="background-color:#10B981; border-color:#10B981; color:white; display:flex; align-items:center; gap:4px;">
               <span class="material-icons-outlined" style="font-size:18px;">receipt_long</span> Generate Invoice
             </button>
           ` : ''}
-          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
+          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left" style="background:#fff"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
           ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job" data-tooltip="Permanently delete this job" data-tooltip-pos="left"><span class="material-icons-outlined">delete</span></button>` : ''}
         </div>
       </div>
-      <div class="tabs" id="job-tabs" style="flex-wrap:wrap">
-        <button class="tab ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview" data-tooltip="General details, technician assignments, site address, and custom fields">Overview</button>
-        <button class="tab ${activeTab === 'tasks' ? 'active' : ''}" data-tab="tasks" data-tooltip="View, track, and complete hierarchical task lists for this job">Tasklists</button>
-        ${hasPermission('Jobs', 'view_costs') ? `<button class="tab ${activeTab === 'costs' ? 'active' : ''}" data-tab="costs" data-tooltip="Track catalog parts, external supplier costs, and calculate profit margins">Costs</button>` : ''}
-        ${hasPermission('Jobs', 'view_quotes_tab') ? `<button class="tab ${activeTab === 'quotes' ? 'active' : ''}" data-tab="quotes" data-tooltip="Draft proposals, revisions, and status records linked to this job">Quotes</button>` : ''}
-        <button class="tab ${activeTab === 'forms' ? 'active' : ''}" data-tab="forms" data-tooltip="Complete JSA, safety audits, and customer sign-off compliance documents">Forms</button>
-        ${hasPermission('Jobs', 'view_pos_tab') ? `<button class="tab ${activeTab === 'pos' ? 'active' : ''}" data-tab="pos" data-tooltip="Issue purchase orders to external suppliers for job materials">POs</button>` : ''}
-        <button class="tab ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity" data-tooltip="Audit trail logs tracking status updates and user modifications">Activity</button>
-        ${hasPermission('Jobs', 'view_timesheets_tab') ? `<button class="tab ${activeTab === 'timesheets' ? 'active' : ''}" data-tab="timesheets" data-tooltip="Technician hours logged on-site vs calculated travel/work segments">Timesheets</button>` : ''}
-        ${hasPermission('Jobs', 'view_invoices_tab') ? `<button class="tab ${activeTab === 'invoices' ? 'active' : ''}" data-tab="invoices" data-tooltip="Progress, standard, deposit, or variation client invoices linked to this job">Invoices</button>` : ''}
-      </div>
-      <div class="tab-content" id="tab-content"></div>
+
+      <div class="tab-content" id="tab-content" style="padding-top:4px;"></div>
     `;
 
     renderTabContent();
     bindEvents();
   }
 
+  function openAddDispatchModal() {
+    const existingSchedules = store.getAll('schedule').filter(t => t.jobId === id);
+    const techs = store.getAll('technicians').filter(t => !t.deactivated || job.technicianId === t.id || existingSchedules.some(s => s.techIds?.includes(t.id)));
+
+    const content = document.createElement('div');
+
+    if (!job.tasks || job.tasks.length === 0) {
+      job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
+      store.update('jobs', id, { tasks: job.tasks });
+    }
+
+    function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
+      let result = [];
+      if (!tasks) return result;
+      tasks.forEach((p, i) => {
+        const path = [...currentPath, i].join('-');
+        const namePath = [...currentNamePath, p.name].join(' > ');
+        result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
+        if (p.subTasks) {
+          result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
+        }
+      });
+      return result;
+    }
+    const flatTasks = getFlatTasks(job.tasks);
+
+    function renderEntries(entries) {
+      let html = '';
+      entries.forEach((e, i) => {
+        html += '<div class="sched-entry" data-index="' + i + '" style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+        html += '<span style="font-weight:600;font-size:13px;color:var(--text-secondary)">Entry ' + (i + 1) + '</span>';
+        if (entries.length > 1) {
+          html += '<button type="button" class="btn btn-sm btn-danger btn-remove-entry" data-index="' + i + '" style="padding:2px 8px">\u2715 Remove</button>';
+        }
+        html += '</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
+        html += '<div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">Task (Optional)</label>';
+        html += '<select class="form-select sched-task" style="width:100%">';
+        html += '<option value="">-- Whole Job / General --</option>';
+        flatTasks.forEach(t => {
+          html += `<option value="${t.path}" ${e.taskPath === t.path ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
+        });
+        html += '</select></div>';
+        html += '<div class="form-group" style="margin:0"><label class="form-label">Start</label>';
+        html += '<input type="datetime-local" class="form-input sched-start" value="' + e.start + '"></div>';
+        html += '<div class="form-group" style="margin:0"><label class="form-label">Finish</label>';
+        html += '<input type="datetime-local" class="form-input sched-finish" value="' + e.finish + '"></div>';
+        html += '</div>';
+
+        html += '<div class="form-group" style="margin:12px 0 0 0"><label class="form-label">Technicians</label>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="tech-chips">';
+        techs.forEach(t => {
+          const active = e.techIds.includes(t.id);
+          const border = active ? 'var(--color-primary)' : 'var(--border-color)';
+          const bg = active ? 'var(--color-primary-light)' : 'transparent';
+          const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
+          html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
+          html += '<input type="checkbox" class="tech-check" data-tech-id="' + t.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
+          html += '<span class="material-icons-outlined" style="font-size:14px">person</span>';
+          html += escapeHTML(t.name);
+          html += '</label>';
+        });
+        html += '</div></div>';
+
+        const assets = store.getAll('assets').filter(a => a.category === 'Business');
+        html += '<div class="form-group" style="margin:16px 0 0 0"><label class="form-label">Business Assets / Tools</label>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="asset-chips">';
+        assets.forEach(a => {
+          const active = e.assetIds && e.assetIds.includes(a.id);
+          const border = active ? 'var(--color-primary)' : 'var(--border-color)';
+          const bg = active ? 'var(--color-primary-light)' : 'transparent';
+          const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
+          html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
+          html += '<input type="checkbox" class="asset-check" data-asset-id="' + a.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
+          html += '<span class="material-icons-outlined" style="font-size:14px">handyman</span>';
+          html += escapeHTML(a.name);
+          html += '</label>';
+        });
+        if (assets.length === 0) html += '<span class="text-tertiary" style="font-size:12px">No business assets configured.</span>';
+        html += '</div></div></div>';
+      });
+      return html;
+    }
+
+    function renderModal(entries) {
+      if (!document.getElementById('sched-modal-styles')) {
+        const s = document.createElement('style');
+        s.id = 'sched-modal-styles';
+        s.textContent = '.sched-summary-row{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;align-items:center}.sched-summary-row:last-child{border-bottom:none}';
+        document.head.appendChild(s);
+      }
+
+      let html = '';
+
+      if (existingSchedules.length > 0) {
+        html += '<div style="margin-bottom:16px">';
+        html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Current Schedule</div>';
+        existingSchedules.forEach(s => {
+          const dt = new Date(s.startTime || s.date).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          html += '<div class="sched-summary-row" style="flex-wrap:wrap">';
+          html += '<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">schedule</span>';
+          html += '<span style="font-weight:500">' + escapeHTML(s.technicianName) + '</span>';
+          html += '<span style="color:var(--text-tertiary);font-size:12px;margin-left:8px;padding-left:8px;border-left:1px solid var(--border-color)">' + escapeHTML(s.taskName || 'General Task') + '</span>';
+          html += '<span style="color:var(--text-tertiary);margin-left:auto">' + dt + '</span>';
+          html += '<span style="font-weight:600;margin-left:12px">' + s.hours + 'h</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+        html += '<hr style="border-color:var(--border-color);margin-bottom:16px">';
+      }
+
+      html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">New Schedule Entries</div>';
+      html += '<div id="sched-entries">' + renderEntries(entries) + '</div>';
+      html += '<button type="button" id="btn-add-entry" class="btn btn-secondary btn-sm" style="width:100%;margin-top:4px">';
+      html += '<span class="material-icons-outlined" style="font-size:16px">add</span> Add Another Entry</button>';
+
+      content.innerHTML = html;
+
+      content.querySelectorAll('.tech-check').forEach(chk => {
+        const label = chk.closest('label');
+        chk.addEventListener('change', () => {
+          if (chk.checked) {
+            label.style.borderColor = 'var(--color-primary)';
+            label.style.background = 'var(--color-primary-light)';
+            label.style.color = 'var(--color-primary)';
+          } else {
+            label.style.borderColor = 'var(--border-color)';
+            label.style.background = 'transparent';
+            label.style.color = 'var(--text-secondary)';
+          }
+        });
+      });
+
+      content.querySelectorAll('.asset-check').forEach(chk => {
+        const label = chk.closest('label');
+        chk.addEventListener('change', () => {
+          if (chk.checked) {
+            label.style.borderColor = 'var(--color-primary)';
+            label.style.background = 'var(--color-primary-light)';
+            label.style.color = 'var(--color-primary)';
+          } else {
+            label.style.borderColor = 'var(--border-color)';
+            label.style.background = 'transparent';
+            label.style.color = 'var(--text-secondary)';
+          }
+        });
+      });
+
+      content.querySelectorAll('.btn-remove-entry').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const current = readCurrentEntries();
+          current.splice(parseInt(btn.dataset.index), 1);
+          renderModal(current);
+        });
+      });
+
+      content.querySelector('#btn-add-entry').addEventListener('click', () => {
+        const current = readCurrentEntries();
+        const p = n => n.toString().padStart(2, '0');
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        const ds = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        current.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
+        renderModal(current);
+      });
+    }
+
+    const p = n => n.toString().padStart(2, '0');
+    const now2 = new Date();
+    const ds = `${now2.getFullYear()}-${p(now2.getMonth() + 1)}-${p(now2.getDate())}`;
+    const defaultTechIds = job.technicianId ? [job.technicianId] : [];
+    let startTime = "08:00";
+    let finishTime = "16:00";
+    if (job.preferredTime) {
+      const parsed = parsePreferredTime(job.preferredTime);
+      if (parsed) {
+        startTime = `${p(parsed.hours)}:${p(parsed.minutes)}`;
+        const fh = (parsed.hours + 2) % 24;
+        finishTime = `${p(fh)}:${p(parsed.minutes)}`;
+      }
+    }
+    const entries = [{ taskPath: '', start: `${ds}T${startTime}`, finish: `${ds}T${finishTime}`, techIds: defaultTechIds, assetIds: [] }];
+    renderModal(entries);
+
+    function readCurrentEntries() {
+      const result = [];
+      content.querySelectorAll('.sched-entry').forEach((el, i) => {
+        const taskPath = el.querySelector('.sched-task')?.value;
+        const start = el.querySelector('.sched-start')?.value;
+        const finish = el.querySelector('.sched-finish')?.value;
+        const techIds = [...el.querySelectorAll('.tech-check:checked')].map(c => c.dataset.techId);
+        const assetIds = [...el.querySelectorAll('.asset-check:checked')].map(c => c.dataset.assetId);
+        result.push({ taskPath, start, finish, techIds, assetIds });
+      });
+      return result;
+    }
+
+    showModal({
+      title: `Schedule Job: ${escapeHTML(job.title || job.number)}`,
+      content,
+      size: 'modal-70',
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: close => close() },
+        {
+          label: 'Save Schedule', className: 'btn-primary', onClick: close => {
+            const currentEntries = readCurrentEntries();
+            let saved = 0;
+            let errors = [];
+
+            currentEntries.forEach((e, i) => {
+              if (!e.start || !e.finish) { errors.push(`Entry ${i + 1}: missing start or finish`); return; }
+              const startDate = new Date(e.start);
+              const finishDate = new Date(e.finish);
+              if (finishDate <= startDate) { errors.push(`Entry ${i + 1}: finish must be after start`); return; }
+              if (e.techIds.length === 0) { errors.push(`Entry ${i + 1}: select at least one technician`); return; }
+            });
+
+            if (errors.length) {
+              showToast(errors[0], 'error');
+              return;
+            }
+
+            currentEntries.forEach((e) => {
+              const startDate = new Date(e.start);
+              const finishDate = new Date(e.finish);
+              const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
+              const selectedTask = flatTasks.find(t => t.path === e.taskPath);
+              const taskName = selectedTask ? selectedTask.name : 'Whole Job';
+
+              e.techIds.forEach(techId => {
+                const tech = store.getById('technicians', techId);
+                if (!tech) return;
+                store.create('schedule', {
+                  jobId: id,
+                  jobNumber: job.number,
+                  taskPath: e.taskPath || null,
+                  taskName: taskName,
+                  technicianId: techId,
+                  technicianName: tech.name,
+                  date: e.start.split('T')[0],
+                  startTime: e.start,
+                  finishTime: e.finish,
+                  hours
+                });
+                saved++;
+              });
+
+              if (e.assetIds && e.assetIds.length > 0) {
+                e.assetIds.forEach(assetId => {
+                  const asset = store.getById('assets', assetId);
+                  if (!asset) return;
+                  store.create('assetUsage', {
+                    jobId: id,
+                    assetId: assetId,
+                    assetName: asset.name,
+                    taskPath: e.taskPath,
+                    taskName: taskName,
+                    startTime: e.start,
+                    finishTime: e.finish,
+                    hours,
+                    recoveryRate: asset.recoveryRate || 0
+                  });
+                });
+              }
+            });
+
+            if (currentEntries.length > 0 && currentEntries[0].start) {
+              const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
+              const jobTechs = allTechIds.map(tid => {
+                const t = store.getById('technicians', tid);
+                const totalHours = currentEntries
+                  .filter(e => e.techIds.includes(tid))
+                  .reduce((sum, e) => {
+                    const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
+                    return sum + (isNaN(h) ? 0 : h);
+                  }, 0);
+                return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
+              });
+              store.update('jobs', id, {
+                scheduledDate: currentEntries[0].start.split('T')[0],
+                technicians: jobTechs,
+                technicianName: jobTechs.map(t => t.name).join(', ')
+              });
+
+              import('../../components/Notifications.js').then(({ addSystemNotification }) => {
+                jobTechs.forEach(t => {
+                  addSystemNotification(
+                    'New Schedule Assignment',
+                    `You have been scheduled for Job ${job.number} (${job.title}) starting ${currentEntries[0].start.replace('T', ' ')} (${t.hours} hrs total).`,
+                    `/jobs/${id}`
+                  );
+                });
+              });
+            }
+
+            showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
+            close();
+            renderTabContent();
+          }
+        }
+      ]
+    });
+  }
+
   function renderTabContent() {
     // Sanitize activeTab based on user permissions
-    if (activeTab === 'costs' && !hasPermission('Jobs', 'view_costs')) {
+    if ((activeTab === 'costs' || activeTab === 'financials') && !hasPermission('Jobs', 'view_costs')) {
       activeTab = 'overview';
     } else if (activeTab === 'quotes' && !hasPermission('Jobs', 'view_quotes_tab')) {
       activeTab = 'overview';
-    } else if (activeTab === 'pos' && !hasPermission('Jobs', 'view_pos_tab')) {
+    } else if (activeTab === 'materials' && !hasPermission('Jobs', 'view_materials_tab')) {
       activeTab = 'overview';
     } else if (activeTab === 'timesheets' && !hasPermission('Jobs', 'view_timesheets_tab')) {
       activeTab = 'overview';
@@ -411,6 +955,156 @@ export function renderJobDetail(container, { id }) {
       return;
     }
 
+    if (activeTab === 'schedule') {
+      const schedules = store.getAll('schedule').filter(t => t.jobId === id);
+      const techs = store.getAll('technicians').filter(t => !t.deactivated);
+      
+      let totalScheduled = 0;
+      schedules.forEach(s => totalScheduled += (parseFloat(s.hours) || 0));
+      const tasklistHours = getJobTasklistHours(job.tasks);
+      const estHours = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 0);
+      const hoursColor = (totalScheduled > estHours && estHours > 0) ? 'var(--color-danger)' : 'var(--text-primary)';
+
+      let scheduleListHtml = '';
+      if (schedules.length === 0) {
+        scheduleListHtml = `
+          <div class="empty-state" style="padding:48px 24px; text-align:center">
+            <span class="material-icons-outlined" style="font-size:48px;color:var(--text-tertiary);margin-bottom:16px">event_busy</span>
+            <h3>No Scheduled Dispatches</h3>
+            <p class="text-secondary" style="margin-top:8px">This job hasn't been scheduled yet.</p>
+          </div>
+        `;
+      } else {
+        scheduleListHtml = `
+          <table class="data-table" style="width:100%; font-size:13px">
+            <thead>
+              <tr>
+                <th style="padding:8px 16px;text-align:left">Date</th>
+                <th style="padding:8px 16px;text-align:left">Technician</th>
+                <th style="padding:8px 16px;text-align:left">Task</th>
+                <th style="padding:8px 16px;text-align:left">Times</th>
+                <th style="padding:8px 16px;text-align:right">Hours</th>
+                <th style="padding:8px 16px;text-align:right"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${schedules.map(s => {
+                const sDate = new Date(s.startTime || s.date);
+                const fDate = s.finishTime ? new Date(s.finishTime) : null;
+                const timeString = fDate 
+                  ? `${sDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${fDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+                  : sDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                return `
+                  <tr>
+                    <td style="padding:12px 16px;font-weight:500">${sDate.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})}</td>
+                    <td style="padding:12px 16px">${escapeHTML(s.technicianName)}</td>
+                    <td style="padding:12px 16px;color:var(--text-secondary)">${escapeHTML(s.taskName || 'General Task')}</td>
+                    <td style="padding:12px 16px;color:var(--text-secondary)">${timeString}</td>
+                    <td style="padding:12px 16px;text-align:right;font-weight:600">${s.hours}h</td>
+                    <td style="padding:12px 16px;text-align:right">
+                      ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-ghost btn-remove-dispatch" data-id="${s.id}" style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+
+      tc.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:16px">
+           <div class="grid-3" style="gap:16px; align-items:start">
+              <div class="card" style="grid-column: span 1">
+                <div class="card-header" style="padding:12px 16px">
+                  <h4 style="margin:0; font-size:14px; font-weight:700">Roster & Budget</h4>
+                </div>
+                <div class="card-body" style="padding:16px">
+                   <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+                     <span style="color:var(--text-secondary)">Estimated Hours:</span>
+                     <span style="font-weight:600">${estHours > 0 ? estHours + 'h' : '—'}</span>
+                   </div>
+                   <div style="display:flex; justify-content:space-between; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border-color)">
+                     <span style="color:var(--text-secondary)">Scheduled Hours:</span>
+                     <span style="font-weight:600; color:${hoursColor}">${totalScheduled}h</span>
+                   </div>
+                   <div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:8px">Assigned Techs</div>
+                   ${job.technicians && job.technicians.length > 0 ? job.technicians.map(t => `
+                     <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0">
+                       <div style="display:flex; align-items:center; gap:8px">
+                         <div style="width:24px;height:24px;border-radius:12px;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">
+                           ${t.name.charAt(0).toUpperCase()}
+                         </div>
+                         <span style="font-size:13px">${escapeHTML(t.name)}</span>
+                       </div>
+                       <span style="font-size:12px;font-weight:600">${t.hours}h</span>
+                     </div>
+                   `).join('') : '<div style="font-size:13px;color:var(--text-tertiary)">No technicians assigned</div>'}
+                </div>
+              </div>
+              
+              <div class="card" style="grid-column: span 2">
+                 <div class="card-header" style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center">
+                    <h4 style="margin:0; font-size:14px; font-weight:700">Dispatch Schedule</h4>
+                    ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-primary" id="btn-add-schedule"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Add Dispatch</button>` : ''}
+                 </div>
+                 <div class="card-body">
+                    ${scheduleListHtml}
+                 </div>
+              </div>
+           </div>
+        </div>
+      `;
+
+      tc.querySelectorAll('.btn-remove-dispatch').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dispatchId = btn.dataset.id;
+          showModal({
+            title: 'Remove Dispatch Entry',
+            content: `
+              <div style="padding: 8px 0;">
+                <p style="margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 500;">Are you sure you want to remove this dispatch entry?</p>
+                <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 13px;">This will remove the technician dispatch schedule entry from the job.</p>
+              </div>
+            `,
+            actions: [
+              {
+                label: 'Cancel',
+                className: 'btn-secondary',
+                onClick: (close) => close()
+              },
+              {
+                label: 'Remove Dispatch',
+                className: 'btn-danger',
+                onClick: (close) => {
+                  store.delete('schedule', dispatchId);
+                  
+                  // Recompute job technicians aggregate
+                  const currentEntries = store.getAll('schedule').filter(t => t.jobId === id);
+                  const allTechIds = [...new Set(currentEntries.map(e => e.technicianId))];
+                  const jobTechs = allTechIds.map(tid => {
+                    const t = store.getById('technicians', tid);
+                    const th = currentEntries.filter(e => e.technicianId === tid).reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
+                    return { id: tid, name: t?.name || '', hours: Math.round(th * 100) / 100 };
+                  });
+                  store.update('jobs', id, {
+                    technicians: jobTechs,
+                    technicianName: jobTechs.map(t => t.name).join(', ')
+                  });
+                  
+                  showToast('Dispatch entry removed', 'info');
+                  close();
+                  renderTabContent();
+                }
+              }
+            ]
+          });
+        });
+      });
+
+      tc.querySelector('#btn-add-schedule')?.addEventListener('click', openAddDispatchModal);
+    }
+
     if (activeTab === 'overview') {
       let jobProgress = 0;
       if (job.tasks && job.tasks.length > 0) {
@@ -424,27 +1118,30 @@ export function renderJobDetail(container, { id }) {
         jobProgress = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
       }
 
-      const techNames = job.technicians && job.technicians.length > 0
-        ? job.technicians.map(t => `${escapeHTML(t.name)} (${t.hours}h)`).join(', ')
-        : escapeHTML(job.technicianName || 'Unassigned');
+      const tasklistHours = getJobTasklistHours(job.tasks);
+      const estHours = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 0);
+      const estHoursDisplay = estHours > 0 ? `${estHours}h` : '—';
 
       tc.innerHTML = `
-        <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+        <div style="display:flex; flex-direction:column; gap:16px">
           
-          <!-- Original Grid details -->
-          <div class="grid-3" style="align-items: start;">
+          <!-- Grid details -->
+          <div class="grid-3" style="align-items: start; gap:16px;">
+            ${job.isRecurring === true ? `
             <div class="card" style="grid-column: span 1">
-              <div class="card-header"><h4>Job Information</h4></div>
-              <div class="card-body">
-                <div style="display:flex;flex-direction:column;gap:12px">
+              <div class="card-header" style="padding:10px 14px"><h4 style="margin:0; font-size:13px; font-weight:700">Job Information</h4></div>
+              <div class="card-body" style="padding:12px 14px">
+                <div style="display:flex; flex-direction:column; gap:2px">
                   ${r('Job Number', escapeHTML(job.number))}
                   ${r('Title', escapeHTML(job.title))}
-                  ${r('Type', escapeHTML(job.type))}
                   ${r('Status', escapeHTML(job.status))}
                   ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
                   ${r('Priority', escapeHTML(job.priority))}
+                  ${r('Est. Hours', estHoursDisplay)}
                   ${r('Customer', escapeHTML(job.customerName))}
                   ${r('Contact', escapeHTML(job.contactName || '—'))}
+                  ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
+                  ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
                   ${(() => {
                     const assetObj = job.assetId ? store.getById('assets', job.assetId) : null;
                     const aName = job.assetName || (assetObj ? assetObj.name : '');
@@ -453,10 +1150,10 @@ export function renderJobDetail(container, { id }) {
                     return r('Linked Asset', `<a href="#/assets/${assetId}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(aName)} ${assetObj?.serial ? `<span class="text-tertiary" style="font-weight:normal;">(S/N: ${escapeHTML(assetObj.serial)})</span>` : ''}</a>`);
                   })()}
                   ${job.preferredTime ? r('Preferred Time', escapeHTML(job.preferredTime)) : ''}
+                  ${r('Created', new Date(job.createdAt).toLocaleDateString())}
                 </div>
               </div>
             </div>
-            ${job.isRecurring === true ? `
             <div class="card" style="grid-column: span 2">
               <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
                 <h4 style="margin:0;display:flex;align-items:center;gap:6px">
@@ -468,15 +1165,15 @@ export function renderJobDetail(container, { id }) {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border-color)">
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Frequency</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${escapeHTML(job.recurringConfig?.freq || '—')}</div>
+                    <div style="font-size:14px;margin-top:2px">${escapeHTML(job.recurringConfig?.freq || '—')}</div>
                   </div>
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Date Range</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${job.recurringConfig?.start ? new Date(job.recurringConfig.start).toLocaleDateString() : '—'} to ${job.recurringConfig?.end ? new Date(job.recurringConfig.end).toLocaleDateString() : '—'}</div>
+                    <div style="font-size:14px;margin-top:2px">${job.recurringConfig?.start ? new Date(job.recurringConfig.start).toLocaleDateString() : '—'} to ${job.recurringConfig?.end ? new Date(job.recurringConfig.end).toLocaleDateString() : '—'}</div>
                   </div>
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Preferred Days</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${escapeHTML((() => {
+                    <div style="font-size:14px;margin-top:2px">${escapeHTML((() => {
                       if (!job.recurringConfig) return '—';
                       if (job.recurringConfig.freq === 'Weekly') {
                         const daysMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
@@ -498,7 +1195,7 @@ export function renderJobDetail(container, { id }) {
                   </div>
                   <div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Total Occurrences</div>
-                    <div style="font-size:14px;font-weight:600;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))).length} spawned</div>
+                    <div style="font-size:14px;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))).length} spawned</div>
                   </div>
                   <div style="grid-column: span 2">
                     <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Default Technician</div>
@@ -519,7 +1216,7 @@ export function renderJobDetail(container, { id }) {
                   const genJobs = (store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.')));
                   if (genJobs.length === 0) {
                     return `
-                      <div style="font-size:12px;color:var(--text-tertiary);font-style:italic;padding:12px;background:var(--bg-color);border:1px dashed var(--border-color);border-radius:6px;text-align:center">
+                      <div style="font-size:12px;color:var(--text-tertiary);font-style:italic;padding:12px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:6px;text-align:center">
                         No job tickets generated yet.
                       </div>
                     `;
@@ -537,7 +1234,7 @@ export function renderJobDetail(container, { id }) {
 
                   return `
                     <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px">
-                      <table class="table" style="width:100%;font-size:12px;margin:0">
+                      <table class="data-table" style="width:100%;font-size:12px;margin:0">
                         <thead>
                           <tr>
                             <th style="padding:6px 12px;text-align:left">Job #</th>
@@ -568,346 +1265,160 @@ export function renderJobDetail(container, { id }) {
               </div>
             </div>
             ` : `
-            <div class="card" style="grid-column: span 2">
-              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-                <h4 style="margin:0">Schedule & Assignment</h4>
-                ${hasPermission('Schedule', 'edit') ? `
-                <button class="btn btn-ghost btn-sm" id="btn-add-schedule" style="font-size:12px;padding:4px 8px">
-                  <span class="material-icons-outlined" style="font-size:14px;margin-right:4px">calendar_month</span> Add to Schedule
-                </button>
-                ` : ''}
-              </div>
-              <div class="card-body">
-                <div style="display:flex;flex-direction:column;gap:12px">
-                  ${r('Technicians', techNames)}
-                  ${r('Scheduled', job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : '—')}
-                  ${r('Est. Hours', job.estimatedHours || '—')}
-                  ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
-                  ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
-                  ${r('Created', new Date(job.createdAt).toLocaleDateString())}
+            <div style="grid-column: 1 / -1; display:grid; grid-template-columns: 2.2fr 1fr; gap:24px;">
+              
+              <!-- Left Column -->
+              <div style="display:flex; flex-direction:column; gap:24px;">
+                <!-- Job Description & Scope -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Job Description & Scope</h4></div>
+                  <div class="card-body" style="padding:20px; font-size:14px; color:var(--text-secondary); line-height:1.6;">
+                    ${job.description ? escapeHTML(job.description).replace(/\n/g, '<br>') : 'No job description provided.'}
+                  </div>
+                </div>
+
+                <!-- Recent Job History -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Recent Job History</h4>
+                    <button class="btn btn-ghost btn-sm" id="btn-view-all-history" style="font-size:12px;padding:4px 8px; display:flex; align-items:center; gap:4px">
+                      <span class="material-icons-outlined" style="font-size:14px">history</span> Full History
+                    </button>
+                  </div>
+                  <div class="card-body" style="padding:20px; display:flex; flex-direction:column; gap:16px;">
+                    ${(() => {
+                      if (!job.historyLog) job.historyLog = [];
+                      if (!job.activityLog) job.activityLog = [];
+                      const sysEntries = job.activityLog.filter(l => l.type === 'system');
+                      if (sysEntries.length > 0) {
+                        job.historyLog = [...sysEntries, ...job.historyLog];
+                        job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+                        job.activityLog = job.activityLog.filter(l => l.type !== 'system');
+                        store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
+                      }
+
+                      const historyLog = job.historyLog.slice(0, 5);
+                      if (historyLog.length === 0) {
+                        return '<div style="color:var(--text-tertiary); font-size:13px; font-style:italic">No recent history.</div>';
+                      }
+
+                      return historyLog.map(log => {
+                        let icon = 'info';
+                        let color = 'var(--text-tertiary)';
+                        if (log.action === 'task_completed') { icon = 'check_circle'; color = 'var(--color-success)'; }
+                        else if (log.action === 'task_uncompleted') { icon = 'radio_button_unchecked'; color = 'var(--text-tertiary)'; }
+                        else if (log.action === 'contractor_assigned') { icon = 'engineering'; color = 'var(--color-warning)'; }
+                        else if (log.action === 'status_changed') { icon = 'flag'; color = 'var(--color-info)'; }
+
+                        return `
+                          <div style="display:flex; gap:12px; align-items:flex-start; padding-bottom:16px; border-bottom:1px solid var(--border-color)">
+                            <div style="width:32px; height:32px; border-radius:50%; background:var(--bg-color); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:`+color+`; border:1px solid var(--border-color); margin-top:2px">
+                              <span class="material-icons-outlined" style="font-size:16px">`+icon+`</span>
+                            </div>
+                            <div style="flex:1">
+                              <div style="font-size:14px; color:var(--text-primary); font-weight:600; margin-bottom:4px">`+escapeHTML(log.content || 'System update')+`</div>
+                              <div style="font-size:12px; color:var(--text-tertiary)">
+                                <span style="font-weight:600">`+escapeHTML(log.author || 'System')+`</span> • `+new Date(log.date).toLocaleString()+`
+                              </div>
+                            </div>
+                          </div>
+                        `;
+                      }).join('');
+                    })()}
+                  </div>
                 </div>
               </div>
+
+              <!-- Right Column -->
+              <div style="display:flex; flex-direction:column; gap:24px;">
+                <!-- Job Details -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Job Details</h4></div>
+                  <div class="card-body" style="padding:12px 20px">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                      <tbody>
+                        <tr><td style="padding:12px 0; color:var(--text-secondary); width:35%;">Customer</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.customerName)}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Contact</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.contactName || '—')}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Site Address</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right; max-width:180px; line-height:1.4;">${job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Quote Ref</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}" style="text-decoration:none">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Created</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${new Date(job.createdAt).toLocaleDateString()}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Progress & Logistics -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Progress & Logistics</h4></div>
+                  <div class="card-body" style="padding:12px 20px">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                      <tbody>
+                        <tr>
+                          <td style="padding:12px 0; color:var(--text-secondary); width:40%;">Completion</td>
+                          <td style="padding:12px 0; text-align:right;">
+                            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;">
+                              <div style="width:80px;background:var(--border-color);height:6px;border-radius:3px;overflow:hidden;display:inline-block;"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div>
+                              <span style="font-weight:700; color:var(--text-primary);">${jobProgress}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Est. Hours</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${estHoursDisplay}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
             </div>
             `}
           </div>
-
         </div>
       `;
 
-      tc.querySelector('#btn-add-schedule')?.addEventListener('click', () => {
-        const techs = store.getAll('technicians').filter(t => !t.deactivated || job.technicianId === t.id || existingSchedules.some(s => s.techIds?.includes(t.id)));
-        const existingSchedules = store.getAll('schedule').filter(t => t.jobId === id);
-
-        // Build the modal content element
+      tc.querySelector('#btn-view-all-history')?.addEventListener('click', () => {
+        const historyLog = job.historyLog || [];
         const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="max-height:450px; overflow-y:auto; padding:4px;">
+            ${historyLog.length === 0 ? '<div class="text-tertiary text-center p-4">No job history recorded yet.</div>' : `
+              <div style="display:flex; flex-direction:column; gap:16px;">
+                ${historyLog.map(log => {
+                  let icon = 'history';
+                  let color = 'var(--color-primary)';
+                  if (log.action === 'task_completed') { icon = 'check_circle'; color = 'var(--color-success)'; }
+                  else if (log.action === 'task_uncompleted') { icon = 'radio_button_unchecked'; color = 'var(--text-tertiary)'; }
+                  else if (log.action === 'contractor_assigned') { icon = 'engineering'; color = 'var(--color-warning)'; }
+                  else if (log.action === 'status_changed') { icon = 'flag'; color = 'var(--color-info)'; }
 
-        // Ensure job tasks are initialized
-        if (!job.tasks || job.tasks.length === 0) {
-          job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
-          store.update('jobs', id, { tasks: job.tasks });
-        }
-
-        function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
-          let result = [];
-          if (!tasks) return result;
-          tasks.forEach((p, i) => {
-            const path = [...currentPath, i].join('-');
-            const namePath = [...currentNamePath, p.name].join(' > ');
-            result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
-            if (p.subTasks) {
-              result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
-            }
-          });
-          return result;
-        }
-        const flatTasks = getFlatTasks(job.tasks);
-
-        function renderEntries(entries) {
-          let html = '';
-          entries.forEach((e, i) => {
-            html += '<div class="sched-entry" data-index="' + i + '" style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px">';
-            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
-            html += '<span style="font-weight:600;font-size:13px;color:var(--text-secondary)">Entry ' + (i + 1) + '</span>';
-            if (entries.length > 1) {
-              html += '<button type="button" class="btn btn-sm btn-danger btn-remove-entry" data-index="' + i + '" style="padding:2px 8px">\u2715 Remove</button>';
-            }
-            html += '</div>';
-            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
-            html += '<div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">Task (Optional)</label>';
-            html += '<select class="form-select sched-task" style="width:100%">';
-            html += '<option value="">-- Whole Job / General --</option>';
-            flatTasks.forEach(t => {
-              html += `<option value="${t.path}" ${e.taskPath === t.path ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
-            });
-            html += '</select></div>';
-            html += '<div class="form-group" style="margin:0"><label class="form-label">Start</label>';
-            html += '<input type="datetime-local" class="form-input sched-start" value="' + e.start + '"></div>';
-            html += '<div class="form-group" style="margin:0"><label class="form-label">Finish</label>';
-            html += '<input type="datetime-local" class="form-input sched-finish" value="' + e.finish + '"></div>';
-            html += '</div>';
-
-            html += '<div class="form-group" style="margin:12px 0 0 0"><label class="form-label">Technicians</label>';
-            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="tech-chips">';
-            techs.forEach(t => {
-              const active = e.techIds.includes(t.id);
-              const border = active ? 'var(--color-primary)' : 'var(--border-color)';
-              const bg = active ? 'var(--color-primary-light)' : 'transparent';
-              const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
-              html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
-              html += '<input type="checkbox" class="tech-check" data-tech-id="' + t.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
-              html += '<span class="material-icons-outlined" style="font-size:14px">person</span>';
-              html += escapeHTML(t.name);
-              html += '</label>';
-            });
-            html += '</div></div>';
-
-            // Assets Section
-            const assets = store.getAll('assets').filter(a => a.category === 'Business');
-            html += '<div class="form-group" style="margin:16px 0 0 0"><label class="form-label">Business Assets / Tools</label>';
-            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" class="asset-chips">';
-            assets.forEach(a => {
-              const active = e.assetIds && e.assetIds.includes(a.id);
-              const border = active ? 'var(--color-primary)' : 'var(--border-color)';
-              const bg = active ? 'var(--color-primary-light)' : 'transparent';
-              const color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
-              html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1.5px solid ' + border + ';border-radius:999px;cursor:pointer;font-size:13px;background:' + bg + ';color:' + color + ';transition:all 0.15s">';
-              html += '<input type="checkbox" class="asset-check" data-asset-id="' + a.id + '" ' + (active ? 'checked' : '') + ' style="display:none">';
-              html += '<span class="material-icons-outlined" style="font-size:14px">handyman</span>';
-              html += escapeHTML(a.name);
-              html += '</label>';
-            });
-            if (assets.length === 0) html += '<span class="text-tertiary" style="font-size:12px">No business assets configured.</span>';
-            html += '</div></div></div>';
-          });
-          return html;
-        }
-
-
-        function renderModal(entries) {
-          // Inject scoped styles once
-          if (!document.getElementById('sched-modal-styles')) {
-            const s = document.createElement('style');
-            s.id = 'sched-modal-styles';
-            s.textContent = '.sched-summary-row{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;align-items:center}.sched-summary-row:last-child{border-bottom:none}';
-            document.head.appendChild(s);
-          }
-
-          let html = '';
-
-          if (existingSchedules.length > 0) {
-            html += '<div style="margin-bottom:16px">';
-            html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Current Schedule</div>';
-            existingSchedules.forEach(s => {
-              const dt = new Date(s.startTime || s.date).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-              html += '<div class="sched-summary-row" style="flex-wrap:wrap">';
-              html += '<span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">schedule</span>';
-              html += '<span style="font-weight:500">' + escapeHTML(s.technicianName) + '</span>';
-              html += '<span style="color:var(--text-tertiary);font-size:12px;margin-left:8px;padding-left:8px;border-left:1px solid var(--border-color)">' + escapeHTML(s.taskName || 'General Task') + '</span>';
-              html += '<span style="color:var(--text-tertiary);margin-left:auto">' + dt + '</span>';
-              html += '<span style="font-weight:600;margin-left:12px">' + s.hours + 'h</span>';
-              html += '</div>';
-            });
-            html += '</div>';
-            html += '<hr style="border-color:var(--border-color);margin-bottom:16px">';
-          }
-
-          html += '<div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">New Schedule Entries</div>';
-          html += '<div id="sched-entries">' + renderEntries(entries) + '</div>';
-          html += '<button type="button" id="btn-add-entry" class="btn btn-secondary btn-sm" style="width:100%;margin-top:4px">';
-          html += '<span class="material-icons-outlined" style="font-size:16px">add</span> Add Another Entry</button>';
-
-          content.innerHTML = html;
-
-          // Tech chip toggles
-          content.querySelectorAll('.tech-check').forEach(chk => {
-            const label = chk.closest('label');
-            chk.addEventListener('change', () => {
-              if (chk.checked) {
-                label.style.borderColor = 'var(--color-primary)';
-                label.style.background = 'var(--color-primary-light)';
-                label.style.color = 'var(--color-primary)';
-              } else {
-                label.style.borderColor = 'var(--border-color)';
-                label.style.background = 'transparent';
-                label.style.color = 'var(--text-secondary)';
-              }
-            });
-          });
-
-          // Asset chip toggles
-          content.querySelectorAll('.asset-check').forEach(chk => {
-            const label = chk.closest('label');
-            chk.addEventListener('change', () => {
-              if (chk.checked) {
-                label.style.borderColor = 'var(--color-primary)';
-                label.style.background = 'var(--color-primary-light)';
-                label.style.color = 'var(--color-primary)';
-              } else {
-                label.style.borderColor = 'var(--border-color)';
-                label.style.background = 'transparent';
-                label.style.color = 'var(--text-secondary)';
-              }
-            });
-          });
-
-          // Remove entry buttons
-          content.querySelectorAll('.btn-remove-entry').forEach(btn => {
-            btn.addEventListener('click', () => {
-              const current = readCurrentEntries();
-              current.splice(parseInt(btn.dataset.index), 1);
-              renderModal(current);
-            });
-          });
-
-          // Add another entry
-          content.querySelector('#btn-add-entry').addEventListener('click', () => {
-            const current = readCurrentEntries();
-            const p = n => n.toString().padStart(2, '0');
-            const d = new Date();
-            d.setDate(d.getDate() + 1);
-            const ds = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-            current.push({ taskPath: '', start: `${ds}T08:00`, finish: `${ds}T16:00`, techIds: [], assetIds: [] });
-            renderModal(current);
-          });
-        }
-
-        // Default first entry: today 8am-4pm, pre-select job's assigned tech if any, and fall back to preferred time
-        const p = n => n.toString().padStart(2, '0');
-        const now2 = new Date();
-        const ds = `${now2.getFullYear()}-${p(now2.getMonth() + 1)}-${p(now2.getDate())}`;
-        const defaultTechIds = job.technicianId ? [job.technicianId] : [];
-        let startTime = "08:00";
-        let finishTime = "16:00";
-        if (job.preferredTime) {
-          const parsed = parsePreferredTime(job.preferredTime);
-          if (parsed) {
-            startTime = `${p(parsed.hours)}:${p(parsed.minutes)}`;
-            const fh = (parsed.hours + 2) % 24;
-            finishTime = `${p(fh)}:${p(parsed.minutes)}`;
-          }
-        }
-        const entries = [{ taskPath: '', start: `${ds}T${startTime}`, finish: `${ds}T${finishTime}`, techIds: defaultTechIds, assetIds: [] }];
-        renderModal(entries);
-
-        function readCurrentEntries() {
-          const result = [];
-          content.querySelectorAll('.sched-entry').forEach((el, i) => {
-            const taskPath = el.querySelector('.sched-task')?.value;
-            const start = el.querySelector('.sched-start')?.value;
-            const finish = el.querySelector('.sched-finish')?.value;
-            const techIds = [...el.querySelectorAll('.tech-check:checked')].map(c => c.dataset.techId);
-            const assetIds = [...el.querySelectorAll('.asset-check:checked')].map(c => c.dataset.assetId);
-            result.push({ taskPath, start, finish, techIds, assetIds });
-          });
-          return result;
-        }
+                  return `
+                    <div style="display:flex; gap:12px; align-items:flex-start; padding-bottom:12px; border-bottom:1px dashed var(--border-color)">
+                      <div style="width:28px; height:28px; border-radius:50%; background:var(--content-bg); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:${color}; border:1px solid var(--border-color); margin-top:2px">
+                        <span class="material-icons-outlined" style="font-size:16px">${icon}</span>
+                      </div>
+                      <div style="flex:1">
+                        <div style="font-size:13.5px; color:var(--text-primary); font-weight:500; margin-bottom:2px">${escapeHTML(log.content || 'System update')}</div>
+                        <div style="font-size:11px; color:var(--text-tertiary)">
+                          <span style="font-weight:600">${escapeHTML(log.author || 'System')}</span> • ${new Date(log.date).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        `;
 
         showModal({
-          title: `Schedule Job: ${escapeHTML(job.title || job.number)}`,
+          title: 'Job History & Proceedings',
           content,
-          size: 'modal-70',
           actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: close => close() },
-            {
-              label: 'Save Schedule', className: 'btn-primary', onClick: close => {
-                const currentEntries = readCurrentEntries();
-                let saved = 0;
-                let errors = [];
-
-                currentEntries.forEach((e, i) => {
-                  if (!e.start || !e.finish) { errors.push(`Entry ${i + 1}: missing start or finish`); return; }
-                  const startDate = new Date(e.start);
-                  const finishDate = new Date(e.finish);
-                  if (finishDate <= startDate) { errors.push(`Entry ${i + 1}: finish must be after start`); return; }
-                  if (e.techIds.length === 0) { errors.push(`Entry ${i + 1}: select at least one technician`); return; }
-                });
-
-                if (errors.length) {
-                  showToast(errors[0], 'error');
-                  return;
-                }
-
-                currentEntries.forEach((e) => {
-                  const startDate = new Date(e.start);
-                  const finishDate = new Date(e.finish);
-                  const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-                  const selectedTask = flatTasks.find(t => t.path === e.taskPath);
-                  const taskName = selectedTask ? selectedTask.name : 'Whole Job';
-
-                  e.techIds.forEach(techId => {
-                    const tech = techs.find(t => t.id === techId);
-                    if (!tech) return;
-                    store.create('schedule', {
-                      jobId: id,
-                      jobNumber: job.number,
-                      taskPath: e.taskPath || null,
-                      taskName: taskName,
-                      technicianId: techId,
-                      technicianName: tech.name,
-                      date: e.start.split('T')[0],
-                      startTime: e.start,
-                      finishTime: e.finish,
-                      hours
-                    });
-                    saved++;
-                  });
-
-                  if (e.assetIds && e.assetIds.length > 0) {
-                    e.assetIds.forEach(assetId => {
-                      const asset = store.getById('assets', assetId);
-                      if (!asset) return;
-                      store.create('assetUsage', {
-                        jobId: id,
-                        assetId: assetId,
-                        assetName: asset.name,
-                        taskPath: e.taskPath,
-                        taskName: taskName,
-                        startTime: e.start,
-                        finishTime: e.finish,
-                        hours,
-                        recoveryRate: asset.recoveryRate || 0
-                      });
-                    });
-                  }
-                });
-
-                if (currentEntries.length > 0 && currentEntries[0].start) {
-                  const allTechIds = [...new Set(currentEntries.flatMap(e => e.techIds))];
-                  const jobTechs = allTechIds.map(tid => {
-                    const t = techs.find(x => x.id === tid);
-                    const totalHours = currentEntries
-                      .filter(e => e.techIds.includes(tid))
-                      .reduce((sum, e) => {
-                        const h = (new Date(e.finish) - new Date(e.start)) / 3600000;
-                        return sum + (isNaN(h) ? 0 : h);
-                      }, 0);
-                    return { id: tid, name: t?.name || '', hours: Math.round(totalHours * 100) / 100 };
-                  });
-                  store.update('jobs', id, {
-                    scheduledDate: currentEntries[0].start.split('T')[0],
-                    technicians: jobTechs,
-                    technicianName: jobTechs.map(t => t.name).join(', ')
-                  });
-
-                  import('../../components/Notifications.js').then(({ addSystemNotification }) => {
-                    jobTechs.forEach(t => {
-                      addSystemNotification(
-                        'New Schedule Assignment',
-                        `You have been scheduled for Job ${job.number} (${job.title}) starting ${currentEntries[0].start.replace('T', ' ')} (${t.hours} hrs total).`,
-                        `/jobs/${id}`
-                      );
-                    });
-                  });
-                }
-
-                showToast(`${saved} schedule ${saved === 1 ? 'entry' : 'entries'} saved`, 'success');
-                close();
-                renderTabContent();
-              }
-            }
+            { label: 'Close', className: 'btn-secondary', onClick: (close) => close() }
           ]
         });
       });
+
+      tc.querySelector('#btn-add-schedule')?.addEventListener('click', openAddDispatchModal);
 
       tc.querySelector('#btn-save-recurring-tech')?.addEventListener('click', () => {
         const newTechId = tc.querySelector('#view-recurring-tech').value || null;
@@ -1109,7 +1620,12 @@ export function renderJobDetail(container, { id }) {
                     </div>
                   </div>
                   <div style="margin-top:16px">
-                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px">Assigned Subcontractors</div>
+                    <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+                      <span>Assigned Subcontractors</span>
+                      <button class="btn btn-ghost btn-sm btn-assign-contractor" data-path="${path.join('-')}" style="padding:2px 6px; font-size:11px; height:auto;">
+                        <span class="material-icons-outlined" style="font-size:14px;">add</span> Allocate
+                      </button>
+                    </div>
                     <div style="display:flex; flex-wrap:wrap; gap:6px">
                       ${(() => {
                         const ids = node.assignedContractorIds || [];
@@ -1242,17 +1758,38 @@ export function renderJobDetail(container, { id }) {
           node.progress = e.target.checked ? 100 : 0;
           node.status = e.target.checked ? 'Completed' : 'Not Started';
           
+          if (!job.historyLog) job.historyLog = [];
+          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+          const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
+          
           if (e.target.checked) {
-            const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-            node.completedBy = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
+            node.completedBy = authorName;
             node.completedAt = new Date().toISOString();
+            
+            job.historyLog.unshift({
+              id: store.generateId(),
+              type: 'system',
+              action: 'task_completed',
+              date: node.completedAt,
+              author: authorName,
+              content: `Task "${node.name}" marked as completed`
+            });
           } else {
             delete node.completedBy;
             delete node.completedAt;
+            
+            job.historyLog.unshift({
+              id: store.generateId(),
+              type: 'system',
+              action: 'task_uncompleted',
+              date: new Date().toISOString(),
+              author: authorName,
+              content: `Task "${node.name}" marked as incomplete`
+            });
           }
           
           updateParentProgress(job.tasks, path);
-          store.update('jobs', id, { tasks: job.tasks });
+          store.update('jobs', id, { tasks: job.tasks, historyLog: job.historyLog });
           renderTabContent();
         });
         chk.addEventListener('click', (e) => e.stopPropagation());
@@ -1266,6 +1803,100 @@ export function renderJobDetail(container, { id }) {
           isInfoPanelEditing = false;
           isRecordingValues = false;
           renderTabContent();
+        });
+      });
+
+      tc.querySelector('.btn-assign-contractor')?.addEventListener('click', (e) => {
+        const path = e.currentTarget.dataset.path.split('-').map(Number);
+        const node = getTaskByPath(job.tasks, path);
+        const activeContractors = store.getAll('contractors').filter(c => c.active);
+        
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-group" style="margin-bottom:12px">
+            <div style="position:relative">
+              <span class="material-icons-outlined" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:18px; color:var(--text-tertiary)">search</span>
+              <input type="text" id="modal-contractor-search" class="form-input" placeholder="Search contractors by name, trade..." style="padding-left:34px; width:100%" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="display:flex; justify-content:space-between; align-items:center">
+              <span>Select Contractors</span>
+              <span class="text-tertiary font-normal" style="font-size:11px" id="contractor-count-label">${activeContractors.length} available</span>
+            </label>
+            <div id="modal-contractor-list" style="display:flex; flex-direction:column; gap:6px; max-height: 250px; overflow-y:auto; padding: 4px;">
+              ${activeContractors.length === 0 ? '<div class="text-tertiary font-italic text-sm">No active contractors found</div>' : ''}
+              ${activeContractors.map(c => `
+                <label class="contractor-item-label" data-search="${escapeHTML(((c.businessName || '') + ' ' + (c.contactName || '') + ' ' + (c.trade || '') + ' ' + (c.email || '')).toLowerCase())}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--content-bg); cursor:pointer;">
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <input type="checkbox" class="contractor-assign-checkbox" value="${c.id}" ${(node.assignedContractorIds || []).includes(c.id) ? 'checked' : ''}>
+                    <div>
+                      <div style="font-weight:500; font-size:13.5px; color:var(--text-primary)">${escapeHTML(c.businessName || c.name || 'Contractor')}</div>
+                      ${c.contactName ? `<div style="font-size:11px; color:var(--text-tertiary)">${escapeHTML(c.contactName)}${c.trade ? ` • ${escapeHTML(c.trade)}` : ''}</div>` : ''}
+                    </div>
+                  </div>
+                  ${c.trade && !c.contactName ? `<span class="badge badge-neutral" style="font-size:10px">${escapeHTML(c.trade)}</span>` : ''}
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        `;
+
+        setTimeout(() => {
+          const searchInput = content.querySelector('#modal-contractor-search');
+          const countLabel = content.querySelector('#contractor-count-label');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.addEventListener('input', (e) => {
+              const q = e.target.value.toLowerCase().trim();
+              let visibleCount = 0;
+              content.querySelectorAll('.contractor-item-label').forEach(label => {
+                const searchStr = label.dataset.search || '';
+                if (!q || searchStr.includes(q)) {
+                  label.style.display = 'flex';
+                  visibleCount++;
+                } else {
+                  label.style.display = 'none';
+                }
+              });
+              if (countLabel) {
+                countLabel.textContent = `${visibleCount} of ${activeContractors.length} showing`;
+              }
+            });
+          }
+        }, 50);
+
+        showModal({
+          title: 'Allocate Subcontractors',
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save Allocation', className: 'btn-primary', onClick: (close) => {
+              const selectedIds = Array.from(content.querySelectorAll('.contractor-assign-checkbox:checked')).map(cb => cb.value);
+              node.assignedContractorIds = selectedIds;
+              
+              if (!job.historyLog) job.historyLog = [];
+              const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+              const assignedNames = selectedIds.map(cid => {
+                const c = store.getById('contractors', cid);
+                return c ? (c.businessName || c.name) : cid;
+              }).join(', ');
+
+              job.historyLog.unshift({
+                id: store.generateId(),
+                type: 'system',
+                action: 'contractor_assigned',
+                date: new Date().toISOString(),
+                author: currentUser.name || currentUser.username || 'System',
+                content: selectedIds.length ? `Assigned task "${node.name}" to contractor(s) [${assignedNames}]` : `Cleared contractor allocation for task "${node.name}"`
+              });
+
+              store.update('jobs', id, { tasks: job.tasks, historyLog: job.historyLog });
+              showToast('Contractor allocation updated', 'success');
+              renderTabContent();
+              close();
+            }}
+          ]
         });
       });
 
@@ -1869,7 +2500,7 @@ export function renderJobDetail(container, { id }) {
           });
         });
       });
-    } else if (activeTab === 'costs') {
+    } else if (activeTab === 'costs' || activeTab === 'financials') {
       // Auto-pull materials from quote if empty
       if (!job.materials) {
         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
@@ -1933,41 +2564,36 @@ export function renderJobDetail(container, { id }) {
         totalLaborCost += (t.hours * t.rate);
       });
 
-      // ---- NEW: Calculate Asset Recovery Costs ----
-      const assetUsage = store.getAll('assetUsage').filter(au => au.jobId === id);
-      const allAssets = store.getAll('assets');
-      let totalAssetCost = 0;
-      const usageList = assetUsage.map(au => {
-        const asset = allAssets.find(a => a.id === au.assetId);
-        const rate = au.recoveryRate || (asset ? asset.recoveryRate : 0) || 0;
-        const cost = au.hours * rate;
-        totalAssetCost += cost;
-        return { ...au, rate, cost };
-      });
-
-      // Determine material cost (Internal)
+      // Purchase orders & Materials
+      const pos = store.getAll('purchaseOrders').filter(p => 
+        (p.jobId && (p.jobId === id || String(p.jobId) === String(id))) || 
+        (p.jobNumber && job && job.number && String(p.jobNumber) === String(job.number))
+      );
+      const totalPoCost = pos.reduce((sum, p) => sum + (p.total || 0), 0);
       const matCost = job.materials.reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
       const additionalMatCost = parseFloat(job.additionalMaterialCost || 0);
-      const totalMatCost = matCost + additionalMatCost;
+      const totalMatCost = matCost + additionalMatCost + totalPoCost;
+
+      // Invoices
+      const jobInvoices = store.getAll('invoices').filter(i => (i.jobId === id || String(i.jobId) === String(id)) && i.status !== 'Void');
+      const totalInvoiced = jobInvoices.reduce((sum, i) => sum + (i.total || 0), 0);
+      const totalPaid = jobInvoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + (i.total || 0), 0);
 
       // Determine billable material cost (with markup tiers)
       const settings = store.getSettings();
       const billableMatTotal = calculateTotalBillableMaterials(job.materials, settings);
-      // For additional costs, we apply the default markup or minimum
       const billableAdditional = calculateBillableMaterialPrice(additionalMatCost, settings);
       const totalBillableMat = billableMatTotal + (additionalMatCost > 0 ? billableAdditional - additionalMatCost : 0) + additionalMatCost;
 
       // Update job properties silently if they changed
-      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost || job.assetCost !== totalAssetCost) {
+      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost) {
         job.laborCost = totalLaborCost;
         job.estimatedHours = totalLoggedHours;
         job.materialCost = totalMatCost;
-        job.assetCost = totalAssetCost;
         store.update('jobs', id, {
           laborCost: totalLaborCost,
           estimatedHours: totalLoggedHours,
-          materialCost: totalMatCost,
-          assetCost: totalAssetCost
+          materialCost: totalMatCost
         });
       }
 
@@ -1976,11 +2602,6 @@ export function renderJobDetail(container, { id }) {
       const minFee = currentProfile ? (currentProfile.minCallOutFee || 0) : 0;
       const finalBillableLabor = Math.max(billableLabor, minFee);
       const billableTotal = finalBillableLabor + totalBillableMat;
-
-      // True Profit = Revenue - (Labor Cost + Material Cost + Asset Recovery)
-      const totalInternalCost = totalLaborCost + totalMatCost + totalAssetCost;
-      const profit = billableTotal - totalInternalCost;
-      const margin = billableTotal > 0 ? (profit / billableTotal) * 100 : 0;
 
       const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id || q.number === job.quoteNumber);
       const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
@@ -2017,15 +2638,56 @@ export function renderJobDetail(container, { id }) {
       const estTotal = estLabor + estMaterial;
       const actLabor = totalLaborCost;
       const actMaterial = totalMatCost;
-      const actAsset = totalAssetCost;
-      const actTotal = actLabor + actMaterial + actAsset;
+      const actTotal = actLabor + actMaterial;
+
+      const contractPrice = acceptedQuote ? (acceptedQuote.total || estTotal) : (job.total || billableTotal || estTotal);
+      const profit = contractPrice - actTotal;
+      const margin = contractPrice > 0 ? (profit / contractPrice) * 100 : 0;
+
       const varianceLabor = actLabor - estLabor;
       const varianceMaterial = actMaterial - estMaterial;
       const varianceTotal = actTotal - estTotal;
 
+      let marginBadgeClass = 'badge-neutral';
+      if (margin >= 35) marginBadgeClass = 'badge-success';
+      else if (margin >= 20) marginBadgeClass = 'badge-info';
+      else if (margin >= 5) marginBadgeClass = 'badge-warning';
+      else marginBadgeClass = 'badge-danger';
+
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
           
+          <!-- Executive KPI Scorecard Grid -->
+          <div class="grid-4" style="gap:16px">
+            <div class="card" style="padding:16px; border-left:4px solid var(--color-primary)">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Contract / Quoted Price</div>
+              <div style="font-size:22px; font-weight:700; color:var(--text-primary)">$${contractPrice.toFixed(2)}</div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">${acceptedQuote ? `From Accepted Quote ${acceptedQuote.number}` : 'Standard Job Pricing'}</div>
+            </div>
+
+            <div class="card" style="padding:16px; border-left:4px solid var(--color-info)">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Invoiced to Date</div>
+              <div style="font-size:22px; font-weight:700; color:var(--color-info)">$${totalInvoiced.toFixed(2)}</div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">Paid: $${totalPaid.toFixed(2)} | Unbilled: $${Math.max(0, contractPrice - totalInvoiced).toFixed(2)}</div>
+            </div>
+
+            <div class="card" style="padding:16px; border-left:4px solid var(--color-warning)">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Total Realized Cost</div>
+              <div style="font-size:22px; font-weight:700; color:var(--text-primary)">$${actTotal.toFixed(2)}</div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-top:4px">Labor: $${actLabor.toFixed(2)} | Mat & POs: $${actMaterial.toFixed(2)}</div>
+            </div>
+
+            <div class="card" style="padding:16px; border-left:4px solid ${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Gross Profit & Margin</div>
+              <div style="font-size:22px; font-weight:700; color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+                $${profit.toFixed(2)}
+              </div>
+              <div style="margin-top:4px">
+                <span class="badge ${marginBadgeClass}" style="font-weight:700">${margin.toFixed(1)}% Margin</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Budget Deviation Tracker Card -->
           <div class="card" style="border: 1.5px solid ${varianceTotal > 0 ? 'var(--color-danger)' : 'var(--color-success)'}">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; background:${varianceTotal > 0 ? 'rgba(239,68,68,0.02)' : 'rgba(16,185,129,0.02)'}; padding: 12px 16px">
@@ -2100,21 +2762,13 @@ export function renderJobDetail(container, { id }) {
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-weight:600">Material Costs</td>
+                    <td style="font-weight:600">Material & PO Costs</td>
                     <td style="text-align:right; color:var(--text-secondary)">$${estMaterial.toFixed(2)}</td>
                     <td style="text-align:right; font-weight:600">$${actMaterial.toFixed(2)}</td>
                     <td style="text-align:right; font-weight:600; color:${varianceMaterial > 0 ? 'var(--color-danger)' : varianceMaterial < 0 ? 'var(--color-success-dark)' : 'var(--text-tertiary)'}">
                       ${varianceMaterial > 0 ? `+$${varianceMaterial.toFixed(2)}` : varianceMaterial < 0 ? `-$${Math.abs(varianceMaterial).toFixed(2)}` : '$0.00'}
                     </td>
                   </tr>
-                  ${actAsset > 0 ? `
-                    <tr>
-                      <td style="font-weight:600">Asset Recovery (Van/Tools)</td>
-                      <td style="text-align:right; color:var(--text-secondary)">$0.00</td>
-                      <td style="text-align:right; font-weight:600">$${actAsset.toFixed(2)}</td>
-                      <td style="text-align:right; font-weight:600; color:var(--color-danger)">+$${actAsset.toFixed(2)}</td>
-                    </tr>
-                  ` : ''}
                 </tbody>
                 <tfoot>
                   <tr style="border-top: 2px solid var(--border-color); font-weight:700">
@@ -2129,270 +2783,149 @@ export function renderJobDetail(container, { id }) {
               </table>
             </div>
           </div>
-          
-          <div class="grid-2">
+
+          <!-- Quotes & Variations Card -->
           <div class="card">
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-              <h4 style="margin:0">Technicians & Internal Cost</h4>
-              <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
-                Actual Cost (Tech Pay)
-              </div>
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Quotes & Variations</h4>
+              <button class="btn btn-sm btn-primary" id="btn-financials-new-quote"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Create Quote</button>
             </div>
-            <div class="card-body">
-              <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
-                Labor costs are based on individual technician pay rates.
-              </div>
+            <div class="card-body" style="padding:0">
               <table class="data-table" style="font-size:13px">
                 <thead>
                   <tr>
-                    <th>Technician</th>
-                    <th style="width:80px">Hours</th>
-                    <th style="width:80px">Pay Rate</th>
-                    <th style="width:100px">Actual Cost</th>
+                    <th>Quote #</th>
+                    <th>Title</th>
+                    <th>Issue Date</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th style="text-align:right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${autoTechs.map(t => `
+                  ${linkedQuotes.length ? linkedQuotes.map(q => `
                     <tr>
-                      <td>${escapeHTML(t.name)}</td>
-                      <td style="font-weight:600">${t.hours.toFixed(2)}</td>
-                      <td>$${(t.payRate || t.rate).toFixed(2)}</td>
-                      <td style="font-weight:600">$${(t.hours * (t.payRate || t.rate)).toFixed(2)}</td>
+                      <td style="font-weight:600"><a href="#/quotes/${q.id}" class="text-primary">${escapeHTML(q.number)}</a></td>
+                      <td>${escapeHTML(q.title || 'Untitled Quote')}</td>
+                      <td>${q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '-'}</td>
+                      <td><span class="badge ${q.status === 'Accepted' ? 'badge-success' : (q.status === 'Declined' ? 'badge-danger' : (q.status === 'Sent' ? 'badge-info' : 'badge-neutral'))}">${escapeHTML(q.status || 'Draft')}</span></td>
+                      <td style="font-weight:600">$${(q.total || 0).toFixed(2)}</td>
+                      <td style="text-align:right">
+                        <a href="#/quotes/${q.id}" class="btn btn-secondary btn-sm">View</a>
+                      </td>
                     </tr>
-                  `).join('')}
-                  ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet.</td></tr>' : ''}
+                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No quotes linked to this job yet.</td></tr>'}
                 </tbody>
               </table>
             </div>
           </div>
 
+          <!-- Invoicing & Billing Summary Card -->
           <div class="card">
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-              <h4 style="margin:0">Asset Recovery</h4>
-              <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
-                Internal Recovery (Tool/Van)
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Invoices & Progress Billing</h4>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-sm btn-secondary" id="btn-financials-deposit-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">request_quote</span> Deposit Invoice</button>
+                <button class="btn btn-sm btn-secondary" id="btn-financials-progress-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">payments</span> Progress Invoice</button>
+                <button class="btn btn-sm btn-primary" id="btn-financials-final-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">receipt_long</span> Create Invoice</button>
               </div>
             </div>
-            <div class="card-body">
-              <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
-                Calculated as (Asset Recovery Rate × Hours Used).
-              </div>
+            <div class="card-body" style="padding:0">
               <table class="data-table" style="font-size:13px">
-                <thead>
-                  <tr>
-                    <th>Asset</th>
-                    <th style="width:80px">Hours</th>
-                    <th style="width:80px">Rate</th>
-                    <th style="width:100px">Recovery</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Invoice #</th><th>Type</th><th>Issue Date</th><th>Due Date</th><th>Total</th><th>Status</th></tr></thead>
                 <tbody>
-                  ${usageList.map(u => `
+                  ${jobInvoices.length ? jobInvoices.map(i => `
                     <tr>
-                      <td>${escapeHTML(u.assetName)}</td>
-                      <td style="font-weight:600">${u.hours.toFixed(2)}</td>
-                      <td>$${u.rate.toFixed(2)}</td>
-                      <td style="font-weight:600">$${u.cost.toFixed(2)}</td>
+                      <td style="font-weight:600"><a href="#/invoices/${i.id}" class="text-primary">${escapeHTML(i.number)}</a></td>
+                      <td>${escapeHTML(i.type || 'Standard')}</td>
+                      <td>${i.issueDate ? new Date(i.issueDate).toLocaleDateString() : '-'}</td>
+                      <td>${i.dueDate ? new Date(i.dueDate).toLocaleDateString() : '-'}</td>
+                      <td style="font-weight:600">$${(i.total || 0).toFixed(2)}</td>
+                      <td><span class="badge ${i.status === 'Paid' ? 'badge-success' : i.status === 'Overdue' ? 'badge-danger' : 'badge-warning'}">${escapeHTML(i.status || 'Draft')}</span></td>
                     </tr>
-                  `).join('')}
-                  ${usageList.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No asset usage recorded.</td></tr>' : ''}
+                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No invoices issued for this job yet.</td></tr>'}
                 </tbody>
-                ${usageList.length > 0 ? `
-                  <tfoot>
-                    <tr style="border-top:2px solid var(--border-color)">
-                      <td colspan="3" style="text-align:right; font-weight:700">Total Asset Recovery:</td>
-                      <td style="font-weight:700; color:var(--color-primary)">$${totalAssetCost.toFixed(2)}</td>
-                    </tr>
-                  </tfoot>
-                ` : ''}
               </table>
             </div>
           </div>
-          
-          
-          <div style="display:flex;flex-direction:column;gap:var(--space-lg)">
+
+          <div class="grid-2">
             <div class="card">
               <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-                <h4 style="margin:0">Material Costs</h4>
-                <button class="btn btn-ghost btn-sm" id="btn-refresh-materials" title="Sync materials with the linked quote">
-                  <span class="material-icons-outlined" style="font-size:16px; margin-right:4px;">sync</span> Sync Quote
-                </button>
+                <h4 style="margin:0">Technicians & Internal Cost</h4>
+                <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
+                  Actual Cost (Tech Pay)
+                </div>
               </div>
               <div class="card-body">
-                <div id="materials-container" style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-                  ${job.materials.map((m, i) => `
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid var(--border-color);border-radius:4px">
-                      <div>
-                        <div class="font-medium">${escapeHTML(m.name)}</div>
-                        <div class="text-secondary" style="font-size:12px">${m.quantity} x $${(m.unitCost || 0).toFixed(2)}</div>
-                      </div>
-                      <div style="display:flex; align-items:center; gap:12px">
-                        <div class="font-medium">$${(m.quantity * (m.unitCost || 0)).toFixed(2)}</div>
-                        <button class="btn btn-ghost btn-sm btn-icon btn-remove-mat" data-index="${i}"><span class="material-icons-outlined" style="color:var(--color-danger);font-size:16px">delete</span></button>
-                      </div>
-                    </div>
-                  `).join('')}
-                  ${(job.materials.length === 0) ? '<div class="text-secondary" style="font-size:14px">No materials added.</div>' : ''}
+                <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
+                  Labor costs are based on individual technician pay rates.
                 </div>
-                <div style="display:flex;gap:8px">
-                  <select class="form-select" id="mat-select" style="flex:2">
-                    <option value="">Select from Stock...</option>
-                    ${getStockOptionsHtml()}
-                  </select>
-                  <input type="number" class="form-input" id="mat-qty" value="1" min="1" style="flex:1" />
-                  <button class="btn btn-primary" id="btn-add-material">Add Item</button>
-                </div>
-                <div class="form-group" style="margin-top:16px;margin-bottom:0">
-                  <label class="form-label">Manual Add. Cost ($) (Permits, Travel, etc.)</label>
-                  <input type="number" class="form-input" id="inp-material-cost" value="${job.additionalMaterialCost || 0}" step="0.01" />
-                </div>
+                <table class="data-table" style="font-size:13px">
+                  <thead>
+                    <tr>
+                      <th>Technician</th>
+                      <th style="width:80px">Hours</th>
+                      <th style="width:80px">Pay Rate</th>
+                      <th style="width:100px">Actual Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${autoTechs.map(t => `
+                      <tr>
+                        <td>${escapeHTML(t.name)}</td>
+                        <td style="font-weight:600">${t.hours.toFixed(2)}</td>
+                        <td>$${(t.payRate || t.rate).toFixed(2)}</td>
+                        <td style="font-weight:600">$${(t.hours * (t.payRate || t.rate)).toFixed(2)}</td>
+                      </tr>
+                    `).join('')}
+                    ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet.</td></tr>' : ''}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             <div class="card">
-              <div class="card-header"><h4>Job Cost Summary</h4></div>
-              <div class="card-body">
-                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Logged Hours</span><span class="font-medium">${totalLoggedHours.toFixed(2)}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Actual Internal Cost</span><span class="font-medium">$${(totalLaborCost + totalMatCost).toFixed(2)}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
-                  <span class="text-secondary">Total Billable Amount</span><span class="font-medium" style="color:var(--color-primary)">$${billableTotal.toFixed(2)}</span>
-                </div>
-                <div style="margin-top:16px; padding:16px; border-radius:8px; background:${profit >= 0 ? 'var(--color-success-bg)' : 'var(--color-danger-bg)'}; color:${profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}; display:flex; flex-direction:column; align-items:center; gap:4px">
-                  <div style="font-size:12px; opacity:0.8; text-transform:uppercase; letter-spacing:0.5px">Est. Profit / Loss</div>
-                  <div style="font-size:24px; font-weight:700">$${profit.toFixed(2)}</div>
-                  <div style="font-size:14px; font-weight:600">${margin.toFixed(1)}% Margin</div>
-                </div>
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
+                <h4 style="margin:0">Direct Overhead & Additional Material Costs</h4>
+                <button class="btn btn-primary btn-sm" id="btn-save-costs"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">save</span> Save Adjustments</button>
               </div>
-              <div class="card-footer">
-                <button class="btn btn-primary" id="btn-save-costs" style="width:100%"><span class="material-icons-outlined">save</span> Save Additional Costs</button>
+              <div class="card-body">
+                <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
+                  Record manual direct job expenses to reflect true job margin.
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">Manual Additional Expenses ($) (Permits, Hire Equipment, Freight, Parking)</label>
+                  <input type="number" class="form-input" id="inp-material-cost" value="${job.additionalMaterialCost || 0}" step="0.01" style="max-width:100%" />
+                </div>
               </div>
             </div>
           </div>
+
         </div>
-      </div>
       `;
 
-      tc.querySelector('#inp-labor-profile')?.addEventListener('change', (e) => {
-        job.laborRateProfileId = e.target.value;
-        store.update('jobs', id, { laborRateProfileId: job.laborRateProfileId });
-        renderTabContent();
-      });
-
-      tc.addEventListener('click', (e) => {
-        const removeMatBtn = e.target.closest('.btn-remove-mat');
-        if (removeMatBtn) {
-          const idx = parseInt(removeMatBtn.dataset.index);
-          job.materials.splice(idx, 1);
-          renderTabContent();
-        }
-      });
-
-      tc.querySelector('#btn-refresh-materials')?.addEventListener('click', () => {
-        const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
-        const acceptedQuote = linkedQuotes.find(q => q.status === 'Accepted') || store.getById('quotes', job.quoteId);
-
-        if (!acceptedQuote) {
-          showToast('No linked accepted quote found.', 'error');
-          return;
-        }
-
-        const manualItems = (job.materials || []).filter(m => !m.fromQuote);
-        const newQuoteItems = [];
-
-        const items = [];
-        if (acceptedQuote.sections && Array.isArray(acceptedQuote.sections)) {
-          acceptedQuote.sections.forEach(sec => {
-            if (sec.lineItems && Array.isArray(sec.lineItems)) {
-              items.push(...sec.lineItems);
-            }
-          });
-        }
-        if (acceptedQuote.lineItems && Array.isArray(acceptedQuote.lineItems)) {
-          items.push(...acceptedQuote.lineItems);
-        }
-
-        items.forEach(item => {
-          if (item.type === 'material') {
-            const sMatch = store.getAll('stock').find(s => s.name === item.description);
-            newQuoteItems.push({
-              stockId: sMatch ? sMatch.id : null,
-              name: item.description || 'Unknown Material',
-              quantity: item.qty || 1,
-              unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : 0,
-              fromQuote: true
-            });
-          }
+      tc.querySelector('#btn-financials-new-quote')?.addEventListener('click', () => {
+        const newQ = store.create('quotes', {
+          customerId: job.customerId,
+          customerName: job.customerName,
+          title: job.title,
+          jobId: job.id,
+          status: 'Draft',
+          version: 1,
+          sections: []
         });
-
-        job.materials = [...newQuoteItems, ...manualItems];
-        store.update('jobs', id, { materials: job.materials });
-        showToast('Materials refreshed from Quote', 'success');
-        renderTabContent();
+        window.location.hash = `#/quotes/${newQ.id}`;
       });
 
-      function updateMaterialCostLive() {
-        const addedMat = (job.materials || []).reduce((sum, m) => sum + (m.quantity * (m.unitCost || 0)), 0);
-        const addCost = parseFloat(tc.querySelector('#inp-material-cost').value) || 0;
-        const m = addedMat + addCost;
-        tc.querySelector('#sum-mat').textContent = '$' + m.toFixed(2);
-        tc.querySelector('#sum-total').textContent = '$' + (totalLaborCost + m).toFixed(2);
-      }
-
-      tc.querySelector('#inp-material-cost')?.addEventListener('input', updateMaterialCostLive);
-
-      tc.querySelector('#btn-add-material')?.addEventListener('click', () => {
-        const matSel = tc.querySelector('#mat-select');
-        const qty = parseInt(tc.querySelector('#mat-qty').value) || 1;
-        const val = matSel.value;
-        if (!val) return;
-
-        const [stockId, locationName] = val.split('::');
-        const stockItem = store.getById('stock', stockId);
-        if (!stockItem) return;
-
-        // Find quantity at the specific location
-        let availableQty = 0;
-        let locObj = null;
-        if (stockItem.locations && Array.isArray(stockItem.locations)) {
-          locObj = stockItem.locations.find(l => l.location === locationName);
-          availableQty = locObj ? locObj.quantity : 0;
-        } else {
-          availableQty = stockItem.quantity || 0;
-        }
-
-        if (availableQty < qty) {
-          showToast(`Not enough stock at ${locationName}. Available: ${availableQty}`, 'error');
-          return;
-        }
-
-        // Deduct from stock at the specific location
-        if (locObj) {
-          locObj.quantity -= qty;
-          stockItem.locations = stockItem.locations.filter(l => l.quantity > 0);
-          stockItem.quantity = stockItem.locations.reduce((sum, l) => sum + l.quantity, 0);
-          stockItem.location = stockItem.locations[0]?.location || 'Main Warehouse';
-        } else {
-          stockItem.quantity -= qty;
-        }
-        
-        store.update('stock', stockId, stockItem);
-        cachedStockOptionsHtml = null; // Invalidate cache
-
-        // Add to job materials
-        job.materials.push({
-          stockId: stockItem.id,
-          name: `${stockItem.name} (${locationName})`,
-          quantity: qty,
-          unitCost: stockItem.costPrice || stockItem.unitPrice || 0,
-          fromQuote: false
-        });
-
-        showToast(`Added ${qty}x ${stockItem.name} from ${locationName}`, 'success');
-        renderTabContent();
+      tc.querySelector('#btn-financials-deposit-inv')?.addEventListener('click', () => {
+        triggerInvoiceGenerationFlow('Deposit');
+      });
+      tc.querySelector('#btn-financials-progress-inv')?.addEventListener('click', () => {
+        triggerInvoiceGenerationFlow('Progress');
+      });
+      tc.querySelector('#btn-financials-final-inv')?.addEventListener('click', () => {
+        triggerInvoiceGenerationFlow('Standard');
       });
 
       tc.querySelector('#btn-save-costs')?.addEventListener('click', () => {
@@ -2408,7 +2941,7 @@ export function renderJobDetail(container, { id }) {
           materialCost: mat,
           additionalMaterialCost: addCost
         });
-        showToast('Additional costs saved', 'success');
+        showToast('Direct expenses saved', 'success');
         renderTabContent();
       });
     } else if (activeTab === 'quotes') {
@@ -2464,12 +2997,22 @@ export function renderJobDetail(container, { id }) {
         showToast('Draft quote created', 'success', { link: `/quotes/${newQ.id}` });
         router.navigate('/quotes/' + newQ.id);
       });
-    } else if (activeTab === 'activity') {
+    } else if (activeTab === 'activity_staff' || activeTab === 'activity_customer') {
       if (!job.activityLog) job.activityLog = [];
       if (!job.customerActivityLog) job.customerActivityLog = [];
+      if (!job.historyLog) job.historyLog = [];
       
-      // Migrate old logs
-      job.activityLog = job.activityLog.map(l => {
+      // Separate system history from staff notes if any exist
+      const sysEntries = job.activityLog.filter(l => l.type === 'system');
+      if (sysEntries.length > 0) {
+        job.historyLog = [...sysEntries, ...job.historyLog];
+        job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        job.activityLog = job.activityLog.filter(l => l.type !== 'system');
+        store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
+      }
+      
+      // Filter activityLog for Communications (staff notes & attachments)
+      const commsLog = job.activityLog.filter(l => l.type !== 'system').map(l => {
         if (l.type === 'note' || l.type === 'attachment') {
           return {
             id: l.id,
@@ -2483,7 +3026,7 @@ export function renderJobDetail(container, { id }) {
       });
 
       let feedHtml = '';
-      if (activeActivitySubTab === 'staff') {
+      if (activeTab === 'activity_staff') {
         feedHtml = `
           <div style="display:flex;gap:8px;margin-bottom:var(--space-base)">
             <input type="text" class="form-input" id="new-note-input" placeholder="Type an internal note..." style="flex:1" />
@@ -2504,7 +3047,7 @@ export function renderJobDetail(container, { id }) {
           </div>
           
           <div class="activity-feed" style="display:flex;flex-direction:column;gap:16px;margin-top:24px">
-            ${job.activityLog.length ? job.activityLog.map((log, i) => `
+            ${commsLog.length ? commsLog.map((log, i) => `
               <div style="display:flex;gap:12px">
                 <div style="width:36px;height:36px;border-radius:50%;background:var(--content-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-secondary)">
                   <span class="material-icons-outlined" style="font-size:18px">${(log.files && log.files.length) ? 'attachment' : 'chat_bubble_outline'}</span>
@@ -2585,17 +3128,6 @@ export function renderJobDetail(container, { id }) {
 
       tc.innerHTML = `
         <div class="card" style="max-width:800px;margin-bottom:var(--space-lg)">
-          <div class="card-header" style="border-bottom:1px solid var(--border-color);padding:0">
-            <div style="display:flex;gap:4px;padding:8px 16px 0 16px">
-              <button class="tab-btn ${activeActivitySubTab === 'staff' ? 'active' : ''}" id="activity-subtab-staff" style="padding:10px 16px;border:none;background:none;border-bottom:2px solid ${activeActivitySubTab === 'staff' ? 'var(--color-primary)' : 'transparent'};color:${activeActivitySubTab === 'staff' ? 'var(--color-primary)' : 'var(--text-secondary)'};font-weight:${activeActivitySubTab === 'staff' ? '600' : '500'};cursor:pointer;font-size:13.5px">
-                Staff Activity & History
-              </button>
-              <button class="tab-btn ${activeActivitySubTab === 'customer' ? 'active' : ''}" id="activity-subtab-customer" style="padding:10px 16px;border:none;background:none;border-bottom:2px solid ${activeActivitySubTab === 'customer' ? 'var(--color-primary)' : 'transparent'};color:${activeActivitySubTab === 'customer' ? 'var(--color-primary)' : 'var(--text-secondary)'};font-weight:${activeActivitySubTab === 'customer' ? '600' : '500'};cursor:pointer;font-size:13.5px;display:flex;align-items:center;gap:6px">
-                <span class="material-icons-outlined" style="font-size:16px">chat</span> Customer Communications
-                ${job.customerActivityLog?.length ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px">${job.customerActivityLog.length}</span>` : ''}
-              </button>
-            </div>
-          </div>
           <div class="card-body">
             ${feedHtml}
           </div>
@@ -2603,7 +3135,7 @@ export function renderJobDetail(container, { id }) {
       `;
 
       // Show/Hide expand buttons based on staff log content height
-      if (activeActivitySubTab === 'staff') {
+      if (activeTab === 'activity_staff') {
         setTimeout(() => {
           tc.querySelectorAll('.activity-log-item').forEach(item => {
             const wrapper = item.querySelector('.activity-content-wrapper');
@@ -2628,16 +3160,6 @@ export function renderJobDetail(container, { id }) {
           });
         }, 0);
       }
-
-      // Bind Subtab events
-      tc.querySelector('#activity-subtab-staff')?.addEventListener('click', () => {
-        activeActivitySubTab = 'staff';
-        renderTabContent();
-      });
-      tc.querySelector('#activity-subtab-customer')?.addEventListener('click', () => {
-        activeActivitySubTab = 'customer';
-        renderTabContent();
-      });
 
       // Staff Tab Posting
       tc.querySelector('#btn-add-note')?.addEventListener('click', () => {
@@ -3003,33 +3525,328 @@ export function renderJobDetail(container, { id }) {
           ]
         });
       });
-    } else if (activeTab === 'pos') {
-      const pos = store.getAll('purchaseOrders').filter(p => p.jobId === id);
+    } else if (activeTab === 'materials') {
+      const pos = store.getAll('purchaseOrders').filter(p => 
+        (p.jobId && (p.jobId === id || String(p.jobId) === String(id))) || 
+        (p.jobNumber && job && job.number && String(p.jobNumber) === String(job.number))
+      );
+
+      const storeJobMaterials = store.getAll('jobMaterials').filter(m => 
+        (m.jobId && (m.jobId === id || String(m.jobId) === String(id))) || 
+        (m.jobNumber && job && job.number && String(m.jobNumber) === String(job.number))
+      );
+
+      const jobObjMaterials = Array.isArray(job.materials) ? job.materials : [];
+      const materialMap = new Map();
+      [...jobObjMaterials, ...storeJobMaterials].forEach(m => {
+        const key = m.id || `${m.partId || m.name}-${m.date}`;
+        if (!materialMap.has(key)) {
+          materialMap.set(key, {
+            ...m,
+            partName: m.partName || m.name || 'Stock Item',
+            quantity: m.quantity || 1,
+            unitCost: m.unitCost || 0,
+            totalCost: m.totalCost || ((m.quantity || 1) * (m.unitCost || 0)),
+            date: m.date || new Date().toISOString()
+          });
+        }
+      });
+      const allocatedMaterials = Array.from(materialMap.values());
+      
+      const totalPoCost = pos.reduce((sum, p) => sum + (p.total || 0), 0);
+      const totalMaterialCost = allocatedMaterials.reduce((sum, m) => sum + (m.totalCost || 0), 0);
+      const grandTotal = totalPoCost + totalMaterialCost;
 
       tc.innerHTML = `
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0">Purchase Orders</h4>
-            <button class="btn btn-sm btn-primary" id="btn-raise-po"><span class="material-icons-outlined" style="font-size:16px;">add_shopping_cart</span> Raise PO</button>
+        <div style="display:flex; flex-direction:column; gap:16px">
+          
+          <div class="card" style="padding:16px; background:var(--bg-color); display:flex; gap:32px; border-left:4px solid var(--color-primary)">
+            <div>
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">Total Materials Cost</div>
+              <div style="font-size:24px; font-weight:700; color:var(--text-primary)">$${grandTotal.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">From Stock</div>
+              <div style="font-size:16px; font-weight:600; color:var(--text-secondary)">$${totalMaterialCost.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:4px">From POs</div>
+              <div style="font-size:16px; font-weight:600; color:var(--text-secondary)">$${totalPoCost.toFixed(2)}</div>
+            </div>
           </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th></tr></thead>
-              <tbody>
-                ${pos.length ? pos.map(p => `
-                  <tr>
-                    <td><a href="#/purchase-orders/${escapeHTML(p.id)}">${escapeHTML(p.number)}</a></td>
-                    <td>${escapeHTML(p.supplierName || '—')}</td>
-                    <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
-                    <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
-                    <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
-                  </tr>
-                `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
-              </tbody>
-            </table>
+
+          <div class="card" style="margin-bottom:var(--space-md)">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Allocated Stock & Materials</h4>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-sm btn-secondary" id="btn-import-quote-parts"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">download</span> Import Parts from Quote</button>
+                <button class="btn btn-sm btn-primary" id="btn-allocate-stock"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">inventory_2</span> Allocate Stock</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="data-table">
+                <thead><tr><th>Part / Item</th><th>Quantity</th><th>Unit Cost</th><th>Total Cost</th><th>Date</th></tr></thead>
+                <tbody>
+                  ${allocatedMaterials.length ? allocatedMaterials.map(m => `
+                    <tr>
+                      <td style="font-weight:500">${escapeHTML(m.partName)}</td>
+                      <td>${m.quantity}</td>
+                      <td>$${(m.unitCost || 0).toFixed(2)}</td>
+                      <td style="font-weight:600;">$${(m.totalCost || 0).toFixed(2)}</td>
+                      <td style="color:var(--text-secondary)">${new Date(m.date).toLocaleDateString()}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No stock items allocated to this job.</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:var(--space-lg)">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0">Purchase Orders</h4>
+              <button class="btn btn-sm btn-primary" id="btn-raise-po"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add_shopping_cart</span> Raise PO</button>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="data-table">
+                <thead><tr><th>PO Number</th><th>Supplier</th><th>Issue Date</th><th>Total</th><th>Status</th></tr></thead>
+                <tbody>
+                  ${pos.length ? pos.map(p => `
+                    <tr>
+                      <td><a href="#/purchase-orders/${escapeHTML(p.id)}">${escapeHTML(p.number)}</a></td>
+                      <td>${escapeHTML(p.supplierName || '—')}</td>
+                      <td>${p.issueDate ? new Date(p.issueDate).toLocaleDateString() : '—'}</td>
+                      <td style="font-weight:600;">$${(p.total || 0).toFixed(2)}</td>
+                      <td><span class="badge ${p.status === 'Received' ? 'badge-success' : p.status === 'Draft' ? 'badge-neutral' : p.status === 'Cancelled' ? 'badge-danger' : 'badge-primary'}">${p.status}</span></td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No purchase orders linked to this job</td></tr>'}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       `;
+
+      tc.querySelector('#btn-import-quote-parts')?.addEventListener('click', () => {
+        const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id || q.number === job.quoteNumber);
+        const targetQuote = linkedQuotes.find(q => q.status === 'Accepted') || linkedQuotes[0] || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+
+        if (!targetQuote) {
+          showToast('No linked quote found for this job.', 'warning');
+          return;
+        }
+
+        const items = [];
+        if (targetQuote.sections && Array.isArray(targetQuote.sections)) {
+          targetQuote.sections.forEach(sec => {
+            if (sec.lineItems && Array.isArray(sec.lineItems)) {
+              items.push(...sec.lineItems);
+            }
+          });
+        }
+        if (targetQuote.lineItems && Array.isArray(targetQuote.lineItems)) {
+          items.push(...targetQuote.lineItems);
+        }
+        if (targetQuote.items && Array.isArray(targetQuote.items)) {
+          items.push(...targetQuote.items);
+        }
+
+        const materialItems = items.filter(i => i.type === 'material' || i.stockId || i.partId || i.type === 'part');
+
+        if (materialItems.length === 0) {
+          showToast(`No material parts found in Quote ${targetQuote.number}`, 'info');
+          return;
+        }
+
+        const stockItems = store.getAll('stock');
+        let importedCount = 0;
+
+        materialItems.forEach(item => {
+          const sMatch = stockItems.find(s => s.id === item.stockId || s.id === item.partId || (s.name && item.description && s.name.toLowerCase() === item.description.toLowerCase()));
+          const newMat = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+            jobId: id,
+            jobNumber: job.number,
+            partId: sMatch ? sMatch.id : (item.partId || item.stockId || null),
+            partName: item.description || item.name || (sMatch ? sMatch.name : 'Stock Item'),
+            name: item.description || item.name || (sMatch ? sMatch.name : 'Stock Item'),
+            quantity: parseFloat(item.qty || item.quantity || 1),
+            unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : (parseFloat(item.costPrice || item.unitCost || item.rate) || 0),
+            totalCost: (parseFloat(item.qty || item.quantity || 1)) * (sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : (parseFloat(item.costPrice || item.unitCost || item.rate) || 0)),
+            date: new Date().toISOString(),
+            fromQuote: true
+          };
+
+          store.create('jobMaterials', newMat);
+
+          if (!Array.isArray(job.materials)) job.materials = [];
+          job.materials.push(newMat);
+          importedCount++;
+        });
+
+        store.update('jobs', id, { materials: job.materials });
+        showToast(`Imported ${importedCount} material items from Quote ${targetQuote.number}`, 'success');
+        renderTabContent();
+      });
+
+      tc.querySelector('#btn-allocate-stock')?.addEventListener('click', () => {
+        const stockItems = store.getAll('stock');
+        const acceptedQuotes = store.getAll('quotes').filter(q => q.jobId === id && q.status === 'Accepted');
+        
+        let allocItems = [{ id: Date.now().toString(), partId: '', qty: 1 }];
+
+        const renderRows = (container) => {
+          container.innerHTML = allocItems.map((item, idx) => `
+            <div class="alloc-row" data-id="${item.id}" style="display:flex; gap:8px; margin-bottom:8px; align-items:flex-end;">
+              <div class="form-group" style="flex:1; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Search Stock *' : ''}</label>
+                <select class="form-select alloc-part-select" data-id="${item.id}">
+                  <option value="">Select or type...</option>
+                  ${stockItems.map(s => `<option value="${s.id}" ${s.id === item.partId ? 'selected' : ''}>${escapeHTML(s.name)} (In Stock: ${s.quantity || 0}) - $${(s.costPrice || 0).toFixed(2)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group" style="width:100px; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Qty *' : ''}</label>
+                <input type="number" class="form-input alloc-qty-input" data-id="${item.id}" value="${item.qty}" min="1" />
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary btn-remove-row" data-id="${item.id}" style="padding:0 8px; height:32px;"><span class="material-icons-outlined" style="font-size:16px; color:var(--text-danger)">delete</span></button>
+            </div>
+          `).join('');
+
+          // Bind events
+          container.querySelectorAll('.alloc-part-select').forEach(sel => {
+            sel.addEventListener('change', (e) => {
+              const rowId = e.target.getAttribute('data-id');
+              const rowItem = allocItems.find(i => i.id === rowId);
+              if (rowItem) rowItem.partId = e.target.value;
+            });
+          });
+          container.querySelectorAll('.alloc-qty-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const rowId = e.target.getAttribute('data-id');
+              const rowItem = allocItems.find(i => i.id === rowId);
+              if (rowItem) rowItem.qty = parseInt(e.target.value) || 1;
+            });
+          });
+          container.querySelectorAll('.btn-remove-row').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              const rowId = e.currentTarget.getAttribute('data-id');
+              allocItems = allocItems.filter(i => i.id !== rowId);
+              renderRows(container);
+            });
+          });
+        };
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="display:flex; justify-content:space-between; margin-bottom:16px;">
+            <p class="text-secondary" style="font-size:12px; margin:0">
+              Allocating items will deduct them from available stock.
+            </p>
+            ${acceptedQuotes.length ? `
+              <button class="btn btn-sm btn-secondary" id="btn-import-quote" style="padding:4px 8px; font-size:11px;">
+                <span class="material-icons-outlined" style="font-size:14px; margin-right:4px">download</span> Import from Quote
+              </button>
+            ` : ''}
+          </div>
+          <div id="alloc-rows-container"></div>
+          <button class="btn btn-sm btn-secondary" id="btn-add-alloc-row" style="margin-top:8px; width:100%; border-style:dashed;">
+            <span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Add Item
+          </button>
+        `;
+
+        showDrawer({
+          title: 'Allocate Stock to Job',
+          content: content.outerHTML,
+          width: 500,
+          onMount: (drawer) => {
+            const container = drawer.querySelector('#alloc-rows-container');
+            renderRows(container);
+
+            drawer.querySelector('#btn-add-alloc-row')?.addEventListener('click', () => {
+              allocItems.push({ id: Date.now().toString(), partId: '', qty: 1 });
+              renderRows(container);
+            });
+
+            drawer.querySelector('#btn-import-quote')?.addEventListener('click', () => {
+              // We'll use the most recently accepted quote, assuming the first one for simplicity
+              const quote = acceptedQuotes[0];
+              if (quote && quote.items) {
+                let importedCount = 0;
+                quote.items.forEach(qi => {
+                  if (qi.stockId) {
+                    const exists = stockItems.find(s => s.id === qi.stockId);
+                    if (exists) {
+                      allocItems.push({ id: Date.now().toString() + Math.random(), partId: qi.stockId, qty: qi.quantity || 1 });
+                      importedCount++;
+                    }
+                  }
+                });
+                
+                // Remove initial empty row if it's there and we imported stuff
+                if (importedCount > 0 && allocItems[0] && !allocItems[0].partId) {
+                  allocItems.shift();
+                }
+                
+                renderRows(container);
+                showToast(`Imported ${importedCount} linked stock items from Quote ${quote.number}`, 'success');
+              } else {
+                showToast('No items found on accepted quote', 'warning');
+              }
+            });
+          },
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Allocate', className: 'btn-primary', onClick: (close) => {
+                const validItems = allocItems.filter(i => i.partId && i.qty > 0);
+                if (validItems.length === 0) {
+                  showToast('Please add at least one valid item to allocate', 'error');
+                  return;
+                }
+
+                let warningShown = false;
+
+                validItems.forEach(item => {
+                  const part = stockItems.find(s => s.id === item.partId);
+                  if (part) {
+                    const currentQty = parseInt(part.quantity) || 0;
+                    if (item.qty > currentQty && !warningShown) {
+                      showToast('Warning: One or more allocations exceed current stock level', 'warning');
+                      warningShown = true;
+                    }
+
+                    const newMat = {
+                      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                      jobId: id,
+                      jobNumber: job.number,
+                      partId: part.id,
+                      partName: part.name,
+                      name: part.name,
+                      quantity: item.qty,
+                      unitCost: part.costPrice || 0,
+                      totalCost: (part.costPrice || 0) * item.qty,
+                      date: new Date().toISOString()
+                    };
+
+                    store.create('jobMaterials', newMat);
+
+                    const existingMats = Array.isArray(job.materials) ? [...job.materials] : [];
+                    existingMats.push(newMat);
+                    job.materials = existingMats;
+                    store.update('jobs', id, { materials: existingMats });
+
+                    store.update('stock', part.id, { quantity: currentQty - item.qty });
+                  }
+                });
+
+                showToast(`Allocated ${validItems.length} items to Job ${job.number}`, 'success');
+                renderTabContent();
+                close();
+              }
+            }
+          ]
+        });
+      });
 
       tc.querySelector('#btn-raise-po')?.addEventListener('click', () => {
         const suppliers = store.getAll('suppliers') || [];
@@ -3066,12 +3883,11 @@ export function renderJobDetail(container, { id }) {
 
         showDrawer({
           title: 'Quick Purchase Order',
-          content: content.outerHTML, // Pass HTML string or handle element appending
+          content: content.outerHTML,
           actions: [
             { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
             {
               label: 'Create PO', className: 'btn-primary', onClick: (close) => {
-                // Note: showDrawer content is recreated via innerHTML, so we must query the document
                 const dOverlay = document.querySelector('.drawer-overlay');
                 const supplier = dOverlay.querySelector('#po-supplier').value;
                 const partId = dOverlay.querySelector('#po-part').value;
@@ -3088,6 +3904,7 @@ export function renderJobDetail(container, { id }) {
                 const po = store.create('purchaseOrders', {
                   number: store.getNextNumber('PO-', 'purchaseOrders'),
                   jobId: id,
+                  jobNumber: job.number,
                   supplierName: supplier,
                   issueDate: new Date().toISOString(),
                   expectedDate: date,
@@ -3167,10 +3984,23 @@ export function renderJobDetail(container, { id }) {
 
     container.querySelector('#header-job-status-select')?.addEventListener('change', (e) => {
       const newStatus = e.target.value;
-      store.update('jobs', id, { status: newStatus });
-      job.status = newStatus;
-      showToast(`Job status updated to ${newStatus}`, 'success');
-      render();
+      if (job.status !== newStatus) {
+        if (!job.historyLog) job.historyLog = [];
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const authorName = currentUser.name || currentUser.username || currentUser.email || 'Unknown User';
+        job.historyLog.unshift({
+          id: store.generateId(),
+          type: 'system',
+          action: 'status_changed',
+          date: new Date().toISOString(),
+          author: authorName,
+          content: `Job status changed from "${job.status}" to "${newStatus}"`
+        });
+        job.status = newStatus;
+        store.update('jobs', id, { status: newStatus, historyLog: job.historyLog });
+        showToast(`Job status updated to ${newStatus}`, 'success');
+        render();
+      }
     });
 
     container.querySelector('#btn-header-generate-invoice')?.addEventListener('click', () => {
@@ -3196,8 +4026,12 @@ export function renderJobDetail(container, { id }) {
 
   render();
 
-  function r(label, value) {
-    return `<div style="display:flex;gap:8px"><span style="width:120px;font-size:var(--font-size-sm);color:var(--text-tertiary);font-weight:500">${label}</span><span>${value}</span></div>`;
+  function r(label, value, opts = {}) {
+    return `
+      <div class="detail-row">
+        <span class="detail-row-label">${label}</span>
+        <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${value || '—'}</span>
+      </div>`;
   }
   function renderFormsTab(tc) {
     const instances = store.getAll('formInstances').filter(fi => fi.jobId === id);
@@ -3458,7 +4292,7 @@ export function renderJobDetail(container, { id }) {
 
         if (f.type === 'info') {
           return `
-          <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:rgba(27, 109, 224, 0.05); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
+          <div class="form-group info-block" style="margin:0; grid-column: span ${fSpan}; padding:16px; background:var(--color-primary-light); border-left:4px solid var(--color-primary); border-radius:4px; color:var(--color-primary-dark); font-size:14px; line-height:1.6">
             <div style="display:flex; gap:12px; align-items:flex-start">
               <span class="material-icons-outlined" style="color:var(--color-primary); flex-shrink:0; font-size:20px; margin-top:2px">info</span>
               <div>${escapeHTML(f.label).replace(/\n/g, '<br/>')}</div>

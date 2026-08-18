@@ -577,7 +577,217 @@ function getRecurringDates(config) {
   return dates;
 }
 
+export function cleanOldJobTitles() {
+  const jobs = store.getAll('jobs') || [];
+  let updatedCount = 0;
+  jobs.forEach(job => {
+    let newTitle = job.title;
+    if (job.parentJobId) {
+      const parentJob = store.getById('jobs', job.parentJobId);
+      if (parentJob && parentJob.title) {
+        newTitle = parentJob.title;
+      } else if (newTitle) {
+        newTitle = newTitle.replace(/\s*—\s*Recurring.*$/i, '').trim();
+      }
+    } else if (newTitle && /\s*—\s*Recurring/i.test(newTitle)) {
+      newTitle = newTitle.replace(/\s*—\s*Recurring.*$/i, '').trim();
+    }
+
+    if (newTitle && newTitle !== job.title) {
+      store.update('jobs', job.id, { title: newTitle });
+      updatedCount++;
+    }
+  });
+  return updatedCount;
+}
+
+export function repairAnomalousJobNumbers() {
+  const jobs = store.getAll('jobs') || [];
+  if (!jobs.length) return 0;
+
+  const settings = store.getSettings() || {};
+  const dt = settings.documentTheme || {};
+  const prefix = dt.jobPrefix !== undefined ? dt.jobPrefix : 'J-';
+  const startingNum = dt.jobStartingNumber !== undefined ? parseInt(dt.jobStartingNumber, 10) : 1;
+
+  const masterJobs = [];
+  const childJobs = [];
+
+  jobs.forEach(j => {
+    if (j.parentJobId || (j.number && typeof j.number === 'string' && j.number.includes('.'))) {
+      childJobs.push(j);
+    } else {
+      masterJobs.push(j);
+    }
+  });
+
+  const normalMasterJobs = [];
+  const anomalousMasterJobs = [];
+
+  masterJobs.forEach(j => {
+    let numStr = null;
+    let hasWrongPrefix = false;
+    if (j.number && typeof j.number === 'string') {
+      if (j.number.startsWith(prefix)) {
+        numStr = j.number.slice(prefix.length);
+      } else if (j.number.startsWith('JOB-') || j.number.startsWith('J-')) {
+        hasWrongPrefix = !j.number.startsWith(prefix);
+        numStr = j.number.replace(/^(JOB-|J-)/, '');
+      } else if (/^\d+$/.test(j.number)) {
+        hasWrongPrefix = true;
+        numStr = j.number;
+      }
+    }
+
+    const num = (numStr && /^\d+$/.test(numStr)) ? parseInt(numStr, 10) : NaN;
+    if (!isNaN(num) && num >= 1000 && startingNum < 500) {
+      anomalousMasterJobs.push({ job: j, num, createdAt: j.createdAt || '' });
+    } else if (!isNaN(num) && num < 50000) {
+      if (hasWrongPrefix) {
+        anomalousMasterJobs.push({ job: j, num, createdAt: j.createdAt || '' });
+      } else {
+        normalMasterJobs.push({ job: j, num });
+      }
+    }
+  });
+
+  if (anomalousMasterJobs.length === 0 && childJobs.every(c => {
+    if (!c.number) return true;
+    const parentJob = c.parentJobId ? store.getById('jobs', c.parentJobId) : null;
+    return !parentJob || (c.number.startsWith(parentJob.number) && !c.number.startsWith('JOB-'));
+  })) {
+    return 0;
+  }
+
+  let maxSeq = startingNum - 1;
+  normalMasterJobs.forEach(item => {
+    if (item.num > maxSeq) maxSeq = item.num;
+  });
+
+  anomalousMasterJobs.sort((a, b) => {
+    if (a.num < 1000 && b.num < 1000) return a.num - b.num;
+    if (a.createdAt && b.createdAt) return a.createdAt.localeCompare(b.createdAt);
+    return a.job.id.localeCompare(b.job.id);
+  });
+
+  const numberMap = new Map();
+  let renumberedCount = 0;
+
+  anomalousMasterJobs.forEach(item => {
+    let targetNum;
+    if (item.num < 1000) {
+      targetNum = item.num;
+      if (targetNum > maxSeq) maxSeq = targetNum;
+    } else {
+      maxSeq++;
+      targetNum = maxSeq;
+    }
+    const newNumber = prefix + targetNum.toString().padStart(5, '0');
+    if (item.job.number !== newNumber) {
+      numberMap.set(item.job.number, newNumber);
+      store.update('jobs', item.job.id, { number: newNumber });
+      item.job.number = newNumber;
+      renumberedCount++;
+    }
+  });
+
+  const childMapByParent = new Map();
+  childJobs.forEach(child => {
+    const parentId = child.parentJobId;
+    const parentJob = parentId ? store.getById('jobs', parentId) : null;
+    const parentNumber = parentJob ? parentJob.number : (child.number ? child.number.split('.')[0] : null);
+
+    if (parentNumber) {
+      const existingCount = (childMapByParent.get(parentNumber) || 0) + 1;
+      childMapByParent.set(parentNumber, existingCount);
+
+      let suffixIndex = existingCount;
+      if (child.number && child.number.includes('.')) {
+        const parsedSuffix = parseInt(child.number.split('.')[1], 10);
+        if (!isNaN(parsedSuffix)) suffixIndex = parsedSuffix;
+      }
+
+      const newChildNumber = `${parentNumber}.${suffixIndex}`;
+      if (child.number !== newChildNumber) {
+        numberMap.set(child.number, newChildNumber);
+        store.update('jobs', child.id, { 
+          number: newChildNumber,
+          notes: child.notes ? child.notes.replace(/Generated from template job (JOB-|J-)?\w+(\.\d+)?/, `Generated from template job ${parentNumber}`) : `Generated from template job ${parentNumber}`
+        });
+        child.number = newChildNumber;
+        renumberedCount++;
+      }
+    }
+  });
+
+  if (numberMap.size > 0) {
+    const invoices = store.getAll('invoices') || [];
+    invoices.forEach(inv => {
+      if (inv.jobId) {
+        const job = store.getById('jobs', inv.jobId);
+        if (job && inv.jobNumber !== job.number) {
+          store.update('invoices', inv.id, { jobNumber: job.number });
+        }
+      } else if (inv.jobNumber && numberMap.has(inv.jobNumber)) {
+        store.update('invoices', inv.id, { jobNumber: numberMap.get(inv.jobNumber) });
+      }
+    });
+
+    const pos = store.getAll('purchaseOrders') || [];
+    pos.forEach(po => {
+      if (po.jobId) {
+        const job = store.getById('jobs', po.jobId);
+        if (job && po.jobNumber !== job.number) {
+          store.update('purchaseOrders', po.id, { jobNumber: job.number });
+        }
+      } else if (po.jobNumber && numberMap.has(po.jobNumber)) {
+        store.update('purchaseOrders', po.id, { jobNumber: numberMap.get(po.jobNumber) });
+      }
+    });
+
+    const schedule = store.getAll('schedule') || [];
+    schedule.forEach(b => {
+      if (b.jobId) {
+        const job = store.getById('jobs', b.jobId);
+        if (job && b.jobNumber !== job.number) {
+          store.update('schedule', b.id, { jobNumber: job.number });
+        }
+      } else if (b.jobNumber && numberMap.has(b.jobNumber)) {
+        store.update('schedule', b.id, { jobNumber: numberMap.get(b.jobNumber) });
+      }
+    });
+
+    const notifications = store.getAll('notifications') || [];
+    notifications.forEach(n => {
+      if (n.jobId) {
+        const job = store.getById('jobs', n.jobId);
+        if (job && n.jobNumber !== job.number) {
+          store.update('notifications', n.id, { jobNumber: job.number });
+        }
+      } else if (n.jobNumber && numberMap.has(n.jobNumber)) {
+        store.update('notifications', n.id, { jobNumber: numberMap.get(n.jobNumber) });
+      }
+    });
+
+    const timesheets = store.getAll('timesheets') || [];
+    timesheets.forEach(t => {
+      if (t.jobId) {
+        const job = store.getById('jobs', t.jobId);
+        if (job && t.jobNumber !== job.number) {
+          store.update('timesheets', t.id, { jobNumber: job.number });
+        }
+      } else if (t.jobNumber && numberMap.has(t.jobNumber)) {
+        store.update('timesheets', t.id, { jobNumber: numberMap.get(t.jobNumber) });
+      }
+    });
+  }
+
+  return renumberedCount;
+}
+
 export function checkRecurringJobs() {
+  cleanOldJobTitles();
+  repairAnomalousJobNumbers();
   const jobs = store.getAll('jobs') || [];
   const notifications = store.getAll('notifications') || [];
   
@@ -602,8 +812,9 @@ export function checkRecurringJobs() {
       const occurrenceDate = new Date(yr, mo - 1, dy);
       
       if (occurrenceDate >= today && occurrenceDate <= next7Days) {
-        // Check if there is already a spawned job for this occurrence
-        const hasJob = jobs.some(j => 
+        // Re-read latest jobs from store on each iteration so newly created sibling jobs in the loop are detected
+        const currentJobs = store.getAll('jobs') || [];
+        const hasJob = currentJobs.some(j => 
           (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) && 
           (j.templateDate === dateStr || j.scheduledDate === dateStr)
         );
@@ -913,14 +1124,7 @@ export function propagateParentJobUpdates(parentJob) {
     if (childJob.status === 'Completed' || childJob.status === 'Invoiced') return;
 
     // Format child title
-    let childTitle = childJob.title;
-    if (childJob.scheduledDate) {
-      const [yr, mo, dy] = childJob.scheduledDate.split('-');
-      const formattedDate = `${dy}/${mo}/${yr}`;
-      childTitle = `${parentJob.title || parentJob.number}`;
-    } else {
-      childTitle = `${parentJob.title || parentJob.number} — Recurring`;
-    }
+    const childTitle = `${parentJob.title || parentJob.number}`;
 
     // Merge tasks while preserving completed progress on child tasks/subtasks
     const parentTasks = parentJob.tasks ? JSON.parse(JSON.stringify(parentJob.tasks)) : [];
@@ -978,11 +1182,20 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
   const parentJob = store.getById('jobs', parentJobId);
   if (!parentJob) return null;
 
+  // Idempotency: check if a child job for this occurrence date already exists before materializing a new one
+  const latestJobs = store.getAll('jobs') || [];
+  const existingChild = latestJobs.find(j =>
+    (j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))) &&
+    (j.templateDate === dateStr || j.scheduledDate === dateStr)
+  );
+  if (existingChild) {
+    return existingChild;
+  }
+
   const [yr, mo, dy] = dateStr.split('-').map(Number);
   const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
   const childTitle = `${parentJob.title || parentJob.number}`;
 
-  const latestJobs = store.getAll('jobs') || [];
   const siblingJobs = latestJobs.filter(j => j.parentJobId === parentJob.id);
   let maxSuffix = 0;
   const prefix = `${parentJob.number}.`;

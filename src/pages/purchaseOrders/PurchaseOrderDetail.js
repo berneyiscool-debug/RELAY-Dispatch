@@ -49,10 +49,13 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
   function render() {
     container.innerHTML = `
       ${renderDetailHeader({
-        title: po.number || 'New Purchase Order',
+        title: escapeHTML(po.number || 'New Purchase Order'),
         icon: 'shopping_cart',
+        iconBgColor: 'var(--color-primary-light)',
+        iconTextColor: 'var(--color-primary)',
         metaHtml: `
-          <span class="badge ${po.status === 'Draft' ? 'badge-neutral' : po.status === 'Issued' ? 'badge-primary' : po.status === 'Received' ? 'badge-success' : 'badge-danger'}">${po.status}</span>
+          <span><span class="material-icons-outlined" style="font-size:14px">store</span> ${escapeHTML(po.supplierName || 'General Supplier')}</span>
+          <span class="badge ${po.status === 'Draft' ? 'badge-neutral' : po.status === 'Issued' ? 'badge-primary' : po.status === 'Received' ? 'badge-success' : 'badge-danger'}">${escapeHTML(po.status || 'Draft')}</span>
         `,
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
@@ -136,7 +139,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
                     <td style="text-align:right">
                       ${po.status === 'Draft' ? `<input type="number" class="form-input item-qty" style="width:80px;text-align:right;margin-left:auto" value="${item.quantity || 1}" min="1" step="1" />` : item.quantity}
                     </td>
-                    <td style="text-align:right;font-weight:600" class="item-total">
+                    <td style="text-align:right" class="item-total">
                       $${((item.unitCost || 0) * (item.quantity || 1)).toFixed(2)}
                     </td>
                     ${po.status === 'Draft' ? `
@@ -148,8 +151,8 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="4" style="text-align:right;font-weight:600">Total:</td>
-                  <td style="text-align:right;font-weight:700;font-size:var(--font-size-lg)" id="po-total">$${(po.total || 0).toFixed(2)}</td>
+                  <td colspan="4" style="text-align:right">Total:</td>
+                  <td style="text-align:right;font-weight:600;font-size:var(--font-size-lg)" id="po-total">$${(po.total || 0).toFixed(2)}</td>
                   ${po.status === 'Draft' ? '<td></td>' : ''}
                 </tr>
               </tfoot>

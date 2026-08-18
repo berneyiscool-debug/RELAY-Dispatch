@@ -62,10 +62,6 @@ export function renderLogin(container) {
   const render = () => {
     container.innerHTML = `
       <div class="auth-split-wrapper">
-        <!-- Glows -->
-        <div class="auth-bg-glow"></div>
-        <div class="auth-bg-glow-2"></div>
-
         <!-- Left Side: Sign In Panel -->
         <div class="auth-panel signin-panel active">
           <!-- Collapsed vertical indicator -->
@@ -81,7 +77,7 @@ export function renderLogin(container) {
               <div class="auth-header" style="text-align: center; margin-bottom: 24px;">
                 <img src="${logoLarge}" alt="DISPATCH" style="max-height: 48px; max-width: 240px; object-fit: contain; margin: 0 auto 12px auto; display: block;" />
                 <p class="auth-subtitle" style="margin-top: 4px; margin-bottom: 4px;">Dispatch & Field Service Management Platform</p>
-                <div style="font-size:10px; color:#888; font-weight:500; letter-spacing:0.5px;">v1.2.4</div>
+                <div style="font-size:11px; color:var(--text-tertiary); font-weight:400; letter-spacing:0.5px;">v1.3.0-beta</div>
               </div>
 
               <!-- Error Alert Panel -->
@@ -133,7 +129,7 @@ export function renderLogin(container) {
                  <a href="#" id="link-forgot-password" style="margin-left:12px;">Forgot password?</a>
                </div>
 
-              <div class="auth-footer" style="margin-top: 16px; border-top: 1px dashed var(--border-color); padding-top: 16px;">
+              <div class="auth-footer" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
                 <a href="#" id="btn-login-local" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--color-primary); text-decoration: none;">
                   <span class="material-icons-outlined" style="font-size: 18px;">offline_bolt</span>
                   Sign In Offline (Local Mode)
@@ -226,7 +222,7 @@ export function renderLogin(container) {
          </div>
          <!-- Forgot Password Modal -->
          <div class="modal" id="forgot-password-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center;">
-           <div class="modal-content" style="max-width:420px; width:90%; margin:auto; background:var(--bg-primary, #fff); padding:28px; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.25); border:1px solid var(--border-color, #e0e0e0);">
+           <div class="modal-content" style="max-width:420px; width:90%; margin:auto; background:var(--card-bg, #fff); padding:28px; border-radius:var(--border-radius-md); box-shadow:var(--shadow-lg); border:1px solid var(--border-color, #e8e8e6);">
              <h3 style="margin-top:0; font-size:18px; display:flex; align-items:center; gap:8px;">
                <span class="material-icons-outlined" style="color:var(--color-primary, #FF5C00); font-size:22px;">lock_reset</span>
                Reset Password
@@ -242,7 +238,7 @@ export function renderLogin(container) {
                    <input type="text" id="reset-employee-id" class="auth-form-input" placeholder="e.g. jake or jake@company.com">
                  </div>
                </div>
-               <div id="reset-find-error" style="display:none; color:#EF4444; font-size:12px; margin-bottom:12px; padding:8px 12px; background:rgba(239,68,68,0.08); border-radius:6px; display:none; align-items:center; gap:6px;">
+               <div id="reset-find-error" style="display:none; color:var(--color-danger); font-size:12px; margin-bottom:12px; padding:8px 12px; background:var(--color-danger-bg); border-radius:var(--border-radius); display:none; align-items:center; gap:6px;">
                  <span class="material-icons-outlined" style="font-size:14px;">error_outline</span>
                  <span id="reset-find-error-text"></span>
                </div>
@@ -254,8 +250,8 @@ export function renderLogin(container) {
 
              <!-- Step 2: Set new password (local users only) -->
              <div id="reset-step-password" style="display:none;">
-               <div style="padding:10px 14px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:8px; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
-                 <span class="material-icons-outlined" style="color:#10B981; font-size:18px;">check_circle</span>
+               <div style="padding:10px 14px; background:var(--color-success-bg); border:1px solid var(--color-success); border-radius:var(--border-radius-md); margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+                 <span class="material-icons-outlined" style="color:var(--color-success); font-size:18px;">check_circle</span>
                  <span style="font-size:13px; color:var(--text-primary);">Account found: <strong id="reset-found-name"></strong></span>
                </div>
                <p style="color:var(--text-secondary, #666); font-size:13px; margin-bottom:16px;">Enter a new password for this account.</p>
@@ -273,7 +269,7 @@ export function renderLogin(container) {
                    <input type="password" id="reset-confirm-password" class="auth-form-input" placeholder="Re-enter new password" minlength="6">
                  </div>
                </div>
-               <div id="reset-pwd-error" style="display:none; color:#EF4444; font-size:12px; margin-bottom:12px; padding:8px 12px; background:rgba(239,68,68,0.08); border-radius:6px; align-items:center; gap:6px;">
+               <div id="reset-pwd-error" style="display:none; color:var(--color-danger); font-size:12px; margin-bottom:12px; padding:8px 12px; background:var(--color-danger-bg); border-radius:var(--border-radius); align-items:center; gap:6px;">
                  <span class="material-icons-outlined" style="font-size:14px;">error_outline</span>
                  <span id="reset-pwd-error-text"></span>
                </div>
@@ -285,7 +281,7 @@ export function renderLogin(container) {
 
              <!-- Step 3: Success -->
              <div id="reset-step-success" style="display:none; text-align:center; padding:12px 0;">
-               <span class="material-icons-outlined" style="font-size:48px; color:#10B981; margin-bottom:12px;">task_alt</span>
+               <span class="material-icons-outlined" style="font-size:48px; color:var(--color-success); margin-bottom:12px;">task_alt</span>
                <h4 style="margin:0 0 8px;">Password Reset Successfully</h4>
                <p style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">You can now sign in with your new password.</p>
                <button id="btn-reset-done" class="btn btn-primary" style="width:100%;">Done</button>
@@ -823,10 +819,6 @@ export async function handleCloudLoginSuccess(container, authUser) {
 function renderForcePasswordChange(container, authUser, profile) {
   container.innerHTML = `
     <div class="auth-container">
-      <!-- Glows -->
-      <div class="auth-bg-glow"></div>
-      <div class="auth-bg-glow-2"></div>
-
       <div class="auth-card">
         <div class="auth-header">
           <div class="auth-logo-icon" style="background:var(--color-warning-bg); border-radius:50%; width:48px; height:48px;">

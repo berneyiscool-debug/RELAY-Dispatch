@@ -604,17 +604,9 @@ export function renderSettings(container) {
         }
       </style>
 
-      <div class="page-header"><h1>Settings</h1></div>
+      <div class="page-header" style="margin-bottom:12px;"><h1>Settings</h1></div>
 
-      <div class="settings-nav-categories">
-        ${categoryTabsHtml}
-      </div>
-
-      <div class="settings-nav-tabs">
-        ${subTabsHtml}
-      </div>
-
-      <div id="settings-content" style="padding-top:var(--space-sm)"></div>
+      <div id="settings-content" style="padding-top:0;"></div>
     `;
 
     renderContent();
@@ -1274,7 +1266,6 @@ export function renderSettings(container) {
       renderMaterialsSettings(tc);
     } else if (activeTab === 'tax') {
       const settings = store.getSettings();
-      let currentJobTypes = settings.jobTypes ? [...settings.jobTypes] : ['Electrical', 'Plumbing', 'HVAC', 'Fire Protection', 'Security', 'General Maintenance', 'Service', 'Project', 'Maintenance', 'Quote'];
       tc.innerHTML = `
         <div class="grid-2">
           <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
@@ -1289,27 +1280,6 @@ export function renderSettings(container) {
                   <div style="display:${settings.taxEnabled !== false ? 'flex' : 'none'}; align-items:center; gap:8px; margin-top:4px" id="tax-rate-container">
                     <input class="form-input" id="tax-rate" type="number" value="${settings.taxRate !== undefined ? settings.taxRate : 10}" style="width:100px" min="0" max="100" step="0.1" /> <span class="text-secondary">%</span>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="card" id="job-types-card">
-              <div class="card-header"><h4>Job Types</h4></div>
-              <div class="card-body">
-                <p class="text-secondary" style="font-size:var(--font-size-sm);margin-bottom:12px">Define the types of jobs your team performs (e.g. Electrical, Plumbing). These appear in job forms and rate mapping.</p>
-                <div id="job-types-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
-                  ${currentJobTypes.map(type => `
-                    <span class="tag-pill tag-pill-active" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:100px; font-weight:500; font-size:13px; background:var(--color-primary-light); color:var(--color-primary-dark)">
-                      <span>${escapeHTML(type)}</span>
-                      <span class="material-icons-outlined delete-job-type-btn" data-type="${escapeHTML(type)}" style="font-size:16px; cursor:pointer; opacity:0.7; transition:opacity 0.2s">close</span>
-                    </span>
-                  `).join('')}
-                </div>
-                <div style="display:flex; gap:8px;">
-                  <input class="form-input" id="new-job-type-input" type="text" placeholder="e.g. Renovation" style="flex:1" />
-                  <button class="btn btn-secondary" id="add-job-type-btn" style="display:flex; align-items:center; gap:4px">
-                    <span class="material-icons-outlined" style="font-size:16px">add</span> Add
-                  </button>
                 </div>
               </div>
             </div>
@@ -1577,44 +1547,6 @@ export function renderSettings(container) {
         });
       }
 
-      // ---- Job Types Management Event Listeners ----
-      const addJobTypeBtn = tc.querySelector('#add-job-type-btn');
-      const newJobTypeInput = tc.querySelector('#new-job-type-input');
-      const jobTypesList = tc.querySelector('#job-types-list');
-
-      function updateJobTypesUI() {
-        jobTypesList.innerHTML = currentJobTypes.map(type => `
-          <span class="tag-pill tag-pill-active" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:100px; font-weight:500; font-size:13px; background:var(--color-primary-light); color:var(--color-primary-dark)">
-            <span>${escapeHTML(type)}</span>
-            <span class="material-icons-outlined delete-job-type-btn" data-type="${escapeHTML(type)}" style="font-size:16px; cursor:pointer; opacity:0.7; transition:opacity 0.2s">close</span>
-          </span>
-        `).join('');
-      }
-
-      addJobTypeBtn?.addEventListener('click', () => {
-        const val = newJobTypeInput.value.trim();
-        if (!val) {
-          showToast('Please enter a job type name', 'warning');
-          return;
-        }
-        if (currentJobTypes.includes(val)) {
-          showToast('This job type already exists', 'warning');
-          return;
-        }
-        currentJobTypes.push(val);
-        newJobTypeInput.value = '';
-        updateJobTypesUI();
-      });
-
-      tc.querySelector('#job-types-card')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.delete-job-type-btn');
-        if (btn) {
-          const typeToDelete = btn.dataset.type;
-          currentJobTypes = currentJobTypes.filter(t => t !== typeToDelete);
-          updateJobTypesUI();
-        }
-      });
-
       // ---- Save ----
       tc.querySelector('#save-tax-settings').addEventListener('click', async () => {
         const btn = tc.querySelector('#save-tax-settings');
@@ -1632,7 +1564,6 @@ export function renderSettings(container) {
           settings.taxRate = taxRate;
           settings.laborRounding = laborRounding;
           settings.laborRates = laborRates;
-          settings.jobTypes = currentJobTypes;
 
           await store.saveSettings(settings);
           showToast('Financial and Rate settings saved successfully', 'success');
@@ -4173,7 +4104,7 @@ export function renderSettings(container) {
           ${info.mode === 'own-domain'
             ? `<div style="font-size:12px;color:var(--color-success);font-weight:600;margin-bottom:8px;">Sending from your own domain (${escapeHTML(info.domain || '')})</div>`
             : ''}
-          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <table class="data-table" style="width:100%;font-size:12px;">
             ${rows.map(r => `<tr>
               <td style="padding:3px 12px 3px 0;color:var(--text-secondary);white-space:nowrap;">${escapeHTML(
                 Object.keys(labels).filter(k => ((info.addresses || {})[k] || '').toLowerCase() === r.addr.toLowerCase()).map(k => labels[k]).join(', ')

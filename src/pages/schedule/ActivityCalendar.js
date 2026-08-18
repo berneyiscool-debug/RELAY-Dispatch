@@ -37,11 +37,12 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
   const days = getWeekDays();
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-  const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id);
 
-  // Filter state
+  // Filter state (declared before `technicians` — filterTechId is referenced in that filter)
   let filterStatus = 'active'; // 'all' | 'active' | 'completed' | 'overdue'
   let filterTechId = isTechnician ? currentUser.id : 'all';
+
+  const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id);
 
   function getFilteredActivities() {
     let acts = store.getAll('activities');
@@ -141,9 +142,9 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
         </div>
       </div>
 
-      <div style="display:flex;gap:16px;flex:1;min-height:0;overflow:hidden">
+      <div style="display:flex;gap:0;flex:1;min-height:0;overflow:hidden">
         <!-- Main Content -->
-        <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;border:none;border-radius:0;box-shadow:none;">
           <div style="padding:14px 18px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center">
             <div style="display:flex;gap:6px">
               <button class="toolbar-filter act-filter ${filterStatus === 'active' ? 'active' : ''}" data-filter="active">Active</button>
@@ -174,7 +175,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
         </div>
 
         <!-- Sidebar -->
-        <div class="card" style="width:280px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto;height:100%;min-height:0">
+        <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto;height:100%;min-height:0;border-left:1px solid var(--border-color);border-radius:0;box-shadow:none;">
           <!-- Stats -->
           <div style="padding:16px;border-bottom:1px solid var(--border-color)">
             <h4 style="font-size:var(--font-size-sm);margin:0 0 12px 0;display:flex;align-items:center;gap:6px">

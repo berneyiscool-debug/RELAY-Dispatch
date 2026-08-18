@@ -14,7 +14,7 @@ export function renderContractorPortal(container, params) {
 
   if (!contractor) {
     container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border-color);">
+      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
         <span class="material-icons-outlined text-danger" style="font-size: 64px; margin-bottom: 20px;">gpp_maybe</span>
         <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Invalid Access Link</h2>
         <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-lg);">
@@ -32,7 +32,7 @@ export function renderContractorPortal(container, params) {
 
   if (settings.enableContractorPortal === false) {
     container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border-color);">
+      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
         <span class="material-icons-outlined text-warning" style="font-size: 64px; margin-bottom: 20px;">lock_clock</span>
         <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Subcontractor Portal Offline</h2>
         <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">
@@ -55,11 +55,11 @@ export function renderContractorPortal(container, params) {
         <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
           <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
         </button>
-        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--card-shadow); text-align:center; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-success-bg); display:flex; align-items:center; justify-content:center; color:var(--color-success); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">gpp_good</span>
           </div>
-          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:700; color:var(--text-primary);">Secure Subcontractor Portal</h2>
+          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:600; color:var(--text-primary);">Secure Subcontractor Portal</h2>
           <p style="margin:0 0 24px 0; font-size:13px; color:var(--text-secondary); line-height:1.5;">
             Welcome, <strong>${escapeHTML(contractor.contactName)}</strong>! To protect your assigned job sheets, timeline uploads, and compliance credentials, please set a 4-to-6 digit security PIN for this portal link.
           </p>
@@ -136,11 +136,11 @@ export function renderContractorPortal(container, params) {
         <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
           <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
         </button>
-        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--card-shadow); text-align:center; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-danger-bg); display:flex; align-items:center; justify-content:center; color:var(--color-danger); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">lock</span>
           </div>
-          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:700; color:var(--text-primary);">Portal Locked</h2>
+          <h2 style="margin:0 0 8px 0; font-size:22px; font-weight:600; color:var(--text-primary);">Portal Locked</h2>
           <p style="margin:0 0 24px 0; font-size:13px; color:var(--text-secondary); line-height:1.5;">
             This Magic Link is protected. Please enter the PIN configured for <strong>${escapeHTML(contractor.businessName)}</strong> to unlock your jobsheet.
           </p>
@@ -292,11 +292,23 @@ export function renderContractorPortal(container, params) {
     const node = getTaskByPath(job.tasks, path);
     if (!node) return;
 
+    const contractorAuthor = contractor.businessName || contractor.contactName || contractor.name || 'Subcontractor';
+
     node.progress = newProgress;
     if (newProgress === 100) {
       node.status = 'Completed';
-      node.completedBy = contractor.businessName || contractor.name || 'Contractor';
+      node.completedBy = contractorAuthor;
       node.completedAt = new Date().toISOString();
+
+      if (!job.historyLog) job.historyLog = [];
+      job.historyLog.unshift({
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'system',
+        action: 'task_completed',
+        date: node.completedAt,
+        author: contractorAuthor,
+        content: `Task "${node.name}" marked as completed by subcontractor (${contractorAuthor})`
+      });
     } else if (newProgress > 0) {
       node.status = 'In Progress';
       delete node.completedBy;
@@ -305,6 +317,16 @@ export function renderContractorPortal(container, params) {
       node.status = 'Not Started';
       delete node.completedBy;
       delete node.completedAt;
+
+      if (!job.historyLog) job.historyLog = [];
+      job.historyLog.unshift({
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'system',
+        action: 'task_uncompleted',
+        date: new Date().toISOString(),
+        author: contractorAuthor,
+        content: `Task "${node.name}" marked as incomplete by subcontractor (${contractorAuthor})`
+      });
     }
 
     // Update parent tasks recursively
@@ -326,7 +348,7 @@ export function renderContractorPortal(container, params) {
       }
     }
 
-    store.update('jobs', jobId, { tasks: job.tasks, status: job.status });
+    store.update('jobs', jobId, { tasks: job.tasks, status: job.status, historyLog: job.historyLog });
     
     // Quick notification / visual feedback
     const toast = document.getElementById('sync-indicator-' + jobId);
@@ -385,43 +407,30 @@ export function renderContractorPortal(container, params) {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+          background: var(--color-primary);
           color: #ffffff;
           padding: 24px 32px;
-          border-radius: 12px;
-          box-shadow: var(--shadow-lg);
+          border-radius: var(--border-radius-md);
           margin-bottom: 24px;
           position: relative;
           overflow: hidden;
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--color-primary);
         }
         [data-theme="dark"] .portal-header {
-          background: linear-gradient(135deg, rgba(255, 92, 0, 0.3) 0%, rgba(9, 9, 11, 0.6) 100%) !important;
-          border: 1px solid var(--border-color);
-        }
-        
-        .portal-header::before {
-          content: '';
-          position: absolute;
-          top: -50%;
-          right: -20%;
-          width: 300px;
-          height: 300px;
-          background: radial-gradient(circle, rgba(27,109,224,0.15) 0%, transparent 60%);
-          border-radius: 50%;
-          pointer-events: none;
+          background: var(--color-primary);
+          border: 1px solid var(--color-primary);
         }
 
         .portal-header h1 {
           margin: 0;
           font-size: 24px;
-          font-weight: 700;
+          font-weight: 600;
           letter-spacing: -0.5px;
         }
 
         .portal-header p {
           margin: 4px 0 0 0;
-          color: #94a3b8;
+          color: rgba(255, 255, 255, 0.85);
           font-size: 13px;
         }
 
@@ -456,8 +465,7 @@ export function renderContractorPortal(container, params) {
         }
 
         .kpi-card:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-md);
+          border-color: var(--border-color-dark);
         }
 
         .kpi-icon {
@@ -488,7 +496,7 @@ export function renderContractorPortal(container, params) {
 
         .kpi-value {
           font-size: 20px;
-          font-weight: 700;
+          font-weight: 600;
           line-height: 1.2;
         }
 
@@ -501,21 +509,15 @@ export function renderContractorPortal(container, params) {
         }
 
         .b2b-banner {
-          background: linear-gradient(135deg, rgba(27,109,224,0.08), rgba(27,109,224,0.02));
-          border: 1px solid var(--color-primary-light);
-          border-radius: 8px;
+          background: var(--color-primary-light);
+          border: 1px solid var(--border-color);
+          border-radius: var(--border-radius-md);
           padding: 16px 20px;
           margin-bottom: 24px;
           display: flex;
           justify-content: space-between;
           align-items: center;
           gap: 16px;
-          animation: pulse 3s infinite ease-in-out;
-        }
-
-        @keyframes pulse {
-          0%, 100% { border-color: var(--color-primary-light); }
-          50% { border-color: rgba(27,109,224,0.4); }
         }
 
         .tabs-nav {
@@ -675,8 +677,8 @@ export function renderContractorPortal(container, params) {
         }
 
         .drag-drop-zone {
-          border: 2px dashed var(--border-color-dark);
-          border-radius: 8px;
+          border: 1px solid var(--border-color-dark);
+          border-radius: var(--border-radius-md);
           padding: 24px;
           text-align: center;
           background: var(--content-bg);
@@ -721,7 +723,7 @@ export function renderContractorPortal(container, params) {
               <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
             </button>
             <div style="font-size: 11px; padding: 6px 12px; background: rgba(255,255,255,0.08); border-radius: 6px; border: 1px solid rgba(255,255,255,0.12)">
-              System Agency ID: <strong style="font-family:monospace; color:#38bdf8">${contractor.id}</strong>
+              System Agency ID: <strong style="font-family:monospace; color:#ffffff">${contractor.id}</strong>
             </div>
           </div>
         </div>
@@ -858,7 +860,7 @@ export function renderContractorPortal(container, params) {
                 <div class="job-card-header" data-id="${item.job.id}">
                   <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
                     <div style="display:flex; align-items:center; gap:8px;">
-                      <span class="font-bold" style="font-size:13px; color:var(--color-primary);">${escapeHTML(item.job.number)}</span>
+                      <span class="font-medium" style="font-size:13px; color:var(--color-primary);">${escapeHTML(item.job.number)}</span>
                       <h3 style="font-size:13px; margin:0;">${escapeHTML(item.job.title)}</h3>
                       <span class="badge ${jobStatusBadges[item.job.status] || 'badge-neutral'}" style="margin:0">${escapeHTML(item.job.status)}</span>
                       <span class="badge" style="${priorityColors[item.job.priority] || ''}; margin:0; font-size:10px; padding: 1px 6px;">${escapeHTML(item.job.priority || 'Medium')}</span>
@@ -1030,8 +1032,8 @@ export function renderContractorPortal(container, params) {
       const taskDescription = t.description || `Standard operational procedures, verification checks, and safety guidelines for "${t.name}".`;
 
       return `
-        <div style="padding-left: ${paddingLeft}px; border-left: ${currentPath.length > 1 ? '1px dashed var(--border-color-dark)' : 'none'}; margin-left: ${currentPath.length > 1 ? '8px' : '0'}; padding-top: 4px; padding-bottom: 4px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding: 6px 10px; background:var(--card-bg); border-radius:4px; border:1px solid ${isAssignedToUs ? 'rgba(27,109,224,0.15)' : 'var(--border-color)'};">
+        <div style="padding-left: ${paddingLeft}px; border-left: ${currentPath.length > 1 ? '1px solid var(--border-color-dark)' : 'none'}; margin-left: ${currentPath.length > 1 ? '8px' : '0'}; padding-top: 4px; padding-bottom: 4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding: 6px 10px; background:var(--card-bg); border-radius:4px; border:1px solid ${isAssignedToUs ? 'var(--color-primary-light)' : 'var(--border-color)'};">
             
             <div class="task-info-col" style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:180px;">
               <div style="display:flex; align-items:center; gap:8px;">
@@ -1052,7 +1054,7 @@ export function renderContractorPortal(container, params) {
                 </span>
 
                 ${t.completedBy ? `
-                  <span style="font-size:10px; color:var(--text-tertiary); font-style:italic;">✓ ${escapeHTML(t.completedBy)} (${new Date(t.completedAt).toLocaleDateString()})</span>
+                  <span style="font-size:10px; color:var(--text-tertiary); font-style:italic; display:inline-flex; align-items:center; gap:2px;"><span class="material-icons-outlined" style="font-size:12px;">check</span> ${escapeHTML(t.completedBy)} (${new Date(t.completedAt).toLocaleDateString()})</span>
                 ` : ''}
               </div>
               <div class="task-desc-container" style="font-size:11px; color:var(--text-secondary); line-height:1.4; padding-left: ${isAssignedToUs ? '24px' : '0px'}; font-style: italic; max-height: ${isDescExpanded ? '200px' : '0px'}; overflow: hidden; transition: max-height 0.2s ease-in-out; margin-top: ${isDescExpanded ? '4px' : '0px'};">
@@ -1077,7 +1079,7 @@ export function renderContractorPortal(container, params) {
               ` : `
                 <!-- Parent node: display progress badge, non-editable directly -->
                 <div style="display:flex; align-items:center; gap:6px;">
-                  <span class="badge" style="background:var(--color-primary-light); color:var(--color-primary); font-size:10px; font-weight:700; margin:0;">${t.progress || 0}%</span>
+                  <span class="badge" style="background:var(--color-primary-light); color:var(--color-primary-ink); font-size:10px; font-weight:600; margin:0;">${t.progress || 0}%</span>
                   <span class="badge badge-neutral" style="font-size:10px; margin:0;">${escapeHTML(t.status || 'Not Started')}</span>
                 </div>
               `}
@@ -1291,15 +1293,17 @@ export function renderContractorPortal(container, params) {
 
         if (!job.activityLog) job.activityLog = [];
         
-        const prefix = `[Subcontractor - ${contractor.businessName}] ${contractor.contactName}`;
-        const fullContent = commentContent ? `${prefix}: ${commentContent}` : `${prefix} attached files`;
+        const contractorAuthor = contractor.businessName || contractor.contactName || contractor.name || 'Subcontractor';
+        const prefix = `[Subcontractor - ${contractorAuthor}]`;
+        const fullContent = commentContent ? `${prefix} ${commentContent}` : `${prefix} attached files`;
 
         job.activityLog.unshift({
           id: Math.random().toString(36).substr(2, 9),
           type: 'combined',
           content: fullContent,
-          files: [...stagedFiles],
-          date: new Date().toISOString()
+          author: contractorAuthor,
+          date: new Date().toISOString(),
+          files: [...stagedFiles]
         });
 
         store.update('jobs', jobId, { activityLog: job.activityLog });
@@ -1590,17 +1594,7 @@ export function renderContractorPortal(container, params) {
       if (alreadyExists) return;
 
       // Generate next job number
-      let maxNum = 100000;
-      const currentJobsList = store.getAll('jobs');
-      currentJobsList.forEach(j => {
-        if (j.number && j.number.startsWith('J-')) {
-          const num = parseInt(j.number.substring(2));
-          if (!isNaN(num) && num > maxNum) {
-            maxNum = num;
-          }
-        }
-      });
-      const newJobNumber = 'J-' + (maxNum + 1);
+      const newJobNumber = store.getNextNumber('J-', 'jobs');
 
       const newB2BJob = {
         id: 'job_b2b_' + Math.random().toString(36).substr(2, 9),

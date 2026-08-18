@@ -1,63 +1,69 @@
 /* ============================================
-   FIELDFORGE — NORDIC GLASSMORPHIC SYSTEM
-   ============================================ */
+   RELAY — LIGHT FLAT SYSTEM (Supabase-inspired)
+   ============================================
+   Flat, opaque surfaces · hairline borders · small radii · subtle neutral
+   shadows · RELAY orange (#FF5C00) as the single accent. Replaces the prior
+   Nordic glassmorphic look. Variable NAMES are unchanged so the whole app
+   re-skins from these tokens; revert with a single `git checkout` of this file. */
 
 :root {
-  /* ---- Colors (Relay Orange Palette) ---- */
+  /* ---- Colors (Relay Orange accent) ---- */
   --color-primary: #FF5C00;
   --color-primary-hover: #E05200;
   --color-primary-light: rgba(255, 92, 0, 0.10);
   --color-primary-dark: #2C2C2E;
-  --body-bg: #f3f5f7; /* flat calm canvas (was glass gradient) */
+  --color-primary-ink: #C2410C;           /* readable orange text on light surfaces */
+  --body-bg: #fbfbfa;                       /* flat near-white canvas (was gradient glass) */
 
-  /* ---- Sidebar (flat, opaque) ---- */
-  --sidebar-bg: #ffffff; /* opaque (was 40% white glass) */
-  --sidebar-bg-dark: #f3f5f7;
-  --sidebar-text: #595f66; /* Secondary slate-gray */
-  --sidebar-text-hover: #191c1e; /* On-surface charcoal */
-  --sidebar-active-bg: rgba(255, 92, 0, 0.08);
-  --sidebar-active-text: #FF5C00;
+  /* ---- Sidebar (flat white) ---- */
+  --sidebar-bg: #ffffff;
+  --sidebar-bg-dark: #f6f6f5;
+  --sidebar-text: #5c5c5a;                  /* secondary ink */
+  --sidebar-text-hover: #1a1a1a;            /* primary ink */
+  --sidebar-active-bg: #e9ebef;             /* neutral grey active — accent reserved for actions/status */
+  --sidebar-active-text: #1a1a1a;
   --sidebar-width-collapsed: 51px;
   --sidebar-width-expanded: 192px;
   --sidebar-transition: 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* ---- Top Bar ---- */
+  /* ---- Top Bar (flat white) ---- */
   --topbar-bg: #ffffff;
   --topbar-height: 45px;
-  --topbar-border: rgba(16, 24, 40, 0.08);
-  --topbar-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --topbar-border: #e8e8e6;
+  --topbar-shadow: 0 1px 2px rgba(15, 15, 15, 0.04);
 
-  /* ---- Content Area (Arctic White & Level 1 Glass) ---- */
-  --content-bg: #f7f9fb; /* Neutral Arctic White base canvas */
-  --bg-color: #f1f5f9; /* Slate-100 shade */
-  --card-bg: #ffffff; /* opaque flat surface (was 40% white glass) */
-  --card-border: rgba(16, 24, 40, 0.08); /* real 1px hairline */
-  --card-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
-  --card-shadow-hover: 0 4px 12px rgba(16, 24, 40, 0.10); /* no colored halo */
+  /* ---- Content Area (near-white canvas, white panels) ---- */
+  --content-bg: #fbfbfa;                    /* app canvas */
+  --bg-color: #f2f2f0;                       /* recessed field / subtle fill */
+  --card-bg: #ffffff;                        /* opaque panel */
+  --card-border: #e8e8e6;                    /* hairline */
+  --card-shadow: 0 1px 2px rgba(15, 15, 15, 0.05), 0 1px 3px rgba(15, 15, 15, 0.04);
+  --card-shadow-hover: 0 4px 12px rgba(15, 15, 15, 0.09), 0 0 0 1px rgba(255, 92, 0, 0.15);
 
-  /* ---- Text (High Contrast Charcoal & Slate) ---- */
-  --text-primary: #191c1e; /* On-surface charcoal */
-  --text-secondary: #42474d; /* Secondary slate gray */
-  --text-tertiary: #5e646b; /* Muted zinc — darkened to pass WCAG AA (≥4.5:1) on light surfaces */
+  /* ---- Text (graphite on light) ---- */
+  --text-primary: #1a1a1a;
+  --text-secondary: #5c5c5a;
+  --text-tertiary: #8a8a87;
+  --text-muted: #b0b0ad;
   --text-inverse: #ffffff;
 
-  /* ---- Status Colors (Soft low-saturation glass pill tags) ---- */
-  --color-success: #059669; /* Sage Green */
-  --color-success-bg: rgba(5, 150, 105, 0.08);
-  --color-warning: #D97706; /* Warm Amber */
-  --color-warning-bg: rgba(217, 119, 6, 0.08);
-  --color-danger: #DC2626; /* Crimson */
-  --color-danger-bg: rgba(220, 38, 38, 0.08);
-  --color-info: #2563EB; /* Cobalt Highlight */
-  --color-info-bg: rgba(37, 99, 235, 0.08);
+  /* ---- Status Colors (darkened for contrast on white) ---- */
+  --color-success: #15803D;
+  --color-success-bg: rgba(22, 163, 74, 0.11);
+  --color-warning: #B45309;
+  --color-warning-bg: rgba(217, 119, 6, 0.12);
+  --color-danger: #DC2626;
+  --color-danger-bg: rgba(220, 38, 38, 0.10);
+  --color-info: #2563EB;
+  --color-info-bg: rgba(37, 99, 235, 0.10);
 
-  /* ---- Borders & Shapes (Significant rounded language) ---- */
-  --border-color: rgba(0, 0, 0, 0.06);
-  --border-color-dark: rgba(0, 0, 0, 0.12);
-  --border-radius-sm: 0.25rem; /* 4px (small components) */
-  --border-radius: 0.5rem; /* 8px (inputs and buttons) */
-  --border-radius-md: 0.625rem; /* 10px (dashboard cards / sidebar container) — de-bubbled */
-  --border-radius-lg: 0.875rem; /* 14px (large content blocks / mobile detail cards) */
+  /* ---- Borders & Shapes (flat, small radii) ---- */
+  --border-color: #e8e8e6;                   /* solid hairline (was translucent) */
+  --border-color-dark: #dcdcda;
+  --border-radius-sm: 4px;
+  --border-radius: 6px;                      /* inputs and buttons */
+  --border-radius-md: 8px;                   /* cards / panels (was 16px) */
+  --border-radius-lg: 10px;                  /* large blocks (was 24px) */
 
   /* ---- Spacing (Base 8px Rhythm) ---- */
   --space-xs: 4px;
@@ -72,14 +78,15 @@
 
   /* ---- Typography (Inter legibility system) ---- */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-base: 13px;
-  --font-size-md: 13px;
-  --font-size-lg: 14px;
-  --font-size-xl: 16px;
-  --font-size-2xl: 20px;
-  --font-size-3xl: 24px;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  --font-size-xs: 10px;
+  --font-size-sm: 11px;
+  --font-size-base: 12px;
+  --font-size-md: 12px;
+  --font-size-lg: 13px;
+  --font-size-xl: 15px;
+  --font-size-2xl: 18px;
+  --font-size-3xl: 22px;
   --font-weight-light: 300;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
@@ -87,12 +94,12 @@
   --font-weight-bold: 700;
   --line-height: 1.5;
 
-  /* ---- Shadows ---- */
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow: 0 1px 3px rgba(16, 24, 40, 0.07);
-  --shadow-md: 0 2px 6px rgba(16, 24, 40, 0.08);
-  --shadow-lg: 0 6px 16px rgba(16, 24, 40, 0.10);
-  --shadow-xl: 0 12px 28px rgba(16, 24, 40, 0.12);
+  /* ---- Shadows (subtle, neutral — no inset glass highlight) ---- */
+  --shadow-sm: 0 1px 2px rgba(15, 15, 15, 0.04);
+  --shadow: 0 1px 2px rgba(15, 15, 15, 0.05), 0 1px 3px rgba(15, 15, 15, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 15, 15, 0.08);
+  --shadow-lg: 0 8px 24px rgba(15, 15, 15, 0.10);
+  --shadow-xl: 0 16px 40px rgba(15, 15, 15, 0.12);
 
   /* ---- Transitions ---- */
   --transition-fast: 0.12s ease;
@@ -113,4 +120,3 @@
   --color-primary-light: rgba(255, 92, 0, 0.18);
   --color-primary-hover: #FF7A2E;
 }
-

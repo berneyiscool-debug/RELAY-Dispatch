@@ -8,6 +8,8 @@ import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderSuppliersList(container) {
   const suppliers = store.getAll('suppliers');
@@ -16,48 +18,35 @@ export function renderSuppliersList(container) {
   const canDelete = hasPermission('Suppliers', 'delete');
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Suppliers</h1>
-      <div class="page-header-actions">
-        ${canCreate ? `<button class="btn btn-primary" id="btn-new-supplier" data-tooltip="Register a new material or service vendor" data-tooltip-pos="left"><span class="material-icons-outlined">add</span> Add Supplier</button>` : ''}
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Suppliers (${suppliers.length})</option>
+          <option value="active">Active (${suppliers.filter(s => s.active === true).length})</option>
+          <option value="inactive">Inactive (${suppliers.filter(s => s.active === false).length})</option>
+        </select>
+        ${canCreate ? `
+          <button class="btn btn-primary btn-sm" id="btn-new-supplier" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Register a new supplier">
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">Add Supplier</span>
+          </button>` : ''}
       </div>
     </div>
-    
-    <div class="page-toolbar">
-      <div class="toolbar-filters">
-        <button class="toolbar-filter active" data-filter="all">All (${suppliers.length})</button>
-        <button class="toolbar-filter" data-filter="active">Active</button>
-        <button class="toolbar-filter" data-filter="inactive">Inactive</button>
-      </div>
-      <div class="toolbar-search">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search suppliers by name, contact, category, or email..." id="suppliers-search" />
-      </div>
-    </div>
-
     <div id="suppliers-table-container"></div>
   `;
 
   let filteredData = [...suppliers];
 
   const columns = [
-    { key: 'name', label: 'Supplier Name', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>` },
-    { key: 'contactName', label: 'Contact Person', render: (r) => escapeHTML(r.contactName || '—') },
-    { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>` },
-    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—') },
-    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—') },
-    { key: 'paymentTerms', label: 'Payment Terms', render: (r) => escapeHTML(r.paymentTerms || '—') },
-    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>` },
+    { key: 'name', label: 'Supplier', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.name)}</span>`, width: '24%' },
+    { key: 'contactName', label: 'Contact', render: (r) => escapeHTML(r.contactName || '—'), width: '18%' },
+    { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '14%' },
+    { key: 'email', label: 'Email', render: (r) => escapeHTML(r.email || '—'), width: '18%' },
+    { key: 'phone', label: 'Phone', render: (r) => escapeHTML(r.phone || '—'), width: '12%' },
+    { key: 'paymentTerms', label: 'Terms', render: (r) => escapeHTML(r.paymentTerms || '—'), width: '10%' },
+    { key: 'active', label: 'Status', render: (r) => `<span class="badge ${r.active ? 'badge-success' : 'badge-neutral'}">${r.active ? 'Active' : 'Inactive'}</span>`, width: '10%' },
   ];
-
-  if (canEdit) {
-    columns.push({ 
-      key: 'actions', 
-      label: '', 
-      width: '80px', 
-      render: (r) => `<button class="btn btn-ghost btn-sm supplier-edit-btn" data-id="${r.id}" data-tooltip="Edit supplier details" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px;">edit</span></button>` 
-    });
-  }
 
   const table = createDataTable({ 
     columns, 
@@ -136,6 +125,11 @@ export function renderSuppliersList(container) {
   if (canCreate) {
     container.querySelector('#btn-new-supplier').addEventListener('click', () => router.navigate('/suppliers/new'));
   }
+  container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    const [key, dir] = val.split('_');
+    table.setSort(key, dir);
+  });
 
   let activeFilter = 'all';
   let searchTerm = '';
@@ -168,17 +162,21 @@ export function renderSuppliersList(container) {
     table.updateData(filteredData);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeFilter = btn.dataset.filter;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      // Filter by date if needed
       updateFilteredData();
-    });
+    }
   });
 
-  container.querySelector('#suppliers-search').addEventListener('input', (e) => {
-    searchTerm = e.target.value.toLowerCase();
+  setListSearch('Search suppliers...', (q) => {
+    searchTerm = q.toLowerCase();
+    updateFilteredData();
+  });
+
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeFilter = e.target.value;
     updateFilteredData();
   });
 

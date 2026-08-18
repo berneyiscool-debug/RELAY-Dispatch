@@ -17,13 +17,15 @@ import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
 import { hasPermission } from '../../utils/permissions.js';
 
-export function renderQuoteDetail(container, { id, customerId, type }) {
+export function renderQuoteDetail(container, params) {
+  const { id, customerId, type, tab } = params;
   const isTemplate = type === 'template';
   const collection = isTemplate ? 'quoteTemplates' : 'quotes';
   const isNew = id === 'new';
+  const activeTab = tab || 'overview';
   
   const settings = store.getSettings();
-  const defaultLaborRate = settings.laborRates.find(r => r.isDefault);
+  const defaultLaborRate = (settings.laborRates && settings.laborRates.find(r => r.isDefault)) || (settings.laborRates && settings.laborRates[0]);
   const defaultLaborRateId = defaultLaborRate ? defaultLaborRate.id : '';
 
   let quote;
@@ -56,6 +58,10 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
   if (!quote) {
     container.innerHTML = `<div class="empty-state"><span class="material-icons-outlined">error</span><h3>${isTemplate ? 'Template' : 'Quote'} not found</h3></div>`;
     return;
+  }
+
+  if (!quote.laborProfileId) {
+    quote.laborProfileId = defaultLaborRateId;
   }
 
   // Data migration for old quotes
@@ -103,8 +109,8 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         iconBgColor: 'var(--color-warning-bg)',
         iconTextColor: 'var(--color-warning)',
         metaHtml: isTemplate ? '' : `
-          ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${quote.customerName}</span>` : ''}
-          <span class="badge ${sb[quote.status] || 'badge-neutral'}">${quote.status}</span>
+          ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(quote.customerName)}</span>` : ''}
+          <span class="badge ${sb[quote.status] || 'badge-neutral'}">${escapeHTML(quote.status || 'Draft')}</span>
         `,
         actionsHtml: isTemplate ? `
           ${!isNew ? `<button class="btn btn-secondary" id="btn-delete-template" style="color:var(--color-danger)"><span class="material-icons-outlined">delete</span> Delete</button>` : ''}
@@ -116,14 +122,26 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote" data-tooltip="Email professional proposal to primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
-             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:var(--z-dropdown);min-width:160px">
-                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Import Template</a>` : ''}
-                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:#333">Save as Template</a>` : ''}
+             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px;box-shadow:var(--shadow-md);z-index:var(--z-dropdown);min-width:160px">
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Import Template</a>` : ''}
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Save as Template</a>` : ''}
                 ${!isNew && hasPermission('Quotes', 'delete') ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Quote</a>` : ''}
              </div>
           </div>
         `
       })}
+
+      ${activeTab === 'history' ? `
+      <div class="card" style="margin-bottom:var(--space-lg)">
+        <div class="card-header"><h4>Activity History</h4></div>
+        <div class="card-body">
+          <p class="text-secondary" style="font-size:var(--font-size-sm); text-align:center; padding:var(--space-xl)">
+            <span class="material-icons-outlined" style="font-size:32px; color:var(--text-tertiary); margin-bottom:8px; display:block">history</span>
+            No activity history recorded for this quote yet.
+          </p>
+        </div>
+      </div>
+      ` : `
 
       ${isTemplate ? `
       <!-- Template Builder Form -->
@@ -208,8 +226,8 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       <div style="display:flex; justify-content:flex-end; gap:var(--space-lg); margin-bottom:var(--space-lg); align-items:stretch; flex-wrap:wrap">
         <!-- Internal Estimation (Only for internal use) -->
         ${quote.status !== 'Archived' && !isTemplate ? `
-        <div class="card" style="width:280px; margin:0; border:1px dashed var(--border-color); background:var(--bg-color); display:flex; flex-direction:column">
-          <div class="card-header" style="padding:10px 16px; border-bottom:1px dashed var(--border-color)">
+        <div class="card" style="width:280px; margin:0; border:1px solid var(--border-color); background:var(--bg-color); display:flex; flex-direction:column">
+          <div class="card-header" style="padding:10px 16px; border-bottom:1px solid var(--border-color)">
             <h5 style="margin:0; font-size:13px; color:var(--text-secondary)">Internal Estimation</h5>
           </div>
           <div class="card-body" style="padding:12px 16px; flex:1; display:flex; flex-direction:column; justify-content:center">
@@ -217,7 +235,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
               <span class="text-secondary">Est. Cost</span>
               <span>$${(quote.totalInternalCost || 0).toFixed(2)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; font-weight:600; color:${(quote.subtotal - (quote.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px; color:${(quote.subtotal - (quote.totalInternalCost || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
               <span>Est. Margin</span>
               <span>$${(quote.subtotal - (quote.totalInternalCost || 0)).toFixed(2)} (${quote.subtotal > 0 ? Math.round(((quote.subtotal - quote.totalInternalCost) / quote.subtotal) * 100) : 0}%)</span>
             </div>
@@ -245,7 +263,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
                 <div style="margin-top:2px"><strong>Signed At:</strong> ${quote.signedAt ? new Date(quote.signedAt).toLocaleString() : '—'}</div>
               </div>
               <div style="border:1px solid var(--border-color); background:var(--bg-color); height:60px; border-radius:4px; display:flex; align-items:center; justify-content:center; margin-top:4px">
-                <span style="font-family:'Brush Script MT', cursive; font-size:26px; color:#1B6DE0; font-style:italic; font-weight:500">${escapeHTML(quote.signatureData || 'Client Signature')}</span>
+                <span style="font-family:'Brush Script MT', cursive; font-size:26px; color:var(--color-primary); font-style:italic; font-weight:500">${escapeHTML(quote.signatureData || 'Client Signature')}</span>
               </div>
             ` : quote.status === 'Declined' ? `
               <div style="display:flex; align-items:center; gap:8px; color:var(--color-danger); font-weight:700; font-size:14px">
@@ -304,6 +322,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="btn btn-secondary" id="btn-cancel-quote">Back</button>
       </div>`)}
+      `}
     `;
 
     bindEvents();
@@ -357,7 +376,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
         </select></td>
         <td><input class="form-input item-input" style="padding:4px 8px" type="number" value="${item.qty || 1}" data-field="qty" min="1" ${isArchived ? 'disabled' : ''}/></td>
         <td><input class="form-input item-input" style="padding:4px 8px" type="number" value="${item.rate || 0}" data-field="rate" step="0.01" ${isArchived ? 'disabled' : ''}/></td>
-        <td style="font-weight:600" class="item-total-cell">$${(item.total || 0).toFixed(2)}</td>
+        <td class="item-total-cell">$${(item.total || 0).toFixed(2)}</td>
         <td>${!isArchived ? `<button class="btn btn-ghost btn-icon btn-sm btn-remove-line" data-sidx="${sIdx}" data-index="${index}"><span class="material-icons-outlined" style="font-size:16px">close</span></button>` : ''}</td>
       </tr>
     `;
@@ -437,7 +456,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
     }));
 
     const newJob = store.create('jobs', {
-      number: `J-${Date.now().toString().slice(-6)}`,
+      number: store.getNextNumber('J-', 'jobs'),
       customerId: quote.customerId,
       customerName: quote.customerName,
       contactName: quote.contactName,
@@ -1028,7 +1047,7 @@ export function renderQuoteDetail(container, { id, customerId, type }) {
           </div>
           <div style="border:1px solid var(--border-color); background:var(--bg-color); height:100px; border-radius:6px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden">
             <div style="position:absolute; top:8px; left:12px; font-size:10px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Handwritten Signature Preview</div>
-            <span id="sig-preview" style="font-family:'Brush Script MT', cursive; font-size:36px; color:#1B6DE0; font-style:italic; font-weight:500; transition:all 0.15s">Client Signature</span>
+            <span id="sig-preview" style="font-family:'Brush Script MT', cursive; font-size:36px; color:var(--color-primary); font-style:italic; font-weight:500; transition:all 0.15s">Client Signature</span>
           </div>
           <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; line-height:1.4; cursor:pointer; margin:0">
             <input type="checkbox" id="sig-consent" style="width:16px; height:16px; margin-top:2px; cursor:pointer" />

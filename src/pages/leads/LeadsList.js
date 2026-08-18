@@ -7,10 +7,11 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
+import { setListSearch } from '../../utils/listSearch.js';
+import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
 export function renderLeadsList(container) {
   const leads = store.getAll('leads');
-  const openLeads = leads.filter(l => l.status !== 'Won' && l.status !== 'Lost');
   
   const likelihoods = {
     'New': 10,
@@ -22,87 +23,18 @@ export function renderLeadsList(container) {
     'Lost': 0
   };
 
-  const totalOpenValue = openLeads.reduce((sum, l) => sum + (l.value || 0), 0);
-  const weightedForecast = openLeads.reduce((sum, l) => {
-    const prob = likelihoods[l.status] || 0;
-    return sum + (l.value || 0) * (prob / 100);
-  }, 0);
-
-  const wonCount = leads.filter(l => l.status === 'Won').length;
-  const lostCount = leads.filter(l => l.status === 'Lost').length;
-  const totalClosed = wonCount + lostCount;
-  const winRate = totalClosed > 0 ? Math.round((wonCount / totalClosed) * 100) : 0;
-
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Leads</h1>
-      <div class="page-header-actions">
-        <button class="btn btn-primary" id="btn-new-lead" data-tooltip="Create a new prospective customer lead" data-tooltip-pos="left">
-          <span class="material-icons-outlined">add</span> New Lead
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${leads.length})</option>
+          ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${leads.filter(l => l.status === s).length})</option>`).join('')}
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Lead</span>
         </button>
-      </div>
-    </div>
-
-    <!-- Forecasting Dashboard Summaries -->
-    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:20px; margin-bottom:24px">
-      <!-- Card 1: Pipeline Value -->
-      <div class="card" style="margin:0; box-shadow:var(--shadow-sm); border-left:4px solid var(--color-primary)">
-        <div class="card-body" style="padding:16px 20px; display:flex; align-items:center; gap:16px">
-          <div style="width:48px; height:48px; border-radius:50%; background:var(--color-primary-light); color:var(--color-primary); display:flex; align-items:center; justify-content:center">
-            <span class="material-icons-outlined" style="font-size:24px">trending_up</span>
-          </div>
-          <div>
-            <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Open Pipeline</div>
-            <div style="font-size:22px; font-weight:800; color:var(--text-primary); margin-top:4px">$${totalOpenValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">${openLeads.length} active opportunities</div>
-          </div>
-        </div>
-      </div>
-      <!-- Card 2: Weighted Value -->
-      <div class="card" style="margin:0; box-shadow:var(--shadow-sm); border-left:4px solid var(--color-success)">
-        <div class="card-body" style="padding:16px 20px; display:flex; align-items:center; gap:16px">
-          <div style="width:48px; height:48px; border-radius:50%; background:var(--color-success-bg); color:var(--color-success); display:flex; align-items:center; justify-content:center">
-            <span class="material-icons-outlined" style="font-size:24px">insights</span>
-          </div>
-          <div>
-            <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Weighted Sales Forecast</div>
-            <div style="font-size:22px; font-weight:800; color:var(--color-success-dark); margin-top:4px">$${weightedForecast.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">Adjusted by probability</div>
-          </div>
-        </div>
-      </div>
-      <!-- Card 3: Win Rate -->
-      <div class="card" style="margin:0; box-shadow:var(--shadow-sm); border-left:4px solid var(--color-warning)">
-        <div class="card-body" style="padding:16px 20px; display:flex; align-items:center; gap:16px">
-          <div style="width:48px; height:48px; border-radius:50%; background:var(--color-warning-bg); color:var(--color-warning-dark); display:flex; align-items:center; justify-content:center">
-            <span class="material-icons-outlined" style="font-size:24px">emoji_events</span>
-          </div>
-          <div>
-            <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Lead Conversion Rate</div>
-            <div style="font-size:22px; font-weight:800; color:var(--text-primary); margin-top:4px">${winRate}%</div>
-            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px">${wonCount} Won / ${lostCount} Lost closed leads</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="page-toolbar" style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
-      <div class="toolbar-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin:0;">
-        <button class="toolbar-filter active" data-filter="all">All (${leads.length})</button>
-        <button class="toolbar-filter" data-filter="New">New</button>
-        <button class="toolbar-filter" data-filter="Contacted">Contacted</button>
-        <button class="toolbar-filter" data-filter="Qualified">Qualified</button>
-        <button class="toolbar-filter" data-filter="Won">Won</button>
-        <button class="toolbar-filter" data-filter="Lost">Lost</button>
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
-        <input type="date" class="form-input" id="filter-date-start" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-        <span style="font-size:12px; color:var(--text-secondary)">to</span>
-        <input type="date" class="form-input" id="filter-date-end" style="width:130px; height:32px; padding:0 8px; font-size:13px;" />
-      </div>
-      <div class="toolbar-search" style="flex:0 0 auto;">
-        <span class="material-icons-outlined">search</span>
-        <input type="text" placeholder="Search leads..." id="leads-search" />
       </div>
     </div>
     <div id="leads-table-container"></div>
@@ -117,22 +49,14 @@ export function renderLeadsList(container) {
   const priorityBadges = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger' };
 
   const columns = [
-    { key: 'number', label: 'Lead #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number || 'LD-' + (r.id.includes('_') ? r.id.split('_')[1].padStart(5, '0') : r.id.substring(0, 5).toUpperCase()))}</span>`, getValue: (r) => r.number || r.id, width: '100px' },
-    { key: 'title', label: 'Lead', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.title)}</span>` },
-    { key: 'customerName', label: 'Customer', render: (r) => `<span class="text-secondary">${escapeHTML(r.customerName)}</span>` },
-    { key: 'source', label: 'Source', render: (r) => `<span class="text-secondary">${escapeHTML(r.source)}</span>` },
-    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${statusBadges[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>` },
-    { key: 'likelihood', label: 'Likelihood', render: (r) => {
-        const prob = likelihoods[r.status] ?? 0;
-        let color = 'var(--text-tertiary)';
-        if (prob >= 80) color = 'var(--color-success)';
-        else if (prob >= 50) color = 'var(--color-primary)';
-        else if (prob >= 30) color = 'var(--color-warning-dark)';
-        return `<span style="font-weight:700; color:${color}">${prob}%</span>`;
-      }, getValue: (r) => likelihoods[r.status] || 0, width: '100px' },
-    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${priorityBadges[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>` },
-    { key: 'value', label: 'Value', render: (r) => `<span class="font-medium">$${(r.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`, getValue: (r) => r.value },
-    { key: 'createdAt', label: 'Created', render: (r) => `<span class="text-secondary">${new Date(r.createdAt).toLocaleDateString()}</span>`, getValue: (r) => new Date(r.createdAt).getTime() },
+    { key: 'number', label: 'Lead #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number || 'LD-' + (r.id.includes('_') ? r.id.split('_')[1].padStart(5, '0') : r.id.substring(0, 5).toUpperCase()))}</span>`, getValue: (r) => r.number || r.id, width: '11%' },
+    { key: 'title', label: 'Lead', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.title)}</span>`, width: '24%' },
+    { key: 'customerName', label: 'Customer', render: (r) => `<span class="text-secondary">${escapeHTML(r.customerName)}</span>`, width: '18%' },
+    { key: 'source', label: 'Source', render: (r) => `<span class="text-secondary">${escapeHTML(r.source)}</span>`, width: '10%' },
+    { key: 'status', label: 'Status', render: (r) => `<span class="badge ${statusBadges[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '11%' },
+    { key: 'priority', label: 'Priority', render: (r) => `<span class="badge ${priorityBadges[r.priority] || 'badge-neutral'}">${escapeHTML(r.priority)}</span>`, width: '10%' },
+    { key: 'value', label: 'Value', render: (r) => `<span class="font-medium">$${(r.value || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`, getValue: (r) => r.value, width: '10%' },
+    { key: 'createdAt', label: 'Date', render: (r) => `<span class="text-secondary">${r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-AU') : '—'}</span>`, getValue: (r) => r.createdAt ? new Date(r.createdAt).getTime() : 0, width: '14%' },
   ];
 
   const table = createDataTable({
@@ -326,27 +250,22 @@ export function renderLeadsList(container) {
     table.updateData(filtered);
   }
 
-  container.querySelectorAll('.toolbar-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.toolbar-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeStatusFilter = btn.dataset.filter;
+  createDateRangeFilter({
+    container: container.querySelector('#date-range-mount'),
+    onChange: (start, end) => {
+      filterStartDate = start;
+      filterEndDate = end;
       applyFilters();
-    });
+    }
   });
 
-  container.querySelector('#leads-search').addEventListener('input', (e) => {
-    searchQuery = e.target.value;
+  setListSearch('Search leads...', (q) => {
+    searchQuery = q;
     applyFilters();
   });
 
-  container.querySelector('#filter-date-start')?.addEventListener('change', (e) => {
-    filterStartDate = e.target.value;
-    applyFilters();
-  });
-
-  container.querySelector('#filter-date-end')?.addEventListener('change', (e) => {
-    filterEndDate = e.target.value;
+  container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
+    activeStatusFilter = e.target.value;
     applyFilters();
   });
 }
