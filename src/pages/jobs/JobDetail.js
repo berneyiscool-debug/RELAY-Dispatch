@@ -583,59 +583,40 @@ export function renderJobDetail(container, { id, tab }) {
     const proj = job.projectId ? store.getById('projects', job.projectId) : null;
 
     container.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-header-info">
-          <div class="detail-header-icon" style="background:var(--color-primary-light);color:var(--color-primary)">
-            <span class="material-icons-outlined">build</span>
-          </div>
-          <div>
-            <div class="detail-header-text" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-              <h2 style="margin:0">${escapeHTML(job.number)} — ${escapeHTML(job.title)}</h2>
-              ${job.parentJobId ? (() => {
-                const parent = store.getById('jobs', job.parentJobId);
-                return parent ? `
-                  <a href="#/jobs/${parent.id}" class="badge badge-info" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; font-weight:600">
-                    <span class="material-icons-outlined" style="font-size:12px">event_repeat</span>
-                    Generated from Service Plan ${escapeHTML(parent.number)}
-                  </a>
-                ` : '';
-              })() : ''}
-            </div>
-            <div class="detail-header-meta" style="margin-top:6px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-              <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(job.customerName)}</span>
-              <span><span class="material-icons-outlined" style="font-size:14px">person</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
-              ${job.isRecurring ? `
-                <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
-              ` : `
-                <select id="header-job-status-select" class="badge ${sb[job.status] || 'badge-neutral'}">
-                  ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
-                    <option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>
-                  `).join('')}
-                </select>
-              `}
-              <span class="badge ${pb[job.priority] || 'badge-neutral'}">${escapeHTML(job.priority)}</span>
-              ${cc ? `
-                <span class="badge badge-purple" style="display:inline-flex; align-items:center; gap:4px; font-weight:600">
-                  <span class="material-icons-outlined" style="font-size:12px">category</span>
-                  ${escapeHTML(cc.code)}
-                </span>
-              ` : ''}
-              ${proj ? `
-                <span style="font-weight:700; display:inline-flex; align-items:center; gap:4px">
-                  <span class="material-icons-outlined" style="font-size:14px; color:var(--color-primary)">folder_copy</span>
-                  Project: <a href="#/projects/${proj.id}" style="color:var(--color-primary); text-decoration:none">${escapeHTML(proj.number)}</a>
-                </span>
-              ` : ''}
-            </div>
-          </div>
+      <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border-color);">
+        <div class="detail-header-meta" style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; font-size:14px;">
+          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">account_circle</span> ${escapeHTML(job.customerName)}</span>
+          <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">person_outline</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
+          ${job.isRecurring ? `
+            <span class="badge badge-purple" style="font-weight:600">Recurring Template</span>
+          ` : `
+            <select id="header-job-status-select" class="badge ${sb[job.status] || 'badge-neutral'}" style="border:none; cursor:pointer;">
+              ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `
+                <option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>
+              `).join('')}
+            </select>
+          `}
+          <span style="font-weight:700; font-size:12px; color:var(--text-secondary); letter-spacing:0.05em; text-transform:uppercase">${escapeHTML(job.priority)}</span>
+          ${cc ? `
+            <span class="badge badge-purple" style="display:inline-flex; align-items:center; gap:4px; font-weight:600">
+              <span class="material-icons-outlined" style="font-size:14px">category</span>
+              ${escapeHTML(cc.code)}
+            </span>
+          ` : ''}
+          ${proj ? `
+            <span style="font-weight:700; display:inline-flex; align-items:center; gap:4px; color:var(--color-primary);">
+              <span class="material-icons-outlined" style="font-size:16px">folder_copy</span>
+              Project: <a href="#/projects/${proj.id}" style="color:var(--color-primary); text-decoration:none">${escapeHTML(proj.number)}</a>
+            </span>
+          ` : ''}
         </div>
-        <div class="flex gap-sm">
+        <div class="flex gap-sm page-header-actions">
           ${job.status === 'Completed' && !hasInvoice ? `
             <button class="btn btn-success" id="btn-header-generate-invoice" data-tooltip="⚡ Dynamic Billing: splits timesheets into active rate timelines automatically" data-tooltip-pos="left" style="background-color:#10B981; border-color:#10B981; color:white; display:flex; align-items:center; gap:4px;">
               <span class="material-icons-outlined" style="font-size:18px;">receipt_long</span> Generate Invoice
             </button>
           ` : ''}
-          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
+          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left" style="background:#fff"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
           ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job" data-tooltip="Permanently delete this job" data-tooltip-pos="left"><span class="material-icons-outlined">delete</span></button>` : ''}
         </div>
       </div>
@@ -1284,91 +1265,115 @@ export function renderJobDetail(container, { id, tab }) {
               </div>
             </div>
             ` : `
-            <div class="card" style="grid-column: 1 / -1">
-              <div class="card-header" style="padding:10px 14px"><h4 style="margin:0; font-size:13px; font-weight:700">Job Information</h4></div>
-              <div class="card-body" style="padding:12px 14px">
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 32px">
-                  <div style="display:flex; flex-direction:column; gap:2px">
-                    ${r('Job Number', escapeHTML(job.number))}
-                    ${r('Title', escapeHTML(job.title))}
-                    ${r('Status', escapeHTML(job.status))}
-                    ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
-                    ${r('Priority', escapeHTML(job.priority))}
-                    ${r('Est. Hours', estHoursDisplay)}
+            <div style="grid-column: 1 / -1; display:grid; grid-template-columns: 2.2fr 1fr; gap:24px;">
+              
+              <!-- Left Column -->
+              <div style="display:flex; flex-direction:column; gap:24px;">
+                <!-- Job Description & Scope -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Job Description & Scope</h4></div>
+                  <div class="card-body" style="padding:20px; font-size:14px; color:var(--text-secondary); line-height:1.6;">
+                    ${job.description ? escapeHTML(job.description).replace(/\n/g, '<br>') : 'No job description provided.'}
                   </div>
-                  <div style="display:flex; flex-direction:column; gap:2px">
-                    ${r('Customer', escapeHTML(job.customerName))}
-                    ${r('Contact', escapeHTML(job.contactName || '—'))}
-                    ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
-                    ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
+                </div>
+
+                <!-- Recent Job History -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Recent Job History</h4>
+                    <button class="btn btn-ghost btn-sm" id="btn-view-all-history" style="font-size:12px;padding:4px 8px; display:flex; align-items:center; gap:4px">
+                      <span class="material-icons-outlined" style="font-size:14px">history</span> Full History
+                    </button>
+                  </div>
+                  <div class="card-body" style="padding:20px; display:flex; flex-direction:column; gap:16px;">
                     ${(() => {
-                      const assetObj = job.assetId ? store.getById('assets', job.assetId) : null;
-                      const aName = job.assetName || (assetObj ? assetObj.name : '');
-                      if (!aName && !assetObj) return '';
-                      const assetId = assetObj ? assetObj.id : job.assetId;
-                      return r('Linked Asset', `<a href="#/assets/${assetId}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(aName)} ${assetObj?.serial ? `<span class="text-tertiary" style="font-weight:normal;">(S/N: ${escapeHTML(assetObj.serial)})</span>` : ''}</a>`);
+                      if (!job.historyLog) job.historyLog = [];
+                      if (!job.activityLog) job.activityLog = [];
+                      const sysEntries = job.activityLog.filter(l => l.type === 'system');
+                      if (sysEntries.length > 0) {
+                        job.historyLog = [...sysEntries, ...job.historyLog];
+                        job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+                        job.activityLog = job.activityLog.filter(l => l.type !== 'system');
+                        store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
+                      }
+
+                      const historyLog = job.historyLog.slice(0, 5);
+                      if (historyLog.length === 0) {
+                        return '<div style="color:var(--text-tertiary); font-size:13px; font-style:italic">No recent history.</div>';
+                      }
+
+                      return historyLog.map(log => {
+                        let icon = 'info';
+                        let color = 'var(--text-tertiary)';
+                        if (log.action === 'task_completed') { icon = 'check_circle'; color = 'var(--color-success)'; }
+                        else if (log.action === 'task_uncompleted') { icon = 'radio_button_unchecked'; color = 'var(--text-tertiary)'; }
+                        else if (log.action === 'contractor_assigned') { icon = 'engineering'; color = 'var(--color-warning)'; }
+                        else if (log.action === 'status_changed') { icon = 'flag'; color = 'var(--color-info)'; }
+
+                        return `
+                          <div style="display:flex; gap:12px; align-items:flex-start; padding-bottom:16px; border-bottom:1px solid var(--border-color)">
+                            <div style="width:32px; height:32px; border-radius:50%; background:var(--bg-color); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:`+color+`; border:1px solid var(--border-color); margin-top:2px">
+                              <span class="material-icons-outlined" style="font-size:16px">`+icon+`</span>
+                            </div>
+                            <div style="flex:1">
+                              <div style="font-size:14px; color:var(--text-primary); font-weight:600; margin-bottom:4px">`+escapeHTML(log.content || 'System update')+`</div>
+                              <div style="font-size:12px; color:var(--text-tertiary)">
+                                <span style="font-weight:600">`+escapeHTML(log.author || 'System')+`</span> • `+new Date(log.date).toLocaleString()+`
+                              </div>
+                            </div>
+                          </div>
+                        `;
+                      }).join('');
                     })()}
-                    ${job.preferredTime ? r('Preferred Time', escapeHTML(job.preferredTime)) : ''}
-                    ${r('Created', new Date(job.createdAt).toLocaleDateString())}
                   </div>
                 </div>
               </div>
+
+              <!-- Right Column -->
+              <div style="display:flex; flex-direction:column; gap:24px;">
+                <!-- Job Details -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Job Details</h4></div>
+                  <div class="card-body" style="padding:12px 20px">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                      <tbody>
+                        <tr><td style="padding:12px 0; color:var(--text-secondary); width:35%;">Customer</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.customerName)}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Contact</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.contactName || '—')}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Site Address</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right; max-width:180px; line-height:1.4;">${job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Quote Ref</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}" style="text-decoration:none">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Created</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${new Date(job.createdAt).toLocaleDateString()}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Progress & Logistics -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Progress & Logistics</h4></div>
+                  <div class="card-body" style="padding:12px 20px">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                      <tbody>
+                        <tr>
+                          <td style="padding:12px 0; color:var(--text-secondary); width:40%;">Completion</td>
+                          <td style="padding:12px 0; text-align:right;">
+                            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;">
+                              <div style="width:80px;background:var(--border-color);height:6px;border-radius:3px;overflow:hidden;display:inline-block;"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div>
+                              <span style="font-weight:700; color:var(--text-primary);">${jobProgress}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Est. Hours</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${estHoursDisplay}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
             </div>
             `}
-            <div class="card" style="grid-column: 1 / -1; margin-top: 16px;">
-              <div class="card-header" style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; align-items:center; gap:8px">
-                  <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">history</span>
-                  <h4 style="margin:0; font-size:13px; font-weight:700">Recent Job History</h4>
-                </div>
-                <button class="btn btn-ghost btn-sm" id="btn-view-all-history" style="font-size:12px;padding:4px 8px; display:flex; align-items:center; gap:4px">
-                  <span class="material-icons-outlined" style="font-size:14px">history</span> View Full History
-                </button>
-              </div>
-              <div class="card-body" style="padding:12px 14px">
-                ${(() => {
-                  if (!job.historyLog) job.historyLog = [];
-                  if (!job.activityLog) job.activityLog = [];
-                  const sysEntries = job.activityLog.filter(l => l.type === 'system');
-                  if (sysEntries.length > 0) {
-                    job.historyLog = [...sysEntries, ...job.historyLog];
-                    job.historyLog.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-                    job.activityLog = job.activityLog.filter(l => l.type !== 'system');
-                    store.update('jobs', id, { historyLog: job.historyLog, activityLog: job.activityLog });
-                  }
-
-                  const historyLog = job.historyLog.slice(0, 5);
-                  if (historyLog.length === 0) {
-                    return '<div style="font-size:13px; color:var(--text-tertiary); font-style:italic">No job history recorded yet. Actions like task completion, contractor allocations, and status changes will appear here.</div>';
-                  }
-                  return '<div style="display:flex; flex-direction:column; gap:12px;">' + historyLog.map(log => {
-                    let icon = 'history';
-                    let color = 'var(--color-primary)';
-                    if (log.action === 'task_completed') { icon = 'check_circle'; color = 'var(--color-success)'; }
-                    else if (log.action === 'task_uncompleted') { icon = 'radio_button_unchecked'; color = 'var(--text-tertiary)'; }
-                    else if (log.action === 'contractor_assigned') { icon = 'engineering'; color = 'var(--color-warning)'; }
-                    else if (log.action === 'status_changed') { icon = 'flag'; color = 'var(--color-info)'; }
-
-                    return `
-                      <div style="display:flex; gap:12px; align-items:flex-start">
-                        <div style="width:24px; height:24px; border-radius:50%; background:var(--content-bg); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:${color}; border:1px solid var(--border-color); margin-top:2px">
-                          <span class="material-icons-outlined" style="font-size:14px">${icon}</span>
-                        </div>
-                        <div>
-                          <div style="font-size:13px; color:var(--text-primary); margin-bottom:2px; font-weight:500">${escapeHTML(log.content || 'Update')}</div>
-                          <div style="font-size:11px; color:var(--text-tertiary)">
-                            <span style="font-weight:600">${escapeHTML(log.author || 'System')}</span> • ${new Date(log.date).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    `;
-                  }).join('') + '</div>';
-                })()}
-              </div>
-            </div>
           </div>
-
         </div>
+      `;
       `;
 
       tc.querySelector('#btn-view-all-history')?.addEventListener('click', () => {

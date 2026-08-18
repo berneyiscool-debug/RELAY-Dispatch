@@ -1424,6 +1424,15 @@ export function renderJobForm(container, params) {
   }
 
   // ==== Form Submit / Save ====
+  const jobForm = container.querySelector('#job-form');
+  if (jobForm) {
+    jobForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      // Optional: trigger save when pressing Enter
+      container.querySelector('#btn-save')?.click();
+    });
+  }
+
   container.querySelector('#btn-save').addEventListener('click', () => {
     const form = container.querySelector('#job-form');
     if (!form.checkValidity()) {
