@@ -78,6 +78,7 @@ export function renderScheduleView(container) {
   let isTechsPanelOpen = false;
   let jobSearchQuery = '';
   let expandedJobTasklistIds = new Set();
+  let expandedTaskNodeIds = new Set(); // per-node expansion of nested (sub-sub-)tasks in search results
 
   // 15-min precision: 1 hour = 32px, so 1 quarter = 8px
   const PX_PER_HOUR = 32;
@@ -198,7 +199,7 @@ export function renderScheduleView(container) {
     const searchSection = document.getElementById('job-search-section-wrapper');
     if (isSearchActive && searchInput && searchSection) {
       if (!searchInput.contains(e.target) && !searchSection.contains(e.target)) {
-        const isChevronClick = e.target.closest('.btn-toggle-job-tasks');
+        const isChevronClick = e.target.closest('.btn-toggle-job-tasks') || e.target.closest('.btn-toggle-task-node');
         if (!isChevronClick) {
           isSearchActive = false;
           if (searchSection) searchSection.style.display = 'none';
@@ -474,6 +475,79 @@ export function renderScheduleView(container) {
         renderSearchResultsList();
       });
     });
+
+    // Expand/collapse a nested task node to reveal (and drag) its child tasks
+    container.querySelectorAll('.btn-toggle-task-node').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.nodeKey;
+        if (expandedTaskNodeIds.has(key)) {
+          expandedTaskNodeIds.delete(key);
+        } else {
+          expandedTaskNodeIds.add(key);
+        }
+        renderSearchResultsList();
+      });
+    });
+  }
+
+  // Recursively render a task node (task → sub-task → sub-sub-task → …) for the
+  // search flyout. Every node is draggable to the calendar; nodes with children
+  // get an expand/collapse chevron so deeper levels can be revealed and dragged.
+  // rootTaskId stays the top-level task's id (what the schedule record stores);
+  // namePath is the full "Task - Sub - SubSub" label carried into the allocation.
+  function renderTaskNodeHTML(node, ctx, rootTaskId, namePath, depth) {
+    const isTop = depth === 0;
+    const hasChildren = node.subTasks && node.subTasks.length > 0;
+    const nodeKey = `${ctx.jobId}::${node.id}`;
+    const expanded = expandedTaskNodeIds.has(nodeKey);
+    const hours = node.estimatedHours || (isTop ? 2 : 1);
+    const rowClass = isTop ? 'unscheduled-job-task' : 'unscheduled-job-subtask';
+    const rowStyle = isTop
+      ? 'display:flex; align-items:center; justify-content:space-between; padding:4px 6px; background:var(--content-bg); border:1px solid var(--border-color); border-radius:4px; cursor:grab; transition: background var(--transition-fast); flex:1; min-width:0;'
+      : 'display:flex; align-items:center; justify-content:space-between; padding:3px 6px; background:rgba(0,0,0,0.015); border:1px solid rgba(0,0,0,0.04); border-radius:3px; cursor:grab; transition: background var(--transition-fast); flex:1; min-width:0;';
+    const icon = isTop ? 'assignment' : 'subdirectory_arrow_right';
+    const iconColor = isTop ? 'var(--color-primary)' : 'var(--text-tertiary)';
+    const iconSize = isTop ? '12px' : '10px';
+    const labelSize = isTop ? '10px' : '9px';
+    const labelColor = isTop ? 'var(--text-primary)' : 'var(--text-secondary)';
+    const labelWeight = isTop ? '500' : '400';
+    const hoursSize = isTop ? '9px' : '8px';
+
+    const toggleBtn = hasChildren
+      ? `<button class="btn-toggle-task-node" data-node-key="${escapeHTML(nodeKey)}" title="${expanded ? 'Hide sub-tasks' : 'Show sub-tasks'}" style="color:var(--text-secondary); width:16px; height:16px; min-width:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0; border:none; background:none; cursor:pointer; flex-shrink:0;"><span class="material-icons-outlined" style="font-size:13px; pointer-events:none;">${expanded ? 'expand_less' : 'expand_more'}</span></button>`
+      : `<span style="width:16px; min-width:16px; flex-shrink:0;"></span>`;
+
+    const childrenHTML = (hasChildren && expanded)
+      ? `<div style="display:flex; flex-direction:column; gap:3px; margin-left:8px; border-left:1px dashed var(--border-color); padding-left:6px; margin-top:2px; margin-bottom:2px;">
+           ${node.subTasks.map(child => renderTaskNodeHTML(child, ctx, rootTaskId, `${namePath} - ${child.name}`, depth + 1)).join('')}
+         </div>`
+      : '';
+
+    return `
+      <div style="display:flex; flex-direction:column; gap:3px;">
+        <div style="display:flex; align-items:center; gap:2px;">
+          ${toggleBtn}
+          <div class="${rowClass}" draggable="true"
+            data-job-id="${ctx.jobId}"
+            data-job-number="${ctx.jobNumber}"
+            data-customer="${escapeHTML(ctx.customerName)}"
+            data-title="${escapeHTML(namePath)}"
+            data-hours="${hours}"
+            data-task-id="${rootTaskId}"
+            data-task-name="${escapeHTML(namePath)}"
+            style="${rowStyle}"
+          >
+            <div style="display:flex; align-items:center; pointer-events:none; flex:1; min-width:0;">
+              <span class="material-icons-outlined" style="font-size:${iconSize}; color:${iconColor}; margin-right:4px; flex-shrink:0;">${icon}</span>
+              <span style="text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:${labelSize}; color:${labelColor}; font-weight:${labelWeight};">${escapeHTML(node.name)}</span>
+            </div>
+            <span style="font-size:${hoursSize}; color:var(--text-tertiary); margin-left:6px; font-weight:600; flex-shrink:0; pointer-events:none;">${hours}h</span>
+          </div>
+        </div>
+        ${childrenHTML}
+      </div>
+    `;
   }
 
   function renderSearchResultsList() {
@@ -538,57 +612,7 @@ export function renderScheduleView(container) {
           ${j.tasks && j.tasks.length > 0 && isTasklistExpanded ? `
             <div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--border-color); display:flex; flex-direction:column; gap:4px;">
               <div style="font-size:9px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; text-align:left; pointer-events:none; margin-bottom:2px;">Tasks (Drag tasks or sub-tasks to assign)</div>
-              ${j.tasks.map(t => {
-                const tHours = t.estimatedHours || 2;
-                const hasSubtasks = t.subTasks && t.subTasks.length > 0;
-                return `
-                  <div style="display:flex; flex-direction:column; gap:3px;">
-                    <div class="unscheduled-job-task" draggable="true" 
-                      data-job-id="${j.id}" 
-                      data-job-number="${j.number}" 
-                      data-customer="${escapeHTML(j.customerName || '')}" 
-                      data-title="${escapeHTML(t.name)}" 
-                      data-hours="${tHours}" 
-                      data-task-id="${t.id}" 
-                      data-task-name="${escapeHTML(t.name)}" 
-                      style="display:flex; align-items:center; justify-content:space-between; padding:4px 6px; background:var(--content-bg); border:1px solid var(--border-color); border-radius:4px; cursor:grab; font-size:10px; font-weight:500; color:var(--text-primary); transition: background var(--transition-fast);"
-                    >
-                      <div style="display:flex; align-items:center; pointer-events:none; flex:1; min-width:0;">
-                        <span class="material-icons-outlined" style="font-size:12px; color:var(--color-primary); margin-right:4px; flex-shrink:0;">assignment</span>
-                        <span style="text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(t.name)}</span>
-                      </div>
-                      <span style="font-size:9px; color:var(--text-tertiary); margin-left:6px; font-weight:600; flex-shrink:0; pointer-events:none;">${tHours}h</span>
-                    </div>
-                    ${hasSubtasks ? `
-                      <div style="display:flex; flex-direction:column; gap:3px; margin-left:8px; border-left:1px dashed var(--border-color); padding-left:6px; margin-top:2px; margin-bottom:4px;">
-                        ${t.subTasks.map(st => {
-                          const stHours = st.estimatedHours || 1;
-                          return `
-                            <div class="unscheduled-job-subtask" draggable="true" 
-                              data-job-id="${j.id}" 
-                              data-job-number="${j.number}" 
-                              data-customer="${escapeHTML(j.customerName || '')}" 
-                              data-title="${escapeHTML(t.name)} - ${escapeHTML(st.name)}" 
-                              data-hours="${stHours}" 
-                              data-task-id="${t.id}" 
-                              data-task-name="${escapeHTML(t.name)} - ${escapeHTML(st.name)}" 
-                              data-subtask-id="${st.id}" 
-                              data-subtask-name="${escapeHTML(st.name)}" 
-                              style="display:flex; align-items:center; justify-content:space-between; padding:3px 6px; background:rgba(0,0,0,0.015); border:1px solid rgba(0,0,0,0.04); border-radius:3px; cursor:grab; font-size:9px; font-weight:400; color:var(--text-secondary); transition: background var(--transition-fast);"
-                            >
-                              <div style="display:flex; align-items:center; pointer-events:none; flex:1; min-width:0;">
-                                <span class="material-icons-outlined" style="font-size:10px; color:var(--text-tertiary); margin-right:3px; flex-shrink:0;">subdirectory_arrow_right</span>
-                                <span style="text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(st.name)}</span>
-                              </div>
-                              <span style="font-size:8px; color:var(--text-tertiary); margin-left:4px; font-weight:500; flex-shrink:0; pointer-events:none;">${stHours}h</span>
-                            </div>
-                          `;
-                        }).join('')}
-                      </div>
-                    ` : ''}
-                  </div>
-                `;
-              }).join('')}
+              ${j.tasks.map(t => renderTaskNodeHTML(t, { jobId: j.id, jobNumber: j.number, customerName: j.customerName || '' }, t.id, t.name, 0)).join('')}
             </div>
           ` : ''}
         </div>
@@ -1079,6 +1103,88 @@ export function renderScheduleView(container) {
   function getUnscheduledJobs() {
     const jobs = store.getAll('jobs') || [];
     return jobs.filter(j => j.status !== 'Completed' && j.status !== 'Invoiced' && j.isRecurring !== true);
+  }
+
+  // Change a job's status directly from the schedule (right-click → Change Status).
+  // Mirrors the JobForm status options; the block recolours on re-render since the
+  // block's status is read from job.status.
+  function openChangeStatusModal(job) {
+    const STATUSES = ['Pending', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Invoiced'];
+    const statusDot = {
+      'Pending': '#F59E0B', 'Scheduled': '#3B82F6', 'In Progress': '#6366F1',
+      'On Hold': '#6B7280', 'Completed': '#10B981', 'Invoiced': '#9CA3AF'
+    };
+
+    const content = document.createElement('div');
+    content.style.padding = '8px 0';
+    content.innerHTML = `
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="display:block; margin-bottom:12px; font-weight:500; font-size:13px; color:var(--text-secondary);">Select Status</label>
+        <div id="status-select-container" style="display:flex; flex-direction:column; gap:8px;">
+          ${STATUSES.map(s => {
+            const active = job.status === s;
+            return `
+              <div class="status-select-item ${active ? 'active' : ''}" data-value="${s}" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border:1.5px solid ${active ? 'var(--color-primary)' : 'var(--border-color)'}; background:${active ? 'rgba(59,130,246,0.08)' : 'var(--card-bg)'}; border-radius:8px; cursor:pointer; transition:all 0.2s ease;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span style="width:10px; height:10px; border-radius:50%; background:${statusDot[s]}; flex-shrink:0;"></span>
+                  <span style="font-weight:600; font-size:13px; color:var(--text-primary);">${s}</span>
+                </div>
+                ${active ? '<span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px;">check_circle</span>' : ''}
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    let selectedStatus = job.status;
+    const items = content.querySelectorAll('.status-select-item');
+    items.forEach(item => {
+      item.addEventListener('mouseenter', () => {
+        if (!item.classList.contains('active')) item.style.background = 'rgba(0,0,0,0.02)';
+      });
+      item.addEventListener('mouseleave', () => {
+        if (!item.classList.contains('active')) item.style.background = 'var(--card-bg)';
+      });
+      item.addEventListener('click', () => {
+        items.forEach(x => {
+          x.classList.remove('active');
+          x.style.borderColor = 'var(--border-color)';
+          x.style.background = 'var(--card-bg)';
+          const check = x.querySelector('.material-icons-outlined');
+          if (check) check.remove();
+        });
+        item.classList.add('active');
+        item.style.borderColor = 'var(--color-primary)';
+        item.style.background = 'rgba(59,130,246,0.08)';
+        selectedStatus = item.dataset.value;
+        const chk = document.createElement('span');
+        chk.className = 'material-icons-outlined';
+        chk.style.color = 'var(--color-primary)';
+        chk.style.fontSize = '18px';
+        chk.textContent = 'check_circle';
+        item.appendChild(chk);
+      });
+    });
+
+    showModal({
+      title: `Change Status for ${job.number}`,
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        {
+          label: 'Update Status',
+          className: 'btn-primary',
+          onClick: c => {
+            if (selectedStatus !== job.status) {
+              store.update('jobs', job.id, { status: selectedStatus });
+              showToast(`Status changed to ${selectedStatus}`, 'success');
+              render();
+            }
+            c();
+          }
+        }
+      ]
+    });
   }
 
   function handleAddJobSchedule() {
@@ -2078,6 +2184,7 @@ export function renderScheduleView(container) {
           } else {
             contextMenu.innerHTML = `
               <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
+              <button class="dropdown-item" id="ctx-change-status"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">flag</span> Change Status</button>
               ${isRealSchedule ? `<button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">assignment</span> Change Task</button>` : ''}
               <button class="dropdown-item" id="ctx-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign</button>
               <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
@@ -2151,6 +2258,14 @@ export function renderScheduleView(container) {
             closeContextMenu();
             const jobId = block.dataset.blockJobId;
             router.navigate(`/jobs/${jobId}`);
+          });
+
+          contextMenu.querySelector('#ctx-change-status')?.addEventListener('click', () => {
+            closeContextMenu();
+            const jobId = block.dataset.blockJobId;
+            const targetJob = store.getById('jobs', jobId);
+            if (!targetJob) { showToast('Job not found or has been deleted.', 'error'); return; }
+            openChangeStatusModal(targetJob);
           });
 
           if (isRealSchedule) {

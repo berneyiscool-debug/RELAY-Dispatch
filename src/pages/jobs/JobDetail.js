@@ -1374,7 +1374,6 @@ export function renderJobDetail(container, { id, tab }) {
           </div>
         </div>
       `;
-      `;
 
       tc.querySelector('#btn-view-all-history')?.addEventListener('click', () => {
         const historyLog = job.historyLog || [];
