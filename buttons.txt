@@ -1,0 +1,54 @@
+434: <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="10">10%</button>
+435: <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="20">20%</button>
+436: <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="25">25%</button>
+437: <button type="button" class="btn btn-sm btn-secondary btn-dep-preset" data-pct="50">50%</button>
+634: <button class="btn btn-success" id="btn-header-generate-invoice" data-tooltip="ΓÜí Dynamic Billing: splits timesheets into active rate timelines automatically" data-tooltip-pos="left" style="background-color:#10B981; border-color:#10B981; color:white; display:flex; align-items:center; gap:4px;">
+638: ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
+639: ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job" data-tooltip="Permanently delete this job" data-tooltip-pos="left"><span class="material-icons-outlined">delete</span></button>` : ''}
+643: <div class="tab-content" id="tab-content" style="padding-top:4px;"></div>
+683: html += '<button type="button" class="btn btn-sm btn-danger btn-remove-entry" data-index="' + i + '" style="padding:2px 8px">\u2715 Remove</button>';
+764: html += '<button type="button" id="btn-add-entry" class="btn btn-secondary btn-sm" style="width:100%;margin-top:4px">';
+1024: ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-ghost btn-remove-dispatch" data-id="${s.id}" style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
+1068: ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-primary" id="btn-add-schedule"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Add Dispatch</button>` : ''}
+1226: <button class="btn btn-sm btn-primary" id="btn-save-recurring-tech" style="font-size:12px;padding:6px 12px;height:34px">
+1324: <button class="btn btn-ghost btn-sm" id="btn-view-all-history" style="font-size:12px;padding:4px 8px; display:flex; align-items:center; gap:4px">
+1521: ${taskViewPath.length > 0 ? `<button class="btn btn-ghost btn-sm btn-icon btn-view-back" title="Back"><span class="material-icons-outlined" style="font-size:18px">arrow_back</span></button>` : ''}
+1559: ? `<button class="btn btn-ghost btn-icon btn-sm btn-drill-down" data-path="${currentPath.join('-')}" style="padding:2px; min-width:24px; min-height:24px; color:inherit"><span class="material-icons-outlined" style="font-size:18px">chevron_right</span></button>`
+1583: <button class="btn btn-sm btn-secondary btn-book-time" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time</button>
+1621: <button class="btn btn-ghost btn-sm btn-assign-contractor" data-path="${path.join('-')}" style="padding:2px 6px; font-size:11px; height:auto;">
+1656: <button class="btn btn-sm btn-ghost btn-record-values" data-path="${path.join('-')}">
+1697: <button class="btn btn-sm btn-primary btn-save-values" data-path="${path.join('-')}">
+2222: <div class="tabs" id="import-tabs" style="margin-bottom:12px">
+2223: <button class="tab active" data-tab="templates">Templates</button>
+2224: <button class="tab" data-tab="jobs">Other Jobs</button>
+2787: <button class="btn btn-sm btn-primary" id="btn-financials-new-quote"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Create Quote</button>
+2824: <button class="btn btn-sm btn-secondary" id="btn-financials-deposit-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">request_quote</span> Deposit Invoice</button>
+2825: <button class="btn btn-sm btn-secondary" id="btn-financials-progress-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">payments</span> Progress Invoice</button>
+2826: <button class="btn btn-sm btn-primary" id="btn-financials-final-inv"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">receipt_long</span> Create Invoice</button>
+2887: <button class="btn btn-primary btn-sm" id="btn-save-costs"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">save</span> Save Adjustments</button>
+2950: <button class="btn btn-primary btn-sm" id="btn-new-quote"><span class="material-icons-outlined">add</span> New Quote</button>
+3033: <button class="btn btn-primary" id="btn-add-note">Post Note</button>
+3058: <button class="btn btn-icon btn-sm btn-ghost btn-delete-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px;z-index:2"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+3096: <button class="btn btn-success" id="btn-add-customer-message" style="display:flex; align-items:center; gap:6px">
+3115: <button class="btn btn-icon btn-sm btn-ghost btn-delete-customer-activity" data-id="${escapeHTML(log.id)}" style="position:absolute;top:4px;right:4px;padding:2px;min-height:24px;min-width:24px;z-index:2"><span class="material-icons-outlined" style="font-size:14px">close</span></button>
+3257: <button class="btn btn-sm btn-primary" id="btn-log-time-tab"><span class="material-icons-outlined" style="font-size:16px;">add_task</span> Log Time</button>
+3278: <button class="btn btn-ghost btn-sm btn-icon btn-edit-ts-job" data-id="${t.id}" title="Edit entry">
+3283: <button class="btn btn-ghost btn-sm btn-icon btn-delete-ts-job" data-id="${t.id}" title="Delete entry" style="color:var(--color-danger)">
+3457: <button class="btn btn-sm btn-primary" id="btn-add-form"><span class="material-icons-outlined" style="font-size:16px;">post_add</span> Complete Form</button>
+3578: <button class="btn btn-sm btn-secondary" id="btn-import-quote-parts"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">download</span> Import Parts from Quote</button>
+3579: <button class="btn btn-sm btn-primary" id="btn-allocate-stock"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">inventory_2</span> Allocate Stock</button>
+3603: <button class="btn btn-sm btn-primary" id="btn-raise-po"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add_shopping_cart</span> Raise PO</button>
+3707: <button type="button" class="btn btn-sm btn-secondary btn-remove-row" data-id="${item.id}" style="padding:0 8px; height:32px;"><span class="material-icons-outlined" style="font-size:16px; color:var(--text-danger)">delete</span></button>
+3742: <button class="btn btn-sm btn-secondary" id="btn-import-quote" style="padding:4px 8px; font-size:11px;">
+3748: <button class="btn btn-sm btn-secondary" id="btn-add-alloc-row" style="margin-top:8px; width:100%; border-style:dashed;">
+3928: <button class="btn btn-sm btn-secondary" id="btn-create-deposit-invoice">Create Deposit Invoice</button>
+3929: <button class="btn btn-sm btn-secondary" id="btn-create-progress-invoice">Create Progress Invoice</button>
+3930: <button class="btn btn-sm btn-primary" id="btn-create-standard-invoice"><span class="material-icons-outlined" style="font-size:16px;">add</span> Create Standard Invoice</button>
+4040: <button class="btn btn-primary btn-sm" id="btn-attach-form">
+4068: <button class="btn ${isComplete ? 'btn-secondary' : 'btn-primary'} btn-sm fill-form" data-id="${fi.id}" title="${isComplete ? 'View / Edit' : 'Fill Form'}">
+4072: <button class="btn btn-secondary btn-icon btn-sm export-form" data-id="${fi.id}" title="Export Options">
+4075: <button class="btn btn-secondary btn-icon btn-sm print-form" data-id="${fi.id}" title="Print / PDF">
+4079: ${!isComplete ? `<button class="btn btn-ghost btn-icon btn-sm remove-form-instance" data-id="${fi.id}" style="color:var(--color-danger)" title="Remove Form"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>` : ''}
+4131: <button class="btn btn-secondary" id="export-modal-pdf" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">
+4135: <button class="btn btn-secondary" id="export-modal-csv" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">
+4139: <button class="btn btn-secondary" id="export-modal-json" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">

@@ -944,7 +944,7 @@ export function renderJobForm(container, params) {
                   </div>
                   <div class="form-group">
                     <label class="form-label">Estimated Hours</label>
-                    <input type="number" class="form-input detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" />
+                    <input type="number" class="form-input detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.25" />
                   </div>
                   <div class="form-group">
                     <label class="form-label">People</label>
@@ -1433,8 +1433,9 @@ export function renderJobForm(container, params) {
   }
 
   // ==== Form Submit / Save ====
-  container.querySelector('#btn-save').addEventListener('click', () => {
-    const form = container.querySelector('#job-form');
+  container.querySelector('#job-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
     if (!form.checkValidity()) {
       const invalidElem = form.querySelector(':invalid');
       if (invalidElem) {

@@ -3018,7 +3018,7 @@ export function renderSettings(container) {
                     <div class="form-row" style="margin-bottom:12px; gap:8px">
                       <div class="form-group">
                         <label class="form-label" style="font-size:11px">Est. Hours</label>
-                        <input type="number" class="form-input tmpl-detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.5" style="font-size:13px" />
+                        <input type="number" class="form-input tmpl-detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.25" style="font-size:13px" />
                       </div>
                       <div class="form-group">
                         <label class="form-label" style="font-size:11px">People</label>
