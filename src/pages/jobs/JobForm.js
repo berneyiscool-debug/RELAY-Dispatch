@@ -1433,9 +1433,16 @@ export function renderJobForm(container, params) {
   }
 
   // ==== Form Submit / Save ====
-  container.querySelector('#job-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const form = e.target;
+  const jobForm = container.querySelector('#job-form');
+  if (jobForm) {
+    jobForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      container.querySelector('#btn-save')?.click();
+    });
+  }
+
+  container.querySelector('#btn-save').addEventListener('click', () => {
+    const form = container.querySelector('#job-form');
     if (!form.checkValidity()) {
       const invalidElem = form.querySelector(':invalid');
       if (invalidElem) {
