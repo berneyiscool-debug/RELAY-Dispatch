@@ -524,10 +524,6 @@ export function renderJobForm(container, params) {
     </form>
   `;
 
-  // ---- Initial Tab Specific Renders ----
-  if (activeTab === 'tasks') renderFormTasks();
-  if (activeTab === 'forms') renderFormSelection();
-
   // ---- Real-time Form Draft Synchronization ----
   function syncDraftFromDOM() {
     if (!jobFormDraft) return;
@@ -1442,6 +1438,10 @@ export function renderJobForm(container, params) {
       });
     });
   }
+
+  // ---- Initial Tab Specific Renders ----
+  if (activeTab === 'tasks') renderFormTasks();
+  if (activeTab === 'forms') renderFormSelection();
 
   // ==== Form Submit / Save ====
   const jobForm = container.querySelector('#job-form');
