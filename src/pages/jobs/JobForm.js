@@ -13,53 +13,46 @@ const AVAILABLE_TAGS = [
   'High Value', 'Recurring', 'Compliance', 'Hazardous', 'New Site'
 ];
 
+let jobFormDraft = null;
+let currentDraftKey = null;
+
 export function renderJobForm(container, params) {
   const id = params.id;
   const isEdit = id && id !== 'new';
   const activeTab = params.tab || 'details';
-  const formIdKey = isEdit ? String(id) : 'new';
+  const draftKey = isEdit ? String(id) : 'new';
 
-  if (container.querySelector('#job-form') && container.dataset.jobFormId === formIdKey) {
-    container.querySelectorAll('[id^="jf-tab-"]').forEach(div => div.style.display = 'none');
-    const targetDiv = container.querySelector(`#jf-tab-${activeTab}`);
-    if (targetDiv) targetDiv.style.display = 'block';
+  if (currentDraftKey !== draftKey || !jobFormDraft) {
+    currentDraftKey = draftKey;
+    const initialJob = isEdit ? (store.getById('jobs', id) || {}) : {};
+    jobFormDraft = JSON.parse(JSON.stringify(initialJob));
 
-    if (activeTab === 'tasks') renderFormTasks();
-    if (activeTab === 'forms') renderFormSelection();
-    return;
-  }
-
-  container.dataset.jobFormId = formIdKey;
-  const job = isEdit ? store.getById('jobs', id) : {};
-  
-  if (!isEdit) {
-    if (params.projectId) {
-      job.projectId = params.projectId;
-      const proj = store.getById('projects', params.projectId);
-      if (proj && proj.customerId) {
-        job.customerId = proj.customerId;
+    if (!isEdit) {
+      if (params.projectId) {
+        jobFormDraft.projectId = params.projectId;
+        const proj = store.getById('projects', params.projectId);
+        if (proj && proj.customerId) jobFormDraft.customerId = proj.customerId;
+      } else if (params.customerId) {
+        jobFormDraft.customerId = params.customerId;
       }
-    } else if (params.customerId) {
-      job.customerId = params.customerId;
-    }
-    if (params.costCenterId) {
-      job.costCenterId = params.costCenterId;
-    }
-    
-    if (job.customerId) {
-      const cust = store.getById('customers', job.customerId);
-      if (cust) {
-        job.customerName = cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim();
-        if (cust.sites && cust.sites.length > 0) {
-          job.siteId = cust.sites[0].name;
-          job.siteAddress = cust.sites[0].address;
-        }
-        if (cust.contacts && cust.contacts.length > 0) {
-          job.primaryContactId = cust.contacts[0].name;
+      if (params.costCenterId) jobFormDraft.costCenterId = params.costCenterId;
+      if (jobFormDraft.customerId) {
+        const cust = store.getById('customers', jobFormDraft.customerId);
+        if (cust) {
+          jobFormDraft.customerName = cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim();
+          if (cust.sites && cust.sites.length > 0) {
+            jobFormDraft.siteId = cust.sites[0].name;
+            jobFormDraft.siteAddress = cust.sites[0].address;
+          }
+          if (cust.contacts && cust.contacts.length > 0) {
+            jobFormDraft.primaryContactId = cust.contacts[0].name;
+          }
         }
       }
     }
   }
+
+  const job = jobFormDraft;
 
   const customers = store.getAll('customers') || [];
   const contractors = store.getAll('contractors') || [];
@@ -340,6 +333,7 @@ export function renderJobForm(container, params) {
                   ${job.isRecurring ? `<option value="Recurring Template" selected>Recurring Template</option>` : ''}
                   ${['Pending','Scheduled','In Progress','On Hold','Completed','Invoiced'].map(s => `<option ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                 </select>
+                ${job.isRecurring ? `<input type="hidden" name="status" value="Recurring Template" />` : ''}
               </div>
               <div class="form-group">
                 <label class="form-label">Priority</label>
@@ -473,30 +467,30 @@ export function renderJobForm(container, params) {
             </div>
 
             <!-- Recurring -->
-            ${(!isEdit && !job.parentJobId) ? `
+            ${(!job.parentJobId && (!isEdit || job.isRecurring)) ? `
             <div class="form-row" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-color);">
               <div class="form-group" style="display:flex;align-items:center;gap:8px">
-                <input type="checkbox" id="is-recurring" style="width:16px;height:16px" />
+                <input type="checkbox" id="is-recurring" style="width:16px;height:16px" ${job.isRecurring ? 'checked' : ''} />
                 <label class="form-label" style="margin:0" for="is-recurring">Recurring Job Template</label>
               </div>
             </div>
-            <div id="recurring-options" style="display:none; flex-direction:column; gap:16px; background:var(--card-bg); padding:16px; border-radius:4px; border:1px solid var(--border-color); margin-bottom:16px">
+            <div id="recurring-options" style="display:${job.isRecurring ? 'flex' : 'none'}; flex-direction:column; gap:16px; background:var(--card-bg); padding:16px; border-radius:4px; border:1px solid var(--border-color); margin-bottom:16px">
               <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:16px;">
                 <div class="form-group">
                   <label class="form-label">Frequency</label>
                   <select class="form-select" id="recurring-freq">
-                    <option value="Weekly">Weekly</option>
-                    <option value="Monthly">Monthly</option>
-                    <option value="Daily">Daily</option>
+                    <option value="Weekly" ${job.recurringConfig?.freq === 'Weekly' ? 'selected' : ''}>Weekly</option>
+                    <option value="Monthly" ${job.recurringConfig?.freq === 'Monthly' ? 'selected' : ''}>Monthly</option>
+                    <option value="Daily" ${job.recurringConfig?.freq === 'Daily' ? 'selected' : ''}>Daily</option>
                   </select>
                 </div>
                 <div class="form-group">
                   <label class="form-label">First Job Date</label>
-                  <input type="date" class="form-input" id="recurring-start" value="${new Date().toISOString().split('T')[0]}" />
+                  <input type="date" class="form-input" id="recurring-start" value="${job.recurringConfig?.start || new Date().toISOString().split('T')[0]}" />
                 </div>
                 <div class="form-group">
                   <label class="form-label">End Date (Max 50 occurrences)</label>
-                  <input type="date" class="form-input" id="recurring-end" />
+                  <input type="date" class="form-input" id="recurring-end" value="${job.recurringConfig?.end || ''}" />
                 </div>
                 <div class="form-group">
                   <label class="form-label">Default Technician</label>
@@ -533,6 +527,38 @@ export function renderJobForm(container, params) {
   // ---- Initial Tab Specific Renders ----
   if (activeTab === 'tasks') renderFormTasks();
   if (activeTab === 'forms') renderFormSelection();
+
+  // ---- Real-time Form Draft Synchronization ----
+  function syncDraftFromDOM() {
+    if (!jobFormDraft) return;
+    const form = container.querySelector('#job-form');
+    if (form) {
+      const formData = Object.fromEntries(new FormData(form));
+      Object.assign(jobFormDraft, formData);
+      const editor = container.querySelector('#job-description-editor');
+      if (editor) jobFormDraft.description = editor.innerHTML;
+    }
+  }
+
+  container.querySelectorAll('#job-form input, #job-form select, #job-form textarea').forEach(elem => {
+    elem.addEventListener('input', syncDraftFromDOM);
+    elem.addEventListener('change', syncDraftFromDOM);
+  });
+
+  const descEditor = container.querySelector('#job-description-editor');
+  if (descEditor) {
+    descEditor.addEventListener('input', syncDraftFromDOM);
+  }
+
+  container.querySelector('#btn-cancel')?.addEventListener('click', () => {
+    jobFormDraft = null;
+    currentDraftKey = null;
+    if (params.customerId) {
+      router.navigate(`/people/${params.customerId}?tab=jobs`);
+    } else {
+      router.navigate('/jobs');
+    }
+  });
 
   // ---- Customer change → update site & contact dropdowns ----
   const custSelect = container.querySelector('#jf-customer');
@@ -1499,10 +1525,12 @@ export function renderJobForm(container, params) {
       else if (!isEmg && job.isEmergency) data.laborCost = Math.max(0, (job.laborCost || 0) - 150);
     }
 
-    if (container.querySelector('#is-recurring')?.checked) {
-      const freq = container.querySelector('#recurring-freq').value;
-      const startInput = container.querySelector('#recurring-start').value;
-      const endInput = container.querySelector('#recurring-end').value;
+    const isRecurringChecked = container.querySelector('#is-recurring')?.checked || (isEdit && job.isRecurring);
+
+    if (isRecurringChecked) {
+      const freq = container.querySelector('#recurring-freq')?.value || job.recurringConfig?.freq || 'Weekly';
+      const startInput = container.querySelector('#recurring-start')?.value || job.recurringConfig?.start || new Date().toISOString().split('T')[0];
+      const endInput = container.querySelector('#recurring-end')?.value || job.recurringConfig?.end || '';
       if (!startInput || !endInput) {
         showToast('Recurring dates required', 'error'); return;
       }
@@ -1512,20 +1540,33 @@ export function renderJobForm(container, params) {
         freq, 
         start: startInput, 
         end: endInput,
-        defaultTechnicianId: container.querySelector('#recurring-tech')?.value || null,
-        daysOfWeek: selectedDaysOfWeek,
-        daysOfMonth: selectedDaysOfMonth
+        defaultTechnicianId: container.querySelector('#recurring-tech')?.value || job.recurringConfig?.defaultTechnicianId || null,
+        daysOfWeek: selectedDaysOfWeek.length > 0 ? selectedDaysOfWeek : (job.recurringConfig?.daysOfWeek || []),
+        daysOfMonth: selectedDaysOfMonth.length > 0 ? selectedDaysOfMonth : (job.recurringConfig?.daysOfMonth || []),
+        skippedDates: job.recurringConfig?.skippedDates || []
       };
     } else {
       if (!isEdit) {
         data.isRecurring = false;
         data.recurringConfig = null;
+      } else if (job.isRecurring) {
+        data.isRecurring = true;
+        data.status = 'Recurring Template';
+        data.recurringConfig = job.recurringConfig || null;
       }
+    }
+
+    if (!data.status && job.status) {
+      data.status = job.status;
     }
 
     // Save Job
     const finalJob = isEdit ? store.update('jobs', id, data) : store.create('jobs', data);
     const jobId = finalJob.id;
+
+    // Reset draft state after save
+    jobFormDraft = null;
+    currentDraftKey = null;
 
     if (finalJob.isRecurring) {
       import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs, propagateParentJobUpdates }) => {

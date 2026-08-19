@@ -557,6 +557,43 @@ describe('Job Recurring Scheduling Integrations', () => {
     assert.strictEqual(updatedInvoice.jobNumber, 'J-00003', 'Linked invoice jobNumber should be updated to J-00003');
     assert.strictEqual(updatedBlock.jobNumber, 'J-00003.1', 'Linked schedule block jobNumber should be updated to J-00003.1');
   });
+
+  test('updating preferredTime on recurring job template preserves status and propagates to child jobs', async () => {
+    const { propagateParentJobUpdates } = await import('../../utils/maintenanceEngine.js');
+    
+    const parent = store.create('jobs', {
+      number: 'J-200',
+      title: 'Weekly Maintenance Master',
+      status: 'Recurring Template',
+      isRecurring: true,
+      preferredTime: '08:00',
+      recurringConfig: { freq: 'Weekly', start: '2026-08-01', end: '2026-12-31' }
+    });
+
+    const child = store.create('jobs', {
+      number: 'J-200.1',
+      title: 'Weekly Maintenance Master',
+      parentJobId: parent.id,
+      status: 'Scheduled',
+      preferredTime: '08:00'
+    });
+
+    // Update preferredTime on parent template
+    const updatedParent = store.update('jobs', parent.id, {
+      preferredTime: '14:00',
+      status: 'Recurring Template',
+      isRecurring: true
+    });
+
+    propagateParentJobUpdates(updatedParent);
+
+    const checkParent = store.getById('jobs', parent.id);
+    const checkChild = store.getById('jobs', child.id);
+
+    assert.strictEqual(checkParent.status, 'Recurring Template', 'Parent job status must remain Recurring Template');
+    assert.strictEqual(checkParent.preferredTime, '14:00', 'Parent job preferredTime must update to 14:00');
+    assert.strictEqual(checkChild.preferredTime, '14:00', 'Child job preferredTime must update to match parent');
+  });
 });
 
 

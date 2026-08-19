@@ -2577,8 +2577,8 @@ function renderTodaySchedule(data, item) {
       title = s.notes || eventType;
     }
     
-    const hourInt = Math.floor(s.startHour);
-    const minInt = Math.round((s.startHour - hourInt) * 60);
+    const hourInt = Math.floor(s.startHour ?? 8);
+    const minInt = s.startMinute !== undefined ? s.startMinute : Math.round(((s.startHour ?? 8) - hourInt) * 60);
     const timeStr = `${String(hourInt).padStart(2, '0')}:${String(minInt).padStart(2, '0')}`;
     const techNameHtml = canViewAllSchedule ? `<span style="opacity: 0.8;"> · ${s.technicianName || 'Unassigned'}</span>` : '';
     const badgeText = isJob ? status : (s.type ? s.type.toUpperCase() : 'EVENT');
