@@ -745,6 +745,75 @@ export function renderPersonDetail(container, { id, tab }) {
         { label: 'Total', key: 'total', format: 'currency' },
         { label: 'Due', key: 'dueDate', format: 'date' },
       ], 'invoices', 'No invoices for this customer');
+    } else if (activeTab === 'financials') {
+      let totalInvoiced = 0;
+      let totalOutstanding = 0;
+      let totalOverdue = 0;
+      const now = new Date();
+      
+      invoices.forEach(inv => {
+        if (inv.status !== 'Draft' && inv.status !== 'Void' && inv.status !== 'Cancelled') {
+           const invTotal = parseFloat(inv.total) || 0;
+           totalInvoiced += invTotal;
+           if (inv.status !== 'Paid') {
+             const balance = inv.balanceDue !== undefined ? parseFloat(inv.balanceDue) : invTotal;
+             totalOutstanding += balance;
+             if (inv.dueDate && new Date(inv.dueDate) < now) {
+               totalOverdue += balance;
+             }
+           }
+        }
+      });
+      
+      tabContent.innerHTML = `
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-bottom:24px;">
+          <div class="card" style="margin:0">
+            <div class="card-header"><h4>Financial Summary</h4></div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
+              <div>
+                <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Total Invoiced</div>
+                <div style="font-size:24px; font-weight:600; color:var(--text-primary); margin-top:4px">$${totalInvoiced.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding-top:12px; border-top:1px solid var(--border-color)">
+                <div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Outstanding</div>
+                  <div style="font-size:16px; font-weight:400; color:var(--text-secondary); margin-top:4px">$${totalOutstanding.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                </div>
+                <div>
+                  <div style="font-size:11px; font-weight:400; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px">Overdue</div>
+                  <div style="font-size:16px; font-weight:400; color:${(totalOverdue > 0 ? 'var(--color-danger)' : 'var(--text-secondary)')}; margin-top:4px">
+                    $${totalOverdue.toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card" style="margin:0">
+            <div class="card-header"><h4>Payment Settings</h4></div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:16px">
+              <div style="display:flex; justify-content:space-between; padding-bottom:12px; border-bottom:1px solid var(--border-color)">
+                <span style="color:var(--text-secondary)">Payment Terms</span>
+                <span style="font-weight:500">${escapeHTML(person.paymentTerms || 'Default (14 Days)')}</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; padding-bottom:12px; border-bottom:1px solid var(--border-color)">
+                <span style="color:var(--text-secondary)">Credit Limit</span>
+                <span style="font-weight:500">${(person.creditLimit ? '$' + parseFloat(person.creditLimit).toLocaleString('en-AU', { minimumFractionDigits: 2 }) : 'None Set')}</span>
+              </div>
+              <div style="display:flex; justify-content:space-between;">
+                <span style="color:var(--text-secondary)">Account Status</span>
+                <span class="badge ${(totalOverdue > 0 ? 'badge-danger' : 'badge-success')}">${(totalOverdue > 0 ? 'In Arrears' : 'In Good Standing')}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` + renderRelatedTable(invoices.filter(i => i.status !== 'Paid' && i.status !== 'Draft'), [
+        { label: 'Invoice #', key: 'number' },
+        { label: 'Status', key: 'status', badge: true },
+        { label: 'Total', key: 'total', format: 'currency' },
+        { label: 'Balance', key: 'balanceDue', format: 'currency' },
+        { label: 'Due', key: 'dueDate', format: 'date' },
+      ], 'invoices', 'No outstanding invoices for this customer');
     }
   }
 

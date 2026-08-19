@@ -16,6 +16,20 @@ const AVAILABLE_TAGS = [
 export function renderJobForm(container, params) {
   const id = params.id;
   const isEdit = id && id !== 'new';
+  const activeTab = params.tab || 'details';
+  const formIdKey = isEdit ? String(id) : 'new';
+
+  if (container.querySelector('#job-form') && container.dataset.jobFormId === formIdKey) {
+    container.querySelectorAll('[id^="jf-tab-"]').forEach(div => div.style.display = 'none');
+    const targetDiv = container.querySelector(`#jf-tab-${activeTab}`);
+    if (targetDiv) targetDiv.style.display = 'block';
+
+    if (activeTab === 'tasks') renderFormTasks();
+    if (activeTab === 'forms') renderFormSelection();
+    return;
+  }
+
+  container.dataset.jobFormId = formIdKey;
   const job = isEdit ? store.getById('jobs', id) : {};
   
   if (!isEdit) {
@@ -269,20 +283,12 @@ export function renderJobForm(container, params) {
         <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> ${isEdit ? 'Update' : 'Create'} Job</button>
       </div>
     </div>
-    <div class="tabs" id="job-form-tabs" style="margin-bottom:16px">
-      <button type="button" class="tab active" data-tab="details">Details</button>
-      <button type="button" class="tab" data-tab="asset">Asset / Equipment</button>
-      <button type="button" class="tab" data-tab="scheduling">Scheduling & Recurrence</button>
-      <button type="button" class="tab" data-tab="tasks">Tasklists</button>
-      <button type="button" class="tab" data-tab="forms">Compliance Forms</button>
-    </div>
-    
     <form id="job-form">
       <input type="hidden" name="assetId" id="jf-asset-id" value="${job.assetId || ''}" />
       <input type="hidden" name="assetName" id="jf-asset-name" value="${escapeHTML(job.assetName || '')}" />
 
       <!-- TAB 1: DETAILS -->
-      <div id="jf-tab-details">
+      <div id="jf-tab-details" style="display:${activeTab === 'details' ? 'block' : 'none'};">
         <div class="card">
           <div class="card-body">
 
@@ -406,7 +412,7 @@ export function renderJobForm(container, params) {
       </div>
 
       <!-- TAB 2: ASSET / EQUIPMENT -->
-      <div id="jf-tab-asset" style="display:none;">
+      <div id="jf-tab-asset" style="display:${activeTab === 'asset' ? 'block' : 'none'};">
         <div class="card">
           <div class="card-body">
             <h4 style="margin:0 0 4px 0; display:flex; align-items:center; gap:6px;">
@@ -439,7 +445,7 @@ export function renderJobForm(container, params) {
       </div>
 
       <!-- TAB 3: SCHEDULING & RECURRENCE -->
-      <div id="jf-tab-scheduling" style="display:none;">
+      <div id="jf-tab-scheduling" style="display:${activeTab === 'scheduling' ? 'block' : 'none'};">
         <div class="card">
           <div class="card-body">
             <h4 style="margin:0 0 16px 0; display:flex; align-items:center; gap:6px;">
@@ -513,32 +519,20 @@ export function renderJobForm(container, params) {
       </div>
 
       <!-- TAB 4: TASKLISTS -->
-      <div id="jf-tab-tasks" style="display:none;">
+      <div id="jf-tab-tasks" style="display:${activeTab === 'tasks' ? 'block' : 'none'};">
         <div id="jf-task-container"></div>
       </div>
       
       <!-- TAB 5: COMPLIANCE FORMS -->
-      <div id="jf-tab-forms" style="display:none;">
+      <div id="jf-tab-forms" style="display:${activeTab === 'forms' ? 'block' : 'none'};">
         <div id="jf-forms-container"></div>
       </div>
     </form>
   `;
 
-  // ---- Tabs ----
-  container.querySelectorAll('#job-form-tabs .tab').forEach(tab => {
-    tab.addEventListener('click', e => {
-      container.querySelectorAll('#job-form-tabs .tab').forEach(t => t.classList.remove('active'));
-      e.currentTarget.classList.add('active');
-      const t = e.currentTarget.dataset.tab;
-      container.querySelector('#jf-tab-details').style.display = t === 'details' ? 'block' : 'none';
-      container.querySelector('#jf-tab-asset').style.display = t === 'asset' ? 'block' : 'none';
-      container.querySelector('#jf-tab-scheduling').style.display = t === 'scheduling' ? 'block' : 'none';
-      container.querySelector('#jf-tab-tasks').style.display = t === 'tasks' ? 'block' : 'none';
-      container.querySelector('#jf-tab-forms').style.display = t === 'forms' ? 'block' : 'none';
-      if (t === 'tasks') renderFormTasks();
-      if (t === 'forms') renderFormSelection();
-    });
-  });
+  // ---- Initial Tab Specific Renders ----
+  if (activeTab === 'tasks') renderFormTasks();
+  if (activeTab === 'forms') renderFormSelection();
 
   // ---- Customer change → update site & contact dropdowns ----
   const custSelect = container.querySelector('#jf-customer');
@@ -1441,8 +1435,10 @@ export function renderJobForm(container, params) {
         const parentTabDiv = invalidElem.closest('[id^="jf-tab-"]');
         if (parentTabDiv) {
           const tabName = parentTabDiv.id.replace('jf-tab-', '');
-          const tabBtn = container.querySelector(`#job-form-tabs .tab[data-tab="${tabName}"]`);
-          if (tabBtn) tabBtn.click();
+          const basePath = isEdit ? `/jobs/${id}/edit` : '/jobs/new';
+          const qParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+          qParams.set('tab', tabName);
+          router.navigate(`${basePath}?${qParams.toString()}`);
         }
       }
       form.reportValidity();

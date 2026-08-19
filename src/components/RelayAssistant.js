@@ -581,6 +581,9 @@ export async function openRelay() {
 
   if (!hasPermission('AI Assistant', 'use')) return;
 
+  // Always enforce chat mode when minimized, watchdog when expanded
+  activeTab = isExpanded ? 'watchdog' : 'chat';
+
   const draftKey = `relay_draft_message_${getUserId()}`;
   const draftVal = localStorage.getItem(draftKey) || '';
   const cloud = isCloudUser();

@@ -241,25 +241,74 @@ function getContextualMenu(hash) {
   const id = parts[1];
   const isEdit = parts[2] === 'edit';
 
+  // Job Form: Create (/jobs/new) or Edit (/jobs/:id/edit)
+  if (resource === 'jobs' && (id === 'new' || isEdit)) {
+    const job = isEdit && id ? store.getById('jobs', id) : null;
+    const jobTitle = isEdit ? (job ? `Edit Job #${job.number}` : 'Edit Job') : 'New Job';
+    const currentTab = activeTab || 'details';
+    const basePath = id === 'new' ? '/jobs/new' : `/jobs/${id}/edit`;
+
+    const buildTabPath = (tabId) => {
+      const qParams = new URLSearchParams(queryString || '');
+      qParams.set('tab', tabId);
+      return `${basePath}?${qParams.toString()}`;
+    };
+
+    return {
+      railId: 'cat-workflow',
+      headerTitle: jobTitle,
+      icon: 'build',
+      backPath: isEdit ? `/jobs/${id}` : '/jobs',
+      backLabel: isEdit ? 'Back to Job' : 'Back to Jobs',
+      items: [
+        { id: 'details', icon: 'assignment', label: 'Details', path: buildTabPath('details') },
+        { id: 'asset', icon: 'inventory_2', label: 'Asset / Equipment', path: buildTabPath('asset') },
+        { id: 'scheduling', icon: 'event', label: 'Scheduling & Recurrence', path: buildTabPath('scheduling') },
+        { id: 'tasks', icon: 'checklist', label: 'Tasklists', path: buildTabPath('tasks') },
+        { id: 'forms', icon: 'fact_check', label: 'Compliance Forms', path: buildTabPath('forms') }
+      ],
+      activeTab: currentTab
+    };
+  }
+
   if (!resource || id === 'new' || isEdit) return null;
 
   // Settings page (/settings)
   if (resource === 'settings') {
     const currentTab = activeTab || 'company';
+    // Company-type gating mirrors Settings.js: every tab stays visible, but the
+    // ones that don't apply to the current account type are greyed out (disabled)
+    // instead of hidden — so users can see what other plans unlock. Keep this in
+    // sync with the flags computed in renderSettings() (src/pages/Settings.js).
+    const local = isLocalMode();
+    const deploymentType = (store.getSettings().localDeploymentType) || 'single_user';
+    const portalDisabled = local;                                     // portals are cloud-only
+    const folderSyncDisabled = !local;                                // folder sync is local-only
+    const usersDisabled = local && deploymentType === 'single_user';  // needs cloud or multi-user local
+    const aiDisabled = local;                                         // AI assistant is cloud-only
     return {
       railId: 'cat-admin',
       headerTitle: 'Settings & Config',
       icon: 'settings',
       items: [
         { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
-        { id: 'tax', icon: 'payments', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
-        { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
-        { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+        { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' },
+        { id: 'ai_assistant', icon: 'smart_toy', label: 'AI Assistant', path: '/settings?tab=ai_assistant', disabled: aiDisabled, tooltip: 'Requires Cloud Account' },
+        { id: 'api_keys', icon: 'vpn_key', label: 'Local System Configuration', path: '/settings?tab=api_keys' },
         { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
         { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
+        { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments' },
         { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email' },
-        { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal' },
-        { id: 'integrations', icon: 'api', label: 'Integrations', path: '/settings?tab=integrations' }
+        { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
+        { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+        { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
+        { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' },
+        { id: 'users', icon: 'group', label: 'Users & Permissions', path: '/settings?tab=users', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
+        { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
+        { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
+        { id: 'folder_sync', icon: 'sync', label: 'Folder Sync', path: '/settings?tab=folder_sync', disabled: folderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
+        // No Settings page behind this yet — shown greyed so it's discoverable.
+        { id: 'integrations', icon: 'hub', label: 'Integrations', path: '/settings?tab=integrations', disabled: true, tooltip: 'Coming soon — third-party integrations' }
       ],
       activeTab: currentTab
     };
@@ -614,7 +663,7 @@ function syncActiveFromRoute(sidebar, path) {
       </div>
       <nav class="submenu-nav" style="${contextual.items && contextual.items.length > 0 ? '' : 'display:none;'}">
         ${contextual.items.map(item => `
-          <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''}" data-path="${item.path}" style="display:flex; align-items:center; width:100%">
+          <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" ${item.disabled ? `data-tooltip="${escapeHTML(item.tooltip || 'Not available for this account type')}" data-tooltip-pos="right"` : ''} style="display:flex; align-items:center; width:100%">
             <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
             <span class="nav-label">${escapeHTML(item.label)}</span>
             ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}

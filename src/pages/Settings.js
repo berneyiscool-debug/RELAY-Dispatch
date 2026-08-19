@@ -208,6 +208,9 @@ export function renderSettings(container) {
     activeTab = tabParam;
   }
 
+  // Email Templates was merged into the Email & Domain tab — keep old links working.
+  if (activeTab === 'email_templates') activeTab = 'email';
+
   const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
   const settings = store.getSettings();
   const localDeploymentType = settings.localDeploymentType || 'single_user';
@@ -236,7 +239,7 @@ export function renderSettings(container) {
 
   function getCategoryForTab(tab) {
     if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
-    if (['templates_forms', 'invoices_quotes', 'payments', 'email', 'email_templates'].includes(tab)) return 'workflow';
+    if (['templates_forms', 'invoices_quotes', 'payments', 'email'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
     if (['materials', 'cost_centers', 'tax'].includes(tab)) return 'resources';
     return 'general';
@@ -442,6 +445,7 @@ export function renderSettings(container) {
         { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
+        { id: 'ai_assistant', label: 'AI Assistant', disabled: isAIAssistantDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'api_keys', label: 'Local System Configuration' },
         { id: 'system', label: 'System Options' }
       ]
@@ -456,8 +460,7 @@ export function renderSettings(container) {
         // v1.3 #3 — dark until FLAGS.payments flips on for launch
         ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : []),
         // v1.3 #5 — dark until FLAGS.email flips on for launch
-        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain' }] : []),
-        ...(FLAGS.email ? [{ id: 'email_templates', label: 'Email Templates' }] : [])
+        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain' }] : [])
       ]
     },
     {
@@ -652,6 +655,11 @@ export function renderSettings(container) {
       return;
     }
 
+    if (activeTab === 'ai_assistant') {
+      renderAIAssistantTab(tc);
+      return;
+    }
+
     if (activeTab === 'templates_forms') {
       renderTemplatesFormsTab(tc);
       return;
@@ -672,10 +680,6 @@ export function renderSettings(container) {
       return;
     }
 
-    if (activeTab === 'email_templates') {
-      renderEmailTemplatesTab(tc);
-      return;
-    }
 
     if (activeTab === 'cost_centers') {
       renderCostCentersTab(tc);
@@ -3763,67 +3767,6 @@ export function renderSettings(container) {
     });
   }
 
-  // Wording and branding are edited in the full-width Email Studio; this tab is
-  // the way in, and reports which emails have been personalised.
-  function renderEmailTemplatesTab(tc) {
-    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
-    if (!isCloud) {
-      tc.innerHTML = `
-        <div class="card" style="max-width:760px">
-          <div class="card-header"><h4>Email Templates</h4></div>
-          <div class="card-body"><p style="color:var(--text-secondary);">Email personalisation is a cloud feature. Upgrade to a cloud account to customise the emails RELAY sends.</p></div>
-        </div>`;
-      return;
-    }
-
-    const s = store.getSettings() || {};
-    const dtheme = s.documentTheme || {};
-    const mail = emailSettings();
-    const branding = mail.branding || {};
-    const header = branding.headerBg || dtheme.headerBg || '#1E2A3A';
-    const accent = branding.accent || dtheme.accentColor || '#FF5C00';
-    const templates = mail.templates || {};
-    const customised = EMAIL_TEMPLATES.filter(t => {
-      const v = templates[t.key] || {};
-      return !!(v.subject || v.intro || v.note || v.ctaLabel);
-    });
-
-    tc.innerHTML = `
-      <div class="card" style="max-width:860px">
-        <div class="card-body" style="display:flex; gap:26px; align-items:center; padding:24px; flex-wrap:wrap">
-          <div style="flex:0 0 150px; width:150px; background:#eef1f4; border:1px solid var(--border-color-dark); border-radius:6px; box-shadow:var(--shadow-md); padding:10px; overflow:hidden" aria-hidden="true">
-            <div style="background:#fff; border-radius:4px; overflow:hidden">
-              <div style="height:16px; background:${header}"></div>
-              <div style="padding:8px 9px 11px">
-                <div style="height:4px; width:56%; border-radius:2px; background:#c9d0d8"></div>
-                <div style="height:3px; width:92%; margin-top:7px; border-radius:2px; background:#e3e7ec"></div>
-                <div style="height:3px; width:78%; margin-top:4px; border-radius:2px; background:#e3e7ec"></div>
-                <div style="height:11px; width:52%; margin-top:9px; border-radius:3px; background:${accent}"></div>
-              </div>
-            </div>
-          </div>
-          <div style="flex:1 1 340px; min-width:280px">
-            <h3 style="margin:0 0 6px; font-size:var(--font-size-xl)">Email templates</h3>
-            <p style="margin:0 0 14px; color:var(--text-secondary); font-size:var(--font-size-lg); line-height:1.6; max-width:52ch">
-              The subject lines, wording and branding of the quote, invoice, receipt, reminder and
-              portal invite emails RELAY sends on your behalf.
-            </p>
-            <p style="margin:0 0 18px; font-size:var(--font-size-base); color:var(--text-tertiary)">
-              ${customised.length
-                ? `${customised.length} of ${EMAIL_TEMPLATES.length} personalised — ${escapeHTML(customised.map(t => t.label).join(', '))}`
-                : `All ${EMAIL_TEMPLATES.length} emails use RELAY's standard wording.`}
-            </p>
-            <button class="btn btn-primary" id="open-email-studio">
-              <span class="material-icons-outlined" style="font-size:18px">drafts</span>
-              Open Email Studio
-            </button>
-          </div>
-        </div>
-      </div>`;
-
-    tc.querySelector('#open-email-studio')?.addEventListener('click', () => router.navigate('/settings/email-templates'));
-  }
-
   function renderEmailTab(tc) {
     const settings = store.getSettings() || {};
     const email = emailSettings();   // settings.mailer — see utils/email.js
@@ -3968,6 +3911,21 @@ export function renderSettings(container) {
               </label>`).join('')}
           </div>
 
+          <h5 style="margin:18px 0 8px;">Wording &amp; branding</h5>
+          <p style="font-size:12px;color:var(--text-secondary);margin:0 0 10px;max-width:60ch;">
+            ${(() => {
+              const tmpl = email.templates || {};
+              const customised = EMAIL_TEMPLATES.filter(t => { const v = tmpl[t.key] || {}; return !!(v.subject || v.intro || v.note || v.ctaLabel); });
+              return customised.length
+                ? `${customised.length} of ${EMAIL_TEMPLATES.length} personalised — ${escapeHTML(customised.map(t => t.label).join(', '))}`
+                : `All ${EMAIL_TEMPLATES.length} emails use RELAY's standard wording.`;
+            })()}
+          </p>
+          <button class="btn btn-secondary" id="open-email-studio" style="margin-bottom:8px;">
+            <span class="material-icons-outlined" style="font-size:18px">drafts</span>
+            Open Email Studio
+          </button>
+
           <h5 style="margin:18px 0 8px;">Automatic payment reminders</h5>
           <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;">
             <input type="checkbox" id="em-rem-enabled" style="width:16px;height:16px;" ${(email.reminders || {}).enabled ? 'checked' : ''} />
@@ -4042,6 +4000,8 @@ export function renderSettings(container) {
       window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
       return s;
     };
+
+    tc.querySelector('#open-email-studio')?.addEventListener('click', () => router.navigate('/settings/email-templates'));
 
     tc.querySelector('#em-save')?.addEventListener('click', async () => {
       try {
@@ -4452,7 +4412,7 @@ export function renderSettings(container) {
     render();
   }
 
-  function renderApiKeysTab(tc) {
+  function renderAIAssistantTab(tc) {
     const s = store.getSettings();
     const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
     const ai = s.ai || {
@@ -4467,7 +4427,6 @@ export function renderSettings(container) {
       systemPrompt: 'You are Deputy, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
     };
     if (ai.useSameKey === undefined) ai.useSameKey = true;
-    const maps = s.maps || { apiKey: '' };
 
     const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null') || { id: 'default' };
     const userId = currentUser.id || 'default';
@@ -4553,20 +4512,6 @@ export function renderSettings(container) {
                   <button class="btn btn-primary" id="btn-save-ai">Save AI Config</button>
                 </div>
 
-              </div>
-            </div>
-
-            <div class="card">
-              <div class="card-header"><h4>Google Maps Configuration</h4></div>
-              <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-                <div class="form-group">
-                  <label class="form-label" style="font-weight:600;">Maps API Key</label>
-                  <input type="password" class="form-input" id="maps-apikey" value="${maps.apiKey || ''}" placeholder="AIzaSy..." />
-                  <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Used for address autocomplete, distance calculations, and rendering maps. Get this from the Google Cloud Console.</div>
-                </div>
-                <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
-                  <button class="btn btn-primary" id="btn-save-maps">Save Maps Config</button>
-                </div>
               </div>
             </div>
 
@@ -4671,14 +4616,6 @@ export function renderSettings(container) {
         showToast('AI settings saved successfully', 'success');
       });
 
-      tc.querySelector('#btn-save-maps').addEventListener('click', () => {
-        const apiKey = tc.querySelector('#maps-apikey').value.trim();
-        const settings = store.getSettings();
-        settings.maps = { apiKey };
-        store.saveSettings(settings);
-        showToast('Maps settings saved successfully', 'success');
-      });
-
       // Test handler
       tc.querySelector('#btn-test-ai').addEventListener('click', async () => {
         const apiKey = tc.querySelector('#ai-apikey').value.trim();
@@ -4768,6 +4705,38 @@ export function renderSettings(container) {
     }
 
     render();
+  }
+
+  // Local System Configuration — API keys for local integrations (Google Maps).
+  // AI Assistant setup lives in its own tab (renderAIAssistantTab).
+  function renderApiKeysTab(tc) {
+    const s = store.getSettings();
+    const maps = s.maps || { apiKey: '' };
+    tc.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:var(--space-lg); max-width:760px;">
+        <div class="card">
+          <div class="card-header"><h4>Google Maps Configuration</h4></div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+            <div class="form-group">
+              <label class="form-label" style="font-weight:600;">Maps API Key</label>
+              <input type="password" class="form-input" id="maps-apikey" value="${maps.apiKey || ''}" placeholder="AIzaSy..." />
+              <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Used for address autocomplete, distance calculations, and rendering maps. Get this from the Google Cloud Console.</div>
+            </div>
+            <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
+              <button class="btn btn-primary" id="btn-save-maps">Save Maps Config</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    tc.querySelector('#btn-save-maps').addEventListener('click', () => {
+      const apiKey = tc.querySelector('#maps-apikey').value.trim();
+      const settings = store.getSettings();
+      settings.maps = { apiKey };
+      store.saveSettings(settings);
+      showToast('Maps settings saved successfully', 'success');
+    });
   }
 
   function renderCostCentersTab(tc) {
