@@ -361,15 +361,6 @@ export function renderJobForm(container, params) {
               </div>
             </div>
 
-            <!-- Contractor -->
-            <div class="form-group">
-              <label class="form-label">Assign to Contractor (Optional)</label>
-              <select class="form-select" name="contractorId">
-                <option value="">None (Internal Techs)</option>
-                ${contractors.map(c => `<option value="${c.id}" ${job.contractorId === c.id ? 'selected' : ''}>${escapeHTML(c.businessName)}</option>`).join('')}
-              </select>
-            </div>
-
             <!-- Tags -->
             <div class="form-group">
               <label class="form-label">Tags</label>
@@ -963,6 +954,32 @@ export function renderJobForm(container, params) {
                   <label class="form-label">Description</label>
                   <textarea class="form-input detail-input" data-field="description" rows="3">${escapeHTML(node.description || '')}</textarea>
                 </div>
+                <div style="margin-top:12px">
+                  <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-weight:600; color:var(--text-secondary)">Assigned Subcontractors</span>
+                    <button type="button" class="btn btn-ghost btn-sm btn-form-assign-contractor" data-path="${path.join('-')}" style="padding:2px 6px; font-size:11px; height:auto;">
+                      <span class="material-icons-outlined" style="font-size:14px;">add</span> Allocate
+                    </button>
+                  </div>
+                  <div style="display:flex; flex-wrap:wrap; gap:6px">
+                    ${(() => {
+                      const ids = node.assignedContractorIds || [];
+                      if (ids.length === 0) {
+                        return `<span style="color:var(--text-tertiary); font-style:italic; font-size:13px">Unassigned</span>`;
+                      }
+                      return ids.map(id => {
+                        const contr = store.getById('contractors', id);
+                        const name = contr ? contr.businessName : 'Unknown Subcontractor';
+                        return `
+                          <span class="badge" style="background:var(--color-primary-light); color:var(--color-primary); font-weight:600; display:inline-flex; align-items:center; gap:4px; padding:4px 8px; border-radius:4px; font-size:12px">
+                            <span class="material-icons-outlined" style="font-size:14px">engineering</span>
+                            ${escapeHTML(name)}
+                          </span>
+                        `;
+                      }).join('');
+                    })()}
+                  </div>
+                </div>
                 ${!hasSubs ? `
                 <div style="margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px">
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
@@ -1111,6 +1128,94 @@ export function renderJobForm(container, params) {
              }
           }
        });
+
+     // Subcontractor Allocation listener for task builder
+     tc.querySelector('.btn-form-assign-contractor')?.addEventListener('click', (e) => {
+        const path = e.currentTarget.dataset.path.split('-').map(Number);
+        const node = getTaskByPath(jobTasks, path);
+        if (!node) return;
+        const activeContractors = store.getAll('contractors').filter(c => c.active);
+        
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-group" style="margin-bottom:12px">
+            <div style="position:relative">
+              <span class="material-icons-outlined" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:18px; color:var(--text-tertiary)">search</span>
+              <input type="text" id="modal-contractor-search" class="form-input" placeholder="Search contractors by name, trade..." style="padding-left:34px; width:100%" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="display:flex; justify-content:space-between; align-items:center">
+              <span>Select Contractors</span>
+              <span class="text-tertiary font-normal" style="font-size:11px" id="contractor-count-label">${activeContractors.length} available</span>
+            </label>
+            <div id="modal-contractor-list" style="display:flex; flex-direction:column; gap:6px; max-height: 250px; overflow-y:auto; padding: 4px;">
+              ${activeContractors.length === 0 ? '<div class="text-tertiary font-italic text-sm">No active contractors found</div>' : ''}
+              ${activeContractors.map(c => `
+                <label class="contractor-item-label" data-search="${escapeHTML(((c.businessName || '') + ' ' + (c.contactName || '') + ' ' + (c.trade || '') + ' ' + (c.email || '')).toLowerCase())}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--content-bg); cursor:pointer;">
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <input type="checkbox" class="contractor-assign-checkbox" value="${c.id}" ${(node.assignedContractorIds || []).includes(c.id) ? 'checked' : ''}>
+                    <div>
+                      <div style="font-weight:500; font-size:13.5px; color:var(--text-primary)">${escapeHTML(c.businessName || c.name || 'Contractor')}</div>
+                      ${c.contactName ? `<div style="font-size:11px; color:var(--text-tertiary)">${escapeHTML(c.contactName)}${c.trade ? ` • ${escapeHTML(c.trade)}` : ''}</div>` : ''}
+                    </div>
+                  </div>
+                  ${c.trade && !c.contactName ? `<span class="badge badge-neutral" style="font-size:10px">${escapeHTML(c.trade)}</span>` : ''}
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        `;
+
+        setTimeout(() => {
+          const searchInput = content.querySelector('#modal-contractor-search');
+          const countLabel = content.querySelector('#contractor-count-label');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.addEventListener('input', (ev) => {
+              const q = ev.target.value.toLowerCase().trim();
+              let visibleCount = 0;
+              content.querySelectorAll('.contractor-item-label').forEach(label => {
+                const searchStr = label.dataset.search || '';
+                if (!q || searchStr.includes(q)) {
+                  label.style.display = 'flex';
+                  visibleCount++;
+                } else {
+                  label.style.display = 'none';
+                }
+              });
+              if (countLabel) {
+                countLabel.textContent = `${visibleCount} of ${activeContractors.length} showing`;
+              }
+            });
+          }
+        }, 50);
+
+        import('../../components/Modal.js').then(({ showModal }) => {
+          showModal({
+            title: 'Allocate Subcontractors',
+            content,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+              { label: 'Save Allocation', className: 'btn-primary', onClick: (close) => {
+                const selectedIds = Array.from(content.querySelectorAll('.contractor-assign-checkbox:checked')).map(cb => cb.value);
+                node.assignedContractorIds = selectedIds;
+                if (selectedIds.length > 0) {
+                  node.assignedContractorId = selectedIds[0];
+                  const contr = store.getById('contractors', selectedIds[0]);
+                  node.assignedContractorName = contr ? contr.businessName : '';
+                } else {
+                  node.assignedContractorId = null;
+                  node.assignedContractorName = '';
+                }
+                showToast('Contractor allocation updated', 'success');
+                renderFormTasks();
+                close();
+              }}
+            ]
+          });
+        });
+     });
        
     });
 

@@ -957,6 +957,122 @@ export function renderJobDetail(container, { id, tab }) {
 
     if (activeTab === 'schedule') {
       const schedules = store.getAll('schedule').filter(t => t.jobId === id);
+
+      const recurringCardHtml = job.isRecurring === true ? `
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-color)">
+            <h4 style="margin:0;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;color:var(--text-primary)">
+              <span class="material-icons-outlined" style="color:var(--color-primary)">event_repeat</span>
+              Recurring Plan
+            </h4>
+          </div>
+          <div class="card-body" style="padding:20px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border-color)">
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Frequency</div>
+                <div style="font-size:14px;font-weight:500;margin-top:2px;color:var(--text-primary)">${escapeHTML(job.recurringConfig?.freq || '—')}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Date Range</div>
+                <div style="font-size:14px;font-weight:500;margin-top:2px;color:var(--text-primary)">${job.recurringConfig?.start ? new Date(job.recurringConfig.start).toLocaleDateString() : '—'} to ${job.recurringConfig?.end ? new Date(job.recurringConfig.end).toLocaleDateString() : '—'}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Preferred Days</div>
+                <div style="font-size:14px;font-weight:500;margin-top:2px;color:var(--text-primary)">${escapeHTML((() => {
+                  if (!job.recurringConfig) return '—';
+                  if (job.recurringConfig.freq === 'Weekly') {
+                    const daysMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+                    let days = (job.recurringConfig.daysOfWeek || []).map(d => daysMap[d]).join(', ');
+                    if (!days && job.recurringConfig.start) {
+                      days = daysMap[new Date(job.recurringConfig.start).getDay()];
+                    }
+                    return days || '—';
+                  } else if (job.recurringConfig.freq === 'Monthly') {
+                    let days = (job.recurringConfig.daysOfMonth || []).map(d => `Day ${d}`).join(', ');
+                    if (!days && job.recurringConfig.start) {
+                      days = `Day ${new Date(job.recurringConfig.start).getDate()}`;
+                    }
+                    return days || '—';
+                  } else {
+                    return 'Every Day';
+                  }
+                })())}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Total Occurrences</div>
+                <div style="font-size:14px;font-weight:500;margin-top:2px;color:var(--text-primary)">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))).length} spawned</div>
+              </div>
+              <div style="grid-column: 1 / -1">
+                <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase;margin-bottom:4px">Default Technician</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <select class="form-select" id="view-recurring-tech" style="padding:4px 12px;font-size:13px;width:240px;height:34px;background-color:var(--card-bg)">
+                    <option value="">-- No Default (Unassigned) --</option>
+                    ${store.getAll('technicians').filter(t => !t.deactivated || job.recurringConfig?.defaultTechnicianId === t.id).map(t => `<option value="${t.id}" ${job.recurringConfig?.defaultTechnicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+                  </select>
+                  <button class="btn btn-sm btn-primary" id="btn-save-recurring-tech" style="font-size:12px;padding:6px 12px;height:34px">
+                    Save Assignment
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style="font-weight:700;font-size:14px;color:var(--text-primary);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+              <span class="material-icons-outlined" style="font-size:18px;color:var(--color-primary)">work_history</span>
+              Child jobs
+            </div>
+            ${(() => {
+              const genJobs = (store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.')));
+              if (genJobs.length === 0) {
+                return `
+                  <div style="font-size:13px;color:var(--text-tertiary);font-style:italic;padding:16px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:6px;text-align:center">
+                    No child jobs generated yet.
+                  </div>
+                `;
+              }
+              
+              function getTechNames(j) {
+                if (j.technicians && j.technicians.length > 0) {
+                  return j.technicians.map(t => {
+                    const resolved = store.getById('technicians', typeof t === 'object' ? t.id : t);
+                    return resolved ? resolved.name : (t.name || t);
+                  }).join(', ');
+                }
+                return escapeHTML(j.technicianName || 'Unassigned');
+              }
+
+              return `
+                <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px">
+                  <table class="data-table" style="width:100%;font-size:13px;margin:0">
+                    <thead>
+                      <tr>
+                        <th style="padding:8px 12px;text-align:left">Job #</th>
+                        <th style="padding:8px 12px;text-align:left">Scheduled Date</th>
+                        <th style="padding:8px 12px;text-align:left">Technician</th>
+                        <th style="padding:8px 12px;text-align:left">Status</th>
+                        <th style="padding:8px 12px;text-align:right"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${genJobs.map(gj => {
+                        const statusBadge = gj.status === 'Completed' ? 'badge-success' : gj.status === 'Scheduled' ? 'badge-info' : 'badge-warning';
+                        return `
+                          <tr>
+                            <td style="padding:8px 12px;font-weight:600"><a href="#/jobs/${gj.id}">${escapeHTML(gj.number)}</a></td>
+                            <td style="padding:8px 12px">${gj.scheduledDate ? new Date(gj.scheduledDate).toLocaleDateString() : '—'}</td>
+                            <td style="padding:8px 12px">${escapeHTML(getTechNames(gj))}</td>
+                            <td style="padding:8px 12px"><span class="badge ${statusBadge}">${escapeHTML(gj.status)}</span></td>
+                            <td style="padding:8px 12px;text-align:right"><a href="#/jobs/${gj.id}" class="btn btn-sm btn-ghost" style="padding:2px 6px"><span class="material-icons-outlined" style="font-size:16px">visibility</span></a></td>
+                          </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `;
+            })()}
+          </div>
+        </div>
+      ` : '';
       const techs = store.getAll('technicians').filter(t => !t.deactivated);
       
       let totalScheduled = 0;
@@ -1014,6 +1130,7 @@ export function renderJobDetail(container, { id, tab }) {
 
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:16px">
+          ${recurringCardHtml}
            <div class="grid-3" style="gap:16px; align-items:start">
               <div class="card" style="grid-column: span 1">
                 <div class="card-header" style="padding:12px 16px">
@@ -1127,144 +1244,7 @@ export function renderJobDetail(container, { id, tab }) {
           
           <!-- Grid details -->
           <div class="grid-3" style="align-items: start; gap:16px;">
-            ${job.isRecurring === true ? `
-            <div class="card" style="grid-column: span 1">
-              <div class="card-header" style="padding:10px 14px"><h4 style="margin:0; font-size:13px; font-weight:700">Job Information</h4></div>
-              <div class="card-body" style="padding:12px 14px">
-                <div style="display:flex; flex-direction:column; gap:2px">
-                  ${r('Job Number', escapeHTML(job.number))}
-                  ${r('Title', escapeHTML(job.title))}
-                  ${r('Status', escapeHTML(job.status))}
-                  ${r('Completion', `<div style="display:flex;align-items:center;gap:8px;max-width:200px"><div style="flex:1;background:var(--border-color);height:8px;border-radius:4px;overflow:hidden"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div><span style="font-size:12px;font-weight:600">${jobProgress}%</span></div>`)}
-                  ${r('Priority', escapeHTML(job.priority))}
-                  ${r('Est. Hours', estHoursDisplay)}
-                  ${r('Customer', escapeHTML(job.customerName))}
-                  ${r('Contact', escapeHTML(job.contactName || '—'))}
-                  ${r('Site Address', job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—')}
-                  ${r('Quote Ref', job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—')}
-                  ${(() => {
-                    const assetObj = job.assetId ? store.getById('assets', job.assetId) : null;
-                    const aName = job.assetName || (assetObj ? assetObj.name : '');
-                    if (!aName && !assetObj) return '';
-                    const assetId = assetObj ? assetObj.id : job.assetId;
-                    return r('Linked Asset', `<a href="#/assets/${assetId}" class="cell-link font-medium" style="display:inline-flex;align-items:center;gap:4px;"><span class="material-icons-outlined" style="font-size:14px;color:var(--color-primary)">inventory_2</span> ${escapeHTML(aName)} ${assetObj?.serial ? `<span class="text-tertiary" style="font-weight:normal;">(S/N: ${escapeHTML(assetObj.serial)})</span>` : ''}</a>`);
-                  })()}
-                  ${job.preferredTime ? r('Preferred Time', escapeHTML(job.preferredTime)) : ''}
-                  ${r('Created', new Date(job.createdAt).toLocaleDateString())}
-                </div>
-              </div>
-            </div>
-            <div class="card" style="grid-column: span 2">
-              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-                <h4 style="margin:0;display:flex;align-items:center;gap:6px">
-                  <span class="material-icons-outlined" style="color:var(--color-primary)">event_repeat</span>
-                  Recurring Service Plan (Master)
-                </h4>
-              </div>
-              <div class="card-body">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border-color)">
-                  <div>
-                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Frequency</div>
-                    <div style="font-size:14px;margin-top:2px">${escapeHTML(job.recurringConfig?.freq || '—')}</div>
-                  </div>
-                  <div>
-                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Date Range</div>
-                    <div style="font-size:14px;margin-top:2px">${job.recurringConfig?.start ? new Date(job.recurringConfig.start).toLocaleDateString() : '—'} to ${job.recurringConfig?.end ? new Date(job.recurringConfig.end).toLocaleDateString() : '—'}</div>
-                  </div>
-                  <div>
-                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Preferred Days</div>
-                    <div style="font-size:14px;margin-top:2px">${escapeHTML((() => {
-                      if (!job.recurringConfig) return '—';
-                      if (job.recurringConfig.freq === 'Weekly') {
-                        const daysMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
-                        let days = (job.recurringConfig.daysOfWeek || []).map(d => daysMap[d]).join(', ');
-                        if (!days && job.recurringConfig.start) {
-                          days = daysMap[new Date(job.recurringConfig.start).getDay()];
-                        }
-                        return days || '—';
-                      } else if (job.recurringConfig.freq === 'Monthly') {
-                        let days = (job.recurringConfig.daysOfMonth || []).map(d => `Day ${d}`).join(', ');
-                        if (!days && job.recurringConfig.start) {
-                          days = `Day ${new Date(job.recurringConfig.start).getDate()}`;
-                        }
-                        return days || '—';
-                      } else {
-                        return 'Every Day';
-                      }
-                    })())}</div>
-                  </div>
-                  <div>
-                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Total Occurrences</div>
-                    <div style="font-size:14px;margin-top:2px">${(store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))).length} spawned</div>
-                  </div>
-                  <div style="grid-column: span 2">
-                    <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase">Default Technician</div>
-                    <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-                      <select class="form-select" id="view-recurring-tech" style="padding:4px 12px;font-size:13px;width:240px;height:34px;background-color:var(--card-bg)">
-                        <option value="">-- No Default (Unassigned) --</option>
-                        ${store.getAll('technicians').filter(t => !t.deactivated || job.recurringConfig?.defaultTechnicianId === t.id).map(t => `<option value="${t.id}" ${job.recurringConfig?.defaultTechnicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
-                      </select>
-                      <button class="btn btn-sm btn-primary" id="btn-save-recurring-tech" style="font-size:12px;padding:6px 12px;height:34px">
-                        Save Assignment
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div style="font-weight:600;font-size:13px;color:var(--text-secondary);margin-bottom:8px">Generated Job Tickets</div>
-                ${(() => {
-                  const genJobs = (store.getAll('jobs') || []).filter(j => j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.')));
-                  if (genJobs.length === 0) {
-                    return `
-                      <div style="font-size:12px;color:var(--text-tertiary);font-style:italic;padding:12px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:6px;text-align:center">
-                        No job tickets generated yet.
-                      </div>
-                    `;
-                  }
-                  
-                  function getTechNames(j) {
-                    if (j.technicians && j.technicians.length > 0) {
-                      return j.technicians.map(t => {
-                        const resolved = store.getById('technicians', typeof t === 'object' ? t.id : t);
-                        return resolved ? resolved.name : (t.name || t);
-                      }).join(', ');
-                    }
-                    return escapeHTML(j.technicianName || 'Unassigned');
-                  }
-
-                  return `
-                    <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px">
-                      <table class="data-table" style="width:100%;font-size:12px;margin:0">
-                        <thead>
-                          <tr>
-                            <th style="padding:6px 12px;text-align:left">Job #</th>
-                            <th style="padding:6px 12px;text-align:left">Scheduled Date</th>
-                            <th style="padding:6px 12px;text-align:left">Technician</th>
-                            <th style="padding:6px 12px;text-align:left">Status</th>
-                            <th style="padding:6px 12px;text-align:right"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${genJobs.map(gj => {
-                            const statusBadge = gj.status === 'Completed' ? 'badge-success' : gj.status === 'Scheduled' ? 'badge-info' : 'badge-warning';
-                            return `
-                              <tr>
-                                <td style="padding:6px 12px;font-weight:600"><a href="#/jobs/${gj.id}">${escapeHTML(gj.number)}</a></td>
-                                <td style="padding:6px 12px">${gj.scheduledDate ? new Date(gj.scheduledDate).toLocaleDateString() : '—'}</td>
-                                <td style="padding:6px 12px">${escapeHTML(getTechNames(gj))}</td>
-                                <td style="padding:6px 12px"><span class="badge ${statusBadge}">${escapeHTML(gj.status)}</span></td>
-                                <td style="padding:6px 12px;text-align:right"><a href="#/jobs/${gj.id}" class="btn btn-sm btn-ghost" style="padding:2px 6px"><span class="material-icons-outlined" style="font-size:16px">visibility</span></a></td>
-                              </tr>
-                            `;
-                          }).join('')}
-                        </tbody>
-                      </table>
-                    </div>
-                  `;
-                })()}
-              </div>
-            </div>
-            ` : `
+            
             <div style="grid-column: 1 / -1; display:grid; grid-template-columns: 2.2fr 1fr; gap:24px;">
               
               <!-- Left Column -->
@@ -1366,11 +1346,7 @@ export function renderJobDetail(container, { id, tab }) {
                       </tbody>
                     </table>
                   </div>
-                </div>
-              </div>
-
             </div>
-            `}
           </div>
         </div>
       `;
@@ -3559,6 +3535,7 @@ export function renderJobDetail(container, { id, tab }) {
 
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:16px">
+          ${recurringCardHtml}
           
           <div class="card" style="padding:16px; background:var(--bg-color); display:flex; gap:32px; border-left:4px solid var(--color-primary)">
             <div>

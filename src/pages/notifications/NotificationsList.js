@@ -403,26 +403,36 @@ export function renderNotificationsList(container, params) {
     const linkedAsset = n.assetId ? store.getById('assets', n.assetId) : null;
     const linkedPlan = n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId) : null;
     const customer = linkedAsset?.customerId ? store.getById('customers', linkedAsset.customerId) : null;
+    const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated || t.id === n.technicianId);
+
+    // Auto-filled default technician (from notification, maintenance plan, or linked quote)
+    const defaultTechId = n.technicianId || linkedPlan?.defaultTechnicianId || linkedPlan?.recurringConfig?.defaultTechnicianId || '';
 
     // Build maintenance plan details card if relevant
     let maintenanceDetailsCardHtml = '';
-    if (n.type === 'Recurring Job Due') {
+    if (n.type === 'Recurring Job Due' || n.maintenancePlanId) {
+      const materialsList = n.mergedMaterialsList || [];
+      const totalLaborHrs = parseFloat(n.totalLaborHrs || 0);
+      const totalLaborCost = parseFloat(n.totalLaborCost || 0);
+      const totalMaterialCost = parseFloat(n.totalMaterialCost || 0);
+      const totalJobCost = totalLaborCost + totalMaterialCost;
+
       maintenanceDetailsCardHtml = `
-        <div class="maint-details-card" style="padding:16px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px">
+        <div class="maint-details-card" style="padding:16px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px">
           <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:6px">
             <span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">settings_suggest</span>
-            Service Maintenance Details
+            Service Maintenance & Job Info
           </div>
           
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
               <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Service Plan</div>
-              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHTML(linkedPlan?.name || '—')}</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHTML(linkedPlan?.name || n.title || '—')}</div>
             </div>
             <div>
               <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Frequency / Trigger</div>
               <div style="font-size:13px;font-weight:500;color:var(--text-primary)">
-                ${escapeHTML(linkedPlan?.frequency || '—')} (${escapeHTML(linkedPlan?.triggerType || '—')})
+                ${escapeHTML(linkedPlan?.frequency || 'Scheduled')} (${escapeHTML(linkedPlan?.triggerType || 'Calendar')})
               </div>
             </div>
           </div>
@@ -443,22 +453,22 @@ export function renderNotificationsList(container, params) {
           <div style="border-top:1px solid var(--border-color);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
               <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Customer</div>
-              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHTML(customer?.company || customer?.name || '—')}</div>
+              <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHTML(customer?.company || customer?.name || n.customerName || '—')}</div>
             </div>
             <div>
               <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Location / Site</div>
               <div style="font-size:13px;font-weight:500;color:var(--text-primary)">
-                ${escapeHTML(linkedAsset?.site || 'Main Office')}${customer?.address ? `<br><span style="font-size:11px;color:var(--text-secondary)">${escapeHTML(customer.address)}</span>` : ''}
+                ${escapeHTML(linkedAsset?.site || n.siteName || 'Main Office')}${customer?.address ? `<br><span style="font-size:11px;color:var(--text-secondary)">${escapeHTML(customer.address)}</span>` : ''}
               </div>
             </div>
           </div>
 
           <div style="border-top:1px solid var(--border-color);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
-              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Due / Milestone</div>
+              <div style="font-size:11px;color:var(--text-tertiary);font-weight:600">Target Due Date</div>
               <div style="font-size:13px;font-weight:600;color:var(--color-primary-dark)">
                 ${n.targetServiceDate 
-                  ? new Date(n.targetServiceDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+                  ? new Date(n.targetServiceDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
                   : n.currentMeterAtTrigger 
                     ? `Milestone: ${parseFloat(n.currentMeterAtTrigger) + (linkedPlan ? parseFloat(linkedPlan.meterInterval || 0) : 0)} ${escapeHTML(linkedAsset?.meterUnit || 'hrs')}`
                     : '—'}
@@ -472,6 +482,74 @@ export function renderNotificationsList(container, params) {
             </div>
           </div>
         </div>
+
+        <!-- Interactive Technician Assignment & Reschedule Options -->
+        <div style="padding:16px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;margin-bottom:16px;display:flex;flex-direction:column;gap:14px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:6px">
+            <span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">tune</span>
+            Dispatch Controls & Scheduling
+          </div>
+
+          <!-- Assign Technician -->
+          <div>
+            <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:flex;align-items:center;gap:6px">
+              <span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">person_add</span>
+              Assign Technician
+            </label>
+            <select class="form-select" id="notif-assign-tech" style="height:36px">
+              <option value="">-- Unassigned (Pending) --</option>
+              ${technicians.map(t => `<option value="${t.id}" ${defaultTechId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+            </select>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">Autofilled if plan has default technician. Job will be auto-scheduled upon dispatch.</div>
+          </div>
+
+          <!-- Reschedule Occurrence -->
+          <div style="border-top:1px solid var(--border-color);padding-top:12px">
+            <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:flex;align-items:center;gap:6px">
+              <span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary)">event</span>
+              Reschedule Occurrence
+            </label>
+            <div style="display:flex;gap:8px">
+              <input type="date" class="form-input" id="notif-reschedule-date" value="${n.targetServiceDate || n.dueDate || ''}" style="height:36px;flex:1" />
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-reschedule-occurrence" style="height:36px;white-space:nowrap;padding:0 12px">
+                <span class="material-icons-outlined" style="font-size:16px">update</span> Reschedule
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Required Parts & Financial Breakdown -->
+        ${materialsList.length > 0 ? `
+          <div style="padding:16px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px">Required Parts & Job Estimates</div>
+            <table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border-color);text-align:left;color:var(--text-tertiary)">
+                  <th style="padding:4px">Required Part</th>
+                  <th style="padding:4px;text-align:center">Qty</th>
+                  <th style="padding:4px;text-align:right">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${materialsList.map(m => `
+                  <tr style="border-bottom:1px dashed var(--border-color)">
+                    <td style="padding:6px 4px;font-weight:500">${escapeHTML(m.name)}</td>
+                    <td style="padding:6px 4px;text-align:center">${m.quantity}</td>
+                    <td style="padding:6px 4px;text-align:right">$${((m.unitCost || 0) * (m.quantity || 1)).toFixed(2)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border-color);font-size:12px;color:var(--text-secondary)">
+              <span>Est. Labor: ${totalLaborHrs} hrs ($${totalLaborCost.toFixed(2)})</span>
+              <span>Parts: $${totalMaterialCost.toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--text-primary)">
+              <span>Total Estimated Job Value:</span>
+              <span style="color:var(--color-primary)">$${totalJobCost.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        ` : ''}
       `;
     }
 
@@ -592,11 +670,17 @@ export function renderNotificationsList(container, params) {
           return acts;
         }
 
+        const isMaintenanceNotif = n.type === 'Recurring Job Due' || n.maintenancePlanId;
+
         return [
           { label: 'Close', className: 'btn-secondary', onClick: close => close() },
           { label: 'Edit', className: 'btn-secondary', onClick: close => { close(); openNotificationFormDrawer(n); } },
           { label: 'Convert to Quote', className: 'btn-secondary', onClick: close => { close(); convertToQuote(n.id); } },
-          { label: 'Convert to Job', className: 'btn-primary', onClick: close => { close(); convertToJob(n.id); } }
+          { 
+            label: isMaintenanceNotif ? 'Dispatch Job' : 'Convert to Job', 
+            className: 'btn-primary', 
+            onClick: close => { close(); convertToJob(n.id); } 
+          }
         ];
       })(),
       onMount: (drawerEl) => {
@@ -607,6 +691,31 @@ export function renderNotificationsList(container, params) {
         drawerEl.querySelector('.drawer-link-job')?.addEventListener('click', () => {
           drawerEl.querySelector('.drawer-close-btn')?.click();
           router.navigate(`/jobs/${n.jobId}`);
+        });
+
+        // Technician assignment listener
+        drawerEl.querySelector('#notif-assign-tech')?.addEventListener('change', (e) => {
+          const newTechId = e.target.value || null;
+          store.update('notifications', n.id, { technicianId: newTechId });
+          n.technicianId = newTechId;
+          showToast('Technician assignment updated', 'success');
+        });
+
+        // Reschedule occurrence listener
+        drawerEl.querySelector('#btn-reschedule-occurrence')?.addEventListener('click', () => {
+          const newDate = drawerEl.querySelector('#notif-reschedule-date')?.value;
+          if (!newDate) {
+            showToast('Please select a valid target date', 'error');
+            return;
+          }
+          store.update('notifications', n.id, { targetServiceDate: newDate, dueDate: newDate });
+          n.targetServiceDate = newDate;
+          n.dueDate = newDate;
+          if (linkedPlan) {
+            store.update('maintenancePlans', linkedPlan.id, { nextServiceDate: newDate });
+          }
+          showToast(`Occurrence rescheduled to ${newDate}`, 'success');
+          renderNotificationsList(container);
         });
       }
     });
@@ -702,12 +811,19 @@ export function renderNotificationsList(container, params) {
 
     const cleanedTitle = cleanTitle(n.title);
 
+    const assignedTechId = n.technicianId || (n.maintenancePlanId ? store.getById('maintenancePlans', n.maintenancePlanId)?.defaultTechnicianId : null);
+    const techObj = assignedTechId ? store.getById('technicians', assignedTechId) : null;
+
     let jobData = {
       number: store.getNextNumber('J-', 'jobs'),
       title: cleanedTitle,
       description: n.description,
-      priority: n.priority,
-      status: 'Pending',
+      priority: n.priority || 'Normal',
+      status: assignedTechId ? 'Scheduled' : 'Pending',
+      technicianId: assignedTechId || undefined,
+      technicianName: techObj ? techObj.name : '',
+      technicians: assignedTechId ? [{ id: assignedTechId, name: techObj ? techObj.name : '' }] : [],
+      scheduledDate: n.targetServiceDate || n.dueDate || new Date().toISOString().split('T')[0],
       notes: `Generated from Notification: ${n.title}\n\n${n.description}`,
       createdAt: new Date().toISOString()
     };
