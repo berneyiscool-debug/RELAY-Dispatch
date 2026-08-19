@@ -263,7 +263,7 @@ function getContextualMenu(hash) {
       items: [
         { id: 'details', icon: 'assignment', label: 'Details', path: buildTabPath('details') },
         { id: 'asset', icon: 'inventory_2', label: 'Asset / Equipment', path: buildTabPath('asset') },
-        { id: 'scheduling', icon: 'event', label: 'Scheduling & Recurrence', path: buildTabPath('scheduling') },
+        { id: 'scheduling', icon: 'event', label: 'Scheduling', path: buildTabPath('scheduling') },
         { id: 'tasks', icon: 'checklist', label: 'Tasklists', path: buildTabPath('tasks') },
         { id: 'forms', icon: 'fact_check', label: 'Compliance Forms', path: buildTabPath('forms') }
       ],

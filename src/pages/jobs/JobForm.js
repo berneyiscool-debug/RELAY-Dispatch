@@ -64,8 +64,8 @@ export function renderJobForm(container, params) {
   let selectedTags = job.tags ? [...job.tags] : [];
 
   // Selected days for recurring config
-  let selectedDaysOfWeek = [];
-  let selectedDaysOfMonth = [];
+  let selectedDaysOfWeek = job.recurringConfig?.daysOfWeek ? [...job.recurringConfig.daysOfWeek] : [];
+  let selectedDaysOfMonth = job.recurringConfig?.daysOfMonth ? [...job.recurringConfig.daysOfMonth] : [];
 
   function getCustomer(custId) {
     return customers.find(c => c.id === custId) || null;
