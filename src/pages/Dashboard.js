@@ -326,7 +326,9 @@ function subscribeWidgetRefresh() {
       clearTimeout(_dashRefreshTimer);
       _dashRefreshTimer = setTimeout(() => {
         const pend = _dashRefreshPending; _dashRefreshPending = new Set();
-        if (document.querySelector('#dash-world')) refreshWidgetsForCollections(pend);
+        const hash = window.location.hash || '#/';
+        const isDashboard = hash === '#/' || hash === '#' || hash.startsWith('#/dashboard');
+        if (isDashboard && document.querySelector('#dash-world')) refreshWidgetsForCollections(pend);
       }, 400);
     };
     store.on(coll, cb);
@@ -489,7 +491,13 @@ function renderPlaceholder(icon, msg) {
 // ── Top-level render ─────────────────────────────────────────────────────────────
 export async function renderDashboard(container) {
   if (!window.__fieldForge) window.__fieldForge = {};
-  window.__fieldForge.reloadDashboard = () => renderDashboard(container);
+  window.__fieldForge.reloadDashboard = () => {
+    const hash = window.location.hash || '#/';
+    const isDashboard = hash === '#/' || hash === '#' || hash.startsWith('#/dashboard');
+    if (isDashboard && document.querySelector('#dash-viewport')) {
+      renderDashboard(container);
+    }
+  };
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const uid = currentUser ? currentUser.id : 'anon';

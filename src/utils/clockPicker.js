@@ -121,6 +121,73 @@ function formatTo24H(t12) {
   return `${h.toString().padStart(2, '0')}:${mStr}`;
 }
 
+function positionFloatingPopup(popup, anchorEl, defaultHeight = 320, defaultWidth = 300) {
+  if (!popup || !anchorEl) return;
+
+  popup.style.position = 'fixed';
+  popup.style.zIndex = '999999';
+  popup.style.visibility = 'hidden';
+
+  const updatePos = () => {
+    if (!document.body.contains(popup)) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const popupHeight = popup.offsetHeight || defaultHeight;
+    const popupWidth = popup.offsetWidth || defaultWidth;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let top;
+    // If space below is not enough for popup height AND space above has more room, position ABOVE!
+    if (spaceBelow < popupHeight && spaceAbove > spaceBelow) {
+      top = rect.top - popupHeight - 6;
+    } else {
+      top = rect.bottom + 6;
+    }
+
+    // Ensure it doesn't extend off top of screen
+    top = Math.max(8, top);
+    // Ensure it doesn't extend off bottom of screen
+    if (top + popupHeight > window.innerHeight - 8) {
+      top = Math.max(8, window.innerHeight - popupHeight - 8);
+    }
+
+    let left = rect.left;
+    // Ensure it doesn't extend off right edge of screen
+    if (left + popupWidth > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - popupWidth - 8);
+    }
+    // Ensure it doesn't extend off left edge of screen
+    left = Math.max(8, left);
+
+    popup.style.top = `${top}px`;
+    popup.style.left = `${left}px`;
+    popup.style.visibility = 'visible';
+  };
+
+  updatePos();
+  requestAnimationFrame(updatePos);
+  setTimeout(updatePos, 0);
+
+  let observer = null;
+  if (window.ResizeObserver) {
+    observer = new ResizeObserver(() => updatePos());
+    observer.observe(popup);
+  }
+
+  const onScrollResize = () => updatePos();
+  window.addEventListener('scroll', onScrollResize, { capture: true, passive: true });
+  window.addEventListener('resize', onScrollResize);
+
+  const prevCleanup = popup._cleanup;
+  popup._cleanup = () => {
+    if (observer) observer.disconnect();
+    window.removeEventListener('scroll', onScrollResize, { capture: true });
+    window.removeEventListener('resize', onScrollResize);
+    if (prevCleanup) prevCleanup();
+  };
+}
+
 function openClockPopup(anchorEl, onSelect) {
   closeAllClockPickers();
   closeAllDatePickerPickers();
@@ -129,12 +196,8 @@ function openClockPopup(anchorEl, onSelect) {
   popup.className = 'clock-picker-popup';
   document.body.appendChild(popup);
 
-  // Position popup directly below input
-  const rect = anchorEl.getBoundingClientRect();
-  const top = rect.bottom + window.scrollY;
-  const left = rect.left + window.scrollX;
-  popup.style.top = `${top + 4}px`;
-  popup.style.left = `${left}px`;
+  // Position popup dynamically with viewport collision detection
+  positionFloatingPopup(popup, anchorEl, 320, 300);
 
   // Determine current time to initialize
   let currentHour = 9;
@@ -334,12 +397,8 @@ export function openDatePickerPopup(anchorEl, onSelect) {
   popup.className = 'date-picker-popup';
   document.body.appendChild(popup);
 
-  // Position popup directly below input
-  const rect = anchorEl.getBoundingClientRect();
-  const top = rect.bottom + window.scrollY;
-  const left = rect.left + window.scrollX;
-  popup.style.top = `${top + 4}px`;
-  popup.style.left = `${left}px`;
+  // Position popup dynamically with viewport collision detection
+  positionFloatingPopup(popup, anchorEl, 320, 280);
 
   // Parse initial date
   let currentDate = new Date();

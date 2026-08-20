@@ -37,6 +37,7 @@ import { renderNotificationsList } from './pages/notifications/NotificationsList
 import { renderQuotesList } from './pages/quotes/QuotesList.js';
 import { renderQuoteDetail } from './pages/quotes/QuoteDetail.js';
 import { renderJobsList } from './pages/jobs/JobsList.js';
+import { renderRecurringTemplatesList } from './pages/jobs/RecurringTemplatesList.js';
 import { renderJobDetail } from './pages/jobs/JobDetail.js';
 import { renderJobForm } from './pages/jobs/JobForm.js';
 import { renderTimesheetsList } from './pages/timesheets/Timesheets.js';
@@ -207,6 +208,36 @@ document.addEventListener('mouseover', (e) => {
 
   target.setAttribute('data-tooltip-level', isCritical ? 'partial' : 'full');
 });
+
+// Auto-detect viewport boundary collisions for all dropdown menus
+document.addEventListener('click', (e) => {
+  const dropdownToggle = e.target.closest('.dropdown > button, .dropdown > a, [data-toggle="dropdown"], .btn-icon');
+  if (dropdownToggle) {
+    const parentDropdown = dropdownToggle.closest('.dropdown');
+    const menu = parentDropdown ? parentDropdown.querySelector('.dropdown-menu') : null;
+    if (menu) {
+      const checkAndPosition = () => {
+        const isVisible = getComputedStyle(menu).display !== 'none';
+        if (isVisible) {
+          const rect = dropdownToggle.getBoundingClientRect();
+          const menuHeight = menu.offsetHeight || 180;
+          const spaceBelow = window.innerHeight - rect.bottom;
+          const spaceAbove = rect.top;
+
+          if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+            menu.classList.add('dropdown-menu-up');
+          } else {
+            menu.classList.remove('dropdown-menu-up');
+          }
+        }
+      };
+
+      checkAndPosition();
+      requestAnimationFrame(checkAndPosition);
+      setTimeout(checkAndPosition, 0);
+    }
+  }
+}, true);
 
 // ---- Build App Shell ----
 const app = document.getElementById('app');
@@ -623,6 +654,7 @@ router.register('/jobs', renderPage(renderJobsList));
 router.register('/jobs/new', renderPage((c, p) => renderJobForm(c, { id: 'new', ...p })));
 router.register('/jobs/:id', renderPage(renderJobDetail));
 router.register('/jobs/:id/edit', renderPage((c, p) => renderJobForm(c, p)));
+router.register('/recurring-templates', renderPage(renderRecurringTemplatesList));
 
 // Projects
 router.register('/projects', renderPage(renderProjectsList));

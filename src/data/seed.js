@@ -781,10 +781,61 @@ export async function seedData(force = false) {
         hours: hours,
         description: `Serviced key distribution assets and finished routine maintenance checks.`,
         status: 'Approved',
-        createdAt: relativeDate(-1),
-        updatedAt: relativeDate(-1)
+        createdAt: relativeDate(-40),
+        updatedAt: relativeDate(-5)
       });
     }
+  });
+
+  // Master Recurring Job Templates
+  generatedJobs.push({
+    id: 'job_rec_1',
+    number: 'T-00001',
+    customerId: customerIds[0],
+    customerName: customerNames[0].company,
+    contactName: `${customerNames[0].first} ${customerNames[0].last}`,
+    title: 'HVAC Monthly Preventive Maintenance',
+    description: 'Scheduled monthly inspection, filter changes, and pressure testing across main rooftop units.',
+    status: 'Recurring Template',
+    priority: 'Normal',
+    isRecurring: true,
+    recurringConfig: {
+      freq: 'Monthly',
+      start: relativeDateString(0),
+      end: relativeDateString(180),
+      daysOfMonth: [1, 15]
+    },
+    tasks: [
+      { id: 'rec_t1', name: 'Rooftop AC Unit Filter Replacement', status: 'Not Started', estimatedHours: 2, subTasks: [] },
+      { id: 'rec_t2', name: 'Refrigerant Pressure & Electrical Check', status: 'Not Started', estimatedHours: 1.5, subTasks: [] }
+    ],
+    createdAt: relativeDate(-10),
+    updatedAt: relativeDate(-10)
+  });
+
+  generatedJobs.push({
+    id: 'job_rec_2',
+    number: 'T-00002',
+    customerId: customerIds[1],
+    customerName: customerNames[1].company,
+    contactName: `${customerNames[1].first} ${customerNames[1].last}`,
+    title: 'Weekly Electrical & Safety Compliance Walkthrough',
+    description: 'Weekly mandatory site electrical compliance check, emergency lighting test, and switchboard thermal check.',
+    status: 'Recurring Template',
+    priority: 'High',
+    isRecurring: true,
+    recurringConfig: {
+      freq: 'Weekly',
+      start: relativeDateString(0),
+      end: relativeDateString(120),
+      daysOfWeek: [1, 4]
+    },
+    tasks: [
+      { id: 'rec_t3', name: 'Emergency Exit Lighting Functional Test', status: 'Not Started', estimatedHours: 1, subTasks: [] },
+      { id: 'rec_t4', name: 'Main Switchboard Thermal Imaging Inspection', status: 'Not Started', estimatedHours: 2, subTasks: [] }
+    ],
+    createdAt: relativeDate(-15),
+    updatedAt: relativeDate(-15)
   });
 
   // 7. Contractors and Suppliers (5 each)

@@ -232,9 +232,9 @@ export function renderSettings(container) {
     activeTab = 'company';
   }
   
-  const isAIAssistantDisabled = isLocalMode;
-  if (isAIAssistantDisabled && activeTab === 'ai_assistant') {
-    activeTab = 'company';
+  // AI Assistant merged into the API Keys tab — keep old links working.
+  if (activeTab === 'ai_assistant') {
+    activeTab = 'api_keys';
   }
 
   function getCategoryForTab(tab) {
@@ -445,8 +445,7 @@ export function renderSettings(container) {
         { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
-        { id: 'ai_assistant', label: 'AI Assistant', disabled: isAIAssistantDisabled, tooltip: 'Requires Cloud Account' },
-        { id: 'api_keys', label: 'Local System Configuration' },
+        { id: 'api_keys', label: 'API Keys' },
         { id: 'system', label: 'System Options' }
       ]
     },
@@ -655,10 +654,6 @@ export function renderSettings(container) {
       return;
     }
 
-    if (activeTab === 'ai_assistant') {
-      renderAIAssistantTab(tc);
-      return;
-    }
 
     if (activeTab === 'templates_forms') {
       renderTemplatesFormsTab(tc);
@@ -4412,9 +4407,10 @@ export function renderSettings(container) {
     render();
   }
 
-  function renderAIAssistantTab(tc) {
+  function renderApiKeysTab(tc) {
     const s = store.getSettings();
     const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
+    const maps = s.maps || { apiKey: '' };
     const ai = s.ai || {
       enabled: false,
       apiKey: '',
@@ -4437,110 +4433,135 @@ export function renderSettings(container) {
 
     function render() {
       tc.innerHTML = `
-        <div style="display:grid; grid-template-columns:1fr 340px; gap:var(--space-lg); max-width:1100px; align-items:start;">
-          <div style="display:flex; flex-direction:column; gap:var(--space-lg);">
-            <div class="card">
-              <div class="card-header"><h4>AI Assistant Configuration</h4></div>
-              <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-                
-                <div class="form-group">
-                  <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
-                    <input type="checkbox" id="ai-enabled" ${ai.enabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;" />
-                    <div>
-                      <span style="font-weight:600;">Enable AI Assistant</span>
-                      <div class="text-tertiary" style="font-size:12px; margin-top:2px;">Replaces the basic rule-based Relay co-pilot with a smart conversational LLM.</div>
-                    </div>
-                  </label>
+        <div style="max-width:760px; display:flex; flex-direction:column; gap:var(--space-lg);">
+
+          <p style="color:var(--text-secondary); margin:0; font-size:13px; line-height:1.6;">
+            Connect the two outside services RELAY can use. You only need to do this once — open a
+            <strong>“Where do I get a key?”</strong> box, follow the numbered steps, paste the key in, and save.
+          </p>
+
+          <!-- DEPUTY AI -->
+          <div class="card">
+            <div class="card-header">
+              <h4 style="display:flex; align-items:center; gap:8px; margin:0;">
+                <span class="material-icons-outlined" style="color:var(--color-primary);">smart_toy</span>
+                Deputy — your AI assistant
+              </h4>
+            </div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+
+              <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                <input type="checkbox" id="ai-enabled" ${ai.enabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;" />
+                <div>
+                  <span style="font-weight:600;">Turn on Deputy AI</span>
+                  <div class="text-tertiary" style="font-size:12px; margin-top:2px;">A smart chat assistant that helps with jobs, quotes, invoices and scheduling.</div>
+                </div>
+              </label>
+
+              <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
+
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label" style="font-weight:600;">Deputy API key</label>
+                  <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="${isLocalMode ? 'Paste your key here (starts with sk-…)' : 'Optional — leave blank to use RELAY’s secure cloud key'}" />
+                  <div class="text-tertiary" style="font-size:12px; margin-top:4px;">${isLocalMode ? 'Stored only on this device. Deputy won’t answer without a key.' : 'Optional — leave blank and RELAY handles the connection securely for you.'}</div>
                 </div>
 
-                <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label class="form-label" style="font-weight:600;">Text API Key</label>
-                      <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="${isLocalMode ? 'sk-...' : 'Optional — Defaults to secure cloud API key'}" />
+                <details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 14px;">
+                  <summary style="cursor:pointer; font-weight:600; font-size:13px; color:var(--color-primary);">Where do I get a key? (about 2 minutes)</summary>
+                  <ol style="margin:12px 0 0; padding-left:20px; font-size:13px; line-height:1.8; color:var(--text-secondary);">
+                    <li>Go to <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> and create a free account.</li>
+                    <li>Open <strong>API keys</strong>, then click <strong>Create new key</strong>.</li>
+                    <li>Copy the key it shows you and paste it into the box above.</li>
+                    <li>Click <strong>Test connection</strong>, then <strong>Save Deputy settings</strong>.</li>
+                  </ol>
+                  <p style="margin:10px 0 0; font-size:12px; color:var(--text-tertiary);">DeepSeek is a low-cost provider that works straight away. Prefer OpenAI, Anthropic or Google? Add their key, then switch the provider under <strong>Advanced settings</strong>.</p>
+                </details>
+
+                <div style="display:flex; gap:12px; align-items:center;">
+                  <button class="btn btn-secondary" id="btn-test-ai" style="display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons-outlined" style="font-size:18px;">bolt</span> Test connection
+                  </button>
+                  <span id="test-status" style="font-size:13px; font-weight:500;"></span>
+                </div>
+                <div id="test-error-details" style="display:none; font-size:12px; color:var(--color-danger); background:var(--color-danger-bg); border-left:3px solid var(--color-danger); padding:8px; border-radius:4px; line-height:1.4;"></div>
+
+                <details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 14px;">
+                  <summary style="cursor:pointer; font-weight:600; font-size:13px;">Advanced settings (provider, model, vision, persona)</summary>
+                  <div style="display:flex; flex-direction:column; gap:16px; margin-top:14px;">
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label class="form-label" style="font-weight:600;">Text API endpoint</label>
+                        <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label" style="font-weight:600;">Text model name</label>
+                        <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
+                      </div>
                     </div>
-                    <div class="form-group">
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label class="form-label" style="font-weight:600;">Vision API endpoint (multimodal)</label>
+                        <input type="text" class="form-input" id="ai-vision-endpoint" value="${ai.visionEndpoint || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'}" placeholder="https://api.openai.com/v1/chat/completions" />
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label" style="font-weight:600;">Vision model name</label>
+                        <input type="text" class="form-input" id="ai-vision-model" value="${ai.visionModel || 'gemini-2.0-flash'}" placeholder="gpt-4o-mini" />
+                      </div>
+                    </div>
+                    <div class="form-group" style="margin:0;">
                       <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <label class="form-label" style="font-weight:600; margin-bottom:0;">Vision API Key</label>
+                        <label class="form-label" style="font-weight:600; margin-bottom:0;">Vision API key</label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-                          <input type="checkbox" id="ai-use-same-key" ${ai.useSameKey ? 'checked' : ''} style="width:14px; height:14px;" /> Use Text API Key
+                          <input type="checkbox" id="ai-use-same-key" ${ai.useSameKey ? 'checked' : ''} style="width:14px; height:14px;" /> Same as Deputy key
                         </label>
                       </div>
-                      <input type="password" class="form-input" id="ai-vision-apikey" value="${ai.useSameKey ? (ai.apiKey || '') : (ai.visionApiKey || '')}" placeholder="API Key for Vision Model" style="margin-top:6px; ${ai.useSameKey ? 'opacity:0.5; pointer-events:none;' : ''}" />
+                      <input type="password" class="form-input" id="ai-vision-apikey" value="${ai.useSameKey ? (ai.apiKey || '') : (ai.visionApiKey || '')}" placeholder="Key for the vision model" style="margin-top:6px; ${ai.useSameKey ? 'opacity:0.5; pointer-events:none;' : ''}" />
                     </div>
-                  </div>
-                  <div class="text-tertiary" style="font-size:11px; margin-top:-8px;">${isLocalMode ? 'Your API keys are stored locally in your browser/sync directory.' : 'Keys are optional. If blank, cloud operations will route securely through Edge Functions.'}</div>
-
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label class="form-label" style="font-weight:600;">Text API Endpoint</label>
-                      <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
+                    <div class="form-group" style="margin:0;">
+                      <label class="form-label" style="font-weight:600;">Deputy’s persona (system prompt)</label>
+                      <textarea class="form-input" id="ai-systemprompt" rows="4" style="font-family:inherit; resize:vertical;">${ai.systemPrompt || ''}</textarea>
+                      <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Sets Deputy’s tone and rules. Your job, quote and staff data is added automatically in the background.</div>
                     </div>
-                    <div class="form-group">
-                      <label class="form-label" style="font-weight:600;">Text Model Name</label>
-                      <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
-                    </div>
+                    <p style="margin:0; font-size:12px; color:var(--text-tertiary);">On a local browser build and seeing connection errors? Some providers block direct calls — route through <strong>OpenRouter</strong> or a local runner like <strong>Ollama</strong> (paste their endpoint above).</p>
                   </div>
+                </details>
+              </div>
 
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label class="form-label" style="font-weight:600;">Vision API Endpoint (Multimodal)</label>
-                      <input type="text" class="form-input" id="ai-vision-endpoint" value="${ai.visionEndpoint || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'}" placeholder="https://api.openai.com/v1/chat/completions" />
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label" style="font-weight:600;">Vision Model Name</label>
-                      <input type="text" class="form-input" id="ai-vision-model" value="${ai.visionModel || 'gemini-2.0-flash'}" placeholder="gpt-4o-mini" />
-                    </div>
-                  </div>
-
-                  <div class="form-group">
-                    <label class="form-label" style="font-weight:600;">Base System Prompt</label>
-                    <textarea class="form-input" id="ai-systemprompt" rows="4" style="font-family:inherit; resize:vertical;">${ai.systemPrompt || ''}</textarea>
-                    <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Defines the persona and basic rules for Relay. Active system records (jobs, quotes, technicians) are appended dynamically in the conversation background.</div>
-                  </div>
-
-                  <div style="display:flex; gap:12px; align-items:center; margin-top:8px;">
-                    <button class="btn btn-secondary" id="btn-test-ai" style="display:flex; align-items:center; gap:6px;">
-                      <span class="material-icons-outlined" style="font-size:18px;">bolt</span> Test Connection
-                    </button>
-                    <span id="test-status" style="font-size:13px; font-weight:500;"></span>
-                  </div>
-                  <div id="test-error-details" style="display:none; margin-top:8px; font-size:12px; color:var(--color-danger); background:var(--color-danger-bg); border-left:3px solid var(--color-danger); padding:8px; border-radius:4px; line-height:1.4;"></div>
-                </div>
-
-                <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
-                  <button class="btn btn-primary" id="btn-save-ai">Save AI Config</button>
-                </div>
-
+              <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
+                <button class="btn btn-primary" id="btn-save-ai">Save Deputy settings</button>
               </div>
             </div>
-
           </div>
 
-          <!-- AI API Guide Card -->
-          <div class="card" style="background:var(--content-bg);">
-            <div class="card-header"><h4>Connecting Your Own API</h4></div>
-            <div class="card-body" style="font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
-              <p style="margin:0;">
-                To power Deputy in local mode, you'll need an API key from an AI provider. Deputy uses the standard OpenAI-compatible API format, meaning you can connect almost any modern language model.
-              </p>
-              <div style="display:flex; gap:8px; align-items:flex-start;">
-                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">key</span>
-                <span><strong>1. Get an API Key:</strong> Create an account with an AI provider (e.g. OpenAI, Anthropic, DeepSeek, or Google) and generate an API key from their developer dashboard.</span>
+          <!-- GOOGLE MAPS -->
+          <div class="card">
+            <div class="card-header">
+              <h4 style="display:flex; align-items:center; gap:8px; margin:0;">
+                <span class="material-icons-outlined" style="color:var(--color-primary);">map</span>
+                Google Maps
+              </h4>
+            </div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+              <p style="margin:0; color:var(--text-secondary); font-size:13px; line-height:1.6;">Powers address autocomplete, drive-time and distance, and the map views.</p>
+
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-weight:600;">Google Maps API key</label>
+                <input type="password" class="form-input" id="maps-apikey" value="${maps.apiKey || ''}" placeholder="Paste your key here (starts with AIza…)" />
               </div>
-              <div style="display:flex; gap:8px; align-items:flex-start;">
-                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">tune</span>
-                <span><strong>2. Configure Endpoints:</strong> Enter your API key, the provider's API endpoint URL, and the exact model name you wish to use.</span>
-              </div>
-              <div style="display:flex; gap:8px; align-items:flex-start;">
-                <span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px; margin-top:2px;">security</span>
-                <span><strong>CORS Restrictions:</strong> Due to browser security, direct API calls from a local web browser may be blocked by some providers. To bypass this:
-                  <ul style="margin:4px 0 0 16px; padding:0; list-style:disc; font-size:12px;">
-                    <li>Route via a CORS proxy (e.g. <code>https://cors-anywhere.herokuapp.com/</code> prefix).</li>
-                    <li>Connect via an aggregator like <strong>OpenRouter</strong> (Endpoint: <code>https://openrouter.ai/api/v1/chat/completions</code>).</li>
-                    <li>Use a local LLM runner like <strong>Ollama</strong> (Endpoint: <code>http://localhost:11434/v1/chat/completions</code>).</li>
-                  </ul>
-                </span>
+
+              <details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 14px;">
+                <summary style="cursor:pointer; font-weight:600; font-size:13px; color:var(--color-primary);">Where do I get a key? (about 5 minutes)</summary>
+                <ol style="margin:12px 0 0; padding-left:20px; font-size:13px; line-height:1.8; color:var(--text-secondary);">
+                  <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and sign in.</li>
+                  <li>Top bar → <strong>New Project</strong>, give it a name, then open <strong>APIs &amp; Services</strong>.</li>
+                  <li>Under <strong>Enable APIs</strong>, turn on <strong>Maps JavaScript API</strong>, <strong>Places API</strong> and <strong>Distance Matrix API</strong>.</li>
+                  <li>Open <strong>Credentials</strong> → <strong>Create credentials</strong> → <strong>API key</strong>, copy it, paste it above and save.</li>
+                </ol>
+                <p style="margin:10px 0 0; font-size:12px; color:var(--text-tertiary);">Google may ask for a billing card, but map usage at this size normally stays within the free monthly allowance.</p>
+              </details>
+
+              <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
+                <button class="btn btn-primary" id="btn-save-maps">Save Maps key</button>
               </div>
             </div>
           </div>
@@ -4702,41 +4723,17 @@ export function renderSettings(container) {
           errEl.textContent = errMsg;
         }
       });
+
+      tc.querySelector('#btn-save-maps')?.addEventListener('click', () => {
+        const apiKey = tc.querySelector('#maps-apikey').value.trim();
+        const settings = store.getSettings();
+        settings.maps = { apiKey };
+        store.saveSettings(settings);
+        showToast('Maps key saved', 'success');
+      });
     }
 
     render();
-  }
-
-  // Local System Configuration — API keys for local integrations (Google Maps).
-  // AI Assistant setup lives in its own tab (renderAIAssistantTab).
-  function renderApiKeysTab(tc) {
-    const s = store.getSettings();
-    const maps = s.maps || { apiKey: '' };
-    tc.innerHTML = `
-      <div style="display:flex; flex-direction:column; gap:var(--space-lg); max-width:760px;">
-        <div class="card">
-          <div class="card-header"><h4>Google Maps Configuration</h4></div>
-          <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Maps API Key</label>
-              <input type="password" class="form-input" id="maps-apikey" value="${maps.apiKey || ''}" placeholder="AIzaSy..." />
-              <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Used for address autocomplete, distance calculations, and rendering maps. Get this from the Google Cloud Console.</div>
-            </div>
-            <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
-              <button class="btn btn-primary" id="btn-save-maps">Save Maps Config</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    tc.querySelector('#btn-save-maps').addEventListener('click', () => {
-      const apiKey = tc.querySelector('#maps-apikey').value.trim();
-      const settings = store.getSettings();
-      settings.maps = { apiKey };
-      store.saveSettings(settings);
-      showToast('Maps settings saved successfully', 'success');
-    });
   }
 
   function renderCostCentersTab(tc) {

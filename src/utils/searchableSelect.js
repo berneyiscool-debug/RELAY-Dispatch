@@ -122,11 +122,38 @@ export function enhanceSelect(select) {
   function positionDropdown() {
     if (!container.classList.contains('searchable-select-open')) return;
     const rect = input.getBoundingClientRect();
+    const dHeight = dropdown.offsetHeight || 220;
+    const dWidth = rect.width;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let top;
+    if (spaceBelow < dHeight && spaceAbove > spaceBelow) {
+      // Appear ABOVE the selection box
+      top = rect.top - dHeight - 4;
+    } else {
+      // Appear BELOW the selection box
+      top = rect.bottom + 2;
+    }
+
+    top = Math.max(8, top);
+    if (top + dHeight > window.innerHeight - 8) {
+      top = Math.max(8, window.innerHeight - dHeight - 8);
+    }
+
+    let left = rect.left;
+    if (left + dWidth > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - dWidth - 8);
+    }
+    left = Math.max(8, left);
+
     dropdown.style.position = 'fixed';
-    dropdown.style.top = `${rect.bottom}px`;
-    dropdown.style.left = `${rect.left}px`;
+    dropdown.style.top = `${top}px`;
+    dropdown.style.left = `${left}px`;
     dropdown.style.width = `${rect.width}px`;
-    dropdown.style.zIndex = '99999';
+    dropdown.style.zIndex = '999999';
+    dropdown.style.visibility = 'visible';
   }
 
   function openDropdown() {
@@ -138,10 +165,13 @@ export function enhanceSelect(select) {
     });
 
     container.classList.add('searchable-select-open');
+    dropdown.style.visibility = 'hidden';
     dropdown.style.display = 'block';
     document.body.appendChild(dropdown);
     rebuildDropdown('');
     positionDropdown();
+    requestAnimationFrame(positionDropdown);
+    setTimeout(positionDropdown, 0);
     
     // Listen to scroll and resize to update position
     window.addEventListener('scroll', positionDropdown, { capture: true, passive: true });

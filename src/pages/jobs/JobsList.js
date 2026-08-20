@@ -15,18 +15,27 @@ export function renderJobsList(container, params) {
   const jobs = customerId ? allJobs.filter(j => j.customerId === customerId) : allJobs;
   const canCreate = hasPermission('Jobs', 'create');
 
+  const statusFromUrl = params?.status || (window.location.hash.includes('status=') ? decodeURIComponent(window.location.hash.split('status=')[1].split('&')[0].replace(/\+/g, ' ')) : '');
+  let selectedStatus = statusFromUrl || '';
+
+  const activeJobsCount = jobs.filter(j => !j.isRecurring && j.status !== 'Recurring Template').length;
+  const recurringCount = jobs.filter(j => j.isRecurring || j.status === 'Recurring Template').length;
+
+  const initialTitle = selectedStatus === 'Recurring Template' ? 'Recurring Templates & Contracts' : (customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs');
+
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <h1>${customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs'}</h1>
+      <h1 id="jobs-page-title">${initialTitle}</h1>
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
-        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:170px; margin:0; align-self:center;">
-          <option value="">All Statuses (${jobs.length})</option>
-          ${['Pending','Scheduled','In Progress','Completed','On Hold','Invoiced','Recurring Template'].map(s => `<option value="${s}">${s} (${jobs.filter(j => s === 'Recurring Template' ? j.isRecurring : j.status === s).length})</option>`).join('')}
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:180px; margin:0; align-self:center;">
+          <option value="" ${!selectedStatus ? 'selected' : ''}>Active Jobs (${activeJobsCount})</option>
+          <option value="ALL_WITH_TEMPLATES" ${selectedStatus === 'ALL_WITH_TEMPLATES' ? 'selected' : ''}>All Jobs & Templates (${jobs.length})</option>
+          ${['Pending','Scheduled','In Progress','Completed','On Hold','Invoiced','Recurring Template'].map(s => `<option value="${s}" ${selectedStatus === s ? 'selected' : ''}>${s} (${s === 'Recurring Template' ? recurringCount : jobs.filter(j => j.status === s && !j.isRecurring).length})</option>`).join('')}
         </select>
         ${canCreate ? `
           <button class="btn btn-primary btn-sm" id="btn-new-job" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
-            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Job</span>
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">${selectedStatus === 'Recurring Template' ? 'New Template' : 'New Job'}</span>
           </button>` : ''}
       </div>
     </div>
@@ -64,8 +73,8 @@ export function renderJobsList(container, params) {
     columns, 
     data: filteredData, 
     onRowClick: (id) => router.navigate(`/jobs/${id}`), 
-    emptyMessage: 'No jobs found', 
-    emptyIcon: 'build',
+    emptyMessage: selectedStatus === 'Recurring Template' ? 'No recurring job templates created yet' : 'No jobs found', 
+    emptyIcon: selectedStatus === 'Recurring Template' ? 'event_repeat' : 'build',
     selectable: true,
     onSelectionChange: (selectedIds) => {
       createBulkActionBar({
@@ -520,7 +529,6 @@ export function renderJobsList(container, params) {
     btnNewJob.addEventListener('click', () => router.navigate('/jobs/new'));
   }
 
-  let selectedStatus = '';
   let searchQuery = '';
   let filterStartDate = '';
   let filterEndDate = '';
@@ -529,9 +537,18 @@ export function renderJobsList(container, params) {
     const q = searchQuery.toLowerCase();
     const filtered = jobs.filter(j => {
       if (selectedStatus) {
-        if (selectedStatus === 'Recurring Template' && !j.isRecurring) return false;
-        if (selectedStatus !== 'Recurring Template' && j.status !== selectedStatus) return false;
+        if (selectedStatus === 'ALL_WITH_TEMPLATES') {
+          // Allow all statuses including templates
+        } else if (selectedStatus === 'Recurring Template') {
+          if (!j.isRecurring && j.status !== 'Recurring Template') return false;
+        } else if (j.status !== selectedStatus || j.isRecurring) {
+          return false;
+        }
+      } else {
+        // Default (Active Jobs): Filter out master recurring templates
+        if (j.isRecurring === true || j.status === 'Recurring Template') return false;
       }
+
       if (q) {
         const num = j.number || '';
         const title = j.title || '';
@@ -579,8 +596,19 @@ export function renderJobsList(container, params) {
 
   container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
     selectedStatus = e.target.value;
+    const titleEl = container.querySelector('#jobs-page-title');
+    if (titleEl) {
+      titleEl.textContent = selectedStatus === 'Recurring Template' ? 'Recurring Templates & Contracts' : (customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs');
+    }
+    const btnLabel = container.querySelector('#btn-new-job .btn-label');
+    if (btnLabel) {
+      btnLabel.textContent = selectedStatus === 'Recurring Template' ? 'New Template' : 'New Job';
+    }
     applyFilters();
   });
+
+  // Apply initial filters (e.g. from URL status parameter)
+  applyFilters();
 
 
 

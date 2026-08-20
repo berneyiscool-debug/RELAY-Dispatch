@@ -1616,7 +1616,6 @@ export function renderJobForm(container, params) {
     });
     
     delete data.notes;
-    data.number = job.number || store.getNextNumber('J-', 'jobs');
     const isEmg = container.querySelector('#is-emergency')?.checked;
     data.isEmergency = isEmg;
 
@@ -1659,6 +1658,16 @@ export function renderJobForm(container, params) {
         data.status = 'Recurring Template';
         data.recurringConfig = job.recurringConfig || null;
       }
+    }
+
+    if (!job.number || (job.number.startsWith('J-') && (data.isRecurring || data.status === 'Recurring Template'))) {
+      if (data.isRecurring || data.status === 'Recurring Template') {
+        data.number = store.getNextNumber('T-', 'jobs');
+      } else {
+        data.number = store.getNextNumber('J-', 'jobs');
+      }
+    } else {
+      data.number = job.number;
     }
 
     if (!data.status && job.status) {

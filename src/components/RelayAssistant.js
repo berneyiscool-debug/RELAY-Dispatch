@@ -82,16 +82,11 @@ function renderWatchdogView(container) {
       <div class="watchdog-banner-info">
         <div class="watchdog-health-ring">${healthScore}%</div>
         <div>
-          <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text-primary);">Operations Watchdog Dashboard</h2>
+          <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--text-primary);">Operations Watchdog Dashboard</h2>
           <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">
             ${totalIssues === 0 ? 'All systems operating smoothly. No active conflicts detected.' : `Detected ${totalIssues} operational alert${totalIssues === 1 ? '' : 's'} requiring attention.`}
           </div>
         </div>
-      </div>
-      <div class="watchdog-banner-actions">
-        <button class="btn btn-secondary btn-sm btn-open-inspector" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;">
-          <span class="material-icons-outlined" style="font-size:16px;">psychology</span> Memory & Audit Inspector &rarr;
-        </button>
       </div>
     </div>
 
@@ -100,7 +95,7 @@ function renderWatchdogView(container) {
         <div>
           <div class="watchdog-card-head">
             <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--color-primary)">event_seat</span>
+              <span class="material-icons-outlined" style="color:var(--text-secondary)">event_seat</span>
               Schedule & Dispatch Health
             </div>
             <span class="badge ${conflictCount + unassignedJobs.length > 0 ? 'badge-warning' : 'badge-success'}">${conflictCount + unassignedJobs.length} Alerts</span>
@@ -121,7 +116,7 @@ function renderWatchdogView(container) {
         <div>
           <div class="watchdog-card-head">
             <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--color-info)">inventory_2</span>
+              <span class="material-icons-outlined" style="color:var(--text-secondary)">inventory_2</span>
               Inventory & Reorder Status
             </div>
             <span class="badge ${lowStock.length > 0 ? 'badge-danger' : 'badge-success'}">${lowStock.length} Low Stock</span>
@@ -141,7 +136,7 @@ function renderWatchdogView(container) {
         <div>
           <div class="watchdog-card-head">
             <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--color-danger)">receipt_long</span>
+              <span class="material-icons-outlined" style="color:var(--text-secondary)">receipt_long</span>
               Overdue Billing & Invoices
             </div>
             <span class="badge ${overdueInvoices.length > 0 ? 'badge-danger' : 'badge-success'}">${overdueInvoices.length} Overdue</span>
@@ -161,7 +156,7 @@ function renderWatchdogView(container) {
         <div>
           <div class="watchdog-card-head">
             <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--color-warning)">request_quote</span>
+              <span class="material-icons-outlined" style="color:var(--text-secondary)">request_quote</span>
               Pending Proposals & Quotes
             </div>
             <span class="badge badge-info">${pendingQuotes.length} Pending</span>
@@ -602,10 +597,9 @@ export async function openRelay() {
       </div>
       <div class="relay-nav-tabs" id="relay-nav-tabs" style="${isExpanded ? 'display:flex' : 'display:none'}">
         <button class="relay-nav-tab ${activeTab === 'watchdog' ? 'active' : ''}" data-tab="watchdog" title="Operations Watchdog"><span class="material-icons-outlined">shield</span> Watchdog</button>
-        <button class="relay-nav-tab ${activeTab === 'inspector' ? 'active' : ''}" data-tab="inspector" title="Memory & Audit Inspector"><span class="material-icons-outlined">psychology</span> Memory & Audit</button>
         <button class="relay-nav-tab ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" title="Chat Stream"><span class="material-icons-outlined">chat</span> Chat</button>
       </div>
-      <div style="display: flex; align-items: center; gap: 6px;">
+      <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
         <button class="relay-expand" id="relay-expand" title="${isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace'}"><span class="material-icons-outlined">${isExpanded ? 'close_fullscreen' : 'open_in_full'}</span></button>
         <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
         <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button>

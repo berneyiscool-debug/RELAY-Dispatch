@@ -500,6 +500,10 @@ select.badge option {
   padding: var(--space-xs) 0;
   animation: fadeIn 0.1s ease;
 }
+.dropdown-menu-up {
+  top: auto !important;
+  bottom: calc(100% + 4px) !important;
+}
 .dropdown-item {
   display: flex;
   align-items: center;

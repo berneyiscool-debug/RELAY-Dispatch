@@ -80,9 +80,9 @@ export function renderAssetList(container, params) {
     { key: 'owner', label: 'Owner', render: (r) => {
         if (r.ownerType === 'Customer' && r.customerId) {
           const cust = store.getById('customers', r.customerId);
-          return cust ? `<span class="badge badge-neutral">${escapeHTML(cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Unnamed Customer')}</span>` : 'Customer';
+          return cust ? escapeHTML(cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Unnamed Customer') : 'Customer';
         }
-        return `<span class="badge badge-primary">My Business</span>`;
+        return 'My Business';
       }, width: '16%'
     },
     { key: 'type', label: 'Category', render: (r) => escapeHTML(r.type || '—'), width: '15%' },

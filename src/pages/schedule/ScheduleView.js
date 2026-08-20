@@ -332,7 +332,7 @@ export function renderScheduleView(container) {
       .forEach(job => {
         const jobDate = new Date(job.scheduledDate);
         const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
-        const jobDuration = totalTaskHours || parseFloat(job.estimatedHours) || parseFloat(job.estimated_hours) || 2;
+        const jobDuration = totalTaskHours || 1;
 
         days.forEach((day, dayIdx) => {
           if (jobDate.toDateString() === day.toDateString()) {
@@ -583,13 +583,15 @@ export function renderScheduleView(container) {
 
     listContainer.innerHTML = matchingJobs.map(j => {
       const isTasklistExpanded = expandedJobTasklistIds.has(j.id);
+      const totalTaskHours = (j.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
+      const jobDuration = totalTaskHours || 1;
       return `
         <div class="unscheduled-job" draggable="true" 
           data-job-id="${j.id}" 
           data-job-number="${j.number}" 
           data-customer="${escapeHTML(j.customerName || '')}" 
           data-title="${escapeHTML(j.title || '')}" 
-          data-hours="${j.estimatedHours || 2}" 
+          data-hours="${jobDuration}" 
           style="width:100%; display:flex; flex-direction:column; gap:2px; padding:8px 10px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius); cursor:grab; pointer-events:auto; transition: all var(--transition-fast);"
         >
           <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; gap:4px;">
@@ -904,6 +906,12 @@ export function renderScheduleView(container) {
       const job = store.getById('jobs', jobId);
       if (!job) return null;
       const tech = techId ? store.getById('technicians', techId) : null;
+      const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
+      let duration = totalTaskHours || 1;
+      if (techId && job.technicians) {
+        const tObj = job.technicians.find(t => String(t.id) === String(techId));
+        if (tObj && tObj.hours) duration = parseFloat(tObj.hours);
+      }
       return {
         id,
         jobId: job.id,
@@ -911,7 +919,7 @@ export function renderScheduleView(container) {
         type: 'legacy',
         date: job.scheduledDate,
         startHour: job.startHour ?? 8,
-        endHour: (job.startHour ?? 8) + (parseFloat(job.estimatedHours) || 2),
+        endHour: (job.startHour ?? 8) + duration,
         technicianId: techId || job.technicianId || null,
         technicianName: tech ? tech.name : (job.technicianName || 'Unassigned')
       };
@@ -2018,6 +2026,29 @@ export function renderScheduleView(container) {
                   <label class="form-label">Notes</label>
                   <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${job.notes || 'No notes available'}</div>
                 </div>
+                <div>
+                  <label class="form-label" style="margin-bottom:8px; display:block; border-bottom:1px solid var(--border-color); padding-bottom:4px;">Recent Time Logs</label>
+                  ${(() => {
+                    const timesheets = (store.getAll('timesheets') || []).filter(t => String(t.jobId) === String(jobId));
+                    timesheets.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    const recentLogs = timesheets.slice(0, 5);
+                    if (recentLogs.length === 0) {
+                      return '<div style="font-size:var(--font-size-sm); color:var(--text-tertiary);">No time logged for this job yet.</div>';
+                    }
+                    return recentLogs.map(log => `
+                      <div style="font-size:var(--font-size-sm); padding:8px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                          <span class="font-medium">${escapeHTML(log.technicianName || 'Unknown Tech')}</span>
+                          <span class="text-secondary">${new Date(log.date).toLocaleDateString()}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                          <span class="text-secondary">${escapeHTML(log.taskName || log.taskId || 'General')} - ${escapeHTML(log.description || 'No description')}</span>
+                          <span class="font-medium" style="color:var(--color-primary)">${log.hours ? parseFloat(log.hours).toFixed(2) + ' hrs' : '0.00 hrs'}</span>
+                        </div>
+                      </div>
+                    `).join('');
+                  })()}
+                </div>
               </div>
             `,
             actions: [
@@ -2738,7 +2769,7 @@ export function renderScheduleView(container) {
 
         if (job) {
           const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
-          const jobDuration = totalTaskHours || parseFloat(job.estimatedHours) || parseFloat(job.estimated_hours) || 2;
+          const jobDuration = totalTaskHours || 1;
           const duration = dragState.type === 'existing'
             ? (dragState.endHour - dragState.startHour)
             : (dragState.hours || jobDuration);

@@ -576,6 +576,7 @@ export function renderJobDetail(container, { id, tab }) {
 
   function render() {
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
+
     const invoicesList = store.getAll('invoices').filter(i => i.jobId === job.id);
     const hasInvoice = invoicesList.length > 0;
 
@@ -934,29 +935,6 @@ export function renderJobDetail(container, { id, tab }) {
   }
 
   function renderTabContent() {
-    // Sanitize activeTab based on user permissions
-    if ((activeTab === 'costs' || activeTab === 'financials') && !hasPermission('Jobs', 'view_costs')) {
-      activeTab = 'overview';
-    } else if (activeTab === 'quotes' && !hasPermission('Jobs', 'view_quotes_tab')) {
-      activeTab = 'overview';
-    } else if (activeTab === 'materials' && !hasPermission('Jobs', 'view_materials_tab')) {
-      activeTab = 'overview';
-    } else if (activeTab === 'timesheets' && !hasPermission('Jobs', 'view_timesheets_tab')) {
-      activeTab = 'overview';
-    } else if (activeTab === 'invoices' && !hasPermission('Jobs', 'view_invoices_tab')) {
-      activeTab = 'overview';
-    }
-
-    const tc = container.querySelector('#tab-content');
-    const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
-
-    if (activeTab === 'forms') {
-      renderFormsTab(tc);
-      return;
-    }
-
-    if (activeTab === 'schedule') {
-      const schedules = store.getAll('schedule').filter(t => t.jobId === id);
 
       const recurringCardHtml = job.isRecurring === true ? `
         <div class="card" style="margin-bottom:24px">
@@ -1073,6 +1051,30 @@ export function renderJobDetail(container, { id, tab }) {
           </div>
         </div>
       ` : '';
+    // Sanitize activeTab based on user permissions
+    if ((activeTab === 'costs' || activeTab === 'financials') && !hasPermission('Jobs', 'view_costs')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'quotes' && !hasPermission('Jobs', 'view_quotes_tab')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'materials' && !hasPermission('Jobs', 'view_materials_tab')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'timesheets' && !hasPermission('Jobs', 'view_timesheets_tab')) {
+      activeTab = 'overview';
+    } else if (activeTab === 'invoices' && !hasPermission('Jobs', 'view_invoices_tab')) {
+      activeTab = 'overview';
+    }
+
+    const tc = container.querySelector('#tab-content');
+    const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
+
+    if (activeTab === 'forms') {
+      renderFormsTab(tc);
+      return;
+    }
+
+    if (activeTab === 'schedule') {
+      const schedules = store.getAll('schedule').filter(t => t.jobId === id);
+
       const techs = store.getAll('technicians').filter(t => !t.deactivated);
       
       let totalScheduled = 0;
@@ -1245,9 +1247,49 @@ export function renderJobDetail(container, { id, tab }) {
           <!-- Grid details -->
           <div class="grid-3" style="align-items: start; gap:16px;">
             
-            <div style="grid-column: 1 / -1; display:grid; grid-template-columns: 2.2fr 1fr; gap:24px;">
+            <div style="grid-column: 1 / -1; display:grid; grid-template-columns: 1fr 2.2fr; gap:24px;">
               
               <!-- Left Column -->
+              <div style="display:flex; flex-direction:column; gap:24px;">
+                <!-- Job Details -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Job Details</h4></div>
+                  <div class="card-body" style="padding:12px 20px">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                      <tbody>
+                        <tr><td style="padding:12px 0; color:var(--text-secondary); width:35%;">Customer</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.customerName)}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Contact</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.contactName || '—')}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Site Address</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right; max-width:180px; line-height:1.4;">${job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Quote Ref</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}" style="text-decoration:none">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—'}</td></tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Created</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${new Date(job.createdAt).toLocaleDateString()}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Progress & Logistics -->
+                <div class="card">
+                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Progress & Logistics</h4></div>
+                  <div class="card-body" style="padding:12px 20px">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                      <tbody>
+                        <tr>
+                          <td style="padding:12px 0; color:var(--text-secondary); width:40%;">Completion</td>
+                          <td style="padding:12px 0; text-align:right;">
+                            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;">
+                              <div style="width:80px;background:var(--border-color);height:6px;border-radius:3px;overflow:hidden;display:inline-block;"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div>
+                              <span style="font-weight:700; color:var(--text-primary);">${jobProgress}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Est. Hours</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${estHoursDisplay}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Column -->
               <div style="display:flex; flex-direction:column; gap:24px;">
                 <!-- Job Description & Scope -->
                 <div class="card">
@@ -1308,44 +1350,6 @@ export function renderJobDetail(container, { id, tab }) {
                   </div>
                 </div>
               </div>
-
-              <!-- Right Column -->
-              <div style="display:flex; flex-direction:column; gap:24px;">
-                <!-- Job Details -->
-                <div class="card">
-                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Job Details</h4></div>
-                  <div class="card-body" style="padding:12px 20px">
-                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
-                      <tbody>
-                        <tr><td style="padding:12px 0; color:var(--text-secondary); width:35%;">Customer</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.customerName)}</td></tr>
-                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Contact</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${escapeHTML(job.contactName || '—')}</td></tr>
-                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Site Address</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right; max-width:180px; line-height:1.4;">${job.siteAddress ? escapeHTML(job.siteAddress) + navigateLinkHTML(job.siteAddress, job.geo) : '—'}</td></tr>
-                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Quote Ref</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${job.quoteId ? (hasPermission('Quotes', 'view') ? `<a href="#/quotes/${escapeHTML(job.quoteId)}" style="text-decoration:none">${escapeHTML(job.quoteId)}</a>` : escapeHTML(job.quoteId)) : '—'}</td></tr>
-                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Created</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${new Date(job.createdAt).toLocaleDateString()}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <!-- Progress & Logistics -->
-                <div class="card">
-                  <div class="card-header" style="padding:16px 20px; border-bottom:1px solid var(--border-color);"><h4 style="margin:0; font-size:15px; font-weight:700; color:var(--text-primary)">Progress & Logistics</h4></div>
-                  <div class="card-body" style="padding:12px 20px">
-                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
-                      <tbody>
-                        <tr>
-                          <td style="padding:12px 0; color:var(--text-secondary); width:40%;">Completion</td>
-                          <td style="padding:12px 0; text-align:right;">
-                            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;">
-                              <div style="width:80px;background:var(--border-color);height:6px;border-radius:3px;overflow:hidden;display:inline-block;"><div style="width:${jobProgress}%;background:var(--color-primary);height:100%"></div></div>
-                              <span style="font-weight:700; color:var(--text-primary);">${jobProgress}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr style="border-top:1px solid var(--border-color)"><td style="padding:12px 0; color:var(--text-secondary);">Est. Hours</td><td style="padding:12px 0; font-weight:500; color:var(--text-primary); text-align:right;">${estHoursDisplay}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
             </div>
           </div>
         </div>
@@ -2477,6 +2481,340 @@ export function renderJobDetail(container, { id, tab }) {
         });
       });
     } else if (activeTab === 'costs' || activeTab === 'financials') {
+
+      // ── Recurring Template: Contract Performance Dashboard ──
+      if (job.isRecurring === true || job.status === 'Recurring Template') {
+        const allJobs = store.getAll('jobs') || [];
+        const childJobs = allJobs.filter(j => 
+          j.parentJobId === id || 
+          j.recurringTemplateId === id || 
+          (j.number && job.number && (
+            j.number.startsWith(job.number + '.') || 
+            j.number.replace(/^J-/, 'T-').startsWith(job.number.replace(/^J-/, 'T-') + '.') || 
+            j.number.replace(/^T-/, 'J-').startsWith(job.number.replace(/^T-/, 'J-') + '.')
+          ))
+        );
+        const allTimesheets = store.getAll('timesheets') || [];
+        const allInvoices = store.getAll('invoices') || [];
+        const allTechs = store.getAll('technicians') || [];
+        const taxRate = store.getTaxRate() || 0.1;
+
+        let totalChildHours = 0;
+        let totalChildLaborCost = 0;
+        let totalChildMaterialCost = 0;
+        let totalChildInvoiced = 0;
+        let totalChildPaid = 0;
+        let completedCount = 0;
+        let inProgressCount = 0;
+        let pendingCount = 0;
+
+        // Calculate direct master template invoices
+        const directTemplateInvoices = allInvoices.filter(i => 
+          i.status !== 'Void' && (
+            i.jobId === id || 
+            i.recurringTemplateId === id ||
+            (i.jobIds && Array.isArray(i.jobIds) && i.jobIds.includes(id))
+          )
+        );
+        directTemplateInvoices.forEach(i => {
+          const invTotal = i.total || 0;
+          totalChildInvoiced += invTotal;
+          if (i.status === 'Paid') {
+            totalChildPaid += invTotal;
+          } else if (i.payments && Array.isArray(i.payments)) {
+            const pSum = i.payments.reduce((s, p) => s + (p.amount || 0), 0);
+            totalChildPaid += Math.min(invTotal, pSum);
+          }
+        });
+
+        const childRows = childJobs.map(cj => {
+          const cjNumJ = (cj.number || '').replace(/^(T-|TEMP-|TEM-)/, 'J-');
+          const cjNumT = (cj.number || '').replace(/^(J-|TEMP-|TEM-)/, 'T-');
+
+          // Hours & labor from timesheets
+          const cTimesheets = allTimesheets.filter(t => t.jobId === cj.id);
+          let cHours = 0;
+          let cLabor = 0;
+          cTimesheets.forEach(t => {
+            const tech = allTechs.find(x => x.id === t.technicianId);
+            const rate = tech ? (tech.payRate || tech.hourlyRate || 45) : 45;
+            cHours += (t.hours || 0);
+            cLabor += (t.hours || 0) * rate;
+          });
+
+          // Materials
+          const cMatCost = (cj.materials || []).reduce((sum, m) => sum + ((m.quantity || 0) * (m.unitCost || 0)), 0) + parseFloat(cj.additionalMaterialCost || 0);
+
+          // Helper to extract section subtotal from sec.subtotal OR sec.lineItems OR sec.items
+          const calcSectionSubtotal = (sec) => {
+            if (sec.subtotal !== undefined && sec.subtotal !== null && sec.subtotal > 0) {
+              return parseFloat(sec.subtotal);
+            }
+            const items = sec.lineItems || sec.items || [];
+            if (items.length > 0) {
+              return items.reduce((sum, it) => {
+                let t = it.total;
+                if (t === undefined || t === null) {
+                  const q = parseFloat(it.qty || it.quantity || 1);
+                  const r = parseFloat(it.rate || it.unitPrice || it.price || 0);
+                  t = q * r;
+                }
+                return sum + (parseFloat(t) || 0);
+              }, 0);
+            }
+            return 0;
+          };
+
+          // Invoices: Single, Combined, or Section-attributed
+          let cInvoiced = 0;
+          let cPaid = 0;
+          let isCombined = false;
+
+          allInvoices.forEach(i => {
+            if (i.status === 'Void') return;
+
+            const invTotal = parseFloat(i.total) || (parseFloat(i.subtotal) ? parseFloat(i.subtotal) * (1 + taxRate) : 0);
+            let jobAmount = 0;
+            let matched = false;
+
+            // 1. Direct single-job link (by ID, J- Number, T- Number, or Quote ID)
+            const isDirectLink = (
+              i.jobId === cj.id || 
+              i.job_id === cj.id || 
+              i.originalJobId === cj.id ||
+              (i.jobId && (i.jobId === cjNumJ || i.jobId === cjNumT)) ||
+              (i.jobNumber && (i.jobNumber === cjNumJ || i.jobNumber === cjNumT)) ||
+              (cj.quoteId && (i.quoteId === cj.quoteId || i.originalQuoteId === cj.quoteId))
+            );
+
+            if (isDirectLink) {
+              jobAmount = invTotal;
+              matched = true;
+            } 
+            // 2. Section-level job attribution inside combined invoice
+            else if (i.sections && Array.isArray(i.sections) && i.sections.length > 0) {
+              const jobSections = i.sections.filter(s => 
+                s.jobId === cj.id || 
+                s.job_id === cj.id || 
+                (s.jobNumber && (s.jobNumber === cjNumJ || s.jobNumber === cjNumT)) ||
+                (s.name && (s.name.includes(cjNumJ) || s.name.includes(cjNumT)))
+              );
+
+              if (jobSections.length > 0) {
+                const secSub = jobSections.reduce((sum, sec) => sum + calcSectionSubtotal(sec), 0);
+                if (secSub > 0) {
+                  jobAmount = secSub * (1 + taxRate);
+                  matched = true;
+                  isCombined = true;
+                }
+              }
+            }
+
+            // 3. Consolidated invoice listing job ID or job Number in jobIds array
+            if (!matched && i.jobIds && Array.isArray(i.jobIds)) {
+              if (i.jobIds.includes(cj.id) || i.jobIds.includes(cjNumJ) || i.jobIds.includes(cjNumT)) {
+                const numJobs = i.jobIds.length;
+                if (numJobs > 0 && invTotal > 0) {
+                  jobAmount = invTotal / numJobs;
+                  matched = true;
+                  isCombined = true;
+                }
+              }
+            }
+
+            // 4. Notes or Title string match fallback
+            if (!matched && (i.title || i.notes)) {
+              const str = `${i.title || ''} ${i.notes || ''}`;
+              if ((cjNumJ && str.includes(cjNumJ)) || (cjNumT && str.includes(cjNumT))) {
+                jobAmount = invTotal;
+                matched = true;
+              }
+            }
+
+            if (matched && jobAmount > 0) {
+              cInvoiced += jobAmount;
+              if (i.status === 'Paid') {
+                cPaid += jobAmount;
+              } else if (i.payments && Array.isArray(i.payments) && invTotal > 0) {
+                const pRatio = i.payments.reduce((sum, p) => sum + (p.amount || 0), 0) / invTotal;
+                cPaid += jobAmount * Math.min(1, pRatio);
+              }
+            }
+          });
+
+          // 5. Fallback for invoiced/completed jobs where no invoice object was matched
+          if (cInvoiced === 0 && (cj.status === 'Invoiced' || cj.status === 'Completed')) {
+            let fallbackVal = parseFloat(cj.total || cj.subtotal || cj.contractValue || cj.amount || cj.estimatedCost || 0);
+            if (!fallbackVal && cj.quoteId) {
+              const q = store.getById('quotes', cj.quoteId);
+              if (q && q.total) fallbackVal = parseFloat(q.total);
+            }
+            if (!fallbackVal && (cLabor > 0 || cMatCost > 0)) {
+              fallbackVal = (cLabor + cMatCost) * 1.30;
+            }
+            if (fallbackVal > 0) {
+              cInvoiced = fallbackVal;
+              if (cj.status === 'Invoiced') cPaid = fallbackVal;
+            }
+          }
+
+          totalChildHours += cHours;
+          totalChildLaborCost += cLabor;
+          totalChildMaterialCost += cMatCost;
+          totalChildInvoiced += cInvoiced;
+          totalChildPaid += cPaid;
+
+          if (cj.status === 'Completed' || cj.status === 'Invoiced') completedCount++;
+          else if (cj.status === 'In Progress') inProgressCount++;
+          else pendingCount++;
+
+          const totalCost = cLabor + cMatCost;
+          const statusBadge = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary' };
+
+          return `
+            <tr style="cursor:pointer" onclick="window.location.hash='#/jobs/${cj.id}'">
+              <td><span class="cell-link font-medium">${escapeHTML(cjNumJ)}</span></td>
+              <td>${cj.scheduledDate ? new Date(cj.scheduledDate.includes('T') ? cj.scheduledDate : cj.scheduledDate + 'T00:00:00').toLocaleDateString('en-AU') : '—'}</td>
+              <td><span class="badge ${statusBadge[cj.status] || 'badge-neutral'}">${escapeHTML(cj.status || 'Pending')}</span></td>
+              <td style="text-align:right">${cHours.toFixed(1)}h</td>
+              <td style="text-align:right">$${cLabor.toFixed(2)}</td>
+              <td style="text-align:right">$${cMatCost.toFixed(2)}</td>
+              <td style="text-align:right;font-weight:600">$${totalCost.toFixed(2)}</td>
+              <td style="text-align:right;font-weight:600;color:var(--color-primary)">
+                $${cInvoiced.toFixed(2)}
+                ${isCombined ? `<span class="badge badge-info" style="font-size:9px; padding:1px 5px; margin-left:4px;" title="Invoiced via combined batch invoice">Combined</span>` : ''}
+              </td>
+            </tr>
+          `;
+        });
+
+        const totalCombinedCost = totalChildLaborCost + totalChildMaterialCost;
+        const avgCostPerJob = childJobs.length > 0 ? totalCombinedCost / childJobs.length : 0;
+        const completionRate = childJobs.length > 0 ? Math.round((completedCount / childJobs.length) * 100) : 0;
+
+        tc.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+            
+            <!-- KPI Scorecard -->
+            <div class="grid-4" style="gap:12px">
+              <div class="card" style="padding:16px; text-align:center">
+                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Child Jobs</div>
+                <div style="font-size:28px; font-weight:800; color:var(--color-primary)">${childJobs.length}</div>
+                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">
+                  <span style="color:var(--color-success)">${completedCount} done</span> · ${inProgressCount} active · ${pendingCount} pending
+                </div>
+              </div>
+              <div class="card" style="padding:16px; text-align:center">
+                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Hours Logged</div>
+                <div style="font-size:28px; font-weight:800; color:var(--text-primary)">${totalChildHours.toFixed(1)}h</div>
+                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">Avg ${childJobs.length > 0 ? (totalChildHours / childJobs.length).toFixed(1) : '0'}h per visit</div>
+              </div>
+              <div class="card" style="padding:16px; text-align:center">
+                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Combined Cost</div>
+                <div style="font-size:28px; font-weight:800; color:var(--color-danger)">$${totalCombinedCost.toFixed(2)}</div>
+                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">Avg $${avgCostPerJob.toFixed(2)} per visit</div>
+              </div>
+              <div class="card" style="padding:16px; text-align:center">
+                <div style="font-size:12px; color:var(--text-tertiary); text-transform:uppercase; font-weight:600; margin-bottom:8px">Total Invoiced</div>
+                <div style="font-size:28px; font-weight:800; color:var(--color-success)">$${totalChildInvoiced.toFixed(2)}</div>
+                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px">$${totalChildPaid.toFixed(2)} collected</div>
+              </div>
+            </div>
+
+            <!-- Cost Breakdown -->
+            <div class="grid-2" style="gap:16px">
+              <div class="card">
+                <div class="card-header" style="padding:14px 20px; border-bottom:1px solid var(--border-color)">
+                  <h4 style="margin:0; font-size:14px; font-weight:700">Cost Breakdown</h4>
+                </div>
+                <div class="card-body" style="padding:16px 20px">
+                  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border-color)">
+                    <span style="color:var(--text-secondary)">Total Labor Cost</span>
+                    <span style="font-weight:700">$${totalChildLaborCost.toFixed(2)}</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border-color)">
+                    <span style="color:var(--text-secondary)">Total Material Cost</span>
+                    <span style="font-weight:700">$${totalChildMaterialCost.toFixed(2)}</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; padding:10px 0; font-weight:800; font-size:15px">
+                    <span>Combined Total</span>
+                    <span style="color:var(--color-primary)">$${totalCombinedCost.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header" style="padding:14px 20px; border-bottom:1px solid var(--border-color)">
+                  <h4 style="margin:0; font-size:14px; font-weight:700">Contract Completion</h4>
+                </div>
+                <div class="card-body" style="padding:16px 20px">
+                  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border-color)">
+                    <span style="color:var(--text-secondary)">Completion Rate</span>
+                    <span style="font-weight:700">${completionRate}%</span>
+                  </div>
+                  <div style="margin:12px 0">
+                    <div style="width:100%; background:var(--border-color); height:8px; border-radius:4px; overflow:hidden">
+                      <div style="width:${completionRate}%; background:var(--color-success); height:100%; transition:width 0.3s"></div>
+                    </div>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border-color)">
+                    <span style="color:var(--text-secondary)">Invoiced vs Cost</span>
+                    <span style="font-weight:700; color:${totalChildInvoiced >= totalCombinedCost ? 'var(--color-success)' : 'var(--color-danger)'}">
+                      ${totalCombinedCost > 0 ? Math.round((totalChildInvoiced / totalCombinedCost) * 100) : 0}%
+                    </span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; padding:10px 0">
+                    <span style="color:var(--text-secondary)">Net Position</span>
+                    <span style="font-weight:700; color:${(totalChildInvoiced - totalCombinedCost) >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}">
+                      ${(totalChildInvoiced - totalCombinedCost) >= 0 ? '+' : '-'}$${Math.abs(totalChildInvoiced - totalCombinedCost).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Child Jobs Table -->
+            <div class="card">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; padding:14px 20px; border-bottom:1px solid var(--border-color)">
+                <h4 style="margin:0; font-size:14px; font-weight:700">Child Job Financial Summary</h4>
+                <span class="badge badge-purple" style="font-weight:600">${childJobs.length} Jobs</span>
+              </div>
+              <div class="card-body" style="padding:0">
+                <table class="data-table" style="font-size:13px">
+                  <thead>
+                    <tr>
+                      <th>Job #</th>
+                      <th>Date</th>
+                      <th>Status</th>
+                      <th style="text-align:right">Hours</th>
+                      <th style="text-align:right">Labor</th>
+                      <th style="text-align:right">Materials</th>
+                      <th style="text-align:right">Total Cost</th>
+                      <th style="text-align:right">Invoiced</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${childRows.length > 0 ? childRows.join('') : '<tr><td colspan="8" style="text-align:center; padding:24px" class="text-secondary">No child jobs generated yet. Jobs will appear here as the maintenance engine spawns them.</td></tr>'}
+                  </tbody>
+                  ${childRows.length > 0 ? `
+                  <tfoot>
+                    <tr style="border-top:2px solid var(--border-color); font-weight:700">
+                      <td colspan="3">Totals</td>
+                      <td style="text-align:right">${totalChildHours.toFixed(1)}h</td>
+                      <td style="text-align:right">$${totalChildLaborCost.toFixed(2)}</td>
+                      <td style="text-align:right">$${totalChildMaterialCost.toFixed(2)}</td>
+                      <td style="text-align:right;color:var(--color-primary)">$${totalCombinedCost.toFixed(2)}</td>
+                      <td style="text-align:right;color:var(--color-success)">$${totalChildInvoiced.toFixed(2)}</td>
+                    </tr>
+                  </tfoot>` : ''}
+                </table>
+              </div>
+            </div>
+
+          </div>
+        `;
+        return; // Skip normal financials rendering
+      }
+
       // Auto-pull materials from quote if empty
       if (!job.materials) {
         const linkedQuotes = store.getAll('quotes').filter(q => q.jobId === id || job.quoteId === q.id);
@@ -2823,61 +3161,6 @@ export function renderJobDetail(container, { id, tab }) {
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div class="grid-2">
-            <div class="card">
-              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-                <h4 style="margin:0">Technicians & Internal Cost</h4>
-                <div style="font-size:12px; color:var(--text-secondary); background:var(--bg-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color)">
-                  Actual Cost (Tech Pay)
-                </div>
-              </div>
-              <div class="card-body">
-                <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
-                  Labor costs are based on individual technician pay rates.
-                </div>
-                <table class="data-table" style="font-size:13px">
-                  <thead>
-                    <tr>
-                      <th>Technician</th>
-                      <th style="width:80px">Hours</th>
-                      <th style="width:80px">Pay Rate</th>
-                      <th style="width:100px">Actual Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${autoTechs.map(t => `
-                      <tr>
-                        <td>${escapeHTML(t.name)}</td>
-                        <td style="font-weight:600">${t.hours.toFixed(2)}</td>
-                        <td>$${(t.payRate || t.rate).toFixed(2)}</td>
-                        <td style="font-weight:600">$${(t.hours * (t.payRate || t.rate)).toFixed(2)}</td>
-                      </tr>
-                    `).join('')}
-                    ${autoTechs.length === 0 ? '<tr><td colspan="4" class="text-secondary" style="text-align:center">No time logged yet.</td></tr>' : ''}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="card">
-              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
-                <h4 style="margin:0">Direct Overhead & Additional Material Costs</h4>
-                <button class="btn btn-primary btn-sm" id="btn-save-costs"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">save</span> Save Adjustments</button>
-              </div>
-              <div class="card-body">
-                <div style="font-size:12px; color:var(--text-tertiary); margin-bottom:16px;">
-                  Record manual direct job expenses to reflect true job margin.
-                </div>
-                <div class="form-group" style="margin-bottom:0">
-                  <label class="form-label">Manual Additional Expenses ($) (Permits, Hire Equipment, Freight, Parking)</label>
-                  <input type="number" class="form-input" id="inp-material-cost" value="${job.additionalMaterialCost || 0}" step="0.01" style="max-width:100%" />
-                </div>
-              </div>
-            </div>
-          </div>
-
         </div>
       `;
 
@@ -3535,7 +3818,6 @@ export function renderJobDetail(container, { id, tab }) {
 
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:16px">
-          ${recurringCardHtml}
           
           <div class="card" style="padding:16px; background:var(--bg-color); display:flex; gap:32px; border-left:4px solid var(--color-primary)">
             <div>

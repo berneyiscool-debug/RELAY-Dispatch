@@ -17,12 +17,13 @@ const navItems = [
   {
     category: 'Workflow', id: 'cat-workflow', icon: 'account_tree',
     items: [
-      { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads' },
       { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
+      { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads', dividerAfter: true },
       { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
-      { id: 'projects', icon: 'folder_copy', label: 'Projects', path: '/projects' },
       { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
-      { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices' },
+      { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices', dividerAfter: true },
+      { id: 'recurring_templates', icon: 'event_repeat', label: 'Recurring Templates', path: '/recurring-templates' },
+      { id: 'projects', icon: 'folder_copy', label: 'Projects', path: '/projects' },
     ],
   },
   {
@@ -38,7 +39,7 @@ const navItems = [
     items: [
       { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
       { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
-      { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
+      { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders', dividerAfter: true },
       { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
     ],
   },
@@ -46,7 +47,7 @@ const navItems = [
     category: 'Admin', id: 'cat-admin', icon: 'admin_panel_settings',
     items: [
       { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
-      { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports' },
+      { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports', dividerAfter: true },
       { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' },
     ],
   },
@@ -113,6 +114,9 @@ export function createSidebar() {
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
           <span class="nav-label">${child.label}</span>
         </button>`;
+      if (child.dividerAfter) {
+        itemsHtml += `<div class="submenu-divider" role="separator" aria-hidden="true"></div>`;
+      }
     });
     panelsHtml += `
       <div class="submenu-panel" data-section="${item.id}">
@@ -285,7 +289,6 @@ function getContextualMenu(hash) {
     const portalDisabled = local;                                     // portals are cloud-only
     const folderSyncDisabled = !local;                                // folder sync is local-only
     const usersDisabled = local && deploymentType === 'single_user';  // needs cloud or multi-user local
-    const aiDisabled = local;                                         // AI assistant is cloud-only
     return {
       railId: 'cat-admin',
       headerTitle: 'Settings & Config',
@@ -293,8 +296,7 @@ function getContextualMenu(hash) {
       items: [
         { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
         { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' },
-        { id: 'ai_assistant', icon: 'smart_toy', label: 'AI Assistant', path: '/settings?tab=ai_assistant', disabled: aiDisabled, tooltip: 'Requires Cloud Account' },
-        { id: 'api_keys', icon: 'vpn_key', label: 'Local System Configuration', path: '/settings?tab=api_keys' },
+        { id: 'api_keys', icon: 'vpn_key', label: 'API Keys', path: '/settings?tab=api_keys' },
         { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
         { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
         { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments' },
@@ -321,6 +323,8 @@ function getContextualMenu(hash) {
       railId: 'cat-materials',
       headerTitle: 'Stock & Inventory',
       icon: 'inventory_2',
+      backPath: '/dashboard',
+      backLabel: 'Back to Dashboard',
       items: [
         { id: 'items', icon: 'inventory_2', label: 'Individual Items', path: '/stock?tab=items' },
         { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' }
@@ -420,24 +424,33 @@ function getContextualMenu(hash) {
   // Job Detail (/jobs/:id)
   if (resource === 'jobs') {
     const job = store.getById('jobs', id);
-    const jobTitle = job ? `Job #${job.number}` : 'Job Detail';
+    const isRecurring = job?.isRecurring === true || job?.status === 'Recurring Template';
+    const jobTitle = job ? (isRecurring ? `Template ${job.number}` : `Job #${job.number}`) : 'Job Detail';
     const currentTab = activeTab || 'overview';
     const customerCommCount = job?.customerActivityLog?.length || 0;
+
+    const navTabs = [
+      { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/jobs/${id}?tab=overview` },
+      { id: 'schedule', icon: 'event', label: 'Schedule', path: `/jobs/${id}?tab=schedule` },
+      { id: 'tasks', icon: 'checklist', label: 'Tasks', path: `/jobs/${id}?tab=tasks` },
+      { id: 'materials', icon: 'inventory_2', label: 'Materials & POs', path: `/jobs/${id}?tab=materials` },
+      { id: 'financials', icon: 'price_check', label: isRecurring ? 'Contract Performance' : 'Financials', path: `/jobs/${id}?tab=financials` }
+    ];
+
+    if (!isRecurring) {
+      navTabs.push(
+        { id: 'activity_staff', icon: 'history', label: 'Staff Activity', path: `/jobs/${id}?tab=activity_staff` },
+        { id: 'activity_customer', icon: 'forum', label: 'Customer Portal', path: `/jobs/${id}?tab=activity_customer`, badge: customerCommCount > 0 ? customerCommCount : null }
+      );
+    }
+
     return {
       railId: 'cat-workflow',
       headerTitle: jobTitle,
-      icon: 'build',
-      backPath: '/jobs',
-      backLabel: 'Back to Jobs',
-      items: [
-        { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/jobs/${id}?tab=overview` },
-        { id: 'schedule', icon: 'event', label: 'Schedule', path: `/jobs/${id}?tab=schedule` },
-        { id: 'tasks', icon: 'checklist', label: 'Tasks', path: `/jobs/${id}?tab=tasks` },
-        { id: 'materials', icon: 'inventory_2', label: 'Materials & POs', path: `/jobs/${id}?tab=materials` },
-        { id: 'financials', icon: 'price_check', label: 'Financials', path: `/jobs/${id}?tab=financials` },
-        { id: 'activity_staff', icon: 'history', label: 'Staff Activity', path: `/jobs/${id}?tab=activity_staff` },
-        { id: 'activity_customer', icon: 'forum', label: 'Customer Portal', path: `/jobs/${id}?tab=activity_customer`, badge: customerCommCount > 0 ? customerCommCount : null }
-      ],
+      icon: isRecurring ? 'event_repeat' : 'build',
+      backPath: isRecurring ? '/recurring-templates' : '/jobs',
+      backLabel: isRecurring ? 'Back to Recurring Templates' : 'Back to Jobs',
+      items: navTabs,
       activeTab: currentTab
     };
   }

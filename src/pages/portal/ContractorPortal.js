@@ -212,6 +212,7 @@ export function renderContractorPortal(container, params) {
     const assigned = [];
 
     allJobs.forEach(job => {
+      if (job.isRecurring === true || job.status === 'Recurring Template') return;
       let isAssigned = (job.contractorId === contractor.id);
       const contractorTasks = [];
 

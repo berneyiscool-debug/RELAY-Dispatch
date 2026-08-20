@@ -843,21 +843,26 @@ export function checkRecurringJobs() {
             }
           });
 
-          // Determine next sub-number J-XXX.Y
+          // Determine next sub-number J-XXX.Y (using job prefix e.g. J- instead of T-)
+          const settings = store.getSettings();
+          const jobPrefix = (settings.documentTheme && settings.documentTheme.jobPrefix !== undefined) ? settings.documentTheme.jobPrefix : 'J-';
+          const baseNumber = job.number ? job.number.replace(/^(T-|TEMP-|TEM-)/, jobPrefix) : 'J-00001';
+
           const latestJobs = store.getAll('jobs') || [];
           const siblingJobs = latestJobs.filter(j => j.parentJobId === job.id);
           let maxSuffix = 0;
-          const prefix = `${job.number}.`;
           siblingJobs.forEach(sj => {
-            if (sj.number && sj.number.startsWith(prefix)) {
-              const suffixStr = sj.number.substring(prefix.length);
-              const suffixNum = parseInt(suffixStr, 10);
-              if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
-                maxSuffix = suffixNum;
+            if (sj.number) {
+              const match = sj.number.match(/\.(\d+)$/);
+              if (match) {
+                const suffixNum = parseInt(match[1], 10);
+                if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
+                  maxSuffix = suffixNum;
+                }
               }
             }
           });
-          const childNumber = `${job.number}.${maxSuffix + 1}`;
+          const childNumber = `${baseNumber}.${maxSuffix + 1}`;
 
           // Child jobs keep the parent's plain title (no date suffix). The
           // Australian-format date is still used in the notification text below.
@@ -1196,19 +1201,24 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
   const formattedDate = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
   const childTitle = `${parentJob.title || parentJob.number}`;
 
+  const settings = store.getSettings();
+  const jobPrefix = (settings.documentTheme && settings.documentTheme.jobPrefix !== undefined) ? settings.documentTheme.jobPrefix : 'J-';
+  const baseNumber = parentJob.number ? parentJob.number.replace(/^(T-|TEMP-|TEM-)/, jobPrefix) : 'J-00001';
+
   const siblingJobs = latestJobs.filter(j => j.parentJobId === parentJob.id);
   let maxSuffix = 0;
-  const prefix = `${parentJob.number}.`;
   siblingJobs.forEach(sj => {
-    if (sj.number && sj.number.startsWith(prefix)) {
-      const suffixStr = sj.number.substring(prefix.length);
-      const suffixNum = parseInt(suffixStr, 10);
-      if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
-        maxSuffix = suffixNum;
+    if (sj.number) {
+      const match = sj.number.match(/\.(\d+)$/);
+      if (match) {
+        const suffixNum = parseInt(match[1], 10);
+        if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
+          maxSuffix = suffixNum;
+        }
       }
     }
   });
-  const childNumber = `${parentJob.number}.${maxSuffix + 1}`;
+  const childNumber = `${baseNumber}.${maxSuffix + 1}`;
 
   const jobMaterials = parentJob.materials ? JSON.parse(JSON.stringify(parentJob.materials)) : [];
   const jobTasks = parentJob.tasks ? JSON.parse(JSON.stringify(parentJob.tasks)) : [];

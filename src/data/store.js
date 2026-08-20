@@ -650,6 +650,8 @@ class DataStore {
     if (this.cache.technicians.length === 0) {
       await this.seedDefaultTechnicians();
     }
+
+    this.migrateChildJobNumbers();
   }
 
   initIndexedDB() {
@@ -1337,6 +1339,8 @@ class DataStore {
       // 3. Set up Realtime listener subscriptions
       this.subscribeRealtime();
 
+      this.migrateChildJobNumbers();
+
       // Emit loaded event for all collections
       collections.forEach(col => {
         this.emit(col, this.cache[col]);
@@ -1834,9 +1838,37 @@ class DataStore {
           console.error('Error parsing jobs meta:', e);
         }
       }
+
+      if ((record.isRecurring === true || record.status === 'Recurring Template') && record.number && (record.number.startsWith('J-') || record.number.startsWith('TEMP-') || record.number.startsWith('TEM-'))) {
+        record.number = record.number.replace(/^(J-|TEMP-|TEM-)/, 'T-');
+      }
+
+      if (record.number && (record.parentJobId || (record.number.includes('.') && record.status !== 'Recurring Template' && !record.isRecurring))) {
+        if (record.number.startsWith('T-') || record.number.startsWith('TEMP-') || record.number.startsWith('TEM-')) {
+          record.number = record.number.replace(/^(T-|TEMP-|TEM-)/, 'J-');
+        }
+      }
     }
 
     return record;
+  }
+
+  migrateChildJobNumbers() {
+    const jobs = this.cache.jobs || [];
+    let updatedCount = 0;
+    jobs.forEach(j => {
+      if (j.number && (j.parentJobId || (j.number.includes('.') && j.status !== 'Recurring Template' && !j.isRecurring))) {
+        if (j.number.startsWith('T-') || j.number.startsWith('TEMP-') || j.number.startsWith('TEM-')) {
+          const newNum = j.number.replace(/^(T-|TEMP-|TEM-)/, 'J-');
+          j.number = newNum;
+          this.update('jobs', j.id, { number: newNum });
+          updatedCount++;
+        }
+      }
+    });
+    if (updatedCount > 0) {
+      console.log(`Migrated ${updatedCount} existing child jobs to J- prefix.`);
+    }
   }
 
   // De-normalize camelCase fields -> snake_case schema columns for database updates
@@ -2371,7 +2403,30 @@ class DataStore {
       item.number = this.getNextNumber('Q-', 'quotes');
     }
     if (collection === 'jobs' && !item.number) {
-      item.number = this.getNextNumber('J-', 'jobs');
+      if (item.parentJobId) {
+        const parentJob = this.getById('jobs', item.parentJobId);
+        const settings = this.getSettings();
+        const jobPrefix = (settings.documentTheme && settings.documentTheme.jobPrefix !== undefined) ? settings.documentTheme.jobPrefix : 'J-';
+        const baseNumber = parentJob && parentJob.number ? parentJob.number.replace(/^(T-|TEMP-|TEM-)/, jobPrefix) : 'J-00001';
+        const siblingJobs = (this.getAll('jobs') || []).filter(j => j.parentJobId === item.parentJobId);
+        let maxSuffix = 0;
+        siblingJobs.forEach(sj => {
+          if (sj.number) {
+            const match = sj.number.match(/\.(\d+)$/);
+            if (match) {
+              const suffixNum = parseInt(match[1], 10);
+              if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
+                maxSuffix = suffixNum;
+              }
+            }
+          }
+        });
+        item.number = `${baseNumber}.${maxSuffix + 1}`;
+      } else if (item.isRecurring || item.status === 'Recurring Template') {
+        item.number = this.getNextNumber('T-', 'jobs');
+      } else {
+        item.number = this.getNextNumber('J-', 'jobs');
+      }
     }
     if (collection === 'purchaseOrders' && !item.number) {
       item.number = this.getNextNumber('PO-', 'purchaseOrders');
@@ -2773,7 +2828,7 @@ class DataStore {
       startingNum = dt.quoteStartingNumber !== undefined ? parseInt(dt.quoteStartingNumber, 10) : 1;
       if (isNaN(startingNum)) startingNum = 1;
     } else if (collection === 'jobs') {
-      prefix = dt.jobPrefix !== undefined ? dt.jobPrefix : (defaultPrefix || 'J-');
+      prefix = (defaultPrefix === 'T-' || defaultPrefix === 'TEMP-' || defaultPrefix === 'TEM-') ? 'T-' : (dt.jobPrefix !== undefined ? dt.jobPrefix : (defaultPrefix || 'J-'));
       startingNum = dt.jobStartingNumber !== undefined ? parseInt(dt.jobStartingNumber, 10) : 1;
       if (isNaN(startingNum)) startingNum = 1;
     }
@@ -3023,9 +3078,21 @@ class DataStore {
     const table = TABLE_MAP[collection];
     if (!table) return; // cache-only collections (e.g. 'activity') have no table
 
+    // Default the fields create() sets — bulk save() receives hand-built records
+    // (e.g. maintenance-engine notifications) that may omit number/createdAt/
+    // updatedAt, all NOT NULL in the cloud schema.
+    const NUMBER_PREFIXES = { leads: 'LD-', notifications: 'NT-', notices: 'NTC-', invoices: 'INV-', quotes: 'Q-', jobs: 'J-', purchaseOrders: 'PO-', projects: 'PRJ-' };
+    const numPrefix = NUMBER_PREFIXES[collection];
+    const now = new Date().toISOString();
     const payload = items
       .filter(it => it && it.id)
-      .map(it => this.denormalizeRecord({ ...it, companyId: this.companyId }, collection));
+      .map(it => this.denormalizeRecord({
+        ...it,
+        companyId: this.companyId,
+        number: (numPrefix && !it.number) ? this.getNextNumber(numPrefix, collection) : it.number,
+        createdAt: it.createdAt || now,
+        updatedAt: it.updatedAt || now,
+      }, collection));
 
     if (payload.length) {
       const { error } = await supabase.from(table).upsert(payload);

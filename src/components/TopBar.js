@@ -65,16 +65,17 @@ export function createTopBar() {
     const listHandler = getListSearch();
     if (listHandler) {
       listHandler(val.trim());
+    } else {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        const query = val.trim();
+        if (query.length >= 1) {
+          showSearchResults(query);
+        } else {
+          hideSearchResults();
+        }
+      }, 180);
     }
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-      const query = val.trim();
-      if (query.length >= 1) {
-        showSearchResults(query);
-      } else {
-        hideSearchResults();
-      }
-    }, 180);
   });
 
   // Reflect the context in the placeholder, and clear the box when leaving a list.
