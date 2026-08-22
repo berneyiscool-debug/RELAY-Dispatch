@@ -4,9 +4,11 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
-import { calculateBillableMaterialPrice, calculateTotalBillableMaterials } from '../../utils/pricing.js';
+import { calculateBillableMaterialPrice, calculateTotalBillableMaterials, roundCurrency } from '../../utils/pricing.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
+import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 
 export function renderJobsList(container, params) {
   const customerId = params?.customerId;
@@ -24,7 +26,7 @@ export function renderJobsList(container, params) {
   const initialTitle = selectedStatus === 'Recurring Template' ? 'Recurring Templates & Contracts' : (customer ? `Jobs — ${escapeHTML(customer.company)}` : 'Jobs');
 
   container.innerHTML = `
-    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1 id="jobs-page-title">${initialTitle}</h1>
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
@@ -43,8 +45,8 @@ export function renderJobsList(container, params) {
   `;
 
   let filteredData = [...jobs];
-  const sb = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary','Recurring Template':'badge-purple' };
-  const pb = { 'Low':'badge-neutral','Medium':'badge-warning','High':'badge-danger','Urgent':'badge-danger' };
+  const sb = JOB_STATUS_BADGES;
+  const pb = PRIORITY_BADGES;
 
   const columns = [
     { key: 'number', label: 'Job #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '10%' },
@@ -134,7 +136,7 @@ export function renderJobsList(container, params) {
               content.innerHTML = `
                 <div class="form-group">
                   <label class="form-label">Scheduled Date</label>
-                  <input type="date" class="form-input" id="bulk-schedule-date" value="${new Date().toISOString().split('T')[0]}" />
+                  <input type="date" class="form-input" id="bulk-schedule-date" value="${todayLocalISO()}" />
                 </div>
               `;
               import('../../components/Modal.js').then(({ showModal }) => {
@@ -192,8 +194,8 @@ export function renderJobsList(container, params) {
                     sections: sections,
                     originalSubtotal: subtotal,
                     subtotal: subtotal,
-                    tax: subtotal * taxRate,
-                    total: subtotal * (1 + taxRate),
+                    tax: roundCurrency(subtotal * taxRate),
+                    total: roundCurrency(subtotal * (1 + taxRate)),
                     issueDate: new Date().toISOString(),
                     dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
                     notes: worksDescription || ''
@@ -353,8 +355,8 @@ export function renderJobsList(container, params) {
                   status: 'Draft',
                   sections: combinedSections,
                   subtotal,
-                  tax: subtotal * taxRate,
-                  total: subtotal * (1 + taxRate),
+                  tax: roundCurrency(subtotal * taxRate),
+                  total: roundCurrency(subtotal * (1 + taxRate)),
                   issueDate: new Date().toISOString(),
                   dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
                   notes: worksDoneNotes.join('\n\n'),
@@ -613,22 +615,25 @@ export function renderJobsList(container, params) {
 
 
   // Update status when selecting from dropdown
-  container.addEventListener('change', (e) => {
-    const select = e.target.closest('.job-list-status-select');
-    if (select) {
-      const jobId = select.dataset.id;
-      const newStatus = select.value;
-      
-      store.update('jobs', jobId, { status: newStatus });
-      
-      // Update badge styling classes
-      select.className = `badge ${sb[newStatus] || 'badge-neutral'} job-list-status-select`;
-      
-      import('../../components/Notifications.js').then(({ showToast }) => {
-        showToast(`Job status updated to ${newStatus}`, 'success');
-      });
-    }
-  });
+  if (!container.dataset.statusListenerBound) {
+    container.dataset.statusListenerBound = '1';
+    container.addEventListener('change', (e) => {
+      const select = e.target.closest('.job-list-status-select');
+      if (select) {
+        const jobId = select.dataset.id;
+        const newStatus = select.value;
+
+        store.update('jobs', jobId, { status: newStatus });
+
+        // Update badge styling classes
+        select.className = `badge ${sb[newStatus] || 'badge-neutral'} job-list-status-select`;
+
+        import('../../components/Notifications.js').then(({ showToast }) => {
+          showToast(`Job status updated to ${newStatus}`, 'success');
+        });
+      }
+    });
+  }
 }
 
 function getJobTasklistHours(tasks) {

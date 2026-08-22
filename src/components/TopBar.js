@@ -36,7 +36,7 @@ export function createTopBar() {
       </div>
       <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant" style="position: relative;">
         ${relayIcon}
-        <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:#FF3B30; color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
+        <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--color-danger); color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
       </button>
       <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
         <span class="material-icons-outlined" id="theme-icon">${(THEMES[getStoredTheme()] ? THEMES[getStoredTheme()].mode : 'light') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
@@ -488,7 +488,7 @@ function showSearchResults(query) {
   const dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'search-results';
-  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050; background:var(--bg-card, #fff); border:1px solid var(--border-color, #e0e0e0); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:4px 0;';
+  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050; background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:4px 0;';
 
   results.slice(0, 10).forEach(r => {
     const item = document.createElement('button');
@@ -499,7 +499,7 @@ function showSearchResults(query) {
       <span style="flex:1" class="truncate">${escapeHTML(r.label)}</span>
       <span class="badge badge-neutral" style="font-size:10px; padding:2px 6px">${escapeHTML(r.type)}</span>
     `;
-    item.addEventListener('mouseenter', () => { item.style.background = 'var(--bg-hover, rgba(0,0,0,0.04))'; });
+    item.addEventListener('mouseenter', () => { item.style.background = 'var(--bg-color)'; });
     item.addEventListener('mouseleave', () => { item.style.background = 'none'; });
     item.addEventListener('click', () => {
       router.navigate(r.path);

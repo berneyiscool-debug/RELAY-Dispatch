@@ -10,6 +10,7 @@ import { showModal } from '../../components/Modal.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { createToolbarFilters } from '../../components/ToolbarFilters.js';
 import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
 
@@ -22,7 +23,7 @@ export function renderStockList(container, params) {
 
   function renderLayout() {
     container.innerHTML = `
-      <div class="page-header" style="margin-bottom:16px">
+      <div class="page-header">
         <h1 style="margin:0">Stock / Inventory</h1>
         <div class="page-header-actions" id="header-actions-container">
           <!-- Dynamically populated based on active tab -->

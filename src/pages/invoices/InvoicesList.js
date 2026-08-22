@@ -9,12 +9,13 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { roundCurrency } from '../../utils/pricing.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
 
   container.innerHTML = `
-    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Invoices</h1>
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
@@ -258,8 +259,8 @@ export function renderInvoicesList(container) {
                         status: 'Draft',
                         sections: combinedSections,
                         subtotal,
-                        tax: subtotal * taxRate,
-                        total: subtotal * (1 + taxRate),
+                        tax: roundCurrency(subtotal * taxRate),
+                        total: roundCurrency(subtotal * (1 + taxRate)),
                         issueDate: new Date().toISOString(),
                         dueDate: new Date(Date.now() + 30 * 86400000).toISOString()
                       });

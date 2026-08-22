@@ -323,7 +323,7 @@ function getContextualMenu(hash) {
       railId: 'cat-materials',
       headerTitle: 'Stock & Inventory',
       icon: 'inventory_2',
-      backPath: '/dashboard',
+      backPath: '/',
       backLabel: 'Back to Dashboard',
       items: [
         { id: 'items', icon: 'inventory_2', label: 'Individual Items', path: '/stock?tab=items' },

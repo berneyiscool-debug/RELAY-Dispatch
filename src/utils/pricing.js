@@ -3,6 +3,17 @@
 // ============================================
 
 /**
+ * Rounds a currency value to 2 decimals, avoiding the floating-point drift
+ * (e.g. 55.55 * 0.1 = 5.5550000000000006) that would otherwise be persisted
+ * into numeric DB columns and PDFs. Use for every GST/total computation.
+ * @param {number} value
+ * @returns {number}
+ */
+export function roundCurrency(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+/**
  * Calculates the billable price for a material item based on tiered settings.
  * @param {number} unitCost - The internal cost of the item.
  * @param {object} settings - The global settings object from store.getSettings().

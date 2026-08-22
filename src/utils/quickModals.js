@@ -7,6 +7,7 @@ import { showModal } from '../components/Modal.js';
 import { showToast } from '../components/Notifications.js';
 import { showDrawer } from '../components/Drawer.js';
 import { escapeHTML } from './security.js';
+import { todayLocalISO } from './dateUtils.js';
 
 /**
  * Opens a modal to quickly create a new Asset.
@@ -43,7 +44,7 @@ export function showAssetQuickAdd({ customerId = null, site = '', onSave = null 
           <label class="form-label">Customer</label>
           <select id="qa-customer-id" class="form-select">
             <option value="">Select customer...</option>
-            ${customers.map(c => `<option value="${c.id}" ${customerId === c.id ? 'selected' : ''}>${c.company || c.firstName + ' ' + c.lastName}</option>`).join('')}
+            ${customers.map(c => `<option value="${c.id}" ${customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || c.firstName + ' ' + c.lastName)}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -75,7 +76,7 @@ export function showAssetQuickAdd({ customerId = null, site = '', onSave = null 
           <label class="form-label">Assign To</label>
           <select id="qa-assigned-to" class="form-select">
             <option value="">Unassigned</option>
-            ${staff.map(s => `<option value="${s.id}">${s.firstName} ${s.lastName}</option>`).join('')}
+            ${staff.map(s => `<option value="${s.id}">${escapeHTML(s.firstName + ' ' + s.lastName)}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -232,7 +233,7 @@ export function showStockQuickAdd({ onSave } = {}) {
           <option>Warehouse A</option>
           <option>Warehouse B</option>
           <optgroup label="Assets / Vehicles">
-            ${assets.map(a => `<option>${a.name}</option>`).join('')}
+            ${assets.map(a => `<option>${escapeHTML(a.name)}</option>`).join('')}
           </optgroup>
         </select>
       </div>
@@ -294,7 +295,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
   let po = isNew ? {
     status: 'Draft',
     lineItems: [],
-    issueDate: new Date().toISOString().split('T')[0],
+    issueDate: todayLocalISO(),
     notes: '',
     supplierId: supplierId || '',
     jobId: jobId || ''
@@ -326,7 +327,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
               <label class="form-label">Linked Job</label>
               <select id="qa-po-job" class="form-select" ${po.status !== 'Draft' && !isNew ? 'disabled' : ''}>
                 <option value="">No specific job (Stock PO)</option>
-                ${jobs.map(j => `<option value="${j.id}" ${po.jobId === j.id ? 'selected' : ''}>#${j.number} - ${j.title}</option>`).join('')}
+                ${jobs.map(j => `<option value="${j.id}" ${po.jobId === j.id ? 'selected' : ''}>#${escapeHTML(j.number)} - ${escapeHTML(j.title)}</option>`).join('')}
               </select>
             </div>
           </div>

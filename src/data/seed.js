@@ -791,7 +791,7 @@ export async function seedData(force = false) {
   generatedJobs.push({
     id: 'job_rec_1',
     number: 'T-00001',
-    customerId: customerIds[0],
+    customerId: generatedCustomers[0].id,
     customerName: customerNames[0].company,
     contactName: `${customerNames[0].first} ${customerNames[0].last}`,
     title: 'HVAC Monthly Preventive Maintenance',
@@ -816,7 +816,7 @@ export async function seedData(force = false) {
   generatedJobs.push({
     id: 'job_rec_2',
     number: 'T-00002',
-    customerId: customerIds[1],
+    customerId: generatedCustomers[1].id,
     customerName: customerNames[1].company,
     contactName: `${customerNames[1].first} ${customerNames[1].last}`,
     title: 'Weekly Electrical & Safety Compliance Walkthrough',

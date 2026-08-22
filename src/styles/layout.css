@@ -238,7 +238,6 @@
 
 /* ---- Top Level Page Buttons (Not in Categories) ---- */
 .sidebar-nav-item:not(.sub-item) {
-  background: rgba(255, 255, 255, 0.2); /* Frosted light glass backing */
   border-color: rgba(255, 255, 255, 0.25);
   box-shadow: 0 2px 8px rgba(72, 83, 103, 0.02);
 }
@@ -434,9 +433,7 @@
 .sidebar-collapsed-flyout {
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.94); /* High-contrast light frosted glass popover */
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--card-bg); /* flat opaque popover */
   border: 1px solid rgba(255, 92, 0, 0.22);
   box-shadow: 0 10px 30px rgba(72, 83, 103, 0.16);
   border-radius: var(--border-radius-md);
@@ -488,7 +485,7 @@
 
 /* Dark mode styling for floating flyout popovers */
 [data-theme-mode="dark"] .sidebar-collapsed-flyout {
-  background: rgba(24, 24, 27, 0.94) !important; /* Volcanic dark frosted glass */
+  background: var(--card-bg) !important; /* flat opaque popover */
   border-color: rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
 }

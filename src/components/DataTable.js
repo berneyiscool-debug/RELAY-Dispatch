@@ -56,7 +56,7 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
         <div class="empty-state">
           <span class="material-icons-outlined">${escapeHTML(emptyIcon)}</span>
           <h3>${escapeHTML(emptyMessage)}</h3>
-          <p>Get started by creating a new record.</p>
+          <p>No records match the current filters, or there is nothing here yet.</p>
         </div>
       `;
       return;

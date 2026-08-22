@@ -4,6 +4,7 @@
 
 import { escapeHTML } from '../utils/security.js';
 import { store } from '../data/store.js';
+import { DOC_STATUS_COLORS } from '../utils/statusColors.js';
 const logoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
 
@@ -147,10 +148,7 @@ export function generateDocument(type, data) {
   }
 
   const isQuote = type === 'quote';
-  const statusColors = {
-    'Draft': '#6B7280', 'Finalised': '#1B6DE0', 'Sent': '#3B82F6', 'Accepted': '#10B981', 'Declined': '#EF4444',
-    'Paid': '#10B981', 'Overdue': '#EF4444', 'Void': '#6B7280',
-  };
+  const statusColors = DOC_STATUS_COLORS;
   const statusColor = statusColors[data.status] || '#6B7280';
 
   const customer = data.customerName || 'Customer';

@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 
 const AVAILABLE_TAGS = [
   'Urgent', 'Follow-up', 'Warranty', 'Inspection', 'After-Hours',
@@ -477,7 +478,7 @@ export function renderJobForm(container, params) {
                 </div>
                 <div class="form-group">
                   <label class="form-label">First Job Date</label>
-                  <input type="date" class="form-input" id="recurring-start" value="${job.recurringConfig?.start || new Date().toISOString().split('T')[0]}" />
+                  <input type="date" class="form-input" id="recurring-start" value="${job.recurringConfig?.start || todayLocalISO()}" />
                 </div>
                 <div class="form-group">
                   <label class="form-label">End Date (Max 50 occurrences)</label>
@@ -824,8 +825,6 @@ export function renderJobForm(container, params) {
     });
 
     freqSelect?.addEventListener('change', () => {
-      selectedDaysOfWeek = [];
-      selectedDaysOfMonth = [];
       updateRecurringDaysSelector();
     });
   }
@@ -840,7 +839,7 @@ export function renderJobForm(container, params) {
   });
 
   // ==== Task List Management ====
-  let jobTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, estimatedHours: 2, people: 1, subTasks: [] }];
+  let jobTasks = job.tasks ? JSON.parse(JSON.stringify(job.tasks)) : [];
   jobTasks.forEach(p => { if (!p.subTasks) p.subTasks = []; });
 
   let taskExpandedPath = [0];
@@ -1633,7 +1632,7 @@ export function renderJobForm(container, params) {
 
     if (isRecurringChecked) {
       const freq = container.querySelector('#recurring-freq')?.value || job.recurringConfig?.freq || 'Weekly';
-      const startInput = container.querySelector('#recurring-start')?.value || job.recurringConfig?.start || new Date().toISOString().split('T')[0];
+      const startInput = container.querySelector('#recurring-start')?.value || job.recurringConfig?.start || todayLocalISO();
       const endInput = container.querySelector('#recurring-end')?.value || job.recurringConfig?.end || '';
       if (!startInput || !endInput) {
         showToast('Recurring dates required', 'error'); return;
@@ -1645,8 +1644,8 @@ export function renderJobForm(container, params) {
         start: startInput, 
         end: endInput,
         defaultTechnicianId: container.querySelector('#recurring-tech')?.value || job.recurringConfig?.defaultTechnicianId || null,
-        daysOfWeek: selectedDaysOfWeek.length > 0 ? selectedDaysOfWeek : (job.recurringConfig?.daysOfWeek || []),
-        daysOfMonth: selectedDaysOfMonth.length > 0 ? selectedDaysOfMonth : (job.recurringConfig?.daysOfMonth || []),
+        daysOfWeek: [...selectedDaysOfWeek],
+        daysOfMonth: [...selectedDaysOfMonth],
         skippedDates: job.recurringConfig?.skippedDates || []
       };
     } else {

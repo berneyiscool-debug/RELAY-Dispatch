@@ -2,6 +2,7 @@
 // FIELDFORGE — CLOUD DATA STORE (Supabase Sync)
 // ============================================
 import { supabase } from '../utils/supabase.js';
+import { todayLocalISO } from '../utils/dateUtils.js';
 import { prebuiltForms } from './prebuiltForms.js';
 
 const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
@@ -51,6 +52,9 @@ const TABLE_COLUMNS = {
     "email",
     "address",
     "settings",
+    "geo",
+    "email_slug",
+    "email_reply_to",
     "created_at",
     "updated_at"
   ],
@@ -69,6 +73,8 @@ const TABLE_COLUMNS = {
     "deactivated",
     "deactivated_at",
     "start_location",
+    "theme",
+    "dashboard_layout",
     "created_at",
     "updated_at"
   ],
@@ -93,6 +99,7 @@ const TABLE_COLUMNS = {
     "status",
     "type",
     "portal_token",
+    "geo",
     "created_at",
     "updated_at"
   ],
@@ -180,6 +187,7 @@ const TABLE_COLUMNS = {
     "notes",
     "project_id",
     "cost_center_id",
+    "geo",
     "created_at",
     "updated_at"
   ],
@@ -198,7 +206,7 @@ const TABLE_COLUMNS = {
     "created_at",
     "updated_at"
   ],
-  costCenters: [
+  cost_centers: [
     "id",
     "company_id",
     "name",
@@ -245,6 +253,7 @@ const TABLE_COLUMNS = {
     "quantity",
     "locations",
     "supplier",
+    "sku",
     "created_at",
     "updated_at"
   ],
@@ -310,28 +319,14 @@ const TABLE_COLUMNS = {
     "value",
     "description",
     "priority",
-    "created_at",
-    "updated_at"
-  ],
-  schedule: [
-    "id",
-    "company_id",
-    "job_id",
-    "job_number",
-    "title",
-    "technician_id",
-    "technician_name",
-    "color",
-    "day_offset",
-    "start_hour",
-    "end_hour",
-    "customer_name",
-    "site_address",
+    "budget",
+    "requirements",
     "created_at",
     "updated_at"
   ],
   password_reset_requests: [
     "id",
+    "company_id",
     "technician_id",
     "employee_id",
     "requested_at",
@@ -386,6 +381,18 @@ const TABLE_COLUMNS = {
     "asset_id",
     "job_id",
     "due_date",
+    "maintenance_plan_id",
+    "merged_plan_ids",
+    "task_template_id",
+    "merged_task_template_ids",
+    "quote_id",
+    "target_service_date",
+    "current_meter_at_trigger",
+    "merged_materials_list",
+    "total_labor_hrs",
+    "total_labor_cost",
+    "total_material_cost",
+    "created_by",
     "created_at",
     "updated_at"
   ],
@@ -2765,7 +2772,7 @@ class DataStore {
           logs.push({
             id: 'log_' + Date.now() + Math.random().toString(36).substr(2, 5),
             type: 'Service',
-            date: new Date().toISOString().split('T')[0],
+            date: todayLocalISO(),
             meter: asset.currentMeter || 0,
             cost: (job.laborCost || 0) + (job.materialCost || 0),
             notes: logText,
@@ -2789,7 +2796,7 @@ class DataStore {
                 else if (plan.frequency === 'Annually') compDate.setFullYear(compDate.getFullYear() + 1);
                 
                 this.update('maintenancePlans', plan.id, {
-                  nextServiceDate: compDate.toISOString().split('T')[0]
+                  nextServiceDate: todayLocalISO(compDate)
                 });
               } else if (plan.triggerType === 'Meter') {
                 this.update('maintenancePlans', plan.id, {
@@ -3228,7 +3235,7 @@ class DataStore {
     }
 
     const dbPayload = defaultTechs.map(t => this.denormalizeRecord({ ...t, companyId }, 'technicians'));
-    const { error } = await supabase.from('technicians').insert(dbPayload);
+    const { error } = await supabase.from('profiles').insert(dbPayload);
     if (error) console.error('Error seeding default technicians:', error);
   }
 
@@ -3321,6 +3328,7 @@ class DataStore {
         Object.keys(TABLE_MAP).forEach(col => {
           localStorage.removeItem('simpro_' + col);
         });
+        localStorage.removeItem('simpro_seeded');
         localStorage.removeItem('simpro__seeded');
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem(this.getStorageKey('folder_sync_enabled'));

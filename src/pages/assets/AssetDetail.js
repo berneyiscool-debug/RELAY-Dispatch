@@ -4,6 +4,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 
 export function renderAssetDetail(container, { id, tab }) {
   const asset = store.getById('assets', id);
@@ -318,7 +319,7 @@ export function renderAssetDetail(container, { id, tab }) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Date</label>
-          <input type="date" id="log-date" class="form-input" value="${new Date().toISOString().split('T')[0]}" />
+          <input type="date" id="log-date" class="form-input" value="${todayLocalISO()}" />
         </div>
         <div class="form-group">
           <label class="form-label">Log Type</label>
@@ -452,7 +453,7 @@ export function renderAssetDetail(container, { id, tab }) {
           </div>
           <div class="form-group">
             <label class="form-label">Next Service Date *</label>
-            <input type="date" class="form-input" id="plan-next-date" value="${existingPlan?.nextServiceDate || new Date().toISOString().split('T')[0]}" />
+            <input type="date" class="form-input" id="plan-next-date" value="${existingPlan?.nextServiceDate || todayLocalISO()}" />
           </div>
         </div>
 

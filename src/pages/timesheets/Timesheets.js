@@ -11,6 +11,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 import { setListSearch } from '../../utils/listSearch.js';
 
 export function renderTimesheetsList(container) {
@@ -176,7 +177,7 @@ export function renderTimesheetsList(container) {
       </div>`;
 
     container.innerHTML = `
-      <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h1>Timesheets & Approval</h1>
         <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
           <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
@@ -568,7 +569,7 @@ export function renderTimesheetsList(container) {
       
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      const dateLabel = new Date().toISOString().split('T')[0];
+      const dateLabel = todayLocalISO();
       link.setAttribute('download', `FieldForge_Selected_Timesheets_${dateLabel}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);

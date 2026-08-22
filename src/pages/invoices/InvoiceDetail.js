@@ -11,7 +11,8 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
-import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
+import { calculateBillableMaterialPrice, roundCurrency } from '../../utils/pricing.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 import { emailEnabledFor, sendEmail, emailBlockedReason } from '../../utils/email.js';
 import { invoiceEmail, receiptEmail, reminderEmail } from '../../utils/emailTemplates.js';
@@ -625,8 +626,8 @@ export function renderInvoiceDetail(container, params) {
       invoice.subtotal = Math.abs(calculatedSubtotal);
     }
 
-    invoice.tax = invoice.subtotal * store.getTaxRate();
-    invoice.total = invoice.subtotal + invoice.tax;
+    invoice.tax = roundCurrency(invoice.subtotal * store.getTaxRate());
+    invoice.total = roundCurrency(invoice.subtotal + invoice.tax);
     
     invoice.approvedVariationsSum = approvedVariationsSum;
     invoice.pendingVariationsSum = pendingVariationsSum;
@@ -658,10 +659,13 @@ export function renderInvoiceDetail(container, params) {
         const menu = moreBtn.nextElementSibling;
         menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
       });
-      document.addEventListener('click', () => {
-        const menu = container.querySelector('.dropdown-menu');
-        if (menu) menu.style.display = 'none';
-      });
+      if (!container.dataset.docClickBound) {
+        container.dataset.docClickBound = '1';
+        document.addEventListener('click', () => {
+          const menu = container.querySelector('.dropdown-menu');
+          if (menu) menu.style.display = 'none';
+        });
+      }
     }
 
     container.querySelector('#inv-labor-profile')?.addEventListener('change', (e) => {
@@ -949,8 +953,8 @@ export function renderInvoiceDetail(container, params) {
       
       let calcSubtotal = originalSectionsSum + approvedVariationsSum;
       invoice.subtotal = invoice.invoiceType === 'CreditNote' ? -Math.abs(calcSubtotal) : Math.abs(calcSubtotal);
-      invoice.tax = invoice.subtotal * store.getTaxRate();
-      invoice.total = invoice.subtotal + invoice.tax;
+      invoice.tax = roundCurrency(invoice.subtotal * store.getTaxRate());
+      invoice.total = roundCurrency(invoice.subtotal + invoice.tax);
       
       invoice.approvedVariationsSum = approvedVariationsSum;
       invoice.pendingVariationsSum = pendingVariationsSum;
@@ -1260,7 +1264,7 @@ export function renderInvoiceDetail(container, params) {
       content.innerHTML = `
         <div class="form-group">
           <label class="form-label">Date Paid</label>
-          <input type="date" class="form-input" id="paid-date" value="${new Date().toISOString().split('T')[0]}" />
+          <input type="date" class="form-input" id="paid-date" value="${todayLocalISO()}" />
         </div>
         <div class="form-group">
           <label class="form-label">Payment Method</label>

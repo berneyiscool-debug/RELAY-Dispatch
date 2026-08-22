@@ -531,7 +531,7 @@ function renderPage(handler) {
 
     // Add/remove non-dashboard/schedule class depending on current hash route
     const hash = window.location.hash || '#/';
-    const isDashboardOrSchedule = hash === '#/' || hash === '#' || hash.startsWith('#/dashboard') || hash.startsWith('#/schedule');
+    const isDashboardOrSchedule = hash === '#/' || hash === '#' || hash.startsWith('#/schedule');
     if (isDashboardOrSchedule) {
       mainContent.classList.remove('non-dashboard-schedule-page');
     } else {
@@ -665,7 +665,6 @@ router.register('/timesheets', renderPage(renderTimesheetsList));
 
 // Assets
 router.register('/assets', renderPage(renderAssetList));
-router.register('/assets/new', renderPage((c, p) => renderAssetForm(c, { id: 'new', ...p })));
 router.register('/assets/:id', renderPage(renderAssetDetail));
 router.register('/assets/:id/edit', renderPage((c, p) => renderAssetForm(c, p)));
 
@@ -674,7 +673,6 @@ router.register('/schedule', renderPage(renderScheduleView));
 
 // Stock
 router.register('/stock', renderPage(renderStockList));
-router.register('/stock/new', renderPage((c, p) => renderStockForm(c, { id: 'new' })));
 router.register('/stock/:id', renderPage(renderStockDetail));
 router.register('/stock/:id/edit', renderPage((c, p) => renderStockForm(c, p)));
 
@@ -713,7 +711,6 @@ router.register('/profile', renderPage(renderProfile));
 
 // ---- Auth Guard Hook ----
 const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile'];
-const customerRoutes = ['/portal'];
 
 router.onNavigate = (path, params) => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');

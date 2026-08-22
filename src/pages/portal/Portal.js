@@ -3,6 +3,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
+import { roundCurrency } from '../../utils/pricing.js';
 
 export function renderCustomerPortal(container, params) {
   const token = params.token;
@@ -1118,8 +1119,8 @@ export function renderCustomerPortal(container, params) {
             subtotal = quote.total || 0;
           }
           
-          totalGST = subtotal * store.getTaxRate();
-          totalIncGST = subtotal + totalGST;
+          totalGST = roundCurrency(subtotal * store.getTaxRate());
+          totalIncGST = roundCurrency(subtotal + totalGST);
 
           const statusColors = {
             'Draft': 'badge-draft',
@@ -1323,8 +1324,8 @@ export function renderCustomerPortal(container, params) {
             }
           }
           
-          const totalGST = invoice.tax !== undefined && invoice.tax !== null ? parseFloat(invoice.tax) : (subtotal * store.getTaxRate());
-          const totalIncGST = invoice.total !== undefined && invoice.total !== null ? parseFloat(invoice.total) : (subtotal + totalGST);
+          const totalGST = invoice.tax !== undefined && invoice.tax !== null ? parseFloat(invoice.tax) : roundCurrency(subtotal * store.getTaxRate());
+          const totalIncGST = invoice.total !== undefined && invoice.total !== null ? parseFloat(invoice.total) : roundCurrency(subtotal + totalGST);
 
           return `
             <div class="portal-card" style="margin-bottom:0; border-left:4px solid ${invoice.status === 'Paid' ? 'var(--color-success)' : (isOverdue ? 'var(--color-danger)' : 'var(--border-color)')}">

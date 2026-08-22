@@ -14,7 +14,8 @@ import { navigateLinkHTML } from '../../utils/mapsLinks.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
-import { parsePreferredTime } from '../../utils/dateUtils.js';
+import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
+import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 
 export function renderJobDetail(container, { id, tab }) {
   const job = store.getById('jobs', id);
@@ -25,8 +26,8 @@ export function renderJobDetail(container, { id, tab }) {
 
   updateBreadcrumbDetail(job.number);
 
-  const sb = { 'Pending': 'badge-warning', 'Scheduled': 'badge-info', 'In Progress': 'badge-primary', 'On Hold': 'badge-neutral', 'Completed': 'badge-success', 'Invoiced': 'badge-primary', 'Recurring Template': 'badge-purple' };
-  const pb = { 'Low': 'badge-neutral', 'Medium': 'badge-warning', 'High': 'badge-danger', 'Urgent': 'badge-danger' };
+  const sb = JOB_STATUS_BADGES;
+  const pb = PRIORITY_BADGES;
   let activeTab = tab || 'overview';
   let taskExpandedPath = [0];
   let taskViewPath = [];
@@ -460,16 +461,20 @@ export function renderJobDetail(container, { id, tab }) {
       </div>
     `;
 
-    showModal({
+    const depositModal = showModal({
       title: 'Generate Deposit Invoice',
       content,
       actions: [
         { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
         {
           label: 'Create Deposit Invoice', className: 'btn-primary', onClick: (close) => {
-            const modalEl = document.querySelector('.modal');
-            const laborSrc = modalEl.querySelector('input[name="dep-labor-source"]:checked').value;
-            const matSrc = modalEl.querySelector('input[name="dep-mat-source"]:checked').value;
+            const modalEl = depositModal.modal;
+            const laborSrc = modalEl.querySelector('input[name="dep-labor-source"]:checked')?.value;
+            const matSrc = modalEl.querySelector('input[name="dep-mat-source"]:checked')?.value;
+            if (!laborSrc || !matSrc) {
+              showToast('Could not read deposit settings', 'error');
+              return;
+            }
             const pct = parseFloat(modalEl.querySelector('#dep-percentage').value) || 0;
 
             if (pct <= 0 || pct > 100) {
@@ -516,7 +521,7 @@ export function renderJobDetail(container, { id, tab }) {
 
     // Attach dynamic calculation listeners
     setTimeout(() => {
-      const modalEl = document.querySelector('.modal');
+      const modalEl = depositModal.modal;
       if (!modalEl) return;
 
       function updateDepositCalc() {
@@ -584,7 +589,7 @@ export function renderJobDetail(container, { id, tab }) {
     const proj = job.projectId ? store.getById('projects', job.projectId) : null;
 
     container.innerHTML = `
-      <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border-color);">
+      <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
         <div class="detail-header-meta" style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; font-size:14px;">
           <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">account_circle</span> ${escapeHTML(job.customerName)}</span>
           <span style="display:flex; align-items:center; gap:6px; color:var(--text-secondary)"><span class="material-icons-outlined" style="font-size:16px">person_outline</span> ${escapeHTML(job.technicianName || 'Unassigned')}</span>
@@ -613,11 +618,11 @@ export function renderJobDetail(container, { id, tab }) {
         </div>
         <div class="flex gap-sm page-header-actions">
           ${job.status === 'Completed' && !hasInvoice ? `
-            <button class="btn btn-success" id="btn-header-generate-invoice" data-tooltip="⚡ Dynamic Billing: splits timesheets into active rate timelines automatically" data-tooltip-pos="left" style="background-color:#10B981; border-color:#10B981; color:white; display:flex; align-items:center; gap:4px;">
+            <button class="btn btn-success" id="btn-header-generate-invoice" data-tooltip="⚡ Dynamic Billing: splits timesheets into active rate timelines automatically" data-tooltip-pos="left" style="display:flex; align-items:center; gap:4px;">
               <span class="material-icons-outlined" style="font-size:18px;">receipt_long</span> Generate Invoice
             </button>
           ` : ''}
-          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left" style="background:#fff"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
+          ${hasPermission('Jobs', 'edit') ? `<button class="btn btn-secondary" id="btn-edit-job" data-tooltip="Modify job details, properties, or assignments" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit</button>` : ''}
           ${hasPermission('Jobs', 'delete') ? `<button class="btn btn-danger btn-icon" id="btn-delete-job" data-tooltip="Permanently delete this job" data-tooltip-pos="left"><span class="material-icons-outlined">delete</span></button>` : ''}
         </div>
       </div>
@@ -1151,10 +1156,10 @@ export function renderJobDetail(container, { id, tab }) {
                    ${job.technicians && job.technicians.length > 0 ? job.technicians.map(t => `
                      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0">
                        <div style="display:flex; align-items:center; gap:8px">
-                         <div style="width:24px;height:24px;border-radius:12px;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">
-                           ${t.name.charAt(0).toUpperCase()}
-                         </div>
-                         <span style="font-size:13px">${escapeHTML(t.name)}</span>
+                          <div style="width:24px;height:24px;border-radius:12px;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">
+                            ${(t.name || '?').charAt(0).toUpperCase()}
+                          </div>
+                          <span style="font-size:13px">${escapeHTML(t.name || '')}</span>
                        </div>
                        <span style="font-size:12px;font-weight:600">${t.hours}h</span>
                      </div>
@@ -2008,6 +2013,11 @@ export function renderJobDetail(container, { id, tab }) {
       });
 
       // --- Value Records: Enter Values toggle & Sub-tabs ---
+      tc.querySelector('.btn-record-values')?.addEventListener('click', () => {
+        isRecordingValues = !isRecordingValues;
+        renderTabContent();
+      });
+
       tc.querySelector('.btn-toggle-recording')?.addEventListener('click', () => {
         isRecordingValues = !isRecordingValues;
         renderTabContent();
@@ -2446,7 +2456,11 @@ export function renderJobDetail(container, { id, tab }) {
                   }
 
                   const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-                  const tech = techs.find(t => t.id === techId);
+                  const tech = techs.find(t => t.id === techId) || (techId === currentUser.id ? currentUser : null);
+                  if (!tech) {
+                    showToast('Could not resolve technician', 'error');
+                    return;
+                  }
 
                   store.create('timesheets', {
                     jobId: id,
@@ -2669,7 +2683,7 @@ export function renderJobDetail(container, { id, tab }) {
           else pendingCount++;
 
           const totalCost = cLabor + cMatCost;
-          const statusBadge = { 'Pending':'badge-warning','Scheduled':'badge-info','In Progress':'badge-primary','On Hold':'badge-neutral','Completed':'badge-success','Invoiced':'badge-primary' };
+          const statusBadge = JOB_STATUS_BADGES;
 
           return `
             <tr style="cursor:pointer" onclick="window.location.hash='#/jobs/${cj.id}'">
@@ -2900,15 +2914,19 @@ export function renderJobDetail(container, { id, tab }) {
       const totalBillableMat = billableMatTotal + (additionalMatCost > 0 ? billableAdditional - additionalMatCost : 0) + additionalMatCost;
 
       // Update job properties silently if they changed
-      if (job.laborCost !== totalLaborCost || job.estimatedHours !== totalLoggedHours || job.materialCost !== totalMatCost) {
-        job.laborCost = totalLaborCost;
-        job.estimatedHours = totalLoggedHours;
-        job.materialCost = totalMatCost;
-        store.update('jobs', id, {
+      if (job.laborCost !== totalLaborCost || job.materialCost !== totalMatCost ||
+          (totalLoggedHours > 0 && job.estimatedHours !== totalLoggedHours)) {
+        const updates = {
           laborCost: totalLaborCost,
-          estimatedHours: totalLoggedHours,
           materialCost: totalMatCost
-        });
+        };
+        if (totalLoggedHours > 0) {
+          job.estimatedHours = totalLoggedHours;
+          updates.estimatedHours = totalLoggedHours;
+        }
+        job.laborCost = totalLaborCost;
+        job.materialCost = totalMatCost;
+        store.update('jobs', id, updates);
       }
 
       const currentProfile = settings.laborRates.find(r => r.id === job.laborRateProfileId) || settings.laborRates.find(r => r.isDefault);
@@ -3349,7 +3367,7 @@ export function renderJobDetail(container, { id, tab }) {
         `;
       } else {
         feedHtml = `
-          <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:12px 16px; border-radius:8px; font-size:12.5px; color:#1e40af; margin-bottom:16px; display:flex; align-items:center; gap:8px">
+          <div style="background:var(--color-info-bg); border:1px solid var(--color-info); padding:12px 16px; border-radius:8px; font-size:12.5px; color:var(--color-info); margin-bottom:16px; display:flex; align-items:center; gap:8px">
             <span class="material-icons-outlined" style="font-size:20px">info</span>
             <span><strong>Customer Portal Communications:</strong> Any messages posted in this tab are instantly visible to the customer when they view their secure Portal link.</span>
           </div>
@@ -3364,7 +3382,7 @@ export function renderJobDetail(container, { id, tab }) {
           <div class="activity-feed" style="display:flex;flex-direction:column;gap:16px;margin-top:24px">
             ${job.customerActivityLog.length ? job.customerActivityLog.map((log, i) => `
               <div style="display:flex;gap:12px">
-                <div style="width:36px;height:36px;border-radius:50%;background:${log.isCustomer ? '#e0f2fe' : '#ecfdf5'};display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${log.isCustomer ? '#0284c7' : '#059669'}">
+                <div style="width:36px;height:36px;border-radius:50%;background:${log.isCustomer ? 'var(--color-info-bg)' : 'var(--color-success-bg)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${log.isCustomer ? 'var(--color-info)' : 'var(--color-success)'}">
                   <span class="material-icons-outlined" style="font-size:18px">${log.isCustomer ? 'person' : 'support_agent'}</span>
                 </div>
                 <div style="flex:1;background:var(--content-bg);padding:12px;border-radius:var(--border-radius);position:relative;" class="activity-log-item" data-expanded="false">
@@ -3611,7 +3629,6 @@ export function renderJobDetail(container, { id, tab }) {
         // Ensure job tasks are initialized
         if (!job.tasks || job.tasks.length === 0) {
           job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
-          store.update('jobs', id, { tasks: job.tasks });
         }
         const flatTasks = getFlatTasks(job.tasks);
         const leafTasks = flatTasks.filter(t => t.isLeaf);
@@ -3685,8 +3702,12 @@ export function renderJobDetail(container, { id, tab }) {
                   return;
                 }
 
-                const tech = techs.find(t => t.id === techId);
+                const tech = techs.find(t => t.id === techId) || (techId === currentUser.id ? currentUser : null);
                 const selectedTask = leafTasks.find(t => t.path === taskPathVal);
+                if (!tech) {
+                  showToast('Could not resolve technician', 'error');
+                  return;
+                }
                 const taskNameVal = selectedTask ? selectedTask.name : '';
 
                 store.create('timesheets', {
@@ -4135,7 +4156,7 @@ export function renderJobDetail(container, { id, tab }) {
             </div>
             <div class="form-group">
               <label class="form-label">Expected Date</label>
-              <input type="date" class="form-input" id="po-date" value="${new Date().toISOString().split('T')[0]}" />
+              <input type="date" class="form-input" id="po-date" value="${todayLocalISO()}" />
             </div>
           </div>
         `;
@@ -4396,11 +4417,11 @@ export function renderJobDetail(container, { id, tab }) {
               <span>Export as Print-Optimized PDF</span>
             </button>
             <button class="btn btn-secondary" id="export-modal-csv" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">
-              <span class="material-icons-outlined" style="color:#10B981">table_view</span>
+              <span class="material-icons-outlined" style="color:var(--color-success)">table_view</span>
               <span>Export as Spreadsheet CSV</span>
             </button>
             <button class="btn btn-secondary" id="export-modal-json" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px">
-              <span class="material-icons-outlined" style="color:#1B6DE0">code</span>
+              <span class="material-icons-outlined" style="color:var(--color-info)">code</span>
               <span>Export as Developer JSON</span>
             </button>
           </div>

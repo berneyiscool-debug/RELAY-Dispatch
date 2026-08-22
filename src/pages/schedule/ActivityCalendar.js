@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 
 const ACTIVITY_TYPES = [
   { value: 'call',       label: 'Call',        icon: 'phone',           color: '#3B82F6' },
@@ -49,7 +50,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
     // Tech filter
     if (filterTechId !== 'all') acts = acts.filter(a => a.assignedToId === filterTechId);
     // Status filter
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocalISO();
     if (filterStatus === 'active') acts = acts.filter(a => a.status !== 'completed');
     else if (filterStatus === 'completed') acts = acts.filter(a => a.status === 'completed');
     else if (filterStatus === 'overdue') acts = acts.filter(a => a.status !== 'completed' && a.date < todayStr);
@@ -59,7 +60,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
   function getStats() {
     let acts = store.getAll('activities');
     if (filterTechId !== 'all') acts = acts.filter(a => a.assignedToId === filterTechId);
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocalISO();
     const weekDates = days.map(d => d.toISOString().split('T')[0]);
     const thisWeek = acts.filter(a => weekDates.includes(a.date));
     return {
@@ -73,7 +74,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
   function renderCard(a) {
     const meta = getTypeMeta(a.type);
     const isComplete = a.status === 'completed';
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocalISO();
     const isOverdue = !isComplete && a.date < todayStr;
     const linkedRoute = getLinkedRoute(a.linkedType, a.linkedId);
     const priorityBadge = a.priority === 'high' ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#EF4444;margin-right:4px" title="High priority"></span>' : a.priority === 'low' ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#94A3B8;margin-right:4px" title="Low priority"></span>' : '';
@@ -157,7 +158,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
           <div style="flex:1;overflow-y:auto;padding:16px">
             ${days.map(day => {
               const dateStr = day.toISOString().split('T')[0];
-              const isToday = dateStr === new Date().toISOString().split('T')[0];
+              const isToday = dateStr === todayLocalISO();
               const dayActs = activities.filter(a => a.date === dateStr).sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
               return `
                 <div style="margin-bottom:20px">
@@ -229,7 +230,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
 
   function openActivityModal(existing = null) {
     const isEdit = !!existing;
-    const a = existing || { title: '', type: 'call', date: new Date().toISOString().split('T')[0], time: '', duration: 15, priority: 'normal', status: 'pending', assignedToId: currentUser.id, linkedType: '', linkedId: '', linkedLabel: '', notes: '' };
+    const a = existing || { title: '', type: 'call', date: todayLocalISO(), time: '', duration: 15, priority: 'normal', status: 'pending', assignedToId: currentUser.id, linkedType: '', linkedId: '', linkedLabel: '', notes: '' };
 
     const jobs = store.getAll('jobs').filter(j => j.status !== 'Completed' && j.status !== 'Invoiced');
     const customers = store.getAll('customers');
@@ -463,7 +464,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
     // Quick add
     container.querySelectorAll('.act-quick-add').forEach(b => b.addEventListener('click', () => {
       const type = b.dataset.type;
-      openActivityModal({ title: '', type, date: new Date().toISOString().split('T')[0], time: '', duration: 15, priority: 'normal', status: 'pending', assignedToId: currentUser.id, linkedType: '', linkedId: '', linkedLabel: '', notes: '' });
+      openActivityModal({ title: '', type, date: todayLocalISO(), time: '', duration: 15, priority: 'normal', status: 'pending', assignedToId: currentUser.id, linkedType: '', linkedId: '', linkedLabel: '', notes: '' });
     }));
 
     // Card actions

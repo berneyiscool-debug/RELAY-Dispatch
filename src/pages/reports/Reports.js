@@ -5,6 +5,7 @@
 import { store } from '../../data/store.js';
 import { supabase } from '../../utils/supabase.js';
 import { escapeHTML } from '../../utils/security.js';
+import { JOB_STATUS_COLORS, DOC_STATUS_COLORS } from '../../utils/statusColors.js';
 
 let reportViewMode = 'detailed'; // Simple vs. Detailed report toggle
 
@@ -451,7 +452,7 @@ function renderAIInsightsPanel(reportId, filteredData) {
         100% { opacity: 0.6; }
       }
     </style>
-    <div class="card" id="${containerId}" style="margin-bottom:var(--space-lg); border: 1px solid var(--color-primary-light); background: linear-gradient(135deg, rgba(27, 109, 224, 0.04) 0%, rgba(139, 92, 246, 0.04) 100%);">
+    <div class="card" id="${containerId}" style="margin-bottom:var(--space-lg); border: 1px solid var(--color-primary-light);">
       <div class="card-body" style="padding:16px 20px;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
           <span class="material-icons-outlined" style="color:var(--color-primary); animation: pulse 2s infinite;">psychology</span>
@@ -1244,11 +1245,11 @@ function renderOverviewReport(d, mode) {
     <div class="grid-2" style="margin-bottom:var(--space-lg)">
       <div class="card">
         <div class="card-header"><h4>Jobs by Status</h4></div>
-        <div class="card-body">${barChart(d.jobsByStatus, { 'Pending':'#F59E0B','Scheduled':'#3B82F6','In Progress':'#1B6DE0','On Hold':'#6B7280','Completed':'#10B981','Invoiced':'#8B5CF6' })}</div>
+        <div class="card-body">${barChart(d.jobsByStatus, JOB_STATUS_COLORS)}</div>
       </div>
       <div class="card">
         <div class="card-header"><h4>Invoices by Status</h4></div>
-        <div class="card-body">${barChart(d.invByStatus, { 'Draft':'#6B7280','Sent':'#3B82F6','Paid':'#10B981','Overdue':'#EF4444' })}</div>
+        <div class="card-body">${barChart(d.invByStatus, DOC_STATUS_COLORS)}</div>
       </div>
     </div>
     ` : ''}

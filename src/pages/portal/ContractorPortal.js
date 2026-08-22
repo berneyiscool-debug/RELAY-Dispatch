@@ -1,6 +1,7 @@
 import { store } from '../../data/store.js';
 import { escapeHTML } from '../../utils/security.js';
 import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 import { showToast } from '../../components/Notifications.js';
 
 export function renderContractorPortal(container, params) {
@@ -1608,7 +1609,7 @@ export function renderContractorPortal(container, params) {
         type: job.type,
         status: 'Pending',
         priority: job.priority || 'Medium',
-        scheduledDate: new Date().toISOString().split('T')[0],
+        scheduledDate: todayLocalISO(),
         estimatedHours: job.estimatedHours || 0,
         laborCost: job.laborCost || 0,
         materialCost: job.materialCost || 0,

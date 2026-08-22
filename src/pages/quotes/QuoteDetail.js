@@ -10,7 +10,7 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
-import { calculateBillableMaterialPrice } from '../../utils/pricing.js';
+import { calculateBillableMaterialPrice, roundCurrency } from '../../utils/pricing.js';
 import { emailEnabledFor, sendEmail, emailBlockedReason } from '../../utils/email.js';
 import { quoteEmail } from '../../utils/emailTemplates.js';
 import { portalUrlForDocument } from '../../utils/portalLinks.js';
@@ -425,8 +425,8 @@ export function renderQuoteDetail(container, params) {
       quote.subtotal += sec.subtotal;
     });
 
-    quote.tax = quote.subtotal * store.getTaxRate();
-    quote.total = quote.subtotal + quote.tax;
+    quote.tax = roundCurrency(quote.subtotal * store.getTaxRate());
+    quote.total = roundCurrency(quote.subtotal + quote.tax);
 
     render();
   }
@@ -514,10 +514,13 @@ export function renderQuoteDetail(container, params) {
         const menu = moreBtn.nextElementSibling;
         menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
       });
-      document.addEventListener('click', () => {
-        const menu = container.querySelector('.dropdown-menu');
-        if (menu) menu.style.display = 'none';
-      });
+      if (!container.dataset.docClickBound) {
+        container.dataset.docClickBound = '1';
+        document.addEventListener('click', () => {
+          const menu = container.querySelector('.dropdown-menu');
+          if (menu) menu.style.display = 'none';
+        });
+      }
     }
 
     container.querySelector('#btn-email-quote')?.addEventListener('click', async (e) => {

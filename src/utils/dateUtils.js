@@ -7,6 +7,34 @@
  * @param {string} preferredTimeStr 
  * @returns {{hours: number, minutes: number} | null}
  */
+
+/**
+ * Today's date as a local YYYY-MM-DD string.
+ * `new Date().toISOString().split('T')[0]` yields yesterday for AU users in the
+ * morning because toISOString() renders UTC. Use this for all "today" defaults.
+ * @param {Date} [d] optional date; defaults to now
+ * @returns {string} YYYY-MM-DD in local time
+ */
+export function todayLocalISO(d = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Safe formatter for date-only strings ("YYYY-MM-DD"). Parsing such strings
+ * with new Date() treats them as UTC midnight, which renders one day earlier
+ * in negative-offset timezones. This pins them to local midnight first.
+ * @param {string} dateStr
+ * @param {Intl.DateTimeFormatOptions} [options]
+ * @returns {string}
+ */
+export function formatLocalDate(dateStr, options = {}) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString(undefined, options);
+}
+
 export function parsePreferredTime(preferredTimeStr) {
   if (!preferredTimeStr) return null;
   

@@ -112,11 +112,31 @@
   --z-dropdown: 1000;
   --z-modal: 2000;
   --z-toast: 3000;
+
+  /* ---- Legacy aliases (referenced elsewhere in the CSS; mapped to real tokens) ---- */
+  --color-primary-bg: var(--color-primary-light);
+  --surface-color: var(--card-bg);
+  --bg-color-alt: var(--bg-color);
+  --bg-primary: var(--content-bg);
+  --shadow-xs: var(--shadow-sm);
+  --transition-normal: var(--transition);
+  --radius-sm: var(--border-radius-sm);
+  --radius-lg: var(--border-radius-lg);
 }
 
 [data-theme="dark"] {
-  --body-bg: linear-gradient(135deg, #09090b 0%, #151518 100%) no-repeat fixed;
+  --body-bg: #09090b; /* flat volcanic canvas (no gradient) */
   --color-primary-dark: #FAFAFA; /* Soft ice-white headings */
   --color-primary-light: rgba(255, 92, 0, 0.18);
   --color-primary-hover: #FF7A2E;
+
+  /* ---- Legacy aliases in dark mode ---- */
+  --color-primary-bg: var(--color-primary-light);
+  --surface-color: var(--card-bg);
+  --bg-color-alt: var(--bg-color);
+  --bg-primary: var(--content-bg);
+  --shadow-xs: var(--shadow-sm);
+  --transition-normal: var(--transition);
+  --radius-sm: var(--border-radius-sm);
+  --radius-lg: var(--border-radius-lg);
 }

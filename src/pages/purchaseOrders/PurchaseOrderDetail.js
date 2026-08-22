@@ -8,13 +8,14 @@ import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { escapeHTML } from '../../utils/security.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 
 export function renderPurchaseOrderDetail(container, { id, jobId }) {
   const isNew = id === 'new';
   let po = isNew ? {
     status: 'Draft',
     lineItems: [],
-    issueDate: new Date().toISOString().split('T')[0],
+    issueDate: todayLocalISO(),
     total: 0,
     jobId: jobId || '',
     jobNumber: ''

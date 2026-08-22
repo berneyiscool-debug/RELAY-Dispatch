@@ -13,9 +13,10 @@
 import { store } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
 import { escapeHTML } from '../utils/security.js';
-import { calculateTotalBillableMaterials } from '../utils/pricing.js';
+import { calculateTotalBillableMaterials, roundCurrency } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 import { FLAGS } from '../utils/flags.js';
+import { todayLocalISO } from '../utils/dateUtils.js';
 import { showDrawer } from '../components/Drawer.js';
 import { renderDeputyAsksWidget } from '../components/DeputyAsksWidget.js';
 
@@ -327,7 +328,7 @@ function subscribeWidgetRefresh() {
       _dashRefreshTimer = setTimeout(() => {
         const pend = _dashRefreshPending; _dashRefreshPending = new Set();
         const hash = window.location.hash || '#/';
-        const isDashboard = hash === '#/' || hash === '#' || hash.startsWith('#/dashboard');
+        const isDashboard = hash === '#/' || hash === '#';
         if (isDashboard && document.querySelector('#dash-world')) refreshWidgetsForCollections(pend);
       }, 400);
     };
@@ -493,7 +494,7 @@ export async function renderDashboard(container) {
   if (!window.__fieldForge) window.__fieldForge = {};
   window.__fieldForge.reloadDashboard = () => {
     const hash = window.location.hash || '#/';
-    const isDashboard = hash === '#/' || hash === '#' || hash.startsWith('#/dashboard');
+    const isDashboard = hash === '#/' || hash === '#';
     if (isDashboard && document.querySelector('#dash-viewport')) {
       renderDashboard(container);
     }
@@ -1827,7 +1828,7 @@ function wireWidgetControls(grid, data) {
       const labHours = (job.estimatedHours || 0);
       const billableLab = Math.max(labHours * (profile?.rate || 85), profile?.minCallOutFee || 0);
       const subtotal = matCost + billableLab;
-      const tax = subtotal * store.getTaxRate();
+      const tax = roundCurrency(subtotal * store.getTaxRate());
 
       const inv = store.create('invoices', {
         jobNumber: job.number,
@@ -1842,7 +1843,7 @@ function wireWidgetControls(grid, data) {
         ],
         subtotal,
         tax,
-        total: subtotal + tax,
+        total: roundCurrency(subtotal + tax),
         invoiceType: 'Standard',
         issueDate: new Date().toISOString(),
         dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -1932,7 +1933,7 @@ function wireWidgetControls(grid, data) {
         priority: 'High',
         technicianId: 'tech1',
         technicianName: 'Mark Sullivan',
-        scheduledDate: new Date().toISOString().split('T')[0],
+        scheduledDate: todayLocalISO(),
         estimatedHours: 4,
         laborCost: 200,
         materialCost: 0,
@@ -1943,7 +1944,7 @@ function wireWidgetControls(grid, data) {
 
       const nextDate = new Date();
       nextDate.setMonth(nextDate.getMonth() + 3);
-      store.update('maintenancePlans', plan.id, { nextServiceDate: nextDate.toISOString().split('T')[0] });
+      store.update('maintenancePlans', plan.id, { nextServiceDate: todayLocalISO(nextDate) });
 
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast(`Maintenance Job ${job.number} Dispatched!`, 'success');
@@ -2362,10 +2363,10 @@ async function enhanceTechMaps() {
         techName: s.technicianName || 'Unassigned',
         address: addr,
         startTime: s.startTime || '',
-        jobHtml: `<div style="padding:4px 0;border-bottom:1px solid #E4E9F0;">
+        jobHtml: `<div style="padding:4px 0;border-bottom:1px solid #E8E8E6;">
           <div style="font-weight:700;">${job.number || ''} — ${(job.title || '').replace(/\s*—\s*Recurring.*$/i, '')}</div>
           <div>${job.customerName || ''}</div>
-          <div style="color:#5A6B7F;">${s.technicianName || 'Unassigned'}${timeStr ? ' · ' + timeStr : ''}</div>
+          <div style="color:#5C5C5A;">${s.technicianName || 'Unassigned'}${timeStr ? ' · ' + timeStr : ''}</div>
         </div>`,
       });
     }
@@ -2385,10 +2386,10 @@ async function enhanceTechMaps() {
         lat: site.lat, lng: site.lng,
         color: site.colors.size === 1 ? [...site.colors][0] : '#FF5C00',
         count: site.jobs.length,
-        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;max-width:240px;">
+        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;max-width:240px;">
           ${site.jobs.length > 1 ? `<div style="font-weight:700;color:#FF5C00;margin-bottom:2px;">${site.jobs.length} jobs at this address</div>` : ''}
           ${site.jobs.map(j => j.jobHtml).join('')}
-          <div style="color:#5A6B7F;padding-top:4px;">${site.address}</div>
+          <div style="color:#5C5C5A;padding-top:4px;">${site.address}</div>
         </div>`,
       };
     });
@@ -2403,11 +2404,11 @@ async function enhanceTechMaps() {
       const name = cu.company || `${cu.firstName || ''} ${cu.lastName || ''}`.trim() || 'Customer';
       return {
         lat: geo.lat, lng: geo.lng,
-        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;max-width:220px;">
+        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;max-width:220px;">
           <div style="font-weight:700;margin-bottom:2px;">${name}</div>
           ${cu.phone ? `<div>${cu.phone}</div>` : ''}
-          <div style="color:#5A6B7F;">${addr}</div>
-          <div style="color:#5A6B7F;font-size:11px;">Customer</div>
+          <div style="color:#5C5C5A;">${addr}</div>
+          <div style="color:#5C5C5A;font-size:11px;">Customer</div>
         </div>`,
       };
     }).filter(Boolean);
@@ -2448,15 +2449,15 @@ async function enhanceTechMaps() {
       };
       const bounds = new google.maps.LatLngBounds();
 
-      const baseMarker = new Marker({ map, position: { lat: base.lat, lng: base.lng }, icon: pinSvg('#1E2A3A', 'home'), zIndex: 30 });
-      hover(baseMarker, `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A2332;">
+      const baseMarker = new Marker({ map, position: { lat: base.lat, lng: base.lng }, icon: pinSvg('#2C2C2E', 'home'), zIndex: 30 });
+      hover(baseMarker, `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;">
         <div style="font-weight:700;">${base.source === 'user' ? 'My start location' : (store.getSettings().name || 'Office')}</div>
-        <div style="color:#5A6B7F;">${base.label}</div>
-        <div style="color:#5A6B7F;font-size:11px;">${base.source === 'user' ? 'Dispatch start' : 'Office · dispatch start'}</div></div>`);
+        <div style="color:#5C5C5A;">${base.label}</div>
+        <div style="color:#5C5C5A;font-size:11px;">${base.source === 'user' ? 'Dispatch start' : 'Office · dispatch start'}</div></div>`);
       bounds.extend({ lat: base.lat, lng: base.lng });
 
       customerPins.forEach(p => {
-        const m = new Marker({ map, position: { lat: p.lat, lng: p.lng }, icon: pinSvg('#64748B', 'person', 24), zIndex: 10 });
+        const m = new Marker({ map, position: { lat: p.lat, lng: p.lng }, icon: pinSvg('#8A8A87', 'person', 24), zIndex: 10 });
         hover(m, p.info);
       });
 
@@ -2490,7 +2491,7 @@ async function enhanceTechMaps() {
       const swatch = (color, label) => `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;"><span style="width:10px;height:10px;border-radius:50%;background:${color};border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);flex-shrink:0;"></span><span style="color:var(--text-secondary);white-space:nowrap;">${label}</span></div>`;
       const legend = document.createElement('div');
       legend.style.cssText = 'position:absolute;top:8px;right:8px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:6px;padding:6px 8px;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.15);max-height:45%;overflow:auto;z-index:5;';
-      legend.innerHTML = swatch('#1E2A3A', 'Office') + swatch('#64748B', 'Customers')
+      legend.innerHTML = swatch('#2C2C2E', 'Office') + swatch('#8A8A87', 'Customers')
         + techLegend.map((t) => swatch(t.color, esc(t.name))).join('');
       c.style.position = 'relative';
       c.appendChild(legend);
@@ -3025,7 +3026,7 @@ function renderAssetStatus(data, item) {
 function renderOverdueMaintenance(data, item) {
   const plans = store.getAll('maintenancePlans') || [];
   const activePlans = plans.filter(p => p.status === 'Active');
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayLocalISO();
   const overdue = activePlans.filter(p => p.nextServiceDate && p.nextServiceDate <= today);
 
   if (!overdue.length) return renderPlaceholder('build', 'No overdue maintenance');

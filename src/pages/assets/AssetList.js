@@ -55,7 +55,7 @@ export function renderAssetList(container, params) {
   }
 
   container.innerHTML = `
-    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>${customer ? `Assets — ${escapeHTML(customer.company || `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed Customer')}` : 'Assets Manager'}</h1>
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>

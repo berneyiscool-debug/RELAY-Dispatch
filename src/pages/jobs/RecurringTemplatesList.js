@@ -20,7 +20,7 @@ export function renderRecurringTemplatesList(container, params) {
   const canCreate = hasPermission('Jobs', 'create');
 
   container.innerHTML = `
-    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <div>
         <h1 style="margin:0; font-size:22px;">${customer ? `Recurring Templates — ${escapeHTML(customer.company)}` : 'Recurring Templates & Contracts'}</h1>
         <p class="text-secondary" style="margin:4px 0 0 0; font-size:13px">Master repeating service plans used to generate scheduled maintenance jobs.</p>

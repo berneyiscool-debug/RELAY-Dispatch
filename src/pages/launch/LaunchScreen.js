@@ -88,7 +88,7 @@ export function renderLaunchScreen(container, onComplete) {
       width: 100vw;
       height: 100vh;
       background: #f3f5f7;
-      color: #1e293b;
+      color: #1a1a1a;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       overflow: hidden;
       box-sizing: border-box;
@@ -180,7 +180,7 @@ export function renderLaunchScreen(container, onComplete) {
       font-weight: 700;
       letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: #475569;
+      color: #5c5c5a;
       white-space: nowrap;
       margin-top: 12px;
     }
@@ -304,7 +304,7 @@ export function renderLaunchScreen(container, onComplete) {
       }
       .indicator-arrow {
         display: inline-block;
-        color: #475569;
+        color: #5c5c5a;
         font-size: 20px !important;
       }
     }
@@ -331,11 +331,11 @@ export function renderLaunchScreen(container, onComplete) {
       align-items: center;
       justify-content: center;
       gap: 8px;
-      color: #0f172a !important;
+      color: #1a1a1a !important;
     }
     .launch-subtitle {
       font-size: 12.5px;
-      color: #475569;
+      color: #5c5c5a;
       margin: 0 0 14px 0;
       line-height: 1.5;
       text-align: center;
@@ -353,7 +353,7 @@ export function renderLaunchScreen(container, onComplete) {
       align-items: center;
       gap: 10px;
       font-size: 13px;
-      color: #475569;
+      color: #5c5c5a;
     }
     .launch-feature-item.soon {
       opacity: 0.5;
@@ -374,7 +374,7 @@ export function renderLaunchScreen(container, onComplete) {
       display: block;
       font-size: 12px;
       font-weight: 600;
-      color: #475569;
+      color: #5c5c5a;
       margin-bottom: 4px;
       text-align: left;
     }
@@ -386,7 +386,7 @@ export function renderLaunchScreen(container, onComplete) {
       left: 10px;
       top: 50%;
       transform: translateY(-50%);
-      color: #64748b;
+      color: #5c5c5a;
       font-size: 18px;
     }
     .launch-input {
@@ -395,7 +395,7 @@ export function renderLaunchScreen(container, onComplete) {
       background-color: rgba(255, 255, 255, 0.7);
       border: 1px solid rgba(0, 0, 0, 0.12);
       border-radius: 8px;
-      color: #0f172a;
+      color: #1a1a1a;
       font-size: 13px;
       box-sizing: border-box;
       transition: border-color 0.2s, background-color 0.2s;
@@ -432,7 +432,7 @@ export function renderLaunchScreen(container, onComplete) {
     .launch-btn-secondary {
       background-color: rgba(255, 255, 255, 0.6);
       border: 1px solid rgba(0, 0, 0, 0.12);
-      color: #0f172a;
+      color: #1a1a1a;
     }
     .launch-btn-secondary:hover {
       background-color: rgba(255, 255, 255, 0.9);
@@ -451,7 +451,7 @@ export function renderLaunchScreen(container, onComplete) {
       transition: border-color 0.2s, background-color 0.2s;
     }
     .account-item-wrapper:hover {
-      border-color: #94a3b8;
+      border-color: #8a8a87;
       background-color: rgba(255,255,255,0.8);
     }
     .account-item {
@@ -483,15 +483,15 @@ export function renderLaunchScreen(container, onComplete) {
       font-size: 14px;
       margin: 0 0 2px 0;
       text-align: left;
-      color: #0f172a;
+      color: #1a1a1a;
     }
     .account-meta {
       font-size: 11px;
-      color: #64748b;
+      color: #5c5c5a;
       text-align: left;
     }
     .account-icon {
-      color: #64748b;
+      color: #5c5c5a;
       font-size: 20px;
     }
     .password-prompt-box {
@@ -508,7 +508,7 @@ export function renderLaunchScreen(container, onComplete) {
       background-color: rgba(255, 255, 255, 0.8);
       border: 1px solid rgba(0, 0, 0, 0.12);
       border-radius: 6px;
-      color: #0f172a;
+      color: #1a1a1a;
       font-size: 13px;
     }
     .password-prompt-input:focus {
@@ -532,10 +532,10 @@ export function renderLaunchScreen(container, onComplete) {
     }
     .password-prompt-cancel {
       background: transparent;
-      color: #64748b;
+      color: #5c5c5a;
     }
     .password-prompt-cancel:hover {
-      color: #0f172a;
+      color: #1a1a1a;
     }
     .new-account-form {
       border: 1px dashed rgba(0, 0, 0, 0.15);
@@ -561,7 +561,7 @@ export function renderLaunchScreen(container, onComplete) {
       justify-content: center;
       font-size: 10px;
       font-weight: 700;
-      color: #475569;
+      color: #5c5c5a;
       background: rgba(255,255,255,0.4);
       text-transform: uppercase;
     }
@@ -648,11 +648,11 @@ export function renderLaunchScreen(container, onComplete) {
 
             <!-- Toggle between Cloud and Local Services -->
             <div class="auth-mode-toggle" style="display: flex; gap: 8px; margin-bottom: 16px; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.08);">
-              <button class="toggle-tab" id="btn-toggle-cloud" style="flex: 1; padding: 6px 10px; border: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${activeAuthMode === 'cloud' ? '#FF5C00' : 'transparent'}; color: ${activeAuthMode === 'cloud' ? '#ffffff' : '#475569'};">
+              <button class="toggle-tab" id="btn-toggle-cloud" style="flex: 1; padding: 6px 10px; border: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${activeAuthMode === 'cloud' ? '#FF5C00' : 'transparent'}; color: ${activeAuthMode === 'cloud' ? '#ffffff' : '#5c5c5a'};">
                 <span class="material-icons-outlined" style="font-size: 14px;">cloud_queue</span>
                 <span>Cloud Services</span>
               </button>
-              <button class="toggle-tab" id="btn-toggle-local" style="flex: 1; padding: 6px 10px; border: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${activeAuthMode === 'local' ? '#FF5C00' : 'transparent'}; color: ${activeAuthMode === 'local' ? '#ffffff' : '#475569'};">
+              <button class="toggle-tab" id="btn-toggle-local" style="flex: 1; padding: 6px 10px; border: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${activeAuthMode === 'local' ? '#FF5C00' : 'transparent'}; color: ${activeAuthMode === 'local' ? '#ffffff' : '#5c5c5a'};">
                 <span class="material-icons-outlined" style="font-size: 14px;">computer</span>
                 <span>Local Services</span>
               </button>
@@ -683,7 +683,7 @@ export function renderLaunchScreen(container, onComplete) {
 
           <div class="launch-panel-content">
             <h2 class="launch-title">
-              <span class="material-icons-outlined" style="font-size: 22px; color: #64748b;">shield</span> Local Admin
+              <span class="material-icons-outlined" style="font-size: 22px; color: #5c5c5a;">shield</span> Local Admin
             </h2>
             <p class="launch-subtitle">Single-user offline admin mode. Your data is stored locally on this machine.</p>
 
@@ -692,7 +692,7 @@ export function renderLaunchScreen(container, onComplete) {
 
           <!-- Description when empty -->
           ${accounts.length === 0 && !isCreatingLocalAccount ? `
-            <div class="launch-panel-content" style="text-align: center; color: #64748b; font-size: 13px; margin-top: 16px;">
+            <div class="launch-panel-content" style="text-align: center; color: #5c5c5a; font-size: 13px; margin-top: 16px;">
               No setup required. Click "New local account" to get started.
             </div>
           ` : ''}
@@ -721,13 +721,13 @@ export function renderLaunchScreen(container, onComplete) {
           <label class="launch-form-label">Business Profile</label>
           <div class="launch-input-wrapper">
             <span class="material-icons-outlined launch-input-icon">business</span>
-            <select id="local-signin-profile" class="launch-input" style="appearance: none; background: #0f172a; border: none; color: #f8fafc; width: 100%; padding-left: 36px; height: 40px; border-radius: 6px; font-family: inherit; font-size: 14px;" required>
+            <select id="local-signin-profile" class="launch-input" style="appearance: none; background: #1a1a1a; border: none; color: #f8fafc; width: 100%; padding-left: 36px; height: 40px; border-radius: 6px; font-family: inherit; font-size: 14px;" required>
               ${accounts.length === 0 
                 ? '<option value="" disabled selected>No profiles available. Create one on the right.</option>' 
                 : accounts.map((acc, index) => `<option value="${acc.id}" ${index === 0 ? 'selected' : ''}>${escapeHTML(acc.businessName)}</option>`).join('')
               }
             </select>
-            <span class="material-icons-outlined" style="position: absolute; right: 12px; top: 11px; color: #64748b; pointer-events: none;">expand_more</span>
+            <span class="material-icons-outlined" style="position: absolute; right: 12px; top: 11px; color: #5c5c5a; pointer-events: none;">expand_more</span>
           </div>
         </div>
 
@@ -749,7 +749,7 @@ export function renderLaunchScreen(container, onComplete) {
 
         <div style="display: flex; align-items: center; gap: 8px; margin-top: -4px;">
           <input type="checkbox" id="local-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${localStorage.getItem('relay_local_remember_me') === 'true' ? 'checked' : ''}>
-          <label for="local-remember-me" style="font-size: 13px; color: #94a3b8; cursor: pointer; user-select: none;">Remember me</label>
+          <label for="local-remember-me" style="font-size: 13px; color: #8a8a87; cursor: pointer; user-select: none;">Remember me</label>
         </div>
 
         <button type="submit" class="launch-btn launch-btn-primary" id="btn-local-signin-submit">
@@ -793,7 +793,7 @@ export function renderLaunchScreen(container, onComplete) {
 
         <div style="display: flex; align-items: center; gap: 8px; margin-top: -4px;">
           <input type="checkbox" id="cloud-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${localStorage.getItem('relay_cloud_remember_me') === 'true' ? 'checked' : ''}>
-          <label for="cloud-remember-me" style="font-size: 13px; color: #64748b; cursor: pointer; user-select: none;">Remember me</label>
+          <label for="cloud-remember-me" style="font-size: 13px; color: #5c5c5a; cursor: pointer; user-select: none;">Remember me</label>
         </div>
 
         <button type="submit" class="launch-btn launch-btn-primary" id="btn-cloud-submit">
@@ -802,7 +802,7 @@ export function renderLaunchScreen(container, onComplete) {
 
         <div style="text-align: center; margin-top: 10px; font-size: 13px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
           <span>Don't have an account? <a href="#" id="link-show-signup" style="color: #FF5C00; text-decoration: none; font-weight: 600;">Create account</a></span>
-          <span style="color: #cbd5e1;">•</span>
+          <span style="color: #b0b0ad;">•</span>
           <a href="#" id="link-cloud-forgot" style="color: #FF5C00; text-decoration: none; font-weight: 600;">Forgot password?</a>
         </div>
       </form>
@@ -882,7 +882,7 @@ export function renderLaunchScreen(container, onComplete) {
       const lastUsed = formatRelativeTime(acct.lastAccessedAt || acct.createdAt);
 
       html += `
-        <div class="account-item-wrapper" style="${isPromptOpen ? 'border-color: #94a3b8; background-color: rgba(255,255,255,0.01);' : ''}">
+        <div class="account-item-wrapper" style="${isPromptOpen ? 'border-color: #8a8a87; background-color: rgba(255,255,255,0.01);' : ''}">
           <div class="account-item" data-id="${acct.id}">
             <div class="account-details">
               <div class="account-avatar" style="background-color: ${acct.avatarColor || '#FF5C00'}">
@@ -924,14 +924,14 @@ export function renderLaunchScreen(container, onComplete) {
       if (isDirSupported) {
         dirSyncHtml = `
           <div class="launch-form-group" style="margin-bottom: 8px;">
-            <label class="launch-form-label" style="color: #94a3b8;">Local Directory for Storage (Required)</label>
+            <label class="launch-form-label" style="color: #8a8a87;">Local Directory for Storage (Required)</label>
             <div style="display: flex; gap: 8px; align-items: center;">
-              <button type="button" class="launch-btn launch-btn-secondary" id="btn-local-pick-dir" style="margin: 0; padding: 8px 12px; font-size: 13px; flex: 1; border-color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;">
+              <button type="button" class="launch-btn launch-btn-secondary" id="btn-local-pick-dir" style="margin: 0; padding: 8px 12px; font-size: 13px; flex: 1; border-color: #5c5c5a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;">
                 <span class="material-icons-outlined" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">folder</span>
                 <span id="local-pick-dir-label">${pendingLocalDirHandle ? escapeHTML(pendingLocalDirHandle.name) : 'Choose folder...'}</span>
               </button>
             </div>
-            <div class="text-tertiary" style="font-size: 11px; margin-top: 4px; color: #64748b; line-height: 1.4;">
+            <div class="text-tertiary" style="font-size: 11px; margin-top: 4px; color: #5c5c5a; line-height: 1.4;">
               Saves database records and attachments directly to this computer folder (ideal for OneDrive/Dropbox/Network share).
             </div>
           </div>
@@ -939,9 +939,9 @@ export function renderLaunchScreen(container, onComplete) {
       } else {
         dirSyncHtml = `
           <div class="launch-form-group" style="margin-bottom: 8px;">
-            <label class="launch-form-label" style="color: #94a3b8;">Storage</label>
-            <div style="font-size: 12px; color: #94a3b8; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 8px;">
-              <span class="material-icons-outlined" style="font-size: 18px; color: #3b82f6;">tablet_mac</span>
+            <label class="launch-form-label" style="color: #8a8a87;">Storage</label>
+            <div style="font-size: 12px; color: #8a8a87; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 8px;">
+              <span class="material-icons-outlined" style="font-size: 18px; color: #2563EB;">tablet_mac</span>
               <span>Data will be stored locally in device browser storage (IndexedDB).</span>
             </div>
           </div>
@@ -952,34 +952,34 @@ export function renderLaunchScreen(container, onComplete) {
         <div class="new-account-form">
           <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600;">Create Local Business Profile</h4>
           <div class="launch-form-group" style="margin-bottom: 8px;">
-            <label class="launch-form-label" style="color: #94a3b8;">Business Name</label>
+            <label class="launch-form-label" style="color: #8a8a87;">Business Name</label>
             <input type="text" id="local-business-name" class="launch-input" placeholder="e.g. Side Electrical" style="padding-left: 12px;" required />
           </div>
           <div class="launch-form-group" style="margin-bottom: 8px;">
-            <label class="launch-form-label" style="color: #94a3b8;">Protect with PIN/Password (Optional)</label>
+            <label class="launch-form-label" style="color: #8a8a87;">Protect with PIN/Password (Optional)</label>
             <input type="password" id="local-business-password" class="launch-input" placeholder="Leave blank for no password" style="padding-left: 12px;" />
           </div>
           
           <div id="local-recovery-fields" style="display: none; margin-top: 8px;">
             <div class="launch-form-group" style="margin-bottom: 8px;">
-              <label class="launch-form-label" style="color: #94a3b8;">Recovery Question</label>
+              <label class="launch-form-label" style="color: #8a8a87;">Recovery Question</label>
               <div class="launch-input-wrapper">
-                <select id="local-recovery-question-select" class="launch-input" style="appearance: none; background: #0f172a; border: none; color: #f8fafc; width: 100%; padding-left: 12px; height: 36px; border-radius: 6px; font-family: inherit; font-size: 13px;">
+                <select id="local-recovery-question-select" class="launch-input" style="appearance: none; background: #1a1a1a; border: none; color: #f8fafc; width: 100%; padding-left: 12px; height: 36px; border-radius: 6px; font-family: inherit; font-size: 13px;">
                   <option value="What was the name of your first pet?">What was the name of your first pet?</option>
                   <option value="In what city or town did your parents meet?">In what city or town did your parents meet?</option>
                   <option value="What was the name of your first school?">What was the name of your first school?</option>
                   <option value="What was your favorite childhood food?">What was your favorite childhood food?</option>
                   <option value="custom">Write a custom question...</option>
                 </select>
-                <span class="material-icons-outlined" style="position: absolute; right: 12px; top: 9px; color: #64748b; pointer-events: none;">expand_more</span>
+                <span class="material-icons-outlined" style="position: absolute; right: 12px; top: 9px; color: #5c5c5a; pointer-events: none;">expand_more</span>
               </div>
             </div>
             <div class="launch-form-group" id="local-recovery-custom-group" style="display: none; margin-bottom: 8px;">
-              <label class="launch-form-label" style="color: #94a3b8;">Custom Question</label>
+              <label class="launch-form-label" style="color: #8a8a87;">Custom Question</label>
               <input type="text" id="local-recovery-question-custom" class="launch-input" placeholder="Type your custom question" style="padding-left: 12px;" />
             </div>
             <div class="launch-form-group" style="margin-bottom: 8px;">
-              <label class="launch-form-label" style="color: #94a3b8;">Recovery Answer</label>
+              <label class="launch-form-label" style="color: #8a8a87;">Recovery Answer</label>
               <input type="text" id="local-recovery-answer" class="launch-input" placeholder="Enter answer (case-insensitive)" style="padding-left: 12px;" />
             </div>
           </div>
@@ -1691,32 +1691,28 @@ export function renderLaunchScreen(container, onComplete) {
     overlay.style.cssText = `
       position: fixed; inset: 0; z-index: 10000;
       background: rgba(15, 23, 42, 0.6);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
       display: flex; align-items: center; justify-content: center;
       padding: 16px;
     `;
     
     overlay.innerHTML = `
       <div class="launch-modal-card" style="
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: #ffffff;
+        border: 1px solid var(--border-color);
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         border-radius: 12px;
         max-width: 440px;
         width: 100%;
         padding: 24px;
         box-sizing: border-box;
-        color: #1e293b;
+        color: #1a1a1a;
         font-family: 'Inter', sans-serif;
       ">
-        <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #0f172a;">
+        <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #1a1a1a;">
           <span class="material-icons-outlined" style="color: #FF5C00; font-size: 22px;">help_outline</span>
           ${title}
         </h3>
-        <div class="launch-modal-body" style="margin-bottom: 20px; font-size: 13px; line-height: 1.5; color: #475569;">
+        <div class="launch-modal-body" style="margin-bottom: 20px; font-size: 13px; line-height: 1.5; color: #5c5c5a;">
           ${contentHtml}
         </div>
         <div style="display: flex; gap: 8px; justify-content: flex-end;">
@@ -1897,7 +1893,7 @@ export function renderLaunchScreen(container, onComplete) {
       title: 'Reset Profile PIN',
       contentHtml: `
         <p>Answer your security recovery question to reset your PIN.</p>
-        <div style="margin: 12px 0; padding: 10px 14px; background: rgba(0, 0, 0, 0.04); border-radius: 6px; font-size: 13px; font-weight: 600; color: #0f172a;">
+        <div style="margin: 12px 0; padding: 10px 14px; background: rgba(0, 0, 0, 0.04); border-radius: 6px; font-size: 13px; font-weight: 600; color: #1a1a1a;">
           Question: ${escapeHTML(acct.recoveryQuestion)}
         </div>
         <div class="launch-form-group">

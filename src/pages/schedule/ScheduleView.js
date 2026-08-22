@@ -9,7 +9,8 @@ import { escapeHTML } from '../../utils/security.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showModal } from '../../components/Modal.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
-import { parsePreferredTime } from '../../utils/dateUtils.js';
+import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
+import { JOB_STATUS_COLORS } from '../../utils/statusColors.js';
 import { FLAGS } from '../../utils/flags.js';
 import { getVirtualRecurringOccurrences, materializeVirtualOccurrence } from '../../utils/maintenanceEngine.js';
 
@@ -146,7 +147,7 @@ export function renderScheduleView(container) {
     });
 
     const firstSched = sorted[0];
-    const firstDate = firstSched.date || firstSched.startTime?.split('T')[0] || new Date().toISOString().split('T')[0];
+    const firstDate = firstSched.date || firstSched.startTime?.split('T')[0] || todayLocalISO();
 
     const techsMap = {};
     jobSchedules.forEach(s => {
@@ -282,11 +283,15 @@ export function renderScheduleView(container) {
       } else if (s.startTime) {
         sDate = new Date(s.startTime);
       } else if (s.dayOffset !== undefined) {
-        // Seeded relative dayOffset (Monday of the current week + dayOffset)
+        // Legacy relative dayOffset rows: materialize an absolute date once,
+        // otherwise the same row ghosts into every week you view.
         const monday = days[0]; // Monday
         if (monday) {
           sDate = new Date(monday);
           sDate.setDate(sDate.getDate() + s.dayOffset);
+          const pad = n => String(n).padStart(2, '0');
+          const dateStr = `${sDate.getFullYear()}-${pad(sDate.getMonth() + 1)}-${pad(sDate.getDate())}`;
+          store.update('schedule', s.id, { date: dateStr, dayOffset: null });
         }
       }
 
@@ -1040,8 +1045,8 @@ export function renderScheduleView(container) {
 
   function bindMarquee(days) {
     const scroll = document.getElementById('calendar-scroll');
-    if (!scroll || scroll.dataset.marqueeBound) return;
-    scroll.dataset.marqueeBound = '1';
+    if (!scroll || container.dataset.marqueeBound) return;
+    container.dataset.marqueeBound = '1';
 
     scroll.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
@@ -1093,8 +1098,8 @@ export function renderScheduleView(container) {
     });
 
     // Esc clears selection; leaving the schedule page tears down the floating bar
-    if (!scroll.dataset.escBound) {
-      scroll.dataset.escBound = '1';
+    if (!container.dataset.escBound) {
+      container.dataset.escBound = '1';
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && selectedScheduleIds.size && location.hash.startsWith('#/schedule')) clearSelection();
       });
@@ -1118,10 +1123,7 @@ export function renderScheduleView(container) {
   // block's status is read from job.status.
   function openChangeStatusModal(job) {
     const STATUSES = ['Pending', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Invoiced'];
-    const statusDot = {
-      'Pending': '#F59E0B', 'Scheduled': '#3B82F6', 'In Progress': '#6366F1',
-      'On Hold': '#6B7280', 'Completed': '#10B981', 'Invoiced': '#9CA3AF'
-    };
+    const statusDot = JOB_STATUS_COLORS;
 
     const content = document.createElement('div');
     content.style.padding = '8px 0';
@@ -1132,7 +1134,7 @@ export function renderScheduleView(container) {
           ${STATUSES.map(s => {
             const active = job.status === s;
             return `
-              <div class="status-select-item ${active ? 'active' : ''}" data-value="${s}" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border:1.5px solid ${active ? 'var(--color-primary)' : 'var(--border-color)'}; background:${active ? 'rgba(59,130,246,0.08)' : 'var(--card-bg)'}; border-radius:8px; cursor:pointer; transition:all 0.2s ease;">
+              <div class="status-select-item ${active ? 'active' : ''}" data-value="${s}" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border:1.5px solid ${active ? 'var(--color-primary)' : 'var(--border-color)'}; background:${active ? 'var(--color-primary-light)' : 'var(--card-bg)'}; border-radius:8px; cursor:pointer; transition:all 0.2s ease;">
                 <div style="display:flex; align-items:center; gap:10px;">
                   <span style="width:10px; height:10px; border-radius:50%; background:${statusDot[s]}; flex-shrink:0;"></span>
                   <span style="font-weight:600; font-size:13px; color:var(--text-primary);">${s}</span>
@@ -1228,7 +1230,7 @@ export function renderScheduleView(container) {
           </div>
           <div class="form-group">
             <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
-            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+            <input type="date" class="form-input" name="date" value="${todayLocalISO()}" required />
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
@@ -1378,7 +1380,7 @@ export function renderScheduleView(container) {
 
   function handleAddLeave() {
     const technicians = getTechnicians();
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocalISO();
 
     showDrawer({
       title: 'Book Technician Leave',
@@ -1507,7 +1509,7 @@ export function renderScheduleView(container) {
           </div>
           <div class="form-group">
             <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
-            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+            <input type="date" class="form-input" name="date" value="${todayLocalISO()}" required />
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
@@ -1585,7 +1587,7 @@ export function renderScheduleView(container) {
           </div>
           <div class="form-group">
             <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
-            <input type="date" class="form-input" name="date" value="${new Date().toISOString().split('T')[0]}" required />
+            <input type="date" class="form-input" name="date" value="${todayLocalISO()}" required />
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
@@ -2818,7 +2820,9 @@ export function renderScheduleView(container) {
               date: localDateStr,
               startTime: startTimeStr,
               finishTime: finishTimeStr,
-              hours: duration
+              hours: duration,
+              startHour: dropHour,
+              endHour: dropEndHour
             });
             syncJobWithSchedules(job.id);
 
@@ -2836,6 +2840,8 @@ export function renderScheduleView(container) {
                   date: ndStr,
                   startTime: `${ndStr}T${pad(Math.floor(ns))}:${pad(Math.round((ns - Math.floor(ns)) * 60))}`,
                   finishTime: `${ndStr}T${pad(Math.floor(ne))}:${pad(Math.round((ne - Math.floor(ne)) * 60))}`,
+                  startHour: ns,
+                  endHour: ne
                 });
                 if (g.id !== dragState.scheduleId) { const gj = store.getById('schedule', g.id); if (gj) syncJobWithSchedules(gj.jobId); }
               });
@@ -2854,6 +2860,8 @@ export function renderScheduleView(container) {
               startTime: startTimeStr,
               finishTime: finishTimeStr,
               hours: duration,
+              startHour: dropHour,
+              endHour: dropEndHour,
               taskId: dragState.taskId || null,
               taskName: dragState.taskName || null
             });
@@ -2946,7 +2954,7 @@ export function renderScheduleView(container) {
             if (['schedule', 'leave', 'blockout', 'meeting'].includes(resizeState.blockType)) {
               const sched = store.getById('schedule', resizeState.scheduleId);
               if (sched) {
-                const sDateStr = sched.date || sched.startTime?.split('T')[0] || new Date().toISOString().split('T')[0];
+                const sDateStr = sched.date || sched.startTime?.split('T')[0] || todayLocalISO();
                 const pad = n => n.toString().padStart(2, '0');
                 const startH = Math.floor(startHour);
                 const startM = Math.round((startHour - startH) * 60);
@@ -2967,7 +2975,7 @@ export function renderScheduleView(container) {
               // Convert legacy block into proper schedule allocation on resize
               const job = store.getAll('jobs').find(j => j.id === jobId);
               if (job) {
-                const sDateStr = job.scheduledDate || new Date().toISOString().split('T')[0];
+                const sDateStr = job.scheduledDate || todayLocalISO();
                 const pad = n => n.toString().padStart(2, '0');
                 const startH = Math.floor(startHour);
                 const startM = Math.round((startHour - startH) * 60);
@@ -3075,7 +3083,7 @@ function btipLeafTasks(tasks, path = [], out = []) {
 function computeBtipSlices(sched, job) {
   const pad = n => String(n).padStart(2, '0');
   const hourToStr = h => `${pad(Math.floor(h))}:${pad(Math.round((h - Math.floor(h)) * 60))}`;
-  const dateStr = sched.date || (sched.startTime ? sched.startTime.split('T')[0] : new Date().toISOString().split('T')[0]);
+  const dateStr = sched.date || (sched.startTime ? sched.startTime.split('T')[0] : todayLocalISO());
 
   let sHour = sched.startHour;
   let eHour = sched.endHour;

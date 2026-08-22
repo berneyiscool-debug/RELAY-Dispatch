@@ -7,6 +7,7 @@ import { createDataTable } from '../../components/DataTable.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { todayLocalISO } from '../../utils/dateUtils.js';
 
 export function renderNotificationsList(container, params) {
   const allNotifications = store.getAll('notifications') || [];
@@ -38,7 +39,7 @@ export function renderNotificationsList(container, params) {
   }
 
   container.innerHTML = `
-    <div class="page-header" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Notifications</h1>
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
@@ -823,7 +824,7 @@ export function renderNotificationsList(container, params) {
       technicianId: assignedTechId || undefined,
       technicianName: techObj ? techObj.name : '',
       technicians: assignedTechId ? [{ id: assignedTechId, name: techObj ? techObj.name : '' }] : [],
-      scheduledDate: n.targetServiceDate || n.dueDate || new Date().toISOString().split('T')[0],
+      scheduledDate: n.targetServiceDate || n.dueDate || todayLocalISO(),
       notes: `Generated from Notification: ${n.title}\n\n${n.description}`,
       createdAt: new Date().toISOString()
     };

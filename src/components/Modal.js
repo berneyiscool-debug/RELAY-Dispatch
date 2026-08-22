@@ -7,7 +7,6 @@ import { escapeHTML } from '../utils/security.js';
 export function showModal({ title, content, size = '', onClose, actions = [] }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
-  overlay.id = 'modal-overlay';
 
   const modal = document.createElement('div');
   modal.className = `modal ${size}`;
@@ -15,7 +14,7 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
   let html = `
     <div class="modal-header">
       <h3>${escapeHTML(title)}</h3>
-      <button class="modal-close" id="modal-close-btn">
+      <button class="modal-close modal-close-btn">
         <span class="material-icons-outlined">close</span>
       </button>
     </div>
@@ -25,7 +24,7 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
   if (actions.length) {
     html += '<div class="modal-footer">';
     actions.forEach((action, i) => {
-      html += `<button class="btn ${action.className || 'btn-secondary'}" id="modal-action-${i}">${escapeHTML(action.label)}</button>`;
+      html += `<button class="btn ${action.className || 'btn-secondary'} modal-action-${i}">${escapeHTML(action.label)}</button>`;
     });
     html += '</div>';
   }
@@ -47,14 +46,14 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
     if (onClose) onClose();
   };
 
-  modal.querySelector('#modal-close-btn').addEventListener('click', close);
+  modal.querySelector('.modal-close-btn').addEventListener('click', close);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
 
   // Action handlers
   actions.forEach((action, i) => {
-    const btn = modal.querySelector(`#modal-action-${i}`);
+    const btn = modal.querySelector(`.modal-action-${i}`);
     if (btn && action.onClick) {
       btn.addEventListener('click', () => action.onClick(close));
     }

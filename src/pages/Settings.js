@@ -606,7 +606,7 @@ export function renderSettings(container) {
         }
       </style>
 
-      <div class="page-header" style="margin-bottom:12px;"><h1>Settings</h1></div>
+      <div class="page-header"><h1>Settings</h1></div>
 
       <div id="settings-content" style="padding-top:0;"></div>
     `;
@@ -1085,7 +1085,7 @@ export function renderSettings(container) {
                       <td>
                         ${canReactivate 
                           ? '<span class="badge badge-success">Cooldown Complete</span>' 
-                          : `<span class="badge badge-warning" style="background:#FFF7ED; color:#C2410C; border:1px solid #FFEDD5">Available in ${remaining} days</span>`}
+                          : `<span class="badge badge-warning" style="background:var(--color-warning-bg); color:var(--color-warning); border:1px solid var(--color-warning-bg)">Available in ${remaining} days</span>`}
                       </td>
                       <td>
                         <button class="btn btn-sm btn-ghost btn-reactivate-user" 
@@ -1906,7 +1906,7 @@ export function renderSettings(container) {
                         
                         store.clearAll();
                         localStorage.setItem('simpro__prevent_seeding', 'true');
-                        localStorage.setItem('simpro__seeded', 'true');
+                        store.markSeeded();
                         localStorage.removeItem('currentUser');
                         
                         showToast('App restored to fresh state. Reloading...', 'success');

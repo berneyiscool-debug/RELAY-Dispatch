@@ -75,6 +75,20 @@
   color: #ffffff;
 }
 
+/* Success Button (flat solid green) */
+.btn-success {
+  background: var(--color-success);
+  color: #ffffff;
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.btn-success:hover:not(:disabled) {
+  background: #166534;
+  border-color: transparent;
+  box-shadow: none;
+  color: #ffffff;
+}
+
 /* Ghost Button (Border-free flat button that swells on hover) */
 .btn-ghost {
   background: transparent;
@@ -548,18 +562,6 @@ select.badge option {
 }
 
 /* ---- Pagination ---- */
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px 10px 12px;
-  border-top: 1px solid var(--border-color);
-  background: var(--card-bg);
-  margin-top: auto;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-}
 .dt-page-size-select {
   position: relative;
   z-index: 20;
@@ -759,6 +761,8 @@ select.badge {
   background: var(--card-bg);
   margin-top: auto;
   flex-shrink: 0;
+  position: relative;
+  z-index: 10;
 }
 .pagination-info {
   font-size: var(--font-size-sm);
@@ -1095,28 +1099,6 @@ select.badge {
 }
 
 /* Dark mode overrides for elements that use hardcoded colors */
-[data-theme-mode="dark"] .btn-primary {
-  background: rgba(255, 122, 46, 0.14) !important;
-  border-color: rgba(255, 122, 46, 0.35) !important;
-  color: #FF9A5C !important; /* Soft brand orange */
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-}
-[data-theme-mode="dark"] .btn-primary:hover:not(:disabled) {
-  background: rgba(255, 122, 46, 0.24) !important;
-  border-color: rgba(255, 122, 46, 0.55) !important;
-  color: #FFB380 !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-}
-[data-theme-mode="dark"] .btn-secondary {
-  background: rgba(255, 255, 255, 0.04) !important;
-  color: var(--text-primary) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-}
-[data-theme-mode="dark"] .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(255, 255, 255, 0.2) !important;
-  color: var(--text-inverse) !important;
-}
 [data-theme-mode="dark"] .btn-danger {
   background: rgba(248, 113, 113, 0.1) !important;
   border-color: rgba(248, 113, 113, 0.3) !important;
@@ -1161,11 +1143,11 @@ select.badge {
 }
 [data-theme-mode="dark"] .modal,
 [data-theme-mode="dark"] .drawer {
-  background: rgba(13, 17, 30, 0.85);
+  background: var(--card-bg);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 [data-theme-mode="dark"] .dropdown-menu {
-  background: rgba(13, 17, 30, 0.85);
+  background: var(--card-bg);
   border-color: rgba(255, 255, 255, 0.1);
 }
 [data-theme-mode="dark"] .dropdown-item:hover {
@@ -1252,14 +1234,11 @@ select.badge {
   background: rgba(0, 0, 0, 0.4);
   z-index: var(--z-modal);
   animation: fadeIn 0.2s ease;
-  backdrop-filter: blur(2px);
   display: flex;
   justify-content: flex-end;
 }
 .drawer {
-  background: rgba(255, 255, 255, 0.88); /* Highly legible 88% white fill */
-  backdrop-filter: blur(20px); /* 20px frosted blur */
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--card-bg); /* flat opaque panel */
   height: 100%;
   max-width: 100vw;
   display: flex;

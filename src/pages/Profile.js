@@ -67,7 +67,7 @@ const compressImage = (file) => {
 
 export function renderProfile(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-  const loginMode = sessionStorage.getItem('relay_login_mode') || 'cloud'; // 'local' | 'local_multiuser' | 'cloud'
+  const loginMode = localStorage.getItem('relay_login_mode') || 'cloud'; // 'local' | 'local_multiuser' | 'cloud'
   
   let activeAvatarColor = currentUser.color || '#FF5C00';
   let activeRecoveryQuestion = '';

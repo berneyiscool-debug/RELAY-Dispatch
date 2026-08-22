@@ -2,6 +2,7 @@ import { store } from '../data/store.js';
 import { showModal } from '../components/Modal.js';
 import { showToast } from '../components/Notifications.js';
 import { escapeHTML } from './security.js';
+import { todayLocalISO } from './dateUtils.js';
 
 export function showTimesheetEditModal(timesheetId, onSaveCallback) {
   const ts = store.getById('timesheets', timesheetId);
@@ -56,8 +57,21 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
     }).join('');
   }
 
-  const startStr = ts.startTime || `${ts.date}T09:00`;
-  const finishStr = ts.finishTime || `${ts.date}T10:00`;
+  function toDatetimeLocal(timeStr, fallbackHour) {
+    if (!timeStr || typeof timeStr !== 'string') {
+      const dateStr = ts.date || todayLocalISO();
+      return `${dateStr}T${String(fallbackHour).padStart(2, '0')}:00`;
+    }
+    if (timeStr.includes('T')) return timeStr;
+    if (/^\d{1,2}:\d{2}/.test(timeStr)) {
+      const dateStr = ts.date || todayLocalISO();
+      return `${dateStr}T${timeStr.length === 5 ? timeStr : timeStr.slice(0, 5)}`;
+    }
+    return timeStr;
+  }
+
+  const startStr = toDatetimeLocal(ts.startTime, 9);
+  const finishStr = toDatetimeLocal(ts.finishTime, 10);
   const technicians = store.getAll('technicians').filter(t => !t.deactivated || ts.technicianId === t.id);
   const activeJobs = store.getAll('jobs').filter(j => j.status !== 'Completed' && j.status !== 'Invoiced' || j.id === ts.jobId);
 
@@ -174,12 +188,14 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
     ev.stopPropagation();
     const isVisible = taskDropdown.style.display === 'block';
     taskDropdown.style.display = isVisible ? 'none' : 'block';
-  });
-
-  // Close dropdown on click outside
-  document.addEventListener('click', (ev) => {
-    if (!content.contains(ev.target)) {
-      taskDropdown.style.display = 'none';
+    if (!isVisible) {
+      const onDocClick = (ev2) => {
+        if (!content.contains(ev2.target)) {
+          taskDropdown.style.display = 'none';
+          document.removeEventListener('click', onDocClick);
+        }
+      };
+      document.addEventListener('click', onDocClick);
     }
   });
 
@@ -300,8 +316,12 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
         }
 
         const hours = Math.round(((finishDate - startDate) / 3600000) * 100) / 100;
-        const tech = technicians.find(t => t.id === techId);
+        const tech = technicians.find(t => t.id === techId) || (techId === currentUser.id ? currentUser : null);
         const job = activeJobs.find(j => j.id === jobId);
+        if (!tech || !job) {
+          showToast('Could not resolve technician or job', 'error');
+          return;
+        }
 
         store.update('timesheets', ts.id, {
           jobId: job.id,
