@@ -90,8 +90,8 @@ export function renderInvoiceDetail(container, params) {
 
   function logInvoiceActivity(type, title, description, icon = 'history', badgeClass = 'badge-neutral') {
     if (!invoice.historyLog) invoice.historyLog = [];
-    const currentUser = store.getCurrentUser();
-    const userName = currentUser ? (currentUser.name || currentUser.email) : 'System';
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const userName = currentUser.name || currentUser.email || 'System';
 
     invoice.historyLog.unshift({
       id: store.generateId(),
