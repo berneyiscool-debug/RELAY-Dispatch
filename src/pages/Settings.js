@@ -218,6 +218,7 @@ export function renderSettings(container) {
 
   const isUsersDisabled = isLocalMode && localDeploymentType === 'single_user';
   const isPortalDisabled = isLocalMode;
+  const isCloudGated = isLocalMode; // online payments + email are cloud-only
   const isFolderSyncDisabled = !isLocalMode;
 
   if (isUsersDisabled && activeTab === 'users') {
@@ -230,6 +231,12 @@ export function renderSettings(container) {
     activeTab = 'company';
   }
   if (isFolderSyncDisabled && activeTab === 'folder_sync') {
+    activeTab = 'company';
+  }
+  if (isCloudGated && activeTab === 'payments') {
+    activeTab = 'company';
+  }
+  if (isCloudGated && activeTab === 'email') {
     activeTab = 'company';
   }
   
@@ -458,9 +465,9 @@ export function renderSettings(container) {
         { id: 'templates_forms', label: 'Templates & Forms' },
         { id: 'invoices_quotes', label: 'Quotes & Invoices' },
         // v1.3 #3 — dark until FLAGS.payments flips on for launch
-        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments' }] : []),
+        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments', disabled: isCloudGated, tooltip: 'Requires Cloud Account' }] : []),
         // v1.3 #5 — dark until FLAGS.email flips on for launch
-        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain' }] : [])
+        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain', disabled: isCloudGated, tooltip: 'Requires Cloud Account' }] : [])
       ]
     },
     {
