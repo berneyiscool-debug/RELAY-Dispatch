@@ -2969,7 +2969,6 @@ class DataStore {
         headerBg: '#1E2A3A',
         accentTint: '#F8FAFC',
         fontFamily: 'sans-serif',
-        invoiceTitle: 'TAX INVOICE',
         invoiceTerms: 'Please pay within 7 days of invoice issue.',
         invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
         quoteTitle: 'PROPOSAL / QUOTE',

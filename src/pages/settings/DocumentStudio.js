@@ -37,7 +37,6 @@ const DEFAULTS = {
   headerBg: '#1E2A3A',
   accentTint: '#F8FAFC',
   fontFamily: 'sans-serif',
-  invoiceTitle: 'TAX INVOICE',
   invoiceTerms: 'Please pay within 7 days of invoice issue.',
   invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
   quoteTitle: 'PROPOSAL / QUOTE',
@@ -173,8 +172,7 @@ export function renderDocumentStudio(container) {
 
   function contentTab() {
     return group('Document titles',
-      field({ id: 'ds-inv-title', label: 'Invoice', value: dt.invoiceTitle, placeholder: 'TAX INVOICE', width: 168 })
-      + field({ id: 'ds-quote-title', label: 'Quote', value: dt.quoteTitle, placeholder: 'PROPOSAL / QUOTE', width: 168 }))
+      field({ id: 'ds-quote-title', label: 'Quote', value: dt.quoteTitle, placeholder: 'PROPOSAL / QUOTE', width: 168 }))
       + group('Numbering',
         field({ id: 'ds-inv-prefix', label: 'Inv. prefix', value: dt.invoicePrefix, placeholder: 'INV-', width: 86 })
         + field({ id: 'ds-inv-start', label: 'Next no.', value: dt.invoiceStartingNumber, type: 'number', min: 1, width: 78 })
@@ -317,7 +315,7 @@ export function renderDocumentStudio(container) {
     if (docTypeEl) {
       docTypeEl.textContent = docType === 'quote'
         ? (dt.quoteTitle || DEFAULTS.quoteTitle)
-        : (dt.invoiceTitle || DEFAULTS.invoiceTitle);
+        : (settings.taxEnabled !== false ? 'TAX INVOICE' : 'INVOICE');
     }
 
     const headerEl = d.querySelector('.pdf-header');
@@ -503,7 +501,6 @@ export function renderDocumentStudio(container) {
 
     // Content — short values edit in place
     const textField = (id, prop) => q(id)?.addEventListener('input', (e) => change({ [prop]: e.target.value }));
-    textField('#ds-inv-title', 'invoiceTitle');
     textField('#ds-quote-title', 'quoteTitle');
     textField('#ds-inv-prefix', 'invoicePrefix');
     textField('#ds-quote-prefix', 'quotePrefix');

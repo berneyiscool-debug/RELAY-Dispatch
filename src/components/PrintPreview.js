@@ -163,7 +163,6 @@ export function generateDocument(type, data) {
     headerBg: '#1E2A3A',
     accentTint: '#F8FAFC',
     fontFamily: 'sans-serif',
-    invoiceTitle: 'TAX INVOICE',
     invoiceTerms: 'Please pay within 7 days of invoice issue.',
     invoicePaymentTerms: 'Payment via Direct Deposit:\nBSB: 123-456\nAccount: 78901234\nReference: [Invoice Number]',
     quoteTitle: 'PROPOSAL / QUOTE',
@@ -312,7 +311,7 @@ export function generateDocument(type, data) {
           </div>
         </div>
         <div class="pdf-title-block" style="${titleBlockStyle}">
-          <div class="pdf-doc-type">${isQuote ? escapeHTML(dt.quoteTitle || 'QUOTE') : escapeHTML(dt.invoiceTitle || 'TAX INVOICE')}</div>
+          <div class="pdf-doc-type">${isQuote ? escapeHTML(dt.quoteTitle || 'QUOTE') : escapeHTML(settings.taxEnabled !== false ? 'TAX INVOICE' : 'INVOICE')}</div>
           <div class="pdf-doc-number">${data.number}</div>
           <div class="pdf-status" style="background:${statusColor}15;color:${statusColor};border:1px solid ${statusColor}40">${data.status}</div>
         </div>
