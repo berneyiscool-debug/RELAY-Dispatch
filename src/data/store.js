@@ -659,6 +659,7 @@ class DataStore {
     }
 
     this.migrateChildJobNumbers();
+    this.repairInvoiceIssueDates();
   }
 
   initIndexedDB() {
@@ -1347,6 +1348,7 @@ class DataStore {
       this.subscribeRealtime();
 
       this.migrateChildJobNumbers();
+      this.repairInvoiceIssueDates();
 
       // Emit loaded event for all collections
       collections.forEach(col => {
@@ -1787,7 +1789,7 @@ class DataStore {
         record.sections = [{ id: this.generateId(), name: 'Main Phase', lineItems: meta }];
         record.invoiceType = 'Standard';
         record.laborProfileId = '';
-        record.issueDate = '';
+        record.issueDate = record.issueDate || '';
         record.originalQuoteId = '';
         record.originalQuoteNumber = '';
         record.originalSubtotal = 0;
@@ -1798,7 +1800,7 @@ class DataStore {
         record.sections = meta.sections || [];
         record.invoiceType = meta.invoiceType || 'Standard';
         record.laborProfileId = meta.laborProfileId || '';
-        record.issueDate = meta.issueDate || '';
+        record.issueDate = meta.issueDate || record.issueDate || '';
         record.originalQuoteId = meta.originalQuoteId || '';
         record.originalQuoteNumber = meta.originalQuoteNumber || '';
         record.originalSubtotal = meta.originalSubtotal || 0;
@@ -1876,6 +1878,51 @@ class DataStore {
     if (updatedCount > 0) {
       console.log(`Migrated ${updatedCount} existing child jobs to J- prefix.`);
     }
+  }
+
+  // Legacy invoices (seeded demo data and pre-serialization cloud records) can be
+  // missing `issueDate`, leaving the Date column blank ("—") and breaking sort.
+  // Derive a sensible date from the record's own timestamps and persist it back so
+  // the invoice list is consistent without requiring manual re-editing.
+  repairInvoiceIssueDates() {
+    const invoices = this.cache.invoices || [];
+    let repaired = 0;
+
+    const toDateOnly = (val) => {
+      if (!val) return null;
+      const s = String(val).trim();
+      if (!s) return null;
+      const datePart = s.split('T')[0].slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
+    };
+
+    const shiftDateOnly = (dateOnly, days) => {
+      const d = new Date(dateOnly + 'T00:00:00Z');
+      if (isNaN(d.getTime())) return null;
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().split('T')[0];
+    };
+
+    invoices.forEach(inv => {
+      if (inv.issueDate || !inv.id) return;
+
+      let derived = toDateOnly(inv.createdAt);
+      if (!derived) {
+        const due = toDateOnly(inv.dueDate);
+        if (due) derived = shiftDateOnly(due, -30);
+      }
+      if (!derived) derived = toDateOnly(inv.updatedAt);
+      if (!derived) return;
+
+      inv.issueDate = derived;
+      this.update('invoices', inv.id, { issueDate: derived });
+      repaired++;
+    });
+
+    if (repaired > 0) {
+      console.log(`[RELAY] Repaired missing issue dates on ${repaired} invoice(s).`);
+    }
+    return repaired;
   }
 
   // De-normalize camelCase fields -> snake_case schema columns for database updates
@@ -2209,7 +2256,7 @@ class DataStore {
         sections: record.sections || record.line_items || [],
         invoiceType: record.invoiceType || 'Standard',
         laborProfileId: record.laborProfileId || '',
-        issueDate: record.issueDate || '',
+        issueDate: record.issue_date || '',
         originalQuoteId: record.originalQuoteId || '',
         originalQuoteNumber: record.originalQuoteNumber || '',
         originalSubtotal: record.originalSubtotal || 0,

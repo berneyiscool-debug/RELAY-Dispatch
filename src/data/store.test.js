@@ -273,6 +273,7 @@ describe('DataStore', () => {
         ],
         invoiceType: 'Standard',
         laborProfileId: 'rate_1',
+        issueDate: '2026-08-23',
         originalQuoteNumber: 'Q-00001',
         approvedVariationsSum: 150
       };
@@ -306,6 +307,7 @@ describe('DataStore', () => {
       assert.strictEqual(norm.customerId, 'cust_abc');
       assert.strictEqual(norm.invoiceType, 'Standard');
       assert.strictEqual(norm.laborProfileId, 'rate_1');
+      assert.strictEqual(norm.issueDate, '2026-08-23');
       assert.strictEqual(norm.originalQuoteNumber, 'Q-00001');
       assert.strictEqual(norm.approvedVariationsSum, 150);
       assert.strictEqual(norm.sections[0].name, 'Phase 1');
@@ -345,6 +347,25 @@ describe('DataStore', () => {
       assert.strictEqual(norm.isTemplate, true);
       assert.strictEqual(norm.sections[0].name, 'Phase 2');
       assert.strictEqual(norm.sections[0].lineItems[0].description, 'Test Material');
+    });
+
+    test('repairInvoiceIssueDates backfills missing issueDate from createdAt/dueDate', () => {
+      store.cache.invoices = [
+        { id: 'inv_no_date', number: 'INV-1', createdAt: '2026-08-10T10:00:00.000Z' },
+        { id: 'inv_with_date', number: 'INV-2', issueDate: '2026-08-01' },
+        { id: 'inv_only_due', number: 'INV-3', dueDate: '2026-09-20' },
+        { id: 'inv_empty', number: 'INV-4' }
+      ];
+
+      const repaired = store.repairInvoiceIssueDates();
+
+      const byId = (id) => store.cache.invoices.find(i => i.id === id);
+
+      assert.strictEqual(repaired, 2);
+      assert.strictEqual(byId('inv_no_date').issueDate, '2026-08-10');
+      assert.strictEqual(byId('inv_with_date').issueDate, '2026-08-01');
+      assert.strictEqual(byId('inv_only_due').issueDate, '2026-08-21');
+      assert.strictEqual(byId('inv_empty').issueDate, undefined);
     });
   });
 });
