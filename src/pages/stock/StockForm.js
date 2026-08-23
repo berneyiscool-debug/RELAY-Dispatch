@@ -13,6 +13,7 @@ export function renderStockForm(container, { id }) {
   const technicians = store.getAll('technicians').filter(t => !t.deactivated || item.location === `Vehicle - ${t.name}`);
   const assets = store.getAll('assets');
   const activeSuppliers = store.getAll('suppliers').filter(s => s.active !== false);
+  const materialCategories = store.getSettings().materialCategories || [];
 
   // Helper to build options for locations select dropdown
   function getLocationOptions(selectedLoc = '') {
@@ -87,7 +88,8 @@ export function renderStockForm(container, { id }) {
             <div class="form-group">
               <label class="form-label">Category</label>
               <select class="form-select" name="category">
-                ${['Electrical','Plumbing','HVAC','Fire Safety','Security','General'].map(c => `<option ${item.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+                ${materialCategories.map(c => `<option value="${escapeHTML(c)}" ${item.category === c ? 'selected' : ''}>${escapeHTML(c)}</option>`).join('')}
+                ${item.category && !materialCategories.includes(item.category) ? `<option value="${escapeHTML(item.category)}" selected>${escapeHTML(item.category)}</option>` : ''}
               </select>
             </div>
           </div>

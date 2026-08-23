@@ -10,7 +10,7 @@ import { showModal } from '../../components/Modal.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
-import { createToolbarFilters } from '../../components/ToolbarFilters.js';
+import { getToolbarFilterTags, toolbarFilterMatches } from '../../components/ToolbarFilters.js';
 import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
 
@@ -18,23 +18,17 @@ export function renderStockList(container, params) {
   let activeTab = params?.tab === 'kits' ? 'kits' : 'items';
   let searchTerm = '';
   let activeLocation = 'all';
-  let activeKitCategory = 'All';
+  let activeItemFilter = 'all';
+  let activeKitFilter = 'all';
   let itemTableInstance = null;
+  let kitTableInstance = null;
 
   function renderLayout() {
     container.innerHTML = `
-      <div class="page-header">
-        <h1 style="margin:0">Stock / Inventory</h1>
+      <div class="page-header" style="display:none;">
         <div class="page-header-actions" id="header-actions-container">
           <!-- Dynamically populated based on active tab -->
         </div>
-      </div>
-
-      <!-- Tab functionality migrated to Sidebar.js -->
-
-      <!-- Dynamic Toolbar Section -->
-      <div class="page-toolbar" id="toolbar-container" style="display:flex; justify-content:space-between; align-items:center;">
-        <!-- Dynamically populated based on active tab -->
       </div>
 
       <!-- Table Container -->
@@ -47,13 +41,8 @@ export function renderStockList(container, params) {
     renderActiveTabContent();
   }
 
-  function bindTabEvents() {
-    // Deprecated: Tab switching is handled by the contextual sidebar menu
-  }
-
   function renderActiveTabContent() {
     const actionsContainer = container.querySelector('#header-actions-container') || document.querySelector('#header-actions-container') || document.querySelector('#breadcrumb-actions');
-    const toolbarContainer = container.querySelector('#toolbar-container');
     const tableContainer = container.querySelector('#stock-table-container');
 
     // Clean up any existing bulk action bar
@@ -63,13 +52,11 @@ export function renderStockList(container, params) {
       // 1. Actions Header for Items
       if (actionsContainer) {
         actionsContainer.innerHTML = `
-          <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
-          <select id="filter-sort-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;" title="Sort Stock">
-            <option value="name_asc">Sort: Name (A-Z)</option>
-            <option value="name_desc">Sort: Name (Z-A)</option>
-            <option value="partNumber_asc">Sort: Part #</option>
-            <option value="quantity_desc">Sort: Stock (High-Low)</option>
-            <option value="costPrice_desc">Sort: Cost (High-Low)</option>
+          <div id="filter-mount" style="display:inline-flex; align-items:center;"></div>
+          <div id="sort-mount" style="display:inline-flex; align-items:center;"></div>
+          <span class="text-tertiary" style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Location:</span>
+          <select class="form-select" id="location-filter" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:180px; margin:0; align-self:center;">
+            <option value="all">All Locations</option>
           </select>
           <button class="btn btn-secondary btn-sm" id="btn-transfer-stock" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Move stock quantities between warehouse locations or technician vehicles"><span class="material-icons-outlined" style="font-size:13px;">swap_horiz</span> Transfer</button>
           <button class="btn btn-secondary btn-sm" id="btn-import-stock" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Upload a supplier CSV parts list files directly to catalog inventory"><span class="material-icons-outlined" style="font-size:13px;">file_upload</span> Import</button>
@@ -77,41 +64,26 @@ export function renderStockList(container, params) {
         `;
       }
 
-      // 2. Toolbar for Items
-      if (toolbarContainer) {
-        toolbarContainer.innerHTML = `
-          <div style="display:flex; gap:15px; align-items:center; flex:1; max-width:75%">
-            <div id="stock-filters-carousel-container" style="flex:0 0 50%; max-width:50%; overflow:hidden"></div>
-            <div class="toolbar-selectors" style="display:flex; gap:10px; align-items:center;">
-               <span class="text-tertiary" style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Location:</span>
-               <select class="form-select select-sm" id="location-filter" style="width:180px; height:32px; font-size:13px;">
-                  <option value="all">All Locations</option>
-               </select>
-            </div>
-          </div>
-        `;
+      // Populate Location selector
+      const stock = store.getAll('stock') || [];
+      const locSelect = container.querySelector('#location-filter');
+      if (locSelect) {
+        const locations = [...new Set(stock.flatMap(s => (s.locations || []).map(l => l.location || 'Unassigned')))].sort();
+        const warehouses = locations.filter(l => l.toLowerCase().includes('warehouse') || l === 'Main' || l === 'Main Warehouse');
+        const vehicles = locations.filter(l => l.toLowerCase().includes('vehicle') || l.toLowerCase().includes('van') || l.toLowerCase().includes('truck'));
+        const otherLocs = locations.filter(l => !warehouses.includes(l) && !vehicles.includes(l));
 
-        // Populate Location selector
-        const stock = store.getAll('stock') || [];
-        const locSelect = toolbarContainer.querySelector('#location-filter');
-        if (locSelect) {
-          const locations = [...new Set(stock.flatMap(s => (s.locations || []).map(l => l.location || 'Unassigned')))].sort();
-          const warehouses = locations.filter(l => l.toLowerCase().includes('warehouse') || l === 'Main' || l === 'Main Warehouse');
-          const vehicles = locations.filter(l => l.toLowerCase().includes('vehicle') || l.toLowerCase().includes('van') || l.toLowerCase().includes('truck'));
-          const otherLocs = locations.filter(l => !warehouses.includes(l) && !vehicles.includes(l));
-
-          const addOptGroup = (label, list) => {
-            if (list.length > 0) {
-              const group = document.createElement('optgroup');
-              group.label = label;
-              list.forEach(l => group.appendChild(new Option(l, l, false, l === activeLocation)));
-              locSelect.appendChild(group);
-            }
-          };
-          addOptGroup('Warehouses', warehouses);
-          addOptGroup('Vehicles / Vans', vehicles);
-          addOptGroup('Other', otherLocs);
-        }
+        const addOptGroup = (label, list) => {
+          if (list.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = label;
+            list.forEach(l => group.appendChild(new Option(l, l, false, l === activeLocation)));
+            locSelect.appendChild(group);
+          }
+        };
+        addOptGroup('Warehouses', warehouses);
+        addOptGroup('Vehicles / Vans', vehicles);
+        addOptGroup('Other', otherLocs);
       }
 
       // Render DataTable for Items
@@ -122,16 +94,9 @@ export function renderStockList(container, params) {
       // 1. Actions Header for Kits
       if (actionsContainer) {
         actionsContainer.innerHTML = `
+          <div id="filter-mount" style="display:inline-flex; align-items:center;"></div>
+          <div id="sort-mount" style="display:inline-flex; align-items:center;"></div>
           <button class="btn btn-primary btn-sm" id="btn-new-kit" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Bundle multiple parts and labor items into a single pre-packaged kit for quick quoting"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Kit Bundle</span></button>
-        `;
-      }
-
-      // 2. Toolbar for Kits with carousel
-      if (toolbarContainer) {
-        toolbarContainer.innerHTML = `
-          <div style="display:flex; gap:15px; align-items:center; flex:1; max-width:75%">
-            <div id="kits-filters-carousel-container" style="flex:0 0 50%; max-width:50%; overflow:hidden"></div>
-          </div>
         `;
       }
 
@@ -155,7 +120,6 @@ export function renderStockList(container, params) {
 
   function renderItemsTable(tableContainer) {
     const stock = store.getAll('stock') || [];
-    let tagFilteredData = [...stock];
 
     const columns = [
       { key: 'name', label: 'Item', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>`, width: '28%' },
@@ -341,26 +305,17 @@ export function renderStockList(container, params) {
 
     function applyItemFilters() {
       const q = searchTerm.toLowerCase();
-      const filtered = tagFilteredData.filter(s => {
+      const filtered = stock.filter(s => {
         const matchLoc = activeLocation === 'all' || (s.locations || []).some(l => l.location === activeLocation);
         const matchSearch = !q ||
           s.name.toLowerCase().includes(q) ||
           s.sku.toLowerCase().includes(q) ||
           s.category.toLowerCase().includes(q);
-        return matchLoc && matchSearch;
+        const matchFilter = toolbarFilterMatches(s, activeItemFilter, 'stock');
+        return matchLoc && matchSearch && matchFilter;
       });
       table.updateData(filtered);
     }
-
-    createToolbarFilters({
-      container: container.querySelector('#stock-filters-carousel-container'),
-      originalData: stock,
-      filterType: 'stock',
-      onFilterChange: (filtered) => {
-        tagFilteredData = filtered;
-        applyItemFilters();
-      }
-    });
 
     applyItemFilters();
   }
@@ -379,10 +334,30 @@ export function renderStockList(container, params) {
       renderItemsTable(container.querySelector('#stock-table-container'));
     });
 
-    findEl('#filter-sort-select')?.addEventListener('change', (e) => {
-      const val = e.target.value;
-      const [key, dir] = val.split('_');
-      if (itemTableInstance) itemTableInstance.setSort(key, dir);
+    // Filter dropdown
+    createDropdown({
+      container: findEl('#filter-mount'),
+      options: getToolbarFilterTags(store.getAll('stock') || [], 'stock'),
+      onChange: (val) => {
+        activeItemFilter = val;
+        renderItemsTable(container.querySelector('#stock-table-container'));
+      }
+    });
+
+    // Sort dropdown
+    createDropdown({
+      container: findEl('#sort-mount'),
+      options: [
+        { value: 'name_asc', label: 'Sort: Name (A-Z)' },
+        { value: 'name_desc', label: 'Sort: Name (Z-A)' },
+        { value: 'partNumber_asc', label: 'Sort: Part #' },
+        { value: 'quantity_desc', label: 'Sort: Stock (High-Low)' },
+        { value: 'costPrice_desc', label: 'Sort: Cost (High-Low)' },
+      ],
+      onChange: (val) => {
+        const [key, dir] = val.split('_');
+        if (itemTableInstance) itemTableInstance.setSort(key, dir);
+      }
     });
 
     // Transfer button click
@@ -405,23 +380,22 @@ export function renderStockList(container, params) {
 
   function renderKitsTable(tableContainer) {
     const kits = store.getAll('kits') || [];
-    let tagFilteredKits = [...kits];
 
     const columns = [
-      { key: 'name', label: 'Kit Name', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>${r.description ? `<div style="font-size:12px; color:var(--text-tertiary); margin-top:2px">${escapeHTML(r.description)}</div>` : ''}` },
-      { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '150px' },
+      { key: 'name', label: 'Kit Name', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>${r.description ? `<div style="font-size:12px; color:var(--text-tertiary); margin-top:2px">${escapeHTML(r.description)}</div>` : ''}`, width: '26%' },
+      { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '14%' },
       { key: 'items', label: 'Items Included', render: (r) => {
         const mCount = (r.items || []).filter(i => i.type !== 'labor').length;
         const lCount = (r.items || []).filter(i => i.type === 'labor').length;
         return `<span style="font-size:13px">${mCount} material${mCount !== 1 ? 's' : ''}${lCount > 0 ? `, ${lCount} labour` : ''}</span>`;
-      }, width: '200px' },
-      { key: 'totalCost', label: 'Total Cost', render: (r) => `$${(r.totalCost || 0).toFixed(2)}`, getValue: (r) => r.totalCost, width: '120px', style: 'text-align:right' },
-      { key: 'totalPrice', label: 'Total Sell', render: (r) => `<span style="font-weight:600">$${(r.totalPrice || 0).toFixed(2)}</span>`, getValue: (r) => r.totalPrice, width: '120px', style: 'text-align:right' },
+      }, width: '18%' },
+      { key: 'totalCost', label: 'Total Cost', render: (r) => `$${(r.totalCost || 0).toFixed(2)}`, getValue: (r) => r.totalCost, width: '13%', align: 'right' },
+      { key: 'totalPrice', label: 'Total Sell', render: (r) => `<span class="cell-amount">$${(r.totalPrice || 0).toFixed(2)}</span>`, getValue: (r) => r.totalPrice, width: '13%', align: 'right' },
       { key: 'margin', label: 'Margin', render: (r) => {
         const margin = r.totalPrice > 0 ? ((r.totalPrice - r.totalCost) / r.totalPrice * 100) : 0;
         const color = margin >= 30 ? 'var(--color-success)' : margin >= 15 ? 'var(--color-warning)' : 'var(--color-danger)';
         return `<span style="font-weight:600; color:${color}">${margin.toFixed(1)}%</span>`;
-      }, getValue: (r) => r.totalPrice > 0 ? ((r.totalPrice - r.totalCost) / r.totalPrice * 100) : 0, width: '100px', style: 'text-align:right' }
+      }, getValue: (r) => r.totalPrice > 0 ? ((r.totalPrice - r.totalCost) / r.totalPrice * 100) : 0, width: '12%', align: 'right' }
     ];
 
     const table = createDataTable({
@@ -496,27 +470,18 @@ export function renderStockList(container, params) {
 
     tableContainer.innerHTML = '';
     tableContainer.appendChild(table);
+    kitTableInstance = table;
 
     function applyKitFilters() {
       const q = searchTerm.toLowerCase();
-      const filtered = tagFilteredKits.filter(k => {
-        const matchSearch = !q ||
+      const filtered = kits.filter(k =>
+        (!q ||
           k.name.toLowerCase().includes(q) ||
-          (k.description || '').toLowerCase().includes(q);
-        return matchSearch;
-      });
+          (k.description || '').toLowerCase().includes(q)) &&
+        toolbarFilterMatches(k, activeKitFilter, 'kits')
+      );
       table.updateData(filtered);
     }
-
-    createToolbarFilters({
-      container: container.querySelector('#kits-filters-carousel-container'),
-      originalData: kits,
-      filterType: 'kits',
-      onFilterChange: (filtered) => {
-        tagFilteredKits = filtered;
-        applyKitFilters();
-      }
-    });
 
     applyKitFilters();
   }
@@ -524,15 +489,35 @@ export function renderStockList(container, params) {
   function bindKitActions() {
     setListSearch((q) => {
       searchTerm = q;
-      applyKitFilters();
-    }, 'Stock');
+      renderKitsTable(container.querySelector('#stock-table-container'));
+    }, 'Search kits...');
 
     const findEl = (sel) => container.querySelector(sel) || document.querySelector(sel);
 
-    // Search input
-    findEl('#kit-search')?.addEventListener('input', (e) => {
-      searchTerm = e.target.value;
-      renderKitsTable(container.querySelector('#stock-table-container'));
+    // Filter dropdown
+    createDropdown({
+      container: findEl('#filter-mount'),
+      options: getToolbarFilterTags(store.getAll('kits') || [], 'kits'),
+      onChange: (val) => {
+        activeKitFilter = val;
+        renderKitsTable(container.querySelector('#stock-table-container'));
+      }
+    });
+
+    // Sort dropdown
+    createDropdown({
+      container: findEl('#sort-mount'),
+      options: [
+        { value: 'name_asc', label: 'Sort: Name (A-Z)' },
+        { value: 'name_desc', label: 'Sort: Name (Z-A)' },
+        { value: 'totalPrice_desc', label: 'Sort: Sell (High-Low)' },
+        { value: 'totalCost_desc', label: 'Sort: Cost (High-Low)' },
+        { value: 'margin_desc', label: 'Sort: Margin (High-Low)' },
+      ],
+      onChange: (val) => {
+        const [key, dir] = val.split('_');
+        if (kitTableInstance) kitTableInstance.setSort(key, dir);
+      }
     });
 
     // New Kit button
@@ -543,8 +528,50 @@ export function renderStockList(container, params) {
 
   // --- DRAWERS & MODALS BACKPORT ---
 
+  function createDropdown({ container, options, onChange }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'dropdown';
+    wrap.style.cssText = 'display:inline-flex; align-items:center;';
+    wrap.innerHTML = `
+      <button type="button" class="btn btn-secondary btn-sm dropdown-trigger" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+        <span class="dropdown-trigger-label">${escapeHTML(options[0].label)}</span>
+        <span class="material-icons-outlined" style="font-size:13px;">expand_more</span>
+      </button>
+      <div class="dropdown-menu" style="display:none; position:absolute; right:0; top:calc(100% + 4px); min-width:180px;">
+        ${options.map(o => `<button type="button" class="dropdown-item" data-value="${escapeHTML(o.value)}" style="white-space:nowrap;">${escapeHTML(o.label)}</button>`).join('')}
+      </div>
+    `;
+
+    if (container && container.replaceWith) container.replaceWith(wrap);
+
+    const trigger = wrap.querySelector('.dropdown-trigger');
+    const menu = wrap.querySelector('.dropdown-menu');
+    const label = wrap.querySelector('.dropdown-trigger-label');
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const willOpen = menu.style.display === 'none';
+      menu.style.display = willOpen ? 'block' : 'none';
+    });
+
+    wrap.querySelectorAll('.dropdown-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        label.textContent = item.textContent;
+        menu.style.display = 'none';
+        if (onChange) onChange(item.dataset.value);
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!wrap.contains(e.target)) menu.style.display = 'none';
+    });
+
+    return wrap;
+  }
+
   function openNewStockDrawer() {
     const technicians = store.getAll('technicians').filter(t => !t.deactivated);
+    const categories = store.getSettings().materialCategories || ['General'];
     const content = document.createElement('div');
     content.innerHTML = `
       <div class="form-group">
@@ -554,7 +581,9 @@ export function renderStockList(container, params) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Category</label>
-          <input type="text" class="form-input" id="new-stock-category" />
+          <select class="form-select" id="new-stock-category">
+            ${categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">Initial Location</label>
@@ -590,7 +619,7 @@ export function renderStockList(container, params) {
         { label: 'Create', className: 'btn-primary', onClick: (close) => {
           const dOverlay = document.querySelector('.drawer-overlay');
           const name = dOverlay.querySelector('#new-stock-name').value.trim();
-          const category = dOverlay.querySelector('#new-stock-category').value.trim() || 'Uncategorized';
+          const category = dOverlay.querySelector('#new-stock-category').value;
           const location = dOverlay.querySelector('#new-stock-location').value;
           const costPrice = parseFloat(dOverlay.querySelector('#new-stock-cost').value);
           const initialQty = parseInt(dOverlay.querySelector('#new-stock-qty').value) || 0;
@@ -932,12 +961,6 @@ export function renderStockList(container, params) {
   };
 
   const handleStockChange = (e) => {
-    if (e.target.id === 'filter-sort-select') {
-      const val = e.target.value;
-      const [key, dir] = val.split('_');
-      if (itemTableInstance) itemTableInstance.setSort(key, dir);
-      return;
-    }
     if (e.target.id === 'location-filter') {
       activeLocation = e.target.value;
       const stockTableCont = container.querySelector('#stock-table-container');

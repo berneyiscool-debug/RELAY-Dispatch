@@ -194,6 +194,7 @@ CREATE TABLE stock (
   quantity numeric DEFAULT 0,
   locations jsonb DEFAULT '[]'::jsonb,
   supplier text,
+  sku text,
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
