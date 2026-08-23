@@ -567,10 +567,9 @@ export function renderPersonDetail(container, { id, tab }) {
         });
 
         // Mount address autocomplete on the site address field once the drawer
-        // is in the DOM (cloud users only — paid/online feature).
-        const isCloudUser = store.companyId && !store.companyId.startsWith('acct_');
+        // is in the DOM.
         setTimeout(() => {
-          attachAddressAutocomplete(document.querySelector('.drawer-overlay #new-s-address'), { enabled: isCloudUser });
+          attachAddressAutocomplete(document.querySelector('.drawer-overlay #new-s-address'));
         }, 0);
       }
 

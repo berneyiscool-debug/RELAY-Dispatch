@@ -947,6 +947,13 @@ function renderForcePasswordChange(container, authUser, profile) {
 }
 
 async function completeLogin(user) {
+  // Keep the login mode consistent with the active account so a reloaded tab
+  // (or a second tab adopting the session) boots into the correct mode.
+  const loginMode = user.companyId && String(user.companyId).startsWith('acct_')
+    ? (user.id === `${user.companyId}_admin` ? 'local' : 'local_multiuser')
+    : 'cloud';
+  localStorage.setItem('relay_login_mode', loginMode);
+
   const sidebar = document.querySelector('.sidebar');
   const topbar = document.querySelector('.topbar');
   const breadcrumb = document.getElementById('breadcrumb');

@@ -823,6 +823,7 @@ router.onNavigate = (path, params) => {
 window.addEventListener('fieldforge-logout', () => {
   localStorage.removeItem('currentUser');
   localStorage.removeItem('relay_login_mode');
+  try { sessionStorage.removeItem('relay_active_account'); } catch {}
   import('./utils/supabase.js').then(({ supabase }) => supabase.auth.signOut());
   const sidebar = document.querySelector('.sidebar');
   const topbar = document.querySelector('.topbar');
@@ -834,13 +835,26 @@ window.addEventListener('fieldforge-logout', () => {
 });
 
 // ---- Boot ----
-// Session Launch Guard
-if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('relay_session_initialized')) {
-  localStorage.removeItem('currentUser');
-  localStorage.removeItem('relay_login_mode');
-  sessionStorage.removeItem('relay_active_account');
-  sessionStorage.setItem('relay_session_initialized', 'true');
+// Cross-tab session sync: `currentUser` (localStorage) is the canonical auth
+// marker written on every login and removed on every logout. If another tab
+// signs in/out (or switches account), adopt its state by reloading so the boot
+// logic below restores the correct session. Only react when the signed-in
+// *identity* changes — role toggles and other same-user writes must not reload.
+function authIdentityOf(raw) {
+  if (!raw) return '';
+  try {
+    const u = JSON.parse(raw);
+    return (u && u.id && u.companyId) ? `${u.id}|${u.companyId}` : '';
+  } catch {
+    return '';
+  }
 }
+
+window.addEventListener('storage', (e) => {
+  if (e.key !== 'currentUser') return;
+  if (authIdentityOf(e.newValue) === authIdentityOf(e.oldValue)) return;
+  window.location.reload();
+});
 
 // Before resolving, check if we need to redirect to login
 const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -858,6 +872,10 @@ if (currentUser && !localStorage.getItem('relay_login_mode')) {
 const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
 if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
   window.location.hash = '#/login';
+}
+// No signed-in session at boot → clear any stale per-tab local account namespace.
+if (!currentUser) {
+  try { sessionStorage.removeItem('relay_active_account'); } catch {}
 }
 
 // An early build of the email feature stored its config object at settings.email,

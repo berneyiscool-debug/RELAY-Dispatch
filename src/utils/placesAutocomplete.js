@@ -27,7 +27,11 @@ import { loadGoogleMapsSdk, getEffectiveGoogleMapsKey } from './googleMapsLoader
 export async function attachAddressAutocomplete(targetInput, opts = {}) {
   const { enabled = true, onSelect } = opts;
   const activeKey = getEffectiveGoogleMapsKey();
-  if (!enabled || !activeKey || !targetInput) return;
+  if (!enabled || !targetInput) return;
+  if (!activeKey) {
+    console.warn('RELAY: address autocomplete skipped — no Google Maps key configured (set VITE_GOOGLE_MAPS_BROWSER_KEY for cloud, or a key under Settings → Google Maps).');
+    return;
+  }
   if (targetInput.dataset.pacMounted === '1') return;
   targetInput.dataset.pacMounted = '1';
 

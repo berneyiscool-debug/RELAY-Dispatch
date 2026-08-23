@@ -15,6 +15,7 @@ import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, email
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
+import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -778,6 +779,11 @@ export function renderSettings(container) {
             </div>
           </div>
         `;
+
+        // Company address autocomplete — same behaviour as customer/supplier
+        // address fields; seeds the geocode cache so route/start-location maps
+        // can use it without a separate lookup.
+        attachAddressAutocomplete(tc.querySelector('#company-address'));
 
         // Handlers for Company Tab
         const logoInput = tc.querySelector('#logo-upload');

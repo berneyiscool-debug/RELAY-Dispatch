@@ -80,9 +80,9 @@ export function renderPersonForm(container, { id }) {
     </div>
   `;
 
-  // Address autocomplete (cloud users only — paid/online feature).
-  const isCloudUser = store.companyId && !store.companyId.startsWith('acct_');
-  attachAddressAutocomplete(container.querySelector('[name="address"]'), { enabled: isCloudUser });
+  // Address autocomplete. Enabled whenever a Google Maps key is available
+  // (cloud bundled key or a user-entered key in Settings), otherwise it no-ops.
+  attachAddressAutocomplete(container.querySelector('[name="address"]'));
 
   const typeSelect = container.querySelector('[name="type"]');
   const companyInput = container.querySelector('[name="company"]');

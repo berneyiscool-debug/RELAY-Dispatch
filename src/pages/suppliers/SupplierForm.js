@@ -98,9 +98,9 @@ export function renderSupplierForm(container, params) {
     </div>
   `;
 
-  // Address autocomplete (cloud users only — paid/online feature).
-  const isCloudUser = store.companyId && !store.companyId.startsWith('acct_');
-  attachAddressAutocomplete(container.querySelector('#address'), { enabled: isCloudUser });
+  // Address autocomplete. Enabled whenever a Google Maps key is available
+  // (cloud bundled key or a user-entered key in Settings), otherwise no-op.
+  attachAddressAutocomplete(container.querySelector('#address'));
 
   container.querySelector('#btn-cancel').addEventListener('click', () => {
     router.navigate(isNew ? '/suppliers' : `/suppliers/${params.id}`);
