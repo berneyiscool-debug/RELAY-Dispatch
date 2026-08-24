@@ -1,5 +1,6 @@
 import { store } from '../data/store.js';
-import { dispatchChat, getSystemContext } from '../components/RelayAssistant.js';
+import { dispatchChat } from './aiEngine.js';
+import { getSystemContext } from '../components/RelayAssistant.js';
 
 let autopilotTimeout = null;
 

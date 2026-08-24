@@ -157,6 +157,16 @@ export function createSidebar() {
     // Logout handled by its own listener.
     if (e.target.closest('#btn-logout')) return;
 
+    // Contextual back button that re-opens its parent group submenu (no navigation).
+    const backSectionBtn = e.target.closest('.submenu-context-back[data-back-section]');
+    if (backSectionBtn) {
+      e.preventDefault();
+      const ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+      if (ctxPanel) ctxPanel.remove();
+      setActiveSection(sidebar, backSectionBtn.dataset.backSection);
+      return;
+    }
+
     // Any page link (direct rail page or submenu item).
     const navBtn = e.target.closest('[data-path]');
     if (navBtn) {
@@ -320,11 +330,11 @@ function getContextualMenu(hash) {
   if (resource === 'stock' && !id) {
     const currentTab = activeTab || 'items';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-resources',
       headerTitle: 'Stock & Inventory',
       icon: 'inventory_2',
-      backPath: '/',
-      backLabel: 'Back to Dashboard',
+      backSection: 'cat-resources',
+      backLabel: 'Back to Resources',
       items: [
         { id: 'items', icon: 'inventory_2', label: 'Individual Items', path: '/stock?tab=items' },
         { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' }
@@ -501,7 +511,7 @@ function getContextualMenu(hash) {
     const supplierTitle = supplier ? supplier.name : 'Supplier Detail';
     const currentTab = activeTab || 'overview';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-people',
       headerTitle: supplierTitle,
       icon: 'local_shipping',
       backPath: '/suppliers',
@@ -589,7 +599,7 @@ function getContextualMenu(hash) {
     const stock = store.getById('stock', id);
     const stockTitle = stock ? stock.name : 'Item Detail';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-resources',
       headerTitle: stockTitle,
       icon: 'inventory_2',
       backPath: '/stock',
@@ -604,7 +614,7 @@ function getContextualMenu(hash) {
     const kit = store.getById('kits', id);
     const kitTitle = kit ? kit.name : 'Kit Detail';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-resources',
       headerTitle: kitTitle,
       icon: 'widgets',
       backPath: '/stock?tab=kits',
@@ -662,9 +672,9 @@ function syncActiveFromRoute(sidebar, path) {
 
     ctxPanel.innerHTML = `
       <div class="submenu-context-header">
-        ${contextual.backPath ? `
+        ${(contextual.backPath || contextual.backSection) ? `
           <div class="submenu-context-back-row">
-            <button class="submenu-context-back" data-path="${contextual.backPath}" title="${escapeHTML(contextual.backLabel || 'Back')}">
+            <button class="submenu-context-back" ${contextual.backSection ? `data-back-section="${contextual.backSection}"` : `data-path="${contextual.backPath}"`} title="${escapeHTML(contextual.backLabel || 'Back')}">
               <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
             </button>
           </div>
