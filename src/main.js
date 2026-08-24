@@ -54,7 +54,7 @@ import { renderSettings } from './pages/Settings.js';
 import { renderFormBuilder } from './pages/forms/FormBuilder.js';
 import { renderDocumentStudio } from './pages/settings/DocumentStudio.js';
 import { renderEmailStudio } from './pages/settings/EmailStudio.js';
-import { renderKitDetail } from './pages/kits/KitDetail.js';
+import { renderKitDetail, renderKitForm } from './pages/kits/KitDetail.js';
 
 import { renderLogin, handleCloudLoginSuccess } from './pages/login/Login.js';
 import { renderLaunchScreen } from './pages/launch/LaunchScreen.js';
@@ -687,7 +687,8 @@ router.register('/purchase-orders/:id', renderPage(renderPurchaseOrderDetail));
 
 // Kits
 router.register('/kits', renderPage((c, p) => renderStockList(c, { tab: 'kits' })));
-router.register('/kits/new', renderPage((c, p) => renderKitDetail(c, { id: 'new' })));
+router.register('/kits/new', renderPage((c, p) => renderKitForm(c, { id: 'new' })));
+router.register('/kits/:id/edit', renderPage((c, p) => renderKitForm(c, p)));
 router.register('/kits/:id', renderPage(renderKitDetail));
 
 // Documents
