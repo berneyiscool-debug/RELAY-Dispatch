@@ -10,7 +10,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { escapeHTML } from '../../utils/security.js';
 
-export function renderKitDetail(container, { id }) {
+export function renderKitForm(container, { id }) {
   const isNew = id === 'new';
   let kit;
 
@@ -294,7 +294,7 @@ export function renderKitDetail(container, { id }) {
 
   function bindEvents() {
     // Header Actions
-    container.querySelector('#btn-cancel')?.addEventListener('click', () => router.navigate('/kits'));
+    container.querySelector('#btn-cancel')?.addEventListener('click', () => router.navigate(isNew ? '/kits' : `/kits/${id}`));
 
     container.querySelector('#btn-duplicate')?.addEventListener('click', () => {
       const duplicate = JSON.parse(JSON.stringify(kit));
@@ -308,11 +308,21 @@ export function renderKitDetail(container, { id }) {
     });
 
     container.querySelector('#btn-delete')?.addEventListener('click', () => {
-      if (confirm('Are you sure you want to delete this kit?')) {
-        store.delete('kits', kit.id);
-        showToast('Kit deleted successfully', 'success');
-        router.navigate('/kits');
-      }
+      const content = document.createElement('div');
+      content.innerHTML = `<p>Delete <strong>${escapeHTML(kit.name)}</strong>? This action cannot be undone.</p>`;
+      showModal({
+        title: 'Delete Kit',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Delete', className: 'btn-danger', onClick: (close) => {
+            store.delete('kits', kit.id);
+            showToast('Kit deleted successfully', 'success');
+            close();
+            router.navigate('/kits');
+          }}
+        ]
+      });
     });
 
     container.querySelector('#btn-save')?.addEventListener('click', () => {
@@ -343,7 +353,7 @@ export function renderKitDetail(container, { id }) {
       } else {
         store.update('kits', kit.id, kit);
         showToast('Kit saved successfully', 'success');
-        render();
+        router.navigate(`/kits/${kit.id}`);
       }
     });
 
@@ -528,4 +538,150 @@ export function renderKitDetail(container, { id }) {
   }
 
   render();
+}
+
+// ============================================
+// KIT DETAIL (READ-ONLY VIEW)
+// ============================================
+
+export function renderKitDetail(container, { id }) {
+  const kit = store.getById('kits', id);
+  if (!kit) {
+    container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Kit not found</h3></div>';
+    return;
+  }
+
+  updateBreadcrumbDetail(kit.name);
+
+  const margin = kit.totalPrice > 0 ? ((kit.totalPrice - kit.totalCost) / kit.totalPrice * 100) : 0;
+  const marginDollar = kit.totalPrice - kit.totalCost;
+  const marginColor = margin >= 30 ? 'var(--color-success)' : margin >= 15 ? 'var(--color-warning)' : 'var(--color-danger)';
+
+  const items = kit.items || [];
+  const itemsHtml = items.length === 0
+    ? '<div class="text-tertiary" style="padding:24px; text-align:center">No items in this kit yet.</div>'
+    : `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Item</th>
+            <th>SKU</th>
+            <th style="text-align:right">Qty</th>
+            <th style="text-align:right">Cost</th>
+            <th style="text-align:right">Sell</th>
+            <th style="text-align:right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(item => {
+            const isLabor = item.type === 'labor';
+            return `
+              <tr>
+                <td><span class="badge ${isLabor ? 'badge-success' : 'badge-primary'}">${isLabor ? 'Labour' : 'Material'}</span></td>
+                <td>${escapeHTML(item.name || '—')}</td>
+                <td style="font-family:monospace">${escapeHTML(item.sku || '—')}</td>
+                <td style="text-align:right">${item.qty || 0}</td>
+                <td style="text-align:right">$${(item.costPrice || 0).toFixed(2)}</td>
+                <td style="text-align:right">$${(item.unitPrice || 0).toFixed(2)}</td>
+                <td style="text-align:right">$${((item.qty || 0) * (item.unitPrice || 0)).toFixed(2)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+
+  container.innerHTML = `
+    ${renderDetailHeader({
+      title: escapeHTML(kit.name),
+      icon: 'widgets',
+      iconBgColor: 'var(--color-primary-light)',
+      iconTextColor: 'var(--color-primary)',
+      metaHtml: `
+        <span class="badge badge-neutral">${escapeHTML(kit.category || 'General')}</span>
+        <span class="badge ${kit.active ? 'badge-success' : 'badge-neutral'}">${kit.active ? 'Active' : 'Inactive'}</span>
+      `,
+      actionsHtml: `
+        <button class="btn btn-secondary" id="btn-edit-kit"><span class="material-icons-outlined">edit</span> Edit</button>
+        <button class="btn btn-secondary" id="btn-duplicate-kit"><span class="material-icons-outlined">content_copy</span> Duplicate</button>
+        <button class="btn btn-danger btn-icon" id="btn-delete-kit"><span class="material-icons-outlined">delete</span></button>
+      `
+    })}
+
+    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px; align-items:start">
+      <div style="display:flex; flex-direction:column; gap:24px">
+        <div class="card">
+          <div class="card-header"><h4>Kit Details</h4></div>
+          <div class="card-body">
+            <div style="display:flex; flex-direction:column; gap:12px">
+              ${r('Name', kit.name)}
+              ${r('Category', kit.category || 'General')}
+              ${r('Description', kit.description)}
+              ${r('Status', kit.active ? 'Active' : 'Inactive')}
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4>Kit Items</h4></div>
+          <div class="card-body" style="padding:0">
+            ${itemsHtml}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="height: fit-content;">
+        <div class="card-header"><h4>Pricing & Value</h4></div>
+        <div class="card-body">
+          <div style="display:flex; flex-direction:column; gap:12px">
+            ${r('Total Items', kit.itemCount || 0)}
+            ${r('Total Cost', `$${(kit.totalCost || 0).toFixed(2)}`)}
+            ${r('Total Sell Price', `$${(kit.totalPrice || 0).toFixed(2)}`, { amount: true })}
+            ${r('Margin ($)', `$${marginDollar.toFixed(2)}`)}
+            ${r('Margin (%)', `${margin.toFixed(1)}%`)}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.querySelector('#btn-edit-kit')?.addEventListener('click', () => router.navigate(`/kits/${id}/edit`));
+
+  container.querySelector('#btn-duplicate-kit')?.addEventListener('click', () => {
+    const duplicate = JSON.parse(JSON.stringify(kit));
+    delete duplicate.id;
+    duplicate.name = `${duplicate.name} (Copy)`;
+    duplicate.createdAt = new Date().toISOString();
+    duplicate.updatedAt = new Date().toISOString();
+    const saved = store.create('kits', duplicate);
+    showToast('Kit duplicated successfully', 'success');
+    router.navigate(`/kits/${saved.id}`);
+  });
+
+  container.querySelector('#btn-delete-kit')?.addEventListener('click', () => {
+    const content = document.createElement('div');
+    content.innerHTML = `<p>Delete <strong>${escapeHTML(kit.name)}</strong>? This action cannot be undone.</p>`;
+    showModal({
+      title: 'Delete Kit',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+        { label: 'Delete', className: 'btn-danger', onClick: (close) => {
+          store.delete('kits', kit.id);
+          showToast('Kit deleted successfully', 'success');
+          close();
+          router.navigate('/kits');
+        }}
+      ]
+    });
+  });
+}
+
+function r(label, value, opts = {}) {
+  return `
+    <div class="detail-row">
+      <span class="detail-row-label">${label}</span>
+      <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${value || '—'}</span>
+    </div>`;
 }
