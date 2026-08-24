@@ -6,41 +6,17 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { getStorageLocationOptionsHtml } from '../../utils/storageLocations.js';
 
 export function renderStockForm(container, { id }) {
   const isEdit = id && id !== 'new';
   const item = isEdit ? store.getById('stock', id) : {};
-  const technicians = store.getAll('technicians').filter(t => !t.deactivated || item.location === `Vehicle - ${t.name}`);
-  const assets = store.getAll('assets');
   const activeSuppliers = store.getAll('suppliers').filter(s => s.active !== false);
   const materialCategories = store.getSettings().materialCategories || [];
 
   // Helper to build options for locations select dropdown
   function getLocationOptions(selectedLoc = '') {
-    let html = `<option value="">Select location...</option>`;
-    html += `<option value="Main Warehouse" ${selectedLoc === 'Main Warehouse' ? 'selected' : ''}>Main Warehouse</option>`;
-    
-    html += `<optgroup label="Warehouses">`;
-    ['Warehouse A', 'Warehouse B'].forEach(w => {
-      html += `<option value="${w}" ${selectedLoc === w ? 'selected' : ''}>${w}</option>`;
-    });
-    html += `</optgroup>`;
-    
-    html += `<optgroup label="Vehicles">`;
-    technicians.forEach(t => {
-      const locName = `Vehicle - ${t.name}`;
-      html += `<option value="${locName}" ${selectedLoc === locName ? 'selected' : ''}>${locName}</option>`;
-    });
-    html += `</optgroup>`;
-
-    html += `<optgroup label="Assets">`;
-    assets.forEach(a => {
-      html += `<option value="${a.name}" ${selectedLoc === a.name ? 'selected' : ''}>${a.name}</option>`;
-    });
-    html += `</optgroup>`;
-
-    html += `<option value="On Order" ${selectedLoc === 'On Order' ? 'selected' : ''}>On Order</option>`;
-    return html;
+    return getStorageLocationOptionsHtml(selectedLoc);
   }
 
   // Generate HTML for a single location stock row

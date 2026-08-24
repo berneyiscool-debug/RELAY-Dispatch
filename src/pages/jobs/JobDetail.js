@@ -16,6 +16,7 @@ import { hasPermission } from '../../utils/permissions.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
+import { deductStockFromLocation } from '../../utils/storageLocations.js';
 
 export function renderJobDetail(container, { id, tab }) {
   const job = store.getById('jobs', id);
@@ -3865,17 +3866,18 @@ export function renderJobDetail(container, { id, tab }) {
             </div>
             <div class="card-body" style="padding:0">
               <table class="data-table">
-                <thead><tr><th>Part / Item</th><th>Quantity</th><th>Unit Cost</th><th>Total Cost</th><th>Date</th></tr></thead>
+                <thead><tr><th>Part / Item</th><th>Location</th><th>Quantity</th><th>Unit Cost</th><th>Total Cost</th><th>Date</th></tr></thead>
                 <tbody>
                   ${allocatedMaterials.length ? allocatedMaterials.map(m => `
                     <tr>
                       <td style="font-weight:500">${escapeHTML(m.partName)}</td>
+                      <td style="color:var(--text-secondary)">${escapeHTML(m.location || '—')}</td>
                       <td>${m.quantity}</td>
                       <td>$${(m.unitCost || 0).toFixed(2)}</td>
                       <td style="font-weight:600;">$${(m.totalCost || 0).toFixed(2)}</td>
                       <td style="color:var(--text-secondary)">${new Date(m.date).toLocaleDateString()}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No stock items allocated to this job.</td></tr>'}
+                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No stock items allocated to this job.</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -3938,66 +3940,183 @@ export function renderJobDetail(container, { id, tab }) {
         }
 
         const stockItems = store.getAll('stock');
-        let importedCount = 0;
 
-        materialItems.forEach(item => {
+        const importRows = materialItems.map(item => {
           const sMatch = stockItems.find(s => s.id === item.stockId || s.id === item.partId || (s.name && item.description && s.name.toLowerCase() === item.description.toLowerCase()));
-          const newMat = {
+          const qty = parseFloat(item.qty || item.quantity || 1);
+          const firstLoc = sMatch ? ((sMatch.locations || []).find(l => (parseFloat(l.quantity) || 0) > 0)?.location || '') : '';
+          return {
             id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-            jobId: id,
-            jobNumber: job.number,
+            description: item.description || item.name || (sMatch ? sMatch.name : 'Stock Item'),
             partId: sMatch ? sMatch.id : (item.partId || item.stockId || null),
-            partName: item.description || item.name || (sMatch ? sMatch.name : 'Stock Item'),
-            name: item.description || item.name || (sMatch ? sMatch.name : 'Stock Item'),
-            quantity: parseFloat(item.qty || item.quantity || 1),
-            unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : (parseFloat(item.costPrice || item.unitCost || item.rate) || 0),
-            totalCost: (parseFloat(item.qty || item.quantity || 1)) * (sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : (parseFloat(item.costPrice || item.unitCost || item.rate) || 0)),
-            date: new Date().toISOString(),
-            fromQuote: true
+            qty,
+            location: firstLoc,
+            unitCost: sMatch ? (sMatch.costPrice || sMatch.unitPrice || 0) : (parseFloat(item.costPrice || item.unitCost || item.rate) || 0)
           };
-
-          store.create('jobMaterials', newMat);
-
-          if (!Array.isArray(job.materials)) job.materials = [];
-          job.materials.push(newMat);
-          importedCount++;
         });
 
-        store.update('jobs', id, { materials: job.materials });
-        showToast(`Imported ${importedCount} material items from Quote ${targetQuote.number}`, 'success');
-        renderTabContent();
+        const locOptionsHtml = (row, selectedLoc) => {
+          const part = row.partId ? stockItems.find(s => s.id === row.partId) : null;
+          if (!part) return '<option value="">No stock match</option>';
+          const locs = (part.locations || []).filter(l => (parseFloat(l.quantity) || 0) > 0);
+          if (locs.length === 0) return '<option value="">No stock available</option>';
+          return locs.map(l => `<option value="${escapeHTML(l.location)}" ${l.location === selectedLoc ? 'selected' : ''}>${escapeHTML(l.location)} (${l.quantity})</option>`).join('');
+        };
+
+        const renderRows = (container) => {
+          container.innerHTML = importRows.map((row, idx) => `
+            <div class="import-row" data-id="${row.id}" style="display:flex; gap:8px; margin-bottom:8px; align-items:flex-end;">
+              <div class="form-group" style="flex:1.4; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Material' : ''}</label>
+                <div style="height:34px; display:flex; align-items:center; padding:0 8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-color); font-size:13px">${escapeHTML(row.description)}</div>
+              </div>
+              <div class="form-group" style="flex:1.2; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Take From' : ''}</label>
+                <select class="form-select import-loc-select" data-id="${row.id}">
+                  ${locOptionsHtml(row, row.location)}
+                </select>
+              </div>
+              <div class="form-group" style="width:80px; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Qty' : ''}</label>
+                <input type="number" class="form-input import-qty-input" data-id="${row.id}" value="${row.qty}" min="1" />
+              </div>
+            </div>
+          `).join('');
+
+          container.querySelectorAll('.import-loc-select').forEach(sel => {
+            sel.addEventListener('change', (e) => {
+              const r = importRows.find(x => x.id === e.target.getAttribute('data-id'));
+              if (r) r.location = e.target.value;
+            });
+          });
+          container.querySelectorAll('.import-qty-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const r = importRows.find(x => x.id === e.target.getAttribute('data-id'));
+              if (r) r.qty = parseInt(e.target.value) || 1;
+            });
+          });
+        };
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <p class="text-secondary" style="font-size:12px; margin:0 0 16px">
+            Importing will deduct each quantity from the selected stock location.
+          </p>
+          <div id="import-rows-container"></div>
+        `;
+
+        showDrawer({
+          title: `Import Materials from Quote ${escapeHTML(targetQuote.number)}`,
+          content: content.outerHTML,
+          width: 640,
+          onMount: (drawer) => renderRows(drawer.querySelector('#import-rows-container')),
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Import', className: 'btn-primary', onClick: (close) => {
+                let importedCount = 0;
+
+                importRows.forEach(row => {
+                  const part = row.partId ? stockItems.find(s => s.id === row.partId) : null;
+
+                  if (part && row.location) {
+                    const result = deductStockFromLocation(part, row.location, row.qty);
+                    if (!result.ok) {
+                      showToast(result.reason, 'error');
+                      return;
+                    }
+                    store.update('stock', part.id, { locations: part.locations, quantity: part.quantity, location: part.location });
+                  }
+
+                  const newMat = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    jobId: id,
+                    jobNumber: job.number,
+                    partId: part ? part.id : row.partId,
+                    partName: row.description,
+                    name: row.description,
+                    quantity: row.qty,
+                    unitCost: row.unitCost,
+                    totalCost: row.unitCost * row.qty,
+                    location: part && row.location ? row.location : '',
+                    date: new Date().toISOString(),
+                    fromQuote: true
+                  };
+
+                  store.create('jobMaterials', newMat);
+
+                  if (!Array.isArray(job.materials)) job.materials = [];
+                  job.materials.push(newMat);
+                  importedCount++;
+                });
+
+                store.update('jobs', id, { materials: job.materials });
+                showToast(`Imported ${importedCount} materials from Quote ${targetQuote.number}`, 'success');
+                renderTabContent();
+                close();
+              }
+            }
+          ]
+        });
       });
 
       tc.querySelector('#btn-allocate-stock')?.addEventListener('click', () => {
         const stockItems = store.getAll('stock');
         const acceptedQuotes = store.getAll('quotes').filter(q => q.jobId === id && q.status === 'Accepted');
         
-        let allocItems = [{ id: Date.now().toString(), partId: '', qty: 1 }];
+        let allocItems = [{ id: Date.now().toString(), partId: '', location: '', qty: 1 }];
+
+        const locationOptionsHtml = (part, selectedLoc) => {
+          if (!part) return '<option value="">Select stock first</option>';
+          const locs = (part.locations || []).filter(l => (parseFloat(l.quantity) || 0) > 0);
+          if (locs.length === 0) return '<option value="">No stock available</option>';
+          return locs.map(l => `<option value="${escapeHTML(l.location)}" ${l.location === selectedLoc ? 'selected' : ''}>${escapeHTML(l.location)} (${l.quantity})</option>`).join('');
+        };
 
         const renderRows = (container) => {
-          container.innerHTML = allocItems.map((item, idx) => `
+          container.innerHTML = allocItems.map((item, idx) => {
+            const part = stockItems.find(s => s.id === item.partId);
+            return `
             <div class="alloc-row" data-id="${item.id}" style="display:flex; gap:8px; margin-bottom:8px; align-items:flex-end;">
-              <div class="form-group" style="flex:1; margin-bottom:0">
-                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Search Stock *' : ''}</label>
+              <div class="form-group" style="flex:1.4; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Stock Item *' : ''}</label>
                 <select class="form-select alloc-part-select" data-id="${item.id}">
                   <option value="">Select or type...</option>
                   ${stockItems.map(s => `<option value="${s.id}" ${s.id === item.partId ? 'selected' : ''}>${escapeHTML(s.name)} (In Stock: ${s.quantity || 0}) - $${(s.costPrice || 0).toFixed(2)}</option>`).join('')}
                 </select>
               </div>
-              <div class="form-group" style="width:100px; margin-bottom:0">
+              <div class="form-group" style="flex:1.2; margin-bottom:0">
+                <label class="form-label" style="font-size:11px">${idx === 0 ? 'Take From *' : ''}</label>
+                <select class="form-select alloc-loc-select" data-id="${item.id}">
+                  ${locationOptionsHtml(part, item.location)}
+                </select>
+              </div>
+              <div class="form-group" style="width:80px; margin-bottom:0">
                 <label class="form-label" style="font-size:11px">${idx === 0 ? 'Qty *' : ''}</label>
                 <input type="number" class="form-input alloc-qty-input" data-id="${item.id}" value="${item.qty}" min="1" />
               </div>
               <button type="button" class="btn btn-sm btn-secondary btn-remove-row" data-id="${item.id}" style="padding:0 8px; height:32px;"><span class="material-icons-outlined" style="font-size:16px; color:var(--text-danger)">delete</span></button>
             </div>
-          `).join('');
+          `;
+          }).join('');
 
           // Bind events
           container.querySelectorAll('.alloc-part-select').forEach(sel => {
             sel.addEventListener('change', (e) => {
               const rowId = e.target.getAttribute('data-id');
               const rowItem = allocItems.find(i => i.id === rowId);
-              if (rowItem) rowItem.partId = e.target.value;
+              if (rowItem) { rowItem.partId = e.target.value; rowItem.location = ''; }
+              const row = e.target.closest('.alloc-row');
+              const part = stockItems.find(s => s.id === e.target.value);
+              const locSel = row?.querySelector('.alloc-loc-select');
+              if (locSel) locSel.innerHTML = locationOptionsHtml(part, '');
+            });
+          });
+          container.querySelectorAll('.alloc-loc-select').forEach(sel => {
+            sel.addEventListener('change', (e) => {
+              const rowId = e.target.getAttribute('data-id');
+              const rowItem = allocItems.find(i => i.id === rowId);
+              if (rowItem) rowItem.location = e.target.value;
             });
           });
           container.querySelectorAll('.alloc-qty-input').forEach(inp => {
@@ -4037,13 +4156,13 @@ export function renderJobDetail(container, { id, tab }) {
         showDrawer({
           title: 'Allocate Stock to Job',
           content: content.outerHTML,
-          width: 500,
+          width: 640,
           onMount: (drawer) => {
             const container = drawer.querySelector('#alloc-rows-container');
             renderRows(container);
 
             drawer.querySelector('#btn-add-alloc-row')?.addEventListener('click', () => {
-              allocItems.push({ id: Date.now().toString(), partId: '', qty: 1 });
+              allocItems.push({ id: Date.now().toString(), partId: '', location: '', qty: 1 });
               renderRows(container);
             });
 
@@ -4056,7 +4175,7 @@ export function renderJobDetail(container, { id, tab }) {
                   if (qi.stockId) {
                     const exists = stockItems.find(s => s.id === qi.stockId);
                     if (exists) {
-                      allocItems.push({ id: Date.now().toString() + Math.random(), partId: qi.stockId, qty: qi.quantity || 1 });
+                      allocItems.push({ id: Date.now().toString() + Math.random(), partId: qi.stockId, location: '', qty: qi.quantity || 1 });
                       importedCount++;
                     }
                   }
@@ -4084,42 +4203,66 @@ export function renderJobDetail(container, { id, tab }) {
                   return;
                 }
 
-                let warningShown = false;
+                const missingLoc = validItems.find(i => !i.location);
+                if (missingLoc) {
+                  showToast('Select a location to take stock from for every item', 'error');
+                  return;
+                }
+
+                // Validate availability at each selected location before mutating stock.
+                const errors = [];
+                validItems.forEach(item => {
+                  const part = stockItems.find(s => s.id === item.partId);
+                  if (!part) return;
+                  const locEntry = (part.locations || []).find(l => l.location === item.location);
+                  const avail = locEntry ? (parseFloat(locEntry.quantity) || 0) : 0;
+                  if (item.qty > avail) {
+                    errors.push(`${part.name}: only ${avail} available at ${item.location}`);
+                  }
+                });
+                if (errors.length) {
+                  showToast(errors[0], 'error');
+                  return;
+                }
+
+                let allocated = 0;
 
                 validItems.forEach(item => {
                   const part = stockItems.find(s => s.id === item.partId);
-                  if (part) {
-                    const currentQty = parseInt(part.quantity) || 0;
-                    if (item.qty > currentQty && !warningShown) {
-                      showToast('Warning: One or more allocations exceed current stock level', 'warning');
-                      warningShown = true;
-                    }
+                  if (!part) return;
 
-                    const newMat = {
-                      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-                      jobId: id,
-                      jobNumber: job.number,
-                      partId: part.id,
-                      partName: part.name,
-                      name: part.name,
-                      quantity: item.qty,
-                      unitCost: part.costPrice || 0,
-                      totalCost: (part.costPrice || 0) * item.qty,
-                      date: new Date().toISOString()
-                    };
-
-                    store.create('jobMaterials', newMat);
-
-                    const existingMats = Array.isArray(job.materials) ? [...job.materials] : [];
-                    existingMats.push(newMat);
-                    job.materials = existingMats;
-                    store.update('jobs', id, { materials: existingMats });
-
-                    store.update('stock', part.id, { quantity: currentQty - item.qty });
+                  const result = deductStockFromLocation(part, item.location, item.qty);
+                  if (!result.ok) {
+                    showToast(result.reason, 'error');
+                    return;
                   }
+
+                  const newMat = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    jobId: id,
+                    jobNumber: job.number,
+                    partId: part.id,
+                    partName: part.name,
+                    name: part.name,
+                    quantity: item.qty,
+                    unitCost: part.costPrice || 0,
+                    totalCost: (part.costPrice || 0) * item.qty,
+                    location: item.location,
+                    date: new Date().toISOString()
+                  };
+
+                  store.create('jobMaterials', newMat);
+
+                  const existingMats = Array.isArray(job.materials) ? [...job.materials] : [];
+                  existingMats.push(newMat);
+                  job.materials = existingMats;
+                  store.update('jobs', id, { materials: existingMats });
+
+                  store.update('stock', part.id, { locations: part.locations, quantity: part.quantity, location: part.location });
+                  allocated++;
                 });
 
-                showToast(`Allocated ${validItems.length} items to Job ${job.number}`, 'success');
+                showToast(`Allocated ${allocated} items to Job ${job.number}`, 'success');
                 renderTabContent();
                 close();
               }

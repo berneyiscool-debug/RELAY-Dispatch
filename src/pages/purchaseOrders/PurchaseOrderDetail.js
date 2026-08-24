@@ -9,6 +9,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { escapeHTML } from '../../utils/security.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
+import { getStorageLocationOptionsHtml } from '../../utils/storageLocations.js';
 
 export function renderPurchaseOrderDetail(container, { id, jobId }) {
   const isNew = id === 'new';
@@ -196,25 +197,12 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
     });
 
     container.querySelector('#btn-receive')?.addEventListener('click', () => {
-      const technicians = store.getAll('technicians');
-      const assets = store.getAll('assets');
-      
       const content = document.createElement('div');
       content.innerHTML = `
         <div class="form-group">
           <label class="form-label">Receive into Location *</label>
           <select class="form-select" id="receive-location-select" required>
-            <option value="Main Warehouse">Main Warehouse</option>
-            <optgroup label="Warehouses">
-              <option value="Warehouse A">Warehouse A</option>
-              <option value="Warehouse B">Warehouse B</option>
-            </optgroup>
-            <optgroup label="Vehicles">
-              ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
-            </optgroup>
-            <optgroup label="Assets">
-              ${assets.map(a => `<option value="${escapeHTML(a.name)}">${escapeHTML(a.name)}</option>`).join('')}
-            </optgroup>
+            ${getStorageLocationOptionsHtml()}
           </select>
         </div>
       `;

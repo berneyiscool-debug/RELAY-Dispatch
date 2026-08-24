@@ -39,7 +39,8 @@ const TABLE_MAP = {
   costCenters: 'cost_centers',
   emailLog: 'email_log',
   deputyAsks: null,
-  jobMaterials: 'job_materials'
+  jobMaterials: 'job_materials',
+  storageLocations: 'storage_locations'
 };
 
 const TABLE_COLUMNS = {
@@ -363,6 +364,17 @@ const TABLE_COLUMNS = {
     "unit_cost",
     "total_cost",
     "date",
+    "location",
+    "created_at",
+    "updated_at"
+  ],
+  storage_locations: [
+    "id",
+    "company_id",
+    "name",
+    "type",
+    "technician_id",
+    "active",
     "created_at",
     "updated_at"
   ],

@@ -327,7 +327,8 @@ function getContextualMenu(hash) {
       backLabel: 'Back to Dashboard',
       items: [
         { id: 'items', icon: 'inventory_2', label: 'Individual Items', path: '/stock?tab=items' },
-        { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' }
+        { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' },
+        { id: 'locations', icon: 'warehouse', label: 'Storage Locations', path: '/stock?tab=locations' }
       ],
       activeTab: currentTab
     };

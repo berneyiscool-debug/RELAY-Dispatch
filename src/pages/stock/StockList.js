@@ -13,9 +13,10 @@ import { escapeHTML } from '../../utils/security.js';
 import { getToolbarFilterTags, toolbarFilterMatches } from '../../components/ToolbarFilters.js';
 import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
+import { getStorageLocationOptionsHtml, getActiveStorageLocations, getStockHeldAtLocation, renameStorageLocation, STORAGE_LOCATION_TYPES } from '../../utils/storageLocations.js';
 
 export function renderStockList(container, params) {
-  let activeTab = params?.tab === 'kits' ? 'kits' : 'items';
+  let activeTab = (params?.tab === 'kits' || params?.tab === 'locations') ? params.tab : 'items';
   let searchTerm = '';
   let activeLocation = 'all';
   let activeItemFilter = 'all';
@@ -89,6 +90,18 @@ export function renderStockList(container, params) {
       // Render DataTable for Items
       if (tableContainer) renderItemsTable(tableContainer);
       bindItemActions();
+
+    } else if (activeTab === 'locations') {
+      // 1. Actions Header for Storage Locations
+      if (actionsContainer) {
+        actionsContainer.innerHTML = `
+          <button class="btn btn-primary btn-sm" id="btn-new-location" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Add a warehouse, vehicle, or other storage location for stock"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Location</span></button>
+        `;
+      }
+
+      // Render DataTable for Storage Locations
+      if (tableContainer) renderLocationsTable(tableContainer);
+      bindLocationActions();
 
     } else {
       // 1. Actions Header for Kits
@@ -526,6 +539,155 @@ export function renderStockList(container, params) {
     });
   }
 
+  // --- STORAGE LOCATION VIEW FUNCTIONS ---
+
+  function renderLocationsTable(tableContainer) {
+    const locations = getActiveStorageLocations();
+    const technicians = store.getAll('technicians') || [];
+    const data = locations.map(l => ({
+      ...l,
+      techName: l.technicianId ? (technicians.find(t => t.id === l.technicianId)?.name || '') : '',
+      held: getStockHeldAtLocation(l.name)
+    }));
+
+    const columns = [
+      { key: 'name', label: 'Location', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>`, width: '30%' },
+      { key: 'type', label: 'Type', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.type || 'Warehouse')}</span>`, width: '16%' },
+      { key: 'techName', label: 'Assigned To', render: (r) => `<span class="text-secondary">${escapeHTML(r.techName || '—')}</span>`, width: '22%' },
+      { key: 'held', label: 'Stock Held', render: (r) => `<span style="font-weight:600">${r.held}</span>`, getValue: (r) => r.held, width: '16%' },
+      { key: 'active', label: 'Status', render: (r) => r.active === false ? '<span class="badge badge-neutral">Inactive</span>' : '<span class="badge badge-success">Active</span>', width: '16%' },
+    ];
+
+    const table = createDataTable({
+      columns,
+      data,
+      onRowClick: (id) => openLocationDrawer(id),
+      emptyMessage: 'No storage locations',
+      emptyIcon: 'warehouse',
+    });
+
+    tableContainer.innerHTML = '';
+    tableContainer.appendChild(table);
+
+    const q = searchTerm.toLowerCase();
+    if (q) table.updateData(data.filter(l => l.name.toLowerCase().includes(q)));
+  }
+
+  function bindLocationActions() {
+    setListSearch((q) => {
+      searchTerm = q;
+      renderLocationsTable(container.querySelector('#stock-table-container'));
+    }, 'Search locations...');
+
+    const findEl = (sel) => container.querySelector(sel) || document.querySelector(sel);
+    findEl('#btn-new-location')?.addEventListener('click', () => openLocationDrawer(null));
+  }
+
+  function openLocationDrawer(locationId) {
+    const isEdit = !!locationId;
+    const existing = locationId ? store.getById('storageLocations', locationId) : null;
+    const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
+    const selectedType = existing?.type || 'Warehouse';
+
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Location Name *</label>
+        <input type="text" class="form-input" id="loc-name" value="${escapeHTML(existing?.name || '')}" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-select" id="loc-type">
+          ${STORAGE_LOCATION_TYPES.map(t => `<option value="${t}" ${selectedType === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" id="loc-tech-group" style="${selectedType === 'Vehicle' ? '' : 'display:none'}">
+        <label class="form-label">Assigned Technician</label>
+        <select class="form-select" id="loc-technician">
+          <option value="">— None —</option>
+          ${technicians.map(t => `<option value="${escapeHTML(t.id)}" ${existing?.technicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="loc-active" ${existing?.active === false ? '' : 'checked'} />
+        <label class="form-label" style="margin:0">Active</label>
+      </div>
+    `;
+
+    const save = (close) => {
+      const dOverlay = document.querySelector('.drawer-overlay');
+      const name = dOverlay.querySelector('#loc-name').value.trim();
+      const type = dOverlay.querySelector('#loc-type').value;
+      const technicianId = dOverlay.querySelector('#loc-technician').value || null;
+      const active = dOverlay.querySelector('#loc-active').checked;
+
+      if (!name) { showToast('Location name is required', 'error'); return; }
+
+      const dup = getActiveStorageLocations().find(l =>
+        l.name.toLowerCase() === name.toLowerCase() && l.id !== locationId
+      );
+      if (dup) { showToast(`A location named "${name}" already exists`, 'error'); return; }
+
+      const held = isEdit ? getStockHeldAtLocation(existing.name) : 0;
+      if (!active && held > 0) {
+        showToast(`Cannot deactivate: ${name} still holds ${held} stock`, 'error');
+        return;
+      }
+
+      if (isEdit) {
+        if (existing.name !== name) renameStorageLocation(existing.name, name);
+        store.update('storageLocations', locationId, { name, type, technicianId: type === 'Vehicle' ? technicianId : null, active });
+        showToast('Location updated', 'success');
+      } else {
+        store.create('storageLocations', { name, type, technicianId: type === 'Vehicle' ? technicianId : null, active });
+        showToast('Location created', 'success');
+      }
+
+      renderActiveTabContent();
+      close();
+    };
+
+    const del = (close) => {
+      const held = getStockHeldAtLocation(existing.name);
+      if (held > 0) {
+        showToast(`Cannot delete: ${existing.name} still holds ${held} stock`, 'error');
+        return;
+      }
+      showModal({
+        title: 'Delete Location',
+        content: `<p>Delete <strong>${escapeHTML(existing.name)}</strong>? This cannot be undone.</p>`,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (c) => c() },
+          { label: 'Delete', className: 'btn-danger', onClick: (c) => {
+            store.delete('storageLocations', locationId);
+            showToast('Location deleted', 'success');
+            c();
+            close();
+            renderActiveTabContent();
+          }},
+        ],
+      });
+    };
+
+    showDrawer({
+      title: isEdit ? 'Edit Storage Location' : 'New Storage Location',
+      content: content.outerHTML,
+      width: 440,
+      onMount: (drawer) => {
+        const typeSel = drawer.querySelector('#loc-type');
+        const techGroup = drawer.querySelector('#loc-tech-group');
+        typeSel.addEventListener('change', () => {
+          techGroup.style.display = typeSel.value === 'Vehicle' ? '' : 'none';
+        });
+      },
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+        ...(isEdit ? [{ label: 'Delete', className: 'btn-danger', onClick: (close) => del(close) }] : []),
+        { label: isEdit ? 'Update' : 'Create', className: 'btn-primary', onClick: (close) => save(close) },
+      ]
+    });
+  }
+
   // --- DRAWERS & MODALS BACKPORT ---
 
   function createDropdown({ container, options, onChange }) {
@@ -570,7 +732,6 @@ export function renderStockList(container, params) {
   }
 
   function openNewStockDrawer() {
-    const technicians = store.getAll('technicians').filter(t => !t.deactivated);
     const categories = store.getSettings().materialCategories || ['General'];
     const content = document.createElement('div');
     content.innerHTML = `
@@ -588,14 +749,7 @@ export function renderStockList(container, params) {
         <div class="form-group">
           <label class="form-label">Initial Location</label>
           <select class="form-select" id="new-stock-location">
-            <option value="Main Warehouse">Main Warehouse</option>
-            <optgroup label="Warehouses">
-              <option value="Warehouse A">Warehouse A</option>
-              <option value="Warehouse B">Warehouse B</option>
-            </optgroup>
-            <optgroup label="Vehicles">
-              ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
-            </optgroup>
+            ${getStorageLocationOptionsHtml()}
           </select>
         </div>
       </div>
@@ -620,7 +774,7 @@ export function renderStockList(container, params) {
           const dOverlay = document.querySelector('.drawer-overlay');
           const name = dOverlay.querySelector('#new-stock-name').value.trim();
           const category = dOverlay.querySelector('#new-stock-category').value;
-          const location = dOverlay.querySelector('#new-stock-location').value;
+          const location = dOverlay.querySelector('#new-stock-location').value || (getActiveStorageLocations()[0]?.name || 'Main Warehouse');
           const costPrice = parseFloat(dOverlay.querySelector('#new-stock-cost').value);
           const initialQty = parseInt(dOverlay.querySelector('#new-stock-qty').value) || 0;
 
@@ -651,7 +805,6 @@ export function renderStockList(container, params) {
 
   function openTransferDrawer() {
     const stockItems = store.getAll('stock');
-    const technicians = store.getAll('technicians').filter(t => !t.deactivated);
     
     if (stockItems.length === 0) {
       showToast('No stock items available to transfer', 'error');
@@ -679,15 +832,7 @@ export function renderStockList(container, params) {
           <div class="form-group">
             <label class="form-label">Destination Location *</label>
             <select class="form-select" id="transfer-to">
-              <option value="">Select destination...</option>
-              <option value="Main Warehouse">Main Warehouse</option>
-              <optgroup label="Warehouses">
-                <option value="Warehouse A">Warehouse A</option>
-                <option value="Warehouse B">Warehouse B</option>
-              </optgroup>
-              <optgroup label="Vehicles">
-                ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
-              </optgroup>
+              ${getStorageLocationOptionsHtml()}
             </select>
           </div>
         </div>
@@ -956,6 +1101,12 @@ export function renderStockList(container, params) {
     if (btnNewKit) {
       e.preventDefault();
       router.navigate('/kits/new');
+      return;
+    }
+    const btnNewLocation = e.target.closest('#btn-new-location');
+    if (btnNewLocation) {
+      e.preventDefault();
+      openLocationDrawer(null);
       return;
     }
   };

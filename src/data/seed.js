@@ -208,11 +208,18 @@ export async function seedData(force = false) {
   ];
 
   const stockList = [
-    { id: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', qty: 120, costPrice: 85, unitPrice: 120, unit: 'Each', category: 'Consumables' },
-    { id: 'st_2', name: 'Oil Filter — Cat 3306', sku: 'SKU-ST2', qty: 85, costPrice: 45, unitPrice: 75, unit: 'Each', category: 'Filters' },
-    { id: 'st_3', name: 'ATS Control Board', sku: 'SKU-ST3', qty: 15, costPrice: 420, unitPrice: 680, unit: 'Each', category: 'Electrical' },
-    { id: 'st_4', name: 'Battery 12V 100Ah AGM', sku: 'SKU-ST4', qty: 40, costPrice: 185, unitPrice: 280, unit: 'Each', category: 'Electrical' },
-    { id: 'st_5', name: 'Coolant Concentrate 5L', sku: 'SKU-ST5', qty: 60, costPrice: 55, unitPrice: 85, unit: 'Each', category: 'Consumables' }
+    { id: 'st_1', name: 'Engine Oil 15W-40 20L', sku: 'SKU-ST1', quantity: 120, costPrice: 85, unitPrice: 120, unit: 'Each', category: 'Consumables', location: 'Main Warehouse', locations: [{ location: 'Main Warehouse', quantity: 120 }] },
+    { id: 'st_2', name: 'Oil Filter — Cat 3306', sku: 'SKU-ST2', quantity: 85, costPrice: 45, unitPrice: 75, unit: 'Each', category: 'Filters', location: 'Main Warehouse', locations: [{ location: 'Main Warehouse', quantity: 85 }] },
+    { id: 'st_3', name: 'ATS Control Board', sku: 'SKU-ST3', quantity: 15, costPrice: 420, unitPrice: 680, unit: 'Each', category: 'Electrical', location: 'Warehouse A', locations: [{ location: 'Warehouse A', quantity: 15 }] },
+    { id: 'st_4', name: 'Battery 12V 100Ah AGM', sku: 'SKU-ST4', quantity: 40, costPrice: 185, unitPrice: 280, unit: 'Each', category: 'Electrical', location: 'Warehouse A', locations: [{ location: 'Warehouse A', quantity: 40 }] },
+    { id: 'st_5', name: 'Coolant Concentrate 5L', sku: 'SKU-ST5', quantity: 60, costPrice: 55, unitPrice: 85, unit: 'Each', category: 'Consumables', location: 'Warehouse B', locations: [{ location: 'Warehouse B', quantity: 60 }] }
+  ];
+
+  const storageLocationsList = [
+    { id: 'loc_main', name: 'Main Warehouse', type: 'Warehouse', active: true },
+    { id: 'loc_warehouse_a', name: 'Warehouse A', type: 'Warehouse', active: true },
+    { id: 'loc_warehouse_b', name: 'Warehouse B', type: 'Warehouse', active: true },
+    { id: 'loc_on_order', name: 'On Order', type: 'On Order', active: true }
   ];
 
   const customerNames = [
@@ -976,6 +983,7 @@ export async function seedData(force = false) {
   await store.save('userTypes', userTypes);
   await store.save('technicians', techniciansList);
   await store.save('stock', stockList);
+  await store.save('storageLocations', storageLocationsList);
   await store.save('customers', generatedCustomers);
   await store.save('assets', generatedAssets);
   await store.save('maintenancePlans', generatedPlans);

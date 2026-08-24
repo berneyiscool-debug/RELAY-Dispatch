@@ -8,6 +8,7 @@ import { showToast } from '../components/Notifications.js';
 import { showDrawer } from '../components/Drawer.js';
 import { escapeHTML } from './security.js';
 import { todayLocalISO } from './dateUtils.js';
+import { getStorageLocationOptionsHtml, getActiveStorageLocations } from './storageLocations.js';
 
 /**
  * Opens a modal to quickly create a new Asset.
@@ -190,7 +191,6 @@ export function showAssetQuickAdd({ customerId = null, site = '', onSave = null 
  * Opens a drawer/modal to quickly create a new Stock item.
  */
 export function showStockQuickAdd({ onSave } = {}) {
-  const assets = store.getAll('assets');
   const settings = store.getSettings();
   const categories = settings.materialCategories || ['Consumables', 'Electrical', 'Plumbing', 'HVAC Parts', 'Fixings', 'General'];
 
@@ -230,11 +230,7 @@ export function showStockQuickAdd({ onSave } = {}) {
       <div class="form-group" style="grid-column: span 2;">
         <label class="form-label">Primary Location</label>
         <select id="qs-location" class="form-select">
-          <option>Warehouse A</option>
-          <option>Warehouse B</option>
-          <optgroup label="Assets / Vehicles">
-            ${assets.map(a => `<option>${escapeHTML(a.name)}</option>`).join('')}
-          </optgroup>
+          ${getStorageLocationOptionsHtml()}
         </select>
       </div>
     </div>
@@ -269,7 +265,7 @@ export function showStockQuickAdd({ onSave } = {}) {
             reorderLevel: parseInt(content.querySelector('#qs-reorder').value) || 10,
             costPrice: cost,
             unitPrice: sell,
-            location: content.querySelector('#qs-location').value,
+            location: content.querySelector('#qs-location').value || (getActiveStorageLocations()[0]?.name || 'Main Warehouse'),
             quantity: 0, // Starts at 0, will be updated when PO is received
             supplier: ''
           });
@@ -564,25 +560,12 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
        label: 'Mark as Received',
        className: 'btn-success',
        onClick: (close) => {
-         const technicians = store.getAll('technicians').filter(t => !t.deactivated);
-         const assets = store.getAll('assets');
-
          const modalContent = document.createElement('div');
          modalContent.innerHTML = `
            <div class="form-group">
              <label class="form-label">Receive into Location *</label>
              <select class="form-select" id="receive-location-select" required>
-               <option value="Main Warehouse">Main Warehouse</option>
-               <optgroup label="Warehouses">
-                 <option value="Warehouse A">Warehouse A</option>
-                 <option value="Warehouse B">Warehouse B</option>
-               </optgroup>
-               <optgroup label="Vehicles">
-                 ${technicians.map(t => `<option value="Vehicle - ${escapeHTML(t.name)}">Vehicle - ${escapeHTML(t.name)}</option>`).join('')}
-               </optgroup>
-               <optgroup label="Assets">
-                 ${assets.map(a => `<option value="${escapeHTML(a.name)}">${escapeHTML(a.name)}</option>`).join('')}
-               </optgroup>
+               ${getStorageLocationOptionsHtml()}
              </select>
            </div>
          `;
