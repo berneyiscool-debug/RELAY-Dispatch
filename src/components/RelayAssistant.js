@@ -8,7 +8,8 @@
 // ============================================
 import { store } from '../data/store.js';
 import { showToast } from './Notifications.js';
-import { supabase } from '../utils/supabase.js';
+import { dispatchChat } from '../utils/aiEngine.js';
+import { isCloudUser, hasDeputyMax } from '../utils/aiTier.js';
 import { hasPermission } from '../utils/permissions.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
@@ -516,12 +517,6 @@ let pendingAttachments = [];
 // summary toast instead of dozens.
 let suppressActionToasts = false;
 
-// Cloud (paid) users get vision attachments; local/offline users don't, since it
-// hits a paid API. Mirrors the inline check used elsewhere in this file.
-function isCloudUser() {
-  return !!(store.companyId && !store.companyId.startsWith('acct_'));
-}
-
 // Whether the AI backend is usable right now. Cloud users go through the secure
 // edge function (no client key needed); local users must enable AI + supply a key.
 function canUseAI(ai) {
@@ -1019,7 +1014,8 @@ function escapeHtml(s) {
 
 // ── History helpers ────────────────────────────────────────────────────────────
 function trimHistory() {
-  if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+  const limit = hasDeputyMax() ? 20 : 12;
+  if (chatHistory.length > limit) chatHistory = chatHistory.slice(-limit);
 }
 
 function pushAssistant(reply) {
@@ -1409,7 +1405,7 @@ async function callAIEngine() {
   const s = store.getSettings();
   const ai = s.ai || {};
   const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
-  const systemPrompt = `${basePrompt}\n\n${getSystemContext()}`;
+  const systemPrompt = `${basePrompt}\n\n${getSystemContext(!hasDeputyMax())}`;
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -1472,84 +1468,7 @@ async function callAIEngine() {
 }
 
 
-async function callAIEngineGreeting() {
-  const s = store.getSettings();
-  const ai = s.ai || {};
-  const welcomeContext = getAssistantWelcomeContext();
-  const userMemory = getUserMemory();
-  
-  const systemPrompt = `You are Deputy, the intelligent field service co-pilot assistant for ${s.name || 'this company'}.
-You are greeting the user as they open the assistant panel.
-Generate a friendly, concise, and helpful 1 to 2 sentence greeting message based on the current workspace context.
-Focus on introducing yourself, highlighting 1-2 interesting current stats, and asking how you can help.
-Keep it casual, highly helpful, and conversational.
-Do not use markdown formatting, do not write a long paragraph. Return ONLY the welcome greeting text.
-
-Current Workspace Context:
-${welcomeContext}`;
-
-  const messages = [
-    { role: 'system', content: systemPrompt }
-  ];
-
-  return dispatchChat(messages, ai, ai.model || 'deepseek-chat');
-}
-
-// Low-level completions transport, shared by text and vision paths. Routes through
-// the Supabase edge proxy (cloud), the Electron secure handler (desktop), or a
-// direct fetch. `messages` may contain multimodal content arrays for vision.
-export async function dispatchChat(messages, ai, model, endpoint) {
-  // Vision requests pass a different endpoint (e.g. Gemini) than text chat; the
-  // edge function picks the matching server-side key based on this endpoint.
-  const ep = endpoint || ai.endpoint;
-  if (isCloudUser()) {
-    const { data, error } = await supabase.functions.invoke('relay-copilot', {
-      body: { messages, endpoint: ep, model }
-    });
-    if (error) {
-      // supabase-js hides the real upstream message on non-2xx; the actual body
-      // (e.g. the OpenAI error) is on error.context (a Response). Surface it.
-      let detail = error.message || String(error);
-      try {
-        if (error.context && typeof error.context.text === 'function') {
-          const body = await error.context.text();
-          if (body) {
-            try { detail = JSON.parse(body).error || body; } catch { detail = body; }
-          }
-        }
-      } catch (_) { /* keep generic message */ }
-      throw new Error(`AI backend error: ${detail}`);
-    }
-    if (data && data.error) {
-      throw new Error(data.error);
-    }
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  if (window.electronAPI && window.electronAPI.callAIAssistant) {
-    const data = await window.electronAPI.callAIAssistant({ messages, endpoint: ep, model });
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  const res = await fetch(ep || 'https://api.deepseek.com/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${ai.apiKey}`
-    },
-    body: JSON.stringify({ model: model || 'deepseek-chat', messages, temperature: 0.3 })
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`HTTP ${res.status}: ${body}`);
-  }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-
-export function getSystemContext() {
+export function getSystemContext(slim = false) {
   // Pull current DB state
   const jobs = store.getAll('jobs') || [];
   const invoices = store.getAll('invoices') || [];
@@ -1569,7 +1488,7 @@ export function getSystemContext() {
   const allTechs = store.getAll('technicians') || [];
   const deactivatedTechNames = new Set(allTechs.filter(t => t.deactivated).map(t => t.name.toLowerCase()));
   
-  const jobsList = activeJobs.slice(0, 10).map(j => {
+  const jobsList = activeJobs.slice(0, slim ? 5 : 10).map(j => {
     const techName = j.technicianName || 'Unassigned';
     const isDeactivated = techName && deactivatedTechNames.has(techName.toLowerCase());
     const techDisplay = isDeactivated ? `${techName} (DEACTIVATED)` : techName;
@@ -1577,7 +1496,7 @@ export function getSystemContext() {
   }).join('\n');
 
   const unassignedJobsList = unassignedJobs.map(j => `Job #${j.number || j.id}: ${j.title} (${j.status}) - Cust: ${j.customerName || 'None'} - Date: ${j.scheduledDate || 'TBD'}`).join('\n');
-  const overdueInvoicesList = overdueInvoices.slice(0, 8).map(i => `Invoice #${i.number || i.id}: ${i.title} - Total: $${i.total} - Due: ${i.dueDate || 'TBD'}`).join('\n');
+  const overdueInvoicesList = overdueInvoices.slice(0, slim ? 4 : 8).map(i => `Invoice #${i.number || i.id}: ${i.title} - Total: $${i.total} - Due: ${i.dueDate || 'TBD'}`).join('\n');
   const lowStockList = lowStockItems.map(s => `${s.name} (Qty: ${s.quantity || 0}, Reorder Point: ${s.reorderPoint || 5})`).join(', ');
 
   const techWorkloadMap = technicians.map(t => {
@@ -1593,7 +1512,7 @@ export function getSystemContext() {
   const rawFactsheet = isEnabled ? (localStorage.getItem(factsheetKey) || '') : 'User has disabled AI Personal Memory tracking.';
   
   let formattedMemory = '  No specific preferences recorded yet.';
-  if (isEnabled && rawFactsheet) {
+  if (!slim && isEnabled && rawFactsheet) {
     const memNodes = getStructuredMemory(rawFactsheet);
     formattedMemory = [];
     if (memNodes.dispatchRules.length) formattedMemory.push('  [Dispatch Rules]:\n' + memNodes.dispatchRules.map(l => `    - ${l}`).join('\n'));

@@ -391,8 +391,10 @@ async function loadLayout() {
   // layout — that per-origin drift is what made dashboards differ between the browser
   // and the desktop app.
   let cloudAuthoritative = false;
-  // Try Supabase first if user is logged in
-  if (currentUser && currentUser.id) {
+  // Try Supabase first if user is logged in (cloud accounts only — local
+  // account ids are not UUIDs and would 400 against Postgres).
+  const isCloudUser = currentUser && currentUser.companyId && !String(currentUser.companyId).startsWith('acct_');
+  if (currentUser && currentUser.id && isCloudUser) {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -469,7 +471,8 @@ async function saveLayout() {
   // Save to localStorage for offline fallback
   localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  if (currentUser && currentUser.id) {
+  const isCloudUser = currentUser && currentUser.companyId && !String(currentUser.companyId).startsWith('acct_');
+  if (currentUser && currentUser.id && isCloudUser) {
     try {
       const { error } = await supabase
         .from('profiles')

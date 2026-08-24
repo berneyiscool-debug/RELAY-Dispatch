@@ -58,19 +58,23 @@ export function applyTheme(theme, saveToDatabase = false) {
     localStorage.setItem(`simpro_theme_${currentUser.id}`, theme);
 
     if (saveToDatabase) {
-      import('./supabase.js').then(({ supabase }) => {
-        supabase
-          .from('profiles')
-          .update({ theme })
-          .eq('id', currentUser.id)
-          .then(({ error }) => {
-            if (error) {
-              console.error('Failed to update theme in Supabase profiles:', error);
-            }
-          });
-      }).catch(err => {
-        console.error('Failed to load supabase module for theme update:', err);
-      });
+      const loginMode = localStorage.getItem('relay_login_mode');
+      const isCloud = loginMode === 'cloud' && currentUser.companyId && !String(currentUser.companyId).startsWith('acct_');
+      if (isCloud) {
+        import('./supabase.js').then(({ supabase }) => {
+          supabase
+            .from('profiles')
+            .update({ theme })
+            .eq('id', currentUser.id)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Failed to update theme in Supabase profiles:', error);
+              }
+            });
+        }).catch(err => {
+          console.error('Failed to load supabase module for theme update:', err);
+        });
+      }
     }
   }
 

@@ -3,7 +3,7 @@
 // ============================================
 
 import { store } from '../../data/store.js';
-import { supabase } from '../../utils/supabase.js';
+import { dispatchChat } from '../../utils/aiEngine.js';
 import { escapeHTML } from '../../utils/security.js';
 import { JOB_STATUS_COLORS, DOC_STATUS_COLORS } from '../../utils/statusColors.js';
 
@@ -542,38 +542,11 @@ You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks).
         ];
       }
 
-      const endpoint = ai.endpoint || 'https://api.deepseek.com/chat/completions';
       const model = ai.model || 'deepseek-chat';
       let reply = '[]';
 
-      if (ai.apiKey) {
-        // Direct fetch if custom user API key is configured
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${ai.apiKey}`
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: messages,
-            temperature: 0.3
-          })
-        });
-
-        if (!res.ok) {
-          throw new Error(`API returned status ${res.status}`);
-        }
-
-        const resData = await res.json();
-        reply = resData.choices?.[0]?.message?.content || '[]';
-      } else if (isCloudUser) {
-        // Cloud users call Supabase Edge Function securely
-        const { data, error } = await supabase.functions.invoke('relay-copilot', {
-          body: { messages, endpoint, model }
-        });
-        if (error) throw error;
-        reply = data?.choices?.[0]?.message?.content || '[]';
+      if (ai.apiKey || isCloudUser) {
+        reply = await dispatchChat(messages, ai, model);
       }
 
       if (reply.includes('```')) {

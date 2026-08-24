@@ -3038,6 +3038,7 @@ class DataStore {
       },
       ai: {
         enabled: (this.companyId && !this.companyId.startsWith('acct_')) ? true : false,
+        tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local',
         apiKey: '',
         endpoint: 'https://api.deepseek.com/chat/completions',
         model: 'deepseek-chat',

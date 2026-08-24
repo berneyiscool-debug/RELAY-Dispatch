@@ -17,6 +17,7 @@ import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, email
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
+import { getAITier, AI_TIERS } from '../utils/aiTier.js';
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 import { renderLeadProfileSetup } from './leads/leadProfile.js';
 
@@ -4501,6 +4502,8 @@ export function renderSettings(container) {
   function renderApiKeysTab(tc) {
     const s = store.getSettings();
     const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
+    const tier = getAITier();
+    const tierLabel = tier === AI_TIERS.CLOUD_PLUS ? 'Cloud+ Deputy Max' : tier === AI_TIERS.CLOUD ? 'Cloud' : 'Local';
     const maps = s.maps || { apiKey: '' };
     const ai = s.ai || {
       enabled: false,
@@ -4534,10 +4537,11 @@ export function renderSettings(container) {
           <!-- DEPUTY AI -->
           <div class="card">
             <div class="card-header">
-              <h4 style="display:flex; align-items:center; gap:8px; margin:0;">
+              <h4 style="display:flex; align-items:center; gap:8px; margin:0; flex:1;">
                 <span class="material-icons-outlined" style="color:var(--color-primary);">smart_toy</span>
                 Deputy — your AI assistant
               </h4>
+              <span style="font-size:11px; font-weight:600; color:var(--color-primary); background:rgba(255,92,0,0.12); padding:3px 10px; border-radius:999px; white-space:nowrap;">${tierLabel}</span>
             </div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
 
