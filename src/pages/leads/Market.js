@@ -79,8 +79,6 @@ async function fnErrorText(error) {
   return error.message || String(error);
 }
 
-const PENDING_LEAD_KEY = 'relay_market_pending_lead';
-
 export async function renderLeadsMarket(container) {
   if (!isCloud()) {
     container.innerHTML = `
@@ -420,14 +418,11 @@ async function renderLead(container, leadId, opts = {}) {
     const errEl = container.querySelector('#claim-error');
     errEl.style.display = 'none';
     claimBtn.disabled = true;
-    claimBtn.textContent = 'Preparing payment…';
-    const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+    claimBtn.textContent = 'Claiming…';
 
-    const { data, error } = await supabase.functions.invoke('lead-claim', {
-      leadId,
-      successUrl: `${origin}/#/leads?market=1&paid=1&lead=${encodeURIComponent(leadId)}`,
-      cancelUrl: `${origin}/#/leads?market=1`,
-    });
+    // Payment is billed by the Dispatch app, not here — claiming reserves
+    // the slot and releases details immediately.
+    const { data, error } = await supabase.functions.invoke('lead-claim', { leadId });
 
     if (error) {
       claimBtn.disabled = false;
@@ -437,8 +432,14 @@ async function renderLead(container, leadId, opts = {}) {
       return;
     }
 
-    try { localStorage.setItem(PENDING_LEAD_KEY, leadId); } catch (_) { /* non-fatal */ }
-    window.location.href = data.url;
+    const { data: detail } = await supabase.functions.invoke('lead-detail', { leadId });
+    if (detail?.lead) {
+      renderReveal(container, detail.lead);
+    } else {
+      const { showToast } = await import('../../components/Notifications.js');
+      showToast('Lead claimed', 'success');
+      renderFeed(container);
+    }
   });
 }
 
