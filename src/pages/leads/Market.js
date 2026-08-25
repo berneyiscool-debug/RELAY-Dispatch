@@ -16,30 +16,40 @@ import { escapeHTML } from '../../utils/security.js';
 import { geocodeAddress } from '../../utils/geocode.js';
 import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
 
-// Keep in sync with the trade_categories seed in RELAY-Leads
-// supabase/migrations/100_marketplace.sql.
-const TRADES = [
-  { id: 'electrical', label: 'Electrical' },
-  { id: 'plumbing', label: 'Plumbing' },
-  { id: 'hvac', label: 'Heating & Cooling' },
-  { id: 'roofing', label: 'Roofing & Gutters' },
-  { id: 'carpentry', label: 'Carpentry & Joinery' },
-  { id: 'painting', label: 'Painting & Decorating' },
-  { id: 'tiling', label: 'Tiling & Flooring' },
-  { id: 'landscaping', label: 'Landscaping & Gardening' },
-  { id: 'concreting', label: 'Concreting & Paving' },
-  { id: 'fencing', label: 'Fencing & Gates' },
-  { id: 'glazing', label: 'Glass & Glazing' },
-  { id: 'locksmith', label: 'Locksmith' },
-  { id: 'appliance', label: 'Appliance Repair' },
-  { id: 'handyman', label: 'Handyman & Odd Jobs' },
-  { id: 'pest', label: 'Pest Control' },
-  { id: 'cleaning', label: 'Cleaning' },
-  { id: 'security', label: 'Security & Alarms' },
-  { id: 'renovations', label: 'Renovations & Building' },
-  { id: 'demolition', label: 'Demolition & Rubbish Removal' },
-  { id: 'plastering', label: 'Plastering & Rendering' },
-];
+// The trade -> sub-selection tree is served by the shared project's
+// `lead-categories` function (single source of truth, same list customers
+// pick from). Cached per session.
+let categoriesCache = null;
+let labelMap = {};
+
+async function loadCategories() {
+  if (categoriesCache) return categoriesCache;
+  try {
+    const { data, error } = await supabase.functions.invoke('lead-categories', {});
+    if (!error && Array.isArray(data?.categories) && data.categories.length) {
+      categoriesCache = data.categories;
+    }
+  } catch (_) { /* categories unavailable */ }
+  if (!categoriesCache) categoriesCache = [];
+  labelMap = {};
+  for (const t of categoriesCache) labelMap[t.id] = t.label;
+  return categoriesCache;
+}
+
+function groupCategories(categories) {
+  const groups = [];
+  const byGroup = new Map();
+  for (const t of categories) {
+    const g = t.group || 'Other';
+    if (!byGroup.has(g)) {
+      const entry = { group: g, trades: [] };
+      byGroup.set(g, entry);
+      groups.push(entry);
+    }
+    byGroup.get(g).trades.push(t);
+  }
+  return groups;
+}
 
 const isCloud = () => !!(store.companyId && !String(store.companyId).startsWith('acct_'));
 
@@ -47,7 +57,7 @@ const URGENCY_LABEL = { emergency: 'Emergency', urgent: 'Urgent', standard: 'Sta
 const URGENCY_COLOR = { emergency: 'var(--color-danger)', urgent: 'var(--color-warning)', standard: 'var(--color-info)', planned: 'var(--text-secondary)' };
 
 function tradeLabel(id) {
-  return (TRADES.find((t) => t.id === id) || {}).label || id;
+  return labelMap[id] || id;
 }
 
 function fmtCountdown(ms) {
@@ -91,6 +101,8 @@ export async function renderLeadsMarket(container) {
     if (leadId) { await renderLead(container, leadId, { confirmPayment: true }); return; }
   }
 
+  await loadCategories();
+
   const { data: cp, error } = await supabase.from('contractor_profile').select('*').maybeSingle();
   if (error) {
     container.innerHTML = `<p style="color:var(--color-danger); padding:24px;">Could not load your lead profile: ${escapeHTML(error.message)}</p>`;
@@ -106,20 +118,46 @@ export async function renderLeadsMarket(container) {
 }
 
 // ── Setup ───────────────────────────────────────────────────────────────
-function renderSetup(container, existing) {
-  const current = existing || { trades: [], service_geo: null };
+async function renderSetup(container, existing) {
+  const categories = await loadCategories();
+  const groups = groupCategories(categories);
+  const current = existing || { trades: [], service_geo: null, sub_trades: {} };
+  const currentSubTrades = current.sub_trades || {};
+
   container.innerHTML = `
     <div style="max-width:680px; margin:0 auto;">
       <h2 style="margin:0 0 4px;">Set up your lead profile</h2>
-      <p style="color:var(--text-secondary); margin:0 0 20px;">Tell us what work you do and where you're based so we can match you with the right leads.</p>
+      <p style="color:var(--text-secondary); margin:0 0 20px;">Choose the trades you do, then tick the specific services within each. Leave a trade's services blank to receive everything under it.</p>
       <div class="form-group">
-        <label class="form-label">Trades you cover</label>
-        <div id="market-trades" style="display:flex; flex-wrap:wrap; gap:6px;">
-          ${TRADES.map((t) => `
-            <label class="market-chip ${current.trades?.includes(t.id) ? 'active' : ''}" data-trade="${t.id}">
-              <input type="checkbox" value="${t.id}" ${current.trades?.includes(t.id) ? 'checked' : ''} style="display:none;" />
-              ${escapeHTML(t.label)}
-            </label>`).join('')}
+        <label class="form-label">Trades & services you cover</label>
+        <div id="market-trades">
+          ${groups.map((g) => `
+            <div class="market-group">
+              <h4 class="market-group-title">${escapeHTML(g.group)}</h4>
+              <div class="market-group-trades">
+                ${g.trades.map((t) => {
+                  const checked = current.trades?.includes(t.id);
+                  const picked = currentSubTrades[t.id] || [];
+                  const subs = t.subs || [];
+                  return `
+                  <div class="market-trade ${checked ? 'active' : ''}" data-trade="${t.id}">
+                    <label class="market-trade-head">
+                      <input type="checkbox" class="market-trade-check" value="${t.id}" ${checked ? 'checked' : ''} />
+                      <span>${escapeHTML(t.label)}</span>
+                    </label>
+                    ${subs.length ? `
+                      <div class="market-subs ${checked ? '' : 'hidden'}">
+                        ${subs.map((s) => `
+                          <label class="market-sub">
+                            <input type="checkbox" class="market-sub-check" data-trade="${t.id}" value="${s.id}" ${picked.includes(s.id) ? 'checked' : ''} />
+                            <span>${escapeHTML(s.label)}</span>
+                          </label>`).join('')}
+                        <span class="market-subs-hint">${picked.length ? '' : 'Blank = all services under this trade'}</span>
+                      </div>` : ''}
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>`).join('')}
         </div>
       </div>
       <div class="form-group">
@@ -135,11 +173,27 @@ function renderSetup(container, existing) {
     </div>
   `;
 
-  container.querySelectorAll('.market-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const input = chip.querySelector('input');
-      input.checked = !input.checked;
-      chip.classList.toggle('active', input.checked);
+  // Toggle a trade: show/hide its subs, clear subs when unticked.
+  container.querySelectorAll('.market-trade-check').forEach((check) => {
+    check.addEventListener('change', () => {
+      const tradeEl = check.closest('.market-trade');
+      const subsEl = tradeEl.querySelector('.market-subs');
+      tradeEl.classList.toggle('active', check.checked);
+      if (subsEl) {
+        subsEl.classList.toggle('hidden', !check.checked);
+        if (!check.checked) {
+          subsEl.querySelectorAll('.market-sub-check').forEach((s) => { s.checked = false; });
+        }
+      }
+    });
+  });
+
+  // Ticking any sub implies the parent trade is covered.
+  container.querySelectorAll('.market-sub-check').forEach((sub) => {
+    sub.addEventListener('change', () => {
+      const tradeEl = sub.closest('.market-trade');
+      tradeEl.classList.toggle('active', true);
+      tradeEl.querySelector('.market-trade-check').checked = true;
     });
   });
 
@@ -151,8 +205,15 @@ function renderSetup(container, existing) {
   container.querySelector('#btn-market-save').addEventListener('click', async () => {
     const errEl = container.querySelector('#market-setup-error');
     errEl.style.display = 'none';
-    const trades = [...container.querySelectorAll('#market-trades input:checked')].map((el) => el.value);
+    const trades = [...container.querySelectorAll('.market-trade-check:checked')].map((el) => el.value);
     if (!trades.length) { errEl.textContent = 'Choose at least one trade.'; errEl.style.display = 'block'; return; }
+
+    // Only record specific subs; an empty list means "whole trade".
+    const subTrades = {};
+    container.querySelectorAll('.market-sub-check:checked').forEach((el) => {
+      const t = el.dataset.trade;
+      if (trades.includes(t)) (subTrades[t] = subTrades[t] || []).push(el.value);
+    });
 
     const addr = addrInput.value.trim();
     if (!geo) {
@@ -164,6 +225,7 @@ function renderSetup(container, existing) {
     const { error } = await supabase.from('contractor_profile').upsert({
       company_id: store.companyId,
       trades,
+      sub_trades: subTrades,
       service_geo: { lat: geo.lat, lng: geo.lng, formattedAddress: geo.formattedAddress || addr },
       service_radius_km: 50,
       notify_enabled: true,
