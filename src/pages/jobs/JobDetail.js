@@ -17,6 +17,24 @@ import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 
+// Display an uploaded activity image at full size in a centered lightbox modal
+function showImageLightbox(src, name) {
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px';
+
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = name || 'Image';
+  img.style.cssText = 'max-width:100%;max-height:70vh;object-fit:contain;border-radius:var(--border-radius);background:var(--content-bg)';
+  wrapper.appendChild(img);
+
+  showModal({
+    title: name || 'Image',
+    content: wrapper,
+    size: 'modal-xl'
+  });
+}
+
 export function renderJobDetail(container, { id, tab }) {
   const job = store.getById('jobs', id);
   if (!job) {
@@ -3302,6 +3320,8 @@ export function renderJobDetail(container, { id, tab }) {
         return l;
       });
 
+      // Collect image attachments so thumbnails can open an enlarged modal on click
+      const activityImages = [];
       let feedHtml = '';
       if (activeTab === 'activity_staff') {
         feedHtml = `
@@ -3345,7 +3365,7 @@ export function renderJobDetail(container, { id, tab }) {
                         ${log.files.map(f => `
                           <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
                              ${f.type && f.type.startsWith('image/') ?
-        `<div style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px"></div>` :
+        `<div class="activity-image-thumb" data-img-index="${activityImages.push({ data: f.data, name: f.name }) - 1}" title="Click to enlarge" style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px;cursor:pointer"></div>` :
         `<span class="material-icons-outlined" style="font-size:32px;color:var(--text-tertiary)">description</span>`
       }
                              <div style="overflow:hidden">
@@ -3504,6 +3524,14 @@ export function renderJobDetail(container, { id, tab }) {
             }
           };
           reader.readAsDataURL(file);
+        });
+      });
+
+      // Open uploaded images in an enlarged modal when their thumbnail is clicked
+      tc.querySelectorAll('.activity-image-thumb').forEach(thumb => {
+        thumb.addEventListener('click', () => {
+          const img = activityImages[parseInt(thumb.dataset.imgIndex, 10)];
+          if (img) showImageLightbox(img.data, img.name);
         });
       });
 
