@@ -7,6 +7,7 @@ import { supabase } from '../utils/supabase.js';
 import { showToast } from '../components/Notifications.js';
 import { showModal } from '../components/Modal.js';
 import { renderStorageOptions } from '../components/StorageOptions.js';
+import { renderKitTypes } from '../components/KitTypes.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
@@ -196,6 +197,7 @@ export function renderSettings(container) {
   
   let activeTab = 'company';
   let templatesSubTab = 'tasklists';
+  let usersSubTab = 'users';
 
   if (tabParam === 'forms') {
     activeTab = 'templates_forms';
@@ -206,6 +208,15 @@ export function renderSettings(container) {
   } else if (tabParam === 'quote_templates' || tabParam === 'quotes') {
     activeTab = 'templates_forms';
     templatesSubTab = 'quotes';
+  } else if (tabParam === 'users') {
+    activeTab = 'users';
+    usersSubTab = 'users';
+  } else if (tabParam === 'user_types') {
+    activeTab = 'users';
+    usersSubTab = 'user_types';
+  } else if (tabParam === 'password_recovery') {
+    activeTab = 'users';
+    usersSubTab = 'password_recovery';
   } else if (tabParam) {
     activeTab = tabParam;
   }
@@ -250,7 +261,7 @@ export function renderSettings(container) {
     if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
     if (['templates_forms', 'invoices_quotes', 'payments', 'email'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
-    if (['materials', 'cost_centers', 'tax'].includes(tab)) return 'resources';
+    if (['materials', 'storage_options', 'cost_centers', 'tax'].includes(tab)) return 'resources';
     return 'general';
   }
 
@@ -486,6 +497,7 @@ export function renderSettings(container) {
       icon: 'widgets',
       tabs: [
         { id: 'materials', label: 'Materials & Catalog' },
+        { id: 'storage_options', label: 'Storage Options' },
         { id: 'cost_centers', label: 'Cost Centers & Xero' },
         { id: 'tax', label: 'Tax & Labor Rates' }
       ]
@@ -925,358 +937,11 @@ export function renderSettings(container) {
 
       renderCompanyTab();
     } else if (activeTab === 'users') {
-      const techs = store.getAll('technicians');
-      const pendingResets = store.getAll('passwordResetRequests') || [];
-      const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      let userTypes = store.getAll('userTypes') || [];
-
-      // Clean up any exact duplicate userTypes (e.g. legacy 'ut_office' alongside `${companyId}_ut_office`)
-      const seenNames = new Set();
-      const uniqueTypes = [];
-      userTypes.forEach(ut => {
-        const key = (ut.name || '').trim().toLowerCase();
-        if (key && seenNames.has(key)) {
-          store.delete('userTypes', ut.id);
-        } else {
-          if (key) seenNames.add(key);
-          uniqueTypes.push(ut);
-        }
-      });
-      userTypes = uniqueTypes;
-
-      if (!userTypes || userTypes.length === 0) {
-        store.seedDefaultUserTypes();
-        userTypes = store.getAll('userTypes') || [];
-      }
-
-      tc.innerHTML = `
-        <div style="background:rgba(59, 130, 246, 0.1); border-left:4px solid #3b82f6; padding:12px 16px; margin-bottom:var(--space-md); border-radius:4px; font-size:13px; color:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
-          <span style="display:flex; align-items:center; gap:8px;">
-            <span class="material-icons-outlined" style="color:#3b82f6; font-size:18px;">info</span>
-            <span>Your company login code is <strong style="color:#60a5fa">${companySlug}</strong>. Technicians log in using <strong style="color:#60a5fa">username@${companySlug}</strong>.</span>
-          </span>
-        </div>
-
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0">Active Users</h4>
-            <button class="btn btn-primary btn-sm" id="btn-add-user" data-tooltip="Create a new user account" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                               <th style="width:40px"></th>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th>User Type</th>
-                  <th>Username</th>
-                  <th>Pay Rate</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${techs.filter(t => !t.deactivated).map(t => {
-                  const ut = userTypes.find(ut => ut.id === t.userTypeId);
-                  return `
-                    <tr>
-                      <td><div style="width:12px; height:12px; border-radius:50%; background:${t.color}"></div></td>
-                      <td class="font-medium">${t.name}</td>
-                      <td class="text-secondary">${t.role}</td>
-                      <td><span class="badge ${ut?.id === 'ut_admin' ? 'badge-primary' : 'badge-neutral'}">${ut?.name || 'Unassigned'}</span></td>
-                      <td class="text-tertiary">${t.username || (t.email ? t.email.split('@')[0] : '') || '-'}</td>
-                      <td class="text-secondary">${t.payRate ? `$${t.payRate.toFixed(2)}/hr` : '-'}</td>
-                      <td>
-                        <div style="display:flex; gap:8px;">
-                          <button class="btn btn-icon btn-sm btn-edit-user" data-id="${t.id}"><span class="material-icons-outlined" style="font-size:18px">edit</span></button>
-                          ${ut?.id !== 'ut_admin' ? `
-                            <button class="btn btn-icon btn-sm text-danger btn-deactivate-user" data-id="${t.id}" title="Deactivate"><span class="material-icons-outlined" style="font-size:18px">person_off</span></button>
-                          ` : ''}
-                        </div>
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header">
-            <h4 style="margin:0">Pending Password Reset Requests</h4>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Username/Email</th>
-                  <th>Requested On</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${pendingResets.filter(r => r.status === 'pending').length === 0 ? '<tr><td colspan="4" class="text-center text-tertiary" style="padding:24px">No pending reset requests</td></tr>' : ''}
-                ${pendingResets.filter(r => r.status === 'pending').map(r => {
-                  const tech = techs.find(t => t.id === r.technician_id) || {};
-                  const requestedAt = r.requested_at ? new Date(r.requested_at).toLocaleString() : 'Unknown';
-                  return `
-                    <tr>
-                      <td class="font-medium">${tech.name || 'Unknown'}</td>
-                      <td class="text-secondary">${r.employee_id || tech.username || ''}</td>
-                      <td class="text-tertiary">${requestedAt}</td>
-                      <td>
-                        <div style="display:flex; gap:8px;">
-                          <button class="btn btn-sm btn-ghost btn-approve-reset" data-id="${r.id}" data-tech-id="${tech.id}">Approve &amp; Reset</button>
-                          <button class="btn btn-sm btn-ghost text-danger btn-deny-reset" data-id="${r.id}">Deny</button>
-                        </div>
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        ${isLocalMode ? '' : `
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0">User Types & Permissions</h4>
-            <button class="btn btn-secondary btn-sm" id="btn-add-usertype" data-tooltip="Create a new custom user type / role" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> New Type</button>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th>Name</th><th>Description</th><th>Actions</th></tr></thead>
-              <tbody>
-                ${userTypes.map(ut => `
-                  <tr>
-                    <td class="font-medium">${ut.name}</td>
-                    <td class="text-secondary">${ut.description}</td>
-                    <td>
-                      <div style="display:flex; gap:8px;">
-                        <button class="btn btn-sm btn-ghost btn-edit-perms" data-id="${ut.id}">Permissions</button>
-                        <button class="btn btn-sm btn-ghost btn-edit-usertype" data-id="${ut.id}">Edit</button>
-                        <button class="btn btn-sm btn-icon text-danger btn-delete-usertype" data-id="${ut.id}"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>
-                      </div>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        `}
-
-        <div class="card">
-          <div class="card-header"><h4>Deactivated Users (Cooldown Period)</h4></div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th>Deactivated On</th>
-                  <th>Cooldown Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${techs.filter(t => t.deactivated).length === 0 ? '<tr><td colspan="5" class="text-center text-tertiary" style="padding:24px">No deactivated users</td></tr>' : ''}
-                ${techs.filter(t => t.deactivated).map(t => {
-                  const deactivatedAt = new Date(t.deactivatedAt);
-                  const now = new Date();
-                  const diffTime = now - deactivatedAt;
-                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  const remaining = 30 - diffDays;
-                  const canReactivate = remaining <= 0;
-
-                  return `
-                    <tr>
-                      <td style="opacity:0.6; font-weight:500">${t.name}</td>
-                      <td style="opacity:0.6">${t.role}</td>
-                      <td class="text-tertiary">${deactivatedAt.toLocaleDateString()}</td>
-                      <td>
-                        ${canReactivate 
-                          ? '<span class="badge badge-success">Cooldown Complete</span>' 
-                          : `<span class="badge badge-warning" style="background:var(--color-warning-bg); color:var(--color-warning); border:1px solid var(--color-warning-bg)">Available in ${remaining} days</span>`}
-                      </td>
-                      <td>
-                        <button class="btn btn-sm btn-ghost btn-reactivate-user" 
-                                data-id="${t.id}" 
-                                ${!canReactivate ? 'disabled style="opacity:0.4; cursor:not-allowed"' : ''}>
-                          Reactivate
-                        </button>
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-
-      tc.querySelector('#btn-add-user').addEventListener('click', () => {
-        openUserModal();
-      });
-      tc.querySelectorAll('.btn-edit-user').forEach(btn => {
-        btn.addEventListener('click', (e) => openUserModal(e.currentTarget.dataset.id));
-      });
-      tc.querySelectorAll('.btn-deactivate-user').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const id = e.currentTarget.dataset.id;
-          const t = store.getById('technicians', id);
-          if (!t) return;
-          const contentDiv = document.createElement('div');
-          contentDiv.innerHTML = `<p>Are you sure you want to deactivate <strong>${t.name}</strong>? They will no longer be able to log in.</p>`;
-          showModal({
-            title: 'Deactivate User',
-            content: contentDiv,
-            actions: [
-              { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
-              { label: 'Deactivate', className: 'btn-danger', onClick: c => {
-                store.update('technicians', id, { deactivated: true, deactivatedAt: new Date().toISOString() });
-                showToast(`${t.name} deactivated`, 'info');
-                c();
-                renderContent();
-              }}
-            ]
-          });
-        });
-      });
-
-      tc.querySelectorAll('.btn-reactivate-user').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const id = e.currentTarget.dataset.id;
-          const t = store.getById('technicians', id);
-          if (!t) return;
-
-          // Extra safety check for cooldown
-          const deactivatedAt = new Date(t.deactivatedAt);
-          const diffDays = Math.ceil((new Date() - deactivatedAt) / (1000 * 60 * 60 * 24));
-          if (diffDays < 30) {
-            showToast(`License Policy: Seat cooldown in progress (${30 - diffDays} days remaining)`, 'error');
-            return;
-          }
-
-          const contentDiv = document.createElement('div');
-          contentDiv.innerHTML = `<p>Reactivate <strong>${t.name}</strong>? They will regain access once a User Type is assigned.</p>`;
-          showModal({
-            title: 'Reactivate User',
-            content: contentDiv,
-            actions: [
-              { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
-              { label: 'Reactivate', className: 'btn-primary', onClick: c => {
-                store.update('technicians', id, {
-                  deactivated: false,
-                  deactivatedAt: null
-                });
-                showToast(`${t.name} has been reactivated.`, 'success');
-                c();
-                renderContent();
-              }}
-            ]
-          });
-        });
-      });
-
-      tc.querySelectorAll('.btn-approve-reset').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const id = e.currentTarget.dataset.id;
-          const techId = e.currentTarget.dataset.techId;
-          const t = store.getById('technicians', techId);
-          if (!t) return;
-          const contentDiv = document.createElement('div');
-          contentDiv.innerHTML = `
-            <p>Approve password reset request for <strong>${t.name}</strong>? Please enter their new password below:</p>
-            <div class="form-group" style="margin-top:12px">
-              <label class="form-label">New Password</label>
-              <input type="password" id="admin-reset-pwd-input" class="form-input" placeholder="Min. 6 characters" minlength="6" autofocus />
-            </div>
-          `;
-          showModal({
-            title: 'Approve Password Reset',
-            content: contentDiv,
-            actions: [
-              { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
-              { label: 'Reset Password', className: 'btn-primary', onClick: c => {
-                const pwdInput = document.getElementById('admin-reset-pwd-input');
-                const newPwd = pwdInput ? pwdInput.value : '';
-                if (!newPwd || newPwd.length < 6) {
-                  showToast('Password must be at least 6 characters.', 'error');
-                  return;
-                }
-                
-                // Update technician password
-                store.update('technicians', techId, { password: newPwd });
-                
-                // Approve the request
-                store.update('passwordResetRequests', id, { status: 'approved', updated_at: new Date().toISOString() });
-                
-                showToast(`Password updated for ${t.name}`, 'success');
-                c();
-                renderContent();
-              }}
-            ]
-          });
-        });
-      });
-
-      tc.querySelectorAll('.btn-deny-reset').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const id = e.currentTarget.dataset.id;
-          store.update('passwordResetRequests', id, { status: 'denied', updated_at: new Date().toISOString() });
-          showToast('Password reset request denied', 'info');
-          renderContent();
-        });
-      });
-
-      tc.querySelector('#btn-add-usertype')?.addEventListener('click', () => {
-         openUserTypeModal();
-      });
-
-      tc.querySelectorAll('.btn-edit-perms').forEach(btn => {
-        btn.addEventListener('click', () => {
-          openPermissionsModal(btn.dataset.id);
-        });
-      });
-
-      tc.querySelectorAll('.btn-edit-usertype').forEach(btn => {
-        btn.addEventListener('click', () => {
-          openUserTypeModal(btn.dataset.id);
-        });
-      });
-
-      tc.querySelectorAll('.btn-delete-usertype').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const id = btn.dataset.id;
-          const ut = store.getById('userTypes', id);
-          if (!ut) return;
-          if (ut.name.toLowerCase().includes('admin')) {
-            showToast('Cannot delete the Admin user type — at least one Admin must always exist.', 'error');
-            return;
-          }
-          const usersWithType = store.getAll('technicians').filter(t => t.userTypeId === id);
-          const contentDiv = document.createElement('div');
-          contentDiv.innerHTML = `<p>Are you sure you want to delete the user type <strong>${escapeHTML(ut.name)}</strong>?${usersWithType.length > 0 ? ` <strong>${usersWithType.length} user(s)</strong> will become unassigned.` : ''} This cannot be undone.</p>`;
-          showModal({
-            title: 'Confirm Deletion',
-            content: contentDiv,
-            actions: [
-              { label: 'Cancel', className: 'btn-secondary', onClick: (c) => c() },
-              { label: 'Delete', className: 'btn-danger', onClick: async (c) => {
-                await store.delete('userTypes', id);
-                showToast('User Type deleted', 'success');
-                c();
-                renderContent();
-              }}
-            ]
-          });
-        });
-      });
+      renderUsersSettings(tc);
     } else if (activeTab === 'materials') {
       renderMaterialsSettings(tc);
+    } else if (activeTab === 'storage_options') {
+      renderStorageOptionsTab(tc);
     } else if (activeTab === 'tax') {
       const settings = store.getSettings();
       tc.innerHTML = `
@@ -3482,12 +3147,13 @@ export function renderSettings(container) {
         </div>
 
         <div style="margin-top:40px; padding-top:24px; border-top:1px solid var(--border-color); grid-column:1/-1">
-          <div id="storage-options-section"></div>
+          <div id="kit-types-section"></div>
         </div>
+
       </div>
     `;
 
-    renderStorageOptions(tc.querySelector('#storage-options-section'));
+    renderKitTypes(tc.querySelector('#kit-types-section'));
 
     // --- Handlers ---
     const save = async () => {
@@ -3580,6 +3246,388 @@ export function renderSettings(container) {
     });
 
     tc.querySelector('#btn-save-materials').addEventListener('click', save);
+  }
+
+  function renderStorageOptionsTab(tc) {
+    tc.innerHTML = '<div style="max-width:900px" id="storage-options-section"></div>';
+    renderStorageOptions(tc.querySelector('#storage-options-section'));
+  }
+
+  function renderUsersSettings(tc) {
+    const techs = store.getAll('technicians');
+    const pendingResets = store.getAll('passwordResetRequests') || [];
+    const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let userTypes = store.getAll('userTypes') || [];
+
+    // Clean up any exact duplicate userTypes (e.g. legacy 'ut_office' alongside `${companyId}_ut_office`)
+    const seenNames = new Set();
+    const uniqueTypes = [];
+    userTypes.forEach(ut => {
+      const key = (ut.name || '').trim().toLowerCase();
+      if (key && seenNames.has(key)) {
+        store.delete('userTypes', ut.id);
+      } else {
+        if (key) seenNames.add(key);
+        uniqueTypes.push(ut);
+      }
+    });
+    userTypes = uniqueTypes;
+
+    if (!userTypes || userTypes.length === 0) {
+      store.seedDefaultUserTypes();
+      userTypes = store.getAll('userTypes') || [];
+    }
+
+    if (usersSubTab === 'user_types') {
+      renderUserTypesSubTab(tc, userTypes);
+    } else if (usersSubTab === 'password_recovery') {
+      renderPasswordRecoverySubTab(tc, techs, pendingResets);
+    } else {
+      renderUsersSubTab(tc, techs, companySlug, userTypes);
+    }
+  }
+
+  function renderUsersSubTab(subcontent, techs, companySlug, userTypes) {
+    subcontent.innerHTML = `
+      <div style="background:rgba(59, 130, 246, 0.1); border-left:4px solid #3b82f6; padding:12px 16px; margin-bottom:var(--space-md); border-radius:4px; font-size:13px; color:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span class="material-icons-outlined" style="color:#3b82f6; font-size:18px;">info</span>
+          <span>Your company login code is <strong style="color:#60a5fa">${companySlug}</strong>. Technicians log in using <strong style="color:#60a5fa">username@${companySlug}</strong>.</span>
+        </span>
+      </div>
+
+      <div class="card" style="margin-bottom:var(--space-lg)">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 style="margin:0">Active Users</h4>
+          <button class="btn btn-primary btn-sm" id="btn-add-user" data-tooltip="Create a new user account" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> Add User</button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th>Name</th>
+                <th>Role</th>
+                <th>User Type</th>
+                <th>Username</th>
+                <th>Pay Rate</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${techs.filter(t => !t.deactivated).map(t => {
+                const ut = userTypes.find(ut => ut.id === t.userTypeId);
+                return `
+                  <tr>
+                    <td><div style="width:12px; height:12px; border-radius:50%; background:${t.color}"></div></td>
+                    <td class="font-medium">${t.name}</td>
+                    <td class="text-secondary">${t.role}</td>
+                    <td><span class="badge ${ut?.id === 'ut_admin' ? 'badge-primary' : 'badge-neutral'}">${ut?.name || 'Unassigned'}</span></td>
+                    <td class="text-tertiary">${t.username || (t.email ? t.email.split('@')[0] : '') || '-'}</td>
+                    <td class="text-secondary">${t.payRate ? `$${t.payRate.toFixed(2)}/hr` : '-'}</td>
+                    <td>
+                      <div style="display:flex; gap:8px;">
+                        <button class="btn btn-icon btn-sm btn-edit-user" data-id="${t.id}"><span class="material-icons-outlined" style="font-size:18px">edit</span></button>
+                        ${ut?.id !== 'ut_admin' ? `
+                          <button class="btn btn-icon btn-sm text-danger btn-deactivate-user" data-id="${t.id}" title="Deactivate"><span class="material-icons-outlined" style="font-size:18px">person_off</span></button>
+                        ` : ''}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h4>Deactivated Users (Cooldown Period)</h4></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Deactivated On</th>
+                <th>Cooldown Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${techs.filter(t => t.deactivated).length === 0 ? '<tr><td colspan="5" class="text-center text-tertiary" style="padding:24px">No deactivated users</td></tr>' : ''}
+              ${techs.filter(t => t.deactivated).map(t => {
+                const deactivatedAt = new Date(t.deactivatedAt);
+                const now = new Date();
+                const diffTime = now - deactivatedAt;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                const remaining = 30 - diffDays;
+                const canReactivate = remaining <= 0;
+
+                return `
+                  <tr>
+                    <td style="opacity:0.6; font-weight:500">${t.name}</td>
+                    <td style="opacity:0.6">${t.role}</td>
+                    <td class="text-tertiary">${deactivatedAt.toLocaleDateString()}</td>
+                    <td>
+                      ${canReactivate 
+                        ? '<span class="badge badge-success">Cooldown Complete</span>' 
+                        : `<span class="badge badge-warning" style="background:var(--color-warning-bg); color:var(--color-warning); border:1px solid var(--color-warning-bg)">Available in ${remaining} days</span>`}
+                    </td>
+                    <td>
+                      <button class="btn btn-sm btn-ghost btn-reactivate-user" 
+                              data-id="${t.id}" 
+                              ${!canReactivate ? 'disabled style="opacity:0.4; cursor:not-allowed"' : ''}>
+                        Reactivate
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    subcontent.querySelector('#btn-add-user').addEventListener('click', () => {
+      openUserModal();
+    });
+    subcontent.querySelectorAll('.btn-edit-user').forEach(btn => {
+      btn.addEventListener('click', (e) => openUserModal(e.currentTarget.dataset.id));
+    });
+    subcontent.querySelectorAll('.btn-deactivate-user').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.dataset.id;
+        const t = store.getById('technicians', id);
+        if (!t) return;
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = `<p>Are you sure you want to deactivate <strong>${t.name}</strong>? They will no longer be able to log in.</p>`;
+        showModal({
+          title: 'Deactivate User',
+          content: contentDiv,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            { label: 'Deactivate', className: 'btn-danger', onClick: c => {
+              store.update('technicians', id, { deactivated: true, deactivatedAt: new Date().toISOString() });
+              showToast(`${t.name} deactivated`, 'info');
+              c();
+              renderContent();
+            }}
+          ]
+        });
+      });
+    });
+
+    subcontent.querySelectorAll('.btn-reactivate-user').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.dataset.id;
+        const t = store.getById('technicians', id);
+        if (!t) return;
+
+        const deactivatedAt = new Date(t.deactivatedAt);
+        const diffDays = Math.ceil((new Date() - deactivatedAt) / (1000 * 60 * 60 * 24));
+        if (diffDays < 30) {
+          showToast(`License Policy: Seat cooldown in progress (${30 - diffDays} days remaining)`, 'error');
+          return;
+        }
+
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = `<p>Reactivate <strong>${t.name}</strong>? They will regain access once a User Type is assigned.</p>`;
+        showModal({
+          title: 'Reactivate User',
+          content: contentDiv,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            { label: 'Reactivate', className: 'btn-primary', onClick: c => {
+              store.update('technicians', id, {
+                deactivated: false,
+                deactivatedAt: null
+              });
+              showToast(`${t.name} has been reactivated.`, 'success');
+              c();
+              renderContent();
+            }}
+          ]
+        });
+      });
+    });
+  }
+
+  function renderUserTypesSubTab(subcontent, userTypes) {
+    if (isLocalMode) {
+      subcontent.innerHTML = `
+        <div class="empty-state">
+          <span class="material-icons-outlined">admin_panel_settings</span>
+          <h3>User Types & Permissions</h3>
+          <p class="text-secondary">Custom user types are available on cloud accounts.</p>
+        </div>
+      `;
+      return;
+    }
+
+    subcontent.innerHTML = `
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 style="margin:0">User Types & Permissions</h4>
+          <button class="btn btn-secondary btn-sm" id="btn-add-usertype" data-tooltip="Create a new custom user type / role" data-tooltip-pos="left"><span class="material-icons-outlined" style="font-size:16px">add</span> New Type</button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table">
+            <thead><tr><th>Name</th><th>Description</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${userTypes.map(ut => `
+                <tr>
+                  <td class="font-medium">${ut.name}</td>
+                  <td class="text-secondary">${ut.description}</td>
+                  <td>
+                    <div style="display:flex; gap:8px;">
+                      <button class="btn btn-sm btn-ghost btn-edit-perms" data-id="${ut.id}">Permissions</button>
+                      <button class="btn btn-sm btn-ghost btn-edit-usertype" data-id="${ut.id}">Edit</button>
+                      <button class="btn btn-sm btn-icon text-danger btn-delete-usertype" data-id="${ut.id}"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    subcontent.querySelector('#btn-add-usertype')?.addEventListener('click', () => {
+       openUserTypeModal();
+    });
+
+    subcontent.querySelectorAll('.btn-edit-perms').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openPermissionsModal(btn.dataset.id);
+      });
+    });
+
+    subcontent.querySelectorAll('.btn-edit-usertype').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openUserTypeModal(btn.dataset.id);
+      });
+    });
+
+    subcontent.querySelectorAll('.btn-delete-usertype').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const ut = store.getById('userTypes', id);
+        if (!ut) return;
+        if (ut.name.toLowerCase().includes('admin')) {
+          showToast('Cannot delete the Admin user type — at least one Admin must always exist.', 'error');
+          return;
+        }
+        const usersWithType = store.getAll('technicians').filter(t => t.userTypeId === id);
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = `<p>Are you sure you want to delete the user type <strong>${escapeHTML(ut.name)}</strong>?${usersWithType.length > 0 ? ` <strong>${usersWithType.length} user(s)</strong> will become unassigned.` : ''} This cannot be undone.</p>`;
+        showModal({
+          title: 'Confirm Deletion',
+          content: contentDiv,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (c) => c() },
+            { label: 'Delete', className: 'btn-danger', onClick: async (c) => {
+              await store.delete('userTypes', id);
+              showToast('User Type deleted', 'success');
+              c();
+              renderContent();
+            }}
+          ]
+        });
+      });
+    });
+  }
+
+  function renderPasswordRecoverySubTab(subcontent, techs, pendingResets) {
+    subcontent.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h4 style="margin:0">Pending Password Reset Requests</h4>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username/Email</th>
+                <th>Requested On</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pendingResets.filter(r => r.status === 'pending').length === 0 ? '<tr><td colspan="4" class="text-center text-tertiary" style="padding:24px">No pending reset requests</td></tr>' : ''}
+              ${pendingResets.filter(r => r.status === 'pending').map(r => {
+                const tech = techs.find(t => t.id === r.technician_id) || {};
+                const requestedAt = r.requested_at ? new Date(r.requested_at).toLocaleString() : 'Unknown';
+                return `
+                  <tr>
+                    <td class="font-medium">${tech.name || 'Unknown'}</td>
+                    <td class="text-secondary">${r.employee_id || tech.username || ''}</td>
+                    <td class="text-tertiary">${requestedAt}</td>
+                    <td>
+                      <div style="display:flex; gap:8px;">
+                        <button class="btn btn-sm btn-ghost btn-approve-reset" data-id="${r.id}" data-tech-id="${tech.id}">Approve &amp; Reset</button>
+                        <button class="btn btn-sm btn-ghost text-danger btn-deny-reset" data-id="${r.id}">Deny</button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    subcontent.querySelectorAll('.btn-approve-reset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.dataset.id;
+        const techId = e.currentTarget.dataset.techId;
+        const t = store.getById('technicians', techId);
+        if (!t) return;
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = `
+          <p>Approve password reset request for <strong>${t.name}</strong>? Please enter their new password below:</p>
+          <div class="form-group" style="margin-top:12px">
+            <label class="form-label">New Password</label>
+            <input type="password" id="admin-reset-pwd-input" class="form-input" placeholder="Min. 6 characters" minlength="6" autofocus />
+          </div>
+        `;
+        showModal({
+          title: 'Approve Password Reset',
+          content: contentDiv,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+            { label: 'Reset Password', className: 'btn-primary', onClick: c => {
+              const pwdInput = document.getElementById('admin-reset-pwd-input');
+              const newPwd = pwdInput ? pwdInput.value : '';
+              if (!newPwd || newPwd.length < 6) {
+                showToast('Password must be at least 6 characters.', 'error');
+                return;
+              }
+
+              store.update('technicians', techId, { password: newPwd });
+              store.update('passwordResetRequests', id, { status: 'approved', updated_at: new Date().toISOString() });
+
+              showToast(`Password updated for ${t.name}`, 'success');
+              c();
+              renderContent();
+            }}
+          ]
+        });
+      });
+    });
+
+    subcontent.querySelectorAll('.btn-deny-reset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.dataset.id;
+        store.update('passwordResetRequests', id, { status: 'denied', updated_at: new Date().toISOString() });
+        showToast('Password reset request denied', 'info');
+        renderContent();
+      });
+    });
   }
 
   function renderTemplatesFormsTab(tc) {

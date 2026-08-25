@@ -637,7 +637,7 @@ router.register('/suppliers/:id/edit', renderPage((c, p) => renderSupplierForm(c
 
 // Leads
 router.register('/leads', renderPage(renderLeadsList));
-router.register('/leads/new', renderPage((c, p) => renderLeadForm(c, { id: 'new' })));
+router.register('/leads/new', renderPage((c, p) => renderLeadForm(c, { id: 'new', origin: p.origin })));
 router.register('/leads/:id', renderPage(renderLeadDetail));
 router.register('/leads/:id/edit', renderPage((c, p) => renderLeadForm(c, p)));
 

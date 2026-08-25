@@ -233,6 +233,13 @@ export async function seedData(force = false) {
     { id: 'kt_hvac', name: 'HVAC', active: true }
   ];
 
+  const locationTypesList = [
+    { id: 'lt_warehouse', name: 'Warehouse', active: true },
+    { id: 'lt_vehicle', name: 'Vehicle', active: true },
+    { id: 'lt_asset', name: 'Asset', active: true },
+    { id: 'lt_on_order', name: 'On Order', active: true }
+  ];
+
   const customerNames = [
     {
       company: 'Starlight Logistics Pty Ltd',
@@ -773,6 +780,7 @@ export async function seedData(force = false) {
       title: leadTitles[cIdx],
       description: leadDescriptions[cIdx],
       status: cIdx === 4 ? 'New' : 'Converted',
+      origin: 'Internal',
       value: 2500 + cIdx * 3000,
       createdAt: relativeDate(-60),
       updatedAt: relativeDate(-1)
@@ -996,6 +1004,7 @@ export async function seedData(force = false) {
   await store.save('stock', stockList);
   await store.save('storageLocations', storageLocationsList);
   await store.save('kitTypes', kitTypesList);
+  await store.save('locationTypes', locationTypesList);
   await store.save('customers', generatedCustomers);
   await store.save('assets', generatedAssets);
   await store.save('maintenancePlans', generatedPlans);

@@ -10,9 +10,24 @@ import { escapeHTML } from '../../utils/security.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 
-export function renderLeadsList(container) {
+export function renderLeadsList(container, params) {
   const leads = store.getAll('leads');
-  
+  const originOf = (l) => (l.origin === 'Marketplace' ? 'Marketplace' : 'Internal');
+  const activeOrigin = (params && params.tab) === 'Marketplace' ? 'Marketplace' : 'Internal';
+
+  if (activeOrigin === 'Marketplace') {
+    container.innerHTML = `
+      <div class="empty-state" style="padding:64px 24px; text-align:center;">
+        <span class="material-icons-outlined" style="font-size:64px; color:var(--text-tertiary); margin-bottom:12px; display:block;">storefront</span>
+        <h3 style="margin:0 0 8px">Marketplace is coming soon</h3>
+        <p class="text-secondary" style="margin:0 auto; max-width:440px;">The marketplace will let you discover and accept incoming work from service providers and customers. Check back soon.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const originLeads = leads.filter(l => originOf(l) === activeOrigin);
+
   const likelihoods = {
     'New': 10,
     'Contacted': 30,
@@ -29,8 +44,8 @@ export function renderLeadsList(container) {
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
         <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
-          <option value="all">All Statuses (${leads.length})</option>
-          ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${leads.filter(l => l.status === s).length})</option>`).join('')}
+          <option value="all">All Statuses (${originLeads.length})</option>
+          ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${originLeads.filter(l => l.status === s).length})</option>`).join('')}
         </select>
         <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
           <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Lead</span>
@@ -40,7 +55,7 @@ export function renderLeadsList(container) {
     <div id="leads-table-container"></div>
   `;
 
-  let filteredData = [...leads];
+  let filteredData = [...originLeads];
 
   const statusBadges = {
     'New': 'badge-info', 'Contacted': 'badge-neutral', 'Qualified': 'badge-warning',
@@ -217,7 +232,7 @@ export function renderLeadsList(container) {
   });
 
   container.querySelector('#leads-table-container').appendChild(table);
-  container.querySelector('#btn-new-lead').addEventListener('click', () => router.navigate('/leads/new'));
+  container.querySelector('#btn-new-lead').addEventListener('click', () => router.navigate(`/leads/new?origin=${activeOrigin}`));
 
   let activeStatusFilter = 'all';
   let searchQuery = '';
@@ -225,7 +240,7 @@ export function renderLeadsList(container) {
   let filterEndDate = '';
 
   function applyFilters() {
-    let filtered = [...leads];
+    let filtered = leads.filter(l => originOf(l) === activeOrigin);
     if (activeStatusFilter !== 'all') {
       filtered = filtered.filter(l => l.status === activeStatusFilter);
     }

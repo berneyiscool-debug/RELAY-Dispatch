@@ -1045,8 +1045,8 @@ export function renderScheduleView(container) {
 
   function bindMarquee(days) {
     const scroll = document.getElementById('calendar-scroll');
-    if (!scroll || container.dataset.marqueeBound) return;
-    container.dataset.marqueeBound = '1';
+    if (!scroll || scroll.dataset.marqueeBound) return;
+    scroll.dataset.marqueeBound = '1';
 
     scroll.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;

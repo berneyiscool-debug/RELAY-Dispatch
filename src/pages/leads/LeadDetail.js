@@ -142,6 +142,7 @@ export function renderLeadDetail(container, { id }) {
                   ${r('Customer', escapeHTML(lead.customerName))}
                   ${r('Contact Name', escapeHTML(lead.contactName || '—'))}
                   ${r('Lead Source', escapeHTML(lead.source || '—'))}
+                  ${r('Origin', escapeHTML(lead.origin || 'Internal'))}
                   ${r('Priority', `<span class="badge ${lead.priority === 'High' ? 'badge-danger' : lead.priority === 'Low' ? 'badge-neutral' : 'badge-warning'}">${escapeHTML(lead.priority || 'Medium')}</span>`)}
                   ${r('Status', `<span class="badge ${statusBadges[lead.status] || 'badge-neutral'}">${escapeHTML(lead.status)}</span>`)}
                 </div>

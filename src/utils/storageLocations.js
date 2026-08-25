@@ -8,8 +8,7 @@
 
 import { store } from '../data/store.js';
 import { escapeHTML } from './security.js';
-
-export const STORAGE_LOCATION_TYPES = ['Warehouse', 'Vehicle', 'Asset', 'On Order'];
+import { getActiveLocationTypes } from './locationTypes.js';
 
 export function getStorageLocations() {
   return store.getAll('storageLocations') || [];
@@ -85,9 +84,18 @@ export function receiveStockIntoLocation(stockItem, targetLoc, qty) {
 
 // Build `<option>` markup for a location-type `<select>` (Warehouse, Vehicle, …).
 export function getStorageLocationTypeOptionsHtml(selectedType = '') {
-  return STORAGE_LOCATION_TYPES.map(t =>
-    `<option value="${t}" ${selectedType === t ? 'selected' : ''}>${t}</option>`
+  return getActiveLocationTypes().map(t =>
+    `<option value="${t.name}" ${selectedType === t.name ? 'selected' : ''}>${t.name}</option>`
   ).join('');
+}
+
+// Type options for a receive/transfer destination (physical locations only,
+// i.e. everything except "On Order").
+export function getPhysicalLocationTypeOptionsHtml(selectedType = '') {
+  return getActiveLocationTypes()
+    .filter(t => t.name !== 'On Order')
+    .map(t => `<option value="${t.name}" ${selectedType === t.name ? 'selected' : ''}>${t.name}</option>`)
+    .join('');
 }
 
 // Infer a location's type from its name (used to pre-select the type dropdown).
@@ -128,12 +136,23 @@ export function getStorageLocationOptionsHtml(selected = '', type = null, includ
 
   const assetNames = [...byType('Asset'), ...assets.map(a => a.name).filter(n => !locations.some(l => l.name === n))];
 
-  const groups = {
-    'Warehouse': { label: 'Warehouses', names: byType('Warehouse') },
-    'Vehicle': { label: 'Vehicles / Vans', names: [...vehicleNames, ...virtualVehicles] },
-    'Asset': { label: 'Assets', names: assetNames },
-    'On Order': { label: 'On Order', names: byType('On Order') }
+  const typeLabels = {
+    'Warehouse': 'Warehouses',
+    'Vehicle': 'Vehicles / Vans',
+    'Asset': 'Assets',
+    'On Order': 'On Order'
   };
+
+  // Build a group per active location type, preserving the special handling for
+  // Vehicle (virtual technician vans) and Asset (linked asset names).
+  const activeTypes = getActiveLocationTypes().map(t => t.name);
+  const groups = {};
+  activeTypes.forEach(t => {
+    let names = byType(t);
+    if (t === 'Vehicle') names = [...vehicleNames, ...virtualVehicles];
+    if (t === 'Asset') names = assetNames;
+    groups[t] = { label: typeLabels[t] || (t.endsWith('s') ? t : `${t}s`), names };
+  });
 
   const option = (n) => `<option value="${escapeHTML(n)}" ${selected === n ? 'selected' : ''}>${escapeHTML(n)}</option>`;
   const optgroup = (label, names) => {
@@ -147,10 +166,10 @@ export function getStorageLocationOptionsHtml(selected = '', type = null, includ
       html += groups[type].names.map(option).join('');
     }
   } else {
-    html += optgroup(groups.Warehouse.label, groups.Warehouse.names);
-    html += optgroup(groups.Vehicle.label, groups.Vehicle.names);
-    html += optgroup(groups.Asset.label, groups.Asset.names);
-    if (includeOnOrder) html += optgroup(groups['On Order'].label, groups['On Order'].names);
+    activeTypes.forEach(t => {
+      if (t === 'On Order' && !includeOnOrder) return;
+      html += optgroup(groups[t].label, groups[t].names);
+    });
   }
   return html;
 }

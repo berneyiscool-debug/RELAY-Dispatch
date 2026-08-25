@@ -41,7 +41,8 @@ const TABLE_MAP = {
   deputyAsks: null,
   jobMaterials: 'job_materials',
   storageLocations: 'storage_locations',
-  kitTypes: 'kit_types'
+  kitTypes: 'kit_types',
+  locationTypes: 'location_types'
 };
 
 const TABLE_COLUMNS = {
@@ -323,6 +324,7 @@ const TABLE_COLUMNS = {
     "priority",
     "budget",
     "requirements",
+    "origin",
     "created_at",
     "updated_at"
   ],
@@ -380,6 +382,14 @@ const TABLE_COLUMNS = {
     "updated_at"
   ],
   kit_types: [
+    "id",
+    "company_id",
+    "name",
+    "active",
+    "created_at",
+    "updated_at"
+  ],
+  location_types: [
     "id",
     "company_id",
     "name",
@@ -2466,6 +2476,9 @@ class DataStore {
     if (collection === 'leads' && !item.number) {
       item.number = this.getNextNumber('LD-', 'leads');
     }
+    if (collection === 'leads' && !item.origin) {
+      item.origin = 'Internal';
+    }
     if (collection === 'notifications' && !item.number) {
       item.number = this.getNextNumber('NT-', 'notifications');
     }
@@ -3418,7 +3431,7 @@ class DataStore {
         'customers', 'assets', 'maintenancePlans', 'taskTemplates', 'quotes', 
         'jobs', 'invoices', 'stock', 'timesheets', 'contractors', 'suppliers', 
         'purchaseOrders', 'notifications', 'formTemplates', 'formInstances', 
-        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog', 'jobMaterials', 'storageLocations', 'kitTypes'
+        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog', 'jobMaterials', 'storageLocations', 'kitTypes', 'locationTypes'
       ];
       
       await Promise.all(

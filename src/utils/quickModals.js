@@ -8,7 +8,7 @@ import { showToast } from '../components/Notifications.js';
 import { showDrawer } from '../components/Drawer.js';
 import { escapeHTML } from './security.js';
 import { todayLocalISO } from './dateUtils.js';
-import { getStorageLocationOptionsHtml, getActiveStorageLocations, receiveStockIntoLocation } from './storageLocations.js';
+import { getStorageLocationOptionsHtml, getActiveStorageLocations, getPhysicalLocationTypeOptionsHtml, receiveStockIntoLocation } from './storageLocations.js';
 
 /**
  * Opens a modal to quickly create a new Asset.
@@ -559,28 +559,49 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
      footerActions.push({
        label: 'Mark as Received',
        className: 'btn-success',
-       onClick: (close) => {
-         const modalContent = document.createElement('div');
-         modalContent.innerHTML = `
-           <div class="form-group">
-             <label class="form-label">Receive into Location *</label>
-              <select class="form-select" id="receive-location-select" required>
-                ${getStorageLocationOptionsHtml('', null, false)}
-              </select>
-           </div>
-         `;
+        onClick: (close) => {
+          const modalContent = document.createElement('div');
+          modalContent.innerHTML = `
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Location Type</label>
+                <select class="form-select receive-type-select">
+                  <option value="">Type...</option>
+                  ${getPhysicalLocationTypeOptionsHtml()}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Receive into Location *</label>
+                <select class="form-select receive-location-select" disabled>
+                  <option value="">Select type first...</option>
+                </select>
+              </div>
+            </div>
+          `;
 
-         showModal({
-           title: 'Receive Purchase Order',
-           content: modalContent,
-           actions: [
-             { label: 'Cancel', className: 'btn-secondary', onClick: (closeModal) => closeModal() },
-             { label: 'Receive Items', className: 'btn-success', onClick: (closeModal) => {
-               const targetLoc = modalContent.querySelector('#receive-location-select').value;
-               if (!targetLoc) {
-                 showToast('Please select a valid location', 'error');
-                 return;
-               }
+          modalContent.querySelector('.receive-type-select').addEventListener('change', (e) => {
+            const type = e.target.value;
+            const locSel = modalContent.querySelector('.receive-location-select');
+            if (!type) {
+              locSel.disabled = true;
+              locSel.innerHTML = '<option value="">Select type first...</option>';
+            } else {
+              locSel.disabled = false;
+              locSel.innerHTML = getStorageLocationOptionsHtml('', type, false);
+            }
+          });
+
+          showModal({
+            title: 'Receive Purchase Order',
+            content: modalContent,
+            actions: [
+              { label: 'Cancel', className: 'btn-secondary', onClick: (closeModal) => closeModal() },
+              { label: 'Receive Items', className: 'btn-success', onClick: (closeModal) => {
+                const targetLoc = modalContent.querySelector('.receive-location-select').value;
+                if (!targetLoc) {
+                  showToast('Please select a valid location', 'error');
+                  return;
+                }
 
                let receiveCount = 0;
                const allStock = store.getAll('stock');

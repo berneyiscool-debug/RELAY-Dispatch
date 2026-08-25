@@ -9,7 +9,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { escapeHTML } from '../../utils/security.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
-import { getStorageLocationOptionsHtml, receiveStockIntoLocation } from '../../utils/storageLocations.js';
+import { getStorageLocationOptionsHtml, getPhysicalLocationTypeOptionsHtml, receiveStockIntoLocation } from '../../utils/storageLocations.js';
 
 export function renderPurchaseOrderDetail(container, { id, jobId }) {
   const isNew = id === 'new';
@@ -199,13 +199,34 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
     container.querySelector('#btn-receive')?.addEventListener('click', () => {
       const content = document.createElement('div');
       content.innerHTML = `
-        <div class="form-group">
-          <label class="form-label">Receive into Location *</label>
-          <select class="form-select" id="receive-location-select" required>
-            ${getStorageLocationOptionsHtml('', null, false)}
-          </select>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Location Type</label>
+            <select class="form-select receive-type-select">
+              <option value="">Type...</option>
+              ${getPhysicalLocationTypeOptionsHtml()}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Receive into Location *</label>
+            <select class="form-select receive-location-select" disabled>
+              <option value="">Select type first...</option>
+            </select>
+          </div>
         </div>
       `;
+
+      content.querySelector('.receive-type-select').addEventListener('change', (e) => {
+        const type = e.target.value;
+        const locSel = content.querySelector('.receive-location-select');
+        if (!type) {
+          locSel.disabled = true;
+          locSel.innerHTML = '<option value="">Select type first...</option>';
+        } else {
+          locSel.disabled = false;
+          locSel.innerHTML = getStorageLocationOptionsHtml('', type, false);
+        }
+      });
 
       showModal({
         title: 'Receive Purchase Order',
@@ -213,7 +234,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
           { label: 'Receive Items', className: 'btn-success', onClick: (close) => {
-            const targetLoc = content.querySelector('#receive-location-select').value;
+            const targetLoc = content.querySelector('.receive-location-select').value;
             if (!targetLoc) {
               showToast('Please select a valid location', 'error');
               return;

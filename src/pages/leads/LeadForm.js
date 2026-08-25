@@ -7,9 +7,10 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 
-export function renderLeadForm(container, { id }) {
+export function renderLeadForm(container, { id, origin }) {
   const isEdit = id && id !== 'new';
   const lead = isEdit ? store.getById('leads', id) : {};
+  const defaultOrigin = lead.origin || origin || 'Internal';
   const customers = store.getAll('customers');
 
   container.innerHTML = `
@@ -21,12 +22,18 @@ export function renderLeadForm(container, { id }) {
             <label class="form-label">Title *</label>
             <input class="form-input" name="title" value="${escapeHTML(lead.title || '')}" required placeholder="e.g. Commercial Switchboard Upgrade" />
           </div>
+          <div class="form-group">
+            <label class="form-label">Customer *</label>
+            <select class="form-select" name="customerId" required id="lead-customer-select">
+              <option value="">Select customer...</option>
+              ${customers.map(c => `<option value="${c.id}" ${lead.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+            </select>
+          </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Customer *</label>
-              <select class="form-select" name="customerId" required id="lead-customer-select">
-                <option value="">Select customer...</option>
-                ${customers.map(c => `<option value="${c.id}" ${lead.customerId === c.id ? 'selected' : ''}>${escapeHTML(c.company || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unnamed Customer')}</option>`).join('')}
+              <label class="form-label">Origin</label>
+              <select class="form-select" name="origin">
+                ${['Internal','Marketplace'].map(o => `<option ${defaultOrigin === o ? 'selected' : ''}>${o}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">

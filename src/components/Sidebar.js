@@ -167,19 +167,6 @@ export function createSidebar() {
       return;
     }
 
-    // Collapsible contextual submenu group toggle (no navigation).
-    const groupToggle = e.target.closest('.submenu-group-toggle');
-    if (groupToggle) {
-      e.preventDefault();
-      e.stopPropagation();
-      const group = groupToggle.closest('.submenu-group');
-      if (group) {
-        const open = group.classList.toggle('open');
-        groupToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-      }
-      return;
-    }
-
     // Any page link (direct rail page or submenu item).
     const navBtn = e.target.closest('[data-path]');
     if (navBtn) {
@@ -302,7 +289,6 @@ function getContextualMenu(hash) {
 
   // Settings page (/settings)
   if (resource === 'settings') {
-    const currentTab = activeTab || 'company';
     // Company-type gating mirrors Settings.js: every tab stays visible, but the
     // ones that don't apply to the current account type are greyed out (disabled)
     // instead of hidden — so users can see what other plans unlock. Keep this in
@@ -312,50 +298,62 @@ function getContextualMenu(hash) {
     const portalDisabled = local;                                     // portals are cloud-only
     const folderSyncDisabled = !local;                                // folder sync is local-only
     const usersDisabled = local && deploymentType === 'single_user';  // needs cloud or multi-user local
+
+    const groups = [
+      {
+        id: 'general', label: 'General', icon: 'settings',
+        items: [
+          { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
+          { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
+          { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
+          { id: 'folder_sync', icon: 'sync', label: 'Folder Sync', path: '/settings?tab=folder_sync', disabled: folderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
+          { id: 'api_keys', icon: 'vpn_key', label: 'API Keys', path: '/settings?tab=api_keys' },
+          { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' }
+        ]
+      },
+      {
+        id: 'workflow', label: 'Workflow', icon: 'account_tree',
+        items: [
+          { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
+          { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
+          { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', disabled: local, tooltip: 'Requires Cloud Account' },
+          { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', disabled: local, tooltip: 'Requires Cloud Account' }
+        ]
+      },
+      {
+        id: 'people', label: 'People', icon: 'groups',
+        items: [
+          { id: 'users', icon: 'group', label: 'Users', path: '/settings?tab=users', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
+          { id: 'user_types', icon: 'admin_panel_settings', label: 'User Types & Permissions', path: '/settings?tab=user_types', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
+          { id: 'password_recovery', icon: 'lock_reset', label: 'Password Recovery', path: '/settings?tab=password_recovery', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
+          { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' }
+        ]
+      },
+      {
+        id: 'resources', label: 'Resources', icon: 'widgets',
+        items: [
+          { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
+          { id: 'storage_options', icon: 'warehouse', label: 'Storage Options', path: '/settings?tab=storage_options' },
+          { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+          { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
+          // No Settings page behind this yet — shown greyed so it's discoverable.
+          { id: 'integrations', icon: 'hub', label: 'Integrations', path: '/settings?tab=integrations', disabled: true, tooltip: 'Coming soon — third-party integrations' }
+        ]
+      }
+    ];
+
+    // No tab param → group list. A tab param → drill into its group.
+    const openGroup = activeTab ? groups.find(g => g.items.some(item => item.id === activeTab)) : null;
+
     return {
       railId: 'cat-admin',
-      headerTitle: 'Settings & Config',
-      icon: 'settings',
-      items: [
-        {
-          group: 'General', icon: 'settings',
-          items: [
-            { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
-            { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
-            { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
-            { id: 'folder_sync', icon: 'sync', label: 'Folder Sync', path: '/settings?tab=folder_sync', disabled: folderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
-            { id: 'api_keys', icon: 'vpn_key', label: 'API Keys', path: '/settings?tab=api_keys' },
-            { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' }
-          ]
-        },
-        {
-          group: 'Workflow', icon: 'account_tree',
-          items: [
-            { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
-            { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
-            { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', disabled: local, tooltip: 'Requires Cloud Account' },
-            { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', disabled: local, tooltip: 'Requires Cloud Account' }
-          ]
-        },
-        {
-          group: 'People', icon: 'groups',
-          items: [
-            { id: 'users', icon: 'group', label: 'Users & Permissions', path: '/settings?tab=users', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
-            { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' }
-          ]
-        },
-        {
-          group: 'Resources', icon: 'widgets',
-          items: [
-            { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
-            { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
-            { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
-            // No Settings page behind this yet — shown greyed so it's discoverable.
-            { id: 'integrations', icon: 'hub', label: 'Integrations', path: '/settings?tab=integrations', disabled: true, tooltip: 'Coming soon — third-party integrations' }
-          ]
-        }
-      ],
-      activeTab: currentTab
+      headerTitle: openGroup ? openGroup.label : 'Settings & Config',
+      icon: openGroup ? openGroup.icon : 'settings',
+      backPath: openGroup ? '/settings' : undefined,
+      backLabel: openGroup ? 'Back to Settings' : undefined,
+      groups,
+      openGroupId: openGroup ? openGroup.id : null,
+      activeTab: activeTab
     };
   }
 
@@ -416,6 +414,23 @@ function getContextualMenu(hash) {
         { id: 'assets_maintenance', icon: 'settings', label: 'Asset Maintenance', path: '/reports?tab=assets_maintenance' },
         { id: 'customers', icon: 'people', label: 'Customer Analysis', path: '/reports?tab=customers' },
         { id: 'inventory', icon: 'inventory_2', label: 'Inventory Report', path: '/reports?tab=inventory' },
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Leads List (/leads)
+  if (resource === 'leads' && !id) {
+    const currentTab = activeTab || 'Internal';
+    return {
+      railId: 'cat-workflow',
+      headerTitle: 'Leads',
+      icon: 'trending_up',
+      backSection: 'cat-workflow',
+      backLabel: 'Back to Workflow',
+      items: [
+        { id: 'Internal', icon: 'business', label: 'Internal', path: '/leads?tab=Internal' },
+        { id: 'Marketplace', icon: 'storefront', label: 'Marketplace', path: '/leads?tab=Marketplace' }
       ],
       activeTab: currentTab
     };
@@ -660,32 +675,25 @@ function getContextualMenu(hash) {
   return null;
 }
 
-// Render a contextual submenu's items. Supports two shapes for `items`:
+// Render a contextual submenu's items. Supports two shapes:
 //   1. Flat list of { id, icon, label, path, ... } page links.
-//   2. Collapsible groups: { group: 'Label', icon, items: [...] } rendered as
-//      accordion submenus (auto-opened when it holds the active item).
+//   2. Grouped drill-down: `groups` = [{ id, label, icon, items: [...] }] with an
+//      optional `openGroupId`. When a group is open, only its items render (the
+//      header back button returns to the group list); otherwise the groups render
+//      as plain links into their first enabled tab.
 function renderContextualItems(contextual) {
-  const items = contextual.items || [];
-  const hasGroups = items.length > 0 && items.some(it => it.group);
-
-  if (!hasGroups) {
-    return items.map(item => renderSubmenuItem(contextual, item)).join('');
+  if (contextual.groups) {
+    const openGroup = contextual.groups.find(g => g.id === contextual.openGroupId);
+    if (openGroup) {
+      return openGroup.items.map(item => renderSubmenuItem(contextual, item)).join('');
+    }
+    return contextual.groups.map(group => {
+      const target = group.items.find(item => !item.disabled) || group.items[0];
+      return renderSubmenuItem(contextual, { id: group.id, icon: group.icon, label: group.label, path: target.path });
+    }).join('');
   }
 
-  return items.map(group => {
-    const open = group.items?.some(item => contextual.activeTab === item.id) || group.open === true;
-    return `
-      <div class="submenu-group ${open ? 'open' : ''}" data-group="${escapeHTML(group.group)}">
-        <button class="submenu-group-toggle" aria-expanded="${open ? 'true' : 'false'}">
-          ${group.icon ? `<span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${group.icon}</span></span>` : ''}
-          <span class="nav-label submenu-group-label">${escapeHTML(group.group)}</span>
-          <span class="submenu-group-caret material-icons-outlined" aria-hidden="true">expand_more</span>
-        </button>
-        <div class="submenu-group-items">
-          ${(group.items || []).map(item => renderSubmenuItem(contextual, item)).join('')}
-        </div>
-      </div>`;
-  }).join('');
+  return (contextual.items || []).map(item => renderSubmenuItem(contextual, item)).join('');
 }
 
 function renderSubmenuItem(contextual, item) {
@@ -753,7 +761,7 @@ function syncActiveFromRoute(sidebar, path) {
           <div class="submenu-context-title" title="${escapeHTML(contextual.headerTitle)}">${escapeHTML(contextual.headerTitle)}</div>
         </div>
       </div>
-      <nav class="submenu-nav" style="${contextual.items && contextual.items.length > 0 ? '' : 'display:none;'}">
+      <nav class="submenu-nav" style="${(contextual.items && contextual.items.length > 0) || (contextual.groups && contextual.groups.length > 0) ? '' : 'display:none;'}">
         ${renderContextualItems(contextual)}
       </nav>
     `;
