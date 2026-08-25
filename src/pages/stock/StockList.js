@@ -13,10 +13,11 @@ import { escapeHTML } from '../../utils/security.js';
 import { getToolbarFilterTags, toolbarFilterMatches } from '../../components/ToolbarFilters.js';
 import { parseCSV } from '../../utils/csvParser.js';
 import { setListSearch } from '../../utils/listSearch.js';
-import { getStorageLocationOptionsHtml, getActiveStorageLocations, getStockHeldAtLocation, renameStorageLocation, STORAGE_LOCATION_TYPES } from '../../utils/storageLocations.js';
+import { getStorageLocationOptionsHtml, getActiveStorageLocations } from '../../utils/storageLocations.js';
+import { getActiveKitTypes } from '../../utils/kitTypes.js';
 
 export function renderStockList(container, params) {
-  let activeTab = (params?.tab === 'kits' || params?.tab === 'locations') ? params.tab : 'items';
+  let activeTab = params?.tab === 'kits' ? 'kits' : 'items';
   let searchTerm = '';
   let activeLocation = 'all';
   let activeItemFilter = 'all';
@@ -90,18 +91,6 @@ export function renderStockList(container, params) {
       // Render DataTable for Items
       if (tableContainer) renderItemsTable(tableContainer);
       bindItemActions();
-
-    } else if (activeTab === 'locations') {
-      // 1. Actions Header for Storage Locations
-      if (actionsContainer) {
-        actionsContainer.innerHTML = `
-          <button class="btn btn-primary btn-sm" id="btn-new-location" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" data-tooltip="Add a warehouse, vehicle, or other storage location for stock"><span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Location</span></button>
-        `;
-      }
-
-      // Render DataTable for Storage Locations
-      if (tableContainer) renderLocationsTable(tableContainer);
-      bindLocationActions();
 
     } else {
       // 1. Actions Header for Kits
@@ -396,7 +385,7 @@ export function renderStockList(container, params) {
 
     const columns = [
       { key: 'name', label: 'Kit Name', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>${r.description ? `<div style="font-size:12px; color:var(--text-tertiary); margin-top:2px">${escapeHTML(r.description)}</div>` : ''}`, width: '26%' },
-      { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '14%' },
+      { key: 'category', label: 'Kit Type', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || 'General')}</span>`, width: '14%' },
       { key: 'items', label: 'Items Included', render: (r) => {
         const mCount = (r.items || []).filter(i => i.type !== 'labor').length;
         const lCount = (r.items || []).filter(i => i.type === 'labor').length;
@@ -428,11 +417,11 @@ export function renderStockList(container, params) {
               label: 'Change Category',
               icon: 'category',
               onClick: (ids) => {
-                const categories = ['Service Kits', 'Vehicle Loadouts', 'Installation Kits', 'Commissioning Kits', 'General', 'Electrical', 'Plumbing', 'HVAC'];
+                const categories = getActiveKitTypes().map(t => t.name);
                 const content = document.createElement('div');
                 content.innerHTML = `
                   <div class="form-group">
-                    <label class="form-label">Select Category</label>
+                    <label class="form-label">Select Kit Type</label>
                     <select class="form-select" id="bulk-kit-category">
                       ${categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('')}
                     </select>
@@ -448,7 +437,7 @@ export function renderStockList(container, params) {
                       ids.forEach(id => store.update('kits', id, { category: newCat }));
                       table.clearSelection();
                       renderActiveTabContent();
-                      showToast(`Updated ${ids.length} kits to category: ${newCat}`, 'success');
+                      showToast(`Updated ${ids.length} kits to kit type: ${newCat}`, 'success');
                       c();
                     }}
                   ]
@@ -536,155 +525,6 @@ export function renderStockList(container, params) {
     // New Kit button
     findEl('#btn-new-kit')?.addEventListener('click', () => {
       router.navigate('/kits/new');
-    });
-  }
-
-  // --- STORAGE LOCATION VIEW FUNCTIONS ---
-
-  function renderLocationsTable(tableContainer) {
-    const locations = getActiveStorageLocations();
-    const technicians = store.getAll('technicians') || [];
-    const data = locations.map(l => ({
-      ...l,
-      techName: l.technicianId ? (technicians.find(t => t.id === l.technicianId)?.name || '') : '',
-      held: getStockHeldAtLocation(l.name)
-    }));
-
-    const columns = [
-      { key: 'name', label: 'Location', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>`, width: '30%' },
-      { key: 'type', label: 'Type', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.type || 'Warehouse')}</span>`, width: '16%' },
-      { key: 'techName', label: 'Assigned To', render: (r) => `<span class="text-secondary">${escapeHTML(r.techName || '—')}</span>`, width: '22%' },
-      { key: 'held', label: 'Stock Held', render: (r) => `<span style="font-weight:600">${r.held}</span>`, getValue: (r) => r.held, width: '16%' },
-      { key: 'active', label: 'Status', render: (r) => r.active === false ? '<span class="badge badge-neutral">Inactive</span>' : '<span class="badge badge-success">Active</span>', width: '16%' },
-    ];
-
-    const table = createDataTable({
-      columns,
-      data,
-      onRowClick: (id) => openLocationDrawer(id),
-      emptyMessage: 'No storage locations',
-      emptyIcon: 'warehouse',
-    });
-
-    tableContainer.innerHTML = '';
-    tableContainer.appendChild(table);
-
-    const q = searchTerm.toLowerCase();
-    if (q) table.updateData(data.filter(l => l.name.toLowerCase().includes(q)));
-  }
-
-  function bindLocationActions() {
-    setListSearch((q) => {
-      searchTerm = q;
-      renderLocationsTable(container.querySelector('#stock-table-container'));
-    }, 'Search locations...');
-
-    const findEl = (sel) => container.querySelector(sel) || document.querySelector(sel);
-    findEl('#btn-new-location')?.addEventListener('click', () => openLocationDrawer(null));
-  }
-
-  function openLocationDrawer(locationId) {
-    const isEdit = !!locationId;
-    const existing = locationId ? store.getById('storageLocations', locationId) : null;
-    const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
-    const selectedType = existing?.type || 'Warehouse';
-
-    const content = document.createElement('div');
-    content.innerHTML = `
-      <div class="form-group">
-        <label class="form-label">Location Name *</label>
-        <input type="text" class="form-input" id="loc-name" value="${escapeHTML(existing?.name || '')}" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Type</label>
-        <select class="form-select" id="loc-type">
-          ${STORAGE_LOCATION_TYPES.map(t => `<option value="${t}" ${selectedType === t ? 'selected' : ''}>${t}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group" id="loc-tech-group" style="${selectedType === 'Vehicle' ? '' : 'display:none'}">
-        <label class="form-label">Assigned Technician</label>
-        <select class="form-select" id="loc-technician">
-          <option value="">— None —</option>
-          ${technicians.map(t => `<option value="${escapeHTML(t.id)}" ${existing?.technicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="loc-active" ${existing?.active === false ? '' : 'checked'} />
-        <label class="form-label" style="margin:0">Active</label>
-      </div>
-    `;
-
-    const save = (close) => {
-      const dOverlay = document.querySelector('.drawer-overlay');
-      const name = dOverlay.querySelector('#loc-name').value.trim();
-      const type = dOverlay.querySelector('#loc-type').value;
-      const technicianId = dOverlay.querySelector('#loc-technician').value || null;
-      const active = dOverlay.querySelector('#loc-active').checked;
-
-      if (!name) { showToast('Location name is required', 'error'); return; }
-
-      const dup = getActiveStorageLocations().find(l =>
-        l.name.toLowerCase() === name.toLowerCase() && l.id !== locationId
-      );
-      if (dup) { showToast(`A location named "${name}" already exists`, 'error'); return; }
-
-      const held = isEdit ? getStockHeldAtLocation(existing.name) : 0;
-      if (!active && held > 0) {
-        showToast(`Cannot deactivate: ${name} still holds ${held} stock`, 'error');
-        return;
-      }
-
-      if (isEdit) {
-        if (existing.name !== name) renameStorageLocation(existing.name, name);
-        store.update('storageLocations', locationId, { name, type, technicianId: type === 'Vehicle' ? technicianId : null, active });
-        showToast('Location updated', 'success');
-      } else {
-        store.create('storageLocations', { name, type, technicianId: type === 'Vehicle' ? technicianId : null, active });
-        showToast('Location created', 'success');
-      }
-
-      renderActiveTabContent();
-      close();
-    };
-
-    const del = (close) => {
-      const held = getStockHeldAtLocation(existing.name);
-      if (held > 0) {
-        showToast(`Cannot delete: ${existing.name} still holds ${held} stock`, 'error');
-        return;
-      }
-      showModal({
-        title: 'Delete Location',
-        content: `<p>Delete <strong>${escapeHTML(existing.name)}</strong>? This cannot be undone.</p>`,
-        actions: [
-          { label: 'Cancel', className: 'btn-secondary', onClick: (c) => c() },
-          { label: 'Delete', className: 'btn-danger', onClick: (c) => {
-            store.delete('storageLocations', locationId);
-            showToast('Location deleted', 'success');
-            c();
-            close();
-            renderActiveTabContent();
-          }},
-        ],
-      });
-    };
-
-    showDrawer({
-      title: isEdit ? 'Edit Storage Location' : 'New Storage Location',
-      content: content.outerHTML,
-      width: 440,
-      onMount: (drawer) => {
-        const typeSel = drawer.querySelector('#loc-type');
-        const techGroup = drawer.querySelector('#loc-tech-group');
-        typeSel.addEventListener('change', () => {
-          techGroup.style.display = typeSel.value === 'Vehicle' ? '' : 'none';
-        });
-      },
-      actions: [
-        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-        ...(isEdit ? [{ label: 'Delete', className: 'btn-danger', onClick: (close) => del(close) }] : []),
-        { label: isEdit ? 'Update' : 'Create', className: 'btn-primary', onClick: (close) => save(close) },
-      ]
     });
   }
 
@@ -832,7 +672,7 @@ export function renderStockList(container, params) {
           <div class="form-group">
             <label class="form-label">Destination Location *</label>
             <select class="form-select" id="transfer-to">
-              ${getStorageLocationOptionsHtml()}
+              ${getStorageLocationOptionsHtml('', null, false)}
             </select>
           </div>
         </div>
@@ -1101,12 +941,6 @@ export function renderStockList(container, params) {
     if (btnNewKit) {
       e.preventDefault();
       router.navigate('/kits/new');
-      return;
-    }
-    const btnNewLocation = e.target.closest('#btn-new-location');
-    if (btnNewLocation) {
-      e.preventDefault();
-      openLocationDrawer(null);
       return;
     }
   };

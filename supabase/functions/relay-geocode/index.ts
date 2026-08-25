@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ============================================
 // RELAY — GEOCODE PROXY (Google Maps Geocoding API)
@@ -6,6 +7,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 // Keeps GOOGLE_MAPS_API_KEY server-side. Accepts a single address or a
 // batch of addresses (for backfilling existing records in one round trip),
 // biased to Australia. Returns normalised coordinates or null per address.
+//
+// Authentication: requires a signed-in RELAY user (Bearer JWT). Without it the
+// endpoint is an open billing proxy for the shared Google Maps quota.
 //
 // Request body:
 //   { "address": "14 Industrial Lane, Dubbo NSW 2830" }
@@ -73,6 +77,29 @@ serve(async (req) => {
   }
 
   try {
+    // ── Authenticate the caller ────────────────────────────────────────
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!supabaseUrl || !serviceKey) {
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const authHeader = req.headers.get('Authorization') || ''
+    if (!authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: missing token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    const admin = createClient(supabaseUrl, serviceKey)
+    const { data: { user }, error: authErr } = await admin.auth.getUser(authHeader.substring(7))
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY')
     if (!apiKey) {
       return new Response(

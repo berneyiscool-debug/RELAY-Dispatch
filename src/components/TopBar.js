@@ -332,8 +332,8 @@ function toggleNotificationsDropdown(btn) {
       item.innerHTML = `
         ${dotHtml}
         <div style="flex:1">
-          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${n.title || 'Notice'}</div>
-          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${n.message || ''}</div>
+          <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-base);margin-bottom:2px;color:var(--text-primary);">${escapeHTML(n.title || 'Notice')}</div>
+          <div style="font-size:var(--font-size-sm);color:var(--text-secondary);word-wrap:break-word;white-space:normal;line-height:1.4;">${escapeHTML(n.message || '')}</div>
           <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;">${n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</div>
         </div>
       `;

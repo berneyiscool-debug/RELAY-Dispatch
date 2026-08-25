@@ -4,6 +4,7 @@
 
 import { store } from '../data/store.js';
 import { router } from '../router.js';
+import { escapeHTML } from '../utils/security.js';
 
 let container = null;
 
@@ -68,7 +69,7 @@ export function showToast(message, type = 'info', options = {}) {
   const icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
   toast.innerHTML = `
     <span class="material-icons-outlined" style="color:var(--color-${type === 'error' ? 'danger' : type})">${icons[type] || icons.info}</span>
-    <span style="flex:1;font-size:var(--font-size-base)">${message}</span>
+    <span style="flex:1;font-size:var(--font-size-base)">${escapeHTML(message)}</span>
     <button style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px" class="toast-close">
       <span class="material-icons-outlined" style="font-size:16px">close</span>
     </button>

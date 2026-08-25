@@ -40,7 +40,8 @@ const TABLE_MAP = {
   emailLog: 'email_log',
   deputyAsks: null,
   jobMaterials: 'job_materials',
-  storageLocations: 'storage_locations'
+  storageLocations: 'storage_locations',
+  kitTypes: 'kit_types'
 };
 
 const TABLE_COLUMNS = {
@@ -378,6 +379,14 @@ const TABLE_COLUMNS = {
     "created_at",
     "updated_at"
   ],
+  kit_types: [
+    "id",
+    "company_id",
+    "name",
+    "active",
+    "created_at",
+    "updated_at"
+  ],
   notifications: [
     "id",
     "company_id",
@@ -429,6 +438,7 @@ const TABLE_COLUMNS = {
     "id",
     "company_id",
     "name",
+    "category",
     "items",
     "created_at",
     "updated_at"
@@ -2669,7 +2679,8 @@ class DataStore {
                                updates.role !== undefined ||
                                updates.userTypeId !== undefined ||
                                updates.color !== undefined ||
-                               updates.payRate !== undefined;
+                               updates.payRate !== undefined ||
+                               updates.deactivated !== undefined;
 
           if (isAuthUpdate) {
             const { data, error: invokeError } = await supabase.functions.invoke('invite-user', {
@@ -2683,7 +2694,8 @@ class DataStore {
                 userTypeId: updates.userTypeId || previous.userTypeId,
                 color: updates.color || previous.color,
                 payRate: updates.payRate !== undefined ? updates.payRate : previous.payRate,
-                password: updates.password
+                password: updates.password,
+                deactivated: updates.deactivated
               }
             });
 
@@ -3406,7 +3418,7 @@ class DataStore {
         'customers', 'assets', 'maintenancePlans', 'taskTemplates', 'quotes', 
         'jobs', 'invoices', 'stock', 'timesheets', 'contractors', 'suppliers', 
         'purchaseOrders', 'notifications', 'formTemplates', 'formInstances', 
-        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog', 'jobMaterials'
+        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog', 'jobMaterials', 'storageLocations', 'kitTypes'
       ];
       
       await Promise.all(

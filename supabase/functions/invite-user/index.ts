@@ -68,7 +68,7 @@ serve(async (req) => {
 
     // 3. Extract payload
     const body = await req.json()
-    const { action, userId, email, username, password, name, role, userTypeId, color, payRate } = body
+    const { action, userId, email, username, password, name, role, userTypeId, color, payRate, deactivated } = body
 
     if (action === 'update') {
       if (!userId) {
@@ -81,9 +81,16 @@ serve(async (req) => {
       // Get target profile to prevent updating another admin
       const { data: targetProfile } = await supabaseAdmin
         .from('profiles')
-        .select('role')
+        .select('role, company_id')
         .eq('id', userId)
         .single()
+
+      if (targetProfile && targetProfile.company_id !== profile.company_id) {
+        return new Response(
+          JSON.stringify({ error: 'Forbidden: That user belongs to a different company.' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
 
       if (targetProfile && targetProfile.role === 'admin' && user.id !== userId) {
         return new Response(
@@ -97,6 +104,14 @@ serve(async (req) => {
       if (user.id !== userId && (role === 'admin' || isAdminType(userTypeId))) {
         return new Response(
           JSON.stringify({ error: 'Only one administrator is allowed per company.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Nobody can deactivate their own account — the company would lose its admin.
+      if (user.id === userId && deactivated === true) {
+        return new Response(
+          JSON.stringify({ error: 'You cannot deactivate your own account.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -135,6 +150,11 @@ serve(async (req) => {
         user_type_id: userTypeId,
         color: color || '#1B6DE0',
         pay_rate: payRate || 0
+      }
+
+      if (deactivated !== undefined) {
+        profileUpdates.deactivated = !!deactivated
+        profileUpdates.deactivated_at = deactivated ? new Date().toISOString() : null
       }
 
       if (password) {
@@ -185,7 +205,15 @@ serve(async (req) => {
           name,
           username,
           role: role || 'technician',
-          userTypeId: userTypeId || defaultTechType,
+          userTypeId: userTypeId || defaultTechType
+        },
+        // The auth signup trigger reads company membership from app_metadata —
+        // user_metadata is client-editable, app_metadata is server-only, so the
+        // profile for this user can never be forged by a self-signup.
+        app_metadata: {
+          name,
+          username,
+          role: role || 'technician',
           company_id: profile.company_id // Inherit company ID
         }
       })

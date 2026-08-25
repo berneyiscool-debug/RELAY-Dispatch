@@ -9,6 +9,7 @@ import { showModal } from '../../components/Modal.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { escapeHTML } from '../../utils/security.js';
+import { getActiveKitTypes } from '../../utils/kitTypes.js';
 
 export function renderKitForm(container, { id }) {
   const isNew = id === 'new';
@@ -46,7 +47,8 @@ export function renderKitForm(container, { id }) {
   }
 
   const stockItems = store.getAll('stock') || [];
-  const categories = ['Service Kits', 'Vehicle Loadouts', 'Installation Kits', 'Commissioning Kits', 'General', 'Electrical', 'Plumbing', 'HVAC'];
+  const kitTypeNames = getActiveKitTypes().map(t => t.name);
+  const categories = [...new Set([...(kit.category ? [kit.category] : []), ...kitTypeNames])];
 
   function render() {
     recalculate();
@@ -84,7 +86,7 @@ export function renderKitForm(container, { id }) {
                   <input class="form-input" id="kit-name" value="${escapeHTML(kit.name || '')}" placeholder="e.g. Hot Water Service Kit" required />
                 </div>
                 <div class="form-group" style="flex:1">
-                  <label class="form-label">Category</label>
+                  <label class="form-label">Kit Type</label>
                   <select class="form-select" id="kit-category">
                     ${categories.map(c => `<option value="${escapeHTML(c)}" ${kit.category === c ? 'selected' : ''}>${escapeHTML(c)}</option>`).join('')}
                   </select>
@@ -616,7 +618,7 @@ export function renderKitDetail(container, { id }) {
           <div class="card-body">
             <div style="display:flex; flex-direction:column; gap:12px">
               ${r('Name', kit.name)}
-              ${r('Category', kit.category || 'General')}
+              ${r('Kit Type', kit.category || 'General')}
               ${r('Description', kit.description)}
               ${r('Status', kit.active ? 'Active' : 'Inactive')}
             </div>

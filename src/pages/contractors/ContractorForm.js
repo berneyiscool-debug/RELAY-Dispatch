@@ -1,6 +1,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderContractorForm(container, params) {
   const isNew = params.id === 'new';
@@ -27,22 +28,22 @@ export function renderContractorForm(container, params) {
           
           <div class="form-group">
             <label class="form-label">Business Name *</label>
-            <input type="text" id="businessName" class="form-input" value="${contractor.businessName || ''}" placeholder="e.g. Acme Plumbing Pty Ltd" required />
+            <input type="text" id="businessName" class="form-input" value="${escapeHTML(contractor.businessName || '')}" placeholder="e.g. Acme Plumbing Pty Ltd" required />
           </div>
           
           <div class="form-group">
             <label class="form-label">Primary Contact Person *</label>
-            <input type="text" id="contactName" class="form-input" value="${contractor.contactName || ''}" placeholder="e.g. John Doe" required />
+            <input type="text" id="contactName" class="form-input" value="${escapeHTML(contractor.contactName || '')}" placeholder="e.g. John Doe" required />
           </div>
 
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Email Address</label>
-              <input type="email" id="email" class="form-input" value="${contractor.email || ''}" placeholder="e.g. office@acmeplumbing.com" />
+              <input type="email" id="email" class="form-input" value="${escapeHTML(contractor.email || '')}" placeholder="e.g. office@acmeplumbing.com" />
             </div>
             <div class="form-group">
               <label class="form-label">Phone Number</label>
-              <input type="text" id="phone" class="form-input" value="${contractor.phone || ''}" placeholder="e.g. 0412 345 678" />
+              <input type="text" id="phone" class="form-input" value="${escapeHTML(contractor.phone || '')}" placeholder="e.g. 0412 345 678" />
             </div>
           </div>
 
@@ -51,7 +52,7 @@ export function renderContractorForm(container, params) {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Primary Trade License No.</label>
-              <input type="text" id="licenseNumber" class="form-input" value="${contractor.licenseNumber || ''}" placeholder="e.g. LIC-PL-1190" />
+              <input type="text" id="licenseNumber" class="form-input" value="${escapeHTML(contractor.licenseNumber || '')}" placeholder="e.g. LIC-PL-1190" />
             </div>
             <div class="form-group">
               <label class="form-label">Primary Insurance Expiry</label>
@@ -61,7 +62,7 @@ export function renderContractorForm(container, params) {
 
           <div class="form-group">
             <label class="form-label">Specialties / Trade Skills (comma-separated)</label>
-            <input type="text" id="specialties" class="form-input" value="${(contractor.specialties || []).join(', ')}" placeholder="e.g. Gas Fitting, Excavation, Commercial Plumbing" />
+            <input type="text" id="specialties" class="form-input" value="${escapeHTML((contractor.specialties || []).join(', '))}" placeholder="e.g. Gas Fitting, Excavation, Commercial Plumbing" />
             <p class="text-secondary" style="font-size:11px; margin: 3px 0 0 0;">Used to quickly search and filter subcontractors during dispatch.</p>
           </div>
 

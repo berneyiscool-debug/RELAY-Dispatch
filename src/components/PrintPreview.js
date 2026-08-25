@@ -31,7 +31,7 @@ export function showPrintPreview({ type, data }) {
   ` : '';
 
   toolbar.innerHTML = `
-    <span style="font-weight:600;font-size:14px">${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'} Preview — ${data.number}</span>
+    <span style="font-weight:600;font-size:14px">${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'} Preview — ${escapeHTML(data.number)}</span>
     <div style="display:flex;gap:8px;align-items:center">
       ${exportButtonsHtml}
       <button class="btn btn-primary btn-sm" id="btn-print-pdf" style="background:#10B981;border-color:#10B981">
@@ -312,8 +312,8 @@ export function generateDocument(type, data) {
         </div>
         <div class="pdf-title-block" style="${titleBlockStyle}">
           <div class="pdf-doc-type">${isQuote ? escapeHTML(dt.quoteTitle || 'QUOTE') : escapeHTML(settings.taxEnabled !== false ? 'TAX INVOICE' : 'INVOICE')}</div>
-          <div class="pdf-doc-number">${data.number}</div>
-          <div class="pdf-status" style="background:${statusColor}15;color:${statusColor};border:1px solid ${statusColor}40">${data.status}</div>
+          <div class="pdf-doc-number">${escapeHTML(data.number)}</div>
+          <div class="pdf-status" style="background:${statusColor}15;color:${statusColor};border:1px solid ${statusColor}40">${escapeHTML(data.status)}</div>
         </div>
       </div>
 
@@ -321,8 +321,8 @@ export function generateDocument(type, data) {
       <div class="pdf-info-grid">
         <div class="pdf-info-col">
           <div class="pdf-info-label">${isQuote ? 'Quote For' : 'Bill To'}</div>
-          <div class="pdf-info-value-lg">${customer}</div>
-          ${contact ? `<div class="pdf-info-value">Attn: ${contact}</div>` : ''}
+          <div class="pdf-info-value-lg">${escapeHTML(customer)}</div>
+          ${contact ? `<div class="pdf-info-value">Attn: ${escapeHTML(contact)}</div>` : ''}
         </div>
         <div class="pdf-info-col">
           <div class="pdf-info-row">
@@ -343,19 +343,19 @@ export function generateDocument(type, data) {
           ${!isQuote && data.jobNumber ? `
             <div class="pdf-info-row">
               <span class="pdf-info-label">Job Reference</span>
-              <span class="pdf-info-value">${data.jobNumber}</span>
+              <span class="pdf-info-value">${escapeHTML(data.jobNumber)}</span>
             </div>
           ` : ''}
           ${!isQuote && data.originalQuoteNumber ? `
             <div class="pdf-info-row">
               <span class="pdf-info-label">Linked Quote</span>
-              <span class="pdf-info-value">${data.originalQuoteNumber}</span>
+              <span class="pdf-info-value">${escapeHTML(data.originalQuoteNumber)}</span>
             </div>
           ` : ''}
           ${isQuote && data.title ? `
             <div class="pdf-info-row">
               <span class="pdf-info-label">Description</span>
-              <span class="pdf-info-value">${data.title}</span>
+              <span class="pdf-info-value">${escapeHTML(data.title)}</span>
             </div>
           ` : ''}
         </div>

@@ -350,91 +350,158 @@ BEGIN
 END;
 $$;
 
--- Profiles policy: profiles can be viewed and modified by users in the same company
-CREATE POLICY profile_self_policy ON profiles
-  FOR ALL
+-- Profiles: read/update within the same company; deletes are tenant-scoped
+-- and never allow removing yourself. Insert is blocked for client sessions by
+-- the profiles_security_guard trigger below.
+CREATE POLICY profile_select_own ON profiles
+  FOR SELECT TO authenticated
   USING (id = auth.uid());
 
-CREATE POLICY profile_tenant_policy ON profiles
-  FOR ALL
+CREATE POLICY profile_select_tenant ON profiles
+  FOR SELECT TO authenticated
   USING (company_id = public.get_user_company_id(auth.uid()));
+
+CREATE POLICY profile_update_own ON profiles
+  FOR UPDATE TO authenticated
+  USING (id = auth.uid())
+  WITH CHECK (id = auth.uid());
+
+CREATE POLICY profile_update_tenant ON profiles
+  FOR UPDATE TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
+
+CREATE POLICY profile_delete_tenant ON profiles
+  FOR DELETE TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()) AND id <> auth.uid());
 
 -- RLS policies for all other tables referencing company_id
-CREATE POLICY company_tenant_policy ON companies
-  FOR ALL
-  USING (id = public.get_user_company_id(auth.uid()));
+CREATE POLICY companies_tenant_policy ON companies
+  FOR ALL TO authenticated
+  USING (id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY user_types_tenant_policy ON user_types
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY customers_tenant_policy ON customers
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY assets_tenant_policy ON assets
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY maintenance_plans_tenant_policy ON maintenance_plans
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY task_templates_tenant_policy ON task_templates
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY quotes_tenant_policy ON quotes
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY jobs_tenant_policy ON jobs
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY invoices_tenant_policy ON invoices
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY stock_tenant_policy ON stock
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY timesheets_tenant_policy ON timesheets
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY contractors_tenant_policy ON contractors
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY suppliers_tenant_policy ON suppliers
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY purchase_orders_tenant_policy ON purchase_orders
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY notifications_tenant_policy ON notifications
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY form_templates_tenant_policy ON form_templates
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY form_instances_tenant_policy ON form_instances
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY kits_tenant_policy ON kits
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
 CREATE POLICY documents_tenant_policy ON documents
-  FOR ALL
-  USING (company_id = public.get_user_company_id(auth.uid()));
+  FOR ALL TO authenticated
+  USING (company_id = public.get_user_company_id(auth.uid()))
+  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
+
+-- Client sessions must never create profiles or touch server-managed columns
+-- through the REST API. Service-role calls (edge functions) have no JWT user
+-- and bypass the guard; the signup RPC opts in via relay.admin_provision.
+CREATE OR REPLACE FUNCTION public.profiles_security_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NULL
+     OR current_setting('relay.admin_provision', true) = 'true' THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    RAISE EXCEPTION 'Profiles can only be created through signup or an administrator invitation.';
+  END IF;
+
+  NEW.company_id    := OLD.company_id;
+  NEW.role          := OLD.role;
+  NEW.user_type_id  := OLD.user_type_id;
+  NEW.pay_rate      := OLD.pay_rate;
+  NEW.deactivated   := OLD.deactivated;
+  NEW.deactivated_at := OLD.deactivated_at;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER profiles_security_guard_biu
+  BEFORE INSERT OR UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION public.profiles_security_guard();
 
 
 -- =====================================================================
@@ -443,6 +510,7 @@ CREATE POLICY documents_tenant_policy ON documents
 
 -- RPC to register a new company and assign the signup user as the primary administrator.
 -- Runs with SECURITY DEFINER to write profiles and companies safely without RLS deadlock.
+-- Only the calling user can be provisioned (auth.uid() must match user_id).
 CREATE OR REPLACE FUNCTION create_company_and_admin(
   user_id uuid,
   company_name text,
@@ -452,10 +520,15 @@ CREATE OR REPLACE FUNCTION create_company_and_admin(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   new_company_id uuid;
 BEGIN
+  IF auth.uid() IS DISTINCT FROM user_id THEN
+    RAISE EXCEPTION 'You can only provision your own company.';
+  END IF;
+
   -- 1. Create company record
   INSERT INTO companies (name, settings)
   VALUES (
@@ -465,6 +538,7 @@ BEGIN
   RETURNING id INTO new_company_id;
 
   -- 2. Link the specified user's profile to this company as an administrator
+  PERFORM set_config('relay.admin_provision', 'true', true);
   INSERT INTO profiles (id, company_id, name, email, phone, role)
   VALUES (
     user_id,
@@ -474,22 +548,37 @@ BEGIN
     admin_phone,
     'admin'
   );
+  PERFORM set_config('relay.admin_provision', 'false', true);
 
   RETURN new_company_id;
 END;
 $$;
+
+REVOKE EXECUTE ON FUNCTION create_company_and_admin(uuid, text, text, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION create_company_and_admin(uuid, text, text, text) FROM anon;
+GRANT  EXECUTE ON FUNCTION create_company_and_admin(uuid, text, text, text) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.get_user_company_id(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_user_company_id(uuid) FROM anon;
+GRANT  EXECUTE ON FUNCTION public.get_user_company_id(uuid) TO authenticated;
 
 
 -- =====================================================================
 -- AUTH SIGNUP TRIGGERS
 -- =====================================================================
 
--- Trigger to automatically create a profile for newly registered users if company_id is provided in user_metadata.
--- This handles company staff invitation signups.
+-- Trigger to create a profile for newly registered users.
+--
+-- Invitations arrive via raw_app_meta_data (only the server-side admin API
+-- can write it — clients can never set app_metadata), so the trigger trusts
+-- that for company membership. user_metadata is client-editable and is only
+-- used for the self-signup path, which creates a brand-new company for the
+-- user rather than joining an existing one.
 CREATE OR REPLACE FUNCTION handle_new_user_profile()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   company_uuid uuid;
@@ -497,19 +586,37 @@ DECLARE
   user_username text;
   user_phone text;
   user_role text;
+  company_name text;
 BEGIN
-  -- Extract values from user_metadata (if supplied during signup)
-  IF new.raw_user_meta_data IS NOT NULL THEN
-    IF new.raw_user_meta_data ? 'company_id' THEN
-      company_uuid := (new.raw_user_meta_data->>'company_id')::uuid;
+  -- Invitation path (server-only metadata)
+  IF new.raw_app_meta_data IS NOT NULL THEN
+    IF new.raw_app_meta_data ? 'company_id' THEN
+      company_uuid := NULLIF(new.raw_app_meta_data->>'company_id', '')::uuid;
     END IF;
-    user_name := new.raw_user_meta_data->>'name';
-    user_username := new.raw_user_meta_data->>'username';
-    user_phone := new.raw_user_meta_data->>'phone';
-    user_role := COALESCE(new.raw_user_meta_data->>'role', 'technician');
+    user_name := new.raw_app_meta_data->>'name';
+    user_username := new.raw_app_meta_data->>'username';
+    user_phone := new.raw_app_meta_data->>'phone';
+    user_role := COALESCE(new.raw_app_meta_data->>'role', 'technician');
   END IF;
 
-  -- Only create profile if company_uuid could be resolved
+  -- Never let an invitation payload mint an administrator.
+  IF user_role IS DISTINCT FROM 'manager' AND user_role IS DISTINCT FROM 'technician' THEN
+    user_role := 'technician';
+  END IF;
+
+  -- Self-signup path: the new user gets their own brand-new company.
+  IF company_uuid IS NULL AND new.raw_user_meta_data IS NOT NULL THEN
+    company_name := new.raw_user_meta_data->>'company_name';
+    IF company_name IS NOT NULL AND length(trim(company_name)) > 0 THEN
+      INSERT INTO public.companies (name, settings)
+      VALUES (company_name, '{"markupPercent": 20}'::jsonb)
+      RETURNING id INTO company_uuid;
+      user_role := 'admin';
+      user_name := new.raw_user_meta_data->>'name';
+      user_phone := new.raw_user_meta_data->>'phone';
+    END IF;
+  END IF;
+
   IF company_uuid IS NOT NULL THEN
     INSERT INTO public.profiles (id, company_id, name, email, username, phone, role)
     VALUES (new.id, company_uuid, user_name, new.email, user_username, user_phone, user_role);

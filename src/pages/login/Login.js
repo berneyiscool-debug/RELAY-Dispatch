@@ -724,14 +724,18 @@ export function renderLogin(container) {
     const password = container.querySelector('#signup-password').value;
 
     try {
-      // 1. Sign up user in Auth
+      // 1. Sign up user in Auth. company_name is passed as user_metadata —
+      //    the DB trigger creates a brand-new company + admin profile for this
+      //    user server-side (user_metadata is never trusted for joining an
+      //    existing company; that path is app_metadata-only via invitations).
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             name: adminName,
-            phone: adminPhone
+            phone: adminPhone,
+            company_name: companyName
           }
         }
       });
@@ -741,15 +745,28 @@ export function renderLogin(container) {
         throw new Error('Verification required or signup was blocked. Check your email inbox.');
       }
 
-      // 2. Call security definer RPC function to create company and profile records
-      const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
-        user_id: data.user.id,
-        company_name: companyName,
-        admin_name: adminName,
-        admin_phone: adminPhone
-      });
+      // Email confirmation ON → no session yet; the user picks up their
+      // company after clicking the confirmation link and logging in.
+      if (!data.session) {
+        errorTextEl.innerText = 'Verification required — check your email inbox, then sign in.';
+        errorEl.style.display = 'flex';
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Create Company & Admin Account';
+        return;
+      }
 
-      if (rpcError) throw rpcError;
+      // 2. The auth trigger has already created the company and admin profile.
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profileError || !profile?.company_id) {
+        throw new Error('Your company was not provisioned. Please contact support.');
+      }
+
+      const companyId = profile.company_id;
 
       // 3. Set local storage user
       const user = {

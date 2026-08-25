@@ -8,7 +8,7 @@ import { showToast } from '../components/Notifications.js';
 import { showDrawer } from '../components/Drawer.js';
 import { escapeHTML } from './security.js';
 import { todayLocalISO } from './dateUtils.js';
-import { getStorageLocationOptionsHtml, getActiveStorageLocations } from './storageLocations.js';
+import { getStorageLocationOptionsHtml, getActiveStorageLocations, receiveStockIntoLocation } from './storageLocations.js';
 
 /**
  * Opens a modal to quickly create a new Asset.
@@ -564,9 +564,9 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
          modalContent.innerHTML = `
            <div class="form-group">
              <label class="form-label">Receive into Location *</label>
-             <select class="form-select" id="receive-location-select" required>
-               ${getStorageLocationOptionsHtml()}
-             </select>
+              <select class="form-select" id="receive-location-select" required>
+                ${getStorageLocationOptionsHtml('', null, false)}
+              </select>
            </div>
          `;
 
@@ -590,18 +590,8 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
                  if (stockId) {
                    const s = allStock.find(x => x.id === stockId);
                    if (s) {
-                     if (!s.locations) s.locations = [];
-                     let locObj = s.locations.find(l => l.location === targetLoc);
                      const itemQty = parseFloat(item.qty || item.quantity) || 0;
-                     if (locObj) {
-                       locObj.quantity += itemQty;
-                     } else {
-                       s.locations.push({ location: targetLoc, quantity: itemQty });
-                     }
-
-                     s.quantity = s.locations.reduce((sum, l) => sum + l.quantity, 0);
-                     s.location = s.locations[0]?.location || 'Main Warehouse';
-                     s.updatedAt = new Date().toISOString();
+                     receiveStockIntoLocation(s, targetLoc, itemQty);
                      receiveCount++;
                    }
                  }

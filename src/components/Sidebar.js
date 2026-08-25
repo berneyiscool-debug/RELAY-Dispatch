@@ -157,6 +157,29 @@ export function createSidebar() {
     // Logout handled by its own listener.
     if (e.target.closest('#btn-logout')) return;
 
+    // Contextual back button that re-opens its parent group submenu (no navigation).
+    const backSectionBtn = e.target.closest('.submenu-context-back[data-back-section]');
+    if (backSectionBtn) {
+      e.preventDefault();
+      const ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+      if (ctxPanel) ctxPanel.remove();
+      setActiveSection(sidebar, backSectionBtn.dataset.backSection);
+      return;
+    }
+
+    // Collapsible contextual submenu group toggle (no navigation).
+    const groupToggle = e.target.closest('.submenu-group-toggle');
+    if (groupToggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      const group = groupToggle.closest('.submenu-group');
+      if (group) {
+        const open = group.classList.toggle('open');
+        groupToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+      return;
+    }
+
     // Any page link (direct rail page or submenu item).
     const navBtn = e.target.closest('[data-path]');
     if (navBtn) {
@@ -294,23 +317,43 @@ function getContextualMenu(hash) {
       headerTitle: 'Settings & Config',
       icon: 'settings',
       items: [
-        { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
-        { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' },
-        { id: 'api_keys', icon: 'vpn_key', label: 'API Keys', path: '/settings?tab=api_keys' },
-        { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
-        { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
-        { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', disabled: local, tooltip: 'Requires Cloud Account' },
-        { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', disabled: local, tooltip: 'Requires Cloud Account' },
-        { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
-        { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
-        { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
-        { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' },
-        { id: 'users', icon: 'group', label: 'Users & Permissions', path: '/settings?tab=users', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
-        { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
-        { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
-        { id: 'folder_sync', icon: 'sync', label: 'Folder Sync', path: '/settings?tab=folder_sync', disabled: folderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
-        // No Settings page behind this yet — shown greyed so it's discoverable.
-        { id: 'integrations', icon: 'hub', label: 'Integrations', path: '/settings?tab=integrations', disabled: true, tooltip: 'Coming soon — third-party integrations' }
+        {
+          group: 'General', icon: 'settings',
+          items: [
+            { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
+            { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
+            { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
+            { id: 'folder_sync', icon: 'sync', label: 'Folder Sync', path: '/settings?tab=folder_sync', disabled: folderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
+            { id: 'api_keys', icon: 'vpn_key', label: 'API Keys', path: '/settings?tab=api_keys' },
+            { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' }
+          ]
+        },
+        {
+          group: 'Workflow', icon: 'account_tree',
+          items: [
+            { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
+            { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
+            { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', disabled: local, tooltip: 'Requires Cloud Account' },
+            { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', disabled: local, tooltip: 'Requires Cloud Account' }
+          ]
+        },
+        {
+          group: 'People', icon: 'groups',
+          items: [
+            { id: 'users', icon: 'group', label: 'Users & Permissions', path: '/settings?tab=users', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
+            { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' }
+          ]
+        },
+        {
+          group: 'Resources', icon: 'widgets',
+          items: [
+            { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
+            { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+            { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
+            // No Settings page behind this yet — shown greyed so it's discoverable.
+            { id: 'integrations', icon: 'hub', label: 'Integrations', path: '/settings?tab=integrations', disabled: true, tooltip: 'Coming soon — third-party integrations' }
+          ]
+        }
       ],
       activeTab: currentTab
     };
@@ -320,15 +363,14 @@ function getContextualMenu(hash) {
   if (resource === 'stock' && !id) {
     const currentTab = activeTab || 'items';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-resources',
       headerTitle: 'Stock & Inventory',
       icon: 'inventory_2',
-      backPath: '/',
-      backLabel: 'Back to Dashboard',
+      backSection: 'cat-resources',
+      backLabel: 'Back to Resources',
       items: [
         { id: 'items', icon: 'inventory_2', label: 'Individual Items', path: '/stock?tab=items' },
-        { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' },
-        { id: 'locations', icon: 'warehouse', label: 'Storage Locations', path: '/stock?tab=locations' }
+        { id: 'kits', icon: 'widgets', label: 'Kit Bundles', path: '/stock?tab=kits' }
       ],
       activeTab: currentTab
     };
@@ -502,7 +544,7 @@ function getContextualMenu(hash) {
     const supplierTitle = supplier ? supplier.name : 'Supplier Detail';
     const currentTab = activeTab || 'overview';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-people',
       headerTitle: supplierTitle,
       icon: 'local_shipping',
       backPath: '/suppliers',
@@ -590,7 +632,7 @@ function getContextualMenu(hash) {
     const stock = store.getById('stock', id);
     const stockTitle = stock ? stock.name : 'Item Detail';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-resources',
       headerTitle: stockTitle,
       icon: 'inventory_2',
       backPath: '/stock',
@@ -605,7 +647,7 @@ function getContextualMenu(hash) {
     const kit = store.getById('kits', id);
     const kitTitle = kit ? kit.name : 'Kit Detail';
     return {
-      railId: 'cat-materials',
+      railId: 'cat-resources',
       headerTitle: kitTitle,
       icon: 'widgets',
       backPath: '/stock?tab=kits',
@@ -618,9 +660,45 @@ function getContextualMenu(hash) {
   return null;
 }
 
+// Render a contextual submenu's items. Supports two shapes for `items`:
+//   1. Flat list of { id, icon, label, path, ... } page links.
+//   2. Collapsible groups: { group: 'Label', icon, items: [...] } rendered as
+//      accordion submenus (auto-opened when it holds the active item).
+function renderContextualItems(contextual) {
+  const items = contextual.items || [];
+  const hasGroups = items.length > 0 && items.some(it => it.group);
+
+  if (!hasGroups) {
+    return items.map(item => renderSubmenuItem(contextual, item)).join('');
+  }
+
+  return items.map(group => {
+    const open = group.items?.some(item => contextual.activeTab === item.id) || group.open === true;
+    return `
+      <div class="submenu-group ${open ? 'open' : ''}" data-group="${escapeHTML(group.group)}">
+        <button class="submenu-group-toggle" aria-expanded="${open ? 'true' : 'false'}">
+          ${group.icon ? `<span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${group.icon}</span></span>` : ''}
+          <span class="nav-label submenu-group-label">${escapeHTML(group.group)}</span>
+          <span class="submenu-group-caret material-icons-outlined" aria-hidden="true">expand_more</span>
+        </button>
+        <div class="submenu-group-items">
+          ${(group.items || []).map(item => renderSubmenuItem(contextual, item)).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderSubmenuItem(contextual, item) {
+  return `
+    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" ${item.disabled ? `data-tooltip="${escapeHTML(item.tooltip || 'Not available for this account type')}" data-tooltip-pos="right"` : ''} style="display:flex; align-items:center; width:100%">
+      <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
+      <span class="nav-label">${escapeHTML(item.label)}</span>
+      ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
+    </button>`;
+}
+
 // Show a section's submenu panel and mark its rail item active.
-function setActiveSection(sidebar, sectionId) {
-  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
+function setActiveSection(sidebar, sectionId) {  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
   sidebar.querySelectorAll('.rail-item').forEach(r => {
     r.classList.toggle('active', r.dataset.id === sectionId);
@@ -663,9 +741,9 @@ function syncActiveFromRoute(sidebar, path) {
 
     ctxPanel.innerHTML = `
       <div class="submenu-context-header">
-        ${contextual.backPath ? `
+        ${(contextual.backPath || contextual.backSection) ? `
           <div class="submenu-context-back-row">
-            <button class="submenu-context-back" data-path="${contextual.backPath}" title="${escapeHTML(contextual.backLabel || 'Back')}">
+            <button class="submenu-context-back" ${contextual.backSection ? `data-back-section="${contextual.backSection}"` : `data-path="${contextual.backPath}"`} title="${escapeHTML(contextual.backLabel || 'Back')}">
               <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
             </button>
           </div>
@@ -676,13 +754,7 @@ function syncActiveFromRoute(sidebar, path) {
         </div>
       </div>
       <nav class="submenu-nav" style="${contextual.items && contextual.items.length > 0 ? '' : 'display:none;'}">
-        ${contextual.items.map(item => `
-          <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" ${item.disabled ? `data-tooltip="${escapeHTML(item.tooltip || 'Not available for this account type')}" data-tooltip-pos="right"` : ''} style="display:flex; align-items:center; width:100%">
-            <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
-            <span class="nav-label">${escapeHTML(item.label)}</span>
-            ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
-          </button>
-        `).join('')}
+        ${renderContextualItems(contextual)}
       </nav>
     `;
 

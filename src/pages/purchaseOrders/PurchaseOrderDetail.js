@@ -9,7 +9,7 @@ import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { escapeHTML } from '../../utils/security.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
-import { getStorageLocationOptionsHtml } from '../../utils/storageLocations.js';
+import { getStorageLocationOptionsHtml, receiveStockIntoLocation } from '../../utils/storageLocations.js';
 
 export function renderPurchaseOrderDetail(container, { id, jobId }) {
   const isNew = id === 'new';
@@ -202,7 +202,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
         <div class="form-group">
           <label class="form-label">Receive into Location *</label>
           <select class="form-select" id="receive-location-select" required>
-            ${getStorageLocationOptionsHtml()}
+            ${getStorageLocationOptionsHtml('', null, false)}
           </select>
         </div>
       `;
@@ -226,17 +226,7 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
               if (item.stockId) {
                 const s = allStock.find(x => x.id === item.stockId);
                 if (s) {
-                  if (!s.locations) s.locations = [];
-                  let locObj = s.locations.find(l => l.location === targetLoc);
-                  if (locObj) {
-                    locObj.quantity += item.quantity;
-                  } else {
-                    s.locations.push({ location: targetLoc, quantity: item.quantity });
-                  }
-                  
-                  s.quantity = s.locations.reduce((sum, l) => sum + l.quantity, 0);
-                  s.location = s.locations[0]?.location || 'Main Warehouse';
-                  s.updatedAt = new Date().toISOString();
+                  receiveStockIntoLocation(s, targetLoc, item.quantity);
                   receiveCount++;
                 }
               }

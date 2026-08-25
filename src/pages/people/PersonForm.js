@@ -6,6 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderPersonForm(container, { id }) {
   const isEdit = id && id !== 'new';
@@ -22,7 +23,7 @@ export function renderPersonForm(container, { id }) {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" id="company-label">Company Name ${isIndividual ? '' : '*'}</label>
-              <input class="form-input" name="company" value="${person.company || ''}" ${isIndividual ? '' : 'required'} />
+              <input class="form-input" name="company" value="${escapeHTML(person.company || '')}" ${isIndividual ? '' : 'required'} />
             </div>
             <div class="form-group">
               <label class="form-label">Type</label>
@@ -35,26 +36,26 @@ export function renderPersonForm(container, { id }) {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" id="first-name-label">First Name ${isIndividual ? '*' : ''}</label>
-              <input class="form-input" name="firstName" value="${person.firstName || ''}" ${isIndividual ? 'required' : ''} />
+              <input class="form-input" name="firstName" value="${escapeHTML(person.firstName || '')}" ${isIndividual ? 'required' : ''} />
             </div>
             <div class="form-group">
               <label class="form-label" id="last-name-label">Last Name ${isIndividual ? '*' : ''}</label>
-              <input class="form-input" name="lastName" value="${person.lastName || ''}" ${isIndividual ? 'required' : ''} />
+              <input class="form-input" name="lastName" value="${escapeHTML(person.lastName || '')}" ${isIndividual ? 'required' : ''} />
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Email</label>
-              <input class="form-input" type="email" name="email" value="${person.email || ''}" />
+              <input class="form-input" type="email" name="email" value="${escapeHTML(person.email || '')}" />
             </div>
             <div class="form-group">
               <label class="form-label">Phone</label>
-              <input class="form-input" name="phone" value="${person.phone || ''}" />
+              <input class="form-input" name="phone" value="${escapeHTML(person.phone || '')}" />
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">Address</label>
-            <input class="form-input" name="address" value="${person.address || ''}" />
+            <input class="form-input" name="address" value="${escapeHTML(person.address || '')}" />
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -67,7 +68,7 @@ export function renderPersonForm(container, { id }) {
           </div>
           <div class="form-group">
             <label class="form-label">Notes</label>
-            <textarea class="form-textarea" name="notes">${person.notes || ''}</textarea>
+            <textarea class="form-textarea" name="notes">${escapeHTML(person.notes || '')}</textarea>
           </div>
         </form>
       </div>

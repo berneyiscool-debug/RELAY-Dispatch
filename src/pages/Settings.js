@@ -6,6 +6,7 @@ import { store } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
 import { showToast } from '../components/Notifications.js';
 import { showModal } from '../components/Modal.js';
+import { renderStorageOptions } from '../components/StorageOptions.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
@@ -484,7 +485,7 @@ export function renderSettings(container) {
       label: 'Resources',
       icon: 'widgets',
       tabs: [
-        { id: 'materials', label: 'Materials & Kits' },
+        { id: 'materials', label: 'Materials & Catalog' },
         { id: 'cost_centers', label: 'Cost Centers & Xero' },
         { id: 'tax', label: 'Tax & Labor Rates' }
       ]
@@ -697,10 +698,10 @@ export function renderSettings(container) {
 
       const renderCompanyTab = () => {
         tc.innerHTML = `
-          <div class="card" style="max-width:850px">
+          <div class="card" style="max-width:100%">
             <div class="card-header"><h4>Company Information</h4></div>
             <div class="card-body">
-              <div style="display:grid; grid-template-columns: 1fr 280px; gap:var(--space-lg)">
+              <div style="display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:var(--space-lg)">
                 <div style="display:flex; flex-direction:column; gap:16px">
                   <div class="form-group">
                     <label class="form-label">Company Name</label>
@@ -1598,7 +1599,7 @@ export function renderSettings(container) {
       const portalPayment = s.customerPortalPayment || 'Please pay via Bank Transfer to BSB: 123-456 Account: 7890 1234. Please quote your Invoice Number as reference.';
 
       tc.innerHTML = `
-        <div class="card" style="max-width:800px">
+        <div class="card" style="max-width:100%">
           <div class="card-header"><h4>Customer Portal Settings</h4></div>
           <div class="card-body" style="display:flex; flex-direction:column; gap:20px;">
             <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
@@ -1609,16 +1610,18 @@ export function renderSettings(container) {
               </div>
             </div>
 
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Custom Portal Welcome Message</label>
-              <textarea class="form-textarea" id="portal-welcome" rows="3" placeholder="Enter a custom message displayed to customers on their dashboard...">${escapeHTML(portalWelcome)}</textarea>
-              <p class="text-tertiary" style="font-size:11px; margin-top:4px;">This message will appear prominently at the top of the customer's portal dashboard.</p>
-            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:var(--space-lg); align-items:start;">
+              <div class="form-group">
+                <label class="form-label" style="font-weight:600;">Custom Portal Welcome Message</label>
+                <textarea class="form-textarea" id="portal-welcome" rows="3" placeholder="Enter a custom message displayed to customers on their dashboard...">${escapeHTML(portalWelcome)}</textarea>
+                <p class="text-tertiary" style="font-size:11px; margin-top:4px;">This message will appear prominently at the top of the customer's portal dashboard.</p>
+              </div>
 
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Invoice Payment Instructions</label>
-              <textarea class="form-textarea" id="portal-payment" rows="3" placeholder="BSB, Account Number, and payment instructions...">${escapeHTML(portalPayment)}</textarea>
-              <p class="text-tertiary" style="font-size:11px; margin-top:4px;">These bank details and instructions will be shown to customers when reviewing outstanding invoices in their portal.</p>
+              <div class="form-group">
+                <label class="form-label" style="font-weight:600;">Invoice Payment Instructions</label>
+                <textarea class="form-textarea" id="portal-payment" rows="3" placeholder="BSB, Account Number, and payment instructions...">${escapeHTML(portalPayment)}</textarea>
+                <p class="text-tertiary" style="font-size:11px; margin-top:4px;">These bank details and instructions will be shown to customers when reviewing outstanding invoices in their portal.</p>
+              </div>
             </div>
           </div>
           <div class="card-footer" style="display:flex; justify-content:flex-end">
@@ -1657,7 +1660,7 @@ export function renderSettings(container) {
       const portalEnabled = s.enableContractorPortal !== false;
 
       tc.innerHTML = `
-        <div class="card" style="max-width:800px">
+        <div class="card" style="max-width:100%">
           <div class="card-header"><h4>Contractor Portal Settings</h4></div>
           <div class="card-body" style="display:flex; flex-direction:column; gap:20px;">
             <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
@@ -1704,7 +1707,7 @@ export function renderSettings(container) {
       const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
       const currentTheme = (currentUser && currentUser.id) ? (currentUser.theme || localStorage.getItem(`simpro_theme_${currentUser.id}`) || 'light') : 'light';
       tc.innerHTML = `
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-lg); max-width:960px; align-items:start;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:var(--space-lg); max-width:100%; align-items:start;">
           <!-- Left Column -->
           <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
             <!-- Data Management -->
@@ -3380,8 +3383,8 @@ export function renderSettings(container) {
     const categories = settings.materialCategories || ['General'];
 
     tc.innerHTML = `
-      <div style="max-width:900px">
-        <div class="card" style="margin-bottom:24px">
+      <div style="max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:24px; align-items:start;">
+        <div class="card" style="margin-bottom:0">
           <div class="card-header"><h4 style="margin:0">Markup Configuration</h4></div>
           <div class="card-body">
             <div class="grid-2">
@@ -3474,11 +3477,17 @@ export function renderSettings(container) {
           </div>
         </div>
 
-        <div style="margin-top:24px;display:flex;justify-content:flex-end">
+        <div style="margin-top:24px;display:flex;justify-content:flex-end; grid-column:1/-1">
           <button class="btn btn-primary" id="btn-save-materials" data-tooltip="Save material markup rules and categories" data-tooltip-pos="top">Save Material Settings</button>
+        </div>
+
+        <div style="margin-top:40px; padding-top:24px; border-top:1px solid var(--border-color); grid-column:1/-1">
+          <div id="storage-options-section"></div>
         </div>
       </div>
     `;
+
+    renderStorageOptions(tc.querySelector('#storage-options-section'));
 
     // --- Handlers ---
     const save = async () => {
@@ -3708,7 +3717,8 @@ export function renderSettings(container) {
     const cur = (pay.currency || 'AUD').toUpperCase();
 
     tc.innerHTML = `
-      <div class="card" style="max-width:820px">
+      <div style="max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:24px; align-items:start;">
+      <div class="card" style="max-width:100%">
         <div class="card-header"><h4>Online Payments (Stripe)</h4></div>
         <div class="card-body">
           <p style="color:var(--text-secondary);margin-top:0;">
@@ -3751,6 +3761,7 @@ export function renderSettings(container) {
             <button class="btn btn-primary" id="pay-save"><span class="material-icons-outlined">save</span> Save Payment Settings</button>
           </div>
         </div>
+      </div>
       </div>`;
 
     tc.querySelector('#pay-save')?.addEventListener('click', async () => {
@@ -3805,7 +3816,7 @@ export function renderSettings(container) {
       : (status === 'failed' ? 'var(--color-danger)' : 'var(--color-warning)');
 
     tc.innerHTML = `
-      <div class="card" style="max-width:860px">
+      <div class="card" style="max-width:100%">
         <div class="card-header"><h4>Email</h4></div>
         <div class="card-body">
           <p style="color:var(--text-secondary);margin-top:0;">
@@ -3845,7 +3856,7 @@ export function renderSettings(container) {
           <p style="font-size:11px;color:var(--text-tertiary);margin:0 0 8px;">Proves the whole chain end to end. Counts toward your daily limit; the result appears in Recent sends below.</p>
 
           <h5 style="margin:18px 0 8px;">Sender details</h5>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:12px;">
             <div class="form-group">
               <label class="form-label">Display name</label>
               <input class="form-input" id="em-from-name" value="${escapeHTML(email.fromName || settings.name || '')}" placeholder="Grace Dance" />
@@ -3919,7 +3930,9 @@ export function renderSettings(container) {
               </label>`).join('')}
           </div>
 
-          <h5 style="margin:18px 0 8px;">Wording &amp; branding</h5>
+          <div style="margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:24px; align-items:start;">
+          <div>
+          <h5 style="margin:0 0 8px;">Wording &amp; branding</h5>
           <p style="font-size:12px;color:var(--text-secondary);margin:0 0 10px;max-width:60ch;">
             ${(() => {
               const tmpl = email.templates || {};
@@ -3933,8 +3946,9 @@ export function renderSettings(container) {
             <span class="material-icons-outlined" style="font-size:18px">drafts</span>
             Open Email Studio
           </button>
-
-          <h5 style="margin:18px 0 8px;">Automatic payment reminders</h5>
+          </div>
+          <div>
+          <h5 style="margin:0 0 8px;">Automatic payment reminders</h5>
           <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;">
             <input type="checkbox" id="em-rem-enabled" style="width:16px;height:16px;" ${(email.reminders || {}).enabled ? 'checked' : ''} />
             Send reminders automatically
@@ -3950,6 +3964,8 @@ export function renderSettings(container) {
             </div>
           </div>
           <p style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">One nudge that many days before the due date, then a repeat every N days while overdue. Uses the “Payment reminder” template; runs while the app is open.</p>
+          </div>
+          </div>
 
           <div style="margin-top:16px;">
             <button class="btn btn-primary" id="em-save"><span class="material-icons-outlined">save</span> Save Email Settings</button>
@@ -4150,7 +4166,7 @@ export function renderSettings(container) {
     const chip = (label) => `<span style="padding:3px 10px; border:1px solid var(--border-color-dark); border-radius:999px; font-size:11.5px; font-weight:600; color:var(--text-secondary)">${escapeHTML(label)}</span>`;
 
     tc.innerHTML = `
-      <div class="card" style="max-width:860px">
+      <div class="card" style="max-width:100%">
         <div class="card-body" style="display:flex; gap:26px; align-items:center; padding:24px; flex-wrap:wrap">
           <div style="flex:0 0 128px; width:128px; aspect-ratio:210/297; background:#fff; border:1px solid var(--border-color-dark); border-radius:4px; box-shadow:var(--shadow-md); padding:10px 11px; overflow:hidden" aria-hidden="true">
             <div style="height:12px; border-radius:2px; background:${header}"></div>
@@ -4275,7 +4291,7 @@ export function renderSettings(container) {
       }
 
       tc.innerHTML = `
-        <div style="display:grid; grid-template-columns:1fr 340px; gap:var(--space-lg); max-width:1100px; align-items:start;">
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:var(--space-lg); max-width:100%; align-items:start;">
           <!-- Folder Configuration -->
           <div class="card">
             <div class="card-header"><h4>Direct Directory Sync</h4></div>
@@ -4446,9 +4462,9 @@ export function renderSettings(container) {
 
     function render() {
       tc.innerHTML = `
-        <div style="max-width:760px; display:flex; flex-direction:column; gap:var(--space-lg);">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:var(--space-lg); max-width:100%; align-items:start;">
 
-          <p style="color:var(--text-secondary); margin:0; font-size:13px; line-height:1.6;">
+          <p style="color:var(--text-secondary); margin:0; font-size:13px; line-height:1.6; grid-column:1/-1;">
             Connect the two outside services RELAY can use. You only need to do this once — open a
             <strong>“Where do I get a key?”</strong> box, follow the numbered steps, paste the key in, and save.
           </p>
@@ -4754,7 +4770,7 @@ export function renderSettings(container) {
 
       const renderTab = () => {
         tc.innerHTML = `
-          <div class="card" style="max-width:900px">
+          <div class="card" style="max-width:100%">
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center">
               <h4 style="margin:0">Cost Centers</h4>
               <button class="btn btn-primary btn-sm" id="btn-add-cost-center" style="display:flex; align-items:center; gap:6px">
@@ -4938,7 +4954,7 @@ export function renderSettings(container) {
     const categories = settings.supplierCategories || ['Electrical', 'Plumbing', 'HVAC', 'Fire Safety', 'Security', 'General'];
 
     tc.innerHTML = `
-      <div style="max-width:900px">
+      <div style="max-width:100%">
         <div class="card" style="margin-bottom:24px">
           <div class="card-header"><h4 style="margin:0">Supplier Categories</h4></div>
           <div class="card-body">

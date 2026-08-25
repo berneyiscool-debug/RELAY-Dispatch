@@ -257,6 +257,17 @@ serve(async (req) => {
         if (name === domain || name.endsWith(`.${domain}`)) {
           return json({ error: `${domain} is managed by RELAY and cannot be added.` }, 403)
         }
+        // Bringing your own domain verifies it on RELAY's shared Resend
+        // account, so it is limited to domains RELAY has approved in advance.
+        // Set RELAY_APPROVED_DOMAINS (comma-separated) in the edge function
+        // secrets to the list of domains your customers may use.
+        const approved = (Deno.env.get('RELAY_APPROVED_DOMAINS') || '')
+          .split(',')
+          .map((d) => d.trim().toLowerCase())
+          .filter(Boolean)
+        if (approved.length === 0 || !approved.some((d) => name === d || name.endsWith(`.${d}`))) {
+          return json({ error: 'That domain is not approved for use. Contact RELAY support.' }, 403)
+        }
         const data = await resend('/domains', key, 'POST', { name })
         return json({ id: data.id, name: data.name, status: data.status, records: data.records || [] })
       }

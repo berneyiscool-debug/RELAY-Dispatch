@@ -16,6 +16,10 @@ dist-electron
 # Netlify CLI
 .netlify
 
+# Supabase CLI local state (linked project ref is not a secret, but it is
+# machine-specific metadata that shouldn't live in the public repo)
+supabase/.temp
+
 # Editor / OS noise
 .DS_Store
 *.log

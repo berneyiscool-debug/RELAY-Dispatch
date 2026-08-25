@@ -6,7 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
-import { getStorageLocationOptionsHtml } from '../../utils/storageLocations.js';
+import { getStorageLocationOptionsHtml, getStorageLocationTypeOptionsHtml, getStorageLocationTypeByName } from '../../utils/storageLocations.js';
 
 export function renderStockForm(container, { id }) {
   const isEdit = id && id !== 'new';
@@ -14,18 +14,25 @@ export function renderStockForm(container, { id }) {
   const activeSuppliers = store.getAll('suppliers').filter(s => s.active !== false);
   const materialCategories = store.getSettings().materialCategories || [];
 
-  // Helper to build options for locations select dropdown
-  function getLocationOptions(selectedLoc = '') {
-    return getStorageLocationOptionsHtml(selectedLoc);
-  }
-
   // Generate HTML for a single location stock row
   function createLocationRowHtml(loc = '', qty = 0) {
+    const type = getStorageLocationTypeByName(loc);
+    const isOnOrder = type === 'On Order';
+    const locDisabled = !type || isOnOrder;
+    const locOptions = isOnOrder
+      ? '<option value="On Order" selected>On Order — no location needed</option>'
+      : getStorageLocationOptionsHtml(loc, type || null);
     return `
       <div class="location-row" style="display:flex; gap:12px; align-items:center; margin-bottom:10px">
+        <div style="width:150px; flex:0 0 150px;">
+          <select class="form-select loc-type-select" style="width:100%">
+            <option value="">Type...</option>
+            ${getStorageLocationTypeOptionsHtml(type)}
+          </select>
+        </div>
         <div style="flex:1">
-          <select class="form-select loc-select" required style="width:100%">
-            ${getLocationOptions(loc)}
+          <select class="form-select loc-select" ${locDisabled ? 'disabled' : 'required'} style="width:100%">
+            ${locOptions}
           </select>
         </div>
         <div style="width:120px">
@@ -138,6 +145,25 @@ export function renderStockForm(container, { id }) {
         showToast('At least one stock location is required', 'error');
       }
     });
+
+    row.querySelector('.loc-type-select').addEventListener('change', (e) => {
+      const type = e.target.value;
+      const locSelect = row.querySelector('.loc-select');
+
+      if (!type) {
+        locSelect.disabled = true;
+        locSelect.removeAttribute('required');
+        locSelect.innerHTML = getStorageLocationOptionsHtml('', null);
+      } else if (type === 'On Order') {
+        locSelect.disabled = true;
+        locSelect.removeAttribute('required');
+        locSelect.innerHTML = '<option value="On Order" selected>On Order — no location needed</option>';
+      } else {
+        locSelect.disabled = false;
+        locSelect.setAttribute('required', '');
+        locSelect.innerHTML = getStorageLocationOptionsHtml('', type);
+      }
+    });
   }
 
   // Bind initial rows
@@ -150,14 +176,34 @@ export function renderStockForm(container, { id }) {
     if (!form.checkValidity()) { form.reportValidity(); return; }
 
     const locationRows = Array.from(editorContainer.querySelectorAll('.location-row'));
-    const locations = locationRows.map(row => {
-      const loc = row.querySelector('.loc-select').value;
+    const locations = [];
+    let locationError = null;
+
+    for (const row of locationRows) {
+      const type = row.querySelector('.loc-type-select').value;
       const qty = parseInt(row.querySelector('.loc-qty').value) || 0;
-      return { location: loc, quantity: qty };
-    }).filter(l => l.location !== '');
+
+      if (!type) {
+        locationError = 'Select a location type for every row';
+        break;
+      }
+
+      const loc = type === 'On Order' ? 'On Order' : row.querySelector('.loc-select').value;
+      if (!loc) {
+        locationError = 'Select a location for every row (or choose "On Order")';
+        break;
+      }
+
+      locations.push({ location: loc, quantity: qty });
+    }
+
+    if (locationError) {
+      showToast(locationError, 'error');
+      return;
+    }
 
     if (locations.length === 0) {
-      showToast('Please select at least one valid stock location', 'error');
+      showToast('Please add at least one stock location', 'error');
       return;
     }
 

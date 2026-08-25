@@ -9,7 +9,7 @@
 import { store } from '../data/store.js';
 import { escapeHTML } from './security.js';
 
-export const STORAGE_LOCATION_TYPES = ['Warehouse', 'Vehicle', 'On Order', 'Asset'];
+export const STORAGE_LOCATION_TYPES = ['Warehouse', 'Vehicle', 'Asset', 'On Order'];
 
 export function getStorageLocations() {
   return store.getAll('storageLocations') || [];
@@ -58,17 +58,61 @@ export function deductStockFromLocation(stockItem, locationName, qty) {
   return { ok: true, stockItem };
 }
 
+// Receive `qty` of a stock item into a physical location (mutates the object).
+// Also clears the matching quantity from the "On Order" pool, so a received PO
+// moves stock out of "On Order" rather than double-counting it.
+export function receiveStockIntoLocation(stockItem, targetLoc, qty) {
+  const q = parseFloat(qty) || 0;
+  const locations = Array.isArray(stockItem.locations)
+    ? stockItem.locations.map(l => ({ ...l }))
+    : [];
+
+  const target = locations.find(l => l.location === targetLoc);
+  if (target) target.quantity = (parseFloat(target.quantity) || 0) + q;
+  else locations.push({ location: targetLoc, quantity: q });
+
+  if (q > 0) {
+    const onOrder = locations.find(l => l.location === 'On Order');
+    if (onOrder) onOrder.quantity = Math.max(0, (parseFloat(onOrder.quantity) || 0) - q);
+  }
+
+  stockItem.locations = locations.filter(l => (parseFloat(l.quantity) || 0) > 0);
+  stockItem.quantity = stockItem.locations.reduce((sum, l) => sum + (parseFloat(l.quantity) || 0), 0);
+  stockItem.location = stockItem.locations[0]?.location || targetLoc;
+  stockItem.updatedAt = new Date().toISOString();
+  return stockItem;
+}
+
+// Build `<option>` markup for a location-type `<select>` (Warehouse, Vehicle, …).
+export function getStorageLocationTypeOptionsHtml(selectedType = '') {
+  return STORAGE_LOCATION_TYPES.map(t =>
+    `<option value="${t}" ${selectedType === t ? 'selected' : ''}>${t}</option>`
+  ).join('');
+}
+
+// Infer a location's type from its name (used to pre-select the type dropdown).
+export function getStorageLocationTypeByName(name) {
+  if (!name) return '';
+  const loc = getStorageLocations().find(l => l.name === name);
+  if (loc) return loc.type || 'Warehouse';
+  if (name.startsWith('Vehicle - ')) return 'Vehicle';
+  return '';
+}
+
 // Build grouped `<option>/<optgroup>` markup for a location `<select>`.
 // Vehicle locations are sourced from storage_locations (type "Vehicle"),
 // falling back to a virtual entry per active technician for backward compat.
 // Asset and On-Order locations are surfaced when present.
-export function getStorageLocationOptionsHtml(selected = '') {
+// Pass a `type` to restrict the list to a single location type, and
+// `includeOnOrder = false` to drop the "On Order" group (e.g. receive/transfer
+// destinations, where stock is moving INTO a physical location).
+export function getStorageLocationOptionsHtml(selected = '', type = null, includeOnOrder = true) {
   const locations = getActiveStorageLocations();
   const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
   const allTechnicians = store.getAll('technicians') || [];
   const assets = store.getAll('assets') || [];
 
-  const byType = (type) => locations.filter(l => (l.type || 'Warehouse') === type).map(l => l.name);
+  const byType = (t) => locations.filter(l => (l.type || 'Warehouse') === t).map(l => l.name);
 
   const vehicleNames = new Set(byType('Vehicle'));
   const virtualVehicles = technicians
@@ -84,16 +128,30 @@ export function getStorageLocationOptionsHtml(selected = '') {
 
   const assetNames = [...byType('Asset'), ...assets.map(a => a.name).filter(n => !locations.some(l => l.name === n))];
 
+  const groups = {
+    'Warehouse': { label: 'Warehouses', names: byType('Warehouse') },
+    'Vehicle': { label: 'Vehicles / Vans', names: [...vehicleNames, ...virtualVehicles] },
+    'Asset': { label: 'Assets', names: assetNames },
+    'On Order': { label: 'On Order', names: byType('On Order') }
+  };
+
+  const option = (n) => `<option value="${escapeHTML(n)}" ${selected === n ? 'selected' : ''}>${escapeHTML(n)}</option>`;
   const optgroup = (label, names) => {
     if (!names.length) return '';
-    return `<optgroup label="${escapeHTML(label)}">${names.map(n => `<option value="${escapeHTML(n)}" ${selected === n ? 'selected' : ''}>${escapeHTML(n)}</option>`).join('')}</optgroup>`;
+    return `<optgroup label="${escapeHTML(label)}">${names.map(option).join('')}</optgroup>`;
   };
 
   let html = '<option value="">Select location...</option>';
-  html += optgroup('Warehouses', byType('Warehouse'));
-  html += optgroup('Vehicles / Vans', [...vehicleNames, ...virtualVehicles]);
-  html += optgroup('Assets', assetNames);
-  html += optgroup('On Order', byType('On Order'));
+  if (type && groups[type]) {
+    if (type !== 'On Order' || includeOnOrder) {
+      html += groups[type].names.map(option).join('');
+    }
+  } else {
+    html += optgroup(groups.Warehouse.label, groups.Warehouse.names);
+    html += optgroup(groups.Vehicle.label, groups.Vehicle.names);
+    html += optgroup(groups.Asset.label, groups.Asset.names);
+    if (includeOnOrder) html += optgroup(groups['On Order'].label, groups['On Order'].names);
+  }
   return html;
 }
 

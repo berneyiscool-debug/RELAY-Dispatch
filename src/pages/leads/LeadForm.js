@@ -19,7 +19,7 @@ export function renderLeadForm(container, { id }) {
         <form id="lead-form">
           <div class="form-group">
             <label class="form-label">Title *</label>
-            <input class="form-input" name="title" value="${lead.title || ''}" required placeholder="e.g. Commercial Switchboard Upgrade" />
+            <input class="form-input" name="title" value="${escapeHTML(lead.title || '')}" required placeholder="e.g. Commercial Switchboard Upgrade" />
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -39,11 +39,11 @@ export function renderLeadForm(container, { id }) {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Contact Phone</label>
-              <input class="form-input" id="lead-phone" name="phone" value="${lead.phone || ''}" placeholder="e.g. 0400 123 456" />
+              <input class="form-input" id="lead-phone" name="phone" value="${escapeHTML(lead.phone || '')}" placeholder="e.g. 0400 123 456" />
             </div>
             <div class="form-group">
               <label class="form-label">Contact Email</label>
-              <input class="form-input" id="lead-email" type="email" name="email" value="${lead.email || ''}" placeholder="e.g. contact@example.com" />
+              <input class="form-input" id="lead-email" type="email" name="email" value="${escapeHTML(lead.email || '')}" placeholder="e.g. contact@example.com" />
             </div>
           </div>
           <div class="form-row">
@@ -63,20 +63,20 @@ export function renderLeadForm(container, { id }) {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Client Budget ($)</label>
-              <input class="form-input" type="number" name="budget" value="${lead.budget || ''}" step="0.01" placeholder="e.g. 15000" />
+              <input class="form-input" type="number" name="budget" value="${escapeHTML(lead.budget ?? '')}" step="0.01" placeholder="e.g. 15000" />
             </div>
             <div class="form-group">
               <label class="form-label">Estimated Value ($)</label>
-              <input class="form-input" type="number" name="value" value="${lead.value || ''}" step="0.01" placeholder="e.g. 12000" />
+              <input class="form-input" type="number" name="value" value="${escapeHTML(lead.value ?? '')}" step="0.01" placeholder="e.g. 12000" />
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">Project Requirements</label>
-            <textarea class="form-textarea" name="requirements" placeholder="Enter detailed project scope or client requirements..." style="min-height:100px">${lead.requirements || ''}</textarea>
+            <textarea class="form-textarea" name="requirements" placeholder="Enter detailed project scope or client requirements..." style="min-height:100px">${escapeHTML(lead.requirements || '')}</textarea>
           </div>
           <div class="form-group">
             <label class="form-label">Notes</label>
-            <textarea class="form-textarea" name="description" placeholder="Internal pipeline notes...">${lead.description || ''}</textarea>
+            <textarea class="form-textarea" name="description" placeholder="Internal pipeline notes...">${escapeHTML(lead.description || '')}</textarea>
           </div>
         </form>
       </div>
