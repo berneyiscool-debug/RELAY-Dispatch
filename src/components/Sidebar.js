@@ -822,19 +822,35 @@ function getSidebarProfileInfo() {
     role = ({ admin: 'Complete Mode', technician: 'Simple Mode' })[uiMode] || role;
   }
   const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
-  return { name, role, initials, color: currentUser.color || '#FF5C00' };
+  // Prefer the avatar saved on currentUser (kept in sync by the profile page);
+  // fall back to the technician record so a fresh session still shows the photo.
+  let avatarUrl = currentUser.avatarUrl || null;
+  if (!avatarUrl && currentUser.id) {
+    const tech = store.getById('technicians', currentUser.id);
+    if (tech && tech.avatarUrl) avatarUrl = tech.avatarUrl;
+  }
+  return { name, role, initials, color: currentUser.color || '#FF5C00', avatarUrl };
 }
 
 // Fill the footer profile block (avatar / name / role).
 export function updateSidebarProfile(sidebarElement) {
   const sidebar = sidebarElement || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
-  // Avatar renders the Lucide circle-user glyph (static markup); only name/role update here.
-  const { name, role } = getSidebarProfileInfo();
+  const { name, role, avatarUrl } = getSidebarProfileInfo();
   const nameEl = sidebar.querySelector('#sidebar-profile-name');
   const roleEl = sidebar.querySelector('#sidebar-profile-role');
   if (nameEl) nameEl.textContent = name;
   if (roleEl) roleEl.textContent = role;
+
+  // Show the uploaded avatar photo when one exists, otherwise the default icon.
+  const avatarEl = sidebar.querySelector('#sidebar-profile-avatar');
+  if (avatarEl) {
+    if (avatarUrl) {
+      avatarEl.innerHTML = `<img src="${escapeHTML(avatarUrl)}" alt="${escapeHTML(name)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`;
+    } else {
+      avatarEl.innerHTML = '<span class="material-icons-outlined">account_circle</span>';
+    }
+  }
 }
 
 export function updateSidebarAccess(sidebarElement) {
