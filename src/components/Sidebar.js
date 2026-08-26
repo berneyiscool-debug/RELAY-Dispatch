@@ -689,7 +689,7 @@ function renderContextualItems(contextual) {
     }
     return contextual.groups.map(group => {
       const target = group.items.find(item => !item.disabled) || group.items[0];
-      return renderSubmenuItem(contextual, { id: group.id, icon: group.icon, label: group.label, path: target.path });
+      return renderSubmenuItem(contextual, { id: group.id, icon: group.icon, label: group.label, path: target.path, hasChildren: true });
     }).join('');
   }
 
@@ -702,6 +702,7 @@ function renderSubmenuItem(contextual, item) {
       <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
       <span class="nav-label">${escapeHTML(item.label)}</span>
       ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
+      ${item.hasChildren ? `<span class="rail-caret material-icons-outlined" aria-hidden="true" style="margin-left:auto">chevron_right</span>` : ''}
     </button>`;
 }
 

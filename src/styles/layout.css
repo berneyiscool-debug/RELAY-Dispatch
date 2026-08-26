@@ -2705,6 +2705,7 @@
 }
 .submenu-item .nav-icon { flex: none; width: 18px; display: flex; align-items: center; justify-content: center; }
 .submenu-item .material-icons-outlined { font-size: 18px; }
+.submenu-item .rail-caret { font-size: 16px; opacity: 0.45; flex: none; }
 .submenu-item:hover { background: #f2f3f5; color: var(--sidebar-text-hover); }
 .submenu-item.active { background: var(--sidebar-active-bg); color: var(--text-primary); font-weight: var(--font-weight-medium); }
 
