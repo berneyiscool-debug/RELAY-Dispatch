@@ -116,6 +116,31 @@ export function renderScheduleView(container) {
     }
   }
 
+  // Position a just-appended context menu at the cursor, but flip/clamp it so it
+  // never spills past the viewport. Without this, a right-click near the bottom
+  // opens the menu downward and it runs off-screen. Call after appendChild so the
+  // menu's real width/height are measurable.
+  function positionContextMenu(menu, x, y) {
+    if (!menu) return;
+    const pad = 8;
+    const rect = menu.getBoundingClientRect();
+    let left = x;
+    let top = y;
+    // Flip left if it would overflow the right edge.
+    if (left + rect.width > window.innerWidth - pad) {
+      left = Math.min(x - rect.width, window.innerWidth - rect.width - pad);
+    }
+    // Flip upward (menu grows up from the cursor) if it would overflow the bottom.
+    if (top + rect.height > window.innerHeight - pad) {
+      top = y - rect.height;
+    }
+    // Final clamp so it always stays on-screen.
+    left = Math.max(pad, Math.min(left, window.innerWidth - rect.width - pad));
+    top = Math.max(pad, Math.min(top, window.innerHeight - rect.height - pad));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
   // Remove the PREVIOUS visit's listener (a fresh function each render, so a plain
   // removeEventListener(closeContextMenu) is a no-op and stale closures pile up —
   // their render() calls then snap the calendar back to the old week, breaking the
@@ -946,6 +971,90 @@ export function renderScheduleView(container) {
     showToast(`Unscheduled ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}`, 'success');
     clearSelection();
     render();
+  }
+
+  // Change the status of every job in the current multi-selection at once.
+  function bulkChangeStatus() {
+    const scheds = selectedSchedules();
+    const jobIds = [...new Set(scheds.map(s => s.jobId).filter(Boolean))];
+    const jobs = jobIds.map(jid => store.getById('jobs', jid)).filter(Boolean);
+    if (!jobs.length) { showToast('No jobs found for the current selection.', 'error'); return; }
+
+    const STATUSES = ['Pending', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Invoiced'];
+    const statusDot = JOB_STATUS_COLORS;
+
+    const content = document.createElement('div');
+    content.style.padding = '8px 0';
+    content.innerHTML = `
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="display:block; margin-bottom:12px; font-weight:500; font-size:13px; color:var(--text-secondary);">Set status for ${jobs.length} job${jobs.length > 1 ? 's' : ''}</label>
+        <div id="status-select-container" style="display:flex; flex-direction:column; gap:8px;">
+          ${STATUSES.map(s => `
+            <div class="status-select-item" data-value="${s}" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border:1.5px solid var(--border-color); background:var(--card-bg); border-radius:8px; cursor:pointer; transition:all 0.2s ease;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="width:10px; height:10px; border-radius:50%; background:${statusDot[s]}; flex-shrink:0;"></span>
+                <span style="font-weight:600; font-size:13px; color:var(--text-primary);">${s}</span>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+    `;
+
+    let selectedStatus = null;
+    const items = content.querySelectorAll('.status-select-item');
+    items.forEach(item => {
+      item.addEventListener('mouseenter', () => {
+        if (!item.classList.contains('active')) item.style.background = 'rgba(0,0,0,0.02)';
+      });
+      item.addEventListener('mouseleave', () => {
+        if (!item.classList.contains('active')) item.style.background = 'var(--card-bg)';
+      });
+      item.addEventListener('click', () => {
+        items.forEach(x => {
+          x.classList.remove('active');
+          x.style.borderColor = 'var(--border-color)';
+          x.style.background = 'var(--card-bg)';
+          const check = x.querySelector('.material-icons-outlined');
+          if (check) check.remove();
+        });
+        item.classList.add('active');
+        item.style.borderColor = 'var(--color-primary)';
+        item.style.background = 'rgba(59,130,246,0.08)';
+        selectedStatus = item.dataset.value;
+        const chk = document.createElement('span');
+        chk.className = 'material-icons-outlined';
+        chk.style.color = 'var(--color-primary)';
+        chk.style.fontSize = '18px';
+        chk.textContent = 'check_circle';
+        item.appendChild(chk);
+      });
+    });
+
+    showModal({
+      title: `Change Status for ${jobs.length} Jobs`,
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+        {
+          label: 'Update Status',
+          className: 'btn-primary',
+          onClick: c => {
+            if (!selectedStatus) { showToast('Please select a status.', 'error'); return; }
+            let changed = 0;
+            jobs.forEach(j => {
+              if (j.status !== selectedStatus) {
+                store.update('jobs', j.id, { status: selectedStatus });
+                changed++;
+              }
+            });
+            showToast(`Status changed to ${selectedStatus} for ${changed} job${changed === 1 ? '' : 's'}`, 'success');
+            clearSelection();
+            render();
+            c();
+          }
+        }
+      ]
+    });
   }
 
   function bulkBookTime() {
@@ -2124,10 +2233,13 @@ export function renderScheduleView(container) {
           contextMenu.style.cssText = `position:fixed;top:${e.clientY}px;left:${e.clientX}px;z-index:1000;background:var(--card-bg);box-shadow:var(--shadow-md);border:1px solid var(--border-color);border-radius:var(--border-radius);padding:4px 0;min-width:180px;`;
           contextMenu.innerHTML = `
             <div style="padding:4px 12px;font-size:11px;color:var(--text-tertiary);font-weight:600;">${n} allocations selected</div>
+            <button class="dropdown-item" id="ctx-bulk-status"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">flag</span> Change Status (${n})</button>
             <button class="dropdown-item" id="ctx-bulk-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place (${n})</button>
             <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign (${n})</button>
             <button class="dropdown-item text-danger" id="ctx-bulk-unsched"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${n})</button>`;
           document.body.appendChild(contextMenu);
+          positionContextMenu(contextMenu, e.clientX, e.clientY);
+          contextMenu.querySelector('#ctx-bulk-status').addEventListener('click', () => { closeContextMenu(); bulkChangeStatus(); });
           contextMenu.querySelector('#ctx-bulk-book').addEventListener('click', () => { closeContextMenu(); bulkBookTime(); });
           contextMenu.querySelector('#ctx-batch-reassign')?.addEventListener('click', () => { closeContextMenu(); promptReassign([...selectedScheduleIds]); });
           contextMenu.querySelector('#ctx-bulk-unsched').addEventListener('click', () => { closeContextMenu(); bulkUnschedule(); });
@@ -2155,6 +2267,7 @@ export function renderScheduleView(container) {
             <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
           `;
           document.body.appendChild(contextMenu);
+          positionContextMenu(contextMenu, e.clientX, e.clientY);
 
           contextMenu.querySelector('#ctx-skip-occurrence').addEventListener('click', () => {
             closeContextMenu();
@@ -2228,6 +2341,7 @@ export function renderScheduleView(container) {
             `;
           }
           document.body.appendChild(contextMenu);
+          positionContextMenu(contextMenu, e.clientX, e.clientY);
 
           function promptReassign(idsToReassign) {
             const techs = store.getAll('technicians').filter(t => !t.deactivated);
@@ -2498,6 +2612,7 @@ export function renderScheduleView(container) {
             <button class="dropdown-item text-danger" id="ctx-delete-allocation"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">delete</span> Delete Allocation</button>
           `;
           document.body.appendChild(contextMenu);
+          positionContextMenu(contextMenu, e.clientX, e.clientY);
 
           contextMenu.querySelector('#ctx-delete-allocation').addEventListener('click', () => {
             closeContextMenu();
