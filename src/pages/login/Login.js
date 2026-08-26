@@ -826,6 +826,7 @@ export async function handleCloudLoginSuccess(container, authUser) {
       ? (profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_admin' : `${profile.company_id}_ut_admin`)
       : (profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_tech' : `${profile.company_id}_ut_tech`)),
     color: profile.color || '#3B82F6',
+    avatarUrl: profile.avatar_url || null,
     theme: profile.theme || 'light'
   };
 

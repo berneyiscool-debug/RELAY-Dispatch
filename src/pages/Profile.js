@@ -525,7 +525,7 @@ export function renderProfile(container) {
           // Write back to profiles table
           const { error: profileError } = await supabase
             .from('profiles')
-            .update({ name: name, color: activeAvatarColor })
+            .update({ name: name, color: activeAvatarColor, avatar_url: uploadedAvatarUrl })
             .eq('id', currentUser.id);
             
           if (profileError) throw profileError;
