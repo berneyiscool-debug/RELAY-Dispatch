@@ -68,6 +68,7 @@ const TABLE_COLUMNS = {
     "role",
     "user_type_id",
     "color",
+    "avatar_url",
     "pay_rate",
     "force_password_change",
     "deactivated",
@@ -1461,6 +1462,10 @@ class DataStore {
       record.payRate = parseFloat(record.pay_rate);
       delete record.pay_rate;
     }
+    if (record.avatar_url !== undefined) {
+      record.avatarUrl = record.avatar_url;
+      delete record.avatar_url;
+    }
     if (record.first_name !== undefined) {
       record.firstName = record.first_name;
       delete record.first_name;
@@ -1982,6 +1987,10 @@ class DataStore {
     if (record.payRate !== undefined) {
       record.pay_rate = record.payRate;
       delete record.payRate;
+    }
+    if (record.avatarUrl !== undefined) {
+      record.avatar_url = record.avatarUrl;
+      delete record.avatarUrl;
     }
     if (record.firstName !== undefined) {
       record.first_name = record.firstName;

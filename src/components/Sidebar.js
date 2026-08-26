@@ -746,19 +746,24 @@ function getSidebarProfileInfo() {
     role = ({ admin: 'Complete Mode', technician: 'Simple Mode' })[uiMode] || role;
   }
   const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'U';
-  return { name, role, initials, color: currentUser.color || '#FF5C00' };
+  return { name, role, initials, color: currentUser.color || '#FF5C00', avatarUrl: currentUser.avatarUrl || null };
 }
 
 // Fill the footer profile block (avatar / name / role).
 export function updateSidebarProfile(sidebarElement) {
   const sidebar = sidebarElement || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
-  // Avatar renders the Lucide circle-user glyph (static markup); only name/role update here.
-  const { name, role } = getSidebarProfileInfo();
+  const { name, role, avatarUrl } = getSidebarProfileInfo();
   const nameEl = sidebar.querySelector('#sidebar-profile-name');
   const roleEl = sidebar.querySelector('#sidebar-profile-role');
+  const avatarEl = sidebar.querySelector('#sidebar-profile-avatar');
   if (nameEl) nameEl.textContent = name;
   if (roleEl) roleEl.textContent = role;
+  if (avatarEl) {
+    avatarEl.innerHTML = avatarUrl
+      ? `<img src="${avatarUrl}" style="width:32px; height:32px; border-radius:50%; object-fit:cover; display:block;" alt="avatar" />`
+      : `<span class="material-icons-outlined">account_circle</span>`;
+  }
 }
 
 export function updateSidebarAccess(sidebarElement) {
