@@ -1870,6 +1870,7 @@ class DataStore {
           record.preferredTime = meta.preferredTime || '';
           record.description = meta.description || '';
           record.parentJobId = meta.parentJobId || null;
+          if (meta.templateDate !== undefined) record.templateDate = meta.templateDate;
           record.assetName = meta.assetName || '';
           record.notes = meta.notes || '';
           if (meta.activityLog !== undefined) record.activityLog = meta.activityLog;
@@ -2267,6 +2268,7 @@ class DataStore {
         preferredTime: record.preferredTime || '',
         description: record.description || '',
         parentJobId: record.parentJobId || null,
+        templateDate: record.templateDate || null,
         assetName: record.assetName || '',
         notes: record.notes || '',
         activityLog: record.activityLog || [],

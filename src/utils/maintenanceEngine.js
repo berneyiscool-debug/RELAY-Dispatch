@@ -712,7 +712,7 @@ export function repairAnomalousJobNumbers() {
         numberMap.set(child.number, newChildNumber);
         store.update('jobs', child.id, { 
           number: newChildNumber,
-          notes: child.notes ? child.notes.replace(/Generated from template job (JOB-|J-)?\w+(\.\d+)?/, `Generated from template job ${parentNumber}`) : `Generated from template job ${parentNumber}`
+          notes: child.notes ? child.notes.replace(/Generated from template job \S+/, `Generated from template job ${parentNumber}`) : `Generated from template job ${parentNumber}`
         });
         child.number = newChildNumber;
         renumberedCount++;
@@ -814,9 +814,9 @@ export function checkRecurringJobs() {
       if (occurrenceDate >= today && occurrenceDate <= next7Days) {
         // Re-read latest jobs from store on each iteration so newly created sibling jobs in the loop are detected
         const currentJobs = store.getAll('jobs') || [];
-        const hasJob = currentJobs.some(j => 
-          (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) && 
-          (j.templateDate === dateStr || j.scheduledDate === dateStr)
+        const hasJob = currentJobs.some(j =>
+          (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) &&
+          (String(j.templateDate || '').slice(0, 10) === dateStr || String(j.scheduledDate || '').slice(0, 10) === dateStr)
         );
 
         const isSkipped = job.recurringConfig?.skippedDates?.includes(dateStr);
@@ -1085,7 +1085,7 @@ export function getVirtualRecurringOccurrences(startDateStr, endDateStr) {
         // Check if an actual spawned child job already exists for this date
         const hasJob = jobs.some(j =>
           (j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))) &&
-          j.scheduledDate === dateStr
+          (String(j.templateDate || '').slice(0, 10) === dateStr || String(j.scheduledDate || '').slice(0, 10) === dateStr)
         );
 
         const isSkipped = parentJob.recurringConfig?.skippedDates?.includes(dateStr);
@@ -1191,7 +1191,7 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
   const latestJobs = store.getAll('jobs') || [];
   const existingChild = latestJobs.find(j =>
     (j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))) &&
-    (j.templateDate === dateStr || j.scheduledDate === dateStr)
+    (String(j.templateDate || '').slice(0, 10) === dateStr || String(j.scheduledDate || '').slice(0, 10) === dateStr)
   );
   if (existingChild) {
     return existingChild;
