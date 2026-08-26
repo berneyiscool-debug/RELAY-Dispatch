@@ -1,6 +1,7 @@
 import { store } from '../data/store.js';
 import { dispatchChat } from './aiEngine.js';
 import { getSystemContext } from '../components/RelayAssistant.js';
+import { hasDeputyMax } from './aiTier.js';
 
 let autopilotTimeout = null;
 
@@ -18,6 +19,7 @@ async function evaluateStoreState() {
   const s = store.getSettings();
   const ai = s.ai || {};
   if (!ai.enabled) return;
+  if (!hasDeputyMax()) return;
 
   const jobs = store.getAll('jobs') || [];
   const activeJobsList = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress');

@@ -607,7 +607,7 @@ export async function openRelay() {
       <div class="relay-thread" id="relay-thread"></div>
       <div class="relay-attach-row" id="relay-attach-row"></div>
       <div class="relay-input-wrap">
-        <button class="relay-attach" id="relay-attach" title="${cloud ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a cloud feature'}" ${cloud ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
+        <button class="relay-attach" id="relay-attach" title="${hasDeputyMax() ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a Deputy Max feature'}" ${hasDeputyMax() ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
         <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
         <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Deputy">${escapeHtml(draftVal)}</textarea>
         <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
@@ -725,8 +725,21 @@ export async function openRelay() {
       autoGrow(input);
 
       const ai = (store.getSettings() || {}).ai || {};
-      if (!isCloudUser() || !canUseAI(ai)) {
-        const reply = "Attachments need the cloud AI assistant enabled. An admin can turn it on in Settings → AI.";
+      if (isCloudUser()) {
+        if (!hasDeputyMax()) {
+          const reply = "Attachments and document extraction are a Deputy Max feature — upgrade your plan to Cloud+ to use them.";
+          pushAssistant(reply);
+          addMessage(thread, 'relay', reply);
+          return;
+        }
+        if (!canUseAI(ai)) {
+          const reply = "Attachments need the cloud AI assistant enabled. An admin can turn it on in Settings → AI.";
+          pushAssistant(reply);
+          addMessage(thread, 'relay', reply);
+          return;
+        }
+      } else if (!canUseAI(ai)) {
+        const reply = "Attachments need the AI assistant enabled with an API key. An admin can turn it on in Settings → AI.";
         pushAssistant(reply);
         addMessage(thread, 'relay', reply);
         return;
