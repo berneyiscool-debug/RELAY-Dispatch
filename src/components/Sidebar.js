@@ -11,6 +11,9 @@ import { hasPermission } from '../utils/permissions.js';
 
 // Primary sections. Items without `items[]` are direct pages (no submenu);
 // items with `items[]` open a secondary panel.
+// Rule: any submenu tab that opens into child tabs of its own carries
+// `hasChildren: true` so it renders the same right chevron the rail uses
+// (see the panel builder below and renderSubmenuItem for contextual groups).
 const navItems = [
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
   { id: 'schedule', icon: 'calendar_today', label: 'Schedule', path: '/schedule' },
@@ -18,7 +21,7 @@ const navItems = [
     category: 'Workflow', id: 'cat-workflow', icon: 'account_tree',
     items: [
       { id: 'notifications', icon: 'campaign', label: 'Notifications', path: '/notifications' },
-      { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads', dividerAfter: true },
+      { id: 'leads', icon: 'trending_up', label: 'Leads', path: '/leads', hasChildren: true, dividerAfter: true },
       { id: 'quotes', icon: 'request_quote', label: 'Quotes', path: '/quotes' },
       { id: 'jobs', icon: 'build', label: 'Jobs', path: '/jobs' },
       { id: 'invoices', icon: 'receipt_long', label: 'Invoices', path: '/invoices', dividerAfter: true },
@@ -38,7 +41,7 @@ const navItems = [
     category: 'Resources', id: 'cat-resources', icon: 'widgets',
     items: [
       { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
-      { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock' },
+      { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock', hasChildren: true },
       { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders', dividerAfter: true },
       { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
     ],
@@ -46,9 +49,9 @@ const navItems = [
   {
     category: 'Admin', id: 'cat-admin', icon: 'admin_panel_settings',
     items: [
-      { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents' },
-      { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports', dividerAfter: true },
-      { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings' },
+      { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents', hasChildren: true },
+      { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports', hasChildren: true, dividerAfter: true },
+      { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings', hasChildren: true },
     ],
   },
 ];
@@ -113,6 +116,7 @@ export function createSidebar() {
         <button class="submenu-item ${disabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${disabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
           <span class="nav-label">${child.label}</span>
+          ${child.hasChildren ? `<span class="rail-caret material-icons-outlined" aria-hidden="true" style="font-size:16px;opacity:0.45;flex:none;margin-left:auto">chevron_right</span>` : ''}
         </button>`;
       if (child.dividerAfter) {
         itemsHtml += `<div class="submenu-divider" role="separator" aria-hidden="true"></div>`;
