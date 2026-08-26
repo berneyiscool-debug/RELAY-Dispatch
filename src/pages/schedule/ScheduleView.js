@@ -123,6 +123,10 @@ export function renderScheduleView(container) {
   function positionContextMenu(menu, x, y) {
     if (!menu) return;
     const pad = 8;
+    // .dropdown-menu ships with `right:0`; combined with our inline `left` that
+    // stretches the menu across to the viewport edge. Clear it so the menu sizes
+    // to its content before we measure it.
+    menu.style.right = 'auto';
     const rect = menu.getBoundingClientRect();
     let left = x;
     let top = y;
