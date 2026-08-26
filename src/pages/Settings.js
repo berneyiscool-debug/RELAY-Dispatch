@@ -4475,6 +4475,19 @@ export function renderSettings(container) {
                 </div>
               </label>
 
+              <div class="form-group" style="margin:0; ${isLocalMode ? 'display:none' : ''}" id="ai-tier-group">
+                <label class="form-label" style="font-weight:600;">Deputy tier</label>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                  <button type="button" class="btn btn-sm ai-tier-option ${tier === AI_TIERS.CLOUD ? 'btn-primary' : 'btn-secondary'}" data-tier="${AI_TIERS.CLOUD}" style="flex:1;">Cloud</button>
+                  <button type="button" class="btn btn-sm ai-tier-option ${tier === AI_TIERS.CLOUD_PLUS ? 'btn-primary' : 'btn-secondary'}" data-tier="${AI_TIERS.CLOUD_PLUS}" style="flex:1;">Cloud+ Deputy Max</button>
+                </div>
+                <div class="text-tertiary" style="font-size:12px; margin-top:6px;" id="ai-tier-hint">
+                  ${tier === AI_TIERS.CLOUD_PLUS
+                    ? 'Deputy Max: image/attachment extraction, autopilot conflict proposals, longer chat memory, richer context.'
+                    : 'Cloud: chat assistant. Upgrade to Cloud+ for attachment extraction, autopilot conflict proposals and longer memory.'}
+                </div>
+              </div>
+
               <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
 
                 <div class="form-group" style="margin:0;">
@@ -4620,6 +4633,26 @@ export function renderSettings(container) {
 
 
 
+      // Tier toggle (cloud users only). Track the selection locally so switching
+      // without saving doesn't show an unexpected badge.
+      let selectedTier = tier;
+      tc.querySelectorAll('.ai-tier-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedTier = btn.dataset.tier;
+          tc.querySelectorAll('.ai-tier-option').forEach(b => {
+            const on = b.dataset.tier === selectedTier;
+            b.classList.toggle('btn-primary', on);
+            b.classList.toggle('btn-secondary', !on);
+          });
+          const hint = tc.querySelector('#ai-tier-hint');
+          if (hint) {
+            hint.textContent = selectedTier === AI_TIERS.CLOUD_PLUS
+              ? 'Deputy Max: image/attachment extraction, autopilot conflict proposals, longer chat memory, richer context.'
+              : 'Cloud: chat assistant. Upgrade to Cloud+ for attachment extraction, autopilot conflict proposals and longer memory.';
+          }
+        });
+      });
+
       // Save handler
       tc.querySelector('#btn-save-ai').addEventListener('click', () => {
         const enabled = enabledCheckbox.checked;
@@ -4647,7 +4680,8 @@ export function renderSettings(container) {
           model,
           visionEndpoint,
           visionModel,
-          systemPrompt
+          systemPrompt,
+          tier: selectedTier
         };
 
         store.saveSettings(settings);
