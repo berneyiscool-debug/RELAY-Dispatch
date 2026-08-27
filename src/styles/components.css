@@ -3799,4 +3799,102 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   color: var(--text-primary);
 }
 
+/* ---- Leads Market (trade chips + tab) ---- */
+.market-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.market-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--text-primary);
+}
+.market-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light, rgba(255, 92, 0, 0.1));
+  color: var(--color-primary-ink, #c2410c);
+  font-weight: 600;
+}
+.leads-tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* ---- Leads Market — trade / sub-selection picker ---- */
+.market-group { margin-bottom: 18px; }
+.market-group-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+.market-group-trades {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.market-trade {
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--card-bg, #fff);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.market-trade.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-light, rgba(255,92,0,0.1)); }
+
+.market-trade-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.market-trade-head input { accent-color: var(--color-primary); }
+
+.market-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 4px 24px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color, #ddd);
+}
+.market-subs.hidden { display: none; }
+
+.market-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.market-sub:hover { border-color: var(--color-primary); color: var(--text-primary); }
+.market-sub input { accent-color: var(--color-primary); }
+
+.market-subs-hint {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+
 

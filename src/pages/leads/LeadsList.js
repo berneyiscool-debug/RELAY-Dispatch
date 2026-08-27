@@ -1,4 +1,4 @@
-// ============================================
+﻿// ============================================
 // SIMPRO CLONE — LEADS LIST PAGE
 // ============================================
 
@@ -7,27 +7,50 @@ import { createDataTable } from '../../components/DataTable.js';
 import { router } from '../../router.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
-import { setListSearch } from '../../utils/listSearch.js';
+import { setListSearch, clearListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { renderLeadsMarket } from './Market.js';
 
 export function renderLeadsList(container, params) {
+  const hash = window.location.hash || '';
+  const startOnMarket = (params && params.tab === 'Marketplace') || /[?&]market=1/.test(hash) ? 'market' : 'leads';
+
+  container.innerHTML = `
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <h1>Leads</h1>
+    </div>
+    <div class="leads-tabs" style="display:flex; gap:2px; border-bottom:1px solid var(--border-color, #ddd); margin-bottom:14px;">
+      <button class="leads-tab ${startOnMarket === 'leads' ? 'active' : ''}" data-tab="leads" style="padding:8px 16px; font-size:13px; font-weight:600; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; color:var(--text-secondary);">Leads</button>
+      <button class="leads-tab ${startOnMarket === 'market' ? 'active' : ''}" data-tab="market" style="padding:8px 16px; font-size:13px; font-weight:600; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; color:var(--text-secondary);">Market</button>
+    </div>
+    <div id="leads-tab-content"></div>
+  `;
+
+  const content = container.querySelector('#leads-tab-content');
+  const tabs = container.querySelectorAll('.leads-tab');
+
+  const activate = (tab) => {
+    tabs.forEach((t) => {
+      const active = t.dataset.tab === tab;
+      t.classList.toggle('active', active);
+      t.style.color = active ? 'var(--text-primary)' : 'var(--text-secondary)';
+      t.style.borderBottomColor = active ? 'var(--color-primary)' : 'transparent';
+    });
+    if (tab === 'market') {
+      clearListSearch();
+      renderLeadsMarket(content);
+    } else {
+      renderLeadsTable(content);
+    }
+  };
+
+  tabs.forEach((t) => t.addEventListener('click', () => activate(t.dataset.tab)));
+  activate(startOnMarket);
+}
+
+function renderLeadsTable(container) {
   const leads = store.getAll('leads');
-  const originOf = (l) => (l.origin === 'Marketplace' ? 'Marketplace' : 'Internal');
-  const activeOrigin = (params && params.tab) === 'Marketplace' ? 'Marketplace' : 'Internal';
-
-  if (activeOrigin === 'Marketplace') {
-    container.innerHTML = `
-      <div class="empty-state" style="padding:64px 24px; text-align:center;">
-        <span class="material-icons-outlined" style="font-size:64px; color:var(--text-tertiary); margin-bottom:12px; display:block;">storefront</span>
-        <h3 style="margin:0 0 8px">Marketplace is coming soon</h3>
-        <p class="text-secondary" style="margin:0 auto; max-width:440px;">The marketplace will let you discover and accept incoming work from service providers and customers. Check back soon.</p>
-      </div>
-    `;
-    return;
-  }
-
-  const originLeads = leads.filter(l => originOf(l) === activeOrigin);
-
+  
   const likelihoods = {
     'New': 10,
     'Contacted': 30,
@@ -39,23 +62,20 @@ export function renderLeadsList(container, params) {
   };
 
   container.innerHTML = `
-    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <h1>Leads</h1>
-      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
-        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
-          <option value="all">All Statuses (${originLeads.length})</option>
-          ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${originLeads.filter(l => l.status === s).length})</option>`).join('')}
-        </select>
-        <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
-          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Lead</span>
-        </button>
-      </div>
+    <div class="leads-toolbar" style="display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+      <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+      <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+        <option value="all">All Statuses (${leads.length})</option>
+        ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${leads.filter(l => l.status === s).length})</option>`).join('')}
+      </select>
+      <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+        <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Lead</span>
+      </button>
     </div>
     <div id="leads-table-container"></div>
   `;
 
-  let filteredData = [...originLeads];
+  let filteredData = [...leads];
 
   const statusBadges = {
     'New': 'badge-info', 'Contacted': 'badge-neutral', 'Qualified': 'badge-warning',
@@ -232,7 +252,7 @@ export function renderLeadsList(container, params) {
   });
 
   container.querySelector('#leads-table-container').appendChild(table);
-  container.querySelector('#btn-new-lead').addEventListener('click', () => router.navigate(`/leads/new?origin=${activeOrigin}`));
+  container.querySelector('#btn-new-lead').addEventListener('click', () => router.navigate('/leads/new'));
 
   let activeStatusFilter = 'all';
   let searchQuery = '';
@@ -240,7 +260,7 @@ export function renderLeadsList(container, params) {
   let filterEndDate = '';
 
   function applyFilters() {
-    let filtered = leads.filter(l => originOf(l) === activeOrigin);
+    let filtered = [...leads];
     if (activeStatusFilter !== 'all') {
       filtered = filtered.filter(l => l.status === activeStatusFilter);
     }
@@ -284,3 +304,4 @@ export function renderLeadsList(container, params) {
     applyFilters();
   });
 }
+
