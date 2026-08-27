@@ -29,6 +29,7 @@ CREATE TABLE profiles (
   role text DEFAULT 'technician' NOT NULL,
   user_type_id text,
   color text,
+  avatar_url text,
   theme text DEFAULT 'light',
   pay_rate numeric DEFAULT 0,
   force_password_change boolean DEFAULT false NOT NULL,

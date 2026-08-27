@@ -977,9 +977,12 @@ export function renderSettings(container) {
               <tbody>
                 ${techs.filter(t => !t.deactivated).map(t => {
                   const ut = userTypes.find(ut => ut.id === t.userTypeId);
+                  const avatarCell = t.avatarUrl
+                    ? `<img src="${t.avatarUrl}" style="width:32px; height:32px; border-radius:50%; object-fit:cover; display:block;" />`
+                    : `<div style="width:32px; height:32px; border-radius:50%; background:${t.color}; align-items:center; justify-content:center; display:flex; color:#fff; font-weight:600; font-size:12px;">${(t.name || 'U').trim().charAt(0).toUpperCase()}</div>`;
                   return `
                     <tr>
-                      <td><div style="width:12px; height:12px; border-radius:50%; background:${t.color}"></div></td>
+                      <td>${avatarCell}</td>
                       <td class="font-medium">${t.name}</td>
                       <td class="text-secondary">${t.role}</td>
                       <td><span class="badge ${ut?.id === 'ut_admin' ? 'badge-primary' : 'badge-neutral'}">${ut?.name || 'Unassigned'}</span></td>
