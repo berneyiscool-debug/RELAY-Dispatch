@@ -711,7 +711,7 @@ router.register('/settings/quote-templates/:id/edit', renderPage((c, p) => rende
 router.register('/profile', renderPage(renderProfile));
 
 // ---- Auth Guard Hook ----
-const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile'];
+const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile', '/projects', '/recurring-templates'];
 
 router.onNavigate = (path, params) => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -774,6 +774,8 @@ router.onNavigate = (path, params) => {
           '/invoices': 'Invoices',
           '/documents': 'Documents',
           '/reports': 'Reports',
+          '/projects': 'Projects',
+          '/recurring-templates': 'Recurring Templates',
           '/settings': 'Settings'
        };
        const moduleName = pathMap[basePath];

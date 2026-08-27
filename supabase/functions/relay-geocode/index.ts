@@ -79,10 +79,13 @@ serve(async (req) => {
   try {
     // ── Authenticate the caller ────────────────────────────────────────
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if (!supabaseUrl || !serviceKey) {
+    // `SUPABASE_ANON_KEY` is auto-injected by the Edge Runtime on every
+    // project. `SUPABASE_SERVICE_ROLE_KEY` is not — requiring it was causing
+    // 500s on fresh projects where only the auto-injected secrets exist.
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+    if (!supabaseUrl || !anonKey) {
       return new Response(
-        JSON.stringify({ error: 'Server configuration error.' }),
+        JSON.stringify({ error: 'Upgrade the edge function (SUPABASE_ANON_KEY auto-injected env missing — redeploy the function).' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -93,7 +96,7 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const admin = createClient(supabaseUrl, serviceKey)
+    const admin = createClient(supabaseUrl, anonKey)
     const { data: { user }, error: authErr } = await admin.auth.getUser(authHeader.substring(7))
     if (authErr || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized: invalid token' }),
@@ -103,7 +106,7 @@ serve(async (req) => {
     const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY')
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'GOOGLE_MAPS_API_KEY is not set on Supabase.' }),
+        JSON.stringify({ error: 'GOOGLE_MAPS_API_KEY is not set on Supabase. Set it via: supabase secrets set GOOGLE_MAPS_API_KEY=<key>' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }

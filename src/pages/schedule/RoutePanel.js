@@ -10,7 +10,7 @@ import { store } from '../../data/store.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { computeRoute, getStartLocation, navigateUrl, fmtDuration } from '../../utils/routing.js';
-import { getCachedGeo, geocodeAddress } from '../../utils/geocode.js';
+import { getCachedGeo, geocodeAddress, getLastGeocodeError } from '../../utils/geocode.js';
 
 const PANEL_ID = 'schedule-route-panel';
 const BTN_ID = 'btn-schedule-route';
@@ -22,20 +22,42 @@ function blocksFor(dateStr, techId) {
   const t = (s) => s.startTime ? new Date(s.startTime).getTime()
     : ((s.startHour || 0) * 3600 + (s.startMinute || 0) * 60) * 1000;
   return (store.getAll('schedule') || [])
-    .filter(s => s.date === dateStr && (s.technicianId || 'unassigned') === techId)
+    .filter(s => (s.date === dateStr || (s.startTime && s.startTime.startsWith(dateStr)))
+      && (s.technicianId || 'unassigned') === techId)
     .sort((a, b) => t(a) - t(b));
 }
 
 async function stopForBlock(s) {
-  const job = store.getById('jobs', s.jobId);
-  const addr = job?.siteAddress;
-  if (!addr) return null;
-  const geo = job.geo || getCachedGeo(addr) || await geocodeAddress(addr);
-  if (!geo) return null;
+  let job = s.jobId ? store.getById('jobs', s.jobId) : null;
+  // Some stale legacy allocations lost their job_id — resolve by job number.
+  if (!job && s.jobNumber) {
+    job = (store.getAll('jobs') || []).find(j => j.number === s.jobNumber) || null;
+  }
+  const dbg = { number: job?.number || s.jobNumber || s.jobId || 'unknown allocation' };
+  if (!job) return { skip: true, ...dbg, reason: 'not linked to a job record' };
+
+  // The job may not carry its own site address (only filled when a site was
+  // picked at creation) — fall back to the customer's address, which is the
+  // address users expect routed ("the customer address").
+  let addr = job.siteAddress;
+  let geo = job.geo;
+  if (!addr && job.customerId) {
+    const cust = store.getById('customers', job.customerId);
+    if (cust) {
+      addr = cust.address || cust.sites?.[0]?.address || '';
+      geo = geo || cust.geo;
+    }
+  }
+  if (!addr) return { skip: true, ...dbg, reason: 'no address on job or customer' };
+  geo = geo || getCachedGeo(addr) || await geocodeAddress(addr);
+  if (!geo) {
+    const why = getLastGeocodeError();
+    return { skip: true, ...dbg, reason: `could not geocode “${addr}”${why ? ` — ${why}` : ''}` };
+  }
   // Trim generated suffixes ("… — Recurring (21/07/2026)") for display
   const title = (job.title || addr).replace(/\s*—\s*Recurring.*$/i, '').trim();
   return {
-    id: s.id, blockId: s.id, jobId: s.jobId,
+    skip: false, id: s.id, blockId: s.id, jobId: s.jobId,
     number: job.number || '', title,
     label: `${job.number || ''} ${title}`.trim(),
     time: s.startTime ? s.startTime.slice(11, 16) : '',
@@ -110,10 +132,11 @@ async function renderPanelContentInner(body, date, technicians, refresh) {
   for (const tech of technicians) {
     const blocks = blocksFor(dateStr, tech.id);
     if (!blocks.length) continue;
-    const stops = (await Promise.all(blocks.map(stopForBlock))).filter(Boolean);
+    const results = await Promise.all(blocks.map(stopForBlock));
+    const stops = results.filter(r => !r.skip);
     if (!stops.length) {
       sections.push(`<div class="rp-section"><div class="rp-tech">${escapeHTML(tech.name)}</div>
-        <div class="rp-muted">No geocodable job addresses for this day.</div></div>`);
+        <div class="rp-muted">No geocodable job addresses for this day.<br>${results.map(r => `• ${escapeHTML(r.number)} — ${escapeHTML(r.reason)}`).join('<br>')}</div></div>`);
       continue;
     }
     const route = await computeRoute({ origin: { lat: start.lat, lng: start.lng }, stops, roundTrip: true });
@@ -201,7 +224,7 @@ async function renderPanelContentInner(body, date, technicians, refresh) {
       slot.innerHTML = `<div class="rp-muted">Optimizing…</div>`;
       try {
         const blocks = blocksFor(dateStr, techId);
-        const stops = (await Promise.all(blocks.map(stopForBlock))).filter(Boolean);
+        const stops = (await Promise.all(blocks.map(stopForBlock))).filter(r => !r.skip);
         const current = await computeRoute({ origin: { lat: start.lat, lng: start.lng }, stops, roundTrip: true });
         const best = await computeRoute({ origin: { lat: start.lat, lng: start.lng }, stops, roundTrip: true, optimize: true });
         if (!best) { slot.innerHTML = `<div class="rp-muted">Route service unavailable.</div>`; return; }

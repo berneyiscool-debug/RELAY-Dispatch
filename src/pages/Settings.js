@@ -8,7 +8,7 @@ import { showToast } from '../components/Notifications.js';
 import { showModal } from '../components/Modal.js';
 import { renderStorageOptions } from '../components/StorageOptions.js';
 import { renderKitTypes } from '../components/KitTypes.js';
-import { MODULE_PERMS } from '../utils/permissions.js';
+import { MODULE_PERMS, buildGranularPerms } from '../utils/permissionDefs.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
@@ -74,15 +74,6 @@ async function hashPassword(password) {
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Build a permissions array with all granular keys
-function buildGranularPerms(valueFn) {
-  return Object.entries(MODULE_PERMS).map(([module, perms]) => {
-    const obj = { module };
-    perms.forEach(({ key }) => { obj[key] = valueFn(module, key); });
-    return obj;
-  });
 }
 
 // Helper to render visual timeline
@@ -2166,7 +2157,6 @@ export function renderSettings(container) {
           if (editId) {
             store.update('userTypes', editId, { name, description: desc });
           } else {
-            const baseModules = ['Dashboard', 'Customers', 'Leads', 'Quotes', 'Jobs', 'Timesheets', 'Assets', 'Schedule', 'Contractors', 'Stock', 'Purchase Orders', 'Invoices', 'Documents', 'Reports', 'Settings'];
             let perms = [];
             if (template === 'Admin') perms = buildGranularPerms(() => true);
             else if (template === 'Manager') perms = buildGranularPerms((mod, key) => {

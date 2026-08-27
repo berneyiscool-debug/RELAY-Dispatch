@@ -116,10 +116,12 @@ serve(async (req) => {
   try {
     // ── Authenticate the caller ────────────────────────────────────────
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if (!supabaseUrl || !serviceKey) {
+    // Use the auto-injected SUPABASE_ANON_KEY. Requiring SUPABASE_SERVICE_ROLE_KEY
+    // 500s on fresh projects that only have the auto-injected secrets.
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+    if (!supabaseUrl || !anonKey) {
       return new Response(
-        JSON.stringify({ error: 'Server configuration error.' }),
+        JSON.stringify({ error: 'Upgrade the edge function (SUPABASE_ANON_KEY auto-injected env missing — redeploy the function).' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -130,7 +132,7 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const admin = createClient(supabaseUrl, serviceKey)
+    const admin = createClient(supabaseUrl, anonKey)
     const { data: { user }, error: authErr } = await admin.auth.getUser(authHeader.substring(7))
     if (authErr || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized: invalid token' }),

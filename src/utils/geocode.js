@@ -13,6 +13,38 @@ import { supabase } from './supabase.js';
 
 const CACHE_KEY = 'relay.geocodeCache.v1';
 const inFlight = new Map(); // normalizedAddress -> Promise, dedupes concurrent lookups
+let lastError = null; // human-readable failure reason from the edge function
+
+/** The reason the last geocode call failed (e.g. missing GOOGLE_MAPS_API_KEY),
+ *  or null when the last call succeeded. Lets UIs explain WHY an address could
+ *  not be resolved instead of pretending there's no address. */
+export function getLastGeocodeError() { return lastError; }
+
+async function errorMessage(err) {
+  // supabase-js v2 FunctionsHttpError shape: err.context = { status, code, error, errorMessage, ... }
+  // (older versions hand us the raw Fetch Response). Handle both + raw bodies.
+  const ctx = err && err.context;
+  if (ctx) {
+    const status = ctx.status ? `HTTP ${ctx.status}` : '';
+    const body = ctx.errorMessage || ctx.error || ctx.message || ctx.errorJson || null;
+    if (body && typeof body === 'string') return `${status} — ${body.slice(0, 200)}`.trim();
+    if (body && typeof body === 'object') return `${status} — ${JSON.stringify(body).slice(0, 200)}`.trim();
+    if (ctx.response) {
+      try {
+        const text = await ctx.response.clone().text();
+        if (text) return `${status || 'HTTP error'} — ${text.slice(0, 200)}`.trim();
+      } catch { /* body already consumed */ }
+    }
+    return status || 'Edge Function error';
+  }
+  if (err && err.response) {
+    try {
+      const text = await err.response.clone().text();
+      if (text) return text.slice(0, 200);
+    } catch { /* ignore */ }
+  }
+  return (err && err.message) ? String(err.message) : String(err);
+}
 
 // Normalise so trivial formatting differences ("14 Industrial Lane, Dubbo NSW 2830"
 // vs "14 industrial lane,  dubbo  nsw 2830") share one cache entry / one billed call.
@@ -87,13 +119,15 @@ export async function geocodeAddress(address, opts = {}) {
       if (error) throw error;
       if (!data || !data.result) return null;
 
+      lastError = null;
       const geo = { ...data.result, geocodedAt: new Date().toISOString() };
       const fresh = loadCache();
       fresh[key] = geo;
       saveCache(fresh);
       return geo;
     } catch (err) {
-      console.warn('RELAY geocode failed:', err?.message || err);
+      lastError = await errorMessage(err);
+      console.warn('RELAY geocode failed:', lastError);
       return null;
     } finally {
       inFlight.delete(key);

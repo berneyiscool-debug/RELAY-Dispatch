@@ -3,16 +3,7 @@
 // ============================================
 
 import { store } from './store.js';
-import { MODULE_PERMS } from '../utils/permissions.js';
-
-// ---- Granular permissions helper ----
-function buildGranularPerms(valueFn) {
-  return Object.entries(MODULE_PERMS).map(([module, perms]) => {
-    const obj = { module };
-    perms.forEach(({ key }) => { obj[key] = valueFn(module, key); });
-    return obj;
-  });
-}
+import { MODULE_PERMS, buildGranularPerms } from '../utils/permissionDefs.js';
 
 const userTypes = [
   {
