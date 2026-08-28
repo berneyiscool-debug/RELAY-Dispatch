@@ -49,6 +49,7 @@ export const MODULE_PERMS = {
     { key: 'view_quotes_tab', label: 'View Quotes Tab' },
     { key: 'view_pos_tab', label: 'View POs Tab' },
     { key: 'view_timesheets_tab', label: 'View Timesheets Tab' },
+    { key: 'view_materials_tab', label: 'View Materials Tab' },
     { key: 'view_invoices_tab', label: 'View Invoices Tab' },
     { key: 'manage_materials', label: 'Manage Materials & Stock' },
     { key: 'create_invoice', label: 'Create Invoices from Job' },
@@ -118,7 +119,13 @@ export const MODULE_PERMS = {
     { key: 'view', label: 'View Projects' },
     { key: 'create', label: 'Create Projects' },
     { key: 'edit', label: 'Edit Projects' },
-    { key: 'delete', label: 'Delete Projects' }
+    { key: 'delete', label: 'Delete Projects' },
+  ],
+  // The Relay AI Assistant is a staff co-pilot: it respects the user's granular
+  // per-module permissions for any action it takes, but opening it is gated off
+  // this single 'use' key (granted to staff by default, admin-controllable).
+  'AI Assistant': [
+    { key: 'use', label: 'Use AI Assistant' },
   ]
 };
 

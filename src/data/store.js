@@ -3231,11 +3231,12 @@ class DataStore {
         name: 'Technician',
         description: 'Field staff — limited to their own jobs, schedule and timesheets',
         permissions: buildGranularPerms((mod, key) => {
+          if (mod === 'AI Assistant') return key === 'use';
           if (mod === 'Dashboard') return key === 'view';
           if (mod === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
           if (mod === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
           if (mod === 'Jobs') {
-            return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+            return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'view_materials_tab', 'manage_materials'].includes(key);
           }
           if (mod === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
           if (mod === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);

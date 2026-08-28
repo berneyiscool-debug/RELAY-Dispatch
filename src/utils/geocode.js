@@ -117,9 +117,9 @@ export async function geocodeAddress(address, opts = {}) {
         body: { address },
       });
       if (error) throw error;
+      lastError = null;
       if (!data || !data.result) return null;
 
-      lastError = null;
       const geo = { ...data.result, geocodedAt: new Date().toISOString() };
       const fresh = loadCache();
       fresh[key] = geo;

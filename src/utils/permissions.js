@@ -3,7 +3,6 @@
 // ============================================
 
 import { store } from '../data/store.js';
-import { MODULE_PERMS } from './permissionDefs.js';
 
 export function hasPermission(module, key) {
   // Recurring templates are stored as recurring Jobs, so gate them off the Jobs
@@ -20,11 +19,12 @@ export function hasPermission(module, key) {
   // and give them a standard set of technician permissions to declutter the UI.
   const isLocalAdminTechView = localStorage.getItem('relay_login_mode') === 'local' && localStorage.getItem('uiMode') === 'technician';
   if (isLocalAdminTechView) {
+    if (module === 'AI Assistant') return key === 'use';
     if (module === 'Dashboard') return key === 'view';
     if (module === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
     if (module === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
     if (module === 'Jobs') {
-      return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+      return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'view_materials_tab', 'manage_materials'].includes(key);
     }
     if (module === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
     if (module === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);
@@ -42,17 +42,23 @@ export function hasPermission(module, key) {
     const ut = store.getById('userTypes', currentUser.userTypeId);
     if (ut && ut.permissions) {
       const p = ut.permissions.find(p => p.module === module);
-      return p ? !!p[key] : false;
+      if (p) return !!p[key];
+      // User types created before 'AI Assistant' became a module have no entry
+      // for it. Default staff to enabled rather than silently locking the
+      // assistant off; saving permissions in Settings makes it explicit.
+      if (module === 'AI Assistant') return key === 'use';
+      return false;
     }
   }
 
   // Fallbacks if no userType is associated or defined:
   if (currentUser.role === 'technician') {
+    if (module === 'AI Assistant') return key === 'use';
     if (module === 'Dashboard') return key === 'view';
     if (module === 'Schedule') return ['view', 'view_own', 'edit'].includes(key);
     if (module === 'Quotes') return ['view', 'create', 'edit', 'delete', 'approve', 'convert', 'generate_pdf'].includes(key);
     if (module === 'Jobs') {
-      return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'manage_materials'].includes(key);
+      return ['view', 'create', 'edit', 'delete', 'book_time', 'view_invoices_tab', 'create_invoice', 'manage_tasks', 'view_timesheets_tab', 'view_materials_tab', 'manage_materials'].includes(key);
     }
     if (module === 'Invoices') return ['view', 'create', 'send', 'void'].includes(key);
     if (module === 'Customers') return ['view', 'create', 'edit', 'delete', 'manage_contacts'].includes(key);

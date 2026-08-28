@@ -2164,8 +2164,9 @@ export function renderSettings(container) {
               return true;
             });
             else if (template === 'Technician') perms = buildGranularPerms((mod, key) => {
+              if (mod === 'AI Assistant') return key === 'use';
               if (mod === 'Dashboard') return key === 'view';
-              if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time'].includes(key);
+              if (mod === 'Jobs') return ['view', 'manage_tasks', 'book_time', 'view_materials_tab'].includes(key);
               if (mod === 'Timesheets') return ['view_own', 'create'].includes(key);
               if (mod === 'Schedule') return ['view_own'].includes(key);
               return false;
