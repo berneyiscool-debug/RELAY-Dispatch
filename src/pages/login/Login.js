@@ -979,16 +979,17 @@ async function completeLogin(user) {
   if (topbar) topbar.style.display = '';
   if (breadcrumb) breadcrumb.style.display = '';
 
-  // Trigger UI updates for routes
+  const { store: dataStore } = await import('../../data/store.js');
+  await dataStore.initializeUser(user);
+  const landingRoute = getLandingRoute(user, dataStore);
+
+  // Trigger UI updates for routes (after initializeUser so the sidebar's
+  // local-mode gate reflects the now-active cloud account).
   const { updateSidebarAccess } = await import('../../components/Sidebar.js');
   if (updateSidebarAccess) updateSidebarAccess();
 
   const { updateTopbarAccess } = await import('../../components/TopBar.js');
   if (updateTopbarAccess) updateTopbarAccess();
-
-  const { store: dataStore } = await import('../../data/store.js');
-  await dataStore.initializeUser(user);
-  const landingRoute = getLandingRoute(user, dataStore);
 
   // Restore theme settings
   const storedTheme = user.theme || 'light';

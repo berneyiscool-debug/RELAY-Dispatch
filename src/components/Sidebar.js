@@ -873,6 +873,19 @@ export function updateSidebarAccess(sidebarElement) {
     if (!labelEl) return;
     const label = labelEl.textContent.trim();
     if (label === 'Dashboard' || label === 'Notifications') { item.style.display = ''; return; }
+    // Re-evaluate the local-mode gate (Documents requires a cloud account) so a
+    // sidebar built before a cloud login is un-disabled once the cloud session is active.
+    if (label === 'Documents') {
+      const disabled = isLocalMode();
+      item.classList.toggle('disabled-local', disabled);
+      if (disabled) {
+        item.setAttribute('data-tooltip', 'Requires Cloud Account');
+        item.setAttribute('data-tooltip-pos', 'right');
+      } else {
+        item.removeAttribute('data-tooltip');
+        item.removeAttribute('data-tooltip-pos');
+      }
+    }
     const canView = hasPermission(label, 'view') || hasPermission(label, 'view_own');
     item.style.display = canView ? '' : 'none';
   });
