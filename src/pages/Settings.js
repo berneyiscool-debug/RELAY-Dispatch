@@ -18,6 +18,7 @@ import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
+import { renderLeadProfileSetup } from './leads/leadProfile.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -798,6 +799,13 @@ export function renderSettings(container) {
               </button>
             </div>
           </div>
+
+          <div class="card" style="max-width:100%">
+            <div class="card-header"><h4>Lead & Market Profile</h4></div>
+            <div class="card-body">
+              <div id="lead-profile-root"></div>
+            </div>
+          </div>
         `;
 
         // Company address autocomplete — same behaviour as customer/supplier
@@ -936,6 +944,9 @@ export function renderSettings(container) {
       };
 
       renderCompanyTab();
+      renderLeadProfileSetup(tc.querySelector('#lead-profile-root')).catch((err) => {
+        console.error('Error rendering lead profile setup:', err);
+      });
     } else if (activeTab === 'users') {
       renderUsersSettings(tc);
     } else if (activeTab === 'materials') {
