@@ -176,6 +176,7 @@ export async function renderLeadProfileSetup(container, opts = {}) {
       <p id="lead-profile-error" style="color:var(--color-danger); display:none;"></p>
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button class="btn btn-primary" id="btn-lead-profile-save">Save Lead Profile</button>
+        <button class="btn btn-ghost" id="btn-lead-profile-reset" type="button">Reset</button>
       </div>
     </div>
   `;
@@ -253,5 +254,21 @@ export async function renderLeadProfileSetup(container, opts = {}) {
 
     showToast('Lead profile saved', 'success');
     if (onSaved) onSaved(profile);
+  });
+
+  // Reset all trade/service selections back to a blank state.
+  container.querySelector('#btn-lead-profile-reset').addEventListener('click', () => {
+    container.querySelectorAll('.market-trade').forEach((tradeEl) => {
+      tradeEl.classList.remove('active');
+      const check = tradeEl.querySelector('.market-trade-check');
+      if (check) check.checked = false;
+      const subsEl = tradeEl.querySelector('.market-subs');
+      if (subsEl) {
+        subsEl.classList.add('hidden');
+        subsEl.querySelectorAll('.market-sub-check').forEach((s) => { s.checked = false; });
+      }
+    });
+    const errEl = container.querySelector('#lead-profile-error');
+    if (errEl) errEl.style.display = 'none';
   });
 }
