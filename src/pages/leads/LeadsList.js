@@ -9,47 +9,46 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { setListSearch, clearListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
-import { renderLeadsMarket } from './Market.js';
 
 export function renderLeadsList(container, params) {
   const hash = window.location.hash || '';
   const startOnMarket = (params && params.tab === 'Marketplace') || /[?&]market=1/.test(hash) ? 'market' : 'leads';
 
-  container.innerHTML = `
-    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <h1>Leads</h1>
-    </div>
-    <div class="leads-tabs" style="display:flex; gap:2px; border-bottom:1px solid var(--border-color, #ddd); margin-bottom:14px;">
-      <button class="leads-tab ${startOnMarket === 'leads' ? 'active' : ''}" data-tab="leads" style="padding:8px 16px; font-size:13px; font-weight:600; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; color:var(--text-secondary);">Leads</button>
-      <button class="leads-tab ${startOnMarket === 'market' ? 'active' : ''}" data-tab="market" style="padding:8px 16px; font-size:13px; font-weight:600; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; color:var(--text-secondary);">Market</button>
-    </div>
-    <div id="leads-tab-content"></div>
-  `;
-
-  const content = container.querySelector('#leads-tab-content');
-  const tabs = container.querySelectorAll('.leads-tab');
-
-  const activate = (tab) => {
-    tabs.forEach((t) => {
-      const active = t.dataset.tab === tab;
-      t.classList.toggle('active', active);
-      t.style.color = active ? 'var(--text-primary)' : 'var(--text-secondary)';
-      t.style.borderBottomColor = active ? 'var(--color-primary)' : 'transparent';
+  if (startOnMarket === 'market') {
+    clearListSearch();
+    renderLeadsTable(container, {
+      origin: 'Marketplace',
+      containerId: 'market-table-container',
+      searchLabel: 'Search marketplace leads...',
+      emptyMessage: 'No marketplace leads yet',
+      emptyIcon: 'storefront',
+      newLeadHref: '/leads/new?origin=Marketplace',
     });
-    if (tab === 'market') {
-      clearListSearch();
-      renderLeadsMarket(content);
-    } else {
-      renderLeadsTable(content);
-    }
-  };
+    return;
+  }
 
-  tabs.forEach((t) => t.addEventListener('click', () => activate(t.dataset.tab)));
-  activate(startOnMarket);
+  renderLeadsTable(container, {
+    origin: 'Internal',
+    containerId: 'leads-table-container',
+    searchLabel: 'Search leads...',
+    emptyMessage: 'No leads found',
+    emptyIcon: 'trending_up',
+    newLeadHref: '/leads/new',
+  });
 }
 
-function renderLeadsTable(container) {
-  const leads = store.getAll('leads');
+function renderLeadsTable(container, opts = {}) {
+  const {
+    origin = 'Internal',
+    containerId = 'leads-table-container',
+    searchLabel = 'Search leads...',
+    emptyMessage = 'No leads found',
+    emptyIcon = 'trending_up',
+    newLeadHref = '/leads/new',
+  } = opts;
+
+  const isMarket = origin === 'Marketplace';
+  const leads = store.getAll('leads').filter(l => (isMarket ? l.origin === 'Marketplace' : l.origin !== 'Marketplace'));
   
   const likelihoods = {
     'New': 10,
@@ -62,17 +61,19 @@ function renderLeadsTable(container) {
   };
 
   container.innerHTML = `
-    <div class="leads-toolbar" style="display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
-      <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
-      <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
-        <option value="all">All Statuses (${leads.length})</option>
-        ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${leads.filter(l => l.status === s).length})</option>`).join('')}
-      </select>
-      <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
-        <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Lead</span>
-      </button>
+    <div class="page-header" style="display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:6px;">
+      <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
+        <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
+          <option value="all">All Statuses (${leads.length})</option>
+          ${['New','Contacted','Qualified','Won','Lost'].map(s => `<option value="${s}">${s} (${leads.filter(l => l.status === s).length})</option>`).join('')}
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-new-lead" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">New Lead</span>
+        </button>
+      </div>
     </div>
-    <div id="leads-table-container"></div>
+    <div id="${containerId}"></div>
   `;
 
   let filteredData = [...leads];
@@ -97,7 +98,7 @@ function renderLeadsTable(container) {
   const table = createDataTable({
     columns, data: filteredData,
     onRowClick: (id) => router.navigate(`/leads/${id}`),
-    emptyMessage: 'No leads found', emptyIcon: 'trending_up',
+    emptyMessage, emptyIcon,
     selectable: true,
     onSelectionChange: (selectedIds) => {
       createBulkActionBar({
@@ -251,8 +252,8 @@ function renderLeadsTable(container) {
     }
   });
 
-  container.querySelector('#leads-table-container').appendChild(table);
-  container.querySelector('#btn-new-lead').addEventListener('click', () => router.navigate('/leads/new'));
+  container.querySelector(`#${containerId}`).appendChild(table);
+  container.querySelector('#btn-new-lead').addEventListener('click', () => router.navigate(newLeadHref));
 
   let activeStatusFilter = 'all';
   let searchQuery = '';
@@ -294,7 +295,7 @@ function renderLeadsTable(container) {
     }
   });
 
-  setListSearch('Search leads...', (q) => {
+  setListSearch(searchLabel, (q) => {
     searchQuery = q;
     applyFilters();
   });

@@ -3824,10 +3824,6 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   color: var(--color-primary-ink, #c2410c);
   font-weight: 600;
 }
-.leads-tab:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -2px;
-}
 
 /* ---- Leads Market — trade / sub-selection picker ---- */
 .market-group { margin-bottom: 18px; }
