@@ -26,6 +26,21 @@ export function renderScheduleView(container) {
   const loginMode = localStorage.getItem('relay_login_mode');
   const isLocalAdmin = loginMode === 'local';
 
+  function getVisibleTechsKey() {
+    return `relay_schedule_visible_techs_${currentUser.id || 'anon'}`;
+  }
+  function loadVisibleTechs() {
+    try {
+      const raw = localStorage.getItem(getVisibleTechsKey());
+      if (!raw) return null;
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : null;
+    } catch { return null; }
+  }
+  function saveVisibleTechs() {
+    try { localStorage.setItem(getVisibleTechsKey(), JSON.stringify([...visibleTechIds])); } catch { /* ignore */ }
+  }
+
   function getTechnicians() {
     const allTechs = store.getAll('technicians') || [];
     if (isLocalAdmin) {
@@ -67,9 +82,17 @@ export function renderScheduleView(container) {
   let resizeState = null;
   let selectedScheduleIds = new Set(); // marquee multi-select of schedule blocks
   let marqueeState = null;
-  // Technicians are locked to their own view; admins/managers can toggle multiple
-  // If in technician view but has no technician record (local admin toggled), show all.
-  let visibleTechIds = new Set((isTechnician && hasTechRecord) ? [currentUser.id] : technicians.map(t => t.id));
+  // Default to the current user only. If the user has previously chosen a set via the
+  // technician filter, restore that saved selection instead.
+  const savedVisibleTechs = loadVisibleTechs();
+  let visibleTechIds;
+  if (savedVisibleTechs && savedVisibleTechs.length > 0) {
+    visibleTechIds = new Set(savedVisibleTechs);
+  } else if (currentUser.id) {
+    visibleTechIds = new Set([currentUser.id]);
+  } else {
+    visibleTechIds = new Set(technicians.map(t => t.id));
+  }
   let contextMenu = null;
   let savedScrollTop = 0;
   let savedScrollLeft = 0;
@@ -2021,6 +2044,7 @@ export function renderScheduleView(container) {
         if (e.target.checked) visibleTechIds.add(e.target.value);
         else visibleTechIds.delete(e.target.value);
         render();
+        saveVisibleTechs();
       });
     });
 
