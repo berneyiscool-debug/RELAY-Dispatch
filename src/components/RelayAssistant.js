@@ -17,10 +17,20 @@ import { loadUserMemory, saveUserMemory, clearStaleMemory, getStructuredMemory }
 import { FLAGS } from '../utils/flags.js';
 import { hasMapsAction, runMapsActions } from '../utils/deputyMaps.js';
 import { hasWeatherAction, runWeatherActions } from '../utils/deputyWeather.js';
+import { getThreads, getThread, createThread, renameThread, deleteThread, setThreadMessages, ensureDefaultThread } from '../utils/deputyThreads.js';
+import { runEmergencyScan, summariseScan, SCAN_CATEGORIES } from '../utils/deputyScan.js';
+import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
 
 let panel = null;
 let onStateChange = null;
 let chatHistory = [];
+let currentThreadId = null;
+let emergencyFindings = [];
+let scanRefreshTimer = null;
+
+function lastThreadKey() {
+  return `relay_last_thread_${getUserId()}`;
+}
 
 // ── Workspace State & Action Audit Log ──
 let isExpanded = localStorage.getItem('relay_expanded') === 'true';
@@ -342,6 +352,146 @@ async function renderMemoryInspectorView(container) {
   });
 }
 
+function scanCategoryRoute(category) {
+  switch (category) {
+    case SCAN_CATEGORIES.OVERDUE_INVOICE: return 'invoices';
+    case SCAN_CATEGORIES.CRITICAL_STOCK: return 'stock';
+    case SCAN_CATEGORIES.TECH_CONFLICT: return 'schedule';
+    case SCAN_CATEGORIES.OVERDUE_MAINTENANCE: return 'assets';
+    default: return 'jobs';
+  }
+}
+
+function scanProposalForFinding(finding) {
+  const id = (finding.recordIds || [])[0] || '';
+  switch (finding.category) {
+    case SCAN_CATEGORIES.EMERGENCY_JOB: {
+      const techs = (store.getAll('technicians') || []).filter(t => !t.deactivated);
+      if (techs.length) {
+        return `[ACTION: ASSIGN_TECH, {"jobId":"${id}","technicianName":"${techs[0].name}"}]`;
+      }
+      return `[ACTION: NAVIGATE, {"page":"jobs"}]`;
+    }
+    case SCAN_CATEGORIES.CRITICAL_STOCK:
+      return `[ACTION: REORDER_STOCK, {"itemId":"${id}","quantity":10}]`;
+    default:
+      return `[ACTION: NAVIGATE, {"page":"${scanCategoryRoute(finding.category)}"}]`;
+  }
+}
+
+function surfaceEmergencyAsks(findings) {
+  const critical = findings.filter(f => f.severity === 'critical');
+  if (!critical.length) return;
+  const allAsks = store.getAll('deputyAsks') || [];
+  const unresolvedAsks = allAsks.filter(a => a.status === 'pending');
+  let added = false;
+  critical.forEach(finding => {
+    const signature = (finding.recordIds || []).sort().join(',');
+    const alreadyAsked = unresolvedAsks.some(a => a.conflictJobIds === signature && a.title === finding.title);
+    if (alreadyAsked) return;
+    allAsks.push({
+      id: 'ask_' + Date.now() + Math.random().toString(36).substr(2, 9),
+      company_id: store.companyId,
+      title: finding.title,
+      description: finding.detail,
+      proposedAction: scanProposalForFinding(finding),
+      status: 'pending',
+      conflictJobIds: signature,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    added = true;
+  });
+  if (added) store.save('deputyAsks', allAsks);
+}
+
+function refreshEmergencyScan() {
+  if (!hasDeputyMax()) return;
+  emergencyFindings = runEmergencyScan();
+  surfaceEmergencyAsks(emergencyFindings);
+  if (panel && activeTab === 'scan') {
+    renderEmergencyScanView(panel.querySelector('#relay-workspace-view'));
+  }
+}
+
+function scheduleEmergencyScanRefresh() {
+  if (!hasDeputyMax()) return;
+  if (scanRefreshTimer) clearTimeout(scanRefreshTimer);
+  scanRefreshTimer = setTimeout(refreshEmergencyScan, 1200);
+}
+
+function renderEmergencyScanView(container) {
+  if (!container) return;
+  if (!hasDeputyMax()) {
+    container.innerHTML = '';
+    return;
+  }
+  if (!emergencyFindings.length) emergencyFindings = runEmergencyScan();
+  const findings = emergencyFindings;
+  const counts = { critical: 0, high: 0, medium: 0 };
+  findings.forEach(f => { counts[f.severity] = (counts[f.severity] || 0) + 1; });
+
+  const grouped = {};
+  findings.forEach(f => {
+    if (!grouped[f.category]) grouped[f.category] = [];
+    grouped[f.category].push(f);
+  });
+
+  const noFindings = findings.length === 0;
+  const groupHtml = Object.entries(grouped).map(([cat, items]) => `
+    <div class="scan-group">
+      <div class="scan-group-head">${escapeHtml(cat)} <span class="badge ${items.some(i => i.severity === 'critical') ? 'badge-danger' : 'badge-warning'}">${items.length}</span></div>
+      ${items.map(f => `
+        <div class="scan-finding scan-sev-${f.severity}">
+          <span class="scan-sev-badge scan-sev-${f.severity}">${f.severity}</span>
+          <div class="scan-finding-body">
+            <div class="scan-finding-title">${escapeHtml(f.title)}</div>
+            <div class="scan-finding-detail">${escapeHtml(f.detail)}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm btn-open-scan" data-route="${scanCategoryRoute(f.category)}">Open</button>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="watchdog-banner">
+      <div class="watchdog-banner-info">
+        <div class="watchdog-health-ring">${findings.length}</div>
+        <div>
+          <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--text-primary);">Emergency Scan</h2>
+          <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">
+            ${noFindings ? 'No urgent issues detected. All systems look clear.' : `Detected ${findings.length} finding${findings.length === 1 ? '' : 's'}: ${counts.critical} critical, ${counts.high} high, ${counts.medium} medium.`}
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-danger btn-sm btn-run-scan" style="display:inline-flex;align-items:center;gap:6px;">
+        <span class="material-icons-outlined" style="font-size:16px;">radar</span> Run Emergency Scan
+      </button>
+    </div>
+    ${noFindings ? `
+      <div style="padding:24px 16px;text-align:center;color:var(--text-tertiary);">
+        <span class="material-icons-outlined" style="font-size:32px;opacity:0.5;margin-bottom:8px;">verified</span>
+        <div>Nothing needs urgent attention right now.</div>
+      </div>
+    ` : `<div class="scan-list">${groupHtml}</div>`}
+  `;
+
+  container.querySelector('.btn-run-scan')?.addEventListener('click', () => {
+    emergencyFindings = runEmergencyScan();
+    surfaceEmergencyAsks(emergencyFindings);
+    logAction('Emergency Scan', `Ran scan — ${emergencyFindings.length} finding${emergencyFindings.length === 1 ? '' : 's'}`, emergencyFindings.length ? 'warning' : 'success');
+    renderEmergencyScanView(container);
+  });
+
+  container.querySelectorAll('.btn-open-scan').forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.location.hash = `#/${btn.dataset.route}`;
+      showToast(`Opened ${btn.dataset.route} view.`, 'info');
+    });
+  });
+}
+
 function updateWorkspaceView(panel) {
   if (!panel) return;
   const workspaceView = panel.querySelector('#relay-workspace-view');
@@ -378,6 +528,8 @@ function updateWorkspaceView(panel) {
         renderWatchdogView(workspaceView);
       } else if (activeTab === 'inspector') {
         renderMemoryInspectorView(workspaceView);
+      } else if (activeTab === 'scan') {
+        renderEmergencyScanView(workspaceView);
       }
     }
   }
@@ -529,6 +681,13 @@ function getUserId() {
 }
 
 function loadChatHistory() {
+  // Deputy Max: history lives in the active thread (cloud-synced).
+  if (hasDeputyMax()) {
+    if (!currentThreadId) return [];
+    const t = getThread(currentThreadId);
+    return t && Array.isArray(t.messages) ? t.messages : [];
+  }
+  // Base/cloud: legacy single-history in localStorage.
   const key = `relay_chat_history_${getUserId()}`;
   try {
     const raw = localStorage.getItem(key);
@@ -540,6 +699,12 @@ function loadChatHistory() {
 }
 
 function saveChatHistory(history) {
+  // Deputy Max: persist to the active thread.
+  if (hasDeputyMax()) {
+    if (currentThreadId) setThreadMessages(currentThreadId, history);
+    return;
+  }
+  // Base/cloud: legacy single-history in localStorage.
   const key = `relay_chat_history_${getUserId()}`;
   try {
     localStorage.setItem(key, JSON.stringify(history));
@@ -593,6 +758,15 @@ export async function openRelay() {
       <div class="relay-nav-tabs" id="relay-nav-tabs" style="${isExpanded ? 'display:flex' : 'display:none'}">
         <button class="relay-nav-tab ${activeTab === 'watchdog' ? 'active' : ''}" data-tab="watchdog" title="Operations Watchdog"><span class="material-icons-outlined">shield</span> Watchdog</button>
         <button class="relay-nav-tab ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" title="Chat Stream"><span class="material-icons-outlined">chat</span> Chat</button>
+        <button class="relay-nav-tab ${activeTab === 'scan' ? 'active' : ''}" data-tab="scan" title="Emergency Scan" style="${hasDeputyMax() ? '' : 'display:none'}"><span class="material-icons-outlined">emergency</span> Scan</button>
+      </div>
+      <div class="relay-thread-switcher" id="relay-thread-switcher" style="${hasDeputyMax() ? '' : 'display:none'}">
+        <button class="relay-thread-btn" id="relay-thread-btn" title="Switch chat thread">
+          <span class="material-icons-outlined">forum</span>
+          <span class="relay-thread-label" id="relay-thread-label">Main</span>
+          <span class="material-icons-outlined relay-thread-caret">expand_more</span>
+        </button>
+        <div class="relay-thread-menu" id="relay-thread-menu" style="display:none"></div>
       </div>
       <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
         <button class="relay-expand" id="relay-expand" title="${isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace'}"><span class="material-icons-outlined">${isExpanded ? 'close_fullscreen' : 'open_in_full'}</span></button>
@@ -649,31 +823,53 @@ export async function openRelay() {
     });
   }
 
+  // Thread switcher (Deputy Max multichat) — toggle menu + close on outside click
+  const threadBtn = panel.querySelector('#relay-thread-btn');
+  const threadSwitcher = panel.querySelector('#relay-thread-switcher');
+  if (threadBtn && threadSwitcher && hasDeputyMax()) {
+    threadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = panel.querySelector('#relay-thread-menu');
+      if (!menu) return;
+      renderThreadSwitcher();
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+    document.addEventListener('click', (e) => {
+      if (threadSwitcher && !threadSwitcher.contains(e.target)) closeThreadMenu();
+    });
+  }
+
+  // Emergency scan: refresh on relevant store changes + run once on open.
+  if (hasDeputyMax()) {
+    ['jobs', 'schedule', 'invoices', 'stock', 'maintenancePlans'].forEach(coll => store.on(coll, scheduleEmergencyScanRefresh));
+    refreshEmergencyScan();
+  }
+
   updateWorkspaceView(panel);
 
   if (draftVal) {
     autoGrow(input);
   }
 
+  // Select the active thread (Deputy Max) or fall back to the legacy single
+  // history. Max users restore the last-opened thread across sessions.
+  if (hasDeputyMax()) {
+    await ensureDefaultThread();
+    const threads = getThreads();
+    const saved = localStorage.getItem(lastThreadKey());
+    currentThreadId = (saved && threads.some(t => t.id === saved))
+      ? saved
+      : (threads.length ? threads[0].id : null);
+    if (currentThreadId) localStorage.setItem(lastThreadKey(), currentThreadId);
+    renderThreadSwitcher();
+  }
+
   // Load persisted history
   chatHistory = loadChatHistory();
 
-  // Remove any previous intro message (in case the panel was reopened without full reload)
-  const existingIntro = thread.querySelector('.assistant-intro');
-  if (existingIntro) existingIntro.remove();
-
-  // Render all persisted messages from history first (so they are above the greeting)
-  chatHistory.forEach(msg => {
-    const uiRole = msg.role === 'assistant' ? 'relay' : msg.role;
-    addMessage(thread, uiRole, msg.content);
-  });
-
-  // Load and possibly clear stale user memory
+  // Update interaction count and timestamp
   let memory = await loadUserMemory();
   memory = clearStaleMemory(memory);
-  const card = renderIntroDashboard(thread, memory);
-
-  // Update interaction count and timestamp
   const updatedMemory = {
     ...memory,
     interactionCount: (memory.interactionCount || 0) + 1,
@@ -681,27 +877,7 @@ export async function openRelay() {
   };
   await saveUserMemory(updatedMemory);
 
-  // Scroll so the intro card starts at the top of the viewport
-  if (chatHistory.length > 0) {
-    thread.classList.add('relay-thread-has-history');
-    // Pin the greeting card's top to the thread's visible top. card.offsetTop is
-    // relative to the positioned panel and includes the header height, so subtract
-    // the thread's own offset to get the card's position WITHIN the scrollable
-    // thread (the old code used the raw offsetTop and over-scrolled by the header,
-    // clipping the card). offsetTop is layout-based, so the card's slide-in
-    // animation doesn't skew it the way getBoundingClientRect would. The delay
-    // lets the history messages finish animating in before we measure — a bare
-    // rAF fires too early, before they have height, and under-scrolls.
-    setTimeout(() => {
-      const cardPos = card.offsetTop - thread.offsetTop;
-      // Centre the greeting card in the visible thread (clamped so it never
-      // over-scrolls past the top).
-      thread.scrollTop = Math.max(0, cardPos - (thread.clientHeight - card.offsetHeight) / 2);
-    }, 60);
-  } else {
-    thread.classList.remove('relay-thread-has-history');
-    thread.scrollTop = 0;
-  }
+  await renderChatThread(thread);
 
   const submit = async () => {
     const text = input.value.trim();
@@ -774,7 +950,7 @@ export async function openRelay() {
       const ai = s.ai || {};
 
       if (canUseAI(ai)) {
-        const response = await callAIEngine();
+        const response = hasDeputyMax() ? await callAIEngineWithTriage() : await callAIEngine();
         typing.remove();
         addMessage(thread, 'relay', response);
       } else {
@@ -858,15 +1034,21 @@ panel.querySelector('.assistant-reset-memory')?.addEventListener('click', async 
   
   const btnClearChat = panel.querySelector('.relay-clear-chat');
   if (btnClearChat) {
-    btnClearChat.addEventListener('click', () => {
-      if (confirm('Are you sure you want to clear your chat history?')) {
+    btnClearChat.addEventListener('click', async () => {
+      if (confirm('Are you sure you want to clear this chat?')) {
         chatHistory = [];
-        const key = `relay_chat_history_${getUserId()}`;
-        localStorage.removeItem(key);
+        if (hasDeputyMax()) {
+          // Max: clear only the active thread, keep the rest.
+          if (currentThreadId) await setThreadMessages(currentThreadId, []);
+        } else {
+          const key = `relay_chat_history_${getUserId()}`;
+          localStorage.removeItem(key);
+        }
         localStorage.removeItem(draftKey);
         thread.innerHTML = '';
         renderIntroDashboard(thread, {});
-        showToast('Chat history cleared.', 'success');
+        renderThreadSwitcher();
+        showToast('Chat cleared.', 'success');
       }
     });
   }
@@ -879,6 +1061,8 @@ panel.querySelector('.assistant-reset-memory')?.addEventListener('click', async 
 export function closeRelay() {
   if (!panel) return;
   document.removeEventListener('keydown', escClose, true);
+  if (scanRefreshTimer) { clearTimeout(scanRefreshTimer); scanRefreshTimer = null; }
+  ['jobs', 'schedule', 'invoices', 'stock', 'maintenancePlans'].forEach(coll => store.off(coll, scheduleEmergencyScanRefresh));
   const p = panel;
   panel = null;
   p.classList.remove('open');
@@ -1045,6 +1229,134 @@ function attachmentLabel(files) {
 function clearAttachments() {
   pendingAttachments = [];
   renderAttachmentChips();
+}
+
+// ── Chat thread rendering ──────────────────────────────────────────────────────
+// Re-render the active thread's messages + greeting card. Used on open and when
+// switching threads (Deputy Max multichat).
+async function renderChatThread(thread) {
+  thread.innerHTML = '';
+  chatHistory.forEach(msg => {
+    const uiRole = msg.role === 'assistant' ? 'relay' : msg.role;
+    addMessage(thread, uiRole, msg.content);
+  });
+
+  const memory = clearStaleMemory(await loadUserMemory());
+  const card = renderIntroDashboard(thread, memory);
+
+  if (chatHistory.length > 0) {
+    thread.classList.add('relay-thread-has-history');
+    // Pin the greeting card's top to the thread's visible top. card.offsetTop is
+    // relative to the positioned panel and includes the header height, so subtract
+    // the thread's own offset to get the card's position WITHIN the scrollable
+    // thread. offsetTop is layout-based, so the card's slide-in animation doesn't
+    // skew it the way getBoundingClientRect would.
+    setTimeout(() => {
+      const cardPos = card.offsetTop - thread.offsetTop;
+      thread.scrollTop = Math.max(0, cardPos - (thread.clientHeight - card.offsetHeight) / 2);
+    }, 60);
+  } else {
+    thread.classList.remove('relay-thread-has-history');
+    thread.scrollTop = 0;
+  }
+}
+
+// Render the header thread switcher (list, new chat, rename, delete) for Max users.
+function renderThreadSwitcher() {
+  if (!panel || !hasDeputyMax()) return;
+  const menu = panel.querySelector('#relay-thread-menu');
+  const label = panel.querySelector('#relay-thread-label');
+  if (!menu) return;
+
+  const threads = getThreads();
+  const current = threads.find(t => t.id === currentThreadId);
+  if (label) label.textContent = current ? current.title : 'New chat';
+
+  menu.innerHTML = `
+    <div class="relay-thread-menu-head">
+      <span>Threads</span>
+      <button class="relay-thread-new" id="relay-thread-new" title="Start a new chat">
+        <span class="material-icons-outlined">add</span> New chat
+      </button>
+    </div>
+    <div class="relay-thread-list">
+      ${threads.length === 0
+        ? '<div class="relay-thread-empty">No threads yet</div>'
+        : threads.map(t => `
+          <div class="relay-thread-item ${t.id === currentThreadId ? 'active' : ''}" data-id="${t.id}">
+            <button class="relay-thread-pick" data-id="${t.id}" title="Open thread">
+              <span class="material-icons-outlined">chat_bubble_outline</span>
+              <span class="relay-thread-name">${escapeHtml(t.title)}</span>
+            </button>
+            <button class="relay-thread-rename" data-id="${t.id}" title="Rename"><span class="material-icons-outlined">edit</span></button>
+            <button class="relay-thread-delete" data-id="${t.id}" title="Delete"><span class="material-icons-outlined">delete</span></button>
+          </div>
+        `).join('')}
+    </div>
+  `;
+
+  menu.querySelector('#relay-thread-new')?.addEventListener('click', async () => {
+    const t = await createThread();
+    currentThreadId = t.id;
+    localStorage.setItem(lastThreadKey(), t.id);
+    chatHistory = [];
+    const threadEl = panel.querySelector('#relay-thread');
+    if (threadEl) await renderChatThread(threadEl);
+    renderThreadSwitcher();
+    closeThreadMenu();
+  });
+
+  menu.querySelectorAll('.relay-thread-pick').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      currentThreadId = btn.dataset.id;
+      localStorage.setItem(lastThreadKey(), currentThreadId);
+      chatHistory = loadChatHistory();
+      const threadEl = panel.querySelector('#relay-thread');
+      if (threadEl) await renderChatThread(threadEl);
+      renderThreadSwitcher();
+      closeThreadMenu();
+    });
+  });
+
+  menu.querySelectorAll('.relay-thread-rename').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const cur = getThread(id);
+      const title = prompt('Rename thread:', cur ? cur.title : '');
+      if (title != null) {
+        await renameThread(id, title.trim() || 'New chat');
+        renderThreadSwitcher();
+      }
+    });
+  });
+
+  menu.querySelectorAll('.relay-thread-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!confirm('Delete this thread? This cannot be undone.')) return;
+      const wasCurrent = id === currentThreadId;
+      await deleteThread(id);
+      if (wasCurrent) {
+        const remaining = getThreads();
+        currentThreadId = remaining.length ? remaining[0].id : null;
+        if (currentThreadId) localStorage.setItem(lastThreadKey(), currentThreadId);
+        else localStorage.removeItem(lastThreadKey());
+        chatHistory = loadChatHistory();
+        const threadEl = panel.querySelector('#relay-thread');
+        if (threadEl) await renderChatThread(threadEl);
+      }
+      renderThreadSwitcher();
+      closeThreadMenu();
+    });
+  });
+}
+
+function closeThreadMenu() {
+  if (!panel) return;
+  const menu = panel.querySelector('#relay-thread-menu');
+  if (menu) menu.style.display = 'none';
 }
 
 function renderAttachmentChips() {
@@ -1417,20 +1729,28 @@ async function renderWeeklyReportWidget(container) {
 async function callAIEngine() {
   const s = store.getSettings();
   const ai = s.ai || {};
-  const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
-  const systemPrompt = `${basePrompt}\n\n${getSystemContext(!hasDeputyMax())}`;
+  const model = ai.model || 'deepseek-chat';
+  const systemPrompt = buildSystemPrompt(ai);
 
   const messages = [
     { role: 'system', content: systemPrompt },
     ...chatHistory
   ];
 
-  const reply = await dispatchChat(messages, ai, ai.model || 'deepseek-chat');
+  const reply = await dispatchChat(messages, ai, model);
+  return finaliseExternalReply(reply, systemPrompt, ai, model);
+}
 
-  // Some actions can't be answered in one turn: they need real external data
-  // (drive times from the routing service, live forecasts). Fetch it, then feed
-  // the result back so Deputy phrases the final answer with real numbers instead
-  // of an empty tag.
+function buildSystemPrompt(ai) {
+  const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
+  return `${basePrompt}\n\n${getSystemContext(!hasDeputyMax())}`;
+}
+
+// Some actions can't be answered in one turn: they need real external data
+// (drive times from the routing service, live forecasts). Fetch it, then feed
+// the result back so Deputy phrases the final answer with real numbers instead
+// of an empty tag.
+async function finaliseExternalReply(reply, systemPrompt, ai, model, { parseActions = true } = {}) {
   let externalData = '';
   if (FLAGS.maps && hasMapsAction(reply)) {
     const routeData = await runMapsActions(reply);
@@ -1440,7 +1760,7 @@ async function callAIEngine() {
     const wxData = await runWeatherActions(reply);
     if (wxData) externalData += (externalData ? '\n\n' : '') + wxData;
   }
-  
+
   const lookupMatches = [...reply.matchAll(/\[ACTION:\s*LOOKUP_RECORD\s*\|\s*([^\|\]]+)\s*\|\s*([^\]]+)\]/gi)];
   for (const match of lookupMatches) {
     const collection = match[1].trim();
@@ -1471,13 +1791,70 @@ async function callAIEngine() {
       { role: 'assistant', content: reply },
       { role: 'user', content: `[LIVE SERVICE RESULTS / LOOKUP DATA]\n${externalData}\n\nUsing only this additional data, answer my previous question concisely and naturally. Do NOT emit any action tags in this response.` }
     ];
-    const finalReply = await dispatchChat(followup, ai, ai.model || 'deepseek-chat');
+    const finalReply = await dispatchChat(followup, ai, model);
     pushAssistant(finalReply);
-    return parseAndExecuteActions(finalReply);
+    return parseActions ? parseAndExecuteActions(finalReply) : finalReply;
   }
 
   pushAssistant(reply);
-  return parseAndExecuteActions(reply);
+  return parseActions ? parseAndExecuteActions(reply) : reply;
+}
+
+// ── 2-stage triage route handlers (Deputy Max) ────────────────────────────────
+// QUESTION: synthesis prompt, no action parsing.
+async function answerSynthesisPrompt(systemPrompt, ai, model) {
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...chatHistory], ai, model);
+  pushAssistant(reply);
+  return reply;
+}
+
+// ACTION: focused prompt, execute action tags immediately (with permission checks).
+async function runActionPrompt(systemPrompt, ai, model) {
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...chatHistory], ai, model);
+  return finaliseExternalReply(reply, systemPrompt, ai, model);
+}
+
+// EXTERNAL: gather live data first, then answer (no action tags executed).
+async function resolveExternalPrompt(systemPrompt, ai, model) {
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...chatHistory], ai, model);
+  return finaliseExternalReply(reply, systemPrompt, ai, model, { parseActions: false });
+}
+
+// URGENT: run the emergency scan, surface critical findings as proposals,
+// open the Emergency Scan view, and summarise.
+async function handleUrgentIntent() {
+  emergencyFindings = runEmergencyScan();
+  surfaceEmergencyAsks(emergencyFindings);
+  if (panel) {
+    if (!isExpanded) {
+      isExpanded = true;
+      localStorage.setItem('relay_expanded', 'true');
+    }
+    activeTab = 'scan';
+    updateWorkspaceView(panel);
+  }
+  const reply = summariseScan(emergencyFindings) || 'I ran an emergency scan.';
+  pushAssistant(reply);
+  return reply;
+}
+
+// Classify the latest user turn, then route to the matching handler.
+async function callAIEngineWithTriage() {
+  const s = store.getSettings();
+  const ai = s.ai || {};
+  const model = ai.model || 'deepseek-chat';
+  const systemPrompt = buildSystemPrompt(ai);
+  const lastUser = [...chatHistory].reverse().find(m => m.role === 'user');
+  const text = lastUser ? lastUser.content : '';
+  const triage = await triageMessage(text, { ai, model, chatHistory });
+  const ctx = {
+    text,
+    answerQuestion: () => answerSynthesisPrompt(systemPrompt, ai, model),
+    runAction: () => runActionPrompt(systemPrompt, ai, model),
+    resolveExternal: () => resolveExternalPrompt(systemPrompt, ai, model),
+    handleUrgent: () => handleUrgentIntent()
+  };
+  return routeIntent(triage.intent, ctx);
 }
 
 

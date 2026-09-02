@@ -42,7 +42,8 @@ const TABLE_MAP = {
   jobMaterials: 'job_materials',
   storageLocations: 'storage_locations',
   kitTypes: 'kit_types',
-  locationTypes: 'location_types'
+  locationTypes: 'location_types',
+  deputyThreads: 'deputy_threads'
 };
 
 const TABLE_COLUMNS = {
@@ -395,6 +396,14 @@ const TABLE_COLUMNS = {
     "company_id",
     "name",
     "active",
+    "created_at",
+    "updated_at"
+  ],
+  deputy_threads: [
+    "id",
+    "company_id",
+    "title",
+    "messages",
     "created_at",
     "updated_at"
   ],
