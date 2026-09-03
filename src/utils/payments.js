@@ -87,11 +87,12 @@ export async function refreshConnectStatus({ loginLink = false } = {}) {
   return data;
 }
 
-/** Open the tenant's Stripe Express dashboard (payouts, history). */
+/** Open the tenant's Stripe dashboard (payouts, history). Full-dashboard
+ *  accounts have no platform login link — send them to dashboard.stripe.com. */
 export async function openConnectDashboard() {
   const data = await invoke('relay-connect-status', { loginLink: true });
-  if (!data?.loginUrl) throw new Error('Finish setting up payments first.');
-  if (typeof location !== 'undefined') location.href = data.loginUrl;
+  const url = data?.loginUrl || 'https://dashboard.stripe.com/';
+  if (typeof location !== 'undefined') location.href = url;
   return data;
 }
 

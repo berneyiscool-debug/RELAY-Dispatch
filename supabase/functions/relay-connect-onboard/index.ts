@@ -81,12 +81,15 @@ serve(async (req) => {
       const account = await stripeV2('core/accounts', stripeKey, {
         display_name: company.name || 'RELAY tenant',
         ...(company.email ? { contact_email: String(company.email) } : {}),
-        dashboard: 'express',
+        // 'full' dashboard + stripe/stripe responsibilities = a Standard-style
+        // account: the tenant is merchant of record, pays their own Stripe fees,
+        // manages their own payouts, and Stripe covers negative balances (lowest
+        // platform risk). Express dashboards require application/application,
+        // which Stripe rejects alongside stripe/stripe.
+        dashboard: 'full',
         configuration: {
           merchant: { capabilities: { card_payments: { requested: true } } },
         },
-        // Stripe-owned pricing: the tenant is merchant of record, pays Stripe
-        // fees, and Stripe covers their negative balances (lowest platform risk).
         defaults: { responsibilities: { fees_collector: 'stripe', losses_collector: 'stripe' } },
         include: ['configuration.merchant'],
         metadata: { company_id: String(company.id) },
