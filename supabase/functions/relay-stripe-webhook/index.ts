@@ -25,7 +25,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 //   checkout.session.completed,
 //   customer.subscription.created, customer.subscription.updated,
 //   customer.subscription.deleted,
-//   invoice.payment_failed, invoice.paid
+//   invoice.payment_failed
 
 const enc = new TextEncoder()
 
@@ -117,8 +117,12 @@ async function applySubscription(sub: any) {
   const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id
   const item = sub?.items?.data?.[0]
   const tier = tierForPrice(item?.price)
-  const periodEnd = sub?.current_period_end
-    ? new Date(sub.current_period_end * 1000).toISOString()
+  // In Stripe's flexible billing mode the period end lives on the subscription
+  // ITEM; older (classic) subscriptions carry it at the top level. Prefer the
+  // item, fall back to the subscription.
+  const periodEndUnix = item?.current_period_end ?? sub?.current_period_end
+  const periodEnd = periodEndUnix
+    ? new Date(periodEndUnix * 1000).toISOString()
     : null
 
   const patch: Record<string, unknown> = {
@@ -145,7 +149,7 @@ async function applySubscription(sub: any) {
   }
 }
 
-// invoice.payment_failed / invoice.paid carry the subscription id + customer.
+// invoice.payment_failed carries the subscription id + customer.
 async function applyInvoiceStatus(inv: any, status: string) {
   const subId = typeof inv?.subscription === 'string' ? inv.subscription : inv?.subscription?.id
   const customerId = typeof inv?.customer === 'string' ? inv.customer : inv?.customer?.id
@@ -216,11 +220,11 @@ serve(async (req) => {
       }
 
       case 'invoice.payment_failed': {
+        // Fast dunning signal. Recovery back to active/canceled/etc. comes
+        // through customer.subscription.updated, which carries the real status
+        // (we deliberately do NOT derive status from invoice.paid — a trial's
+        // $0 invoice would otherwise overwrite a genuine "trialing" status).
         await applyInvoiceStatus(evt.data?.object || {}, 'past_due')
-        break
-      }
-      case 'invoice.paid': {
-        await applyInvoiceStatus(evt.data?.object || {}, 'active')
         break
       }
     }

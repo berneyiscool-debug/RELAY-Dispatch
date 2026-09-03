@@ -86,7 +86,6 @@ The existing `relay-stripe-webhook` endpoint must now also receive:
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
 - `invoice.payment_failed`
-- `invoice.paid`
 
 ## How it fits together
 
