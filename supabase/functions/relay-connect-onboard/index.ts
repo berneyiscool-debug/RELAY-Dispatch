@@ -87,6 +87,9 @@ serve(async (req) => {
         // platform risk). Express dashboards require application/application,
         // which Stripe rejects alongside stripe/stripe.
         dashboard: 'full',
+        // Country is required before a merchant configuration can be set. Default
+        // to the platform country (AU); the tenant confirms during onboarding.
+        identity: { country: 'AU' },
         configuration: {
           merchant: { capabilities: { card_payments: { requested: true } } },
         },
