@@ -114,6 +114,10 @@ AS $$
     AND COALESCE(deactivated, false) = false;
 $$;
 
+-- Only the billing edge functions need this, and they call it via the service
+-- role (which bypasses grants). Do NOT grant it to authenticated: it's SECURITY
+-- DEFINER, so a signed-in user could otherwise read any tenant's seat count by
+-- passing an arbitrary company id.
 REVOKE EXECUTE ON FUNCTION public.company_active_seat_count(uuid) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.company_active_seat_count(uuid) FROM anon;
-GRANT  EXECUTE ON FUNCTION public.company_active_seat_count(uuid) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.company_active_seat_count(uuid) FROM authenticated;
