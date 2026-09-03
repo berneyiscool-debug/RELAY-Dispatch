@@ -80,14 +80,22 @@ serve(async (req) => {
     if (profile.role !== 'admin') return json({ error: 'Forbidden: only an administrator can manage billing.' }, 403)
 
     // 2. Resolve the requested tier → Stripe Price.
+    // Two supported setups (either works): an explicit STRIPE_PRICE_* secret, or
+    // a Price tagged in Stripe with the fixed lookup_key below. Lookup keys are
+    // not secret and let you re-price later (transfer_lookup_key) without secrets.
     const { tier, successUrl, cancelUrl } = await req.json()
-    const priceByTier: Record<string, string | undefined> = {
-      cloud: Deno.env.get('STRIPE_PRICE_CLOUD'),
-      cloud_plus: Deno.env.get('STRIPE_PRICE_CLOUD_PLUS'),
-    }
     if (tier !== 'cloud' && tier !== 'cloud_plus') return json({ error: 'tier must be "cloud" or "cloud_plus"' }, 400)
-    const price = priceByTier[tier]
-    if (!price) return json({ error: `Price for ${tier} is not configured (STRIPE_PRICE_${tier === 'cloud' ? 'CLOUD' : 'CLOUD_PLUS'})` }, 500)
+
+    const LOOKUP_KEYS: Record<string, string> = { cloud: 'relay_cloud', cloud_plus: 'relay_cloud_plus' }
+    let price = Deno.env.get(tier === 'cloud' ? 'STRIPE_PRICE_CLOUD' : 'STRIPE_PRICE_CLOUD_PLUS') || ''
+    if (!price) {
+      const lookup = LOOKUP_KEYS[tier]
+      const prices = await stripe(`prices?lookup_keys[]=${encodeURIComponent(lookup)}&active=true&limit=1`, stripeKey)
+      price = prices?.data?.[0]?.id || ''
+    }
+    if (!price) {
+      return json({ error: `No Stripe Price for ${tier}. Set STRIPE_PRICE_${tier === 'cloud' ? 'CLOUD' : 'CLOUD_PLUS'}, or tag the Price with lookup_key "${LOOKUP_KEYS[tier]}".` }, 500)
+    }
 
     // 3. Load the company + ensure a Stripe customer exists.
     const { data: company } = await admin

@@ -96,12 +96,17 @@ async function markInvoicePaid(invoiceId: string, sessionId: string) {
   })
 }
 
-// price id → our tier slug. Unknown prices leave the tier untouched (null here
-// means "don't change"), so a future add-on price can't silently downgrade.
-function tierForPrice(priceId: string | undefined | null): string | null {
-  if (!priceId) return null
-  if (priceId === Deno.env.get('STRIPE_PRICE_CLOUD')) return 'cloud'
-  if (priceId === Deno.env.get('STRIPE_PRICE_CLOUD_PLUS')) return 'cloud_plus'
+// Stripe price → our tier slug, by id (STRIPE_PRICE_* secret) or lookup_key —
+// matching whichever setup relay-billing-checkout used. Unknown prices leave the
+// tier untouched (null = "don't change"), so a future add-on price can't
+// silently downgrade.
+function tierForPrice(price: any): string | null {
+  const id = price?.id
+  const lk = price?.lookup_key
+  if (id && id === Deno.env.get('STRIPE_PRICE_CLOUD')) return 'cloud'
+  if (id && id === Deno.env.get('STRIPE_PRICE_CLOUD_PLUS')) return 'cloud_plus'
+  if (lk === 'relay_cloud') return 'cloud'
+  if (lk === 'relay_cloud_plus') return 'cloud_plus'
   return null
 }
 
@@ -111,7 +116,7 @@ async function applySubscription(sub: any) {
   const companyId = sub?.metadata?.company_id
   const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id
   const item = sub?.items?.data?.[0]
-  const tier = tierForPrice(item?.price?.id)
+  const tier = tierForPrice(item?.price)
   const periodEnd = sub?.current_period_end
     ? new Date(sub.current_period_end * 1000).toISOString()
     : null

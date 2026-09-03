@@ -22,24 +22,41 @@ the customer-facing invoice payments in `007_invoice_payments.sql` /
 Create one Product per paid tier, each with a **recurring, per-unit (licensed)
 monthly** Price in **AUD**:
 
-- **RELAY Cloud** — $18.00 / unit / month → copy the Price id (`price_...`)
-- **RELAY Cloud+** — $21.00 / unit / month → copy the Price id (`price_...`)
+- **RELAY Cloud** — $18.00 / unit / month
+- **RELAY Cloud+** — $21.00 / unit / month
 
 (There is no existing Product/Price catalogue — the invoice-payment flow uses
 ad-hoc `price_data`, so nothing to migrate.)
+
+**Recommended: give each Price a `lookup_key`** (edit the Price → Advanced →
+Lookup key), so no secret has to hold a `price_...` id and you can re-price later
+without touching config:
+
+- Cloud  → lookup key `relay_cloud`
+- Cloud+ → lookup key `relay_cloud_plus`
 
 Enable the **Customer Portal** (Stripe → Settings → Billing → Customer portal)
 and allow plan switching + cancellation so "Manage billing" works.
 
 ## 2. Supabase — Edge Function secrets
 
-Add these under Supabase → Edge Functions → Secrets (alongside the existing
-`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`):
+Add these under Supabase → Edge Functions → Secrets:
 
 ```
-STRIPE_PRICE_CLOUD=price_xxxxxxxxxxxx          # RELAY Cloud  ($18)
-STRIPE_PRICE_CLOUD_PLUS=price_yyyyyyyyyyyy      # RELAY Cloud+ ($21)
+STRIPE_SECRET_KEY=sk_live_...        # or sk_test_... while testing
+STRIPE_WEBHOOK_SECRET=whsec_...      # from the webhook endpoint you add in step 5
 ```
+
+**Price resolution — pick ONE:**
+
+- **Lookup keys (recommended):** nothing to add. The functions look Prices up by
+  `relay_cloud` / `relay_cloud_plus` (set in step 1).
+- **Explicit Price ids:** if you'd rather not use lookup keys, set these instead
+  and they take precedence:
+  ```
+  STRIPE_PRICE_CLOUD=price_xxxxxxxxxxxx          # RELAY Cloud  ($18)
+  STRIPE_PRICE_CLOUD_PLUS=price_yyyyyyyyyyyy      # RELAY Cloud+ ($21)
+  ```
 
 ## 3. Apply the migration
 
