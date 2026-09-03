@@ -113,6 +113,7 @@ serve(async (req) => {
       use_case: {
         type: 'account_onboarding',
         account_onboarding: {
+          configurations: ['merchant'],
           refresh_url: `${back}&connect=refresh`,
           return_url: `${back}&connect=return`,
           collection_options: { fields: 'eventually_due' },
