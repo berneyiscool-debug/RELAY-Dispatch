@@ -523,12 +523,12 @@ function isCloudUser() {
   return !!(store.companyId && !store.companyId.startsWith('acct_'));
 }
 
-// Whether the AI backend is usable right now.
-//   • Cloud+ : managed AI via the secure edge function — no client key needed.
-//   • Cloud / local : must enable AI and supply their own API key (BYO key).
-// Managed (keyless) AI is the Cloud+ differentiator; see subscription.js.
+// Whether the AI backend is usable right now. Deputy (managed AI via the secure
+// edge function, no client key) is a CLOUD feature — Cloud and Cloud+ both get
+// it. Local/offline users must enable AI and supply their own API key. The only
+// Cloud+ extra is Deputy Max (expanding the window); see the expand gate below.
 function canUseAI(ai) {
-  return isCloudPlus() ? (ai.enabled !== false) : !!(ai.enabled && ai.apiKey);
+  return isCloudUser() ? (ai.enabled !== false) : !!(ai.enabled && ai.apiKey);
 }
 
 function getUserId() {
@@ -579,6 +579,12 @@ export async function openRelay() {
 
   if (!hasPermission('AI Assistant', 'use')) return;
 
+  // Deputy Max (expanding to the full workspace) is the sole Cloud+ feature.
+  // Cloud/local get Deputy minimized-only, so never honour a stored expanded
+  // state for them (e.g. after a downgrade from Cloud+).
+  const canExpand = isCloudPlus();
+  if (!canExpand) isExpanded = false;
+
   // Always enforce chat mode when minimized, watchdog when expanded
   activeTab = isExpanded ? 'watchdog' : 'chat';
 
@@ -603,7 +609,9 @@ export async function openRelay() {
         <button class="relay-nav-tab ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" title="Chat Stream"><span class="material-icons-outlined">chat</span> Chat</button>
       </div>
       <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
-        <button class="relay-expand" id="relay-expand" title="${isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace'}"><span class="material-icons-outlined">${isExpanded ? 'close_fullscreen' : 'open_in_full'}</span></button>
+        ${canExpand
+          ? `<button class="relay-expand" id="relay-expand" title="${isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace'}"><span class="material-icons-outlined">${isExpanded ? 'close_fullscreen' : 'open_in_full'}</span></button>`
+          : `<button class="relay-expand relay-expand-locked" id="relay-expand" title="Deputy Max — upgrade to Cloud+ to expand" style="opacity:.6;"><span class="material-icons-outlined">open_in_full</span></button>`}
         <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
         <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button>
         <button class="assistant-reset-memory" title="Reset Assistant Memory" style="display:none;"><span class="material-icons-outlined">refresh</span></button>
@@ -637,6 +645,11 @@ export async function openRelay() {
   // Bind workspace expansion & tabs
   if (expandBtn) {
     expandBtn.addEventListener('click', () => {
+      // Deputy Max is Cloud+ only. Cloud/local get an upsell, not the expand.
+      if (!isCloudPlus()) {
+        showToast('Deputy Max (expanding Deputy to the full workspace) is a Cloud+ feature. Upgrade in Settings → Plan & Billing.', 'info');
+        return;
+      }
       isExpanded = !isExpanded;
       localStorage.setItem('relay_expanded', isExpanded);
       if (isExpanded) {

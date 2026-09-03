@@ -4,7 +4,6 @@
 
 import { store } from '../../data/store.js';
 import { supabase } from '../../utils/supabase.js';
-import { isCloudPlus } from '../../utils/subscription.js';
 import { escapeHTML } from '../../utils/security.js';
 import { JOB_STATUS_COLORS, DOC_STATUS_COLORS } from '../../utils/statusColors.js';
 
@@ -479,8 +478,8 @@ async function fetchAIInsights(reportId, d, cacheKey) {
 
   const s = store.getSettings();
   const ai = s.ai || {};
-  // Managed (keyless) AI is a Cloud+ feature; Cloud/local can still use BYO key.
-  const canUseAI = isCloudPlus() ? (ai.enabled !== false) : !!(ai.enabled && ai.apiKey);
+  const isCloudUser = !!(store.companyId && !store.companyId.startsWith('acct_'));
+  const canUseAI = ai.enabled !== false && (isCloudUser || !!ai.apiKey);
 
   let insightsHTML = '';
 

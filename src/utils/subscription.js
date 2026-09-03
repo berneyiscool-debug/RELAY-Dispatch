@@ -5,7 +5,9 @@
 //
 //   free       — offline/local account (IndexedDB, `acct_` id). $0. No cloud row.
 //   cloud      — $18 / active user / month. Core cloud features.
-//   cloud_plus — $21 / active user / month. Adds managed AI + integrations.
+//   cloud_plus — $21 / active user / month. Adds Deputy Max (the expandable
+//                full-workspace Deputy window). Cloud gets the same Deputy,
+//                minimized-only.
 //
 // The tier + Stripe state are server-managed columns on `companies` (see
 // 022_subscription_billing.sql); the store surfaces them read-only under
@@ -33,20 +35,22 @@ export const PLAN_CATALOG = {
     id: 'cloud',
     name: 'Cloud',
     price: 18,
-    tagline: 'Multi-user, synced, and online.',
-    features: ['Everything in Free', 'Cloud sync across your team', 'Online card payments & customer portal', 'RELAY email domain', 'Contractor & customer portals'],
+    tagline: 'The whole app, online — with Deputy.',
+    features: ['Everything in Free', 'Cloud sync across your team', 'Online card payments & customer portal', 'RELAY email domain', 'Deputy AI assistant'],
   },
   cloud_plus: {
     id: 'cloud_plus',
     name: 'Cloud+',
     price: 21,
-    tagline: 'Cloud, plus the managed AI suite.',
-    features: ['Everything in Cloud', 'Managed AI Copilot (no API key)', 'AI route & maps intelligence', 'Priority integrations'],
+    tagline: 'Everything in Cloud, plus Deputy Max.',
+    features: ['Everything in Cloud', 'Deputy Max — expand Deputy to the full workspace'],
   },
 };
 
 // Features that require the top tier. Keep this the ONE list the app consults.
-export const CLOUD_PLUS_FEATURES = new Set(['ai_copilot', 'maps_ai', 'managed_ai', 'integrations']);
+// Cloud and Cloud+ are identical EXCEPT Deputy Max: the expandable, full-
+// workspace Deputy window. Cloud gets Deputy minimized-only.
+export const CLOUD_PLUS_FEATURES = new Set(['deputy_max']);
 
 // Statuses in which a paid subscription is considered live.
 const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);

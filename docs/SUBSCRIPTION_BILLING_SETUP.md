@@ -8,7 +8,7 @@ the customer-facing invoice payments in `007_invoice_payments.sql` /
 |-------------|---------------------|---------------------------------------------------|
 | Free        | $0                  | Offline/local account only. No cloud row.         |
 | Cloud       | $18                 | Cloud sync, online payments, portals, email domain|
-| Cloud+      | $21                 | Everything in Cloud **+ managed AI** & integrations|
+| Cloud+      | $21                 | Everything in Cloud **+ Deputy Max** (expandable Deputy)|
 
 - **Free is offline-only** — it never creates a `companies` row, so it never
   touches Stripe. "Upgrading" from Free = the existing *Migrate to Cloud* flow.
@@ -99,8 +99,8 @@ Settings → Plan & Billing
 
 Gating (src/utils/subscription.js):
   getTier() → 'free' | 'cloud' | 'cloud_plus'
-  hasCloudFeatures()  → any cloud account          (unchanged from today's gate)
-  isCloudPlus()       → tier==cloud_plus & live sub (managed AI, integrations)
+  hasCloudFeatures()  → any cloud account          (Cloud incl. full Deputy)
+  isCloudPlus()       → tier==cloud_plus & live sub (Deputy Max: expandable window)
 ```
 
 ## Security notes

@@ -3888,7 +3888,7 @@ export function renderSettings(container) {
 
       <p style="font-size:11px;color:var(--text-tertiary);margin-top:16px;max-width:760px;">
         Prices are in AUD per active user, per month. Adding or deactivating a user adjusts your next
-        invoice automatically (prorated). Cloud+ adds the managed AI suite and priority integrations.
+        invoice automatically (prorated). Cloud and Cloud+ are the same app; Cloud+ adds Deputy Max — expanding the Deputy assistant to the full workspace.
       </p>
     `;
 
