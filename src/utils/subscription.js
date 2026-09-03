@@ -143,6 +143,18 @@ export async function startCheckout(tier) {
   return data;
 }
 
+/**
+ * Switch an EXISTING subscription between Cloud and Cloud+ in place (prorated).
+ * Use this when subscriptionActive() — it swaps the price on the current
+ * subscription instead of creating a second one. No redirect.
+ * @param {'cloud'|'cloud_plus'} tier
+ */
+export async function changePlan(tier) {
+  if (!isCloudUser()) throw new Error('No subscription to change.');
+  if (tier !== 'cloud' && tier !== 'cloud_plus') throw new Error('Unknown plan.');
+  return await invoke('relay-billing-change-plan', { tier });
+}
+
 /** Open Stripe's hosted portal to manage/cancel/update the subscription. */
 export async function openBillingPortal() {
   if (!isCloudUser()) throw new Error('No subscription to manage.');

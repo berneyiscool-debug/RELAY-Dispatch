@@ -110,11 +110,22 @@ function tierForPrice(price: any): string | null {
   return null
 }
 
-// Persist a Stripe subscription object onto its company row. Matches the
-// company by metadata.company_id first (most reliable), else by customer id.
+// A subscription only affects the company whose CURRENT subscription it is, or
+// one that has no subscription yet (the first one to attach). This guard means a
+// stray/duplicate subscription — or the cancellation of an old one — can never
+// wipe the plan the company is actually on. As a PostgREST filter:
+//   (stripe_subscription_id is null OR stripe_subscription_id = <this sub>)
+function currentSubGuard(subId: string) {
+  return `&or=(stripe_subscription_id.is.null,stripe_subscription_id.eq.${encodeURIComponent(subId)})`
+}
+
+// Persist a Stripe subscription object onto its company row. Matches the company
+// by metadata.company_id first (most reliable), else by customer id, always
+// scoped by currentSubGuard so only the relevant subscription wins.
 async function applySubscription(sub: any) {
   const companyId = sub?.metadata?.company_id
   const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id
+  const subId = String(sub?.id || '')
   const item = sub?.items?.data?.[0]
   const tier = tierForPrice(item?.price)
   // In Stripe's flexible billing mode the period end lives on the subscription
@@ -127,7 +138,7 @@ async function applySubscription(sub: any) {
 
   const patch: Record<string, unknown> = {
     subscription_status: sub?.status ?? null,
-    stripe_subscription_id: sub?.id ?? null,
+    stripe_subscription_id: subId || null,
     subscription_seats: typeof item?.quantity === 'number' ? item.quantity : null,
     subscription_current_period_end: periodEnd,
     subscription_updated_at: new Date().toISOString(),
@@ -140,13 +151,28 @@ async function applySubscription(sub: any) {
     patch.subscription_tier = null
   }
 
+  const guard = currentSubGuard(subId)
   if (companyId) {
-    await supaPatch(`companies?id=eq.${encodeURIComponent(companyId)}`, patch)
+    await supaPatch(`companies?id=eq.${encodeURIComponent(companyId)}${guard}`, patch)
   } else if (customerId) {
-    await supaPatch(`companies?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, patch)
+    await supaPatch(`companies?stripe_customer_id=eq.${encodeURIComponent(customerId)}${guard}`, patch)
   } else {
     console.warn('relay-stripe-webhook: subscription event with no company_id or customer')
   }
+}
+
+// A subscription was deleted/cancelled. Clear the plan ONLY on the company whose
+// current subscription is this exact one (match by sub id) — never by company_id,
+// so cancelling a leftover duplicate can't wipe the active plan.
+async function clearSubscription(sub: any) {
+  const subId = String(sub?.id || '')
+  if (!subId) return
+  await supaPatch(`companies?stripe_subscription_id=eq.${encodeURIComponent(subId)}`, {
+    subscription_status: sub?.status ?? 'canceled',
+    subscription_tier: null,
+    stripe_subscription_id: null,
+    subscription_updated_at: new Date().toISOString(),
+  })
 }
 
 // invoice.payment_failed carries the subscription id + customer.
@@ -212,10 +238,15 @@ serve(async (req) => {
       }
 
       case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-      case 'customer.subscription.deleted': {
+      case 'customer.subscription.updated': {
         await applySubscription(evt.data?.object || {})
         console.log(`relay-stripe-webhook: ${evt.type} applied`)
+        break
+      }
+
+      case 'customer.subscription.deleted': {
+        await clearSubscription(evt.data?.object || {})
+        console.log('relay-stripe-webhook: subscription deleted, plan cleared')
         break
       }
 

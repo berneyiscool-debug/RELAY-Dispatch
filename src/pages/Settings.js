@@ -13,7 +13,7 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { FLAGS } from '../utils/flags.js';
-import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, openBillingPortal } from '../utils/subscription.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, changePlan, openBillingPortal } from '../utils/subscription.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
@@ -3910,9 +3910,17 @@ export function renderSettings(container) {
         const chosen = e.currentTarget.dataset.choose;
         e.currentTarget.disabled = true;
         try {
-          await startCheckout(chosen); // redirects to Stripe Checkout
+          if (active) {
+            // Already subscribed — swap the plan in place (prorated), no new
+            // subscription. Avoids creating a duplicate that double-bills.
+            await changePlan(chosen);
+            showToast(`Switched to ${PLAN_CATALOG[chosen].name}.`, 'success');
+            setTimeout(() => window.location.reload(), 900);
+          } else {
+            await startCheckout(chosen); // first subscription → Stripe Checkout
+          }
         } catch (err) {
-          showToast(err.message || 'Could not start checkout', 'error');
+          showToast(err.message || 'Could not change plan', 'error');
           e.currentTarget.disabled = false;
         }
       });

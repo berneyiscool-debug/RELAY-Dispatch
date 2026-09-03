@@ -99,8 +99,17 @@ serve(async (req) => {
 
     // 3. Load the company + ensure a Stripe customer exists.
     const { data: company } = await admin
-      .from('companies').select('id, name, email, stripe_customer_id').eq('id', profile.company_id).single()
+      .from('companies')
+      .select('id, name, email, stripe_customer_id, stripe_subscription_id, subscription_status')
+      .eq('id', profile.company_id).single()
     if (!company) return json({ error: 'Company not found' }, 404)
+
+    // Never create a SECOND subscription. If one is already live, a tier change
+    // must swap the price in place (relay-billing-change-plan), not open Checkout.
+    const liveStatuses = ['active', 'trialing', 'past_due']
+    if (company.stripe_subscription_id && liveStatuses.includes(String(company.subscription_status))) {
+      return json({ error: 'This account already has an active subscription. Use change plan instead.', code: 'already_subscribed' }, 409)
+    }
 
     let customerId = company.stripe_customer_id as string | null
     if (!customerId) {
