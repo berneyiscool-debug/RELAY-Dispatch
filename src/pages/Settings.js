@@ -690,7 +690,9 @@ export function renderSettings(container) {
     }
 
     if (activeTab === 'billing') {
-      renderBillingTab(tc);
+      // currentUser + openMigrationModal are renderSettings locals; the module-
+      // level renderBillingTab can't close over them, so pass them in.
+      renderBillingTab(tc, currentUser, openMigrationModal);
       return;
     }
 
@@ -3765,9 +3767,9 @@ export function renderSettings(container) {
     });
   }
 
-  function renderBillingTab(tc) {
+  function renderBillingTab(tc, currentUser, openMigrationModal) {
     const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
-    const isAdmin = (currentUser.role === 'admin');
+    const isAdmin = (currentUser?.role === 'admin');
     const tier = getTier();                      // 'free' | 'cloud' | 'cloud_plus'
     const sub = getSubscription();               // { tier, status, seats, currentPeriodEnd, hasCustomer }
     const active = subscriptionActive();
