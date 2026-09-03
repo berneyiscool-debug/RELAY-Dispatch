@@ -1,97 +1,129 @@
 // ============================================
-// RELAY — PAYMENTS CLIENT (Stripe online payments)
+// RELAY — PAYMENTS CLIENT (Stripe Connect — customer invoice payments)
 // ============================================
-// Thin client over the `relay-create-payment` edge function. Creates a hosted
-// Stripe Checkout link for an invoice; the `relay-stripe-webhook` function marks
-// the invoice Paid when payment completes. Cloud-gated + flag-gated (v1.3 #3,
-// dark until launch): local/offline accounts never see it, and the whole feature
-// stays hidden behind FLAGS.payments until 1.3.0 cuts.
+// Tenants connect THEIR OWN Stripe (Express) account; their customers pay
+// invoices directly into it. This module drives onboarding + status and creates
+// the hosted checkout link for an invoice. Cloud-gated + flag-gated (payments
+// are a cloud feature, hidden until FLAGS.payments). The relay-stripe-webhook
+// marks the invoice Paid when payment completes.
 
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
 
-// Cloud accounts only (paid API). Mirrors the inline check used across the app:
-// a real company id that isn't a local `acct_` namespace.
+// Cloud accounts only. Mirrors the check used across the app.
 function isCloudUser() {
   return !!(store.companyId && !String(store.companyId).startsWith('acct_'));
 }
 
-// Per-company payments config lives in settings.payments (set in Settings → Payments).
+// Per-company payments config (currency, per-doc toggles) lives in settings.payments.
 export function paymentsSettings() {
   return (store.getSettings() || {}).payments || {};
 }
 
-// Feature available to this user right now?
+// Server-managed Connect status (read-only), surfaced by the store.
+export function connectInfo() {
+  return (store.getSettings() || {})._connect || {};
+}
+
+// Has the tenant finished onboarding and can they accept charges?
+export function connectReady() {
+  return !!connectInfo().chargesEnabled;
+}
+
+// Feature available to this user right now (shows the Payments settings tab)?
 export function paymentsEnabled() {
   return !!(FLAGS.payments && isCloudUser());
 }
 
-// Is online payment switched on for this document type? Requires the admin to have
-// ticked "Payments configured & live" in Settings → Payments (so we never show a
-// Pay button before Stripe is actually set up).
+// Is online payment switched on for this document type? Requires a connected
+// account that can actually take charges, plus the per-type toggle (default on).
 export function paymentsEnabledFor(docType = 'invoice') {
   if (!paymentsEnabled()) return false;
-  const cfg = paymentsSettings();
-  if (!cfg.connected) return false;
-  const per = cfg.enabledFor;
-  return !per || per[docType] !== false; // default on once connected
+  if (!connectReady()) return false;
+  const per = paymentsSettings().enabledFor;
+  return !per || per[docType] !== false;
 }
 
-function resolveCustomerEmail(invoice) {
-  if (invoice.customerEmail) return invoice.customerEmail;
-  const cid = invoice.customer_id || invoice.customerId;
-  if (cid) {
-    const c = store.getById('customers', cid);
-    if (c?.email) return c.email;
-  }
-  return undefined;
-}
-
-/**
- * Create a Stripe Checkout link for an invoice.
- * @returns {Promise<{url:string, sessionId:string}>}
- * @throws if not enabled, invalid amount, or the edge function errors.
- */
-export async function createInvoicePaymentLink(invoice) {
-  if (!paymentsEnabled()) throw new Error('Online payments are not enabled for this account.');
-  if (!invoice || !invoice.id) throw new Error('A saved invoice is required.');
-  const amount = Number(invoice.total);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invoice total must be greater than zero.');
-
-  const settings = store.getSettings() || {};
-  const cfg = settings.payments || {};
-  const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
-
-  const { data, error } = await supabase.functions.invoke('relay-create-payment', {
-    body: {
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.number,
-      amount,
-      currency: (cfg.currency || 'aud').toLowerCase(),
-      customerEmail: resolveCustomerEmail(invoice),
-      companyName: settings.name,
-      successUrl: `${origin}/#/invoices?paid=${encodeURIComponent(invoice.number || invoice.id)}`,
-      cancelUrl: `${origin}/#/invoices`,
-    },
-  });
-
+async function invoke(fn, body) {
+  const { data, error } = await supabase.functions.invoke(fn, { body: body || {} });
   if (error) {
     let detail = error.message || String(error);
     try {
       if (error.context && typeof error.context.text === 'function') {
-        const body = await error.context.text();
-        if (body) { try { detail = JSON.parse(body).error || body; } catch { detail = body; } }
+        const text = await error.context.text();
+        if (text) { try { detail = JSON.parse(text).error || text; } catch { detail = text; } }
       }
     } catch (_) { /* keep generic */ }
-    throw new Error(`Payment link failed: ${detail}`);
+    throw new Error(detail);
   }
   if (data?.error) throw new Error(data.error);
-  if (!data?.url) throw new Error('No checkout URL was returned.');
+  return data;
+}
 
+// ── Connect onboarding / status (admin, in Settings → Payments) ──────
+
+/** Begin (or resume) Stripe Express onboarding. Redirects to Stripe. */
+export async function startConnectOnboarding(returnPath = '/settings?tab=payments') {
+  if (!isCloudUser()) throw new Error('Create a cloud account first.');
+  const data = await invoke('relay-connect-onboard', { returnPath });
+  if (!data?.url) throw new Error('Could not start onboarding.');
+  if (typeof location !== 'undefined') location.href = data.url;
+  return data;
+}
+
+/** Refresh the connected-account status into the store. Returns the status. */
+export async function refreshConnectStatus({ loginLink = false } = {}) {
+  if (!isCloudUser()) return null;
+  const data = await invoke('relay-connect-status', { loginLink });
+  if (data && store.companySettings) {
+    store.companySettings._connect = {
+      accountId: connectInfo().accountId || null,
+      chargesEnabled: !!data.chargesEnabled,
+      detailsSubmitted: !!data.detailsSubmitted,
+    };
+    try { store.emit('settings', store.getSettings()); } catch (_) { /* non-fatal */ }
+  }
+  return data;
+}
+
+/** Open the tenant's Stripe Express dashboard (payouts, history). */
+export async function openConnectDashboard() {
+  const data = await invoke('relay-connect-status', { loginLink: true });
+  if (!data?.loginUrl) throw new Error('Finish setting up payments first.');
+  if (typeof location !== 'undefined') location.href = data.loginUrl;
+  return data;
+}
+
+// ── Invoice payment link ─────────────────────────────────────────────
+
+/**
+ * Create a Stripe Checkout link to pay an invoice (charged on the tenant's
+ * connected account). Works for the in-app "Pay Link" and emailed links.
+ * @returns {Promise<{url:string, sessionId:string}>}
+ */
+export async function createInvoicePaymentLink(invoice) {
+  if (!invoice || !invoice.id) throw new Error('A saved invoice is required.');
+  return createPaymentLinkForInvoiceId(invoice.id);
+}
+
+/**
+ * Create a checkout link from just an invoice id. Used by emailed links and the
+ * (unauthenticated) customer portal — the edge function authorises by invoice.
+ * @returns {Promise<{url:string, sessionId:string}>}
+ */
+export async function createPaymentLinkForInvoiceId(invoiceId, opts = {}) {
+  if (!invoiceId) throw new Error('An invoice id is required.');
+  const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+  const data = await invoke('relay-create-payment', {
+    invoiceId,
+    successUrl: opts.successUrl || `${origin}/#/invoices?paid=${encodeURIComponent(invoiceId)}`,
+    cancelUrl: opts.cancelUrl || `${origin}/#/invoices`,
+  });
+  if (!data?.url) throw new Error('No checkout URL was returned.');
   // Best-effort: remember the session id on the invoice for reconciliation.
   if (data.sessionId) {
-    try { store.update('invoices', invoice.id, { stripeSessionId: data.sessionId }); } catch (_) { /* non-fatal */ }
+    try { store.update('invoices', invoiceId, { stripeSessionId: data.sessionId }); } catch (_) { /* non-fatal */ }
   }
   return data;
 }

@@ -175,6 +175,18 @@ async function clearSubscription(sub: any) {
   })
 }
 
+// account.updated (Connect): reflect the tenant's Express onboarding readiness
+// onto their company row, matched by connected-account id.
+async function applyConnectAccount(account: any) {
+  const acctId = String(account?.id || '')
+  if (!acctId) return
+  await supaPatch(`companies?stripe_connect_account_id=eq.${encodeURIComponent(acctId)}`, {
+    stripe_connect_charges_enabled: !!account?.charges_enabled,
+    stripe_connect_details_submitted: !!account?.details_submitted,
+    stripe_connect_updated_at: new Date().toISOString(),
+  })
+}
+
 // invoice.payment_failed carries the subscription id + customer.
 async function applyInvoiceStatus(inv: any, status: string) {
   const subId = typeof inv?.subscription === 'string' ? inv.subscription : inv?.subscription?.id
@@ -190,13 +202,22 @@ async function applyInvoiceStatus(inv: any, status: string) {
 serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 })
 
-  const secret = Deno.env.get('STRIPE_WEBHOOK_SECRET')
-  if (!secret) return new Response('STRIPE_WEBHOOK_SECRET not configured', { status: 500 })
+  // Two possible endpoints hit this URL: the platform account webhook and the
+  // Connect webhook (connected-account events for direct-charge invoice
+  // payments + account.updated). Each has its own signing secret — accept both.
+  const secrets = [
+    Deno.env.get('STRIPE_WEBHOOK_SECRET'),
+    Deno.env.get('STRIPE_CONNECT_WEBHOOK_SECRET'),
+  ].filter(Boolean) as string[]
+  if (!secrets.length) return new Response('No webhook secret configured', { status: 500 })
 
   const sig = req.headers.get('Stripe-Signature') || ''
   const rawBody = await req.text() // must verify against the raw, unparsed body
 
-  const ok = await verifyStripeSignature(rawBody, sig, secret).catch(() => false)
+  let ok = false
+  for (const s of secrets) {
+    if (await verifyStripeSignature(rawBody, sig, s).catch(() => false)) { ok = true; break }
+  }
   if (!ok) {
     console.warn('relay-stripe-webhook: signature verification failed')
     return new Response('Invalid signature', { status: 400 })
@@ -247,6 +268,12 @@ serve(async (req) => {
       case 'customer.subscription.deleted': {
         await clearSubscription(evt.data?.object || {})
         console.log('relay-stripe-webhook: subscription deleted, plan cleared')
+        break
+      }
+
+      case 'account.updated': {
+        await applyConnectAccount(evt.data?.object || {})
+        console.log('relay-stripe-webhook: connect account.updated applied')
         break
       }
 

@@ -1353,6 +1353,13 @@ class DataStore {
             currentPeriodEnd: comp.subscription_current_period_end || null,
             hasCustomer: !!comp.stripe_customer_id,
           },
+          // Stripe Connect (customer invoice payments to the tenant's own
+          // account). Server-managed — see 023_connect_payments.sql.
+          _connect: {
+            accountId: comp.stripe_connect_account_id || null,
+            chargesEnabled: !!comp.stripe_connect_charges_enabled,
+            detailsSubmitted: !!comp.stripe_connect_details_submitted,
+          },
         };
       }
 

@@ -14,6 +14,7 @@ import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { FLAGS } from '../utils/flags.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
+import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
@@ -3949,15 +3950,49 @@ export function renderSettings(container) {
         <div class="card" style="max-width:760px">
           <div class="card-header"><h4>Online Payments (Stripe)</h4></div>
           <div class="card-body">
-            <p style="color:var(--text-secondary);">Online card payments are a cloud feature. Upgrade to a cloud account to let customers pay invoices online by card.</p>
+            <p style="color:var(--text-secondary);">Online card payments are a cloud feature. Upgrade to a cloud account to let your customers pay invoices online by card.</p>
           </div>
         </div>`;
       return;
     }
 
+    const conn = connectInfo();                 // { accountId, chargesEnabled, detailsSubmitted }
+    const ready = connectReady();
+    const started = !!conn.accountId;
     const enabledFor = pay.enabledFor || {};
     const currencies = ['AUD', 'USD', 'NZD', 'GBP', 'EUR'];
     const cur = (pay.currency || 'AUD').toUpperCase();
+
+    // Returning from Stripe onboarding? Pull fresh status and re-render.
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
+    const connectParam = params.get('connect');
+    if (!tc.__connectRefreshed && (started || connectParam)) {
+      tc.__connectRefreshed = true;
+      const before = JSON.stringify(conn);
+      refreshConnectStatus().then((d) => {
+        if (d && JSON.stringify(connectInfo()) !== before) renderPaymentsTab(tc);
+      }).catch(() => {});
+    }
+
+    // Status banner.
+    let status;
+    if (ready) {
+      status = `<div style="display:flex;align-items:center;gap:10px;background:var(--color-info-bg);border:1px solid var(--color-info);border-radius:8px;padding:12px 14px;">
+        <span class="material-icons-outlined" style="color:var(--color-info);">verified</span>
+        <div><div style="font-weight:600;font-size:13px;">Connected — you can accept card payments</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">Payments go straight to your Stripe account.</div></div></div>`;
+    } else if (started) {
+      status = `<div style="display:flex;align-items:center;gap:10px;background:var(--color-warning-bg,#fff7ed);border:1px solid var(--color-warning);border-radius:8px;padding:12px 14px;">
+        <span class="material-icons-outlined" style="color:var(--color-warning);">hourglass_top</span>
+        <div><div style="font-weight:600;font-size:13px;">Setup not finished</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">Stripe still needs a few details before you can take payments.</div></div></div>`;
+    } else {
+      status = `<div style="font-size:13px;color:var(--text-secondary);">Connect your Stripe account so customers can pay their invoices by card — the money goes directly to you. No Stripe account yet? You'll create one in a minute during setup.</div>`;
+    }
+
+    const primaryBtn = ready
+      ? `<button class="btn btn-secondary" id="pay-dashboard"><span class="material-icons-outlined">open_in_new</span> Manage payouts on Stripe</button>`
+      : `<button class="btn btn-primary" id="pay-connect"><span class="material-icons-outlined">account_balance</span> ${started ? 'Continue Stripe setup' : 'Connect Stripe'}</button>`;
 
     tc.innerHTML = `
       <div style="max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:24px; align-items:start;">
@@ -3965,27 +4000,14 @@ export function renderSettings(container) {
         <div class="card-header"><h4>Online Payments (Stripe)</h4></div>
         <div class="card-body">
           <p style="color:var(--text-secondary);margin-top:0;">
-            Let customers pay invoices by card via a secure Stripe checkout link. Generate a link from any sent invoice; it's marked Paid automatically once payment clears.
+            Let customers pay invoices by card. Send a Pay link on an invoice or in the customer portal; it's marked Paid automatically once payment clears.
           </p>
 
-          <div style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin:14px 0;">
-            <div style="font-weight:600;font-size:13px;margin-bottom:8px;">One-time setup</div>
-            <ol style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
-              <li>Create a <strong>Stripe</strong> account and copy your <strong>Secret key</strong>.</li>
-              <li>In Supabase → Edge Functions → Secrets, add <code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code>.</li>
-              <li>Deploy the <code>relay-create-payment</code> and <code>relay-stripe-webhook</code> functions.</li>
-              <li>In Stripe → Developers → Webhooks, add an endpoint pointing at <code>relay-stripe-webhook</code> and subscribe it to <code>checkout.session.completed</code>.</li>
-            </ol>
-          </div>
+          <div style="margin:14px 0;">${status}</div>
 
-          <div class="form-group" style="display:flex;align-items:center;gap:10px;">
-            <label class="switch" style="margin:0;">
-              <input type="checkbox" id="pay-connected" ${pay.connected ? 'checked' : ''} />
-            </label>
-            <div>
-              <div style="font-weight:600;font-size:13px;">Payments configured &amp; live</div>
-              <div style="font-size:11px;color:var(--text-tertiary);">Tick once the setup above is done. Controls whether the Pay Link button appears on invoices.</div>
-            </div>
+          <div style="margin:16px 0;display:flex;gap:10px;flex-wrap:wrap;">
+            ${primaryBtn}
+            ${started ? `<button class="btn btn-secondary" id="pay-refresh"><span class="material-icons-outlined">refresh</span> Refresh status</button>` : ''}
           </div>
 
           <div class="form-group" style="max-width:220px;">
@@ -3997,7 +4019,7 @@ export function renderSettings(container) {
 
           <div class="form-group" style="display:flex;align-items:center;gap:10px;">
             <input type="checkbox" id="pay-enable-invoice" style="width:16px;height:16px;" ${enabledFor.invoice !== false ? 'checked' : ''} />
-            <label for="pay-enable-invoice" style="margin:0;font-size:13px;">Show a "Pay Link" action on sent invoices</label>
+            <label for="pay-enable-invoice" style="margin:0;font-size:13px;">Offer a "Pay" action on sent invoices &amp; the customer portal</label>
           </div>
 
           <div style="margin-top:16px;">
@@ -4007,12 +4029,29 @@ export function renderSettings(container) {
       </div>
       </div>`;
 
+    tc.querySelector('#pay-connect')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await startConnectOnboarding('/settings?tab=payments'); }
+      catch (err) { showToast(err.message || 'Could not start Stripe setup', 'error'); e.currentTarget.disabled = false; }
+    });
+
+    tc.querySelector('#pay-dashboard')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await openConnectDashboard(); }
+      catch (err) { showToast(err.message || 'Could not open Stripe', 'error'); e.currentTarget.disabled = false; }
+    });
+
+    tc.querySelector('#pay-refresh')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await refreshConnectStatus(); showToast('Status updated', 'info'); renderPaymentsTab(tc); }
+      catch (err) { showToast(err.message || 'Could not refresh', 'error'); e.currentTarget.disabled = false; }
+    });
+
     tc.querySelector('#pay-save')?.addEventListener('click', async () => {
       try {
         const s = store.getSettings() || {};
         s.payments = {
           ...(s.payments || {}),
-          connected: tc.querySelector('#pay-connected').checked,
           currency: tc.querySelector('#pay-currency').value,
           enabledFor: {
             ...((s.payments || {}).enabledFor || {}),
