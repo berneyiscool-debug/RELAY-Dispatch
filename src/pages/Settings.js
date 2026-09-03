@@ -13,7 +13,7 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { FLAGS } from '../utils/flags.js';
-import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, changePlan, openBillingPortal } from '../utils/subscription.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
@@ -3770,6 +3770,18 @@ export function renderSettings(container) {
   function renderBillingTab(tc, currentUser, openMigrationModal) {
     const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
     const isAdmin = (currentUser?.role === 'admin');
+
+    // The company row is cached at sign-in with no realtime updates, so a change
+    // made in the Stripe portal (or a webhook that just landed) won't show until
+    // we refetch. Pull the latest and re-render once if anything actually moved.
+    if (isCloud) {
+      const before = JSON.stringify(getSubscription());
+      refreshSubscription().then(() => {
+        if (JSON.stringify(getSubscription()) !== before) {
+          renderBillingTab(tc, currentUser, openMigrationModal);
+        }
+      });
+    }
     const tier = getTier();                      // 'free' | 'cloud' | 'cloud_plus'
     const sub = getSubscription();               // { tier, status, seats, currentPeriodEnd, hasCustomer }
     const active = subscriptionActive();

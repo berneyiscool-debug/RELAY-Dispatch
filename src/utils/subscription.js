@@ -66,6 +66,36 @@ export function getSubscription() {
   return (store.getSettings() || {})._subscription || {};
 }
 
+// Re-pull the server-side subscription state into the store. The app caches the
+// company row at sign-in and doesn't get realtime updates on it, so anything
+// that changes the subscription outside this tab — a Stripe Customer Portal
+// switch/cancel, or the webhook finishing after checkout — is invisible until we
+// refetch. Call this when showing billing. Best-effort; returns the raw row.
+export async function refreshSubscription() {
+  if (!isCloudUser()) return null;
+  try {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('subscription_tier, subscription_status, subscription_seats, subscription_current_period_end, stripe_customer_id')
+      .eq('id', store.companyId)
+      .single();
+    if (error || !data) return null;
+    if (store.companySettings) {
+      store.companySettings._subscription = {
+        tier: data.subscription_tier || null,
+        status: data.subscription_status || null,
+        seats: data.subscription_seats ?? null,
+        currentPeriodEnd: data.subscription_current_period_end || null,
+        hasCustomer: !!data.stripe_customer_id,
+      };
+      try { store.emit('settings', store.getSettings()); } catch (_) { /* non-fatal */ }
+    }
+    return data;
+  } catch (_) {
+    return null;
+  }
+}
+
 // The account's effective tier: 'free' | 'cloud' | 'cloud_plus'.
 // A local account is always Free. A cloud account is whatever tier it holds;
 // until it picks a plan its tier column is null — treat that as 'cloud' so the
