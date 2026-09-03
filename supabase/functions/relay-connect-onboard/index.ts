@@ -2,15 +2,16 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ============================================
-// RELAY — CONNECT ONBOARD (Stripe Express)
+// RELAY — CONNECT ONBOARD (Stripe Accounts v2)
 // ============================================
-// Creates (or reuses) the calling admin's company Stripe EXPRESS connected
-// account and returns a hosted onboarding URL. After onboarding, invoice
-// payments are charged directly on this account (see relay-create-payment), so
-// the tenant is paid into their own Stripe. Auth: admin. No SDK.
+// Creates (or reuses) the calling admin's company connected account via the
+// Accounts v2 API (merchant configuration, Express dashboard) and returns a
+// hosted onboarding URL (v2 account link). After onboarding, invoice payments
+// are charged directly on this account (relay-create-payment), so the tenant is
+// paid into their own Stripe. Auth: admin. No SDK — v2 REST with JSON bodies.
 //
-// Request body: { "returnPath"? }   // where to return in-app (default Payments)
-// Response:      { "url": "https://connect.stripe.com/setup/...", "accountId": "acct_..." }
+// Request body: { "returnPath"? }
+// Response:      { "url": "https://connect.stripe.com/...", "accountId": "acct_..." }
 //
 // Secrets: STRIPE_SECRET_KEY (platform), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
@@ -26,23 +27,19 @@ function json(body: unknown, status = 200) {
   })
 }
 
-async function stripe(path: string, key: string, params?: Record<string, string>) {
-  const init: RequestInit = {
-    method: params ? 'POST' : 'GET',
+// Stripe v2 REST helper — JSON body (v2 does not use form-encoding).
+async function stripeV2(path: string, key: string, body?: unknown, method = body ? 'POST' : 'GET') {
+  const res = await fetch(`https://api.stripe.com/v2/${path}`, {
+    method,
     headers: {
       'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/json',
     },
-  }
-  if (params) {
-    const form = new URLSearchParams()
-    for (const [k, v] of Object.entries(params)) form.set(k, v)
-    init.body = form.toString()
-  }
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, init)
+    body: body ? JSON.stringify(body) : undefined,
+  })
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(`Stripe HTTP ${res.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`)
+    throw new Error(`Stripe HTTP ${res.status}: ${data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200)}`)
   }
   return data
 }
@@ -74,17 +71,21 @@ serve(async (req) => {
       .from('companies').select('id, name, email, stripe_connect_account_id').eq('id', profile.company_id).single()
     if (!company) return json({ error: 'Company not found' }, 404)
 
-    // Create the Express account if the company doesn't have one yet.
+    // Create the v2 connected account (merchant config) if none yet.
     let accountId = company.stripe_connect_account_id as string | null
     if (!accountId) {
-      const account = await stripe('accounts', stripeKey, {
-        type: 'express',
-        country: 'AU',
-        ...(company.email ? { email: String(company.email) } : {}),
-        'capabilities[card_payments][requested]': 'true',
-        'capabilities[transfers][requested]': 'true',
-        'business_profile[name]': company.name || 'RELAY tenant',
-        'metadata[company_id]': String(company.id),
+      const account = await stripeV2('core/accounts', stripeKey, {
+        display_name: company.name || 'RELAY tenant',
+        ...(company.email ? { contact_email: String(company.email) } : {}),
+        dashboard: 'express',
+        configuration: {
+          merchant: { capabilities: { card_payments: { requested: true } } },
+        },
+        // Stripe-owned pricing: the tenant is merchant of record, pays Stripe
+        // fees, and Stripe covers their negative balances (lowest platform risk).
+        defaults: { responsibilities: { fees_collector: 'stripe', losses_collector: 'stripe' } },
+        include: ['configuration.merchant'],
+        metadata: { company_id: String(company.id) },
       })
       accountId = account.id
       await admin.from('companies')
@@ -96,13 +97,17 @@ serve(async (req) => {
     const { returnPath } = await req.json().catch(() => ({}))
     const back = `${origin}/#${returnPath || '/settings?tab=payments'}`
 
-    // Account Links are single-use and short-lived; the client always requests a
-    // fresh one when starting/continuing onboarding.
-    const link = await stripe('account_links', stripeKey, {
+    // v2 account link — hosted onboarding.
+    const link = await stripeV2('core/account_links', stripeKey, {
       account: String(accountId),
-      type: 'account_onboarding',
-      refresh_url: `${back}&connect=refresh`,
-      return_url: `${back}&connect=return`,
+      use_case: {
+        type: 'account_onboarding',
+        account_onboarding: {
+          refresh_url: `${back}&connect=refresh`,
+          return_url: `${back}&connect=return`,
+          collection_options: { fields: 'eventually_due' },
+        },
+      },
     })
 
     return json({ url: link.url, accountId })

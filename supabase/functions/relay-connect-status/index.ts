@@ -2,16 +2,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ============================================
-// RELAY — CONNECT STATUS
+// RELAY — CONNECT STATUS (Accounts v2)
 // ============================================
-// Returns (and persists) the company's Stripe Express account readiness:
-// charges_enabled + details_submitted. Also mints an Express dashboard login
-// link when requested (so an onboarded tenant can manage payouts). The webhook
-// (account.updated) keeps these columns fresh too; this lets the UI refresh on
-// demand (e.g. right after the tenant returns from onboarding). Auth: admin.
+// Reads + persists whether the company's v2 connected account can accept card
+// payments (configuration.merchant.capabilities.card_payments.status === active)
+// and, best-effort, mints an Express dashboard login link. The client calls this
+// on return from onboarding to refresh. Auth: admin. No SDK.
 //
 // Request body: { "loginLink"?: boolean }
-// Response: { connected, chargesEnabled, detailsSubmitted, requirementsDue, loginUrl? }
+// Response: { connected, chargesEnabled, detailsSubmitted, loginUrl? }
 //
 // Secrets: STRIPE_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
@@ -27,24 +26,12 @@ function json(body: unknown, status = 200) {
   })
 }
 
-async function stripe(path: string, key: string, params?: Record<string, string>) {
-  const init: RequestInit = {
-    method: params ? 'POST' : 'GET',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  }
-  if (params) {
-    const form = new URLSearchParams()
-    for (const [k, v] of Object.entries(params)) form.set(k, v)
-    init.body = form.toString()
-  }
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, init)
+async function stripeV2Get(path: string, key: string) {
+  const res = await fetch(`https://api.stripe.com/v2/${path}`, {
+    headers: { 'Authorization': `Bearer ${key}` },
+  })
   const data = await res.json()
-  if (!res.ok) {
-    throw new Error(`Stripe HTTP ${res.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`)
-  }
+  if (!res.ok) throw new Error(`Stripe HTTP ${res.status}: ${data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200)}`)
   return data
 }
 
@@ -76,13 +63,16 @@ serve(async (req) => {
     if (!company) return json({ error: 'Company not found' }, 404)
 
     if (!company.stripe_connect_account_id) {
-      return json({ connected: false, chargesEnabled: false, detailsSubmitted: false, requirementsDue: [] })
+      return json({ connected: false, chargesEnabled: false, detailsSubmitted: false })
     }
 
-    const account = await stripe(`accounts/${company.stripe_connect_account_id}`, stripeKey)
-    const chargesEnabled = !!account.charges_enabled
-    const detailsSubmitted = !!account.details_submitted
-    const requirementsDue = account?.requirements?.currently_due || []
+    const account = await stripeV2Get(
+      `core/accounts/${company.stripe_connect_account_id}?include=configuration.merchant`, stripeKey)
+    const cardStatus = account?.configuration?.merchant?.capabilities?.card_payments?.status || 'unrequested'
+    const chargesEnabled = cardStatus === 'active'
+    // "Details submitted" ~ they've provided enough that the capability is no
+    // longer un-started. Good enough to distinguish "in progress" from "not begun".
+    const detailsSubmitted = chargesEnabled || cardStatus === 'pending'
 
     await admin.from('companies').update({
       stripe_connect_charges_enabled: chargesEnabled,
@@ -90,14 +80,21 @@ serve(async (req) => {
       stripe_connect_updated_at: new Date().toISOString(),
     }).eq('id', company.id)
 
+    // Best-effort Express dashboard login link (v1 endpoint still serves the
+    // Express dashboard for these accounts; ignore if unavailable).
     let loginUrl: string | undefined
     const { loginLink } = await req.json().catch(() => ({}))
-    if (loginLink && detailsSubmitted) {
-      const link = await stripe(`accounts/${company.stripe_connect_account_id}/login_links`, stripeKey, {})
-      loginUrl = link.url
+    if (loginLink && chargesEnabled) {
+      try {
+        const res = await fetch(
+          `https://api.stripe.com/v1/accounts/${company.stripe_connect_account_id}/login_links`,
+          { method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' } })
+        const link = await res.json()
+        if (res.ok) loginUrl = link.url
+      } catch (_) { /* dashboard link optional */ }
     }
 
-    return json({ connected: true, chargesEnabled, detailsSubmitted, requirementsDue, loginUrl })
+    return json({ connected: true, chargesEnabled, detailsSubmitted, loginUrl })
   } catch (err) {
     console.error('relay-connect-status error:', err)
     return json({ error: String(err?.message || err) }, 500)
