@@ -26,9 +26,12 @@ function json(body: unknown, status = 200) {
   })
 }
 
+// v2 endpoints require an explicit API version header (v1 does not).
+const STRIPE_V2_VERSION = Deno.env.get('STRIPE_API_VERSION') || '2026-08-26.dahlia'
+
 async function stripeV2Get(path: string, key: string) {
   const res = await fetch(`https://api.stripe.com/v2/${path}`, {
-    headers: { 'Authorization': `Bearer ${key}` },
+    headers: { 'Authorization': `Bearer ${key}`, 'Stripe-Version': STRIPE_V2_VERSION },
   })
   const data = await res.json()
   if (!res.ok) throw new Error(`Stripe HTTP ${res.status}: ${data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200)}`)

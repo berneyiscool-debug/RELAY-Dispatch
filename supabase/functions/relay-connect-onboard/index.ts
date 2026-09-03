@@ -28,12 +28,16 @@ function json(body: unknown, status = 200) {
 }
 
 // Stripe v2 REST helper — JSON body (v2 does not use form-encoding).
+// v2 endpoints require an explicit API version header (v1 does not).
+const STRIPE_V2_VERSION = Deno.env.get('STRIPE_API_VERSION') || '2026-08-26.dahlia'
+
 async function stripeV2(path: string, key: string, body?: unknown, method = body ? 'POST' : 'GET') {
   const res = await fetch(`https://api.stripe.com/v2/${path}`, {
     method,
     headers: {
       'Authorization': `Bearer ${key}`,
       'Content-Type': 'application/json',
+      'Stripe-Version': STRIPE_V2_VERSION,
     },
     body: body ? JSON.stringify(body) : undefined,
   })
