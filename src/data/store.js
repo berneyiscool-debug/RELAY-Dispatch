@@ -1342,7 +1342,17 @@ class DataStore {
       if (!compErr && comp) {
         this.companySettings = {
           name: comp.name,
-          ...(comp.settings || {})
+          ...(comp.settings || {}),
+          // RELAY subscription state (server-managed columns, read-only here —
+          // see 022_subscription_billing.sql). Namespaced so it can never
+          // collide with a user-defined settings key.
+          _subscription: {
+            tier: comp.subscription_tier || null,
+            status: comp.subscription_status || null,
+            seats: comp.subscription_seats ?? null,
+            currentPeriodEnd: comp.subscription_current_period_end || null,
+            hasCustomer: !!comp.stripe_customer_id,
+          },
         };
       }
 
@@ -2623,6 +2633,12 @@ class DataStore {
             this.emit('technicians', cachedItems);
           }
 
+          // A new active user = a new billable seat. Reconcile Stripe's
+          // subscription quantity (prorated). Best-effort: the seat-sync
+          // function no-ops without a live subscription, and the Stripe
+          // webhook is the backstop if this call is dropped.
+          try { supabase.functions.invoke('relay-billing-sync-seats', { body: {} }); } catch (_) { /* non-fatal */ }
+
           return item;
         } catch (err) {
           // Rollback cache update on failure
@@ -2741,6 +2757,12 @@ class DataStore {
 
           if (dbError) {
             throw dbError;
+          }
+
+          // Activating/deactivating a user changes the billable seat count —
+          // reconcile Stripe (prorated). Best-effort; webhook is the backstop.
+          if (updates.deactivated !== undefined) {
+            try { supabase.functions.invoke('relay-billing-sync-seats', { body: {} }); } catch (_) { /* non-fatal */ }
           }
 
           const cachedItems = [...this.cache.technicians];

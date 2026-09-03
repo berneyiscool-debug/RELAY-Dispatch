@@ -10,6 +10,7 @@ import { store } from '../data/store.js';
 import { showToast } from './Notifications.js';
 import { supabase } from '../utils/supabase.js';
 import { hasPermission } from '../utils/permissions.js';
+import { isCloudPlus } from '../utils/subscription.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
 import { loadUserMemory, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
@@ -522,10 +523,12 @@ function isCloudUser() {
   return !!(store.companyId && !store.companyId.startsWith('acct_'));
 }
 
-// Whether the AI backend is usable right now. Cloud users go through the secure
-// edge function (no client key needed); local users must enable AI + supply a key.
+// Whether the AI backend is usable right now.
+//   • Cloud+ : managed AI via the secure edge function — no client key needed.
+//   • Cloud / local : must enable AI and supply their own API key (BYO key).
+// Managed (keyless) AI is the Cloud+ differentiator; see subscription.js.
 function canUseAI(ai) {
-  return isCloudUser() ? (ai.enabled !== false) : !!(ai.enabled && ai.apiKey);
+  return isCloudPlus() ? (ai.enabled !== false) : !!(ai.enabled && ai.apiKey);
 }
 
 function getUserId() {

@@ -13,6 +13,7 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { FLAGS } from '../utils/flags.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, openBillingPortal } from '../utils/subscription.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
@@ -259,7 +260,7 @@ export function renderSettings(container) {
   }
 
   function getCategoryForTab(tab) {
-    if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
+    if (['company', 'billing', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
     if (['templates_forms', 'invoices_quotes', 'payments', 'email'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
     if (['materials', 'storage_options', 'cost_centers', 'tax'].includes(tab)) return 'resources';
@@ -463,6 +464,7 @@ export function renderSettings(container) {
       icon: 'settings',
       tabs: [
         { id: 'company', label: 'Company Profile' },
+        { id: 'billing', label: 'Plan & Billing' },
         { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
@@ -684,6 +686,11 @@ export function renderSettings(container) {
 
     if (activeTab === 'invoices_quotes') {
       renderInvoicesQuotesTab(tc);
+      return;
+    }
+
+    if (activeTab === 'billing') {
+      renderBillingTab(tc);
       return;
     }
 
@@ -3753,6 +3760,158 @@ export function renderSettings(container) {
           const filtered = store.getAll('formTemplates').filter(t => t.id !== id);
           store.save('formTemplates', filtered);
           renderFormsTab(tc);
+        }
+      });
+    });
+  }
+
+  function renderBillingTab(tc) {
+    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+    const isAdmin = (currentUser.role === 'admin');
+    const tier = getTier();                      // 'free' | 'cloud' | 'cloud_plus'
+    const sub = getSubscription();               // { tier, status, seats, currentPeriodEnd, hasCustomer }
+    const active = subscriptionActive();
+    const pastDue = subscriptionPastDue();
+
+    // Live seat estimate = active (non-deactivated) users on this account.
+    const techs = store.getAll('technicians') || [];
+    const activeSeats = techs.filter(t => !t.deactivated).length || 1;
+
+    const statusLabel = {
+      active: 'Active', trialing: 'Trial', past_due: 'Payment overdue',
+      canceled: 'Cancelled', incomplete: 'Setup incomplete', unpaid: 'Unpaid',
+    }[String(sub.status || '')] || (isCloud ? 'No plan selected' : 'Offline (Free)');
+
+    const renew = sub.currentPeriodEnd
+      ? new Date(sub.currentPeriodEnd).toLocaleDateString()
+      : null;
+
+    // Post-checkout / portal return banner.
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
+    const billingResult = params.get('billing');
+    let banner = '';
+    if (billingResult === 'success') {
+      banner = `<div style="background:var(--color-info-bg);border-left:4px solid var(--color-info);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-info);display:flex;gap:8px;align-items:center;">
+        <span class="material-icons-outlined">check_circle</span>
+        <span>Thanks! Your subscription is being activated — it can take a moment to confirm. Refresh if the plan below hasn't updated yet.</span></div>`;
+    } else if (billingResult === 'cancelled') {
+      banner = `<div style="background:var(--color-warning-bg,#fff7ed);border-left:4px solid var(--color-warning);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-warning);display:flex;gap:8px;align-items:center;">
+        <span class="material-icons-outlined">info</span><span>Checkout cancelled — no changes were made.</span></div>`;
+    }
+    if (pastDue) {
+      banner += `<div style="background:var(--color-danger-bg);border-left:4px solid var(--color-danger);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-danger);display:flex;gap:8px;align-items:center;">
+        <span class="material-icons-outlined">error_outline</span>
+        <span>Your last payment failed. Update your card in "Manage billing" to keep your team's cloud access.</span></div>`;
+    }
+
+    // One plan card. `state` ∈ current | upgrade | downgrade | switch | locked.
+    const planCard = (plan) => {
+      const isCurrent = (plan.id === tier) && (plan.id === 'free' ? !isCloud : active);
+      const priceLine = plan.price === 0
+        ? `<div style="font-size:26px;font-weight:700;">Free</div>`
+        : `<div style="font-size:26px;font-weight:700;">$${plan.price}<span style="font-size:13px;font-weight:500;color:var(--text-tertiary);"> /user /mo</span></div>`;
+
+      let action = '';
+      if (isCurrent) {
+        action = `<button class="btn btn-secondary" disabled style="width:100%;justify-content:center;">Current plan</button>`;
+      } else if (plan.id === 'free') {
+        action = `<div style="font-size:11px;color:var(--text-tertiary);text-align:center;">Runs offline on-device. No account.</div>`;
+      } else if (!isCloud) {
+        // Local account: must migrate to cloud before subscribing.
+        action = `<button class="btn btn-primary" data-migrate="1" ${isAdmin ? '' : 'disabled'} style="width:100%;justify-content:center;">Move to Cloud &amp; subscribe</button>`;
+      } else {
+        const verb = !active ? 'Choose'
+          : (plan.id === 'cloud_plus' && tier === 'cloud') ? 'Upgrade to'
+          : 'Switch to';
+        action = `<button class="btn btn-primary" data-choose="${plan.id}" ${isAdmin ? '' : 'disabled'} style="width:100%;justify-content:center;">${verb} ${plan.name}</button>`;
+      }
+
+      return `
+        <div class="card" style="max-width:100%;${isCurrent ? 'border:2px solid var(--color-accent,#FF5C00);' : ''}">
+          <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <h4 style="margin:0;">${plan.name}</h4>
+              ${isCurrent ? '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--color-accent,#FF5C00);">CURRENT</span>' : ''}
+            </div>
+            ${priceLine}
+            <div style="font-size:12px;color:var(--text-secondary);min-height:32px;">${plan.tagline}</div>
+            <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
+              ${plan.features.map(f => `<li>${escapeHTML(f)}</li>`).join('')}
+            </ul>
+            <div style="margin-top:auto;padding-top:8px;">${action}</div>
+          </div>
+        </div>`;
+    };
+
+    tc.innerHTML = `
+      ${banner}
+      <div class="card" style="max-width:100%;margin-bottom:20px;">
+        <div class="card-header"><h4>Your plan</h4></div>
+        <div class="card-body">
+          <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;">
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Plan</div>
+              <div style="font-size:20px;font-weight:700;">${active ? (PLAN_CATALOG[tier]?.name || 'Cloud') : (isCloud ? 'No plan yet' : 'Free')}</div>
+              <div style="font-size:12px;color:${pastDue ? 'var(--color-danger)' : 'var(--text-secondary)'};margin-top:2px;">${statusLabel}</div>
+            </div>
+            ${isCloud ? `
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Active users (seats)</div>
+              <div style="font-size:20px;font-weight:700;">${active && sub.seats != null ? sub.seats : activeSeats}</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Billed per active user</div>
+            </div>` : ''}
+            ${active && tier !== 'free' ? `
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Est. monthly</div>
+              <div style="font-size:20px;font-weight:700;">$${(PLAN_CATALOG[tier].price * (sub.seats != null ? sub.seats : activeSeats)).toFixed(0)}</div>
+              ${renew ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Renews ${renew}</div>` : ''}
+            </div>` : ''}
+          </div>
+          ${isCloud && sub.hasCustomer ? `
+          <div style="margin-top:18px;">
+            <button class="btn btn-secondary" id="billing-portal" ${isAdmin ? '' : 'disabled'}>
+              <span class="material-icons-outlined">receipt_long</span> Manage billing &amp; invoices
+            </button>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Update your card, download receipts, or cancel — via Stripe's secure portal.</div>
+          </div>` : ''}
+          ${!isAdmin ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:14px;">Only an administrator can change the plan or billing.</div>` : ''}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:20px;align-items:stretch;">
+        ${planCard(PLAN_CATALOG.free)}
+        ${planCard(PLAN_CATALOG.cloud)}
+        ${planCard(PLAN_CATALOG.cloud_plus)}
+      </div>
+
+      <p style="font-size:11px;color:var(--text-tertiary);margin-top:16px;max-width:760px;">
+        Prices are in AUD per active user, per month. Adding or deactivating a user adjusts your next
+        invoice automatically (prorated). Cloud+ adds the managed AI suite and priority integrations.
+      </p>
+    `;
+
+    tc.querySelector('[data-migrate]')?.addEventListener('click', () => openMigrationModal());
+
+    tc.querySelector('#billing-portal')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await openBillingPortal(); // redirects to Stripe
+      } catch (err) {
+        showToast(err.message || 'Could not open billing portal', 'error');
+        btn.disabled = false;
+      }
+    });
+
+    tc.querySelectorAll('[data-choose]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const chosen = e.currentTarget.dataset.choose;
+        e.currentTarget.disabled = true;
+        try {
+          await startCheckout(chosen); // redirects to Stripe Checkout
+        } catch (err) {
+          showToast(err.message || 'Could not start checkout', 'error');
+          e.currentTarget.disabled = false;
         }
       });
     });

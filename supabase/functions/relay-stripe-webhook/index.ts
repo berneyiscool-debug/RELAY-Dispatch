@@ -3,17 +3,29 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 // ============================================
 // RELAY — STRIPE WEBHOOK
 // ============================================
-// Receives Stripe events and marks the invoice Paid on checkout.session.completed.
-// Verifies the Stripe signature manually with Web Crypto (HMAC-SHA256) against the
-// RAW body — no Stripe SDK. Writes to the invoices table with the service-role key.
+// One endpoint, two concerns:
+//   1. Customer invoice payments (mode=payment Checkout) → mark the `invoices`
+//      row Paid. This is a tenant billing THEIR customer.
+//   2. RELAY subscription billing (mode=subscription + customer.subscription.*)
+//      → persist tier/status/seats onto the `companies` row. This is RELAY
+//      billing the tenant (Free / Cloud / Cloud+).
 //
-// Secrets required (Supabase → Edge Function secrets):
+// Verifies the Stripe signature manually with Web Crypto (HMAC-SHA256) against
+// the RAW body — no Stripe SDK. Writes with the service-role key (bypasses RLS
+// and the companies_billing_guard, which only blocks client JWT sessions).
+//
+// Secrets (Supabase → Edge Function secrets):
 //   STRIPE_WEBHOOK_SECRET       — the "whsec_..." signing secret for this endpoint
-//   SUPABASE_URL                — project URL (auto-injected in Supabase runtime)
-//   SUPABASE_SERVICE_ROLE_KEY   — service role key (bypasses RLS for the update)
+//   SUPABASE_URL                — project URL (auto-injected)
+//   SUPABASE_SERVICE_ROLE_KEY   — service role key
+//   STRIPE_PRICE_CLOUD          — Cloud   per-seat Price id  (maps price → tier)
+//   STRIPE_PRICE_CLOUD_PLUS     — Cloud+  per-seat Price id
 //
-// Register this function's URL as a webhook endpoint in the Stripe dashboard and
-// subscribe it to `checkout.session.completed`.
+// Subscribe this endpoint (Stripe dashboard) to:
+//   checkout.session.completed,
+//   customer.subscription.created, customer.subscription.updated,
+//   customer.subscription.deleted,
+//   invoice.payment_failed, invoice.paid
 
 const enc = new TextEncoder()
 
@@ -48,13 +60,17 @@ async function verifyStripeSignature(rawBody: string, sigHeader: string, secret:
   return v1.some(sig => timingSafeEqual(sig, expected))
 }
 
-async function markInvoicePaid(invoiceId: string, sessionId: string) {
+// ── Supabase REST helpers (service role) ─────────────────────────────
+function supaEnv() {
   const url = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   if (!url || !serviceKey) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured')
+  return { url, serviceKey }
+}
 
-  const today = new Date().toISOString().slice(0, 10)
-  const res = await fetch(`${url}/rest/v1/invoices?id=eq.${encodeURIComponent(invoiceId)}`, {
+async function supaPatch(pathAndQuery: string, body: unknown) {
+  const { url, serviceKey } = supaEnv()
+  const res = await fetch(`${url}/rest/v1/${pathAndQuery}`, {
     method: 'PATCH',
     headers: {
       'apikey': serviceKey,
@@ -62,16 +78,77 @@ async function markInvoicePaid(invoiceId: string, sessionId: string) {
       'Content-Type': 'application/json',
       'Prefer': 'return=minimal',
     },
-    body: JSON.stringify({
-      status: 'Paid',
-      paid_date: today,
-      payment_method: 'Stripe (online)',
-      stripe_session_id: sessionId,
-    }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Supabase PATCH invoices HTTP ${res.status}: ${body.slice(0, 200)}`)
+    const text = await res.text()
+    throw new Error(`Supabase PATCH ${pathAndQuery} HTTP ${res.status}: ${text.slice(0, 200)}`)
+  }
+}
+
+async function markInvoicePaid(invoiceId: string, sessionId: string) {
+  const today = new Date().toISOString().slice(0, 10)
+  await supaPatch(`invoices?id=eq.${encodeURIComponent(invoiceId)}`, {
+    status: 'Paid',
+    paid_date: today,
+    payment_method: 'Stripe (online)',
+    stripe_session_id: sessionId,
+  })
+}
+
+// price id → our tier slug. Unknown prices leave the tier untouched (null here
+// means "don't change"), so a future add-on price can't silently downgrade.
+function tierForPrice(priceId: string | undefined | null): string | null {
+  if (!priceId) return null
+  if (priceId === Deno.env.get('STRIPE_PRICE_CLOUD')) return 'cloud'
+  if (priceId === Deno.env.get('STRIPE_PRICE_CLOUD_PLUS')) return 'cloud_plus'
+  return null
+}
+
+// Persist a Stripe subscription object onto its company row. Matches the
+// company by metadata.company_id first (most reliable), else by customer id.
+async function applySubscription(sub: any) {
+  const companyId = sub?.metadata?.company_id
+  const customerId = typeof sub?.customer === 'string' ? sub.customer : sub?.customer?.id
+  const item = sub?.items?.data?.[0]
+  const tier = tierForPrice(item?.price?.id)
+  const periodEnd = sub?.current_period_end
+    ? new Date(sub.current_period_end * 1000).toISOString()
+    : null
+
+  const patch: Record<string, unknown> = {
+    subscription_status: sub?.status ?? null,
+    stripe_subscription_id: sub?.id ?? null,
+    subscription_seats: typeof item?.quantity === 'number' ? item.quantity : null,
+    subscription_current_period_end: periodEnd,
+    subscription_updated_at: new Date().toISOString(),
+  }
+  if (customerId) patch.stripe_customer_id = customerId
+  // Only overwrite tier when we recognise the price (see tierForPrice).
+  if (tier) patch.subscription_tier = tier
+  // A terminated subscription drops the tier so features re-lock.
+  if (sub?.status === 'canceled' || sub?.status === 'incomplete_expired') {
+    patch.subscription_tier = null
+  }
+
+  if (companyId) {
+    await supaPatch(`companies?id=eq.${encodeURIComponent(companyId)}`, patch)
+  } else if (customerId) {
+    await supaPatch(`companies?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, patch)
+  } else {
+    console.warn('relay-stripe-webhook: subscription event with no company_id or customer')
+  }
+}
+
+// invoice.payment_failed / invoice.paid carry the subscription id + customer.
+async function applyInvoiceStatus(inv: any, status: string) {
+  const subId = typeof inv?.subscription === 'string' ? inv.subscription : inv?.subscription?.id
+  const customerId = typeof inv?.customer === 'string' ? inv.customer : inv?.customer?.id
+  const patch = { subscription_status: status, subscription_updated_at: new Date().toISOString() }
+  if (subId) {
+    await supaPatch(`companies?stripe_subscription_id=eq.${encodeURIComponent(subId)}`, patch)
+  } else if (customerId) {
+    await supaPatch(`companies?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, patch)
   }
 }
 
@@ -94,18 +171,56 @@ serve(async (req) => {
   try { evt = JSON.parse(rawBody) } catch { return new Response('Bad JSON', { status: 400 }) }
 
   try {
-    if (evt.type === 'checkout.session.completed') {
-      const session = evt.data?.object || {}
-      // Only act on genuinely paid sessions
-      if (session.payment_status === 'paid' || session.status === 'complete') {
-        const invoiceId = session.metadata?.invoice_id || session.client_reference_id
-        if (invoiceId) {
-          await markInvoicePaid(String(invoiceId), String(session.id || ''))
-          console.log(`relay-stripe-webhook: invoice ${invoiceId} marked Paid`)
+    switch (evt.type) {
+      case 'checkout.session.completed': {
+        const session = evt.data?.object || {}
+        if (session.mode === 'subscription') {
+          // Subscription checkout: link the company to its new subscription.
+          // The customer.subscription.created event carries the full detail
+          // (price/quantity/period), but stamp the ids now so nothing races.
+          const companyId = session.metadata?.company_id || session.client_reference_id
+          const subId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id
+          const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id
+          if (companyId) {
+            const patch: Record<string, unknown> = { subscription_updated_at: new Date().toISOString() }
+            if (subId) patch.stripe_subscription_id = subId
+            if (customerId) patch.stripe_customer_id = customerId
+            if (session.metadata?.tier) patch.subscription_tier = session.metadata.tier
+            await supaPatch(`companies?id=eq.${encodeURIComponent(companyId)}`, patch)
+            console.log(`relay-stripe-webhook: company ${companyId} subscription checkout completed`)
+          }
+        } else {
+          // One-off invoice payment (existing behaviour).
+          if (session.payment_status === 'paid' || session.status === 'complete') {
+            const invoiceId = session.metadata?.invoice_id || session.client_reference_id
+            if (invoiceId) {
+              await markInvoicePaid(String(invoiceId), String(session.id || ''))
+              console.log(`relay-stripe-webhook: invoice ${invoiceId} marked Paid`)
+            }
+          }
         }
+        break
+      }
+
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        await applySubscription(evt.data?.object || {})
+        console.log(`relay-stripe-webhook: ${evt.type} applied`)
+        break
+      }
+
+      case 'invoice.payment_failed': {
+        await applyInvoiceStatus(evt.data?.object || {}, 'past_due')
+        break
+      }
+      case 'invoice.paid': {
+        await applyInvoiceStatus(evt.data?.object || {}, 'active')
+        break
       }
     }
-    // Acknowledge all other event types so Stripe stops retrying.
+
+    // Acknowledge all event types so Stripe stops retrying.
     return new Response(JSON.stringify({ received: true }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     })
