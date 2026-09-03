@@ -86,6 +86,15 @@ async function supaPatch(pathAndQuery: string, body: unknown) {
   }
 }
 
+async function supaGet(pathAndQuery: string) {
+  const { url, serviceKey } = supaEnv()
+  const res = await fetch(`${url}/rest/v1/${pathAndQuery}`, {
+    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` },
+  })
+  if (!res.ok) throw new Error(`Supabase GET ${pathAndQuery} HTTP ${res.status}`)
+  return await res.json()
+}
+
 async function markInvoicePaid(invoiceId: string, sessionId: string) {
   const today = new Date().toISOString().slice(0, 10)
   await supaPatch(`invoices?id=eq.${encodeURIComponent(invoiceId)}`, {
@@ -94,6 +103,86 @@ async function markInvoicePaid(invoiceId: string, sessionId: string) {
     payment_method: 'Stripe (online)',
     stripe_session_id: sessionId,
   })
+}
+
+function money(n: number, currency = 'AUD') {
+  try { return new Intl.NumberFormat('en-AU', { style: 'currency', currency }).format(n) }
+  catch { return `$${Number(n).toFixed(2)}` }
+}
+
+function headerSafe(v: unknown, max = 200) {
+  return String(v ?? '').replace(/[\r\n]+/g, ' ').slice(0, max).trim()
+}
+function isEmail(v: unknown) {
+  const s = String(v ?? '').trim()
+  return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(s) && s.length <= 254
+}
+
+// Emails the customer a RELAY-branded receipt after an online payment — but only
+// when the tenant chose RELAY (settings.payments.receiptSource !== 'stripe'), so
+// the customer never gets both a RELAY and a Stripe receipt. Sent via Resend on
+// RELAY's shared domain as the tenant's own billing.<slug>@… identity (the same
+// From that relay-email builds). Best-effort: never throws — a receipt hiccup must
+// not make Stripe retry the event and re-run the paid flow.
+async function maybeSendReceipt(session: any, invoiceId: string) {
+  try {
+    const resendKey = Deno.env.get('RESEND_API_KEY')
+    if (!resendKey) return
+    const emailDomain = Deno.env.get('RELAY_EMAIL_DOMAIN') || 'relaydispatch.com.au'
+
+    const inv = (await supaGet(`invoices?id=eq.${encodeURIComponent(invoiceId)}&select=number,total,company_id,customer_id`))?.[0]
+    if (!inv) return
+    const company = (await supaGet(`companies?id=eq.${encodeURIComponent(inv.company_id)}&select=id,name,email,email_slug,email_reply_to,settings`))?.[0]
+    if (!company) return
+
+    const payCfg = (company.settings || {}).payments || {}
+    if (payCfg.receiptSource === 'stripe') return // tenant opted for Stripe's receipt
+    if (!company.email_slug) return               // no sending identity yet
+
+    // Prefer the email the payer entered at checkout; fall back to the customer.
+    let to = session?.customer_details?.email || ''
+    if (!to && inv.customer_id) {
+      const cust = (await supaGet(`customers?id=eq.${encodeURIComponent(inv.customer_id)}&select=email`))?.[0]
+      to = cust?.email || ''
+    }
+    if (!isEmail(to)) return
+
+    const currency = String(payCfg.currency || 'AUD').toUpperCase()
+    const amount = money(Number(inv.total), currency)
+    const num = inv.number || invoiceId
+    const co = company.name || 'the business'
+    const today = new Date().toLocaleDateString('en-AU')
+
+    // Same From shape as relay-email (receipt -> "billing" mailbox).
+    const displayName = headerSafe(company.name || 'RELAY', 78).replace(/["<>\\]/g, '') || 'RELAY'
+    const from = `${displayName} <billing.${company.email_slug}@${emailDomain}>`
+    const replyTo = [company.email_reply_to, company.email].find((c) => isEmail(c))
+
+    const html = `
+      <div style="font-family:system-ui,Segoe UI,Arial,sans-serif;color:#1E2A3A;max-width:560px;">
+        <h2 style="margin:0 0 4px;">Payment received</h2>
+        <p style="margin:0 0 16px;color:#5b6b7c;">Thanks — your payment to ${headerSafe(co, 120)} has been received.</p>
+        <table style="border-collapse:collapse;font-size:14px;">
+          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Invoice</td><td style="padding:4px 0;font-weight:600;">${headerSafe(num, 60)}</td></tr>
+          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Amount paid</td><td style="padding:4px 0;font-weight:600;">${amount}</td></tr>
+          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Date</td><td style="padding:4px 0;">${today}</td></tr>
+          <tr><td style="padding:4px 16px 4px 0;color:#5b6b7c;">Method</td><td style="padding:4px 0;">Card (online)</td></tr>
+        </table>
+        <p style="margin:20px 0 0;color:#8a97a5;font-size:12px;">This is your receipt. No payment is due.</p>
+      </div>`
+
+    const body: Record<string, unknown> = { from, to: [to], subject: `Receipt for invoice ${num} — paid`, html }
+    if (replyTo) body.reply_to = replyTo
+
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    console.log(`relay-stripe-webhook: receipt emailed for invoice ${num}`)
+  } catch (err) {
+    console.error('relay-stripe-webhook: receipt send failed (non-fatal):', err)
+  }
 }
 
 // Stripe price → our tier slug, by id (STRIPE_PRICE_* secret) or lookup_key —
@@ -252,6 +341,7 @@ serve(async (req) => {
             if (invoiceId) {
               await markInvoicePaid(String(invoiceId), String(session.id || ''))
               console.log(`relay-stripe-webhook: invoice ${invoiceId} marked Paid`)
+              await maybeSendReceipt(session, String(invoiceId))
             }
           }
         }

@@ -4022,6 +4022,18 @@ export function renderSettings(container) {
             <label for="pay-enable-invoice" style="margin:0;font-size:13px;">Offer a "Pay" action on sent invoices &amp; the customer portal</label>
           </div>
 
+          <div class="form-group" style="max-width:340px;">
+            <label class="form-label">Payment receipt</label>
+            <select class="form-input" id="pay-receipt-source">
+              <option value="relay" ${pay.receiptSource !== 'stripe' ? 'selected' : ''}>RELAY emails the receipt (recommended)</option>
+              <option value="stripe" ${pay.receiptSource === 'stripe' ? 'selected' : ''}>Let Stripe email the receipt</option>
+            </select>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">
+              Sent automatically when an invoice is paid online — only one receipt goes out. RELAY needs no email setup.
+              If you pick Stripe, turn off RELAY here so the customer doesn't get two.
+            </div>
+          </div>
+
           <div style="margin-top:16px;">
             <button class="btn btn-primary" id="pay-save"><span class="material-icons-outlined">save</span> Save Payment Settings</button>
           </div>
@@ -4053,6 +4065,7 @@ export function renderSettings(container) {
         s.payments = {
           ...(s.payments || {}),
           currency: tc.querySelector('#pay-currency').value,
+          receiptSource: tc.querySelector('#pay-receipt-source').value === 'stripe' ? 'stripe' : 'relay',
           enabledFor: {
             ...((s.payments || {}).enabledFor || {}),
             invoice: tc.querySelector('#pay-enable-invoice').checked,
