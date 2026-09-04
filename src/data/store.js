@@ -1352,6 +1352,9 @@ class DataStore {
             seats: comp.subscription_seats ?? null,
             currentPeriodEnd: comp.subscription_current_period_end || null,
             hasCustomer: !!comp.stripe_customer_id,
+            // Complimentary "power user" grant (set only via Supabase). Non-null
+            // = an always-active grant at that tier, overriding Stripe state.
+            compTier: comp.comp_tier || null,
           },
           // Stripe Connect (customer invoice payments to the tenant's own
           // account). Server-managed — see 023_connect_payments.sql.

@@ -76,7 +76,7 @@ export async function refreshSubscription() {
   try {
     const { data, error } = await supabase
       .from('companies')
-      .select('subscription_tier, subscription_status, subscription_seats, subscription_current_period_end, stripe_customer_id')
+      .select('subscription_tier, subscription_status, subscription_seats, subscription_current_period_end, stripe_customer_id, comp_tier')
       .eq('id', store.companyId)
       .single();
     if (error || !data) return null;
@@ -87,6 +87,7 @@ export async function refreshSubscription() {
         seats: data.subscription_seats ?? null,
         currentPeriodEnd: data.subscription_current_period_end || null,
         hasCustomer: !!data.stripe_customer_id,
+        compTier: data.comp_tier || null,
       };
       try { store.emit('settings', store.getSettings()); } catch (_) { /* non-fatal */ }
     }
@@ -103,14 +104,23 @@ export async function refreshSubscription() {
 export function getTier() {
   if (!isCloudUser()) return 'free';
   const sub = getSubscription();
-  if (sub.tier === 'cloud_plus') return 'cloud_plus';
+  // A complimentary grant (comp_tier, set only via Supabase) overrides Stripe.
+  if (sub.compTier === 'cloud_plus' || sub.tier === 'cloud_plus') return 'cloud_plus';
   return 'cloud';
 }
 
-// Is there a live (paying/trialing/past-due) subscription behind this account?
+// True when the account has full cloud access right now — a live Stripe
+// subscription (paying/trialing/past-due) OR a complimentary comp grant.
 export function subscriptionActive() {
   if (!isCloudUser()) return false;
-  return LIVE_STATUSES.has(String(getSubscription().status || ''));
+  const sub = getSubscription();
+  if (sub.compTier) return true; // comp access is always "active", no charge
+  return LIVE_STATUSES.has(String(sub.status || ''));
+}
+
+// Is this account on a free complimentary grant (no Stripe subscription)?
+export function isComplimentary() {
+  return !!getSubscription().compTier;
 }
 
 // Billing needs attention (card declined etc.) — surface a banner.

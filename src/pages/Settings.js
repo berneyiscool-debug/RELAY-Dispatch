@@ -13,7 +13,7 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { FLAGS } from '../utils/flags.js';
-import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
@@ -3787,15 +3787,18 @@ export function renderSettings(container) {
     const sub = getSubscription();               // { tier, status, seats, currentPeriodEnd, hasCustomer }
     const active = subscriptionActive();
     const pastDue = subscriptionPastDue();
+    const comp = isComplimentary();   // free "power user" grant, set via Supabase
 
     // Live seat estimate = active (non-deactivated) users on this account.
     const techs = store.getAll('technicians') || [];
     const activeSeats = techs.filter(t => !t.deactivated).length || 1;
 
-    const statusLabel = {
-      active: 'Active', trialing: 'Trial', past_due: 'Payment overdue',
-      canceled: 'Cancelled', incomplete: 'Setup incomplete', unpaid: 'Unpaid',
-    }[String(sub.status || '')] || (isCloud ? 'No plan selected' : 'Offline (Free)');
+    const statusLabel = comp
+      ? 'Complimentary — no charge'
+      : ({
+          active: 'Active', trialing: 'Trial', past_due: 'Payment overdue',
+          canceled: 'Cancelled', incomplete: 'Setup incomplete', unpaid: 'Unpaid',
+        }[String(sub.status || '')] || (isCloud ? 'No plan selected' : 'Offline (Free)'));
 
     const renew = sub.currentPeriodEnd
       ? new Date(sub.currentPeriodEnd).toLocaleDateString()
@@ -3827,7 +3830,12 @@ export function renderSettings(container) {
         : `<div style="font-size:26px;font-weight:700;">$${plan.price}<span style="font-size:13px;font-weight:500;color:var(--text-tertiary);"> /user /mo</span></div>`;
 
       let action = '';
-      if (isCurrent) {
+      if (comp && isCloud && plan.id !== 'free') {
+        // Complimentary account: no self-serve billing actions.
+        action = isCurrent
+          ? `<button class="btn btn-secondary" disabled style="width:100%;justify-content:center;">Current plan · complimentary</button>`
+          : `<div style="font-size:11px;color:var(--text-tertiary);text-align:center;">Complimentary access is managed by RELAY.</div>`;
+      } else if (isCurrent) {
         action = `<button class="btn btn-secondary" disabled style="width:100%;justify-content:center;">Current plan</button>`;
       } else if (plan.id === 'free') {
         action = `<div style="font-size:11px;color:var(--text-tertiary);text-align:center;">Runs offline on-device. No account.</div>`;
@@ -3873,9 +3881,9 @@ export function renderSettings(container) {
             <div>
               <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Active users (seats)</div>
               <div style="font-size:20px;font-weight:700;">${active && sub.seats != null ? sub.seats : activeSeats}</div>
-              <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Billed per active user</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${comp ? 'Included at no charge' : 'Billed per active user'}</div>
             </div>` : ''}
-            ${active && tier !== 'free' ? `
+            ${active && !comp && tier !== 'free' ? `
             <div>
               <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Est. monthly</div>
               <div style="font-size:20px;font-weight:700;">$${(PLAN_CATALOG[tier].price * (sub.seats != null ? sub.seats : activeSeats)).toFixed(0)}</div>
