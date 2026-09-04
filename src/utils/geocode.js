@@ -14,6 +14,18 @@ import { supabase } from './supabase.js';
 const CACHE_KEY = 'relay.geocodeCache.v1';
 const inFlight = new Map(); // normalizedAddress -> Promise, dedupes concurrent lookups
 
+// Geocoding is a paid server call — cloud-gated per the roadmap. Local-mode
+// accounts still get coordinates through the cached Places Autocomplete path.
+function isCloudUser() {
+  try {
+    const loginMode = localStorage.getItem('relay_login_mode');
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    return loginMode === 'cloud' && currentUser.companyId && !String(currentUser.companyId).startsWith('acct_');
+  } catch {
+    return false;
+  }
+}
+
 // Normalise so trivial formatting differences ("14 Industrial Lane, Dubbo NSW 2830"
 // vs "14 industrial lane,  dubbo  nsw 2830") share one cache entry / one billed call.
 export function normalizeAddress(address) {
@@ -77,6 +89,9 @@ export async function geocodeAddress(address, opts = {}) {
   // Offline and not cached — nothing we can do now; caller can retry when online.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
 
+  // Server-side geocoding is a cloud-gated paid feature.
+  if (!isCloudUser()) return null;
+
   if (inFlight.has(key)) return inFlight.get(key);
 
   const promise = (async () => {
@@ -125,6 +140,12 @@ export async function geocodeBatch(addresses) {
 
   if (misses.length === 0) return out;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    for (const addr of misses) out.set(addr, null);
+    return out;
+  }
+
+  // Server-side geocoding is a cloud-gated paid feature.
+  if (!isCloudUser()) {
     for (const addr of misses) out.set(addr, null);
     return out;
   }

@@ -34,10 +34,6 @@ export function createTopBar() {
         <input type="text" id="global-search" placeholder="Search…" autocomplete="off" />
         <span class="topbar-search-kbd">Ctrl K</span>
       </div>
-      <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant" style="position: relative;">
-        ${relayIcon}
-        <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--color-danger); color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
-      </button>
       <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
         <span class="material-icons-outlined" id="theme-icon">${(THEMES[getStoredTheme()] ? THEMES[getStoredTheme()].mode : 'light') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
       </button>
@@ -48,6 +44,26 @@ export function createTopBar() {
         <span class="material-icons-outlined">notifications</span>
         <span class="notification-dot"></span>
       </button>
+      <!-- Deputy controls — the trigger slides to line up with the drawer's
+           inside edge; expand/clear/close stay pinned to the far right of the
+           top bar while the Deputy drawer is open. -->
+      <div class="relay-topbar-group relay-deputy-slot">
+        <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant" style="position: relative;">
+          ${relayIcon}
+          <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--color-danger); color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
+        </button>
+      </div>
+      <div class="relay-topbar-group relay-topbar-actions">
+        <button class="relay-topbar-action" id="relay-expand" title="Expand to Full Workspace" aria-label="Expand Deputy workspace">
+          <span class="material-icons-outlined">open_in_full</span>
+        </button>
+        <button class="relay-topbar-action" id="relay-clear-chat" title="Clear Chat" aria-label="Clear Deputy chat">
+          <span class="material-icons-outlined">delete_sweep</span>
+        </button>
+        <button class="relay-topbar-action" id="relay-close" title="Close Deputy" aria-label="Close Deputy">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
       <!-- Simple/Complete mode toggle (local-admin only; profile block moved to the sidebar footer) -->
       <label class="toggle-pill" title="Toggle Simple/Complete Mode" style="display:none;">
         <input type="checkbox" id="ui-mode-toggle" />
@@ -217,7 +233,8 @@ export function createTopBar() {
   }
 
   // Profile display moved to the sidebar footer (see Sidebar.js). The top bar
-  // now only carries search + Deputy + theme/help/notifications + the mode toggle.
+  // now only carries search + theme/help/notifications + the Deputy controls
+  // (right-most) + the mode toggle.
 
   // Update on profile details update
   window.addEventListener('fieldforge-profile-updated', () => {

@@ -19,6 +19,7 @@ import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, email
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
 import { storageGet, storageSet } from '../utils/tauriStore.js';
+import { getAITier, AI_TIERS } from '../utils/aiTier.js';
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 import { renderLeadProfileSetup } from './leads/leadProfile.js';
 
@@ -4742,6 +4743,8 @@ export function renderSettings(container) {
   function renderApiKeysTab(tc) {
     const s = store.getSettings();
     const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
+    const tier = getAITier();
+    const tierLabel = tier === AI_TIERS.CLOUD_PLUS ? 'Cloud+ Deputy Max' : tier === AI_TIERS.CLOUD ? 'Cloud' : 'Local';
     const maps = s.maps || { apiKey: '' };
     const ai = s.ai || {
       enabled: false,
@@ -4775,10 +4778,11 @@ export function renderSettings(container) {
           <!-- DEPUTY AI -->
           <div class="card">
             <div class="card-header">
-              <h4 style="display:flex; align-items:center; gap:8px; margin:0;">
+              <h4 style="display:flex; align-items:center; gap:8px; margin:0; flex:1;">
                 <span class="material-icons-outlined" style="color:var(--color-primary);">smart_toy</span>
                 Deputy — your AI assistant
               </h4>
+              <span style="font-size:11px; font-weight:600; color:var(--color-primary); background:rgba(255,92,0,0.12); padding:3px 10px; border-radius:999px; white-space:nowrap;">${tierLabel}</span>
             </div>
             <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
 
@@ -4789,6 +4793,19 @@ export function renderSettings(container) {
                   <div class="text-tertiary" style="font-size:12px; margin-top:2px;">A smart chat assistant that helps with jobs, quotes, invoices and scheduling.</div>
                 </div>
               </label>
+
+              <div class="form-group" style="margin:0; ${isLocalMode ? 'display:none' : ''}" id="ai-tier-group">
+                <label class="form-label" style="font-weight:600;">Deputy tier</label>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                  <button type="button" class="btn btn-sm ai-tier-option ${tier === AI_TIERS.CLOUD ? 'btn-primary' : 'btn-secondary'}" data-tier="${AI_TIERS.CLOUD}" style="flex:1;">Cloud</button>
+                  <button type="button" class="btn btn-sm ai-tier-option ${tier === AI_TIERS.CLOUD_PLUS ? 'btn-primary' : 'btn-secondary'}" data-tier="${AI_TIERS.CLOUD_PLUS}" style="flex:1;">Cloud+ Deputy Max</button>
+                </div>
+                <div class="text-tertiary" style="font-size:12px; margin-top:6px;" id="ai-tier-hint">
+                  ${tier === AI_TIERS.CLOUD_PLUS
+                    ? 'Deputy Max: image/attachment extraction, autopilot conflict proposals, longer chat memory, richer context.'
+                    : 'Cloud: chat assistant. Upgrade to Cloud+ for attachment extraction, autopilot conflict proposals and longer memory.'}
+                </div>
+              </div>
 
               <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
 
@@ -4935,6 +4952,26 @@ export function renderSettings(container) {
 
 
 
+      // Tier toggle (cloud users only). Track the selection locally so switching
+      // without saving doesn't show an unexpected badge.
+      let selectedTier = tier;
+      tc.querySelectorAll('.ai-tier-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedTier = btn.dataset.tier;
+          tc.querySelectorAll('.ai-tier-option').forEach(b => {
+            const on = b.dataset.tier === selectedTier;
+            b.classList.toggle('btn-primary', on);
+            b.classList.toggle('btn-secondary', !on);
+          });
+          const hint = tc.querySelector('#ai-tier-hint');
+          if (hint) {
+            hint.textContent = selectedTier === AI_TIERS.CLOUD_PLUS
+              ? 'Deputy Max: image/attachment extraction, autopilot conflict proposals, longer chat memory, richer context.'
+              : 'Cloud: chat assistant. Upgrade to Cloud+ for attachment extraction, autopilot conflict proposals and longer memory.';
+          }
+        });
+      });
+
       // Save handler
       tc.querySelector('#btn-save-ai').addEventListener('click', () => {
         const enabled = enabledCheckbox.checked;
@@ -4962,7 +4999,8 @@ export function renderSettings(container) {
           model,
           visionEndpoint,
           visionModel,
-          systemPrompt
+          systemPrompt,
+          tier: selectedTier
         };
 
         store.saveSettings(settings);

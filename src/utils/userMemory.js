@@ -42,6 +42,16 @@ export const loadUserMemory = async () => {
   }
 };
 
+/** Synchronous local read — used by prompt builders that can't await (cloud token is always null here anyway). */
+export const loadUserMemorySync = () => {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
 /** Save memory: try cloud, fall back to localStorage */
 export const saveUserMemory = async (mem) => {
   const userId = getCurrentUserId?.();

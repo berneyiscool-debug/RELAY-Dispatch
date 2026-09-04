@@ -42,7 +42,9 @@ const TABLE_MAP = {
   jobMaterials: 'job_materials',
   storageLocations: 'storage_locations',
   kitTypes: 'kit_types',
-  locationTypes: 'location_types'
+  locationTypes: 'location_types',
+  deputyThreads: 'deputy_threads',
+  deputyRoutines: 'deputy_routines'
 };
 
 const TABLE_COLUMNS = {
@@ -398,6 +400,25 @@ const TABLE_COLUMNS = {
     "created_at",
     "updated_at"
   ],
+  deputy_threads: [
+    "id",
+    "company_id",
+    "title",
+    "messages",
+    "created_at",
+    "updated_at"
+  ],
+  deputy_routines: [
+    "id",
+    "company_id",
+    "title",
+    "trigger",
+    "prompt",
+    "enabled",
+    "last_run_at",
+    "created_at",
+    "updated_at"
+  ],
   notifications: [
     "id",
     "company_id",
@@ -702,7 +723,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 7);
+      const request = window.indexedDB.open(dbName, 8);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1801,6 +1822,10 @@ class DataStore {
       record.updatedAt = record.updated_at;
       delete record.updated_at;
     }
+    if (record.last_run_at !== undefined) {
+      record.lastRunAt = record.last_run_at;
+      delete record.last_run_at;
+    }
     // Contractor / supplier rich fields + lead / schedule fields
     if (record.license_number !== undefined) { record.licenseNumber = record.license_number; delete record.license_number; }
     if (record.hourly_rate !== undefined) { record.hourlyRate = parseFloat(record.hourly_rate); delete record.hourly_rate; }
@@ -2256,6 +2281,10 @@ class DataStore {
     if (record.updatedAt !== undefined) {
       record.updated_at = record.updatedAt;
       delete record.updatedAt;
+    }
+    if (record.lastRunAt !== undefined) {
+      record.last_run_at = record.lastRunAt;
+      delete record.lastRunAt;
     }
     // Contractor / supplier rich fields + lead / schedule fields
     if (record.licenseNumber !== undefined) { record.license_number = record.licenseNumber; delete record.licenseNumber; }
@@ -3070,6 +3099,7 @@ class DataStore {
       },
       ai: {
         enabled: (this.companyId && !this.companyId.startsWith('acct_')) ? true : false,
+        tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local',
         apiKey: '',
         endpoint: 'https://api.deepseek.com/chat/completions',
         model: 'deepseek-chat',
