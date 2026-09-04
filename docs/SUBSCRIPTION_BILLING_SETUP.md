@@ -60,7 +60,7 @@ STRIPE_WEBHOOK_SECRET=whsec_...      # from the webhook endpoint you add in step
 
 ## 3. Apply the migration
 
-`supabase/migrations/022_subscription_billing.sql` adds the server-managed
+`supabase/migrations/025_subscription_billing.sql` adds the server-managed
 billing columns to `companies`, a client write-guard (so a tenant can never
 self-upgrade), and `company_active_seat_count()`.
 

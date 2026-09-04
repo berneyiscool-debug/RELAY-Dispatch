@@ -25,7 +25,7 @@ charges (`connectReady()` / `stripe_connect_charges_enabled`).
 
 Connect is already enabled on the platform account. Steps:
 
-1. **Apply migration** `023_connect_payments.sql` (done on the sandbox).
+1. **Apply migration** `026_connect_payments.sql` (done on the sandbox).
 2. **Deploy functions** (done): `relay-connect-onboard`, `relay-connect-status`,
    `relay-create-payment` (verify_jwt=false), `relay-stripe-webhook`.
 3. **Add a Connect webhook endpoint** in Stripe (Developers → Webhooks → "Add
