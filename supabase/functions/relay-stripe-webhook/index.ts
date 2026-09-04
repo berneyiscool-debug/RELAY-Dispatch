@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1"
 
 // ============================================
 // RELAY — STRIPE WEBHOOK
@@ -118,6 +119,83 @@ function isEmail(v: unknown) {
   return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(s) && s.length <= 254
 }
 
+// Builds a simple one-page A4 PDF of the paid invoice (line items + totals,
+// stamped PAID) from the invoice's stored data — the webhook has no browser, so
+// this doesn't use the app's client-side (jspdf/html2canvas) document template.
+// Returns base64, or null on any failure (the receipt still sends without it).
+async function buildInvoicePdfBase64(inv: any, company: any, currency: string): Promise<string | null> {
+  try {
+    const pdf = await PDFDocument.create()
+    const page = pdf.addPage([595.28, 841.89]) // A4 portrait
+    const font = await pdf.embedFont(StandardFonts.Helvetica)
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+    const W = page.getWidth(), H = page.getHeight(), M = 48
+    const navy = rgb(0.12, 0.16, 0.23), grey = rgb(0.36, 0.42, 0.49), green = rgb(0.13, 0.55, 0.32)
+    const T = (s: string, x: number, y: number, o: any = {}) =>
+      page.drawText(String(s ?? ''), { x, y, size: o.size || 10, font: o.f || font, color: o.color || navy })
+    const R = (s: string, xRight: number, y: number, o: any = {}) => {
+      const f = o.f || font, size = o.size || 10
+      T(s, xRight - f.widthOfTextAtSize(String(s ?? ''), size), y, o)
+    }
+    const fmt = (n: number) => money(Number(n) || 0, currency)
+
+    let y = H - 56
+    T(company?.name || 'Invoice', M, y, { size: 18, f: bold })
+    R('TAX INVOICE', W - M, y, { size: 16, f: bold, color: grey })
+    y -= 30
+    if (company?.email) { T(String(company.email), M, y, { size: 9, color: grey }); }
+    R(`Invoice ${inv.number || ''}`, W - M, y, { size: 10, f: bold })
+    y -= 14
+    R(`Date paid ${new Date().toLocaleDateString('en-AU')}`, W - M, y, { size: 9, color: grey })
+    y -= 30
+
+    T('Bill to', M, y, { size: 9, color: grey }); y -= 14
+    T(inv.customer_name || 'Customer', M, y, { size: 11, f: bold }); y -= 24
+
+    // Table header
+    const colDesc = M, colQty = W - M - 180, colAmt = W - M
+    page.drawRectangle({ x: M, y: y - 4, width: W - 2 * M, height: 20, color: rgb(0.95, 0.96, 0.97) })
+    T('Description', colDesc + 6, y + 2, { size: 9, f: bold, color: grey })
+    R('Qty', colQty + 40, y + 2, { size: 9, f: bold, color: grey })
+    R('Amount', colAmt - 6, y + 2, { size: 9, f: bold, color: grey })
+    y -= 22
+
+    const items = Array.isArray(inv.line_items) ? inv.line_items : []
+    for (const it of items.slice(0, 28)) {
+      const desc = String(it?.description || it?.name || it?.item || 'Item').slice(0, 70)
+      const qty = it?.quantity ?? it?.qty ?? ''
+      const amt = it?.amount ?? it?.total ?? (Number(it?.quantity || 0) * Number(it?.rate || it?.unitPrice || 0))
+      T(desc, colDesc + 6, y, { size: 10 })
+      if (qty !== '') R(String(qty), colQty + 40, y, { size: 10, color: grey })
+      R(fmt(amt), colAmt - 6, y, { size: 10 })
+      y -= 18
+      if (y < 140) break
+    }
+
+    y -= 6
+    page.drawLine({ start: { x: W - M - 220, y }, end: { x: W - M, y }, thickness: 0.5, color: rgb(0.8, 0.83, 0.86) })
+    y -= 18
+    const label = (l: string, v: string, o: any = {}) => { T(l, W - M - 220, y, { size: 10, color: grey, ...o }); R(v, W - M, y, { size: 10, ...o }); y -= 16 }
+    if (inv.subtotal != null) label('Subtotal', fmt(inv.subtotal))
+    if (inv.tax != null && Number(inv.tax) !== 0) label('Tax', fmt(inv.tax))
+    label('Total', fmt(inv.total), { f: bold, size: 11 })
+
+    y -= 10
+    page.drawRectangle({ x: W - M - 140, y: y - 6, width: 140, height: 26, color: green })
+    R(`PAID  ${fmt(inv.total)}`, W - M - 10, y + 2, { size: 12, f: bold, color: rgb(1, 1, 1) })
+
+    T('Paid by card (online) via Stripe. Thank you.', M, 60, { size: 9, color: grey })
+
+    const bytes = await pdf.save()
+    let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    return btoa(bin)
+  } catch (err) {
+    console.error('relay-stripe-webhook: invoice PDF build failed (non-fatal):', err)
+    return null
+  }
+}
+
 // Emails the customer a RELAY-branded receipt after an online payment — but only
 // when the tenant chose RELAY (settings.payments.receiptSource !== 'stripe'), so
 // the customer never gets both a RELAY and a Stripe receipt. Sent via Resend on
@@ -130,7 +208,7 @@ async function maybeSendReceipt(session: any, invoiceId: string) {
     if (!resendKey) return
     const emailDomain = Deno.env.get('RELAY_EMAIL_DOMAIN') || 'relaydispatch.com.au'
 
-    const inv = (await supaGet(`invoices?id=eq.${encodeURIComponent(invoiceId)}&select=number,total,company_id,customer_id`))?.[0]
+    const inv = (await supaGet(`invoices?id=eq.${encodeURIComponent(invoiceId)}&select=number,total,subtotal,tax,line_items,customer_name,company_id,customer_id`))?.[0]
     if (!inv) return
     const company = (await supaGet(`companies?id=eq.${encodeURIComponent(inv.company_id)}&select=id,name,email,email_slug,email_reply_to,settings`))?.[0]
     if (!company) return
@@ -173,6 +251,13 @@ async function maybeSendReceipt(session: any, invoiceId: string) {
 
     const body: Record<string, unknown> = { from, to: [to], subject: `Receipt for invoice ${num} — paid`, html }
     if (replyTo) body.reply_to = replyTo
+
+    // Attach the paid invoice as a PDF.
+    const pdfB64 = await buildInvoicePdfBase64(inv, company, currency)
+    if (pdfB64) {
+      const safeNum = String(num).replace(/[^A-Za-z0-9._-]/g, '_')
+      body.attachments = [{ filename: `Invoice-${safeNum}.pdf`, content: pdfB64 }]
+    }
 
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
