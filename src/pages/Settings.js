@@ -13,6 +13,8 @@ import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { FLAGS } from '../utils/flags.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
+import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { applyTheme, THEMES } from '../utils/theme.js';
@@ -260,7 +262,7 @@ export function renderSettings(container) {
   }
 
   function getCategoryForTab(tab) {
-    if (['company', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
+    if (['company', 'billing', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
     if (['templates_forms', 'invoices_quotes', 'payments', 'email'].includes(tab)) return 'workflow';
     if (['users', 'suppliers'].includes(tab)) return 'people';
     if (['materials', 'storage_options', 'cost_centers', 'tax'].includes(tab)) return 'resources';
@@ -464,6 +466,7 @@ export function renderSettings(container) {
       icon: 'settings',
       tabs: [
         { id: 'company', label: 'Company Profile' },
+        { id: 'billing', label: 'Plan & Billing' },
         { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
         { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
@@ -685,6 +688,13 @@ export function renderSettings(container) {
 
     if (activeTab === 'invoices_quotes') {
       renderInvoicesQuotesTab(tc);
+      return;
+    }
+
+    if (activeTab === 'billing') {
+      // currentUser + openMigrationModal are renderSettings locals; the module-
+      // level renderBillingTab can't close over them, so pass them in.
+      renderBillingTab(tc, currentUser, openMigrationModal);
       return;
     }
 
@@ -3759,6 +3769,178 @@ export function renderSettings(container) {
     });
   }
 
+  function renderBillingTab(tc, currentUser, openMigrationModal) {
+    const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
+    const isAdmin = (currentUser?.role === 'admin');
+
+    // The company row is cached at sign-in with no realtime updates, so a change
+    // made in the Stripe portal (or a webhook that just landed) won't show until
+    // we refetch. Pull the latest and re-render once if anything actually moved.
+    if (isCloud) {
+      const before = JSON.stringify(getSubscription());
+      refreshSubscription().then(() => {
+        if (JSON.stringify(getSubscription()) !== before) {
+          renderBillingTab(tc, currentUser, openMigrationModal);
+        }
+      });
+    }
+    const tier = getTier();                      // 'free' | 'cloud' | 'cloud_plus'
+    const sub = getSubscription();               // { tier, status, seats, currentPeriodEnd, hasCustomer }
+    const active = subscriptionActive();
+    const pastDue = subscriptionPastDue();
+
+    // Live seat estimate = active (non-deactivated) users on this account.
+    const techs = store.getAll('technicians') || [];
+    const activeSeats = techs.filter(t => !t.deactivated).length || 1;
+
+    const statusLabel = {
+      active: 'Active', trialing: 'Trial', past_due: 'Payment overdue',
+      canceled: 'Cancelled', incomplete: 'Setup incomplete', unpaid: 'Unpaid',
+    }[String(sub.status || '')] || (isCloud ? 'No plan selected' : 'Offline (Free)');
+
+    const renew = sub.currentPeriodEnd
+      ? new Date(sub.currentPeriodEnd).toLocaleDateString()
+      : null;
+
+    // Post-checkout / portal return banner.
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
+    const billingResult = params.get('billing');
+    let banner = '';
+    if (billingResult === 'success') {
+      banner = `<div style="background:var(--color-info-bg);border-left:4px solid var(--color-info);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-info);display:flex;gap:8px;align-items:center;">
+        <span class="material-icons-outlined">check_circle</span>
+        <span>Thanks! Your subscription is being activated — it can take a moment to confirm. Refresh if the plan below hasn't updated yet.</span></div>`;
+    } else if (billingResult === 'cancelled') {
+      banner = `<div style="background:var(--color-warning-bg,#fff7ed);border-left:4px solid var(--color-warning);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-warning);display:flex;gap:8px;align-items:center;">
+        <span class="material-icons-outlined">info</span><span>Checkout cancelled — no changes were made.</span></div>`;
+    }
+    if (pastDue) {
+      banner += `<div style="background:var(--color-danger-bg);border-left:4px solid var(--color-danger);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-danger);display:flex;gap:8px;align-items:center;">
+        <span class="material-icons-outlined">error_outline</span>
+        <span>Your last payment failed. Update your card in "Manage billing" to keep your team's cloud access.</span></div>`;
+    }
+
+    // One plan card. `state` ∈ current | upgrade | downgrade | switch | locked.
+    const planCard = (plan) => {
+      const isCurrent = (plan.id === tier) && (plan.id === 'free' ? !isCloud : active);
+      const priceLine = plan.price === 0
+        ? `<div style="font-size:26px;font-weight:700;">Free</div>`
+        : `<div style="font-size:26px;font-weight:700;">$${plan.price}<span style="font-size:13px;font-weight:500;color:var(--text-tertiary);"> /user /mo</span></div>`;
+
+      let action = '';
+      if (isCurrent) {
+        action = `<button class="btn btn-secondary" disabled style="width:100%;justify-content:center;">Current plan</button>`;
+      } else if (plan.id === 'free') {
+        action = `<div style="font-size:11px;color:var(--text-tertiary);text-align:center;">Runs offline on-device. No account.</div>`;
+      } else if (!isCloud) {
+        // Local account: must migrate to cloud before subscribing.
+        action = `<button class="btn btn-primary" data-migrate="1" ${isAdmin ? '' : 'disabled'} style="width:100%;justify-content:center;">Move to Cloud &amp; subscribe</button>`;
+      } else {
+        const verb = !active ? 'Choose'
+          : (plan.id === 'cloud_plus' && tier === 'cloud') ? 'Upgrade to'
+          : 'Switch to';
+        action = `<button class="btn btn-primary" data-choose="${plan.id}" ${isAdmin ? '' : 'disabled'} style="width:100%;justify-content:center;">${verb} ${plan.name}</button>`;
+      }
+
+      return `
+        <div class="card" style="max-width:100%;${isCurrent ? 'border:2px solid var(--color-accent,#FF5C00);' : ''}">
+          <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <h4 style="margin:0;">${plan.name}</h4>
+              ${isCurrent ? '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--color-accent,#FF5C00);">CURRENT</span>' : ''}
+            </div>
+            ${priceLine}
+            <div style="font-size:12px;color:var(--text-secondary);min-height:32px;">${plan.tagline}</div>
+            <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
+              ${plan.features.map(f => `<li>${escapeHTML(f)}</li>`).join('')}
+            </ul>
+            <div style="margin-top:auto;padding-top:8px;">${action}</div>
+          </div>
+        </div>`;
+    };
+
+    tc.innerHTML = `
+      ${banner}
+      <div class="card" style="max-width:100%;margin-bottom:20px;">
+        <div class="card-header"><h4>Your plan</h4></div>
+        <div class="card-body">
+          <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;">
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Plan</div>
+              <div style="font-size:20px;font-weight:700;">${active ? (PLAN_CATALOG[tier]?.name || 'Cloud') : (isCloud ? 'No plan yet' : 'Free')}</div>
+              <div style="font-size:12px;color:${pastDue ? 'var(--color-danger)' : 'var(--text-secondary)'};margin-top:2px;">${statusLabel}</div>
+            </div>
+            ${isCloud ? `
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Active users (seats)</div>
+              <div style="font-size:20px;font-weight:700;">${active && sub.seats != null ? sub.seats : activeSeats}</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Billed per active user</div>
+            </div>` : ''}
+            ${active && tier !== 'free' ? `
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Est. monthly</div>
+              <div style="font-size:20px;font-weight:700;">$${(PLAN_CATALOG[tier].price * (sub.seats != null ? sub.seats : activeSeats)).toFixed(0)}</div>
+              ${renew ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Renews ${renew}</div>` : ''}
+            </div>` : ''}
+          </div>
+          ${isCloud && sub.hasCustomer ? `
+          <div style="margin-top:18px;">
+            <button class="btn btn-secondary" id="billing-portal" ${isAdmin ? '' : 'disabled'}>
+              <span class="material-icons-outlined">receipt_long</span> Manage billing &amp; invoices
+            </button>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Update your card, download receipts, or cancel — via Stripe's secure portal.</div>
+          </div>` : ''}
+          ${!isAdmin ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:14px;">Only an administrator can change the plan or billing.</div>` : ''}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:20px;align-items:stretch;">
+        ${planCard(PLAN_CATALOG.free)}
+        ${planCard(PLAN_CATALOG.cloud)}
+        ${planCard(PLAN_CATALOG.cloud_plus)}
+      </div>
+
+      <p style="font-size:11px;color:var(--text-tertiary);margin-top:16px;max-width:760px;">
+        Prices are in AUD per active user, per month. Adding or deactivating a user adjusts your next
+        invoice automatically (prorated). Cloud and Cloud+ are the same app; Cloud+ adds Deputy Max — expanding the Deputy assistant to the full workspace.
+      </p>
+    `;
+
+    tc.querySelector('[data-migrate]')?.addEventListener('click', () => openMigrationModal());
+
+    tc.querySelector('#billing-portal')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await openBillingPortal(); // redirects to Stripe
+      } catch (err) {
+        showToast(err.message || 'Could not open billing portal', 'error');
+        btn.disabled = false;
+      }
+    });
+
+    tc.querySelectorAll('[data-choose]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const chosen = e.currentTarget.dataset.choose;
+        e.currentTarget.disabled = true;
+        try {
+          if (active) {
+            // Already subscribed — swap the plan in place (prorated), no new
+            // subscription. Avoids creating a duplicate that double-bills.
+            await changePlan(chosen);
+            showToast(`Switched to ${PLAN_CATALOG[chosen].name}.`, 'success');
+            setTimeout(() => window.location.reload(), 900);
+          } else {
+            await startCheckout(chosen); // first subscription → Stripe Checkout
+          }
+        } catch (err) {
+          showToast(err.message || 'Could not change plan', 'error');
+          e.currentTarget.disabled = false;
+        }
+      });
+    });
+  }
+
   function renderPaymentsTab(tc) {
     const settings = store.getSettings() || {};
     const pay = settings.payments || {};
@@ -3769,15 +3951,49 @@ export function renderSettings(container) {
         <div class="card" style="max-width:760px">
           <div class="card-header"><h4>Online Payments (Stripe)</h4></div>
           <div class="card-body">
-            <p style="color:var(--text-secondary);">Online card payments are a cloud feature. Upgrade to a cloud account to let customers pay invoices online by card.</p>
+            <p style="color:var(--text-secondary);">Online card payments are a cloud feature. Upgrade to a cloud account to let your customers pay invoices online by card.</p>
           </div>
         </div>`;
       return;
     }
 
+    const conn = connectInfo();                 // { accountId, chargesEnabled, detailsSubmitted }
+    const ready = connectReady();
+    const started = !!conn.accountId;
     const enabledFor = pay.enabledFor || {};
     const currencies = ['AUD', 'USD', 'NZD', 'GBP', 'EUR'];
     const cur = (pay.currency || 'AUD').toUpperCase();
+
+    // Returning from Stripe onboarding? Pull fresh status and re-render.
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
+    const connectParam = params.get('connect');
+    if (!tc.__connectRefreshed && (started || connectParam)) {
+      tc.__connectRefreshed = true;
+      const before = JSON.stringify(conn);
+      refreshConnectStatus().then((d) => {
+        if (d && JSON.stringify(connectInfo()) !== before) renderPaymentsTab(tc);
+      }).catch(() => {});
+    }
+
+    // Status banner.
+    let status;
+    if (ready) {
+      status = `<div style="display:flex;align-items:center;gap:10px;background:var(--color-info-bg);border:1px solid var(--color-info);border-radius:8px;padding:12px 14px;">
+        <span class="material-icons-outlined" style="color:var(--color-info);">verified</span>
+        <div><div style="font-weight:600;font-size:13px;">Connected — you can accept card payments</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">Payments go straight to your Stripe account.</div></div></div>`;
+    } else if (started) {
+      status = `<div style="display:flex;align-items:center;gap:10px;background:var(--color-warning-bg,#fff7ed);border:1px solid var(--color-warning);border-radius:8px;padding:12px 14px;">
+        <span class="material-icons-outlined" style="color:var(--color-warning);">hourglass_top</span>
+        <div><div style="font-weight:600;font-size:13px;">Setup not finished</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">Stripe still needs a few details before you can take payments.</div></div></div>`;
+    } else {
+      status = `<div style="font-size:13px;color:var(--text-secondary);">Connect your Stripe account so customers can pay their invoices by card — the money goes directly to you. No Stripe account yet? You'll create one in a minute during setup.</div>`;
+    }
+
+    const primaryBtn = ready
+      ? `<button class="btn btn-secondary" id="pay-dashboard"><span class="material-icons-outlined">open_in_new</span> Manage payouts on Stripe</button>`
+      : `<button class="btn btn-primary" id="pay-connect"><span class="material-icons-outlined">account_balance</span> ${started ? 'Continue Stripe setup' : 'Connect Stripe'}</button>`;
 
     tc.innerHTML = `
       <div style="max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:24px; align-items:start;">
@@ -3785,27 +4001,14 @@ export function renderSettings(container) {
         <div class="card-header"><h4>Online Payments (Stripe)</h4></div>
         <div class="card-body">
           <p style="color:var(--text-secondary);margin-top:0;">
-            Let customers pay invoices by card via a secure Stripe checkout link. Generate a link from any sent invoice; it's marked Paid automatically once payment clears.
+            Let customers pay invoices by card. Send a Pay link on an invoice or in the customer portal; it's marked Paid automatically once payment clears.
           </p>
 
-          <div style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin:14px 0;">
-            <div style="font-weight:600;font-size:13px;margin-bottom:8px;">One-time setup</div>
-            <ol style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
-              <li>Create a <strong>Stripe</strong> account and copy your <strong>Secret key</strong>.</li>
-              <li>In Supabase → Edge Functions → Secrets, add <code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code>.</li>
-              <li>Deploy the <code>relay-create-payment</code> and <code>relay-stripe-webhook</code> functions.</li>
-              <li>In Stripe → Developers → Webhooks, add an endpoint pointing at <code>relay-stripe-webhook</code> and subscribe it to <code>checkout.session.completed</code>.</li>
-            </ol>
-          </div>
+          <div style="margin:14px 0;">${status}</div>
 
-          <div class="form-group" style="display:flex;align-items:center;gap:10px;">
-            <label class="switch" style="margin:0;">
-              <input type="checkbox" id="pay-connected" ${pay.connected ? 'checked' : ''} />
-            </label>
-            <div>
-              <div style="font-weight:600;font-size:13px;">Payments configured &amp; live</div>
-              <div style="font-size:11px;color:var(--text-tertiary);">Tick once the setup above is done. Controls whether the Pay Link button appears on invoices.</div>
-            </div>
+          <div style="margin:16px 0;display:flex;gap:10px;flex-wrap:wrap;">
+            ${primaryBtn}
+            ${started ? `<button class="btn btn-secondary" id="pay-refresh"><span class="material-icons-outlined">refresh</span> Refresh status</button>` : ''}
           </div>
 
           <div class="form-group" style="max-width:220px;">
@@ -3817,7 +4020,19 @@ export function renderSettings(container) {
 
           <div class="form-group" style="display:flex;align-items:center;gap:10px;">
             <input type="checkbox" id="pay-enable-invoice" style="width:16px;height:16px;" ${enabledFor.invoice !== false ? 'checked' : ''} />
-            <label for="pay-enable-invoice" style="margin:0;font-size:13px;">Show a "Pay Link" action on sent invoices</label>
+            <label for="pay-enable-invoice" style="margin:0;font-size:13px;">Offer a "Pay" action on sent invoices &amp; the customer portal</label>
+          </div>
+
+          <div class="form-group" style="max-width:340px;">
+            <label class="form-label">Payment receipt</label>
+            <select class="form-input" id="pay-receipt-source">
+              <option value="relay" ${pay.receiptSource !== 'stripe' ? 'selected' : ''}>RELAY emails the receipt (recommended)</option>
+              <option value="stripe" ${pay.receiptSource === 'stripe' ? 'selected' : ''}>Let Stripe email the receipt</option>
+            </select>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">
+              Sent automatically when an invoice is paid online — only one receipt goes out. RELAY needs no email setup.
+              If you pick Stripe, turn off RELAY here so the customer doesn't get two.
+            </div>
           </div>
 
           <div style="margin-top:16px;">
@@ -3827,13 +4042,31 @@ export function renderSettings(container) {
       </div>
       </div>`;
 
+    tc.querySelector('#pay-connect')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await startConnectOnboarding('/settings?tab=payments'); }
+      catch (err) { showToast(err.message || 'Could not start Stripe setup', 'error'); e.currentTarget.disabled = false; }
+    });
+
+    tc.querySelector('#pay-dashboard')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await openConnectDashboard(); }
+      catch (err) { showToast(err.message || 'Could not open Stripe', 'error'); e.currentTarget.disabled = false; }
+    });
+
+    tc.querySelector('#pay-refresh')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await refreshConnectStatus(); showToast('Status updated', 'info'); renderPaymentsTab(tc); }
+      catch (err) { showToast(err.message || 'Could not refresh', 'error'); e.currentTarget.disabled = false; }
+    });
+
     tc.querySelector('#pay-save')?.addEventListener('click', async () => {
       try {
         const s = store.getSettings() || {};
         s.payments = {
           ...(s.payments || {}),
-          connected: tc.querySelector('#pay-connected').checked,
           currency: tc.querySelector('#pay-currency').value,
+          receiptSource: tc.querySelector('#pay-receipt-source').value === 'stripe' ? 'stripe' : 'relay',
           enabledFor: {
             ...((s.payments || {}).enabledFor || {}),
             invoice: tc.querySelector('#pay-enable-invoice').checked,

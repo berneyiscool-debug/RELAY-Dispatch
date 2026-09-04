@@ -308,6 +308,7 @@ function getContextualMenu(hash) {
         id: 'general', label: 'General', icon: 'settings',
         items: [
           { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
+          { id: 'billing', icon: 'credit_card', label: 'Plan & Billing', path: '/settings?tab=billing' },
           { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
           { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
           { id: 'folder_sync', icon: 'sync', label: 'Folder Sync', path: '/settings?tab=folder_sync', disabled: folderSyncDisabled, tooltip: 'Requires Local Folder Storage' },

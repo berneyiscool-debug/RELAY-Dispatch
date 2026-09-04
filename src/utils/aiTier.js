@@ -12,6 +12,7 @@
 // When Stripe plans land, the webhook writes this field server-side.
 
 import { store } from '../data/store.js';
+import { isCloudPlus } from './subscription.js';
 
 export const AI_TIERS = {
   LOCAL: 'local',
@@ -32,5 +33,10 @@ export function getAITier() {
 }
 
 export function hasDeputyMax() {
-  return getAITier() === AI_TIERS.CLOUD_PLUS;
+  // Deputy Max is the sole Cloud+ feature. Honour the legacy settings.ai.tier
+  // flag (set for early adopters and still written server-side by the webhook)
+  // OR a live Stripe Cloud+ subscription, so accounts that had Max before the
+  // billing work don't regress and new subscribers get it through Stripe.
+  if (getAITier() === AI_TIERS.CLOUD_PLUS) return true;
+  return isCloudPlus();
 }

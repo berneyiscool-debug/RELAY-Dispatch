@@ -60,7 +60,7 @@ function lastThreadKey() {
 
 // ── Workspace State & Action Audit Log ──
 let isExpanded = localStorage.getItem('relay_expanded') === 'true';
-let activeTab = 'chat'; // Defaults to Chat (now the default in both modes)
+let activeTab = 'chat'; // Chat when minimized; Watchdog once expanded to the workspace.
 
 const AUDIT_LOG_KEY = 'deputyAuditLog';
 const AUDIT_LOG_MAX = 100;
@@ -1472,9 +1472,15 @@ let topbarRelayBound = false;
 
 function handleExpandClick() {
   if (!panel) return;
+  // Deputy Max (expanding to the full workspace) is Cloud+ only.
+  // Cloud/local get an upsell, not the expand.
+  if (!hasDeputyMax()) {
+    showToast('Deputy Max (expanding Deputy to the full workspace) is a Cloud+ feature. Upgrade in Settings → Plan & Billing.', 'info');
+    return;
+  }
   isExpanded = !isExpanded;
   localStorage.setItem('relay_expanded', isExpanded);
-  activeTab = 'chat';
+  activeTab = isExpanded ? 'watchdog' : 'chat';
   updateWorkspaceView(panel);
 }
 
@@ -1741,8 +1747,13 @@ export async function openRelay() {
 
   if (!hasPermission('AI Assistant', 'use')) return;
 
-  // Chat is the default tab in both minimised and expanded modes.
-  activeTab = 'chat';
+  // Deputy Max (expanding to the full workspace) is the sole Cloud+ feature.
+  // Cloud/local get Deputy minimized-only, so never honour a stored expanded
+  // state for them (e.g. after a downgrade from Cloud+).
+  if (!hasDeputyMax()) isExpanded = false;
+
+  // Always enforce chat mode when minimized, watchdog when expanded.
+  activeTab = isExpanded ? 'watchdog' : 'chat';
 
   const draftKey = `relay_draft_message_${getUserId()}`;
   const draftVal = localStorage.getItem(draftKey) || '';
