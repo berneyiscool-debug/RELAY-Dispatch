@@ -37,6 +37,42 @@ function normalizeThread(t) {
   };
 }
 
+// Derive a short, human-friendly title from a thread's first user message so a
+// new chat is auto-named from its opening context. Returns null when there is
+// no user message yet (e.g. an untouched new chat).
+//
+// We strip common conversational filler ("lets create a", "can you", "i want", …)
+// so titles read as clean labels ("Daily toolbox") rather than full sentences.
+const TITLE_FILLER = [
+  /^(?:hey|hi|hello|ok|okay|so|now|sure|right|alright|well|thanks|thank\s+you)\b[\s,.]*/i,
+  /^(?:can|could|would|will)\s+you\s+/i,
+  /^(?:i\s+(?:want|need|would\s+like|need\s+you|want\s+you)\s+(?:you\s+to\s+)?(?:to\s+)?)/i,
+  /^(?:lets|let's|let\s+us)\s+/i,
+  /^(?:please\s+)?(?:help\s+(?:me\s+)?)?/i,
+  /^(?:please\s+)?(?:create|make|set\s+up|build|add|new|start|save|show|give|tell|report|run|check|look\s+(?:at|for)|find|open|pull|fetch|summarise|summarize|notify|remind|send|update)\s+(?:a\s+|an\s+|the\s+)?/i,
+];
+const TITLE_MAX = 36;
+
+export function deriveThreadTitle(messages) {
+  if (!Array.isArray(messages)) return null;
+  const firstUser = messages.find(m => m && m.role === 'user' && typeof m.content === 'string' && m.content.trim());
+  if (!firstUser) return null;
+  let text = firstUser.content.replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+
+  const stripped = TITLE_FILLER.reduce((t, re) => t.replace(re, ''), text).trim();
+  if (stripped) text = stripped;
+
+  const clean = text.replace(/[.,;:!?]+$/, '').trim();
+  const base = clean.charAt(0).toUpperCase() + clean.slice(1);
+
+  if (base.length <= TITLE_MAX) return base;
+  const cut = base.slice(0, TITLE_MAX);
+  const lastSpace = cut.lastIndexOf(' ');
+  const title = (lastSpace > 10 ? cut.slice(0, lastSpace) : base.slice(0, TITLE_MAX)).replace(/[.,;:]+$/, '').trim();
+  return title || base;
+}
+
 function persistAll(threads) {
   // store.save() defaults companyId/createdAt/updatedAt per record and handles
   // camel↔snake conversion (`companyId`→`company_id`, etc.) via denormalizeRecord.

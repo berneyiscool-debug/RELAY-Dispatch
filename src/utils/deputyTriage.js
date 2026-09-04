@@ -69,7 +69,7 @@ export async function triageMessage(text, context = {}) {
   try {
     const ai = context.ai || (store.getSettings()?.ai) || {};
     const model = context.model || ai.model || 'deepseek-chat';
-    const history = context.chatHistory || [];
+    const history = (context.chatHistory || []).filter(m => m && (m.role === 'user' || m.role === 'assistant' || m.role === 'system'));
     const prompt = `You are a routing classifier. Decide the single best intent for the user's latest message from the options: QUESTION, ACTION, EXTERNAL, URGENT.
 - QUESTION: asking for information, metrics, explanations, or status. No changes requested.
 - ACTION: wants Deputy to perform or change something in the system (assign, schedule, create, update, etc.).

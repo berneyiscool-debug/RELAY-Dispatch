@@ -8,18 +8,21 @@
 // ============================================
 import { store } from '../data/store.js';
 import { showToast } from './Notifications.js';
+import { showModal } from './Modal.js';
 import { dispatchChat } from '../utils/aiEngine.js';
 import { isCloudUser, hasDeputyMax } from '../utils/aiTier.js';
 import { hasPermission } from '../utils/permissions.js';
-import relayIcon from '../assets/deputy-icon.svg?raw';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
-import { loadUserMemory, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
+import { loadUserMemory, loadUserMemorySync, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
 import { FLAGS } from '../utils/flags.js';
 import { hasMapsAction, runMapsActions } from '../utils/deputyMaps.js';
 import { hasWeatherAction, runWeatherActions } from '../utils/deputyWeather.js';
-import { getThreads, getThread, createThread, renameThread, deleteThread, setThreadMessages, ensureDefaultThread } from '../utils/deputyThreads.js';
+import { getThreads, getThread, createThread, renameThread, deleteThread, setThreadMessages, ensureDefaultThread, deriveThreadTitle } from '../utils/deputyThreads.js';
+import { getRoutines, getRoutine, createRoutine, updateRoutine, deleteRoutine, markRoutineRun, routineIsDue, describeTrigger } from '../utils/deputyRoutines.js';
 import { runEmergencyScan, summariseScan, SCAN_CATEGORIES } from '../utils/deputyScan.js';
 import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 let panel = null;
 let onStateChange = null;
@@ -27,6 +30,29 @@ let chatHistory = [];
 let currentThreadId = null;
 let emergencyFindings = [];
 let scanRefreshTimer = null;
+let watchdogRefreshTimer = null;
+let sidebarRailObserver = null;
+let routineTimer = null;
+let routineRunning = false;
+let routineDraft = null; // in-progress conversational routine build (per thread)
+
+// Align the expanded Deputy workspace to the live width of the main sidebar rail,
+// so the panel sits flush against the rail edge (covering the contextual submenu)
+// with no gap — regardless of the rail's expanded/collapsed state.
+function syncPanelToSidebar() {
+  if (!panel) return;
+  const rail = document.querySelector('#sidebar .sidebar-rail');
+  const offset = rail ? Math.round(rail.getBoundingClientRect().width) : 200;
+  panel.style.setProperty('--relay-sidebar-offset', offset + 'px');
+}
+
+function observeSidebarRail() {
+  if (sidebarRailObserver) return;
+  const rail = document.querySelector('#sidebar .sidebar-rail');
+  if (!rail) return;
+  sidebarRailObserver = new ResizeObserver(() => syncPanelToSidebar());
+  sidebarRailObserver.observe(rail);
+}
 
 function lastThreadKey() {
   return `relay_last_thread_${getUserId()}`;
@@ -34,16 +60,41 @@ function lastThreadKey() {
 
 // ── Workspace State & Action Audit Log ──
 let isExpanded = localStorage.getItem('relay_expanded') === 'true';
-let activeTab = 'watchdog'; // Defaults to Watchdog window when opened/expanded
-let actionAuditLog = [
-  {
-    id: 'act_init',
-    timestamp: new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
-    title: 'Operations Watchdog Active',
-    details: 'Scanned active jobs, inventory thresholds, and billing status',
-    status: 'success'
+let activeTab = 'chat'; // Defaults to Chat (now the default in both modes)
+
+const AUDIT_LOG_KEY = 'deputyAuditLog';
+const AUDIT_LOG_MAX = 100;
+
+function loadAuditLog() {
+  try {
+    const raw = localStorage.getItem(AUDIT_LOG_KEY);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    // Corrupt log — fall through to a fresh seed entry.
   }
-];
+  return [
+    {
+      id: 'act_init',
+      timestamp: new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
+      title: 'Operations Watchdog Active',
+      details: 'Scanned active jobs, inventory thresholds, and billing status',
+      status: 'success'
+    }
+  ];
+}
+
+function persistAuditLog() {
+  try {
+    localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(actionAuditLog));
+  } catch (e) {
+    // Storage may be unavailable (private mode / quota) — the in-memory log still works.
+  }
+}
+
+let actionAuditLog = loadAuditLog();
 
 function logAction(title, details, status = 'success') {
   actionAuditLog.unshift({
@@ -53,7 +104,83 @@ function logAction(title, details, status = 'success') {
     details,
     status
   });
-  if (actionAuditLog.length > 50) actionAuditLog.pop();
+  if (actionAuditLog.length > AUDIT_LOG_MAX) actionAuditLog.length = AUDIT_LOG_MAX;
+  persistAuditLog();
+}
+
+// Positive = date is in the past (overdue / stale). Mirrors deputyScan.daysFromToday.
+function daysSinceToday(value) {
+  if (!value) return 0;
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return 0;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  return Math.round((today - day) / 86400000);
+}
+
+function formatAUD(value) {
+  const n = Number(value) || 0;
+  return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+}
+
+function formatWatchdogDate(value) {
+  if (!value) return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function watchdogDrillRow(record) {
+  const detail = record.detail ? `<span class="watchdog-drill-detail">${escapeHtml(record.detail)}</span>` : '';
+  return `
+    <div class="watchdog-drill-row">
+      <div class="watchdog-drill-info">
+        <span class="watchdog-drill-title">${escapeHtml(record.title)}</span>
+        ${detail}
+      </div>
+      <button class="watchdog-drill-open" type="button" data-route="${escapeHtml(record.route)}" title="Open record">
+        <span class="material-icons-outlined">open_in_new</span>
+      </button>
+    </div>`;
+}
+
+function renderWatchdogCard(domain) {
+  const badgeClass = domain.count > 0 ? domain.badgeClass : 'badge-success';
+  const records = domain.records || [];
+  const rows = records.slice(0, 8).map(watchdogDrillRow).join('');
+  const more = records.length > 8
+    ? `<div class="watchdog-drill-more">+${records.length - 8} more — run a scan for the full list.</div>`
+    : '';
+  const list = rows
+    ? `<div class="watchdog-drill">${rows}</div>${more}`
+    : `<div class="watchdog-drill-empty">${domain.emptyText}</div>`;
+  const action = domain.action
+    ? `<button class="btn ${domain.action.cls || 'btn-primary'} btn-sm btn-wd-action" type="button" data-handler="${domain.action.handler}"
+        ${domain.action.route ? `data-route="${domain.action.route}"` : ''}
+        ${domain.action.disabled ? 'disabled' : ''}
+        style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;">
+        <span class="material-icons-outlined" style="font-size:16px;">${domain.action.icon}</span>
+        ${domain.action.label}
+      </button>`
+    : '';
+  return `
+    <div class="watchdog-card collapsed" data-watchdog-domain="${domain.id}">
+      <button class="watchdog-card-head" type="button" aria-expanded="false">
+        <div class="watchdog-card-title">
+          <span class="material-icons-outlined">${domain.icon}</span>
+          ${domain.title}
+        </div>
+        <div class="watchdog-card-head-right">
+          <span class="badge ${badgeClass}">${domain.count} ${domain.badgeLabel}</span>
+          <span class="material-icons-outlined watchdog-card-caret">expand_more</span>
+        </div>
+      </button>
+      <div class="watchdog-card-body">
+        <div class="watchdog-card-summary">${domain.summary}</div>
+        ${list}
+        ${action}
+      </div>
+    </div>`;
 }
 
 function renderWatchdogView(container) {
@@ -62,13 +189,22 @@ function renderWatchdogView(container) {
   const invoices = store.getAll('invoices') || [];
   const quotes = store.getAll('quotes') || [];
   const schedules = store.getAll('schedule') || [];
+  const timesheets = store.getAll('timesheets') || [];
+  const maintenancePlans = store.getAll('maintenancePlans') || [];
+  const leads = store.getAll('leads') || [];
+  const projects = store.getAll('projects') || [];
 
   const unassignedJobs = jobs.filter(j => !j.technicianId && (!j.technicians || !j.technicians.length) && j.status !== 'Completed' && j.status !== 'Invoiced');
   const lowStock = stock.filter(s => (s.quantity || 0) <= (s.reorderPoint || 5));
   const overdueInvoices = invoices.filter(i => i.status === 'Overdue');
   const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending');
+  const pendingTimesheets = timesheets.filter(t => t.status === 'Pending');
+  const overdueMaintenance = maintenancePlans.filter(p => !['Completed', 'Archived'].includes(p.status) && daysSinceToday(p.nextServiceDate) > 0);
+  const staleLeads = leads.filter(l => ['New', 'Contacted'].includes(l.status) && daysSinceToday(l.createdAt) > 7);
+  const overdueProjects = projects.filter(p => p.status === 'In Progress' && daysSinceToday(p.endDate) > 0);
 
   const techBlocks = {};
+  const conflictRecords = [];
   let conflictCount = 0;
   schedules.forEach(s => {
     if (!s.technicianId || !s.date) return;
@@ -80,258 +216,559 @@ function renderWatchdogView(container) {
     if (blocks.length > 1) {
       blocks.sort((a,b) => (a.startHour||0) - (b.startHour||0));
       for (let i = 1; i < blocks.length; i++) {
-        if ((blocks[i].startHour||0) < (blocks[i-1].endHour||0)) { conflictCount++; break; }
+        if ((blocks[i].startHour||0) < (blocks[i-1].endHour||0)) {
+          conflictCount++;
+          conflictRecords.push({
+            title: `${blocks[i].title || blocks[i].jobNumber || 'Scheduled job'} — ${blocks[i].technicianName || 'Technician'}`,
+            detail: `Double-booked on ${formatWatchdogDate(blocks[i].date)}`,
+            route: 'schedule'
+          });
+          break;
+        }
       }
     }
   });
 
-  const totalIssues = unassignedJobs.length + conflictCount + lowStock.length + overdueInvoices.length;
-  const healthScore = Math.max(20, Math.min(100, 100 - (totalIssues * 5)));
+  const watchdogIssues = unassignedJobs.length + conflictCount + lowStock.length + overdueInvoices.length
+    + pendingTimesheets.length + overdueMaintenance.length + staleLeads.length + overdueProjects.length;
 
-  container.innerHTML = `
-    <div class="watchdog-banner">
-      <div class="watchdog-banner-info">
-        <div class="watchdog-health-ring">${healthScore}%</div>
-        <div>
-          <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--text-primary);">Operations Watchdog Dashboard</h2>
-          <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">
-            ${totalIssues === 0 ? 'All systems operating smoothly. No active conflicts detected.' : `Detected ${totalIssues} operational alert${totalIssues === 1 ? '' : 's'} requiring attention.`}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="watchdog-grid">
-      <div class="watchdog-card">
-        <div>
-          <div class="watchdog-card-head">
-            <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--text-secondary)">event_seat</span>
-              Schedule & Dispatch Health
-            </div>
-            <span class="badge ${conflictCount + unassignedJobs.length > 0 ? 'badge-warning' : 'badge-success'}">${conflictCount + unassignedJobs.length} Alerts</span>
-          </div>
-          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
-            ${unassignedJobs.length} unassigned jobs pending scheduling.<br>
-            ${conflictCount} technician time overlaps detected across active schedules.
-          </div>
-        </div>
-        <div>
-          <button class="btn btn-primary btn-sm btn-autofix-dispatch" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${unassignedJobs.length === 0 && conflictCount === 0 ? 'disabled' : ''}>
-            <span class="material-icons-outlined" style="font-size:16px;">auto_fix_high</span> Auto-Fix & Assign Schedule
-          </button>
-        </div>
-      </div>
-
-      <div class="watchdog-card">
-        <div>
-          <div class="watchdog-card-head">
-            <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--text-secondary)">inventory_2</span>
-              Inventory & Reorder Status
-            </div>
-            <span class="badge ${lowStock.length > 0 ? 'badge-danger' : 'badge-success'}">${lowStock.length} Low Stock</span>
-          </div>
-          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
-            ${lowStock.length === 0 ? 'All inventory levels are above reorder thresholds.' : `${lowStock.length} stock item${lowStock.length === 1 ? '' : 's'} at or below reorder level.`}
-          </div>
-        </div>
-        <div>
-          <button class="btn btn-secondary btn-sm btn-autofix-stock" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${lowStock.length === 0 ? 'disabled' : ''}>
-            <span class="material-icons-outlined" style="font-size:16px;">add_shopping_cart</span> Draft Reorder Purchase Orders
-          </button>
-        </div>
-      </div>
-
-      <div class="watchdog-card">
-        <div>
-          <div class="watchdog-card-head">
-            <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--text-secondary)">receipt_long</span>
-              Overdue Billing & Invoices
-            </div>
-            <span class="badge ${overdueInvoices.length > 0 ? 'badge-danger' : 'badge-success'}">${overdueInvoices.length} Overdue</span>
-          </div>
-          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
-            ${overdueInvoices.length === 0 ? 'No overdue invoices.' : `${overdueInvoices.length} invoice${overdueInvoices.length === 1 ? '' : 's'} past payment terms.`}
-          </div>
-        </div>
-        <div>
-          <button class="btn btn-secondary btn-sm btn-autofix-invoices" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${overdueInvoices.length === 0 ? 'disabled' : ''}>
-            <span class="material-icons-outlined" style="font-size:16px;">mail</span> Send Payment Reminders
-          </button>
-        </div>
-      </div>
-
-      <div class="watchdog-card">
-        <div>
-          <div class="watchdog-card-head">
-            <div class="watchdog-card-title">
-              <span class="material-icons-outlined" style="color:var(--text-secondary)">request_quote</span>
-              Pending Proposals & Quotes
-            </div>
-            <span class="badge badge-info">${pendingQuotes.length} Pending</span>
-          </div>
-          <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
-            ${pendingQuotes.length} quote${pendingQuotes.length === 1 ? '' : 's'} currently sent or awaiting customer response.
-          </div>
-        </div>
-        <div>
-          <button class="btn btn-secondary btn-sm btn-autofix-quotes" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;" ${pendingQuotes.length === 0 ? 'disabled' : ''}>
-            <span class="material-icons-outlined" style="font-size:16px;">mark_email_read</span> Log Quote Follow-Ups
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  container.querySelector('.btn-open-inspector')?.addEventListener('click', () => {
-    activeTab = 'inspector';
-    updateWorkspaceView(panel);
+  // Emergency-scan findings fold into the same dashboard (Deputy Max only).
+  const canScan = hasDeputyMax();
+  if (canScan && !emergencyFindings.length) emergencyFindings = runEmergencyScan();
+  const findings = canScan ? emergencyFindings : [];
+  const counts = { critical: 0, high: 0, medium: 0 };
+  findings.forEach(f => { counts[f.severity] = (counts[f.severity] || 0) + 1; });
+  const grouped = {};
+  findings.forEach(f => {
+    if (!grouped[f.category]) grouped[f.category] = [];
+    grouped[f.category].push(f);
   });
+  const alertCount = watchdogIssues + findings.length;
+  const statusText = alertCount === 0
+    ? 'All systems operating smoothly. No active conflicts or urgent issues detected.'
+    : canScan && findings.length
+      ? `Detected ${alertCount} alert${alertCount === 1 ? '' : 's'} — ${counts.critical} critical, ${counts.high} high, ${counts.medium} medium.`
+      : `Detected ${alertCount} operational alert${alertCount === 1 ? '' : 's'} requiring attention.`;
 
-  container.querySelector('.btn-autofix-dispatch')?.addEventListener('click', () => {
-    const techs = store.getAll('technicians').filter(t => !t.deactivated);
-    if (!techs.length) {
-      showToast('No active technicians found to assign.', 'warning');
-      return;
+  const domains = [
+    {
+      id: 'dispatch',
+      icon: 'event_seat',
+      title: 'Schedule & Dispatch',
+      count: unassignedJobs.length + conflictCount,
+      badgeClass: 'badge-warning',
+      badgeLabel: 'Alerts',
+      summary: unassignedJobs.length + conflictCount === 0
+        ? 'No unassigned jobs or scheduling conflicts.'
+        : `${unassignedJobs.length} unassigned job${unassignedJobs.length === 1 ? '' : 's'} and ${conflictCount} scheduling conflict${conflictCount === 1 ? '' : 's'}.`,
+      records: [
+        ...unassignedJobs.map(j => ({ title: j.title || j.number || 'Unassigned job', detail: 'No technician assigned', route: 'jobs' })),
+        ...conflictRecords
+      ],
+      emptyText: 'Every job has a technician and no double-bookings were found.',
+      action: { label: 'Auto-Fix & Assign', icon: 'auto_fix_high', cls: 'btn-primary', handler: 'autofix-dispatch', disabled: unassignedJobs.length === 0 && conflictCount === 0 }
+    },
+    {
+      id: 'stock',
+      icon: 'inventory_2',
+      title: 'Inventory & Reorder',
+      count: lowStock.length,
+      badgeClass: 'badge-danger',
+      badgeLabel: 'Low Stock',
+      summary: lowStock.length === 0
+        ? 'All inventory levels are above reorder thresholds.'
+        : `${lowStock.length} stock item${lowStock.length === 1 ? '' : 's'} at or below reorder level.`,
+      records: lowStock.map(s => ({ title: s.name || s.sku || 'Stock item', detail: `${s.quantity || 0} on hand · reorder at ${s.reorderPoint || 5}`, route: 'stock' })),
+      emptyText: 'No low-stock items right now.',
+      action: { label: 'Draft Reorder POs', icon: 'add_shopping_cart', cls: 'btn-secondary', handler: 'autofix-stock', disabled: lowStock.length === 0 }
+    },
+    {
+      id: 'billing',
+      icon: 'receipt_long',
+      title: 'Overdue Billing & Invoices',
+      count: overdueInvoices.length,
+      badgeClass: 'badge-danger',
+      badgeLabel: 'Overdue',
+      summary: overdueInvoices.length === 0
+        ? 'No overdue invoices.'
+        : `${overdueInvoices.length} invoice${overdueInvoices.length === 1 ? '' : 's'} past payment terms.`,
+      records: overdueInvoices.map(i => ({ title: `${i.number || 'Invoice'} — ${i.customerName || 'Customer'}`, detail: `${formatAUD(i.total)} · due ${formatWatchdogDate(i.dueDate)}`, route: 'invoices' })),
+      emptyText: 'Nothing past payment terms.',
+      action: { label: 'Send Payment Reminders', icon: 'mail', cls: 'btn-secondary', handler: 'autofix-invoices', disabled: overdueInvoices.length === 0 }
+    },
+    {
+      id: 'quotes',
+      icon: 'request_quote',
+      title: 'Pending Proposals & Quotes',
+      count: pendingQuotes.length,
+      badgeClass: 'badge-info',
+      badgeLabel: 'Pending',
+      summary: pendingQuotes.length === 0
+        ? 'No quotes waiting on a customer response.'
+        : `${pendingQuotes.length} quote${pendingQuotes.length === 1 ? '' : 's'} currently sent or awaiting a response.`,
+      records: pendingQuotes.map(q => ({ title: `${q.number || 'Quote'} — ${q.customerName || 'Customer'}`, detail: `${formatAUD(q.total)} · ${q.title || ''}`, route: 'quotes' })),
+      emptyText: 'No pending proposals.',
+      action: { label: 'Log Quote Follow-Ups', icon: 'mark_email_read', cls: 'btn-secondary', handler: 'autofix-quotes', disabled: pendingQuotes.length === 0 }
+    },
+    {
+      id: 'timesheets',
+      icon: 'schedule',
+      title: 'Timesheets Awaiting Approval',
+      count: pendingTimesheets.length,
+      badgeClass: 'badge-warning',
+      badgeLabel: 'Pending',
+      summary: pendingTimesheets.length === 0
+        ? 'All submitted timesheets are approved.'
+        : `${pendingTimesheets.length} timesheet${pendingTimesheets.length === 1 ? '' : 's'} waiting for approval.`,
+      records: pendingTimesheets.map(t => ({ title: `${t.technicianName || 'Technician'} — ${t.jobTitle || t.jobNumber || 'Job'}`, detail: `${t.durationHours || 0}h · ${formatWatchdogDate(t.date)}`, route: 'timesheets' })),
+      emptyText: 'No pending timesheets.',
+      action: { label: 'Approve All', icon: 'done_all', cls: 'btn-primary', handler: 'autofix-timesheets', disabled: pendingTimesheets.length === 0 }
+    },
+    {
+      id: 'maintenance',
+      icon: 'build',
+      title: 'Overdue Maintenance',
+      count: overdueMaintenance.length,
+      badgeClass: 'badge-warning',
+      badgeLabel: 'Overdue',
+      summary: overdueMaintenance.length === 0
+        ? 'All active maintenance plans are up to date.'
+        : `${overdueMaintenance.length} maintenance plan${overdueMaintenance.length === 1 ? '' : 's'} past their next service date.`,
+      records: overdueMaintenance.map(p => ({ title: p.name || 'Maintenance plan', detail: `Service due ${formatWatchdogDate(p.nextServiceDate)}`, route: 'assets' })),
+      emptyText: 'No overdue maintenance.',
+      action: { label: 'Open Assets', icon: 'arrow_forward', cls: 'btn-secondary', handler: 'navigate', route: 'assets' }
+    },
+    {
+      id: 'leads',
+      icon: 'person_search',
+      title: 'Stale Leads',
+      count: staleLeads.length,
+      badgeClass: 'badge-warning',
+      badgeLabel: 'Stale',
+      summary: staleLeads.length === 0
+        ? 'No new or contacted leads sitting idle.'
+        : `${staleLeads.length} lead${staleLeads.length === 1 ? '' : 's'} untouched for over a week.`,
+      records: staleLeads.map(l => ({ title: `${l.customerName || 'Lead'} — ${l.title || l.number || ''}`, detail: `Untouched for ${daysSinceToday(l.createdAt)} days`, route: 'leads' })),
+      emptyText: 'No stale leads.',
+      action: { label: 'Open Leads', icon: 'arrow_forward', cls: 'btn-secondary', handler: 'navigate', route: 'leads' }
+    },
+    {
+      id: 'projects',
+      icon: 'assignment',
+      title: 'Projects Running Late',
+      count: overdueProjects.length,
+      badgeClass: 'badge-warning',
+      badgeLabel: 'Late',
+      summary: overdueProjects.length === 0
+        ? 'No active projects have missed their end date.'
+        : `${overdueProjects.length} active project${overdueProjects.length === 1 ? '' : 's'} past their end date.`,
+      records: overdueProjects.map(p => ({ title: `${p.name || p.number || 'Project'} — ${p.customerName || 'Customer'}`, detail: `Due ${formatWatchdogDate(p.endDate)}`, route: 'projects' })),
+      emptyText: 'No overdue projects.',
+      action: { label: 'Open Projects', icon: 'arrow_forward', cls: 'btn-secondary', handler: 'navigate', route: 'projects' }
     }
-    let countFixed = 0;
-    unassignedJobs.forEach((job, idx) => {
-      const tech = techs[idx % techs.length];
-      job.technicianId = tech.id;
-      job.technicianName = tech.name;
-      store.save('jobs', jobs);
-      countFixed++;
-    });
-    logAction('Auto-Fix Dispatch', `Assigned ${countFixed} unassigned jobs to active technicians`);
-    showToast(`Deputy assigned ${countFixed} jobs successfully!`, 'success');
-    renderWatchdogView(container);
-  });
+  ];
 
-  container.querySelector('.btn-autofix-stock')?.addEventListener('click', () => {
-    if (!lowStock.length) return;
-    const po = {
-      id: 'po_' + Date.now(),
-      number: store.getNextNumber('PO-', 'purchaseOrders'),
-      supplierName: lowStock[0].supplier || 'General Supplier',
-      issueDate: new Date().toISOString(),
-      status: 'Draft',
-      items: lowStock.map(s => ({
-        name: s.name,
-        sku: s.sku,
-        quantity: Math.max(10, (s.reorderPoint || 5) * 2 - (s.quantity || 0)),
-        unitPrice: s.costPrice || s.unitPrice || 0
-      })),
-      total: lowStock.reduce((sum, s) => sum + (s.costPrice || s.unitPrice || 0) * 10, 0)
-    };
-    const pos = store.getAll('purchaseOrders') || [];
-    pos.push(po);
-    store.save('purchaseOrders', pos);
-    logAction('Draft Purchase Order', `Created PO ${po.number} for ${lowStock.length} low stock items`);
-    showToast(`Draft Purchase Order ${po.number} created for ${lowStock.length} items!`, 'success');
-    renderWatchdogView(container);
-  });
-
-  container.querySelector('.btn-autofix-invoices')?.addEventListener('click', () => {
-    logAction('Payment Reminders', `Sent automated reminders for ${overdueInvoices.length} overdue invoices`);
-    showToast(`Reminders sent for ${overdueInvoices.length} overdue invoices!`, 'success');
-    renderWatchdogView(container);
-  });
-
-  container.querySelector('.btn-autofix-quotes')?.addEventListener('click', () => {
-    logAction('Quote Follow-Up', `Logged follow-up tasks for ${pendingQuotes.length} pending quotes`);
-    showToast(`Follow-ups logged for ${pendingQuotes.length} pending quotes!`, 'success');
-    renderWatchdogView(container);
-  });
-}
-
-async function renderMemoryInspectorView(container) {
-  let memory = await loadUserMemory();
-  const entries = Object.entries(memory || {}).filter(([k]) => k !== 'lastUpdated');
-
-  container.innerHTML = `
-    <div class="watchdog-banner">
-      <div class="watchdog-banner-info">
-        <div style="width:54px;height:54px;border-radius:50%;background:rgba(147,51,234,0.12);color:#9333ea;display:flex;align-items:center;justify-content:center;">
-          <span class="material-icons-outlined" style="font-size:28px;">psychology</span>
+  const scanSectionHtml = canScan ? `
+    <div class="watchdog-scan-section">
+      <div class="watchdog-scan-section-head">
+        <div class="watchdog-scan-section-title">
+          <span class="material-icons-outlined" style="color:var(--color-danger)">emergency</span>
+          Scan Findings
         </div>
-        <div>
-          <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text-primary);">Memory & Audit Inspector</h2>
-          <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">
-            Inspect what Deputy has learned about your workspace and review automated system actions.
+        ${findings.length ? `<span class="badge badge-danger">${findings.length} Finding${findings.length === 1 ? '' : 's'}</span>` : ''}
+      </div>
+      ${findings.length === 0 ? `
+        <div class="scan-empty">
+          <span class="material-icons-outlined" style="font-size:20px;opacity:0.5;">verified</span>
+          Nothing needs urgent attention right now.
+        </div>
+      ` : `<div class="scan-list">${Object.entries(grouped).map(([cat, items]) => `
+        <div class="scan-group collapsed" data-cat="${escapeHtml(cat)}">
+          <button class="scan-group-head" type="button" aria-expanded="false">
+            <span class="scan-group-label">${escapeHtml(cat)} <span class="badge ${items.some(i => i.severity === 'critical') ? 'badge-danger' : 'badge-warning'}">${items.length}</span></span>
+            <span class="material-icons-outlined scan-group-caret" aria-hidden="true">expand_more</span>
+          </button>
+          <div class="scan-group-body">
+          ${items.map(f => `
+            <div class="scan-finding scan-sev-${f.severity}">
+              <span class="scan-sev-badge scan-sev-${f.severity}">${f.severity}</span>
+              <div class="scan-finding-body">
+                <div class="scan-finding-title">${escapeHtml(f.title)}</div>
+                <div class="scan-finding-detail">${escapeHtml(f.detail)}</div>
+              </div>
+              <button class="btn btn-secondary btn-sm btn-open-scan" data-route="${scanCategoryRoute(f.category)}">Open</button>
+            </div>
+          `).join('')}
           </div>
         </div>
+      `).join('')}</div>`}
+    </div>
+  ` : '';
+
+  container.innerHTML = `
+    <div class="relay-page-head">
+      <div class="relay-page-title">
+        <span class="material-icons-outlined">shield</span>
+        Operations Monitor
+        <span class="relay-page-sub">${statusText}</span>
       </div>
-      <div class="watchdog-banner-actions">
-        <button class="btn btn-secondary btn-sm btn-return-watchdog" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;">
-          <span class="material-icons-outlined" style="font-size:16px;">arrow_back</span> &larr; Return to Watchdog
+      <div class="relay-page-actions">
+        <span class="watchdog-alert-badge ${alertCount > 0 ? 'has-alerts' : ''}">
+          <span class="material-icons-outlined">notifications_active</span>
+          ${alertCount} Alert${alertCount === 1 ? '' : 's'}
+        </span>
+        ${canScan ? `<button class="btn btn-danger btn-sm btn-run-scan">
+          <span class="material-icons-outlined">radar</span> Run Scan
+        </button>` : ''}
+        <button class="btn btn-secondary btn-sm watchdog-refresh-btn" title="Refresh monitor data">
+          <span class="material-icons-outlined">refresh</span> Refresh
         </button>
       </div>
     </div>
 
-    <div class="inspector-grid">
-      <div class="inspector-card">
-        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-color);padding-bottom:12px;">
-          <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;">
-            <span class="material-icons-outlined" style="color:var(--color-primary)">memory</span>
-            Learned Memory Keys (${entries.length})
-          </div>
-          <button class="btn btn-sm btn-primary btn-add-memory-key" style="font-size:11px;padding:3px 8px;">+ Add Key</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;">
-          ${entries.length === 0 ? '<div style="color:var(--text-tertiary);font-size:13px;padding:12px;text-align:center;">No custom memory entries stored yet.</div>' : entries.map(([key, val]) => `
-            <div class="memory-entry-row">
-              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">
-                <span style="font-weight:600;color:var(--text-primary);">${escapeHtml(key)}:</span>
-                <span style="color:var(--text-secondary);margin-left:6px;">${escapeHtml(typeof val === 'object' ? JSON.stringify(val) : String(val))}</span>
-              </div>
-              <button class="btn btn-ghost btn-sm btn-delete-memory" data-key="${escapeHtml(key)}" title="Delete Key" style="height:24px;padding:0 6px;color:var(--color-danger);">
-                <span class="material-icons-outlined" style="font-size:14px;">delete</span>
-              </button>
-            </div>
-          `).join('')}
-        </div>
-      </div>
+    <div class="relay-page-body">
+    <div class="watchdog-grid">${domains.map(renderWatchdogCard).join('')}</div>
 
-      <div class="inspector-card">
-        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-color);padding-bottom:12px;">
-          <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;">
-            <span class="material-icons-outlined" style="color:var(--color-info)">history</span>
-            Session Action Audit Log (${actionAuditLog.length})
-          </div>
-          <button class="btn btn-sm btn-secondary btn-clear-audit" style="font-size:11px;padding:3px 8px;" ${actionAuditLog.length === 0 ? 'disabled' : ''}>Clear Log</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;">
-          ${actionAuditLog.length === 0 ? '<div style="color:var(--text-tertiary);font-size:13px;padding:12px;text-align:center;">No automated actions executed in this session yet.</div>' : actionAuditLog.map(act => `
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px;background:var(--bg-color-alt, rgba(0,0,0,0.02));border:1px solid var(--border-color);border-radius:8px;font-size:12px;">
-              <div>
-                <div style="font-weight:700;color:var(--text-primary);">${escapeHtml(act.title)}</div>
-                <div style="color:var(--text-secondary);margin-top:2px;">${escapeHtml(act.details)}</div>
-              </div>
-              <span style="color:var(--text-tertiary);font-size:11px;white-space:nowrap;margin-left:8px;">${escapeHtml(act.timestamp)}</span>
-            </div>
-          `).join('')}
-        </div>
-      </div>
+    ${scanSectionHtml}
     </div>
   `;
 
-  container.querySelector('.btn-return-watchdog')?.addEventListener('click', () => {
-    activeTab = 'watchdog';
-    updateWorkspaceView(panel);
+  container.querySelector('.watchdog-refresh-btn')?.addEventListener('click', () => {
+    renderWatchdogView(container);
+    showToast('Monitor data refreshed.', 'info');
   });
 
-  container.querySelector('.btn-add-memory-key')?.addEventListener('click', async () => {
-    const key = prompt('Enter memory key name (e.g. preferredDispatchZone):');
-    if (!key) return;
-    const value = prompt(`Enter value for "${key}":`);
-    if (value === null) return;
-    memory[key] = value;
-    await saveUserMemory(memory);
-    logAction('Added Memory Key', `Saved "${key}" = "${value}"`);
-    showToast(`Memory key "${key}" saved!`, 'success');
-    renderMemoryInspectorView(container);
+  container.querySelector('.btn-run-scan')?.addEventListener('click', () => {
+    emergencyFindings = runEmergencyScan();
+    surfaceEmergencyAsks(emergencyFindings);
+    logAction('Emergency Scan', `Ran scan — ${emergencyFindings.length} finding${emergencyFindings.length === 1 ? '' : 's'}`, emergencyFindings.length ? 'warning' : 'success');
+    renderWatchdogView(container);
+  });
+
+  container.querySelectorAll('.btn-open-scan').forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.location.hash = `#/${btn.dataset.route}`;
+      showToast(`Opened ${btn.dataset.route} view.`, 'info');
+    });
+  });
+
+  // Collapsible scan groups — tap the group header to expand/collapse its findings.
+  container.querySelectorAll('.scan-group-head').forEach(head => {
+    head.addEventListener('click', () => {
+      const group = head.closest('.scan-group');
+      if (!group) return;
+      const collapsed = group.classList.toggle('collapsed');
+      head.setAttribute('aria-expanded', String(!collapsed));
+    });
+  });
+
+  // Collapsible watchdog cards — tap the card head to expand/collapse its drill-down.
+  container.querySelectorAll('.watchdog-card-head').forEach(head => {
+    head.addEventListener('click', () => {
+      const card = head.closest('.watchdog-card');
+      if (!card) return;
+      const collapsed = card.classList.toggle('collapsed');
+      head.setAttribute('aria-expanded', String(!collapsed));
+    });
+  });
+
+  // Drill-down rows open the underlying record view.
+  container.querySelectorAll('.watchdog-drill-open').forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.location.hash = `#/${btn.dataset.route}`;
+      showToast(`Opened ${btn.dataset.route} view.`, 'info');
+    });
+  });
+
+  // Domain action buttons dispatch on their handler name.
+  container.querySelectorAll('.btn-wd-action').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const handler = btn.dataset.handler;
+
+      if (handler === 'navigate') {
+        window.location.hash = `#/${btn.dataset.route}`;
+        showToast(`Opened ${btn.dataset.route} view.`, 'info');
+        return;
+      }
+
+      if (handler === 'autofix-dispatch') {
+        const techs = store.getAll('technicians').filter(t => !t.deactivated);
+        if (!techs.length) {
+          showToast('No active technicians found to assign.', 'warning');
+          return;
+        }
+        let countFixed = 0;
+        unassignedJobs.forEach((job, idx) => {
+          const tech = techs[idx % techs.length];
+          job.technicianId = tech.id;
+          job.technicianName = tech.name;
+          store.save('jobs', jobs);
+          countFixed++;
+        });
+        logAction('Auto-Fix Dispatch', `Assigned ${countFixed} unassigned jobs to active technicians`);
+        showToast(`Deputy assigned ${countFixed} jobs successfully!`, 'success');
+        renderWatchdogView(container);
+        return;
+      }
+
+      if (handler === 'autofix-stock') {
+        if (!lowStock.length) return;
+        const po = {
+          id: 'po_' + Date.now(),
+          number: store.getNextNumber('PO-', 'purchaseOrders'),
+          supplierName: lowStock[0].supplier || 'General Supplier',
+          issueDate: new Date().toISOString(),
+          status: 'Draft',
+          items: lowStock.map(s => ({
+            name: s.name,
+            sku: s.sku,
+            quantity: Math.max(10, (s.reorderPoint || 5) * 2 - (s.quantity || 0)),
+            unitPrice: s.costPrice || s.unitPrice || 0
+          })),
+          total: lowStock.reduce((sum, s) => sum + (s.costPrice || s.unitPrice || 0) * 10, 0)
+        };
+        const pos = store.getAll('purchaseOrders') || [];
+        pos.push(po);
+        store.save('purchaseOrders', pos);
+        logAction('Draft Purchase Order', `Created PO ${po.number} for ${lowStock.length} low stock items`);
+        showToast(`Draft Purchase Order ${po.number} created for ${lowStock.length} items!`, 'success');
+        renderWatchdogView(container);
+        return;
+      }
+
+      if (handler === 'autofix-invoices') {
+        logAction('Payment Reminders', `Sent automated reminders for ${overdueInvoices.length} overdue invoices`);
+        showToast(`Reminders sent for ${overdueInvoices.length} overdue invoices!`, 'success');
+        renderWatchdogView(container);
+        return;
+      }
+
+      if (handler === 'autofix-quotes') {
+        logAction('Quote Follow-Up', `Logged follow-up tasks for ${pendingQuotes.length} pending quotes`);
+        showToast(`Follow-ups logged for ${pendingQuotes.length} pending quotes!`, 'success');
+        renderWatchdogView(container);
+        return;
+      }
+
+      if (handler === 'autofix-timesheets') {
+        const count = pendingTimesheets.length;
+        if (!count) return;
+        pendingTimesheets.forEach(t => store.update('timesheets', t.id, { status: 'Approved' }));
+        logAction('Approve Timesheets', `Approved ${count} pending timesheets`);
+        showToast(`Approved ${count} timesheets!`, 'success');
+        renderWatchdogView(container);
+        return;
+      }
+    });
+  });
+}
+
+// Live-refresh the Watchdog dashboard whenever the data it reads changes,
+// so the "watch" in Watchdog actually watches — no manual refresh needed.
+function refreshWatchdog() {
+  if (panel && activeTab === 'watchdog') {
+    renderWatchdogView(panel.querySelector('#relay-workspace-view'));
+  }
+}
+
+function scheduleWatchdogRefresh() {
+  if (watchdogRefreshTimer) clearTimeout(watchdogRefreshTimer);
+  watchdogRefreshTimer = setTimeout(refreshWatchdog, 800);
+}
+
+async function renderMemoryInspectorView(container) {
+  const memory = await loadUserMemory();
+  const entries = Object.entries(memory || {}).filter(([k]) => k !== 'lastUpdated' && k !== 'interactionCount');
+  const interactionCount = (memory && memory.interactionCount) || 0;
+  const lastUpdated = (memory && memory.lastUpdated)
+    ? new Date(memory.lastUpdated).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  // Structured "personal memory" factsheet, categorised the same way the chat context uses it.
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  const userId = currentUser ? currentUser.id : 'default';
+  const factsheetKey = `relay_factsheet_${userId}`;
+  const enabledKey = `relay_factsheet_enabled_${userId}`;
+  const memEnabled = localStorage.getItem(enabledKey) !== 'false';
+  const rawFactsheet = memEnabled ? (localStorage.getItem(factsheetKey) || '') : '';
+  const structured = memEnabled ? getStructuredMemory(rawFactsheet) : { preferences: [], dispatchRules: [], clientNotes: [], general: [] };
+
+  const memorySections = [
+    { key: 'preferences', label: 'User Preferences', icon: 'favorite' },
+    { key: 'dispatchRules', label: 'Dispatch Rules', icon: 'rule' },
+    { key: 'clientNotes', label: 'Client Notes', icon: 'groups' },
+    { key: 'general', label: 'General Notes', icon: 'notes' }
+  ];
+  const memorySectionsHtml = memorySections.map(sec => {
+    const items = structured[sec.key] || [];
+    return `
+      <div class="memory-section">
+        <div class="memory-section-head">
+          <span class="material-icons-outlined">${sec.icon}</span>
+          <span class="memory-section-label">${sec.label}</span>
+          <span class="badge ${items.length ? 'badge-info' : 'badge-neutral'}">${items.length}</span>
+        </div>
+        ${items.length
+          ? `<ul class="memory-section-list">${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`
+          : '<div class="memory-section-empty">Nothing recorded yet.</div>'}
+      </div>`;
+  }).join('');
+
+  const pendingAsks = (store.getAll('deputyAsks') || [])
+    .filter(a => a.status === 'pending')
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const statusBadge = { success: 'badge-success', warning: 'badge-warning', error: 'badge-danger' };
+
+  container.innerHTML = `
+    <div class="relay-page-head">
+      <div class="relay-page-title">
+        <span class="material-icons-outlined">psychology</span>
+        Memory & Audit Inspector
+        <span class="relay-page-sub">Inspect what Deputy has learned, approve outstanding proposals, and review every automated action.</span>
+      </div>
+    </div>
+
+    <div class="relay-page-body">
+    <div class="inspector-grid">
+      <div class="inspector-card">
+        <div class="inspector-card-head">
+          <div class="inspector-card-title">
+            <span class="material-icons-outlined" style="color:var(--color-primary)">memory</span>
+            Deputy Memory
+          </div>
+          <div class="inspector-card-meta">${interactionCount} interaction${interactionCount === 1 ? '' : 's'}${lastUpdated ? ` · updated ${lastUpdated}` : ''}</div>
+        </div>
+
+        <div class="memory-profile">
+          <div class="memory-profile-label">
+            <span class="material-icons-outlined" style="font-size:16px;">self_improvement</span>
+            Personal Memory ${memEnabled ? '' : '<span class="badge badge-neutral">Disabled</span>'}
+          </div>
+          ${memEnabled
+            ? `<div class="memory-sections">${memorySectionsHtml}</div>`
+            : '<div class="memory-section-empty">Personal memory tracking is turned off in settings.</div>'}
+        </div>
+
+        <div class="memory-keys">
+          <div class="memory-keys-head">
+            <span>Learned Keys (${entries.length})</span>
+            <button class="btn btn-sm btn-primary btn-add-memory-key" style="font-size:11px;padding:3px 8px;">+ Add Key</button>
+          </div>
+          <div class="memory-keys-list">
+            ${entries.length === 0 ? '<div class="memory-section-empty">No custom memory entries stored yet.</div>' : entries.map(([key, val]) => `
+              <div class="memory-entry-row">
+                <div class="memory-entry-key">
+                  <span class="memory-entry-name">${escapeHtml(key)}:</span>
+                  <span class="memory-entry-value">${escapeHtml(typeof val === 'object' ? JSON.stringify(val) : String(val))}</span>
+                </div>
+                <button class="btn btn-ghost btn-sm btn-delete-memory" data-key="${escapeHtml(key)}" title="Delete Key" style="height:24px;padding:0 6px;color:var(--color-danger);">
+                  <span class="material-icons-outlined" style="font-size:14px;">delete</span>
+                </button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="inspector-col">
+        <div class="inspector-card">
+          <div class="inspector-card-head">
+            <div class="inspector-card-title">
+              <span class="material-icons-outlined" style="color:var(--color-info)">mark_email_read</span>
+              Pending Approvals (${pendingAsks.length})
+            </div>
+          </div>
+          <div class="ask-list">
+            ${pendingAsks.length === 0 ? '<div class="ask-empty"><span class="material-icons-outlined" style="font-size:28px;opacity:0.5;margin-bottom:6px;">check_circle</span><div>Nothing waiting on your approval.</div></div>' : pendingAsks.map(ask => `
+              <div class="ask-row">
+                <div class="ask-title">
+                  <span class="material-icons-outlined">auto_awesome</span>
+                  ${escapeHtml(ask.title || 'Proposal')}
+                </div>
+                <div class="ask-desc">${escapeHtml(ask.description || '')}</div>
+                <div class="ask-actions">
+                  <button class="btn btn-primary btn-sm btn-approve-ask" data-id="${escapeHtml(ask.id)}">Approve</button>
+                  <button class="btn btn-secondary btn-sm btn-dismiss-ask" data-id="${escapeHtml(ask.id)}">Dismiss</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="inspector-card">
+          <div class="inspector-card-head">
+            <div class="inspector-card-title">
+              <span class="material-icons-outlined" style="color:var(--color-info)">history</span>
+              Action Audit Log (${actionAuditLog.length})
+            </div>
+            <button class="btn btn-sm btn-secondary btn-clear-audit" style="font-size:11px;padding:3px 8px;" ${actionAuditLog.length === 0 ? 'disabled' : ''}>Clear Log</button>
+          </div>
+          <div class="audit-list">
+            ${actionAuditLog.length === 0 ? '<div class="ask-empty">No automated actions recorded yet.</div>' : actionAuditLog.map(act => `
+              <div class="audit-row">
+                <div class="audit-row-main">
+                  <div class="audit-title">
+                    <span class="badge ${statusBadge[act.status] || 'badge-neutral'}">${escapeHtml(act.status || 'info')}</span>
+                    ${escapeHtml(act.title)}
+                  </div>
+                  <div class="audit-detail">${escapeHtml(act.details)}</div>
+                </div>
+                <span class="audit-time">${escapeHtml(act.timestamp)}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  `;
+
+  container.querySelector('.btn-add-memory-key')?.addEventListener('click', () => {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:14px;padding-top:4px;">
+        <div class="form-group">
+          <label class="form-label">Key Name *</label>
+          <input type="text" id="mk-key" class="form-input" placeholder="e.g. preferredDispatchZone" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Value</label>
+          <textarea id="mk-value" class="form-input" rows="3" placeholder="What should Deputy remember?"></textarea>
+        </div>
+        <div class="memory-modal-hint">This key is saved to Deputy's learned memory and included in future context.</div>
+      </div>
+    `;
+
+    const save = async (close) => {
+      const key = (content.querySelector('#mk-key').value || '').trim();
+      if (!key) { showToast('Please enter a key name', 'error'); return; }
+      const value = (content.querySelector('#mk-value').value || '').trim();
+      memory[key] = value;
+      await saveUserMemory(memory);
+      logAction('Added Memory Key', `Saved "${key}" = "${value}"`);
+      showToast(`Memory key "${key}" saved!`, 'success');
+      close();
+      renderMemoryInspectorView(container);
+    };
+
+    const { close } = showModal({
+      title: 'Add Memory Key',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+        { label: 'Save Key', className: 'btn-primary', onClick: (close) => save(close) }
+      ]
+    });
+
+    // Enter in either field saves; Escape already closes via Modal.js.
+    content.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        save(close);
+      }
+    });
+    content.querySelector('#mk-key')?.focus();
   });
 
   container.querySelectorAll('.btn-delete-memory').forEach(btn => {
@@ -345,8 +782,39 @@ async function renderMemoryInspectorView(container) {
     });
   });
 
+  container.querySelectorAll('.btn-approve-ask').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const askId = btn.dataset.id;
+      const ask = (store.getAll('deputyAsks') || []).find(a => a.id === askId);
+      if (!ask) return;
+      btn.disabled = true;
+      try {
+        await parseAndExecuteActions(ask.proposedAction);
+        store.update('deputyAsks', askId, { status: 'resolved', updated_at: new Date().toISOString() });
+        logAction('Approved Proposal', ask.title || 'Pending proposal');
+        showToast('Proposal approved and executed.', 'success');
+      } catch (err) {
+        logAction('Proposal Failed', err.message || String(err), 'error');
+        showToast('Failed to execute the proposal.', 'error');
+      }
+      renderMemoryInspectorView(container);
+    });
+  });
+
+  container.querySelectorAll('.btn-dismiss-ask').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const askId = btn.dataset.id;
+      const ask = (store.getAll('deputyAsks') || []).find(a => a.id === askId);
+      store.update('deputyAsks', askId, { status: 'dismissed', updated_at: new Date().toISOString() });
+      logAction('Dismissed Proposal', ask ? ask.title : 'Pending proposal', 'warning');
+      showToast('Proposal dismissed.', 'info');
+      renderMemoryInspectorView(container);
+    });
+  });
+
   container.querySelector('.btn-clear-audit')?.addEventListener('click', () => {
     actionAuditLog = [];
+    persistAuditLog();
     showToast('Audit log cleared', 'info');
     renderMemoryInspectorView(container);
   });
@@ -409,8 +877,8 @@ function refreshEmergencyScan() {
   if (!hasDeputyMax()) return;
   emergencyFindings = runEmergencyScan();
   surfaceEmergencyAsks(emergencyFindings);
-  if (panel && activeTab === 'scan') {
-    renderEmergencyScanView(panel.querySelector('#relay-workspace-view'));
+  if (panel && activeTab === 'watchdog') {
+    renderWatchdogView(panel.querySelector('#relay-workspace-view'));
   }
 }
 
@@ -420,84 +888,13 @@ function scheduleEmergencyScanRefresh() {
   scanRefreshTimer = setTimeout(refreshEmergencyScan, 1200);
 }
 
-function renderEmergencyScanView(container) {
-  if (!container) return;
-  if (!hasDeputyMax()) {
-    container.innerHTML = '';
-    return;
-  }
-  if (!emergencyFindings.length) emergencyFindings = runEmergencyScan();
-  const findings = emergencyFindings;
-  const counts = { critical: 0, high: 0, medium: 0 };
-  findings.forEach(f => { counts[f.severity] = (counts[f.severity] || 0) + 1; });
-
-  const grouped = {};
-  findings.forEach(f => {
-    if (!grouped[f.category]) grouped[f.category] = [];
-    grouped[f.category].push(f);
-  });
-
-  const noFindings = findings.length === 0;
-  const groupHtml = Object.entries(grouped).map(([cat, items]) => `
-    <div class="scan-group">
-      <div class="scan-group-head">${escapeHtml(cat)} <span class="badge ${items.some(i => i.severity === 'critical') ? 'badge-danger' : 'badge-warning'}">${items.length}</span></div>
-      ${items.map(f => `
-        <div class="scan-finding scan-sev-${f.severity}">
-          <span class="scan-sev-badge scan-sev-${f.severity}">${f.severity}</span>
-          <div class="scan-finding-body">
-            <div class="scan-finding-title">${escapeHtml(f.title)}</div>
-            <div class="scan-finding-detail">${escapeHtml(f.detail)}</div>
-          </div>
-          <button class="btn btn-secondary btn-sm btn-open-scan" data-route="${scanCategoryRoute(f.category)}">Open</button>
-        </div>
-      `).join('')}
-    </div>
-  `).join('');
-
-  container.innerHTML = `
-    <div class="watchdog-banner">
-      <div class="watchdog-banner-info">
-        <div class="watchdog-health-ring">${findings.length}</div>
-        <div>
-          <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--text-primary);">Emergency Scan</h2>
-          <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">
-            ${noFindings ? 'No urgent issues detected. All systems look clear.' : `Detected ${findings.length} finding${findings.length === 1 ? '' : 's'}: ${counts.critical} critical, ${counts.high} high, ${counts.medium} medium.`}
-          </div>
-        </div>
-      </div>
-      <button class="btn btn-danger btn-sm btn-run-scan" style="display:inline-flex;align-items:center;gap:6px;">
-        <span class="material-icons-outlined" style="font-size:16px;">radar</span> Run Emergency Scan
-      </button>
-    </div>
-    ${noFindings ? `
-      <div style="padding:24px 16px;text-align:center;color:var(--text-tertiary);">
-        <span class="material-icons-outlined" style="font-size:32px;opacity:0.5;margin-bottom:8px;">verified</span>
-        <div>Nothing needs urgent attention right now.</div>
-      </div>
-    ` : `<div class="scan-list">${groupHtml}</div>`}
-  `;
-
-  container.querySelector('.btn-run-scan')?.addEventListener('click', () => {
-    emergencyFindings = runEmergencyScan();
-    surfaceEmergencyAsks(emergencyFindings);
-    logAction('Emergency Scan', `Ran scan — ${emergencyFindings.length} finding${emergencyFindings.length === 1 ? '' : 's'}`, emergencyFindings.length ? 'warning' : 'success');
-    renderEmergencyScanView(container);
-  });
-
-  container.querySelectorAll('.btn-open-scan').forEach(btn => {
-    btn.addEventListener('click', () => {
-      window.location.hash = `#/${btn.dataset.route}`;
-      showToast(`Opened ${btn.dataset.route} view.`, 'info');
-    });
-  });
-}
-
 function updateWorkspaceView(panel) {
   if (!panel) return;
   const workspaceView = panel.querySelector('#relay-workspace-view');
   const chatContainer = panel.querySelector('#relay-chat-container');
   const navTabs = panel.querySelector('#relay-nav-tabs');
-  const expandBtn = panel.querySelector('#relay-expand');
+  const expandBtn = document.querySelector('#relay-expand');
+  const sidebar = panel.querySelector('#relay-thread-sidebar');
 
   if (navTabs) {
     navTabs.style.display = isExpanded ? 'flex' : 'none';
@@ -511,15 +908,32 @@ function updateWorkspaceView(panel) {
     expandBtn.title = isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace';
   }
 
+  // The thread sidebar lives in the expanded workspace.
+  if (sidebar && hasDeputyMax()) {
+    sidebar.style.display = isExpanded ? 'flex' : 'none';
+  }
+
   if (isExpanded) {
     panel.classList.add('expanded');
+    document.body.classList.add('relay-expanded');
+    syncPanelToSidebar();
   } else {
     panel.classList.remove('expanded');
+    document.body.classList.remove('relay-expanded');
   }
 
   if (activeTab === 'chat') {
     if (workspaceView) workspaceView.style.display = 'none';
-    if (chatContainer) chatContainer.style.display = 'flex';
+    if (chatContainer) {
+      // Fill the expanded workspace (flex column, no overflow) so the chat
+      // occupies the whole area rather than hugging the top.
+      chatContainer.style.display = 'flex';
+      chatContainer.style.flexDirection = 'column';
+      chatContainer.style.flex = '1';
+      chatContainer.style.minHeight = '0';
+      chatContainer.style.overflow = 'hidden';
+    }
+    if (hasDeputyMax()) renderThreadSidebar();
   } else {
     if (chatContainer) chatContainer.style.display = 'none';
     if (workspaceView) {
@@ -528,12 +942,587 @@ function updateWorkspaceView(panel) {
         renderWatchdogView(workspaceView);
       } else if (activeTab === 'inspector') {
         renderMemoryInspectorView(workspaceView);
-      } else if (activeTab === 'scan') {
-        renderEmergencyScanView(workspaceView);
+      } else if (activeTab === 'routines') {
+        renderRoutinesView(workspaceView);
       }
     }
   }
 }
+
+// ── Routines (Deputy Max automated actions) ────────────────────────────────────
+function renderRoutinesView(container) {
+  if (!container) return;
+  if (!hasDeputyMax()) {
+    container.innerHTML = `
+      <div style="padding:40px 16px;text-align:center;color:var(--text-tertiary);">
+        <span class="material-icons-outlined" style="font-size:40px;opacity:0.5;margin-bottom:12px;">autorenew</span>
+        <div>Automated Routines are a Deputy Max feature.</div>
+      </div>`;
+    return;
+  }
+
+  const routines = getRoutines();
+  const enabledCount = routines.filter(r => r.enabled).length;
+
+  const cardHtml = routines.map(r => `
+    <div class="routine-card ${r.enabled ? '' : 'disabled'}" data-id="${r.id}">
+      <div class="routine-card-main">
+        <div class="routine-card-title">
+          <button class="routine-switch ${r.enabled ? 'on' : 'off'}" data-id="${r.id}" role="switch" aria-checked="${r.enabled}" title="${r.enabled ? 'Disable routine' : 'Enable routine'}">
+            <span class="routine-switch-knob"></span>
+          </button>
+          <span class="routine-name">${escapeHtml(r.title)}</span>
+        </div>
+        <div class="routine-trigger"><span class="material-icons-outlined">schedule</span> ${escapeHtml(describeTrigger(r.trigger))}</div>
+        <div class="routine-prompt">${escapeHtml(r.prompt)}</div>
+        <div class="routine-meta">${r.lastRunAt ? `Last ran ${formatRelativeTime(r.lastRunAt)}` : 'Not run yet'}</div>
+      </div>
+      <div class="routine-card-actions">
+        <button class="btn btn-sm btn-secondary btn-routine-run" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:15px;">play_arrow</span> Run now</button>
+        <button class="btn btn-sm btn-secondary btn-routine-edit" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:15px;">edit</span> Edit</button>
+        <button class="btn btn-sm btn-danger btn-routine-delete" data-id="${r.id}"><span class="material-icons-outlined" style="font-size:15px;">delete</span> Delete</button>
+      </div>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="relay-page-head">
+      <div class="relay-page-title">
+        <span class="material-icons-outlined">autorenew</span>
+        Routines
+        <span class="relay-page-sub">${
+          routines.length === 0
+            ? 'Create Deputy actions that run automatically on a schedule.'
+            : `${routines.length} routine${routines.length === 1 ? '' : 's'} defined, ${enabledCount} enabled.`
+        }</span>
+      </div>
+      <div class="relay-page-actions">
+        <button class="btn btn-primary btn-sm btn-routine-new"><span class="material-icons-outlined">add</span> New Routine</button>
+      </div>
+    </div>
+    <div class="relay-page-body">
+    ${routines.length === 0
+      ? `<div style="padding:24px 16px;text-align:center;color:var(--text-tertiary);">
+           <span class="material-icons-outlined" style="font-size:32px;opacity:0.5;margin-bottom:8px;">event_repeat</span>
+           <div>No routines yet. Create one and Deputy will run it on its schedule.</div>
+         </div>`
+      : `<div class="routines-list">${cardHtml}</div>`}
+    </div>
+  `;
+
+  container.querySelector('.btn-routine-new')?.addEventListener('click', () => openRoutineEditor(null, container));
+
+  container.querySelectorAll('.btn-routine-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const r = getRoutine(btn.dataset.id);
+      if (r) openRoutineEditor(r, container);
+    });
+  });
+
+  container.querySelectorAll('.btn-routine-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const r = getRoutine(btn.dataset.id);
+      const title = r ? r.title : 'this routine';
+      showModal({
+        title: 'Delete routine',
+        content: `Delete "${title}"? Deputy will stop running this routine. This cannot be undone.`,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+          { label: 'Delete', className: 'btn-danger', onClick: async c => { c(); await deleteRoutine(btn.dataset.id); renderRoutinesView(container); showToast('Routine deleted.', 'success'); } }
+        ]
+      });
+    });
+  });
+
+  container.querySelectorAll('.routine-switch').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cur = getRoutine(btn.dataset.id);
+      if (!cur) return;
+      await updateRoutine(btn.dataset.id, { enabled: !cur.enabled });
+      renderRoutinesView(container);
+      showToast(cur.enabled ? 'Routine disabled.' : 'Routine enabled.', 'success');
+    });
+  });
+
+  container.querySelectorAll('.btn-routine-run').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const r = getRoutine(btn.dataset.id);
+      if (!r) return;
+      const s = store.getSettings();
+      const ai = s.ai || {};
+      if (!ai.enabled) { showToast('Routines need the cloud AI enabled.', 'error'); return; }
+      showToast(`Running "${r.title}"…`, 'info');
+      await runRoutine(r, ai);
+    });
+  });
+}
+
+// Open the "create / edit routine" modal. `routine` is null for a new routine.
+function openRoutineEditor(routine, container) {
+  const editing = !!routine;
+  const t = routine ? routine.trigger : { type: 'interval', interval: 1, unit: 'days' };
+
+  const form = document.createElement('div');
+  form.className = 'routine-editor';
+  form.innerHTML = `
+    <div class="routine-field">
+      <label class="routine-label">Name</label>
+      <input type="text" class="form-input routine-fold-title" value="${escapeHtml(routine ? routine.title : '')}" placeholder="e.g. Morning briefing" maxlength="80">
+    </div>
+    <div class="routine-field">
+      <label class="routine-label">Trigger</label>
+      <select class="form-input routine-fold-type">
+        <option value="interval" ${t.type === 'interval' ? 'selected' : ''}>Every X minutes / hours / days</option>
+        <option value="morning" ${t.type === 'morning' ? 'selected' : ''}>Every morning (once a day)</option>
+        <option value="new_chat" ${t.type === 'new_chat' ? 'selected' : ''}>On new chat</option>
+      </select>
+    </div>
+    <div class="routine-field routine-fold-interval ${t.type === 'interval' ? '' : 'hidden'}">
+      <div class="routine-fold-interval-row">
+        <input type="number" class="form-input routine-fold-interval-num" min="1" step="1" value="${t.type === 'interval' ? (t.interval || 1) : 1}">
+        <select class="form-input routine-fold-interval-unit">
+          <option value="minutes" ${t.unit === 'minutes' ? 'selected' : ''}>minutes</option>
+          <option value="hours" ${t.unit === 'hours' ? 'selected' : ''}>hours</option>
+          <option value="days" ${(t.unit || 'days') === 'days' ? 'selected' : ''}>days</option>
+        </select>
+      </div>
+    </div>
+    <div class="routine-field">
+      <label class="routine-label">What should Deputy do?</label>
+      <textarea class="form-input routine-fold-prompt" rows="4" placeholder="e.g. Summarise today's schedule, flag unassigned jobs and overdue invoices…">${escapeHtml(routine ? routine.prompt : '')}</textarea>
+    </div>
+    <div class="routine-divider"><span>Or describe it to Deputy</span></div>
+    <div class="routine-field">
+      <label class="routine-label">Describe the routine in plain language</label>
+      <textarea class="form-input routine-fold-describe" rows="2" placeholder="e.g. Every morning before I start, give me a rundown of the day's jobs"></textarea>
+      <button type="button" class="btn btn-secondary btn-sm routine-fold-design"><span class="material-icons-outlined" style="font-size:16px;">auto_awesome</span> Design with Deputy</button>
+      <div class="routine-design-status" style="display:none"></div>
+    </div>
+  `;
+
+  const intervalGroup = form.querySelector('.routine-fold-interval');
+  form.querySelector('.routine-fold-type').addEventListener('change', (e) => {
+    intervalGroup.classList.toggle('hidden', e.target.value !== 'interval');
+  });
+
+  const modal = showModal({
+    title: editing ? 'Edit routine' : 'New routine',
+    size: 'modal-lg',
+    content: form,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      {
+        label: editing ? 'Save changes' : 'Save routine',
+        className: 'btn-primary',
+        onClick: async c => {
+          const title = form.querySelector('.routine-fold-title').value.trim();
+          const type = form.querySelector('.routine-fold-type').value;
+          const prompt = form.querySelector('.routine-fold-prompt').value.trim();
+          if (!prompt) { showToast('Tell Deputy what the routine should do.', 'error'); return; }
+          const trigger = {
+            type,
+            interval: Math.max(1, Number(form.querySelector('.routine-fold-interval-num').value) || 1),
+            unit: form.querySelector('.routine-fold-interval-unit').value
+          };
+          if (editing) await updateRoutine(routine.id, { title: title || routine.title, trigger, prompt });
+          else await createRoutine({ title, trigger, prompt });
+          c();
+          renderRoutinesView(container);
+          showToast(editing ? 'Routine updated.' : 'Routine created.', 'success');
+        }
+      }
+    ]
+  });
+
+  form.querySelector('.routine-fold-design').addEventListener('click', async () => {
+    const describe = form.querySelector('.routine-fold-describe').value.trim();
+    if (!describe) { showToast('Describe what you want the routine to do first.', 'info'); return; }
+    const s = store.getSettings();
+    const ai = s.ai || {};
+    if (!ai.enabled || !hasDeputyMax()) {
+      showToast('Design with Deputy needs the cloud AI enabled.', 'error');
+      return;
+    }
+    // Run the guided, multiple-choice routine designer inside this modal.
+    try {
+      await runRoutineDesignWizard(modal, describe, container, ai);
+    } catch (err) {
+      console.error('Routine wizard failed', err);
+      showToast('Couldn’t start the routine designer.', 'error');
+    }
+  });
+}
+
+// Ask Deputy to come up with a couple of multiple-choice clarifying questions for
+// the routine's purpose. Returns [{ text, options: [] }]. Falls back to generic
+// questions (or none) if the AI is unavailable or returns unparseable output.
+async function generateRoutineClarifications(intent, ai, model) {
+  const fallback = [
+    { text: 'What should the routine focus on?', options: ['Jobs only', 'Jobs and invoices', 'Overdue items', 'Everything needing attention'] },
+    { text: 'How detailed should the result be?', options: ['A quick summary', 'A detailed report', 'A checklist of action items'] },
+    { text: 'How should urgent issues be handled?', options: ['Just mention them', 'Flag them as critical', 'List them at the top'] },
+    { text: 'The next run should show?', options: ['Only new changes', 'Everything, every time', 'Just a short update'] }
+  ];
+  if (!ai || !ai.enabled) return fallback;
+  const messages = [
+    {
+      role: 'system',
+      content: 'You are Deputy, designing an automated routine for a dispatcher. Ask 3-4 short, useful multiple-choice questions that clarify the routine\'s intent and expand what it should produce, so the final routine is precise and genuinely useful. Each question must be answerable by tapping ONE option (3-4 options). Do NOT ask anything requiring typed input. Vary the questions across scope, detail, urgency and output. Return ONLY a JSON object, no markdown, no prose, in this exact shape: {"questions":[{"text":"...","options":["...","...","..."]}]}'
+    },
+    { role: 'user', content: `ROUTINE PURPOSE: ${intent}` }
+  ];
+  let raw = '';
+  try { raw = await dispatchChat(messages, ai, model); } catch { return fallback; }
+  try {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    const json = start >= 0 && end > start ? raw.slice(start, end + 1) : raw;
+    const parsed = JSON.parse(json);
+    const questions = (parsed.questions || [])
+      .filter(q => q && q.text && Array.isArray(q.options) && q.options.length >= 2)
+      .map(q => ({ text: q.text.trim(), options: q.options.map(o => String(o).trim()).filter(Boolean) }))
+      .filter(q => q.options.length >= 2)
+      .slice(0, 4);
+    if (questions.length) return questions;
+  } catch { /* fall through to generic questions */ }
+  return fallback;
+}
+
+// Guided, multiple-choice routine designer that runs inside the "New routine"
+// modal. Every question is answered by tapping an option — no free text. Walks
+// trigger → (custom interval) → confirm, then saves the routine.
+async function runRoutineDesignWizard(modal, describe, container, ai) {
+  // `showModal` returns { close, modal, overlay } — `modal` here is that object.
+  const { close, modal: modalEl } = modal;
+  const body = modalEl.querySelector('.modal-body');
+  if (!body) return;
+  const footer = modalEl.querySelector('.modal-footer');
+  if (footer) footer.style.display = 'none';
+
+  const model = (ai && ai.model) || 'deepseek-chat';
+  const ctx = {
+    describe,
+    trigger: null,
+    triggerLabel: '',
+    stage: 'trigger',
+    questions: null,
+    qIndex: 0,
+    qAnswers: [],
+    loading: false
+  };
+
+  const deriveName = () => {
+    const base = (ctx.describe || '')
+      .replace(/^(?:please\s+)?(?:every\s+(?:morning|afternoon|evening|night|day|hour|week|month)|each\s+(?:morning|day|week|month)|daily|weekly|monthly|on\s+new\s+chat)\s*[:,]?\s*/i, '')
+      .replace(/^(?:just\s+|please\s+|i\s+want\s+(?:you\s+to\s+)?)/i, '')
+      .replace(/[.?!]+$/, '').trim();
+    if (base) return capitalise(base.slice(0, 48));
+    if (ctx.trigger && ctx.trigger.type === 'morning') return 'Morning routine';
+    if (ctx.trigger && ctx.trigger.type === 'new_chat') return 'On new chat';
+    return 'Routine';
+  };
+
+  const wizard = document.createElement('div');
+  wizard.className = 'routine-design-wizard';
+  wizard.innerHTML = `
+    <div class="routine-design-head">
+      <span class="material-icons-outlined">auto_awesome</span>
+      <span>Designing your routine</span>
+    </div>
+    <div class="routine-design-body"></div>
+    <div class="routine-design-foot">
+      <button type="button" class="btn btn-ghost btn-sm routine-design-cancel">Cancel</button>
+    </div>
+  `;
+  body.innerHTML = '';
+  body.appendChild(wizard);
+
+  const qBody = wizard.querySelector('.routine-design-body');
+  wizard.querySelector('.routine-design-cancel').addEventListener('click', () => close());
+
+  const optionButtons = (options) => options.map(o =>
+    `<button type="button" class="relay-question-opt-btn" data-value="${escapeHtml(o.value)}" data-label="${escapeHtml(o.label)}">${escapeHtml(o.label)}</button>`
+  ).join('');
+
+  const wire = (onPick) => {
+    qBody.querySelectorAll('.relay-question-opt-btn').forEach(btn => {
+      btn.addEventListener('click', () => onPick(btn.dataset.value, btn.dataset.label));
+    });
+  };
+
+  const fetchClarifications = async () => {
+    ctx.loading = true;
+    render();
+    const questions = await generateRoutineClarifications(ctx.describe, ai, model);
+    ctx.questions = questions;
+    ctx.loading = false;
+    render();
+  };
+
+  const render = () => {
+    qBody.innerHTML = '';
+
+    if (ctx.stage === 'trigger') {
+      qBody.innerHTML = `
+        <div class="routine-design-q">
+          <div class="relay-question-title">When should this routine run?</div>
+          <div class="relay-question-options">${optionButtons([
+            { label: 'Every morning', value: 'morning' },
+            { label: 'Every day', value: 'day' },
+            { label: 'Every hour', value: 'hour' },
+            { label: 'On new chat', value: 'new_chat' },
+            { label: 'Custom interval', value: 'custom' }
+          ])}</div>
+        </div>
+      `;
+      wire((val) => {
+        if (val === 'morning') { ctx.trigger = { type: 'morning' }; ctx.triggerLabel = 'Every morning'; ctx.stage = 'clarify'; render(); }
+        else if (val === 'day') { ctx.trigger = { type: 'interval', interval: 1, unit: 'days' }; ctx.triggerLabel = 'Every day'; ctx.stage = 'clarify'; render(); }
+        else if (val === 'hour') { ctx.trigger = { type: 'interval', interval: 1, unit: 'hours' }; ctx.triggerLabel = 'Every hour'; ctx.stage = 'clarify'; render(); }
+        else if (val === 'new_chat') { ctx.trigger = { type: 'new_chat' }; ctx.triggerLabel = 'On new chat'; ctx.stage = 'clarify'; render(); }
+        else { ctx.stage = 'interval'; render(); }
+      });
+      return;
+    }
+
+    if (ctx.stage === 'interval') {
+      qBody.innerHTML = `
+        <div class="routine-design-q">
+          <div class="relay-question-title">How often should it run?</div>
+          <div class="relay-question-options">${optionButtons([
+            { label: 'Every 30 minutes', value: '30 minutes' },
+            { label: 'Every 2 hours', value: '2 hours' },
+            { label: 'Every 6 hours', value: '6 hours' },
+            { label: 'Once a day', value: '1 day' },
+            { label: 'Once a week', value: '1 week' }
+          ])}</div>
+        </div>
+      `;
+      wire((val, label) => {
+        ctx.triggerLabel = label;
+        ctx.trigger = parseIntervalAnswer(val);
+        ctx.stage = 'clarify';
+        render();
+      });
+      return;
+    }
+
+    if (ctx.stage === 'clarify') {
+      if (!ctx.questions) {
+        if (!ctx.loading) fetchClarifications();
+        qBody.innerHTML = `
+          <div class="routine-design-q">
+            <div class="relay-question-title">Deputy is thinking up a couple of quick questions…</div>
+            <div class="routine-design-loading">Loading</div>
+          </div>
+        `;
+        return;
+      }
+      const q = ctx.questions[ctx.qIndex];
+      if (!q) { ctx.stage = 'confirm'; render(); return; }
+      qBody.innerHTML = `
+        <div class="routine-design-q">
+          <div class="relay-question-title">${escapeHtml(q.text)}</div>
+          <div class="relay-question-options">${optionButtons(q.options.map(o => ({ label: o, value: o })))}</div>
+        </div>
+      `;
+      wire((val, label) => {
+        ctx.qAnswers.push({ q: q.text, a: label });
+        ctx.qIndex++;
+        render();
+      });
+      return;
+    }
+
+    // confirm stage
+    const detail = ctx.qAnswers.map(a => a.a).join(', ');
+    const prompt = ctx.qAnswers.length
+      ? `${ctx.describe}. ${ctx.qAnswers.map(a => `${a.q} ${a.a}`).join('; ')}`
+      : ctx.describe;
+    qBody.innerHTML = `
+      <div class="routine-design-summary">
+        <div class="routine-summary-row"><span class="routine-summary-key">Do</span><span>${escapeHtml(ctx.describe)}</span></div>
+        <div class="routine-summary-row"><span class="routine-summary-key">When</span><span>${escapeHtml(ctx.triggerLabel)}</span></div>
+        ${detail ? `<div class="routine-summary-row"><span class="routine-summary-key">Details</span><span>${escapeHtml(detail)}</span></div>` : ''}
+        <div class="routine-summary-row"><span class="routine-summary-key">Name</span><span>${escapeHtml(deriveName())}</span></div>
+      </div>
+      <div class="routine-design-q">
+        <div class="relay-question-title">Save this routine?</div>
+        <div class="relay-question-options">
+          <button type="button" class="relay-question-opt-btn routine-q-save" data-value="save">Save routine</button>
+          <button type="button" class="relay-question-opt-btn" data-value="change">Change when it runs</button>
+        </div>
+      </div>
+    `;
+    qBody.querySelector('.routine-q-save').addEventListener('click', async () => {
+      await createRoutine({ title: deriveName(), trigger: ctx.trigger, prompt });
+      close();
+      renderRoutinesView(container);
+      showToast('Routine created.', 'success');
+    });
+    qBody.querySelectorAll('.relay-question-opt-btn').forEach(btn => {
+      if (btn.dataset.value === 'change') {
+        btn.addEventListener('click', () => { ctx.stage = 'trigger'; ctx.trigger = null; ctx.triggerLabel = ''; ctx.qIndex = 0; ctx.qAnswers = []; render(); });
+      }
+    });
+  };
+
+  render();
+}
+
+// Start the routine scheduler: a ~60s tick that fires any due interval/morning
+// routines. Runs for Max users regardless of whether the Deputy panel is open.
+function scheduleRoutineEvaluation() {
+  if (routineTimer) clearInterval(routineTimer);
+  routineTimer = setInterval(() => { evaluateRoutines({ reason: 'timer' }); }, 60000);
+}
+
+async function evaluateRoutines({ reason = 'timer' } = {}) {
+  if (!hasDeputyMax()) return;
+  const s = store.getSettings();
+  const ai = s.ai || {};
+  if (!ai.enabled) return;
+  if (routineRunning) return;
+
+  const routines = getRoutines();
+  const due = routines.filter(r => routineIsDue(r, { reason }));
+  if (!due.length) return;
+
+  routineRunning = true;
+  try {
+    await Promise.all(due.map(r => runRoutine(r, ai)));
+  } finally {
+    routineRunning = false;
+    if (panel && activeTab === 'routines') {
+      const ws = panel.querySelector('#relay-workspace-view');
+      if (ws) renderRoutinesView(ws);
+    }
+  }
+}
+
+// Run a single routine: send its prompt to the AI, execute any action tags, and
+// surface the result in chat.
+async function runRoutine(routine, ai) {
+  const systemPrompt = buildSystemPrompt(ai);
+  const model = ai.model || 'deepseek-chat';
+  try {
+    const reply = await dispatchChat([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: routine.prompt }
+    ], ai, model);
+    const clean = await finaliseRoutineReply(reply, systemPrompt, ai, model);
+    const surfaceText = (clean && clean.trim()) || `Ran "${routine.title}" — ${describeTrigger(routine.trigger)}.`;
+    await surfaceRoutineResult(routine, surfaceText);
+    const t = await markRoutineRun(routine.id);
+    logAction('Routine', `Ran "${t ? t.title : routine.title}" — ${describeTrigger(routine.trigger)}`);
+  } catch (err) {
+    console.error(`Routine "${routine.title}" failed:`, err);
+    logAction('Routine', `"${routine.title}" failed — ${err.message || err}`, 'error');
+  }
+}
+
+// Record a routine result into its own, appropriately-named chat tab so the
+// output is easy to find and never clutters whatever the user was doing.
+async function surfaceRoutineResult(routine, text) {
+  if (hasDeputyMax()) {
+    // The routine runs as its own system: seed a title card for the routine
+    // (not the raw prompt) so the result reads as a standalone report, and name
+    // the tab after the routine's short title.
+    const tabTitle = routine.title && routine.title !== 'New routine' ? routine.title : 'Routine result';
+    const seed = [
+      { role: 'routine', title: tabTitle, triggerLabel: describeTrigger(routine.trigger) },
+      { role: 'assistant', content: text }
+    ];
+    const t = await createThread(tabTitle, seed);
+    currentThreadId = t.id;
+    localStorage.setItem(lastThreadKey(), t.id);
+    chatHistory = loadChatHistory();
+  } else {
+    chatHistory.push({ role: 'assistant', content: text });
+    trimHistory();
+    saveChatHistory(chatHistory);
+  }
+
+  // Refresh the thread DOM even if the user is on another tab, so the result is
+  // visible the moment they switch back to Chat.
+  const threadEl = panel ? panel.querySelector('#relay-thread') : null;
+  if (threadEl) await renderChatThread(threadEl);
+  if (hasDeputyMax()) renderThreadSidebar();
+}
+
+// Format an ISO timestamp as a short human relative time ("5m ago", "2h ago").
+function formatRelativeTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso);
+  const diff = Date.now() - then.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return then.toLocaleDateString();
+}
+
+// ── Top-bar Deputy controls ──
+// The expand / clear / close actions now live in the page top bar (next to the
+// Deputy trigger), so they outlive the drawer element and must be bound once.
+let topbarRelayBound = false;
+
+function handleExpandClick() {
+  if (!panel) return;
+  isExpanded = !isExpanded;
+  localStorage.setItem('relay_expanded', isExpanded);
+  activeTab = 'chat';
+  updateWorkspaceView(panel);
+}
+
+function handleClearChatClick() {
+  if (!panel) return;
+  const thread = panel.querySelector('#relay-thread');
+  if (!thread) return;
+  showModal({
+    title: 'Clear chat',
+    content: hasDeputyMax()
+      ? 'Clear this conversation? Its messages will be removed but the chat stays in your list.'
+      : 'Clear this chat? This will permanently remove the conversation history.',
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      {
+        label: 'Clear',
+        className: 'btn-danger',
+        onClick: async c => {
+          c();
+          if (hasDeputyMax()) {
+            // Max: clear only the active thread, keep the rest.
+            await clearDeputyThread(currentThreadId);
+          } else {
+            chatHistory = [];
+            localStorage.removeItem(`relay_chat_history_${getUserId()}`);
+            localStorage.removeItem(`relay_draft_message_${getUserId()}`);
+            thread.innerHTML = '';
+            renderIntroDashboard(thread, {});
+            showToast('Chat cleared.', 'success');
+          }
+        }
+      }
+    ]
+  });
+}
+
+function bindTopbarRelayControls() {
+  if (topbarRelayBound) return;
+  const expandBtn = document.querySelector('#relay-expand');
+  const clearBtn = document.querySelector('#relay-clear-chat');
+  const closeBtn = document.querySelector('#relay-close');
+  if (!expandBtn || !clearBtn || !closeBtn) return;
+  expandBtn.addEventListener('click', handleExpandClick);
+  clearBtn.addEventListener('click', handleClearChatClick);
+  closeBtn.addEventListener('click', closeRelay);
+  topbarRelayBound = true;
+}
+
 // Files the user has attached to the next message (not yet sent).
 function renderIntroDashboard(thread, memory) {
   // Get user details
@@ -701,7 +1690,10 @@ function loadChatHistory() {
 function saveChatHistory(history) {
   // Deputy Max: persist to the active thread.
   if (hasDeputyMax()) {
-    if (currentThreadId) setThreadMessages(currentThreadId, history);
+    if (currentThreadId) {
+      setThreadMessages(currentThreadId, history);
+      autoTitleThread(currentThreadId, history);
+    }
     return;
   }
   // Base/cloud: legacy single-history in localStorage.
@@ -711,6 +1703,19 @@ function saveChatHistory(history) {
   } catch (e) {
     console.error('Failed to save chat history', e);
   }
+}
+
+// Auto-name a new chat from its first user message while it still has the
+// placeholder title. Re-renders the sidebar so the updated name shows.
+async function autoTitleThread(threadId, history) {
+  if (!hasDeputyMax() || !threadId) return;
+  const t = getThread(threadId);
+  if (!t) return;
+  if (t.title && t.title !== 'New chat') return;
+  const derived = deriveThreadTitle(history);
+  if (!derived || derived === t.title) return;
+  await renameThread(threadId, derived);
+  renderThreadSidebar();
 }
 
 
@@ -736,8 +1741,8 @@ export async function openRelay() {
 
   if (!hasPermission('AI Assistant', 'use')) return;
 
-  // Always enforce chat mode when minimized, watchdog when expanded
-  activeTab = isExpanded ? 'watchdog' : 'chat';
+  // Chat is the default tab in both minimised and expanded modes.
+  activeTab = 'chat';
 
   const draftKey = `relay_draft_message_${getUserId()}`;
   const draftVal = localStorage.getItem(draftKey) || '';
@@ -747,72 +1752,51 @@ export async function openRelay() {
   panel = document.createElement('div');
   panel.className = `relay-panel ${isExpanded ? 'expanded' : ''}`;
   panel.innerHTML = `
-    <div class="relay-head">
-      <div class="relay-head-id">
-        <span class="relay-avatar">${relayIcon}</span>
-        <div>
-          <div class="relay-name">Deputy</div>
-          <div class="relay-sub">Your co-pilot</div>
+    <div class="relay-body">
+      <div class="relay-tabs-rail" id="relay-nav-tabs" style="${isExpanded ? 'display:flex' : 'display:none'}">
+        <div class="relay-tabs-rail-head">Deputy</div>
+        <nav class="relay-tabs-rail-nav">
+          <button class="relay-nav-tab ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" title="Chat Stream"><span class="material-icons-outlined">chat</span> Chat</button>
+          <button class="relay-nav-tab ${activeTab === 'routines' ? 'active' : ''}" data-tab="routines" title="Automated Routines" style="${hasDeputyMax() ? '' : 'display:none'}"><span class="material-icons-outlined">autorenew</span> Routines</button>
+          <button class="relay-nav-tab ${activeTab === 'watchdog' ? 'active' : ''}" data-tab="watchdog" title="Operations Monitor"><span class="material-icons-outlined">shield</span> Watchdog</button>
+          <button class="relay-nav-tab ${activeTab === 'inspector' ? 'active' : ''}" data-tab="inspector" title="Memory & Audit Inspector"><span class="material-icons-outlined">psychology</span> Inspector</button>
+        </nav>
+      </div>
+      <div class="relay-main">
+        <div class="relay-workspace-view" id="relay-workspace-view" style="${activeTab !== 'chat' ? 'display:flex' : 'display:none'}"></div>
+      <div class="relay-chat-container" id="relay-chat-container" style="${activeTab === 'chat' ? 'display:flex;flex-direction:column;flex:1;overflow:hidden' : 'display:none'}">
+      <div class="relay-chat-body">
+        <div class="relay-thread-sidebar" id="relay-thread-sidebar" style="${hasDeputyMax() ? '' : 'display:none'}"></div>
+        <div class="relay-chat-main">
+          <div class="relay-weekly-overlay" id="relay-weekly-overlay"></div>
+          <div class="relay-thread" id="relay-thread"></div>
+          <div class="relay-attach-row" id="relay-attach-row"></div>
+          <div class="relay-input-wrap">
+            <button class="relay-attach" id="relay-attach" title="${hasDeputyMax() ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a Deputy Max feature'}" ${hasDeputyMax() ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
+            <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
+            <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Deputy">${escapeHtml(draftVal)}</textarea>
+            <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
+          </div>
+          <div class="relay-foot">This is an early version. You may need to be patient</div>
         </div>
       </div>
-      <div class="relay-nav-tabs" id="relay-nav-tabs" style="${isExpanded ? 'display:flex' : 'display:none'}">
-        <button class="relay-nav-tab ${activeTab === 'watchdog' ? 'active' : ''}" data-tab="watchdog" title="Operations Watchdog"><span class="material-icons-outlined">shield</span> Watchdog</button>
-        <button class="relay-nav-tab ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" title="Chat Stream"><span class="material-icons-outlined">chat</span> Chat</button>
-        <button class="relay-nav-tab ${activeTab === 'scan' ? 'active' : ''}" data-tab="scan" title="Emergency Scan" style="${hasDeputyMax() ? '' : 'display:none'}"><span class="material-icons-outlined">emergency</span> Scan</button>
       </div>
-      <div class="relay-thread-switcher" id="relay-thread-switcher" style="${hasDeputyMax() ? '' : 'display:none'}">
-        <button class="relay-thread-btn" id="relay-thread-btn" title="Switch chat thread">
-          <span class="material-icons-outlined">forum</span>
-          <span class="relay-thread-label" id="relay-thread-label">Main</span>
-          <span class="material-icons-outlined relay-thread-caret">expand_more</span>
-        </button>
-        <div class="relay-thread-menu" id="relay-thread-menu" style="display:none"></div>
       </div>
-      <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
-        <button class="relay-expand" id="relay-expand" title="${isExpanded ? 'Minimise to Side Drawer' : 'Expand to Full Workspace'}"><span class="material-icons-outlined">${isExpanded ? 'close_fullscreen' : 'open_in_full'}</span></button>
-        <button class="relay-clear-chat" title="Clear Chat history"><span class="material-icons-outlined">delete_sweep</span></button>
-        <button class="relay-close" title="Close"><span class="material-icons-outlined">close</span></button>
-        <button class="assistant-reset-memory" title="Reset Assistant Memory" style="display:none;"><span class="material-icons-outlined">refresh</span></button>
-      </div>
-    </div>
-    <div class="relay-workspace-view" id="relay-workspace-view" style="${activeTab !== 'chat' ? 'display:flex' : 'display:none'}"></div>
-    <div class="relay-chat-container" id="relay-chat-container" style="${activeTab === 'chat' ? 'display:flex;flex-direction:column;flex:1;overflow:hidden' : 'display:none'}">
-      <div class="relay-weekly-overlay" id="relay-weekly-overlay"></div>
-      <div class="relay-thread" id="relay-thread"></div>
-      <div class="relay-attach-row" id="relay-attach-row"></div>
-      <div class="relay-input-wrap">
-        <button class="relay-attach" id="relay-attach" title="${hasDeputyMax() ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a Deputy Max feature'}" ${hasDeputyMax() ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
-        <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
-        <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Deputy">${escapeHtml(draftVal)}</textarea>
-        <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
-      </div>
-      <div class="relay-foot">This is an early version. You may need to be patient</div>
     </div>
   `;
   document.body.appendChild(panel);
   document.body.classList.add('relay-assistant-open');
+  syncPanelToSidebar();
+  observeSidebarRail();
   void panel.offsetWidth;
   panel.classList.add('open');
 
   const thread = panel.querySelector('#relay-thread');
   const input = panel.querySelector('#relay-input');
   const send = panel.querySelector('#relay-send');
-  const expandBtn = panel.querySelector('#relay-expand');
   const navTabs = panel.querySelector('#relay-nav-tabs');
 
-  // Bind workspace expansion & tabs
-  if (expandBtn) {
-    expandBtn.addEventListener('click', () => {
-      isExpanded = !isExpanded;
-      localStorage.setItem('relay_expanded', isExpanded);
-      if (isExpanded) {
-        activeTab = 'watchdog';
-      } else {
-        activeTab = 'chat';
-      }
-      updateWorkspaceView(panel);
-    });
-  }
+  bindTopbarRelayControls();
 
   if (navTabs) {
     navTabs.querySelectorAll('.relay-nav-tab').forEach(tab => {
@@ -823,21 +1807,8 @@ export async function openRelay() {
     });
   }
 
-  // Thread switcher (Deputy Max multichat) — toggle menu + close on outside click
-  const threadBtn = panel.querySelector('#relay-thread-btn');
-  const threadSwitcher = panel.querySelector('#relay-thread-switcher');
-  if (threadBtn && threadSwitcher && hasDeputyMax()) {
-    threadBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const menu = panel.querySelector('#relay-thread-menu');
-      if (!menu) return;
-      renderThreadSwitcher();
-      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-    });
-    document.addEventListener('click', (e) => {
-      if (threadSwitcher && !threadSwitcher.contains(e.target)) closeThreadMenu();
-    });
-  }
+  // Watchdog: live-refresh the dashboard on relevant store changes.
+  ['jobs', 'schedule', 'invoices', 'stock', 'quotes'].forEach(coll => store.on(coll, scheduleWatchdogRefresh));
 
   // Emergency scan: refresh on relevant store changes + run once on open.
   if (hasDeputyMax()) {
@@ -861,7 +1832,7 @@ export async function openRelay() {
       ? saved
       : (threads.length ? threads[0].id : null);
     if (currentThreadId) localStorage.setItem(lastThreadKey(), currentThreadId);
-    renderThreadSwitcher();
+    renderThreadSidebar();
   }
 
   // Load persisted history
@@ -943,6 +1914,18 @@ export async function openRelay() {
     addMessage(thread, 'user', text);
     input.value = '';
     autoGrow(input);
+
+    // Deputy Max: a routine request triggers a guided interview instead of a
+    // single-shot answer, so the routine is fully flushed out before it's saved.
+    if (hasDeputyMax()) {
+      const built = await runRoutineBuilder(text);
+      if (built.handled) {
+        pushAssistant(built.reply);
+        addMessage(thread, 'relay', built.reply);
+        return;
+      }
+    }
+
     const typing = addTyping(thread);
 
     try {
@@ -1011,8 +1994,6 @@ export async function openRelay() {
     });
   }
 
-  panel.querySelector('.relay-close').addEventListener('click', closeRelay);
-  
   const toggleWeekBtn = panel.querySelector('.relay-toggle-week');
   if (toggleWeekBtn) {
     toggleWeekBtn.addEventListener('click', () => {
@@ -1027,32 +2008,6 @@ export async function openRelay() {
       }
     });
   }
-panel.querySelector('.assistant-reset-memory')?.addEventListener('click', async () => {
-  await saveUserMemory({});
-  location.reload();
-});
-  
-  const btnClearChat = panel.querySelector('.relay-clear-chat');
-  if (btnClearChat) {
-    btnClearChat.addEventListener('click', async () => {
-      if (confirm('Are you sure you want to clear this chat?')) {
-        chatHistory = [];
-        if (hasDeputyMax()) {
-          // Max: clear only the active thread, keep the rest.
-          if (currentThreadId) await setThreadMessages(currentThreadId, []);
-        } else {
-          const key = `relay_chat_history_${getUserId()}`;
-          localStorage.removeItem(key);
-        }
-        localStorage.removeItem(draftKey);
-        thread.innerHTML = '';
-        renderIntroDashboard(thread, {});
-        renderThreadSwitcher();
-        showToast('Chat cleared.', 'success');
-      }
-    });
-  }
-
   document.addEventListener('keydown', escClose, true);
 
   if (onStateChange) onStateChange(true);
@@ -1062,11 +2017,15 @@ export function closeRelay() {
   if (!panel) return;
   document.removeEventListener('keydown', escClose, true);
   if (scanRefreshTimer) { clearTimeout(scanRefreshTimer); scanRefreshTimer = null; }
+  if (watchdogRefreshTimer) { clearTimeout(watchdogRefreshTimer); watchdogRefreshTimer = null; }
+  ['jobs', 'schedule', 'invoices', 'stock', 'quotes'].forEach(coll => store.off(coll, scheduleWatchdogRefresh));
   ['jobs', 'schedule', 'invoices', 'stock', 'maintenancePlans'].forEach(coll => store.off(coll, scheduleEmergencyScanRefresh));
+  if (sidebarRailObserver) { sidebarRailObserver.disconnect(); sidebarRailObserver = null; }
   const p = panel;
   panel = null;
   p.classList.remove('open');
   document.body.classList.remove('relay-assistant-open');
+  document.body.classList.remove('relay-expanded');
   setTimeout(() => p.remove(), 220);
   if (onStateChange) onStateChange(false);
 }
@@ -1085,6 +2044,29 @@ function autoGrow(el) {
   const isFocused = el.classList.contains('focused');
   const minH = isFocused ? 108 : 38;
   el.style.height = Math.min(Math.max(contentHeight, minH), 120) + 'px';
+}
+
+// Make markdown links open in a new tab, with noopener/noreferrer for safety.
+let relayMarkdownHookAdded = false;
+function ensureRelayLinkHook() {
+  if (relayMarkdownHookAdded) return;
+  relayMarkdownHookAdded = true;
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+}
+
+// Render a chat bubble's body as Markdown → sanitised HTML. `marked` converts
+// the markdown to HTML (single newlines become <br>), and DOMPurify strips any
+// scripts / event handlers the AI output might contain.
+function renderMarkdown(text) {
+  if (!text) return '';
+  ensureRelayLinkHook();
+  const html = marked.parse(text, { breaks: true, gfm: true });
+  return DOMPurify.sanitize(html);
 }
 
 function addMessage(thread, role, text) {
@@ -1112,12 +2094,13 @@ function addMessage(thread, role, text) {
     cleanedText = cleanedText.replace(/\[QUESTION(?:_MULTI)?:\s*[^\]]+\]/gi, '').trim();
   }
 
-  // 3. Strip Markdown asterisks since the UI doesn't render Markdown
-  cleanedText = cleanedText.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
+  // 3. Assistants get Markdown rendering; user text stays escaped plain text
+  //    so a `#` typed by the user doesn't become a heading.
+  const bubbleHtml = role === 'relay' ? renderMarkdown(cleanedText) : escapeHtml(cleanedText);
 
   const m = document.createElement('div');
   m.className = `relay-msg relay-msg-${role}`;
-  m.innerHTML = `<div class="relay-bubble">${escapeHtml(cleanedText)}</div>`;
+  m.innerHTML = `<div class="relay-bubble">${bubbleHtml}</div>`;
   thread.appendChild(m);
 
   // 3. Render the interactive question card if present
@@ -1196,6 +2179,29 @@ function addMessage(thread, role, text) {
   return m;
 }
 
+// Render a routine "title card" at the top of a routine result thread. This is
+// the routine's own header — the routine name and when it ran — followed by the
+// assistant's output beneath it, so the result reads as a standalone report.
+function renderRoutineTitleCard(thread, msg) {
+  const meta = document.createElement('div');
+  meta.className = 'relay-msg relay-msg-routine';
+  meta.innerHTML = `
+    <div class="relay-routine-titlecard">
+      <div class="relay-routine-titlecard-badge">
+        <span class="material-icons-outlined">autorenew</span>
+      </div>
+      <div class="relay-routine-titlecard-body">
+        <div class="relay-routine-titlecard-kicker">Routine result</div>
+        <div class="relay-routine-titlecard-title">${escapeHtml(msg.title || 'Routine')}</div>
+        ${msg.triggerLabel ? `<div class="relay-routine-titlecard-meta">${escapeHtml(msg.triggerLabel)}</div>` : ''}
+      </div>
+    </div>
+  `;
+  thread.appendChild(meta);
+  thread.scrollTop = thread.scrollHeight;
+  return meta;
+}
+
 function addTyping(thread) {
   const m = document.createElement('div');
   m.className = 'relay-msg relay-msg-relay';
@@ -1215,10 +2221,19 @@ function trimHistory() {
   if (chatHistory.length > limit) chatHistory = chatHistory.slice(-limit);
 }
 
+// Chat history used to build AI context. Excludes non-conversation meta messages
+// (e.g. the `routine` title-card marker we store in result threads) so they never
+// reach the model as an unknown role.
+function aiHistory() {
+  return chatHistory.filter(m => m && (m.role === 'user' || m.role === 'assistant' || m.role === 'system'));
+}
+
 function pushAssistant(reply) {
   chatHistory.push({ role: 'assistant', content: reply });
   trimHistory();
   saveChatHistory(chatHistory);
+  // Keep the sidebar ordered by most-recent activity.
+  if (hasDeputyMax()) renderThreadSidebar();
 }
 
 // ── Attachment chips (pending files, shown above the input) ─────────────────────
@@ -1236,10 +2251,20 @@ function clearAttachments() {
 // switching threads (Deputy Max multichat).
 async function renderChatThread(thread) {
   thread.innerHTML = '';
+  const isRoutineResult = chatHistory.some(m => m && m.role === 'routine');
   chatHistory.forEach(msg => {
+    if (msg.role === 'routine') { renderRoutineTitleCard(thread, msg); return; }
     const uiRole = msg.role === 'assistant' ? 'relay' : msg.role;
     addMessage(thread, uiRole, msg.content);
   });
+
+  // Routine results are their own system: show the title card at the top and the
+  // output underneath, without the welcome dashboard pinning the view elsewhere.
+  if (isRoutineResult) {
+    thread.classList.add('relay-thread-has-history');
+    thread.scrollTop = 0;
+    return;
+  }
 
   const memory = clearStaleMemory(await loadUserMemory());
   const card = renderIntroDashboard(thread, memory);
@@ -1261,102 +2286,207 @@ async function renderChatThread(thread) {
   }
 }
 
-// Render the header thread switcher (list, new chat, rename, delete) for Max users.
-function renderThreadSwitcher() {
+// Clear a single Deputy thread's messages. If it's the active thread, also
+// reset the visible conversation. The thread itself (and its title) survives.
+async function clearDeputyThread(threadId) {
+  if (!threadId) return;
+  await setThreadMessages(threadId, []);
+  if (threadId === currentThreadId) {
+    chatHistory = [];
+    const threadEl = panel ? panel.querySelector('#relay-thread') : null;
+    if (threadEl) {
+      threadEl.innerHTML = '';
+      renderIntroDashboard(threadEl, {});
+    }
+    localStorage.removeItem(`relay_draft_message_${getUserId()}`);
+  }
+  renderThreadSidebar();
+  showToast('Chat cleared.', 'success');
+}
+
+// Render the left-hand thread sidebar (list, new chat, rename, clear, delete)
+// for Max users. Visible in the expanded workspace; hidden in the minimised drawer.
+function renderThreadSidebar() {
   if (!panel || !hasDeputyMax()) return;
-  const menu = panel.querySelector('#relay-thread-menu');
-  const label = panel.querySelector('#relay-thread-label');
-  if (!menu) return;
+  const sidebar = panel.querySelector('#relay-thread-sidebar');
+  if (!sidebar) return;
+
+  ensureThreadMenuDocHandler();
 
   const threads = getThreads();
-  const current = threads.find(t => t.id === currentThreadId);
-  if (label) label.textContent = current ? current.title : 'New chat';
 
-  menu.innerHTML = `
-    <div class="relay-thread-menu-head">
-      <span>Threads</span>
-      <button class="relay-thread-new" id="relay-thread-new" title="Start a new chat">
-        <span class="material-icons-outlined">add</span> New chat
+  sidebar.innerHTML = `
+    <div class="relay-thread-sidebar-head">
+      <span class="relay-thread-sidebar-title">Conversations</span>
+      <button class="relay-thread-new" id="relay-thread-new" title="Start a new chat" aria-label="Start a new chat">
+        <span class="material-icons-outlined">add</span>
       </button>
     </div>
     <div class="relay-thread-list">
       ${threads.length === 0
-        ? '<div class="relay-thread-empty">No threads yet</div>'
+        ? '<div class="relay-thread-empty">No chats yet</div>'
         : threads.map(t => `
           <div class="relay-thread-item ${t.id === currentThreadId ? 'active' : ''}" data-id="${t.id}">
-            <button class="relay-thread-pick" data-id="${t.id}" title="Open thread">
+            <button class="relay-thread-pick" data-id="${t.id}" title="Open chat">
               <span class="material-icons-outlined">chat_bubble_outline</span>
               <span class="relay-thread-name">${escapeHtml(t.title)}</span>
             </button>
-            <button class="relay-thread-rename" data-id="${t.id}" title="Rename"><span class="material-icons-outlined">edit</span></button>
-            <button class="relay-thread-delete" data-id="${t.id}" title="Delete"><span class="material-icons-outlined">delete</span></button>
+            <button class="relay-thread-more" data-id="${t.id}" title="More options" aria-label="More options"><span class="material-icons-outlined">more_vert</span></button>
+            <div class="relay-thread-menu" data-id="${t.id}">
+              <button class="relay-thread-menu-item" data-action="rename" data-id="${t.id}"><span class="material-icons-outlined">edit</span>Rename</button>
+              <button class="relay-thread-menu-item" data-action="clear" data-id="${t.id}"><span class="material-icons-outlined">delete_sweep</span>Clear</button>
+              <button class="relay-thread-menu-item" data-action="delete" data-id="${t.id}"><span class="material-icons-outlined">delete</span>Delete</button>
+            </div>
           </div>
         `).join('')}
     </div>
   `;
 
-  menu.querySelector('#relay-thread-new')?.addEventListener('click', async () => {
+  sidebar.querySelector('#relay-thread-new')?.addEventListener('click', async () => {
     const t = await createThread();
     currentThreadId = t.id;
     localStorage.setItem(lastThreadKey(), t.id);
     chatHistory = [];
     const threadEl = panel.querySelector('#relay-thread');
     if (threadEl) await renderChatThread(threadEl);
-    renderThreadSwitcher();
-    closeThreadMenu();
+    renderThreadSidebar();
+    evaluateRoutines({ reason: 'new_chat' });
   });
 
-  menu.querySelectorAll('.relay-thread-pick').forEach(btn => {
+  sidebar.querySelectorAll('.relay-thread-pick').forEach(btn => {
     btn.addEventListener('click', async () => {
       currentThreadId = btn.dataset.id;
       localStorage.setItem(lastThreadKey(), currentThreadId);
       chatHistory = loadChatHistory();
       const threadEl = panel.querySelector('#relay-thread');
       if (threadEl) await renderChatThread(threadEl);
-      renderThreadSwitcher();
-      closeThreadMenu();
+      renderThreadSidebar();
     });
   });
 
-  menu.querySelectorAll('.relay-thread-rename').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+  // The 3-dot menu: tap <more_vert> to reveal Rename / Clear / Delete.
+  sidebar.querySelectorAll('.relay-thread-more').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = btn.dataset.id;
-      const cur = getThread(id);
-      const title = prompt('Rename thread:', cur ? cur.title : '');
-      if (title != null) {
-        await renameThread(id, title.trim() || 'New chat');
-        renderThreadSwitcher();
-      }
+      const menu = sidebar.querySelector(`.relay-thread-menu[data-id="${id}"]`);
+      sidebar.querySelectorAll('.relay-thread-menu.open').forEach(m => {
+        if (m !== menu) m.classList.remove('open');
+      });
+      if (menu) menu.classList.toggle('open');
     });
   });
 
-  menu.querySelectorAll('.relay-thread-delete').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+  sidebar.querySelectorAll('.relay-thread-menu-item').forEach(item => {
+    item.addEventListener('click', (e) => {
       e.stopPropagation();
-      const id = btn.dataset.id;
-      if (!confirm('Delete this thread? This cannot be undone.')) return;
-      const wasCurrent = id === currentThreadId;
-      await deleteThread(id);
-      if (wasCurrent) {
-        const remaining = getThreads();
-        currentThreadId = remaining.length ? remaining[0].id : null;
-        if (currentThreadId) localStorage.setItem(lastThreadKey(), currentThreadId);
-        else localStorage.removeItem(lastThreadKey());
-        chatHistory = loadChatHistory();
-        const threadEl = panel.querySelector('#relay-thread');
-        if (threadEl) await renderChatThread(threadEl);
-      }
-      renderThreadSwitcher();
-      closeThreadMenu();
+      const id = item.dataset.id;
+      const action = item.dataset.action;
+      const menu = item.closest('.relay-thread-menu');
+      if (menu) menu.classList.remove('open');
+
+      if (action === 'rename') renameThreadDialog(id);
+      else if (action === 'clear') clearThreadConfirm(id);
+      else if (action === 'delete') deleteThreadConfirm(id);
     });
   });
 }
 
-function closeThreadMenu() {
-  if (!panel) return;
-  const menu = panel.querySelector('#relay-thread-menu');
-  if (menu) menu.style.display = 'none';
+// Close any open thread menu when the user clicks elsewhere.
+let threadMenuDocHandlerAdded = false;
+function ensureThreadMenuDocHandler() {
+  if (threadMenuDocHandlerAdded) return;
+  threadMenuDocHandlerAdded = true;
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.relay-thread-menu') || e.target.closest('.relay-thread-more')) return;
+    document.querySelectorAll('.relay-thread-menu.open').forEach(m => m.classList.remove('open'));
+  });
+}
+
+function clearThreadConfirm(id) {
+  const cur = getThread(id);
+  const title = cur ? cur.title : 'this chat';
+  showModal({
+    title: 'Clear chat',
+    content: `Clear "${title}"? Its messages will be removed but the chat stays in your list.`,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      { label: 'Clear', className: 'btn-danger', onClick: async c => { c(); await clearDeputyThread(id); } }
+    ]
+  });
+}
+
+function renameThreadDialog(id) {
+  const cur = getThread(id);
+  const currentTitle = cur ? cur.title : '';
+
+  // Use the app-standard modal (not window.prompt) so rename works reliably
+  // and matches the rest of the site's dialogs.
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'form-input';
+  input.value = currentTitle;
+  input.maxLength = 80;
+  input.placeholder = 'Chat name';
+  setTimeout(() => { input.focus(); input.select(); }, 0);
+
+  const modal = showModal({
+    title: 'Rename chat',
+    content: input,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      {
+        label: 'Save',
+        className: 'btn-primary',
+        onClick: async c => {
+          const title = input.value.trim() || 'New chat';
+          await renameThread(id, title);
+          c();
+          renderThreadSidebar();
+        }
+      }
+    ]
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      modal.modal.querySelector('.modal-action-1')?.click();
+    }
+  });
+}
+
+function deleteThreadConfirm(id) {
+  const cur = getThread(id);
+  const title = cur ? cur.title : 'this chat';
+  showModal({
+    title: 'Delete chat',
+    content: `Delete "${title}"? This permanently removes the chat and its messages. This cannot be undone.`,
+    actions: [
+      { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
+      {
+        label: 'Delete',
+        className: 'btn-danger',
+        onClick: async c => {
+          c();
+          const wasCurrent = id === currentThreadId;
+          await deleteThread(id);
+          if (wasCurrent) {
+            // Never leave Max users with zero threads — recreate a default one.
+            if (!getThreads().length) await ensureDefaultThread();
+            const remaining = getThreads();
+            currentThreadId = remaining.length ? remaining[0].id : null;
+            if (currentThreadId) localStorage.setItem(lastThreadKey(), currentThreadId);
+            else localStorage.removeItem(lastThreadKey());
+            chatHistory = loadChatHistory();
+            const threadEl = panel.querySelector('#relay-thread');
+            if (threadEl) await renderChatThread(threadEl);
+          }
+          renderThreadSidebar();
+        }
+      }
+    ]
+  });
 }
 
 function renderAttachmentChips() {
@@ -1734,7 +2864,7 @@ async function callAIEngine() {
 
   const messages = [
     { role: 'system', content: systemPrompt },
-    ...chatHistory
+    ...aiHistory()
   ];
 
   const reply = await dispatchChat(messages, ai, model);
@@ -1787,7 +2917,7 @@ async function finaliseExternalReply(reply, systemPrompt, ai, model, { parseActi
   if (externalData.trim()) {
     const followup = [
       { role: 'system', content: systemPrompt },
-      ...chatHistory,
+      ...aiHistory(),
       { role: 'assistant', content: reply },
       { role: 'user', content: `[LIVE SERVICE RESULTS / LOOKUP DATA]\n${externalData}\n\nUsing only this additional data, answer my previous question concisely and naturally. Do NOT emit any action tags in this response.` }
     ];
@@ -1800,28 +2930,78 @@ async function finaliseExternalReply(reply, systemPrompt, ai, model, { parseActi
   return parseActions ? parseAndExecuteActions(reply) : reply;
 }
 
+// Routines run outside the user's chat thread, so they need their own two-stage
+// lookup flow: fetch any LOOKUP_RECORD / live-data results and feed them back in a
+// clean follow-up, without contaminating the routine with unrelated chat history.
+async function finaliseRoutineReply(reply, systemPrompt, ai, model) {
+  let externalData = '';
+  if (FLAGS.maps && hasMapsAction(reply)) {
+    const routeData = await runMapsActions(reply);
+    if (routeData) externalData += (externalData ? '\n\n' : '') + routeData;
+  }
+  if (FLAGS.weather && hasWeatherAction(reply)) {
+    const wxData = await runWeatherActions(reply);
+    if (wxData) externalData += (externalData ? '\n\n' : '') + wxData;
+  }
+
+  const lookupMatches = [...reply.matchAll(/\[ACTION:\s*LOOKUP_RECORD\s*\|\s*([^\|\]]+)\s*\|\s*([^\]]+)\]/gi)];
+  for (const match of lookupMatches) {
+    const collection = match[1].trim();
+    if (collection.toLowerCase() === 'settings') {
+      externalData += `[RECORD LOOKUP - SETTINGS]: Access Denied.\n\n`;
+      continue;
+    }
+    const idOrNum = match[2].trim();
+    const list = store.getAll(collection) || [];
+    const record = list.find(r => r.id === idOrNum || String(r.number) === String(idOrNum));
+    let lookupResult = '';
+    if (record) {
+      if (collection === 'jobs') {
+        const sch = (store.getAll('schedule') || []).find(s => s.jobId === record.id);
+        if (sch) record._scheduleInfo = { date: sch.date, startHour: sch.startHour, endHour: sch.endHour };
+      }
+      lookupResult = `[RECORD LOOKUP - ${collection.toUpperCase()} - ${idOrNum}]\n${JSON.stringify(record, null, 2)}`;
+    } else {
+      lookupResult = `[RECORD LOOKUP - ${collection.toUpperCase()} - ${idOrNum}]: Not found.`;
+    }
+    externalData += (externalData ? '\n\n' : '') + lookupResult;
+  }
+
+  if (externalData.trim()) {
+    const followup = [
+      { role: 'system', content: systemPrompt },
+      { role: 'assistant', content: reply },
+      { role: 'user', content: `[LIVE SERVICE RESULTS / LOOKUP DATA]\n${externalData}\n\nUsing only this additional data, produce your final routine output now. Do NOT emit any action tags, and do NOT narrate your process or thinking.` }
+    ];
+    const finalReply = await dispatchChat(followup, ai, model);
+    return parseAndExecuteActions(finalReply);
+  }
+
+  return parseAndExecuteActions(reply);
+}
+
 // ── 2-stage triage route handlers (Deputy Max) ────────────────────────────────
 // QUESTION: synthesis prompt, no action parsing.
 async function answerSynthesisPrompt(systemPrompt, ai, model) {
-  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...chatHistory], ai, model);
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()], ai, model);
   pushAssistant(reply);
   return reply;
 }
 
 // ACTION: focused prompt, execute action tags immediately (with permission checks).
 async function runActionPrompt(systemPrompt, ai, model) {
-  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...chatHistory], ai, model);
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()], ai, model);
   return finaliseExternalReply(reply, systemPrompt, ai, model);
 }
 
 // EXTERNAL: gather live data first, then answer (no action tags executed).
 async function resolveExternalPrompt(systemPrompt, ai, model) {
-  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...chatHistory], ai, model);
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()], ai, model);
   return finaliseExternalReply(reply, systemPrompt, ai, model, { parseActions: false });
 }
 
 // URGENT: run the emergency scan, surface critical findings as proposals,
-// open the Emergency Scan view, and summarise.
+// open the Watchdog (Operations Monitor) view, and summarise.
 async function handleUrgentIntent() {
   emergencyFindings = runEmergencyScan();
   surfaceEmergencyAsks(emergencyFindings);
@@ -1830,7 +3010,7 @@ async function handleUrgentIntent() {
       isExpanded = true;
       localStorage.setItem('relay_expanded', 'true');
     }
-    activeTab = 'scan';
+    activeTab = 'watchdog';
     updateWorkspaceView(panel);
   }
   const reply = summariseScan(emergencyFindings) || 'I ran an emergency scan.';
@@ -1857,6 +3037,176 @@ async function callAIEngineWithTriage() {
   return routeIntent(triage.intent, ctx);
 }
 
+// ── Conversational routine builder (Deputy Max) ────────────────────────────────
+// Instead of guessing a routine spec in one shot, Deputy runs a short guided
+// interview: it clarifies what the routine should do, when it should run, and what
+// to call it — then saves a concrete, well-formed routine.
+
+const ROUTINE_DRAFT_KEY = id => `relay_routine_draft_${id}`;
+
+function loadRoutineDraft() {
+  if (!currentThreadId) return null;
+  try { return JSON.parse(localStorage.getItem(ROUTINE_DRAFT_KEY(currentThreadId)) || 'null'); }
+  catch { return null; }
+}
+function saveRoutineDraft() {
+  if (!currentThreadId) return;
+  if (routineDraft) localStorage.setItem(ROUTINE_DRAFT_KEY(currentThreadId), JSON.stringify(routineDraft));
+  else localStorage.removeItem(ROUTINE_DRAFT_KEY(currentThreadId));
+}
+
+function capitalise(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// Heuristic for "the user wants Deputy to build a routine" (distinct from asking
+// about routines). We keep it conservative so normal questions aren't hijacked.
+function looksLikeRoutineRequest(text) {
+  const t = (text || '').toLowerCase().trim();
+  if (!t) return false;
+  if (/(cancel|stop|never ?mind|abort)/.test(t)) return false;
+  if (/^(what|whats|how|why|explain|tell me about)\b/.test(t)) return false;
+  if (/(set\s*up|create|make|build|add|new|want|need)\s+(?:a\s+|an\s+)?routine/.test(t)) return true;
+  if (/\broutine\b/.test(t) && /\b(to\s|that\s|which\s|for\s|should)\b/.test(t)) return true;
+  if (/(\bevery\s+(?:morning|day|hour|night|week|month)|on\s+new\s+chat)/.test(t) && /\b(routine|auto|remind|check|summar|notify|run|give|show|tell|report|fetch|pull|alert)\b/.test(t)) return true;
+  return false;
+}
+
+function suggestTitle(d) {
+  const base = (d.intent || '').replace(/^(?:please\s+)?(?:create|make|set\s*up|build|add|new|i\s+want)\s+(?:a\s+|an\s+)?routine\s+(?:to\s+|that\s+|which\s+)?/i, '');
+  const trimmed = base.replace(/[.?!]+$/, '').trim();
+  if (trimmed) return capitalise(trimmed.slice(0, 40));
+  if (d.trigger && d.trigger.type === 'morning') return 'Morning routine';
+  if (d.trigger && d.trigger.type === 'new_chat') return 'On new chat';
+  return 'Routine';
+}
+
+function parseTriggerAnswer(text) {
+  const t = (text || '').toLowerCase();
+  if (/new chat/.test(t)) return { type: 'new_chat' };
+  if (/morning/.test(t)) return { type: 'morning' };
+  const m = t.match(/(\d+)\s*(min|hour|day|week|month)/);
+  if (m) {
+    const unit = /min/.test(m[2]) ? 'minutes' : /hour/.test(m[2]) ? 'hours' : (/(week|month)/.test(m[2]) ? 'days' : 'days');
+    const interval = /week/.test(m[2]) ? Number(m[1]) * 7 : /month/.test(m[2]) ? Number(m[1]) * 30 : Number(m[1]);
+    return { type: 'interval', interval, unit };
+  }
+  if (/custom/.test(t)) return { custom: true };
+  if (/hour/.test(t)) return { type: 'interval', interval: 1, unit: 'hours' };
+  if (/week/.test(t)) return { type: 'interval', interval: 7, unit: 'days' };
+  if (/day|daily/.test(t)) return { type: 'interval', interval: 1, unit: 'days' };
+  return { type: 'interval', interval: 1, unit: 'days' };
+}
+
+function parseIntervalAnswer(text) {
+  const t = (text || '').toLowerCase();
+  const m = t.match(/(\d+)?\s*(min|minutes|hour|hours|day|days|week|weeks)/);
+  if (!m) return { type: 'interval', interval: 1, unit: 'days' };
+  const raw = m[1] ? Number(m[1]) : null;
+  const w = m[2];
+  if (/min/.test(w)) return { type: 'interval', interval: raw || 30, unit: 'minutes' };
+  if (/hour/.test(w)) return { type: 'interval', interval: raw || 1, unit: 'hours' };
+  if (/week/.test(w)) return { type: 'interval', interval: (raw || 1) * 7, unit: 'days' };
+  return { type: 'interval', interval: raw || 1, unit: 'days' };
+}
+
+function summaryReply(d) {
+  const triggerTxt = d.trigger ? describeTrigger(d.trigger) : '—';
+  return `Here's what I've got so far:\n\n**Do:** ${d.intent || '—'}\n**When:** ${triggerTxt}`;
+}
+
+async function finaliseRoutineCreate(d) {
+  const title = d.title || suggestTitle(d);
+  const routine = await createRoutine({
+    title,
+    trigger: d.trigger || { type: 'interval', interval: 1, unit: 'days' },
+    prompt: d.intent || title,
+  });
+  routineDraft = null;
+  saveRoutineDraft();
+  // Refresh the Routines tab if it's currently visible.
+  if (panel && activeTab === 'routines') {
+    const ws = panel.querySelector('#relay-workspace-view');
+    if (ws) renderRoutinesView(ws);
+  }
+  return {
+    handled: true,
+    reply: `Done! I've saved a routine called **${routine.title}**.\n\n**${describeTrigger(routine.trigger)}** — ${routine.prompt}\n\nYou can review, tweak, or toggle it anytime in the **Routines** tab.`
+  };
+}
+
+function advanceRoutineDraft(text) {
+  const d = routineDraft;
+  const answer = (text || '').trim();
+  switch (d.stage) {
+    case 'action':
+      d.intent = answer || d.intent;
+      d.stage = 'trigger';
+      saveRoutineDraft();
+      return { handled: true, reply: "When should I run it?\n\n[QUESTION: When should this routine run?|Every morning|Every day|Every hour|On new chat|Custom interval]" };
+    case 'trigger': {
+      const parsed = parseTriggerAnswer(answer);
+      if (parsed.custom) {
+        d.stage = 'interval';
+        saveRoutineDraft();
+        return { handled: true, reply: "How often?\n\n[QUESTION: How often?|Every 30 minutes|Every 2 hours|Every 6 hours|Once a day|Once a week]" };
+      }
+      d.trigger = parsed;
+      d.stage = 'title';
+      saveRoutineDraft();
+      return { handled: true, reply: summaryReply(d) + `\n\nWhat should I call it? Reply with a name, or just say **ok** to use **${suggestTitle(d)}**.` };
+    }
+    case 'interval': {
+      d.trigger = parseIntervalAnswer(answer);
+      d.stage = 'title';
+      saveRoutineDraft();
+      return { handled: true, reply: summaryReply(d) + `\n\nWhat should I call it? Reply with a name, or just say **ok** to use **${suggestTitle(d)}**.` };
+    }
+    case 'title': {
+      const a = answer.toLowerCase();
+      d.title = (/^(ok|yes|yep|sure|default|fine)$/.test(a) || !answer) ? suggestTitle(d) : answer;
+      return finaliseRoutineCreate(d);
+    }
+    default:
+      return { handled: false };
+  }
+}
+
+// Entry point for the chat send path. Returns { handled, reply? }. When handled,
+// the caller should pushAssistant(reply) and render it. Returns { handled: false }
+// so the normal AI pipeline runs for non-routine messages.
+async function runRoutineBuilder(text) {
+  if (!hasDeputyMax()) return { handled: false };
+
+  // Keep the in-memory draft aligned with whichever thread is open.
+  if (!routineDraft || routineDraft.threadId !== currentThreadId) {
+    routineDraft = loadRoutineDraft();
+  }
+
+  if (routineDraft && routineDraft.threadId === currentThreadId) {
+    if (/^(cancel|stop|never ?mind|abort)\b/i.test((text || '').trim())) {
+      routineDraft = null;
+      saveRoutineDraft();
+      return { handled: true, reply: "No worries — I've cancelled that routine. Just tell me when you want to build another." };
+    }
+    return advanceRoutineDraft(text);
+  }
+
+  if (looksLikeRoutineRequest(text)) {
+    routineDraft = { threadId: currentThreadId, intent: text.trim(), stage: 'action' };
+    saveRoutineDraft();
+    const seedText = text.trim();
+    return {
+      handled: true,
+      reply: `I'll help you build that as an automated routine. 💡\n\n**What should I do each time it runs?**\n` +
+        (seedText ? `You mentioned: "${seedText}"\n\n` : '') +
+        `Pick an option below, or type your own action and what you'd like me to do with the result.\n\n` +
+        `[QUESTION: What should each run do?|Scan and summarise problems in chat|Flag overdue jobs for me|Flag overdue invoices for me|Check unscheduled jobs for today|Flag critical stock|List technician conflicts for me]`
+    };
+  }
+
+  return { handled: false };
+}
 
 export function getSystemContext(slim = false) {
   // Pull current DB state
@@ -1912,6 +3262,15 @@ export function getSystemContext(slim = false) {
     formattedMemory = formattedMemory.join('\n');
   }
 
+  // Manually-added memory keys (Inspector → "+ Add Key") — surfaced as explicit facts Deputy must respect.
+  const rawKeys = slim ? {} : loadUserMemorySync();
+  const learnedKeyEntries = Object.entries(rawKeys || {})
+    .filter(([k]) => k !== 'lastUpdated' && k !== 'interactionCount')
+    .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+  const learnedKeys = learnedKeyEntries.length
+    ? learnedKeyEntries.map(l => `    - ${l}`).join('\n')
+    : '  No manually-added memory keys yet.';
+
   const modules = ['Jobs', 'Quotes', 'Invoices', 'Customers', 'Schedule', 'Stock', 'Purchase Orders', 'Assets'];
   const userPermissions = modules.map(m => {
     const actions = [];
@@ -1935,6 +3294,8 @@ Assistant Tone & Formatting Guidelines:
 - Use emojis sparingly and only to highlight key structural items (e.g. checkmarks, warnings). Avoid emotional, decorative, or dramatic emojis.
 - Keep your answers clean, direct, and scans-friendly. Do not write verbose diagnostics for simple empty states.
 - CRITICAL FORMATTING RULE: DO NOT OUTPUT ANY ASTERISKS (*) WHATSOEVER IN YOUR RESPONSE. NO BOLDING (**), NO ITALICS (*). They are an eye sore. Instead, use standard dashes (-) for lists, and HTML tables or paragraphs to create structure and emphasis.
+- NO SELF-TALK OR PROCESS NARRATION: Never narrate your internal thinking or announce what you are about to do. Do NOT write phrases like "Wait", "Let me check", "Let me look that up", "I need to pull the details", "I will look into this", or any play-by-play of how you arrived at an answer. If you need record details, silently emit the LOOKUP_RECORD action tag (it is invisible to the user) and then present the finished answer only.
+- ROUTINE OUTPUT RULE: When an automated routine runs, deliver the routine's finished output directly (the rundown, toolbox, report, or summary it was asked to produce). Do NOT include setup commentary, caveats about missing data, or a description of how you searched. Lead with the result, not the process.
 
 Current Live CRM Data Context (updated real-time):
 - Current Local Date & Time: ${new Date().toLocaleString()}
@@ -1957,6 +3318,8 @@ Currently Logged-in User Profile:
 - Permissions: ${userPermissions}
 - Deep User Memory Graph (Structured Preferences/Rules):
 ${formattedMemory}
+- Manually Added Memory Keys (explicit user-supplied facts — treat these as authoritative and apply them whenever relevant):
+${learnedKeys}
 
 Action Execution Formats:
 Action parameters can be passed as structured JSON objects OR pipe-separated strings. JSON payloads are preferred for precision.
@@ -2666,3 +4029,7 @@ function checkCollectionPermission(collection, action) {
   }
   return true;
 }
+
+// Kick off the Routine scheduler once the app loads. It ticks on a ~60s cadence
+// so interval/morning routines fire even while the Deputy panel stays closed.
+scheduleRoutineEvaluation();

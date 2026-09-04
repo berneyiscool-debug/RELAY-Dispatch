@@ -78,14 +78,8 @@
   line-height: 0;
 }
 .licon .licon-svg { width: 1em; height: 1em; display: block; flex: none; }
-@media (min-width: 769px) {
-  #app {
-    transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  body.relay-assistant-open #app {
-    width: calc(100vw - 360px);
-  }
-}
+/* The Deputy drawer overlays the app below the top bar; the page keeps its
+   full width so the top-bar controls can slide over the open drawer. */
 
 /* ---- Sidebar ---- */
 .sidebar {
@@ -628,6 +622,7 @@
 }
 
 .topbar-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -1751,7 +1746,6 @@
   height: 34px !important;
   border-radius: 50% !important;
   padding: 0 !important;
-  margin-right: 8px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1763,27 +1757,93 @@
   display: block;
 }
 
+/* Deputy controls in the page top bar — the trigger plus the workspace actions
+   (expand / clear / close) that used to live in the drawer header. */
+.relay-topbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+.relay-topbar-action {
+  display: flex;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.relay-topbar-action:hover { background: var(--color-primary-light); color: var(--color-primary); }
+#relay-clear-chat:hover { background: rgba(239, 68, 68, 0.08); color: #EF4444; }
+
+/* The whole right-hand top-bar cluster slides over as one unit when the Deputy
+   drawer opens. The trigger glides left so its left edge lines up with the
+   drawer's inside-left edge, while the expand/clear/close actions fade in
+   pinned to the right-hand side of the screen. Everything eases in step with
+   the drawer (--sidebar-transition) so the bar moves together with the panel.
+
+   The actions are absolutely positioned (out of flex flow) so they (a) never
+   leave a gap when the drawer is closed and (b) reveal via opacity/transform
+   rather than a width transition, which the panel's flex reflow can stall. */
+.relay-deputy-slot { transition: margin-right var(--sidebar-transition); }
+body.relay-assistant-open:not(.relay-expanded) .relay-deputy-slot {
+  /* Deputy's left edge lines up with the drawer's inside-left edge: 360px
+     drawer − 24px top-bar padding, minus the Deputy button (34px) and the 8px
+     inter-group gap. */
+  margin-right: calc(360px - 24px - 34px - var(--space-sm));
+}
+body.relay-assistant-open.relay-expanded .relay-deputy-slot {
+  /* Keep the trigger exactly where the minimised drawer leaves it rather than
+     chasing the expanded drawer's far-left edge — that would push the whole
+     cluster off the right of the screen, hiding the expand/clear/close buttons
+     and leaving a huge ugly gap. */
+  margin-right: calc(360px - 24px - 34px - var(--space-sm));
+}
+.relay-topbar-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  transform: translate(6px, -50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform var(--sidebar-transition), visibility 0s linear 0.22s;
+}
+body.relay-assistant-open .relay-topbar-actions {
+  transform: translate(0, -50%);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.18s ease, transform var(--sidebar-transition), visibility 0s;
+}
+
 /* ── Relay assistant — top-left button ── */
 .relay-btn {
   pointer-events: auto;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: 1px solid var(--card-border);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color-dark);
   background: var(--card-bg);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(8px);
-  transition: transform 0.12s, color 0.15s, border-color 0.15s, background 0.15s;
+  box-shadow: none;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
-.relay-btn .material-icons-outlined { font-size: 20px; }
-.relay-btn svg { width: 24px; height: 24px; display: block; }
-.relay-avatar svg { width: 21px; height: 21px; display: block; }
-.relay-btn:hover { transform: scale(1.06); color: var(--color-primary); border-color: rgba(255, 92, 0, 0.4); }
+.relay-btn .material-icons-outlined { font-size: 18px; }
+.relay-btn svg { width: 18px; height: 18px; display: block; }
+.relay-btn:hover { color: var(--color-primary); border-color: rgba(255, 92, 0, 0.4); }
 .relay-btn.active {
   color: #fff;
   background: var(--color-primary);
@@ -1793,119 +1853,94 @@
 /* ── Relay assistant — slide-in panel ── */
 .relay-panel {
   position: fixed;
-  top: 0;
+  top: var(--topbar-height, 45px);
   right: 0;
   width: 360px;
   max-width: 92vw;
   /* dvh so the panel matches the visible viewport: with plain 100vh the panel
      runs below the fold on iPad and its composer (input box) at the bottom is
-     cut off — the "no box to type into" symptom. */
-  height: 100vh;
-  height: 100dvh;
+     cut off — the "no box to type into" symptom. The panel starts below the
+     page top bar so the two bars never mismatch in height. */
+  height: calc(100vh - var(--topbar-height, 45px));
+  height: calc(100dvh - var(--topbar-height, 45px));
   z-index: 500;
   display: flex;
   flex-direction: column;
   background: var(--content-bg);
   border-left: 1px solid var(--card-border);
-  box-shadow: -12px 0 40px rgba(72, 83, 103, 0.16);
+  box-shadow: -8px 0 24px rgba(15, 15, 15, 0.10);
   transform: translateX(100%);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .relay-panel.open { transform: translateX(0); }
 
-.relay-head {
+/* Deputy Max multichat — left-hand conversation sidebar (expanded workspace) */
+.relay-chat-container {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-color);
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.relay-chat-body {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.relay-thread-sidebar {
+  width: 190px;
+  min-width: 190px;
   flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
 }
-.relay-head-id { display: flex; align-items: center; gap: 10px; flex-shrink: 0; min-width: 0; }
-.relay-avatar {
-  width: 34px; height: 34px; border-radius: 50%;
-  background: var(--color-primary);
-  color: #fff; display: flex; align-items: center; justify-content: center;
+.relay-chat-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--content-bg);
 }
-.relay-avatar .material-icons-outlined { font-size: 19px; }
-.relay-name { font-weight: 600; font-size: 14px; color: var(--text-primary); line-height: 1.1; }
-.relay-sub { font-size: 11px; color: var(--text-tertiary); }
-.relay-close {
-  width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent;
-  color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-.relay-close:hover { background: var(--color-primary-light); color: var(--color-primary); }
-
-.relay-clear-chat {
-  width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent;
-  color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-.relay-clear-chat:hover { background: rgba(239, 68, 68, 0.08); color: #EF4444; }
-
-/* Deputy Max thread switcher (multichat) */
-.relay-thread-switcher { position: relative; flex-shrink: 0; }
-.relay-thread-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-color-alt, rgba(0, 0, 0, 0.03));
-  color: var(--text-secondary);
-  cursor: pointer;
-  max-width: 160px;
-}
-.relay-thread-btn:hover { color: var(--color-primary); background: rgba(255, 92, 0, 0.06); }
-.relay-thread-btn .material-icons-outlined { font-size: 16px; }
-.relay-thread-btn .relay-thread-caret { font-size: 14px; }
-.relay-thread-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90px; }
-.relay-thread-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: var(--z-dropdown, 1000);
-  min-width: 240px;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  padding: 6px;
-}
-.relay-thread-menu-head {
+.relay-thread-sidebar-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px 8px;
+  gap: 8px;
+}
+.relay-thread-sidebar-title {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 4px;
 }
 .relay-thread-new {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 600;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border: none;
   background: var(--color-primary);
   color: #fff;
   border-radius: 6px;
-  padding: 4px 8px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .relay-thread-new:hover { filter: brightness(1.05); }
-.relay-thread-new .material-icons-outlined { font-size: 14px; }
-.relay-thread-list { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.relay-thread-new .material-icons-outlined { font-size: 15px; }
+.relay-thread-list { display: flex; flex-direction: column; gap: 2px; }
 .relay-thread-empty { padding: 12px; text-align: center; color: var(--text-tertiary); font-size: 12px; }
-.relay-thread-item { display: flex; align-items: center; gap: 2px; border-radius: 8px; padding: 2px; }
-.relay-thread-item:hover { background: var(--bg-color-alt, rgba(0, 0, 0, 0.03)); }
+.relay-thread-item { position: relative; display: flex; align-items: center; gap: 2px; border-radius: 8px; padding: 2px; }
+.relay-thread-item:hover { background: var(--bg-color-alt, rgba(0, 0, 0, 0.04)); }
 .relay-thread-item.active { background: rgba(255, 92, 0, 0.08); }
 .relay-thread-pick {
   display: flex;
@@ -1916,6 +1951,7 @@
   border: none;
   background: transparent;
   padding: 7px 8px;
+  padding-right: 8px;
   border-radius: 6px;
   cursor: pointer;
   color: var(--text-primary);
@@ -1924,8 +1960,7 @@
 .relay-thread-pick .material-icons-outlined { font-size: 16px; color: var(--text-tertiary); }
 .relay-thread-item.active .relay-thread-pick .material-icons-outlined { color: var(--color-primary); }
 .relay-thread-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.relay-thread-rename,
-.relay-thread-delete {
+.relay-thread-more {
   border: none;
   background: transparent;
   cursor: pointer;
@@ -1936,11 +1971,50 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  /* Keep rows clean — reveal the 3-dot menu trigger on hover so the list doesn't look cluttered. */
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
-.relay-thread-rename:hover { background: var(--bg-color-alt, rgba(0, 0, 0, 0.04)); color: var(--color-primary); }
-.relay-thread-delete:hover { background: rgba(239, 68, 68, 0.08); color: #EF4444; }
-.relay-thread-rename .material-icons-outlined,
-.relay-thread-delete .material-icons-outlined { font-size: 15px; }
+.relay-thread-item:hover .relay-thread-more,
+.relay-thread-item.active .relay-thread-more { opacity: 1; }
+.relay-thread-more:hover { background: var(--bg-color-alt, rgba(0, 0, 0, 0.04)); color: var(--text-primary); }
+.relay-thread-more .material-icons-outlined { font-size: 18px; }
+.relay-thread-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 4px;
+  z-index: 30;
+  min-width: 150px;
+  background: var(--content-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+}
+.relay-thread-menu.open { display: flex; }
+.relay-thread-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+}
+.relay-thread-menu-item:hover { background: var(--bg-color-alt, rgba(0, 0, 0, 0.04)); }
+.relay-thread-menu-item .material-icons-outlined { font-size: 16px; color: var(--text-tertiary); }
+.relay-thread-menu-item[data-action="clear"] .material-icons-outlined { color: var(--color-warning, #e59127); }
+.relay-thread-menu-item[data-action="delete"] .material-icons-outlined { color: #EF4444; }
+.relay-thread-menu-item[data-action="delete"]:hover { background: rgba(239, 68, 68, 0.08); }
 
 .relay-thread {
   flex: 1;
@@ -1969,6 +2043,95 @@
 .relay-msg-relay .relay-bubble { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-primary); border-top-left-radius: 4px; }
 .relay-msg-user .relay-bubble { background: var(--color-primary); color: #fff; border-top-right-radius: 4px; }
 
+/* Routine result title card — the header that makes a routine run read as a
+   standalone system, followed by the assistant's output beneath it. */
+.relay-routine-titlecard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: min(100%, 720px);
+  padding: 12px 14px;
+  border-radius: var(--border-radius-md);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+}
+.relay-routine-titlecard-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--border-radius);
+  background: var(--color-primary);
+  color: #fff;
+}
+.relay-routine-titlecard-badge .material-icons-outlined { font-size: 16px; }
+.relay-routine-titlecard-body { min-width: 0; }
+.relay-routine-titlecard-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+.relay-routine-titlecard-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.relay-routine-titlecard-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+/* Expanded workspace: keep assistant messages on the left, user on the right,
+   without letting either balloon out to the full panel width. */
+.relay-panel.expanded .relay-bubble { max-width: min(84%, 720px); }
+
+/* Assistant bubbles render Markdown, so normalise whitespace and style the
+   generated elements so the AI's headings, lists, tables and code look polished. */
+.relay-msg-relay .relay-bubble { white-space: normal; }
+.relay-msg-relay .relay-bubble > :first-child { margin-top: 0; }
+.relay-msg-relay .relay-bubble > :last-child { margin-bottom: 0; }
+.relay-msg-relay .relay-bubble p { margin: 0 0 8px; }
+.relay-msg-relay .relay-bubble h1,
+.relay-msg-relay .relay-bubble h2,
+.relay-msg-relay .relay-bubble h3,
+.relay-msg-relay .relay-bubble h4 { margin: 14px 0 6px; font-weight: 700; line-height: 1.3; color: var(--text-primary); }
+.relay-msg-relay .relay-bubble h1 { font-size: 16px; }
+.relay-msg-relay .relay-bubble h2 { font-size: 15px; }
+.relay-msg-relay .relay-bubble h3 { font-size: 14px; }
+.relay-msg-relay .relay-bubble h4 { font-size: 13px; }
+.relay-msg-relay .relay-bubble h1,
+.relay-msg-relay .relay-bubble h2 { padding-bottom: 4px; border-bottom: 1px solid var(--border-color); }
+.relay-msg-relay .relay-bubble ul,
+.relay-msg-relay .relay-bubble ol { margin: 0 0 8px; padding-left: 20px; }
+.relay-msg-relay .relay-bubble ul { list-style: disc; }
+.relay-msg-relay .relay-bubble ol { list-style: decimal; }
+.relay-msg-relay .relay-bubble li { margin: 2px 0; }
+.relay-msg-relay .relay-bubble li > ul,
+.relay-msg-relay .relay-bubble li > ol { margin: 2px 0 0; }
+.relay-msg-relay .relay-bubble strong,
+.relay-msg-relay .relay-bubble b { font-weight: 600; }
+.relay-msg-relay .relay-bubble em,
+.relay-msg-relay .relay-bubble i { font-style: italic; }
+.relay-msg-relay .relay-bubble a { color: var(--color-primary-ink); text-decoration: underline; text-underline-offset: 2px; word-break: break-word; }
+.relay-msg-relay .relay-bubble a:hover { color: var(--color-primary); }
+.relay-msg-relay .relay-bubble code { font-family: var(--font-mono); font-size: 0.92em; padding: 1px 5px; border-radius: 4px; background: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-primary); word-break: break-word; }
+.relay-msg-relay .relay-bubble pre { margin: 8px 0; padding: 10px 12px; border-radius: 8px; background: var(--bg-color); border: 1px solid var(--border-color); overflow-x: auto; line-height: 1.45; }
+.relay-msg-relay .relay-bubble pre code { padding: 0; border: 0; background: none; font-size: 12px; white-space: pre; }
+.relay-msg-relay .relay-bubble blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--color-primary); background: var(--bg-color); border-radius: 0 6px 6px 0; color: var(--text-secondary); }
+.relay-msg-relay .relay-bubble hr { margin: 12px 0; border: 0; border-top: 1px solid var(--border-color); }
+.relay-msg-relay .relay-bubble table { margin: 8px 0; width: 100%; border-collapse: collapse; font-size: 12px; }
+.relay-msg-relay .relay-bubble th,
+.relay-msg-relay .relay-bubble td { padding: 6px 9px; border: 1px solid var(--border-color); text-align: left; vertical-align: top; }
+.relay-msg-relay .relay-bubble th { background: var(--bg-color); font-weight: 600; }
+.relay-msg-relay .relay-bubble img { max-width: 100%; height: auto; border-radius: 8px; }
+
 .relay-typing { display: flex; gap: 4px; align-items: center; }
 .relay-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); animation: relayBlink 1s infinite ease-in-out; }
 .relay-typing span:nth-child(2) { animation-delay: 0.15s; }
@@ -1987,7 +2150,7 @@
   flex: 1;
   resize: none;
   border: 1px solid var(--card-border);
-  border-radius: 12px;
+  border-radius: var(--border-radius);
   padding: 9px 12px;
   font-family: var(--font-family);
   font-size: 13px;
@@ -2309,6 +2472,8 @@
   animation: relaySlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.relay-panel.expanded .relay-intro-card { max-width: 680px; }
+
 .relay-intro-banner {
   display: flex;
   align-items: flex-start;
@@ -2438,10 +2603,10 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--bg-primary);
+  background: var(--content-bg);
   z-index: 1000;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px;
   animation: slideDown 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .relay-weekly-overlay.open {
@@ -2452,29 +2617,28 @@
   color: var(--color-primary);
 }
 .relay-weekly-report {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--card-bg);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--border-radius-md);
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
 }
 .relay-weekly-header {
-  padding: 15px 20px;
+  padding: 12px 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color);
 }
 .relay-weekly-header h4 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
 }
 .relay-weather-ribbon {
   display: flex;
   overflow-x: auto;
   gap: 12px;
-  padding: 15px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   scrollbar-width: thin;
 }
@@ -2483,9 +2647,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--border-radius-md);
   padding: 8px 12px;
   min-width: 60px;
 }
@@ -2505,17 +2669,17 @@
   border-bottom: none;
 }
 .rtd-header {
-  padding: 12px 20px;
-  background: rgba(0,0,0,0.15);
+  padding: 10px 16px;
+  background: var(--bg-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-lg);
   color: var(--text-secondary);
 }
 .rtd-body {
-  padding: 12px 20px;
+  padding: 12px 16px;
 }
 .rtd-empty {
   color: var(--text-tertiary);
@@ -2526,7 +2690,7 @@
   display: flex;
   flex-direction: column;
   padding: 8px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--border-color);
 }
 .rtd-tech-row:last-child {
   border-bottom: none;
@@ -2888,109 +3052,412 @@
    DEPUTY ASSISTANT — EXPANDED FULL-PAGE WORKSPACE & WATCHDOG
    ============================================================ */
 .relay-panel.expanded {
-  top: var(--topbar-height, 60px) !important;
-  left: var(--sidebar-width, 240px) !important;
-  width: calc(100% - var(--sidebar-width, 240px)) !important;
-  height: calc(100dvh - var(--topbar-height, 60px)) !important;
+  top: var(--topbar-height, 45px) !important;
+  /* Anchor on the right edge so maximising grows the workspace right-to-left
+     (the left edge sweeps toward the main rail while the right edge stays put). */
+  right: 0 !important;
+  width: calc(100% - var(--relay-sidebar-offset, 200px)) !important;
+  height: calc(100dvh - var(--topbar-height, 45px)) !important;
   max-width: none !important;
   border-left: none !important;
-  border-top: 1px solid var(--border-color) !important;
   box-shadow: none !important;
   z-index: 400 !important;
   transform: none !important;
-  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), left 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-body.sidebar-collapsed .relay-panel.expanded,
-.sidebar.collapsed ~ .app-body .relay-panel.expanded,
-.sidebar.rail-collapsed ~ .app-body .relay-panel.expanded {
-  left: var(--sidebar-collapsed-width, 64px) !important;
-  width: calc(100% - var(--sidebar-collapsed-width, 64px)) !important;
-}
-
-/* Expanded Header Navigation Tabs */
-.relay-nav-tabs {
+/* Deputy expanded body — tab rail + workspace/chat side by side */
+.relay-body {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--bg-color-alt, rgba(0, 0, 0, 0.03));
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 3px;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Right column of the Deputy body — workspace view + chat */
+.relay-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Deputy navigation — vertical tab rail in the contextual side-menu column.
+   Rendered as part of the fixed overlay panel so the page underneath is not
+   reflowed; styled to match the app's sidebar submenu. */
+.relay-tabs-rail {
+  display: flex;
+  flex-direction: column;
+  width: 190px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--card-border);
+  padding: 10px 8px;
+}
+.relay-tabs-rail-head {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  padding: 6px 10px 12px;
+  white-space: nowrap;
+}
+.relay-tabs-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.relay-tabs-rail-nav::-webkit-scrollbar {
+  display: none;
 }
 .relay-nav-tab {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  background: none;
+  color: var(--sidebar-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
   cursor: pointer;
-  transition: all 0.15s ease;
-}
-.relay-nav-tab:hover {
-  color: var(--color-primary);
-  background: rgba(255, 92, 0, 0.06);
-}
-.relay-nav-tab.active {
-  background: var(--card-bg, #ffffff);
-  color: var(--color-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  text-align: left;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 .relay-nav-tab .material-icons-outlined {
-  font-size: 16px;
+  font-size: 18px;
+}
+.relay-nav-tab:hover {
+  background: var(--content-bg);
+  color: var(--sidebar-text-hover);
+}
+.relay-nav-tab.active {
+  background: var(--sidebar-active-bg);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
 }
 
 /* Workspace Views Container */
 .relay-workspace-view {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  background: var(--bg-color, #f8fafc);
+  background: var(--content-bg);
 }
 
-/* Operations Watchdog Dashboard */
-.watchdog-banner {
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 20px 24px;
+/* Deputy page header — mirrors the app's native .page-header (45px bar,
+   hairline underline, 13px bold title, compact actions). */
+.relay-page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  min-height: var(--topbar-height, 45px);
+  padding: 0 16px;
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.relay-page-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.relay-page-title .material-icons-outlined {
+  font-size: 18px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.relay-page-sub {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.relay-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+.relay-page-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Routines (Deputy Max automated actions) */
+.routines-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.routine-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  padding: 14px 16px;
   box-shadow: var(--shadow-xs);
   flex-wrap: wrap;
-  gap: 16px;
 }
-.watchdog-banner-info {
+.routine-card.disabled { opacity: 0.65; }
+.routine-card-main {
+  flex: 1;
+  min-width: 220px;
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 6px;
 }
-.watchdog-health-ring {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 17px;
-  border: 2px solid var(--color-primary);
-}
-.watchdog-banner-actions {
+.routine-card-title {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.routine-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 9999px;
+  background: var(--bg-color);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.routine-switch:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.routine-switch .routine-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+.routine-switch.on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.routine-switch.on .routine-switch-knob {
+  transform: translateX(16px);
+}
+.routine-switch.off .routine-switch-knob {
+  background: var(--text-tertiary, #8a8a87);
+}
+.routine-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.routine-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 3px 8px;
+  width: fit-content;
+}
+.routine-trigger .material-icons-outlined { font-size: 14px; }
+.routine-prompt {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.routine-meta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.routine-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.routine-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+.routine-editor .hidden { display: none !important; }
+.routine-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.routine-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.routine-fold-interval-row {
+  display: flex;
+  gap: 8px;
+}
+.routine-fold-interval-row .form-input:first-child {
+  width: 90px;
+  flex-shrink: 0;
+}
+.routine-fold-interval-row .form-input:last-child {
+  flex: 1;
+}
+.routine-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.routine-divider::before,
+.routine-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+.routine-design-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.routine-design-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+.routine-design-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+.routine-design-head .material-icons-outlined { font-size: 18px; }
+.routine-design-body { display: flex; flex-direction: column; gap: 12px; }
+.routine-design-q { display: flex; flex-direction: column; gap: 8px; }
+.routine-design-q .relay-question-title { font-size: 13px; }
+.routine-design-q .relay-question-opt-btn { padding: 7px 12px; font-size: 12.5px; }
+.routine-design-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+}
+.routine-summary-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.routine-summary-key {
+  flex-shrink: 0;
+  width: 46px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 11px;
+}
+.routine-design-foot {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+.routine-q-save {
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+.routine-q-save:hover {
+  background: var(--color-primary-dark, #1b6de0) !important;
+}
+.routine-design-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.routine-design-loading::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: relay-spin 0.8s linear infinite;
+}
+@keyframes relay-spin {
+  to { transform: rotate(360deg); }
+}
+.watchdog-alert-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 2px 8px;
+}
+.watchdog-alert-badge .material-icons-outlined { font-size: 14px; }
+.watchdog-alert-badge.has-alerts {
+  color: var(--color-warning, #b45309);
+  background: rgba(229, 145, 39, 0.1);
+  border-color: rgba(229, 145, 39, 0.3);
 }
 
 .watchdog-grid {
@@ -3002,26 +3469,137 @@ body.sidebar-collapsed .relay-panel.expanded,
 .watchdog-card {
   background: var(--card-bg, #ffffff);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 14px;
+  border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-xs);
+  overflow: hidden;
 }
 .watchdog-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
 }
 .watchdog-card-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
-  font-size: 14px;
+  min-width: 0;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-lg);
   color: var(--text-primary);
+}
+.watchdog-card-title .material-icons-outlined {
+  font-size: 18px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.watchdog-card-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.watchdog-card-caret {
+  font-size: 18px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.watchdog-card:not(.collapsed) .watchdog-card-caret {
+  transform: rotate(180deg);
+}
+.watchdog-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 14px;
+}
+.watchdog-card.collapsed .watchdog-card-body {
+  display: none;
+}
+.watchdog-card-summary {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.watchdog-drill {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.watchdog-drill-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
+}
+.watchdog-drill-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+.watchdog-drill-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watchdog-drill-detail {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watchdog-drill-open {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--border-radius);
+  cursor: pointer;
+}
+.watchdog-drill-open:hover {
+  background: var(--bg-color);
+  color: var(--text-primary);
+}
+.watchdog-drill-open .material-icons-outlined {
+  font-size: 16px;
+}
+.watchdog-drill-empty {
+  padding: 10px 12px;
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
+  border: 1px dashed var(--border-color);
+  border-radius: var(--border-radius);
+}
+.watchdog-drill-more {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+  padding-top: 2px;
 }
 
 /* Memory & Audit Inspector View */
@@ -3029,31 +3607,253 @@ body.sidebar-collapsed .relay-panel.expanded,
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
+  align-items: start;
 }
 @media (max-width: 900px) {
   .inspector-grid {
     grid-template-columns: 1fr;
   }
 }
+.inspector-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
 .inspector-card {
   background: var(--card-bg, #ffffff);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: var(--border-radius-md);
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   box-shadow: var(--shadow-xs);
 }
+.inspector-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+.inspector-card-title {
+  font-weight: var(--font-weight-semibold);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+.inspector-card-meta {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Deputy Memory card */
+.memory-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.memory-profile-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+.memory-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.memory-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.memory-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+.memory-section-head .material-icons-outlined {
+  font-size: 16px;
+  color: var(--text-tertiary);
+}
+.memory-section-label {
+  flex: 1;
+}
+.memory-section-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.memory-section-list li {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  padding: 6px 10px;
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  line-height: 1.4;
+}
+.memory-section-empty {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  padding: 2px 0;
+}
+.memory-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+.memory-keys-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+.memory-keys-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
 .memory-entry-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 10px 12px;
   background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
   border: 1px solid var(--border-color);
   border-radius: 8px;
   font-size: 13px;
+}
+.memory-entry-key {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.memory-entry-name {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.memory-entry-value {
+  color: var(--text-secondary);
+  margin-left: 6px;
+}
+.memory-modal-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+
+/* Pending Approvals card */
+.ask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.ask-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.ask-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--font-weight-medium);
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.ask-title .material-icons-outlined {
+  font-size: 16px;
+  color: var(--color-primary);
+}
+.ask-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  padding-left: 24px;
+}
+.ask-actions {
+  display: flex;
+  gap: 8px;
+  padding-left: 24px;
+}
+.ask-empty {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Audit Log card */
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.audit-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.audit-row-main {
+  min-width: 0;
+}
+.audit-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.audit-detail {
+  color: var(--text-secondary);
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.audit-time {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 /* Emergency Scan View */
@@ -3066,19 +3866,51 @@ body.sidebar-collapsed .relay-panel.expanded,
 .scan-group {
   background: var(--card-bg, #ffffff);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--border-radius-md);
   padding: 14px 16px;
   box-shadow: var(--shadow-xs);
 }
 .scan-group-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  font-weight: 600;
-  font-size: 14px;
+  width: 100%;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-lg);
   color: var(--text-primary);
   text-transform: capitalize;
+  margin-bottom: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.scan-group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.scan-group-caret {
+  font-size: 18px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+/* Groups render collapsed by default; the caret rotates when expanded. */
+.scan-group.collapsed .scan-group-body {
+  display: none;
+}
+.scan-group.collapsed .scan-group-head {
+  margin-bottom: 0;
+}
+.scan-group:not(.collapsed) .scan-group-head {
   margin-bottom: 10px;
+}
+.scan-group:not(.collapsed) .scan-group-caret {
+  transform: rotate(180deg);
 }
 .scan-finding {
   display: flex;
@@ -3138,4 +3970,44 @@ body.sidebar-collapsed .relay-panel.expanded,
 }
 .scan-finding .btn-open-scan {
   flex-shrink: 0;
+}
+
+/* Merged Watchdog + Emergency Scan section */
+.watchdog-scan-section {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-xs);
+}
+.watchdog-scan-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.watchdog-scan-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  color: var(--text-primary);
+}
+.watchdog-scan-section .scan-list {
+  margin-top: 0;
+}
+.watchdog-scan-section .scan-group {
+  background: var(--bg-color-alt, rgba(0, 0, 0, 0.02));
+}
+.scan-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  text-align: center;
 }
