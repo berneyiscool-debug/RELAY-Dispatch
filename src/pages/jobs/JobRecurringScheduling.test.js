@@ -246,6 +246,94 @@ describe('Job Recurring Scheduling Integrations', () => {
     assert.strictEqual(schedules[0].finishTime, `${todayStr}T12:30`);
   });
 
+  test('Reassigning a template Default Technician propagates to existing and new children', async () => {
+    const { checkRecurringJobs: crj, propagateParentJobUpdates: ppju } = await import('../../utils/maintenanceEngine.js');
+
+    const localDateStr = (date) => {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const addDays = (base, n) => { const d = new Date(base); d.setDate(d.getDate() + n); return d; };
+
+    const today = new Date();
+    const todayStr = localDateStr(today);
+    const startStr = localDateStr(addDays(today, -60)); // template started 60 days ago
+    const endStr = localDateStr(addDays(today, 30));    // still active
+    const existingChildDate = localDateStr(addDays(today, 30));
+
+    // Two technicians: the originally-assigned one and the new default
+    const oldTech = store.create('technicians', { name: 'Old Tech' });
+    const newTech = store.create('technicians', { name: 'New Tech' });
+
+    // Recurring template whose `start` is in the past (previously no future
+    // occurrences were generated) with no default tech yet.
+    const template = store.create('jobs', {
+      number: 'J-040',
+      title: 'Recurring Service',
+      customerId: 'cust_40',
+      customerName: 'Apex Power',
+      priority: 'Normal',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: startStr, end: endStr, daysOfWeek: [] }
+    });
+
+    // An existing future child already scheduled on the old tech
+    const existingChild = store.create('jobs', {
+      parentJobId: template.id,
+      number: 'J-040.1',
+      title: 'Recurring Service',
+      scheduledDate: existingChildDate,
+      templateDate: existingChildDate,
+      status: 'Scheduled',
+      technicianId: oldTech.id,
+      technicianName: oldTech.name
+    });
+    store.create('schedule', {
+      type: 'schedule',
+      jobId: existingChild.id,
+      jobNumber: existingChild.number,
+      technicianId: oldTech.id,
+      technicianName: oldTech.name,
+      date: existingChildDate,
+      startTime: `${existingChildDate}T08:00`,
+      finishTime: `${existingChildDate}T10:00`,
+      hours: 2,
+      startHour: 8,
+      endHour: 10,
+      taskId: null,
+      taskName: 'Whole Job'
+    });
+
+    // Reproduce the JobDetail Save handler for the Default Technician dropdown:
+    // 1. update the template's recurringConfig.defaultTechnicianId
+    const updatedJob = store.update('jobs', template.id, {
+      recurringConfig: { ...template.recurringConfig, defaultTechnicianId: newTech.id }
+    });
+    // 2. run the recurring engine (materializes upcoming occurrences with the new tech)
+    crj();
+    // 3. propagate the new default tech to existing children
+    ppju(updatedJob);
+
+    // Existing future child is re-pointed to the new default tech
+    const existingFresh = store.getById('jobs', existingChild.id);
+    assert.strictEqual(existingFresh.technicianId, newTech.id);
+    assert.strictEqual(existingFresh.technicianName, newTech.name);
+
+    // Its whole-job dispatch entry is re-pointed too
+    const wholeJob = store.getAll('schedule').find(s => s.jobId === existingChild.id && s.taskId === null);
+    assert.strictEqual(wholeJob.technicianId, newTech.id);
+    assert.strictEqual(wholeJob.technicianName, newTech.name);
+
+    // A near-term occurrence was materialized with the new default tech
+    const children = store.getAll('jobs').filter(j => j.parentJobId === template.id);
+    const materialized = children.find(j => j.id !== existingChild.id);
+    assert.ok(materialized, 'expected a new recurring child to be materialized');
+    assert.strictEqual(materialized.technicianId, newTech.id);
+    assert.strictEqual(materialized.technicianName, newTech.name);
+  });
+
   test('Virtual occurrences calculation and materialization via right-click action', async () => {
     const { getVirtualRecurringOccurrences, materializeVirtualOccurrence } = await import('../../utils/maintenanceEngine.js');
 
