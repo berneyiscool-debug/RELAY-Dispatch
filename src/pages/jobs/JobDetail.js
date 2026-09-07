@@ -1428,7 +1428,10 @@ export function renderJobDetail(container, { id, tab }) {
         const newTechId = tc.querySelector('#view-recurring-tech').value || null;
         const currentConfig = job.recurringConfig || {};
         const updatedConfig = { ...currentConfig, defaultTechnicianId: newTechId };
-        const updatedJob = store.update('jobs', id, { recurringConfig: updatedConfig });
+        // store.update updates the cache synchronously and (in cloud mode) resolves
+        // to a { ok, record | error } result, so read the record back from the cache
+        // rather than relying on the return shape.
+        store.update('jobs', id, { recurringConfig: updatedConfig });
         showToast('Default technician updated successfully', 'success');
 
         // Materialize upcoming occurrences with the new tech and reassign
@@ -1436,6 +1439,7 @@ export function renderJobDetail(container, { id, tab }) {
         import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs, propagateParentJobUpdates }) => {
           try {
             checkRecurringJobs();
+            const updatedJob = store.getById('jobs', id);
             if (updatedJob) {
               propagateParentJobUpdates(updatedJob);
             }

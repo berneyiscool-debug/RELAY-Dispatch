@@ -102,8 +102,13 @@ describe('DataStore', () => {
       // Small delay
       await new Promise(resolve => setTimeout(resolve, 5));
 
-      const updated = await store.update('jobs', 'job_1', { title: 'Fix window', status: 'done' });
+      // In cloud mode update() resolves to { ok, record | error }; the mocked
+      // Supabase client succeeds, so assert the record is returned.
+      const result = await store.update('jobs', 'job_1', { title: 'Fix window', status: 'done' });
 
+      assert.ok(result);
+      assert.strictEqual(result.ok, true);
+      const updated = result.record;
       assert.ok(updated);
       assert.strictEqual(updated.title, 'Fix window');
       assert.strictEqual(updated.status, 'done');

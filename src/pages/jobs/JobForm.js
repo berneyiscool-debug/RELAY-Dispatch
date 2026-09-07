@@ -1674,7 +1674,11 @@ export function renderJobForm(container, params) {
     }
 
     // Save Job
-    const finalJob = isEdit ? store.update('jobs', id, data) : store.create('jobs', data);
+    const saved = isEdit ? store.update('jobs', id, data) : store.create('jobs', data);
+    // store.update updates the cache synchronously and (in cloud mode) resolves to a
+    // { ok, record | error } result, so read the record back from the cache rather
+    // than relying on the return shape.
+    const finalJob = store.getById('jobs', isEdit ? id : saved.id) || saved;
     const jobId = finalJob.id;
 
     // Reset draft state after save
