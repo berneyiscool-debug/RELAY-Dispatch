@@ -552,6 +552,16 @@ function getRecurringDates(config) {
     matchDaysOfMonth.push(current.getDate());
   }
 
+  // If the template started in the past, fast-forward to today so future
+  // occurrences are always produced regardless of how old `start` is. The
+  // Weekly/Monthly match-day defaults above were taken from the original
+  // start date, so the recurrence pattern is preserved.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (current < today) {
+    current = new Date(today);
+  }
+
   while (current <= end && count < 50 && iterations < 1000) {
     iterations++;
     let isMatch = false;
@@ -789,11 +799,7 @@ export function checkRecurringJobs() {
   cleanOldJobTitles();
   repairAnomalousJobNumbers();
   const jobs = store.getAll('jobs') || [];
-  const notifications = store.getAll('notifications') || [];
   
-  let storeUpdated = false;
-  const newNotifications = [...notifications];
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -807,13 +813,14 @@ export function checkRecurringJobs() {
   recurringJobs.forEach(job => {
     const occurrenceDates = getRecurringDates(job.recurringConfig);
     
+    let currentJobs = store.getAll('jobs') || [];
     occurrenceDates.forEach(dateStr => {
       const [yr, mo, dy] = dateStr.split('-').map(Number);
       const occurrenceDate = new Date(yr, mo - 1, dy);
       
       if (occurrenceDate >= today && occurrenceDate <= next7Days) {
-        // Re-read latest jobs from store on each iteration so newly created sibling jobs in the loop are detected
-        const currentJobs = store.getAll('jobs') || [];
+        // Use a single read of jobs per template; refresh only after spawning a
+        // child so newly created siblings are still detected within this loop.
         const hasJob = currentJobs.some(j =>
           (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) &&
           (String(j.templateDate || '').slice(0, 10) === dateStr || String(j.scheduledDate || '').slice(0, 10) === dateStr)
@@ -848,8 +855,7 @@ export function checkRecurringJobs() {
           const jobPrefix = (settings.documentTheme && settings.documentTheme.jobPrefix !== undefined) ? settings.documentTheme.jobPrefix : 'J-';
           const baseNumber = job.number ? job.number.replace(/^(T-|TEMP-|TEM-)/, jobPrefix) : 'J-00001';
 
-          const latestJobs = store.getAll('jobs') || [];
-          const siblingJobs = latestJobs.filter(j => j.parentJobId === job.id);
+          const siblingJobs = currentJobs.filter(j => j.parentJobId === job.id);
           let maxSuffix = 0;
           siblingJobs.forEach(sj => {
             if (sj.number) {
@@ -924,6 +930,10 @@ export function checkRecurringJobs() {
           };
 
           const spawnedJob = store.create('jobs', childJob);
+
+          // Refresh the job snapshot so subsequent occurrence dates in this loop
+          // detect the newly spawned sibling.
+          currentJobs = store.getAll('jobs') || [];
 
           if (defaultTechId) {
             let desiredStart = 8;
@@ -1014,16 +1024,13 @@ export function checkRecurringJobs() {
             createdBy: 'System Engine'
           };
           
-          newNotifications.push(notif);
-          storeUpdated = true;
+          // Create individually so we don't re-send the entire notifications
+          // collection on every recurring engine run (avoids the write storm).
+          store.create('notifications', notif);
         }
       }
     });
   });
-
-  if (storeUpdated) {
-    store.save('notifications', newNotifications);
-  }
 }
 
 export function scheduleEngineChecks() {
@@ -1125,6 +1132,17 @@ export function propagateParentJobUpdates(parentJob) {
     j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))
   );
 
+  // Resolve the template's default technician so it can be propagated to
+  // existing child jobs when the user reassigns it on the template.
+  const defaultTechId = parentJob.recurringConfig?.defaultTechnicianId || null;
+  let defaultTechName = '';
+  if (defaultTechId) {
+    const tech = store.getAll('technicians').find(t => t.id === defaultTechId);
+    if (tech) defaultTechName = tech.name;
+  }
+
+  const schedules = store.getAll('schedule') || [];
+
   childJobs.forEach(childJob => {
     if (childJob.status === 'Completed' || childJob.status === 'Invoiced') return;
 
@@ -1176,8 +1194,18 @@ export function propagateParentJobUpdates(parentJob) {
       estimatedLaborCost: parentJob.estimatedLaborCost || 0,
       estimatedMaterialCost: parentJob.estimatedMaterialCost || 0,
       preferredTime: parentJob.preferredTime || childJob.preferredTime || '',
-      tasks: mergedTasks
+      tasks: mergedTasks,
+      ...(defaultTechId ? { technicianId: defaultTechId, technicianName: defaultTechName } : {})
     };
+
+    if (defaultTechId && (childJob.technicianId !== defaultTechId || childJob.technicianName !== defaultTechName)) {
+      // Re-point the child's whole-job dispatch entry to the new default tech
+      schedules.forEach(s => {
+        if (s.jobId === childJob.id && s.taskId === null && s.technicianId && s.technicianId !== defaultTechId) {
+          store.update('schedule', s.id, { technicianId: defaultTechId, technicianName: defaultTechName });
+        }
+      });
+    }
 
     store.update('jobs', childJob.id, updatedChild);
   });

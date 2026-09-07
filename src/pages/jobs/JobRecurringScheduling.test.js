@@ -249,6 +249,13 @@ describe('Job Recurring Scheduling Integrations', () => {
   test('Virtual occurrences calculation and materialization via right-click action', async () => {
     const { getVirtualRecurringOccurrences, materializeVirtualOccurrence } = await import('../../utils/maintenanceEngine.js');
 
+    // Use dates relative to today so this test stays valid as the clock advances
+    // (getRecurringDates fast-forwards to today for templates that started in the past).
+    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const day = (offset) => { const d = new Date(today); d.setDate(d.getDate() + offset); return fmt(d); };
+
     const parentJob = store.create('jobs', {
       number: 'J-010',
       title: 'Future Generator Service',
@@ -260,17 +267,17 @@ describe('Job Recurring Scheduling Integrations', () => {
       isRecurring: true,
       recurringConfig: {
         freq: 'Daily',
-        start: '2026-09-01',
-        end: '2026-09-03'
+        start: day(1),
+        end: day(3)
       }
     });
 
-    // 1. Calculate virtual occurrences for September 2026
-    const virtualOccs = getVirtualRecurringOccurrences('2026-09-01', '2026-09-05');
+    // 1. Calculate virtual occurrences for the coming 5 days
+    const virtualOccs = getVirtualRecurringOccurrences(day(0), day(5));
     assert.strictEqual(virtualOccs.length, 3);
-    assert.strictEqual(virtualOccs[0].scheduledDate, '2026-09-01');
-    assert.strictEqual(virtualOccs[1].scheduledDate, '2026-09-02');
-    assert.strictEqual(virtualOccs[2].scheduledDate, '2026-09-03');
+    assert.strictEqual(virtualOccs[0].scheduledDate, day(1));
+    assert.strictEqual(virtualOccs[1].scheduledDate, day(2));
+    assert.strictEqual(virtualOccs[2].scheduledDate, day(3));
     assert.strictEqual(virtualOccs[0].title, 'Future Generator Service');
 
     // Verify database does NOT contain spawned jobs yet (forecast mode)
@@ -278,17 +285,17 @@ describe('Job Recurring Scheduling Integrations', () => {
     assert.strictEqual(initialChildren.length, 0);
 
     // 2. Materialize the first virtual occurrence explicitly (User right-clicks -> "Create as Job")
-    const materializedJob = materializeVirtualOccurrence(parentJob.id, '2026-09-01', 'tech_99', 9, 3);
+    const materializedJob = materializeVirtualOccurrence(parentJob.id, day(1), 'tech_99', 9, 3);
     assert.ok(materializedJob);
     assert.strictEqual(materializedJob.parentJobId, parentJob.id);
     assert.strictEqual(materializedJob.number, 'J-010.1');
-    assert.strictEqual(materializedJob.scheduledDate, '2026-09-01');
+    assert.strictEqual(materializedJob.scheduledDate, day(1));
     assert.strictEqual(materializedJob.status, 'Scheduled');
 
-    // 3. Re-calculate virtual occurrences: 2026-09-01 should no longer be virtual because real child exists!
-    const virtualOccsAfter = getVirtualRecurringOccurrences('2026-09-01', '2026-09-05');
+    // 3. Re-calculate virtual occurrences: day(1) should no longer be virtual because real child exists!
+    const virtualOccsAfter = getVirtualRecurringOccurrences(day(0), day(5));
     assert.strictEqual(virtualOccsAfter.length, 2);
-    assert.strictEqual(virtualOccsAfter[0].scheduledDate, '2026-09-02');
+    assert.strictEqual(virtualOccsAfter[0].scheduledDate, day(2));
   });
 
   test('Parent-to-child template propagation updates active child jobs', async () => {
@@ -361,6 +368,91 @@ describe('Job Recurring Scheduling Integrations', () => {
     const childCompletedFresh = store.getById('jobs', childJobCompleted.id);
     assert.strictEqual(childCompletedFresh.description, 'Original Description');
     assert.strictEqual(childCompletedFresh.status, 'Completed');
+  });
+
+  test('Default technician propagates to active child jobs and re-points their whole-job dispatch', async () => {
+    const { propagateParentJobUpdates } = await import('../../utils/maintenanceEngine.js');
+
+    const tech = store.create('technicians', { id: 'tech_alpha', name: 'Alpha Tech' });
+
+    const parentJob = store.create('jobs', {
+      number: 'J-030',
+      title: 'Recurring Service',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: '2026-01-01', end: '2026-12-31', defaultTechnicianId: tech.id }
+    });
+
+    const childJob = store.create('jobs', {
+      parentJobId: parentJob.id,
+      number: 'J-030.1',
+      title: 'Recurring Service',
+      scheduledDate: '2026-10-01',
+      status: 'Scheduled',
+      technicianId: 'tech_old',
+      technicianName: 'Old Tech'
+    });
+
+    const completedChild = store.create('jobs', {
+      parentJobId: parentJob.id,
+      number: 'J-030.2',
+      title: 'Recurring Service',
+      scheduledDate: '2026-09-01',
+      status: 'Completed',
+      technicianId: 'tech_old',
+      technicianName: 'Old Tech'
+    });
+
+    store.create('schedule', {
+      type: 'schedule',
+      jobId: childJob.id,
+      jobNumber: childJob.number,
+      technicianId: 'tech_old',
+      technicianName: 'Old Tech',
+      date: '2026-10-01',
+      startTime: '2026-10-01T08:00',
+      finishTime: '2026-10-01T10:00',
+      hours: 2,
+      startHour: 8,
+      endHour: 10,
+      taskId: null,
+      taskName: 'Whole Job'
+    });
+
+    // A manual task-level dispatch must NOT be re-pointed
+    store.create('schedule', {
+      type: 'schedule',
+      jobId: childJob.id,
+      jobNumber: childJob.number,
+      technicianId: 'tech_old',
+      technicianName: 'Old Tech',
+      date: '2026-10-01',
+      startTime: '2026-10-01T08:00',
+      finishTime: '2026-10-01T10:00',
+      hours: 2,
+      startHour: 8,
+      endHour: 10,
+      taskId: 'task_manual',
+      taskName: 'Inspection'
+    });
+
+    propagateParentJobUpdates(parentJob);
+
+    const childFresh = store.getById('jobs', childJob.id);
+    assert.strictEqual(childFresh.technicianId, tech.id);
+    assert.strictEqual(childFresh.technicianName, tech.name);
+
+    // Completed child jobs are left untouched
+    const completedFresh = store.getById('jobs', completedChild.id);
+    assert.strictEqual(completedFresh.technicianId, 'tech_old');
+    assert.strictEqual(completedFresh.technicianName, 'Old Tech');
+
+    const schedules = store.getAll('schedule').filter(s => s.jobId === childJob.id);
+    const wholeJob = schedules.find(s => s.taskId === null);
+    assert.strictEqual(wholeJob.technicianId, tech.id);
+    assert.strictEqual(wholeJob.technicianName, tech.name);
+
+    const manual = schedules.find(s => s.taskId === 'task_manual');
+    assert.strictEqual(manual.technicianId, 'tech_old');
   });
 
   test('Engine detects collision and creates warning notification when auto-scheduling', () => {

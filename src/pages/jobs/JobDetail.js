@@ -1428,9 +1428,26 @@ export function renderJobDetail(container, { id, tab }) {
         const newTechId = tc.querySelector('#view-recurring-tech').value || null;
         const currentConfig = job.recurringConfig || {};
         const updatedConfig = { ...currentConfig, defaultTechnicianId: newTechId };
-        store.update('jobs', id, { recurringConfig: updatedConfig });
+        const updatedJob = store.update('jobs', id, { recurringConfig: updatedConfig });
         showToast('Default technician updated successfully', 'success');
-        renderJobDetail(container, { id });
+
+        // Materialize upcoming occurrences with the new tech and reassign
+        // existing child jobs so the template's default technician takes effect.
+        import('../../utils/maintenanceEngine.js').then(({ checkRecurringJobs, propagateParentJobUpdates }) => {
+          try {
+            checkRecurringJobs();
+            if (updatedJob) {
+              propagateParentJobUpdates(updatedJob);
+            }
+          } catch (engineErr) {
+            console.error('Failed to propagate default technician to recurring jobs:', engineErr);
+          } finally {
+            renderJobDetail(container, { id });
+          }
+        }).catch(loadErr => {
+          console.error('Failed to load maintenance engine:', loadErr);
+          renderJobDetail(container, { id });
+        });
       });
 
     } else if (activeTab === 'tasks') {
