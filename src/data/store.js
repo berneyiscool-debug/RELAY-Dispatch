@@ -2839,23 +2839,36 @@ class DataStore {
     // 3. Write updates asynchronously to Supabase
     const dbPayload = this.denormalizeRecord(updated, collection);
     const table = TABLE_MAP[collection];
-    if (table) {
-      supabase
-        .from(table)
-        .update(dbPayload)
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) {
-            // Roll back to the previous version so the UI matches the database
-            const arr = [...(this.cache[collection] || [])];
-            const i = arr.findIndex(x => x.id === id);
-            if (i !== -1) { arr[i] = previous; this.cache[collection] = arr; this.emit(collection, arr); }
-            this._notifyWriteError('update', collection, error);
-          }
-        });
-    }
+    if (!table) return updated;
 
-    return updated;
+    const rollback = (error) => {
+      // Roll back to the previous version so the UI matches the database
+      const arr = [...(this.cache[collection] || [])];
+      const i = arr.findIndex(x => x.id === id);
+      if (i !== -1) { arr[i] = previous; this.cache[collection] = arr; this.emit(collection, arr); }
+      this._notifyWriteError('update', collection, error);
+    };
+
+    // Resolve (never reject) with a result object so callers can tell success from
+    // failure without triggering unhandled promise rejections in fire-and-forget
+    // call sites. Success resolves to { ok: true, record }.
+    return supabase
+      .from(table)
+      .update(dbPayload)
+      .eq('id', id)
+      .then(({ error }) => {
+        if (error) {
+          rollback(error);
+          return { ok: false, error };
+        }
+        return { ok: true, record: updated };
+      })
+      .catch((err) => {
+        // Network / serialisation failures previously failed silently, leaving the
+        // optimistic cache entry in place until the next reload.
+        rollback(err);
+        return { ok: false, error: err };
+      });
   }
 
   // Child records that must not outlive their parent. Deleting a parent cascades to

@@ -891,7 +891,7 @@ export function renderInvoiceDetail(container, params) {
       });
     });
 
-    container.querySelector('#btn-save-inv')?.addEventListener('click', () => {
+    container.querySelector('#btn-save-inv')?.addEventListener('click', async () => {
       // Guard the high-stakes status transitions (financial/legal) with a branded
       // confirm — marking Paid or Void should never be a silent, undo-less save.
       const newStatus = container.querySelector('#inv-status').value;
@@ -964,8 +964,14 @@ export function renderInvoiceDetail(container, params) {
         showToast('Invoice created', 'success');
         router.navigate(`/invoices/${saved.id}`);
       } else {
-        store.update('invoices', id, invoice);
-        showToast('Invoice saved', 'success');
+        const result = await store.update('invoices', id, invoice);
+        if (!result) {
+          showToast("Couldn't save invoice — record not found", 'error');
+        } else if (result.ok === false) {
+          showToast(`Couldn't save invoice — ${result.error?.message || 'database error'}`, 'error');
+        } else {
+          showToast('Invoice saved', 'success');
+        }
         render();
       }
     });
@@ -1281,11 +1287,15 @@ export function renderInvoiceDetail(container, params) {
         content: content.outerHTML,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-          { label: 'Confirm Payment', className: 'btn-primary', onClick: (close) => {
+          { label: 'Confirm Payment', className: 'btn-primary', onClick: async (close) => {
             const dOverlay = document.querySelector('.drawer-overlay');
             const paidDate = dOverlay.querySelector('#paid-date').value;
             const paymentMethod = dOverlay.querySelector('#paid-method').value;
-            store.update('invoices', id, { status: 'Paid', paidDate, paymentMethod });
+            const result = await store.update('invoices', id, { status: 'Paid', paidDate, paymentMethod });
+            if (!result || result.ok === false) {
+              showToast(`Couldn't mark invoice paid — ${result?.error?.message || 'record not found'}`, 'error');
+              return; // leave the drawer open so the user can retry or cancel
+            }
             invoice.status = 'Paid';
             invoice.paidDate = paidDate;
             invoice.paymentMethod = paymentMethod;
