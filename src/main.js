@@ -287,6 +287,19 @@ function adjustPageHeaderLayout(container) {
       while (actions.firstChild) {
         breadcrumbActions.appendChild(actions.firstChild);
       }
+
+      // Center any element marked with data-breadcrumb-center in the gap between
+      // the breadcrumb trail and the action cluster (breadcrumb uses space-between).
+      // Remove any previously-centered slot (a DIRECT child of the breadcrumb row)
+      // first so a re-render never duplicates it. NB: must not match a slot still
+      // inside #breadcrumb-actions, or we'd delete the very element we're relocating.
+      Array.from(breadcrumb.children)
+        .filter(el => el.hasAttribute('data-breadcrumb-center'))
+        .forEach(el => el.remove());
+      const centerSlot = breadcrumbActions.querySelector('[data-breadcrumb-center]');
+      if (centerSlot) {
+        breadcrumb.insertBefore(centerSlot, breadcrumbActions);
+      }
     }
     
     // Hide title elements, subtitle paragraphs, spans, and icon boxes
@@ -500,6 +513,15 @@ function renderPage(handler) {
     const breadcrumbActions = document.getElementById('breadcrumb-actions');
     if (breadcrumbActions) {
       breadcrumbActions.innerHTML = '';
+    }
+    // Clear any centered breadcrumb slots (e.g. the clock in/out button) left by a
+    // previous page. Only direct children of the breadcrumb row are centered slots;
+    // #breadcrumb-actions was emptied above so nothing else can match.
+    const breadcrumb = document.getElementById('breadcrumb');
+    if (breadcrumb) {
+      Array.from(breadcrumb.children)
+        .filter(el => el.hasAttribute('data-breadcrumb-center'))
+        .forEach(el => el.remove());
     }
 
     // Add/remove non-dashboard/schedule class depending on current hash route

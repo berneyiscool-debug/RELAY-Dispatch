@@ -13,14 +13,19 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { setListSearch } from '../../utils/listSearch.js';
+import { getClockStatusForToday, getActiveClock, clockOut, formatDuration, mapsLink } from '../../utils/timeClock.js';
+import { renderAttendanceView } from './Attendance.js';
 
-export function renderTimesheetsList(container) {
+export function renderTimesheetsList(container, params = {}) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
   const userType = currentUser.userTypeId ? store.getById('userTypes', currentUser.userTypeId) : null;
   const permissions = userType ? userType.permissions?.find(p => p.module === 'Timesheets') : null;
 
   let filterStatus = 'All';
   let filterTechId = 'All';
+  // The Timesheets / Who's-In selection now lives in the sidebar contextual menu
+  // and is driven by the URL (?tab=) rather than in-page tabs.
+  let showWhoIsIn = params.tab === 'whos-in';
 
   // Initialize date range filter defaults (last 7 days to today)
   const today = new Date();
@@ -75,7 +80,153 @@ export function renderTimesheetsList(container) {
     return [...rawTimesheets, ...leaveBlocks].sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
+  function formatClockTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  // "Who's In Today" board: one row per technician with their live attendance status.
+  function renderWhosInBoard() {
+    const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
+    const canViewAll = ['admin', 'manager', 'office'].includes(currentUser.role) || (permissions && permissions.view) || isLocalAdmin;
+    let technicians = (store.getAll('technicians') || [])
+      .filter(t => !t.deactivated)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    // Technicians who aren't managers only see their own attendance.
+    if (!canViewAll) {
+      technicians = technicians.filter(t => String(t.id) === String(currentUser.id));
+    }
+
+    const rows = technicians.map(tech => {
+      const s = getClockStatusForToday(tech.id);
+      const isSelf = String(tech.id) === String(currentUser.id);
+      const canClockOut = s.status === 'in' && (canViewAll || isSelf);
+      return { tech, ...s, isSelf, canClockOut };
+    });
+
+    // Clocked-in technicians first, then alphabetical.
+    rows.sort((a, b) => {
+      const rank = (r) => (r.status === 'in' ? 0 : 1);
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
+      return 0;
+    });
+
+    const inCount = rows.filter(r => r.status === 'in').length;
+
+    container.innerHTML = `
+      <div id="whos-in-table-container">
+        <div class="card data-table-card">
+          ${
+            rows.length === 0 ? `
+            <div class="empty-state">
+              <span class="material-icons-outlined">access_time</span>
+              <h3>No staff to show</h3>
+              <p>Add technicians to your company to track who is in today.</p>
+            </div>` : `
+            <div class="whos-in-summary">
+              <span class="whos-in-dot"></span>
+              <strong>${inCount}</strong> of <strong>${rows.length}</strong> technician${rows.length === 1 ? '' : 's'} clocked in today
+            </div>
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:24%">Technician</th>
+                    <th style="width:12%">Status</th>
+                    <th style="width:12%">Clock In</th>
+                    <th style="width:12%">Clock Out</th>
+                    <th style="width:10%">On Shift</th>
+                    <th style="width:18%">Location</th>
+                    <th style="width:12%; text-align:right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map(r => {
+                    const statusChip = r.status === 'in'
+                      ? `<span class="whos-status whos-in">In</span>`
+                      : r.status === 'out'
+                        ? `<span class="whos-status whos-out">Out</span>`
+                        : `<span class="whos-status whos-notin">Not In</span>`;
+                    const loc = mapsLink(r.location)
+                      ? `<a href="${mapsLink(r.location)}" target="_blank" rel="noopener" class="whos-loc-link" data-tooltip="View on map" data-tooltip-pos="top"><span class="material-icons-outlined" style="font-size:16px;">near_me</span> Map</a>`
+                      : `<span style="color:var(--text-tertiary);font-size:12px;">${r.location ? 'Location recorded' : '—'}</span>`;
+                    const action = r.canClockOut
+                      ? `<button class="btn btn-sm btn-danger" data-clockout="${escapeHTML(r.tech.id)}" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0;"><span class="material-icons-outlined" style="font-size:13px;">stop</span> <span class="btn-label">Clock Out</span></button>`
+                      : `<span style="color:var(--text-tertiary);font-size:12px;">—</span>`;
+                    return `
+                      <tr class="${r.status === 'in' ? 'whos-row-in' : ''}">
+                        <td>
+                          <div class="flex items-center" style="gap:8px;">
+                            <span class="whos-avatar" style="background:${escapeHTML(r.tech.color || '#666')};">${escapeHTML((r.tech.name || '?').charAt(0).toUpperCase())}</span>
+                            <span style="font-weight:500;">${escapeHTML(r.tech.name || 'Unknown')}</span>
+                            ${r.isSelf ? '<span style="font-size:10px;color:var(--text-tertiary);">(You)</span>' : ''}
+                          </div>
+                        </td>
+                        <td>${statusChip}</td>
+                        <td>${formatClockTime(r.clockInAt)}</td>
+                        <td>${formatClockTime(r.clockOutAt)}</td>
+                        <td>${r.status === 'in' ? formatDuration(r.durationMs) : '—'}</td>
+                        <td>${loc}</td>
+                        <td style="text-align:right;">${action}</td>
+                      </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>`
+          }
+        </div>
+      </div>
+    `;
+
+    // Admin/manager (or self) force clock-out.
+    container.querySelectorAll('[data-clockout]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const techId = btn.getAttribute('data-clockout');
+        const tech = technicians.find(t => String(t.id) === String(techId));
+        const active = getActiveClock(techId);
+        if (!active) {
+          showToast('This technician is not currently clocked in.', 'info');
+          return;
+        }
+        showModal({
+          title: `Clock Out ${tech?.name || 'Technician'}`,
+          content: 'Are you sure you want to clock this technician out now?',
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Clock Out',
+              className: 'btn-danger',
+              onClick: async (close) => {
+                close();
+                try {
+                  await clockOut(active.id);
+                  showToast(`${tech?.name || 'Technician'} clocked out.`, 'success');
+                  render();
+                } catch (err) {
+                  showToast('Unable to clock out. Please try again.', 'error');
+                }
+              }
+            }
+          ]
+        });
+      });
+    });
+  }
+
   function render() {
+    const tab = params.tab;
+    if (tab === 'attendance' || tab === 'schedule-vs-actual' || tab === 'payroll' || tab === 'attendance-approvals') {
+      renderAttendanceView(container, params);
+      return;
+    }
+
+    if (showWhoIsIn) {
+      renderWhosInBoard();
+      return;
+    }
+
     const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
     const allTimesheets = getCombinedTimesheets();
     const technicians = store.getAll('technicians').filter(t => !t.deactivated || filterTechId === t.id || allTimesheets.some(ts => ts.technicianId === t.id));

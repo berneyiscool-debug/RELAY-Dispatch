@@ -46,7 +46,8 @@ const TABLE_MAP = {
   kitTypes: 'kit_types',
   locationTypes: 'location_types',
   deputyThreads: 'deputy_threads',
-  deputyRoutines: 'deputy_routines'
+  deputyRoutines: 'deputy_routines',
+  timeClocks: 'time_clocks'
 };
 
 const TABLE_COLUMNS = {
@@ -420,6 +421,24 @@ const TABLE_COLUMNS = {
     "prompt",
     "enabled",
     "last_run_at",
+    "created_at",
+    "updated_at"
+  ],
+  time_clocks: [
+    "id",
+    "company_id",
+    "technician_id",
+    "technician_name",
+    "clock_in_at",
+    "clock_out_at",
+    "clock_in_location",
+    "clock_out_location",
+    "status",
+    "approval_status",
+    "approved_hours",
+    "approved_by",
+    "approved_at",
+    "note",
     "created_at",
     "updated_at"
   ],
@@ -1723,6 +1742,34 @@ class DataStore {
       record.technicianName = record.technician_name;
       delete record.technician_name;
     }
+    if (record.clock_in_at !== undefined) {
+      record.clockInAt = record.clock_in_at;
+      delete record.clock_in_at;
+    }
+    if (record.clock_out_at !== undefined) {
+      record.clockOutAt = record.clock_out_at;
+      delete record.clock_out_at;
+    }
+    if (record.clock_in_location !== undefined) {
+      record.clockInLocation = record.clock_in_location;
+      delete record.clock_in_location;
+    }
+    if (record.clock_out_location !== undefined) {
+      record.clockOutLocation = record.clock_out_location;
+      delete record.clock_out_location;
+    }
+    if (record.approval_status !== undefined) {
+      record.approvalStatus = record.approval_status;
+      delete record.approval_status;
+    }
+    if (record.approved_hours !== undefined) {
+      record.approvedHours = record.approved_hours;
+      delete record.approved_hours;
+    }
+    if (record.approved_at !== undefined) {
+      record.approvedAt = record.approved_at;
+      delete record.approved_at;
+    }
     if (record.quote_id !== undefined) {
       record.quoteId = record.quote_id;
       delete record.quote_id;
@@ -2253,6 +2300,34 @@ class DataStore {
     if (record.technicianName !== undefined) {
       record.technician_name = record.technicianName;
       delete record.technicianName;
+    }
+    if (record.clockInAt !== undefined) {
+      record.clock_in_at = record.clockInAt;
+      delete record.clockInAt;
+    }
+    if (record.clockOutAt !== undefined) {
+      record.clock_out_at = record.clockOutAt;
+      delete record.clockOutAt;
+    }
+    if (record.clockInLocation !== undefined) {
+      record.clock_in_location = record.clockInLocation;
+      delete record.clockInLocation;
+    }
+    if (record.clockOutLocation !== undefined) {
+      record.clock_out_location = record.clockOutLocation;
+      delete record.clockOutLocation;
+    }
+    if (record.approvalStatus !== undefined) {
+      record.approval_status = record.approvalStatus;
+      delete record.approvalStatus;
+    }
+    if (record.approvedHours !== undefined) {
+      record.approved_hours = record.approvedHours;
+      delete record.approvedHours;
+    }
+    if (record.approvedAt !== undefined) {
+      record.approved_at = record.approvedAt;
+      delete record.approvedAt;
     }
     if (record.quoteId !== undefined) {
       record.quote_id = record.quoteId;
