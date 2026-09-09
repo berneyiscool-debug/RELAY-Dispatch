@@ -23,6 +23,7 @@ supabase/.temp
 # Editor / OS noise
 .DS_Store
 *.log
+*.code-workspace
 
 # Debug / scratch experiments — never commit
 scratch/
