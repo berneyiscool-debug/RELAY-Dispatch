@@ -431,6 +431,10 @@ const TABLE_COLUMNS = {
     "priority",
     "read",
     "number",
+    "customer_id",
+    "customer_name",
+    "contact_name",
+    "site_name",
     "asset_id",
     "job_id",
     "due_date",
@@ -1671,6 +1675,10 @@ class DataStore {
       record.siteAddress = record.site_address;
       delete record.site_address;
     }
+    if (record.site_name !== undefined) {
+      record.siteName = record.site_name;
+      delete record.site_name;
+    }
     if (record.technician_id !== undefined) {
       record.technicianId = record.technician_id;
       delete record.technician_id;
@@ -2152,6 +2160,10 @@ class DataStore {
     if (record.siteAddress !== undefined) {
       record.site_address = record.siteAddress;
       delete record.siteAddress;
+    }
+    if (record.siteName !== undefined) {
+      record.site_name = record.siteName;
+      delete record.siteName;
     }
     if (record.technicianId !== undefined) {
       record.technician_id = record.technicianId;
