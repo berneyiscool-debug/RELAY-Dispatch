@@ -43,7 +43,7 @@ const navItems = [
       { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
       { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock', hasChildren: true },
       { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders', dividerAfter: true },
-      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets' },
+      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets', hasChildren: true },
     ],
   },
   {
@@ -435,6 +435,27 @@ function getContextualMenu(hash) {
       items: [
         { id: 'Internal', icon: 'business', label: 'Internal', path: '/leads?tab=Internal' },
         { id: 'Marketplace', icon: 'storefront', label: 'Marketplace', path: '/leads?tab=Marketplace' }
+      ],
+      activeTab: currentTab
+    };
+  }
+
+  // Timesheets List (/timesheets)
+  if (resource === 'timesheets' && !id) {
+    const currentTab = activeTab || 'timesheets';
+    return {
+      railId: 'cat-resources',
+      headerTitle: 'Timesheets',
+      icon: 'schedule',
+      backSection: 'cat-resources',
+      backLabel: 'Back to Resources',
+      items: [
+        { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets?tab=timesheets' },
+        { id: 'whos-in', icon: 'group', label: "Who's In Today", path: '/timesheets?tab=whos-in' },
+        { id: 'attendance', icon: 'event_available', label: 'Attendance Records', path: '/timesheets?tab=attendance' },
+        { id: 'schedule-vs-actual', icon: 'compare_arrows', label: 'Schedule vs Actual', path: '/timesheets?tab=schedule-vs-actual' },
+        { id: 'payroll', icon: 'payments', label: 'Hours & Payroll', path: '/timesheets?tab=payroll' },
+        { id: 'attendance-approvals', icon: 'fact_check', label: 'Attendance Approvals', path: '/timesheets?tab=attendance-approvals' }
       ],
       activeTab: currentTab
     };

@@ -516,10 +516,15 @@ async function runEngineCore(userId, isCloud) {
     // Release the Supabase lock if in cloud mode
     // (If local mode, Web Locks API automatically releases the lock when the async callback finishes)
     if (isCloud) {
-      await supabase.rpc('release_lock', {
-        p_lock_name: 'maintenance_engine',
-        p_user_id: userId
-      }).catch(err => console.error('Error releasing lock:', err));
+      try {
+        const { error } = await supabase.rpc('release_lock', {
+          p_lock_name: 'maintenance_engine',
+          p_user_id: userId
+        });
+        if (error) console.error('Error releasing lock:', error);
+      } catch (err) {
+        console.error('Error releasing lock:', err);
+      }
     }
   }
 }

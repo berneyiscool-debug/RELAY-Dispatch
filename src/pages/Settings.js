@@ -1753,10 +1753,13 @@ export function renderSettings(container) {
                     }
 
                     if (passwordVerified) {
-                      // 1. If cloud mode, delete the company row in Supabase
+                      // 1. If cloud mode, delete the company AND its Supabase login
+                      //    accounts (which frees the registered emails for reuse).
+                      //    The RPC runs as SECURITY DEFINER because `auth.users`
+                      //    cannot be touched by the anon key / RLS.
                       if (!isLocalMode) {
                         const { supabase } = await import('../utils/supabase.js');
-                        const { error: deleteErr } = await supabase.from('companies').delete().eq('id', store.companyId);
+                        const { error: deleteErr } = await supabase.rpc('delete_company_and_auth', { p_company_id: store.companyId });
                         if (deleteErr) {
                           throw new Error('Failed to delete cloud company: ' + deleteErr.message);
                         }

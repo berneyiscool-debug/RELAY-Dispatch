@@ -13,6 +13,7 @@ import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_COLORS } from '../../utils/statusColors.js';
 import { FLAGS } from '../../utils/flags.js';
 import { getVirtualRecurringOccurrences, materializeVirtualOccurrence } from '../../utils/maintenanceEngine.js';
+import { getActiveClock, clockIn, clockOut } from '../../utils/timeClock.js';
 
 export function renderScheduleView(container) {
   document.querySelectorAll('.schedule-tooltip-popover').forEach(t => t.remove());
@@ -25,6 +26,45 @@ export function renderScheduleView(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const loginMode = localStorage.getItem('relay_login_mode');
   const isLocalAdmin = loginMode === 'local';
+
+  // Toggle the current user between clocked-in and clocked-out.
+  async function handleClockToggle() {
+    const active = getActiveClock(currentUser.id);
+    if (active) {
+      // Confirm before clocking out.
+      showModal({
+        title: 'Clock Out',
+        content: 'Are you sure you want to clock out now?',
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          {
+            label: 'Clock Out',
+            className: 'btn-danger',
+            onClick: async (close) => {
+              close();
+              try {
+                const { location } = await clockOut(active.id);
+                showToast(location ? 'Clocked out successfully.' : 'Clocked out. No location captured.', 'success');
+                render();
+              } catch (err) {
+                showToast('Unable to clock out. Please try again.', 'error');
+              }
+            }
+          }
+        ]
+      });
+      return;
+    }
+
+    // Clock in: capture location (best-effort), then record.
+    try {
+      const { location } = await clockIn(currentUser);
+      showToast(location ? 'Clocked in successfully.' : 'Clocked in. No location captured.', 'success');
+      render();
+    } catch (err) {
+      showToast('Unable to clock in. Please try again.', 'error');
+    }
+  }
 
   function getVisibleTechsKey() {
     return `relay_schedule_visible_techs_${currentUser.id || 'anon'}`;
@@ -712,6 +752,10 @@ export function renderScheduleView(container) {
     const blocks = getScheduleBlocks();
     const visibleTechs = technicians.filter(t => visibleTechIds.has(t.id));
 
+    // Clock in/out attendance state for the current user.
+    const activeClock = getActiveClock(currentUser.id);
+    const isClockedIn = !!activeClock;
+
     // SUCCESSFUL RENDER LOG HOOK
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const menuBg = isDark ? '#1e293b' : '#ffffff';
@@ -731,6 +775,13 @@ export function renderScheduleView(container) {
           </div>
           <div class="flex gap-sm items-center" style="margin-left:auto">
             ${!isTechnician ? '' : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${currentUser.name}</span>`}
+          </div>
+          <div class="flex gap-sm items-center" data-breadcrumb-center>
+            <button class="btn ${isClockedIn ? 'btn-danger' : 'btn-success'}" id="btn-time-clock" style="height:28px;font-size:var(--font-size-sm);padding:0 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+              <span class="material-icons-outlined" style="font-size:16px;">${isClockedIn ? 'logout' : 'login'}</span>
+              <span>${isClockedIn ? 'Clock Out' : 'Clock In'}</span>
+            </button>
+            ${isClockedIn ? `<span class="clock-live-indicator" title="You are clocked in right now"><span class="clock-live-dot"></span>On the clock</span>` : ''}
           </div>
           <div class="flex gap-xs">
             <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
@@ -2037,6 +2088,11 @@ export function renderScheduleView(container) {
     });
     container.querySelectorAll('[data-cal]').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); calendarType = btn.dataset.cal; render(); });
+    });
+
+    container.querySelector('#btn-time-clock')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleClockToggle();
     });
 
     container.querySelectorAll('.tech-visibility-checkbox').forEach(cb => {
