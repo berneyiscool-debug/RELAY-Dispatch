@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — CONTRACTORS LIST PAGE
+// RELAY DISPATCH — CONTRACTORS LIST PAGE
 // ============================================
 
 import { store } from '../../data/store.js';

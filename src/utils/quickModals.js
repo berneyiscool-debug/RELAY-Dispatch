@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — QUICK-ADD MODAL UTILITIES
+// RELAY DISPATCH — QUICK-ADD MODAL UTILITIES
 // ============================================
 
 import { store } from '../data/store.js';

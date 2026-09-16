@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — DOCUMENT VIEWER
+// RELAY DISPATCH — DOCUMENT VIEWER
 // ============================================
 
 import { escapeHTML } from '../../utils/security.js';

@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — SCHEDULE VIEW (v2 — Drag & Drop)
+// RELAY DISPATCH — SCHEDULE VIEW (v2 — Drag & Drop)
 // ============================================
 
 import { store } from '../../data/store.js';

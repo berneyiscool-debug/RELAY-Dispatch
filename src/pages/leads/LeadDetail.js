@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — LEAD DETAIL PAGE (High Density)
+// RELAY DISPATCH — LEAD DETAIL PAGE (High Density)
 // ============================================
 
 import { store } from '../../data/store.js';

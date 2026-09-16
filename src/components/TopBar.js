@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — TOP BAR COMPONENT
+// RELAY DISPATCH — TOP BAR COMPONENT
 // ============================================
 
 import { store } from '../data/store.js';
@@ -159,8 +159,8 @@ export function createTopBar() {
         if (updateSidebarAccess) updateSidebarAccess();
       });
       // Trigger a page refresh/rerender to re-evaluate auth guards/permissions
-      if (window.__fieldForge && window.__fieldForge.router) {
-        window.__fieldForge.router.resolve();
+      if (window.__relay && window.__relay.router) {
+        window.__relay.router.resolve();
       }
     });
   }
@@ -237,7 +237,7 @@ export function createTopBar() {
   // (right-most) + the mode toggle.
 
   // Update on profile details update
-  window.addEventListener('fieldforge-profile-updated', () => {
+  window.addEventListener('relay-profile-updated', () => {
     updateTopbarAccess(topbar);
   });
 
@@ -273,7 +273,7 @@ export function updateTopbarAccess(topbarEl) {
 
   // Name / role / avatar now render in the sidebar footer
   // (Sidebar.updateSidebarProfile), refreshed via updateSidebarAccess on login
-  // and the fieldforge-profile-updated event.
+  // and the relay-profile-updated event.
 }
 
 function toggleNotificationsDropdown(btn) {
@@ -387,7 +387,7 @@ function toggleNotificationsDropdown(btn) {
 function showSearchResults(query) {
   hideSearchResults();
 
-  const storeObj = store || window.__fieldForge?.store;
+  const storeObj = store || window.__relay?.store;
   if (!storeObj) return;
 
   const results = [];

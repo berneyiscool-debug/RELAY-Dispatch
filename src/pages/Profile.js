@@ -548,7 +548,7 @@ export function renderProfile(container) {
         }
 
         // Notify TopBar to reload avatar/name
-        window.dispatchEvent(new CustomEvent('fieldforge-profile-updated'));
+        window.dispatchEvent(new CustomEvent('relay-profile-updated'));
 
         showToast('Profile details updated successfully.', 'success');
         render();

@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — PDF PREVIEW & PRINT
+// RELAY DISPATCH — PDF PREVIEW & PRINT
 // ============================================
 
 import { escapeHTML } from '../utils/security.js';

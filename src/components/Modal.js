@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — MODAL COMPONENT
+// RELAY DISPATCH — MODAL COMPONENT
 // ============================================
 
 import { escapeHTML } from '../utils/security.js';

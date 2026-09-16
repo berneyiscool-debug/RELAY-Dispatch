@@ -1455,7 +1455,7 @@ export function renderLaunchScreen(container, onComplete) {
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('relay_active_account', accountId);
       }
-      const { store } = window.__fieldForge;
+      const { store } = window.__relay;
       
       // Temporary connect to namespaced store to load its cache & technicians
       await store.initializeUser({ companyId: accountId });
@@ -1553,7 +1553,7 @@ export function renderLaunchScreen(container, onComplete) {
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('relay_active_account', newAccountId);
       }
-      const { store } = window.__fieldForge;
+      const { store } = window.__relay;
       
       // Initialize namespaced DB connection
       await store.initializeUser({ companyId: newAccountId });
@@ -1664,7 +1664,7 @@ export function renderLaunchScreen(container, onComplete) {
     // Save directory handle if selected
     if (pendingLocalDirHandle) {
       try {
-        const { store } = window.__fieldForge;
+        const { store } = window.__relay;
         await store.initializeUser({ companyId: newAccountId });
         await store.setLocalDirectory(pendingLocalDirHandle);
       } catch (err) {
@@ -1673,7 +1673,7 @@ export function renderLaunchScreen(container, onComplete) {
     } else {
       // Just initialize namespaced DB connection for seeding
       try {
-        const { store } = window.__fieldForge;
+        const { store } = window.__relay;
         await store.initializeUser({ companyId: newAccountId });
       } catch (err) {
         console.error('Failed to initialize local account store:', err);
@@ -1826,7 +1826,7 @@ export function renderLaunchScreen(container, onComplete) {
         confirmBtn.innerText = 'Checking...';
 
         try {
-          const { store } = window.__fieldForge;
+          const { store } = window.__relay;
           await store.initializeUser({ companyId: accountId });
           
           const technicians = store.getAll('technicians') || [];

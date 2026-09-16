@@ -494,8 +494,8 @@ function renderPlaceholder(icon, msg) {
 
 // ── Top-level render ─────────────────────────────────────────────────────────────
 export async function renderDashboard(container) {
-  if (!window.__fieldForge) window.__fieldForge = {};
-  window.__fieldForge.reloadDashboard = () => {
+  if (!window.__relay) window.__relay = {};
+  window.__relay.reloadDashboard = () => {
     const hash = window.location.hash || '#/';
     const isDashboard = hash === '#/' || hash === '#';
     if (isDashboard && document.querySelector('#dash-viewport')) {
@@ -575,12 +575,12 @@ export async function renderDashboard(container) {
   const guides = container.querySelector('#dash-guides');
 
   // Hooks used by the canvas (pan), context menu and page-widget mounts
-  window.__fieldForge.enterEditMode = () => enterEditMode(container, viewport, world, guides, data);
-  window.__fieldForge.openAddWidget = () => openAddWidgetModal(container, viewport, world, guides, data);
-  window.__fieldForge.refreshContextActions = () => updateContextActions(viewport, true);
+  window.__relay.enterEditMode = () => enterEditMode(container, viewport, world, guides, data);
+  window.__relay.openAddWidget = () => openAddWidgetModal(container, viewport, world, guides, data);
+  window.__relay.refreshContextActions = () => updateContextActions(viewport, true);
 
   // Hooks the Relay assistant calls to perform real actions
-  window.__fieldForge.addWidgetById = (id) => {
+  window.__relay.addWidgetById = (id) => {
     const mod = MODULES[id];
     if (!mod || !widgetAllowed(id)) return false;
     const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
@@ -595,15 +595,15 @@ export async function renderDashboard(container) {
     renderWidgets(world, data); renderPins(world); applyTransform(viewport, world, guides);
     return mod.title;
   };
-  window.__fieldForge.flyToViewByName = (name) => {
+  window.__relay.flyToViewByName = (name) => {
     const n = name.toLowerCase();
     const p = live.pins.find(x => (x.label || '').toLowerCase() === n) || live.pins.find(x => (x.label || '').toLowerCase().includes(n));
     if (!p) return false;
     flyTo(viewport, p.x, p.y, p.zoom);
     return p.label;
   };
-  window.__fieldForge.fitAll = () => resetView(viewport);
-  window.__fieldForge.setLock = (on) => {
+  window.__relay.fitAll = () => resetView(viewport);
+  window.__relay.setLock = (on) => {
     live.locked = !!on;
     localStorage.setItem(getLockKey(), live.locked ? '1' : '0');
     viewport.classList.toggle('locked', live.locked);
@@ -800,7 +800,7 @@ function mountPageWidget(body, cfg) {
     host.className = 'pw-host';
     body.appendChild(host);
     if (listFn) { try { listFn(host); } catch (e) { host.innerHTML = renderPlaceholder('error_outline', 'Failed to load'); } }
-    window.__fieldForge?.refreshContextActions?.(); // list actions now available → surface them
+    window.__relay?.refreshContextActions?.(); // list actions now available → surface them
   };
 
   const showDetail = (id) => {
@@ -816,7 +816,7 @@ function mountPageWidget(body, cfg) {
     body.appendChild(host);
     bar.querySelector('.pw-back').addEventListener('click', showList);
     try { detailFn(host, { id }); } catch (e) { host.innerHTML = renderPlaceholder('error_outline', 'Failed to load detail'); }
-    window.__fieldForge?.refreshContextActions?.(); // detail mode → drop this widget's list actions
+    window.__relay?.refreshContextActions?.(); // detail mode → drop this widget's list actions
   };
 
   // Intercept list row clicks (capture phase) → open detail in-widget.
@@ -1435,8 +1435,8 @@ function showCanvasContextMenu(clientX, clientY, ctx) {
 
   const items = [];
   if (!isEditMode) {
-    items.push({ icon: 'add', label: 'Add widget', onClick: () => window.__fieldForge.openAddWidget() });
-    items.push({ icon: 'dashboard_customize', label: 'Customise layout', onClick: () => window.__fieldForge.enterEditMode() });
+    items.push({ icon: 'add', label: 'Add widget', onClick: () => window.__relay.openAddWidget() });
+    items.push({ icon: 'dashboard_customize', label: 'Customise layout', onClick: () => window.__relay.enterEditMode() });
     items.push({ icon: 'bookmark_add', label: 'Save current view', onClick: () => openPinEditor(viewport, world, guides, {}) });
     items.push({ icon: 'center_focus_strong', label: 'Fit all widgets', onClick: () => resetView(viewport) });
     if (widgetEl) {
@@ -1814,7 +1814,7 @@ function wireWidgetControls(grid, data) {
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast(`Job assigned to ${tech.name}`, 'success');
       });
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 
@@ -1900,7 +1900,7 @@ function wireWidgetControls(grid, data) {
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast('Timesheet entry approved', 'success');
       });
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 
@@ -1911,7 +1911,7 @@ function wireWidgetControls(grid, data) {
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast('Timesheet entry rejected', 'error');
       });
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 
@@ -1952,7 +1952,7 @@ function wireWidgetControls(grid, data) {
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast(`Maintenance Job ${job.number} Dispatched!`, 'success');
       });
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 
@@ -1969,7 +1969,7 @@ function wireWidgetControls(grid, data) {
         todos[idx].completed = e.target.checked;
         localStorage.setItem(userKey, JSON.stringify(todos));
       }
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 
@@ -1980,7 +1980,7 @@ function wireWidgetControls(grid, data) {
       const idx = e.currentTarget.dataset.idx;
       todos.splice(idx, 1);
       localStorage.setItem(userKey, JSON.stringify(todos));
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 
@@ -1996,7 +1996,7 @@ function wireWidgetControls(grid, data) {
       todos.push({ text, completed: false });
       localStorage.setItem(userKey, JSON.stringify(todos));
       todoInput.value = '';
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     };
 
     todoAddBtn.addEventListener('click', handleAdd);
@@ -2013,7 +2013,7 @@ function wireWidgetControls(grid, data) {
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast('Quote status marked as Accepted', 'success');
       });
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 
@@ -2024,7 +2024,7 @@ function wireWidgetControls(grid, data) {
       import('../components/Notifications.js').then(({ showToast }) => {
         showToast('Quote status marked as Declined', 'error');
       });
-      window.__fieldForge.reloadDashboard?.();
+      window.__relay.reloadDashboard?.();
     });
   });
 

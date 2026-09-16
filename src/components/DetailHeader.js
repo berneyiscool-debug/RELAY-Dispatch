@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — REUSABLE DETAIL HEADER
+// RELAY DISPATCH — REUSABLE DETAIL HEADER
 // ============================================
 
 export function renderDetailHeader({ title, icon, iconBgColor = 'var(--color-primary-light)', iconTextColor = 'var(--color-primary)', metaHtml = '', actionsHtml = '' }) {
