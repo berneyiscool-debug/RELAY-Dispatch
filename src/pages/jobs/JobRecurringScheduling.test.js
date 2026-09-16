@@ -699,6 +699,42 @@ describe('Job Recurring Scheduling Integrations', () => {
     assert.strictEqual(allChildren.length, 1, 'Only one child job should exist for the date occurrence');
   });
 
+  test('rescheduling a materialized occurrence does not re-spawn a duplicate on the next engine run', async () => {
+    const { materializeVirtualOccurrence } = await import('../../utils/maintenanceEngine.js');
+    const localDateStr = (date) => {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const today = new Date();
+    const todayStr = localDateStr(today);
+    const in3Days = new Date(today);
+    in3Days.setDate(in3Days.getDate() + 3);
+    const in3DaysStr = localDateStr(in3Days);
+
+    // Daily recurring template with an occurrence today (inside the engine's 7-day window)
+    const parent = store.create('jobs', {
+      number: 'J-300',
+      title: 'Daily Site Check',
+      isRecurring: true,
+      recurringConfig: { freq: 'Daily', start: todayStr, end: todayStr }
+    });
+
+    // User drags today's forecast block onto the calendar → real child job
+    const child = materializeVirtualOccurrence(parent.id, todayStr);
+    assert.ok(child.templateDate, 'materialized child must carry a templateDate anchor');
+
+    // User later reschedules it to another day (scheduledDate moves off the occurrence date)
+    store.update('jobs', child.id, { scheduledDate: in3DaysStr });
+
+    // Engine runs again (e.g. next app boot)
+    checkRecurringJobs();
+
+    const children = store.getAll('jobs').filter(j => j.parentJobId === parent.id);
+    assert.strictEqual(children.length, 1, 'Rescheduling must not create a duplicate for the original occurrence date');
+  });
+
   test('repairAnomalousJobNumbers renumbers affected high-number jobs and their child recurring jobs', async () => {
     const { repairAnomalousJobNumbers } = await import('../../utils/maintenanceEngine.js');
 
