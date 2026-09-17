@@ -2710,7 +2710,7 @@ function onDashboard() { return !!document.querySelector('#dash-viewport'); }
 const NOT_ON_DASH = "That one works on the dashboard canvas — head to the Dashboard and ask me again.";
 
 function runLocalCommand(raw) {
-  const ff = window.__fieldForge || {};
+  const ff = window.__relay || {};
   const t = raw.toLowerCase().trim();
 
   if (/\b(help|what can you|commands|capabilities)\b/.test(t)) {
@@ -3435,7 +3435,7 @@ function parseJsonParam(param) {
 
 // Execute a single parsed action against the store / dashboard.
 function executeAction(action, param) {
-  const ff = window.__fieldForge || {};
+  const ff = window.__relay || {};
   const json = parseJsonParam(param);
 
   try {

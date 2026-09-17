@@ -795,11 +795,29 @@ export function repairAnomalousJobNumbers() {
   return renumberedCount;
 }
 
+// Heal recurring child jobs that were materialized before templateDate was
+// stamped on that path. A child with a parent link but no templateDate anchors
+// its idempotency only to scheduledDate, so rescheduling it frees its original
+// occurrence slot and the engine re-spawns a duplicate. Anchor each such child
+// to its current scheduledDate (its intended occurrence date) so the dedup holds
+// permanently. One-time, idempotent: once anchored, a child is skipped forever.
+function backfillChildTemplateDates() {
+  const jobs = store.getAll('jobs') || [];
+  jobs.forEach(j => {
+    if (!j.parentJobId) return;
+    if (j.templateDate) return;
+    const anchor = String(j.scheduledDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return;
+    store.update('jobs', j.id, { templateDate: anchor });
+  });
+}
+
 export function checkRecurringJobs() {
   cleanOldJobTitles();
   repairAnomalousJobNumbers();
+  backfillChildTemplateDates();
   const jobs = store.getAll('jobs') || [];
-  
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -1280,6 +1298,11 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
 
   const childJobData = {
     parentJobId: parentJob.id,
+    // Stable anchor to the occurrence date. Without this, the idempotency
+    // dedup falls back to scheduledDate — so once this job is rescheduled to a
+    // different day, the engine sees the original occurrence as unfilled and
+    // re-spawns a duplicate on every boot. Mirrors the engine spawn path.
+    templateDate: dateStr,
     scheduledDate: dateStr,
     status: childStatus,
     technicianId: techIdToUse || undefined,

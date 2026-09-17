@@ -1,5 +1,5 @@
 ﻿// ============================================
-// SIMPRO CLONE — LEADS LIST PAGE
+// RELAY DISPATCH — LEADS LIST PAGE
 // ============================================
 
 import { store } from '../../data/store.js';

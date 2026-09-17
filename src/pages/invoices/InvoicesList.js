@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — INVOICES LIST PAGE
+// RELAY DISPATCH — INVOICES LIST PAGE
 // ============================================
 
 import { store } from '../../data/store.js';
@@ -102,7 +102,7 @@ export function renderInvoicesList(container) {
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.setAttribute("href", url);
-                link.setAttribute("download", `fieldforge_invoices_sync_${Date.now()}.csv`);
+                link.setAttribute("download", `relay_invoices_sync_${Date.now()}.csv`);
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);

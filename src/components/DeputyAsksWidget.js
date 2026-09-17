@@ -9,8 +9,8 @@ export function renderDeputyAsksWidget(data, item) {
     if (el && !el.dataset.asksBound) {
       el.dataset.asksBound = '1';
       store.on('deputyAsks', () => {
-        if (window.__fieldForge && window.__fieldForge.reloadDashboard) {
-          window.__fieldForge.reloadDashboard();
+        if (window.__relay && window.__relay.reloadDashboard) {
+          window.__relay.reloadDashboard();
         }
       });
     }

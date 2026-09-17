@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — REPORTS MODULE
+// RELAY DISPATCH — REPORTS MODULE
 // ============================================
 
 import { store } from '../../data/store.js';

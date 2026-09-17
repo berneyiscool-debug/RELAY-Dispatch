@@ -184,7 +184,7 @@ export function createSidebar() {
   // Profile (footer, above Logout).
   const profileBtn = sidebar.querySelector('#sidebar-profile');
   if (profileBtn) profileBtn.addEventListener('click', () => router.navigate('/profile'));
-  window.addEventListener('fieldforge-profile-updated', () => updateSidebarProfile(sidebar));
+  window.addEventListener('relay-profile-updated', () => updateSidebarProfile(sidebar));
   updateSidebarProfile(sidebar);
 
   // Toggle collapses the primary rail to icons only.
@@ -221,7 +221,7 @@ export function createSidebar() {
       } else {
         if (resetTimeout) clearTimeout(resetTimeout);
         resetLogoutBtn();
-        window.dispatchEvent(new CustomEvent('fieldforge-logout'));
+        window.dispatchEvent(new CustomEvent('relay-logout'));
       }
     });
     logoutBtn.addEventListener('mouseleave', () => {

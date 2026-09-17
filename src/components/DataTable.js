@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — REUSABLE DATA TABLE
+// RELAY DISPATCH — REUSABLE DATA TABLE
 // ============================================
 
 import { escapeHTML } from '../utils/security.js';

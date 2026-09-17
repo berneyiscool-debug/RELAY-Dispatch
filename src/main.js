@@ -85,7 +85,7 @@ scheduleEngineChecks();
 initSearchableSelects();
 
 // Expose app globals for cross-component access
-window.__fieldForge = { router, store };
+window.__relay = { router, store };
 
 // Temporary auto-fix for JOB- prefixes in IndexedDB/Supabase
 setTimeout(() => {
@@ -821,7 +821,7 @@ router.onNavigate = (path, params) => {
 };
 
 // Handle logout events globally
-window.addEventListener('fieldforge-logout', () => {
+window.addEventListener('relay-logout', () => {
   localStorage.removeItem('currentUser');
   localStorage.removeItem('relay_login_mode');
   try { sessionStorage.removeItem('relay_active_account'); } catch {}

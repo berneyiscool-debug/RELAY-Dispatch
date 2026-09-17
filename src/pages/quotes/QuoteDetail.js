@@ -1,5 +1,5 @@
 // ============================================
-// SIMPRO CLONE — QUOTE DETAIL / BUILDER
+// RELAY DISPATCH — QUOTE DETAIL / BUILDER
 // ============================================
 
 import { store } from '../../data/store.js';

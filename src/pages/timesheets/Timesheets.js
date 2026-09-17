@@ -570,7 +570,7 @@ export function renderTimesheetsList(container) {
       const link = document.createElement('a');
       link.setAttribute('href', url);
       const dateLabel = todayLocalISO();
-      link.setAttribute('download', `FieldForge_Selected_Timesheets_${dateLabel}.csv`);
+      link.setAttribute('download', `RELAY_Selected_Timesheets_${dateLabel}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
