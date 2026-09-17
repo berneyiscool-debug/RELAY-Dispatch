@@ -1764,10 +1764,12 @@ export function renderSettings(container) {
                     }
 
                     if (passwordVerified) {
-                      // 1. If cloud mode, delete the company row in Supabase
+                      // 1. If cloud mode, delete tenant data and its Auth users
                       if (!isLocalMode) {
                         const { supabase } = await import('../utils/supabase.js');
-                        const { error: deleteErr } = await supabase.from('companies').delete().eq('id', store.companyId);
+                        const { error: deleteErr } = await supabase.functions.invoke('delete-company', {
+                          body: {}
+                        });
                         if (deleteErr) {
                           throw new Error('Failed to delete cloud company: ' + deleteErr.message);
                         }
