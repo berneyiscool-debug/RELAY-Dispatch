@@ -29,7 +29,7 @@ export async function attachAddressAutocomplete(targetInput, opts = {}) {
   const activeKey = getEffectiveGoogleMapsKey();
   if (!enabled || !targetInput) return;
   if (!activeKey) {
-    console.warn('RELAY: address autocomplete skipped — no Google Maps key configured (set VITE_GOOGLE_MAPS_BROWSER_KEY for cloud, or a key under Settings → Google Maps).');
+    console.warn('RELAY: address autocomplete skipped — no Google Maps key configured (set VITE_GOOGLE_MAPS_BROWSER_KEY at build time).');
     return;
   }
   if (targetInput.dataset.pacMounted === '1') return;

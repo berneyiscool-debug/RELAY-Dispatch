@@ -1,9 +1,9 @@
 // ============================================
-// RELAY — STORAGE OPTIONS (location types + storage locations)
+// RELAY — STORAGE LOCATIONS (location types + storage locations)
 // ============================================
 // Self-contained section rendering the managed storage-location types and
-// storage locations registries. Rendered inside the Settings "Storage Options"
-// tab.
+// storage locations registries (warehouse/vehicle stock locations, not files).
+// Rendered inside the Settings "Storage Locations" tab.
 
 import { store } from '../data/store.js';
 import { createDataTable } from './DataTable.js';

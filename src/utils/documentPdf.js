@@ -16,6 +16,7 @@
 
 import { store } from '../data/store.js';
 import { getPrintStyles, generateDocument } from '../components/PrintPreview.js';
+import { fontFaceCss } from './fonts.js';
 
 // A4 at 96dpi, which is what the print stylesheet is authored against.
 const A4_PX_W = 794;
@@ -84,8 +85,8 @@ export async function renderDocumentPdf(type, data, opts = {}) {
     const doc = frame.contentDocument;
     doc.open();
     doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8" />
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       <style>
+        ${fontFaceCss()}
         ${getPrintStyles(settings)}
         html, body { background:#ffffff; margin:0; padding:0; }
         .pdf-page { width:${A4_PX_W}px; max-width:${A4_PX_W}px; margin:0 auto; }

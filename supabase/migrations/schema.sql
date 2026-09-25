@@ -1,5 +1,5 @@
 -- =====================================================================
--- FIELDFORGE DATABASE SCHEMA
+-- RELAY DATABASE SCHEMA
 -- =====================================================================
 -- Enabling uuid-ossp if not already loaded
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

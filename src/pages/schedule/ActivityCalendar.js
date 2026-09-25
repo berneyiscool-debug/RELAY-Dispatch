@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — ACTIVITY CALENDAR MODULE
+// RELAY — ACTIVITY CALENDAR MODULE
 // ============================================
 
 import { store } from '../../data/store.js';

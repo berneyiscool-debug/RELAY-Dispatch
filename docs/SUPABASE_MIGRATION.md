@@ -350,6 +350,10 @@ Recommend **A** to keep the polished demo dataset intact.
 8. [ ] Deploy to Netlify with env vars; verify against the live Supabase project.
 9. [ ] **Later:** Supabase Auth (email/pw sign-up) → real RLS policies + `orgId` → portal-token path via Netlify Function → Realtime subscriptions → move cascade logic to DB triggers.
 
+**Already-live project?** Steps 1–8 describe the original one-time cutover. Since then, incremental migrations `002`–`028` were applied ad-hoc and some never landed (`014`, `019`, and the tail of `015`), leaving the live schema behind the repo. `supabase/migrations/029_schema_catchup.sql` repairs that drift: it is idempotent and purely additive, so paste it into the Supabase SQL editor and confirm its final verification query reports `is_present = true` for every row.
+
+**Is the live project closed to the internet?** Not until `supabase/migrations/030_rls_hardening.sql` is applied. Probing the live project with a throwaway account showed that the published anon key could read *and* write every tenant table, and that `mailer_autoconfirm: true` let anyone self-register — so a stranger could sign up, write a `profiles` row with `role = 'admin'` and a victim's `company_id`, and take over that tenant. `030` is also idempotent: it enables RLS on every `public` table, drops **every** pre-existing policy (Postgres ORs policies together, so a single survivor would undo the fix), rebuilds the canonical tenant policies, and applies the signup-trigger / profile-guard hardening first written in `020` that never landed. Apply `029` first, then `030`, and read the audit grid it prints last — every row must read `ok` or `LOCKED (service role only)`.
+
 ---
 
 ## 9. Risks & gotchas
@@ -359,4 +363,6 @@ Recommend **A** to keep the polished demo dataset intact.
 - **Denormalised name fields** can drift (rename a customer → old jobs keep the old name). Acceptable now; a DB trigger can sync later.
 - **Portals** authenticate by `portalToken`, not Supabase Auth — needs the Netlify-Function path, don't expose all rows to anon.
 - **`service_role` key**: server-side only, never in the frontend bundle.
+- **RLS policies are additive (`OR`)**: adding a policy never revokes another one. To tighten access you must `DROP` the old policy — this is why `030` sweeps `pg_policies` before creating anything.
+- **Client-side writes to `profiles` are not possible once `030` is applied** (RLS has no INSERT policy, and `profiles_security_guard` rejects self-provisioned rows). Staff profiles must be created by signup or by the `invite-user` edge function, which uses the service-role key.
 - Do the `store.js` swap **carefully / coordinated** — it's the spine of the app and the Antigravity agents also touch the codebase.

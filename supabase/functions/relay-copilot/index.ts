@@ -6,20 +6,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// The only hosts the proxy may talk to. Never trust a caller-supplied URL:
+// The only host the proxy may talk to. Never trust a caller-supplied URL:
 // forwarding the server-side API key to an arbitrary endpoint exfiltrates it.
-const ALLOWED_ENDPOINTS: Array<{ match: (u: URL) => boolean; key: string; defaultModel: string }> = [
-  {
-    match: (u) => u.hostname === 'api.deepseek.com',
-    key: 'DEEPSEEK_API_KEY',
-    defaultModel: 'deepseek-chat',
-  },
-  {
-    match: (u) => u.hostname === 'generativelanguage.googleapis.com',
-    key: 'GEMINI_API_KEY',
-    defaultModel: 'gemini-2.0-flash',
-  },
-]
+// Deputy is DeepSeek-only, and clients no longer send an endpoint at all, so the
+// allowlist below is defence in depth for older deployed builds.
+// The single model: Flash covers chat AND the attachment images. The legacy ids
+// `deepseek-chat` / `deepseek-reasoner` were retired on 2026-07-24, and V4-Pro
+// cannot read images.
+const ALLOWED_HOST = 'api.deepseek.com'
+const API_KEY_ENV = 'DEEPSEEK_API_KEY'
+const DEFAULT_MODEL = 'deepseek-flash'
+const DEFAULT_ENDPOINT = 'https://api.deepseek.com/chat/completions'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -59,7 +56,7 @@ serve(async (req) => {
 
     let targetUrl: URL
     try {
-      targetUrl = new URL(endpoint || 'https://api.deepseek.com/chat/completions')
+      targetUrl = new URL(endpoint || DEFAULT_ENDPOINT)
     } catch {
       return new Response(JSON.stringify({ error: 'Invalid endpoint URL.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -70,16 +67,15 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const target = ALLOWED_ENDPOINTS.find((t) => t.match(targetUrl))
-    if (!target) {
+    if (targetUrl.hostname !== ALLOWED_HOST) {
       return new Response(JSON.stringify({ error: 'Endpoint is not allowed.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const apiKey = Deno.env.get(target.key)
+    const apiKey = Deno.env.get(API_KEY_ENV)
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: `${target.key} is not set on Supabase.` }),
+        JSON.stringify({ error: `${API_KEY_ENV} is not set on Supabase.` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -91,7 +87,7 @@ serve(async (req) => {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: model || target.defaultModel,
+        model: model || DEFAULT_MODEL,
         messages,
         temperature: 0.3
       })
@@ -100,7 +96,7 @@ serve(async (req) => {
     if (!response.ok) {
       const text = await response.text()
       return new Response(
-        JSON.stringify({ error: `AI API error (model ${model || target.defaultModel}): ${response.status} - ${text}` }),
+        JSON.stringify({ error: `AI API error (model ${model || DEFAULT_MODEL}): ${response.status} - ${text}` }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }

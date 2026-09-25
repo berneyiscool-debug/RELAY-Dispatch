@@ -12,6 +12,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { getPrintStyles, generateDocument } from '../../components/PrintPreview.js';
+import { fontFaceCss } from '../../utils/fonts.js';
 import {
   enterEditorChrome, group, btn, valueBtn, seg, swatch, field, select, slider,
   tabStrip, bindTabs, openPopover, closePopover, textPopoverHTML, bindTextPopover,
@@ -294,7 +295,7 @@ export function renderDocumentStudio(container) {
       patchPreview();
     };
     frame.srcdoc = `<!DOCTYPE html><html><head>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+        <style>${fontFaceCss()}</style>
         <style id="theme-preview-styles">${previewStyles()}</style>
       </head><body style="margin:0;background:#fff">
         <div id="document-content-wrapper">${generateDocument(docType, mockData)}</div>

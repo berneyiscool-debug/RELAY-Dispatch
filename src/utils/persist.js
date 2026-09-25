@@ -1,10 +1,12 @@
-// Utility file for Tauri Store / LocalStorage persistence fallback
+// Small JSON persistence helpers on top of localStorage. Used for the few values
+// that live outside the data store (local accounts, folder-sync handles, cached
+// session state).
 export async function storageGet(key) {
   try {
     const val = localStorage.getItem(key);
     return val ? JSON.parse(val) : null;
   } catch (e) {
-    console.error('Tauri Store get error:', e);
+    console.error('Storage get error:', e);
     return null;
   }
 }
@@ -18,6 +20,6 @@ export async function storageSet(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (e) {
-    console.error('Tauri Store set error:', e);
+    console.error('Storage set error:', e);
   }
 }

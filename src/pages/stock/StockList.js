@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — STOCK LIST & KITS DUAL VIEW PAGE
+// RELAY — STOCK LIST & KITS DUAL VIEW PAGE
 // ============================================
 
 import { store } from '../../data/store.js';

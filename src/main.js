@@ -1,20 +1,26 @@
 // ============================================
-// FIELDFORGE — MAIN ENTRY POINT
+// RELAY — MAIN ENTRY POINT
 // ============================================
 
 import './styles/global.css';
 import './styles/components.css';
 import './styles/layout.css';
+import './styles/settings.css';
 import './styles/docEditor.css';
 
 import { router } from './router.js';
 import { store } from './data/store.js';
-import { applyTheme } from './utils/theme.js';
+import { applyTheme, watchSystemTheme } from './utils/theme.js';
+import { installFontFaces } from './utils/fonts.js';
 
-// Apply stored theme on initial boot
-const initialTheme = localStorage.getItem('simpro_theme') || 'light';
-applyTheme(initialTheme);
-import { seedData } from './data/seed.js';
+// Injected rather than imported as a stylesheet so the very same rules (with
+// absolute asset URLs) can be inlined into the print window, the document preview
+// and the PDF render iframe. Must run before anything paints.
+installFontFaces();
+
+// Appearance is light only at launch; there is no stored preference.
+applyTheme();
+watchSystemTheme();
 import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenanceEngine.js';
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
@@ -25,59 +31,12 @@ import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import './utils/DeputyAutopilot.js';
-// Pages
-import { renderDashboard } from './pages/Dashboard.js';
-import { renderPeopleList } from './pages/people/PeopleList.js';
-import { renderPersonDetail } from './pages/people/PersonDetail.js';
-import { renderPersonForm } from './pages/people/PersonForm.js';
-import { renderLeadsList } from './pages/leads/LeadsList.js';
-import { renderLeadDetail } from './pages/leads/LeadDetail.js';
-import { renderLeadForm } from './pages/leads/LeadForm.js';
-import { renderNotificationsList } from './pages/notifications/NotificationsList.js';
-import { renderQuotesList } from './pages/quotes/QuotesList.js';
-import { renderQuoteDetail } from './pages/quotes/QuoteDetail.js';
-import { renderJobsList } from './pages/jobs/JobsList.js';
-import { renderRecurringTemplatesList } from './pages/jobs/RecurringTemplatesList.js';
-import { renderJobDetail } from './pages/jobs/JobDetail.js';
-import { renderJobForm } from './pages/jobs/JobForm.js';
-import { renderTimesheetsList } from './pages/timesheets/Timesheets.js';
-import { renderScheduleView } from './pages/schedule/ScheduleView.js';
-import { renderStockList } from './pages/stock/StockList.js';
-import { renderStockDetail } from './pages/stock/StockDetail.js';
-import { renderStockForm } from './pages/stock/StockForm.js';
-import { renderInvoicesList } from './pages/invoices/InvoicesList.js';
-import { renderInvoiceDetail } from './pages/invoices/InvoiceDetail.js';
-import { renderPurchaseOrdersList } from './pages/purchaseOrders/PurchaseOrdersList.js';
-import { renderPurchaseOrderDetail } from './pages/purchaseOrders/PurchaseOrderDetail.js';
-import { renderReports } from './pages/reports/Reports.js';
-import { renderSettings } from './pages/Settings.js';
-import { renderFormBuilder } from './pages/forms/FormBuilder.js';
-import { renderDocumentStudio } from './pages/settings/DocumentStudio.js';
-import { renderEmailStudio } from './pages/settings/EmailStudio.js';
-import { renderKitDetail, renderKitForm } from './pages/kits/KitDetail.js';
+import { storageGet, storageSet } from './utils/persist.js';
+import { setSessionUser, clearSessionUser } from './pages/auth/session.js';
 
-import { renderLogin, handleCloudLoginSuccess } from './pages/login/Login.js';
-import { renderLaunchScreen } from './pages/launch/LaunchScreen.js';
-import { storageGet, storageSet } from './utils/tauriStore.js';
-import { renderCustomerPortal } from './pages/portal/Portal.js';
-import { renderContractorPortal } from './pages/portal/ContractorPortal.js';
-import { renderContractorsList } from './pages/contractors/ContractorsList.js';
-import { renderContractorForm } from './pages/contractors/ContractorForm.js';
-import { renderContractorDetail } from './pages/contractors/ContractorDetail.js';
+// Screens are code-split per route (see `lazy` below): only the shell above is
+// loaded up front, each page module is fetched the first time it is opened.
 
-import { renderSuppliersList } from './pages/suppliers/SuppliersList.js';
-import { renderSupplierForm } from './pages/suppliers/SupplierForm.js';
-import { renderSupplierDetail } from './pages/suppliers/SupplierDetail.js';
-
-import { renderAssetList } from './pages/assets/AssetList.js';
-import { renderAssetForm } from './pages/assets/AssetForm.js';
-import { renderAssetDetail } from './pages/assets/AssetDetail.js';
-
-import { renderDocumentBrowser } from './pages/documents/DocumentBrowser.js';
-import { renderDocumentViewer } from './pages/documents/DocumentViewer.js';
-import { renderProfile } from './pages/Profile.js';
-import { renderProjectsList } from './pages/projects/ProjectsList.js';
-import { renderProjectDetail } from './pages/projects/ProjectDetail.js';
 
 // ---- Initialize ----
 checkMaintenancePlans();
@@ -87,27 +46,25 @@ initSearchableSelects();
 // Expose app globals for cross-component access
 window.__relay = { router, store };
 
-// Temporary auto-fix for JOB- prefixes in IndexedDB/Supabase
-setTimeout(() => {
+const JOB_PREFIX_MIGRATION_KEY = 'relay_migration_job_prefix_v1';
+
+// Legacy builds numbered jobs "JOB-0001". Renumber them to "J-0001" once, keyed off a
+// marker, so a returning user is repaired without re-scanning every job on every boot.
+function migrateJobNumberPrefix() {
+  try {
+    if (localStorage.getItem(JOB_PREFIX_MIGRATION_KEY) === 'done') return;
+  } catch { /* storage unavailable — fall through and repair in memory */ }
   const allJobs = store.getAll('jobs') || [];
-  let updated = false;
+  let updated = 0;
   allJobs.forEach(j => {
     if (j.number && j.number.startsWith('JOB-')) {
-      j.number = j.number.replace('JOB-', 'J-');
-      store.update('jobs', j.id, { number: j.number });
-      updated = true;
+      store.update('jobs', j.id, { number: j.number.replace('JOB-', 'J-') });
+      updated++;
     }
   });
-  if (updated) console.log('Repaired JOB- prefixes to J-');
-}, 3000);
-
-// Initialize body attribute with saved tooltip preference level
-document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPreference || 'full');
-
-// Sync body attribute whenever settings are updated (e.g. from Settings panel)
-window.addEventListener('simpro-settings-updated', () => {
-  document.body.setAttribute('data-tooltip-pref', store.getSettings().tooltipPreference || 'full');
-});
+  if (updated) console.log(`Renumbered ${updated} job(s) from JOB- to J- prefixes.`);
+  try { localStorage.setItem(JOB_PREFIX_MIGRATION_KEY, 'done'); } catch { /* ignore */ }
+}
 
 // Global keyboard shortcuts
 document.addEventListener('keydown', (e) => {
@@ -179,35 +136,6 @@ const dateObserver = new MutationObserver((mutations) => {
   }
 });
 dateObserver.observe(document.body, { childList: true, subtree: true });
-
-// Lazy-classify tooltips into 'partial' vs 'full' based on action keywords on hover
-document.addEventListener('mouseover', (e) => {
-  const target = e.target.closest('[data-tooltip]');
-  if (!target || target.hasAttribute('data-tooltip-level')) return;
-
-  const tooltipText = (target.getAttribute('data-tooltip') || '').toLowerCase();
-  const elementId = (target.id || '').toLowerCase();
-  const elementClass = (target.className || '').toLowerCase();
-  const elementText = (target.textContent || '').toLowerCase();
-
-  // Words corresponding to mutating/critical/save/delete/destructive/creation actions
-  const criticalKeywords = [
-    'save', 'delete', 'destroy', 'remove', 'clear', 'reset', 'restore', 'seed',
-    'create', 'add ', 'new ', 'register', 'onboard', 'upload',
-    'send', 'email', 'generate', 'submit', 'post',
-    'deactivate', 'reactivate', 'unlink', 'unlink-',
-    'approve', 'reject', 'void', 'cancel', 'update'
-  ];
-
-  const isCritical = criticalKeywords.some(keyword => 
-    tooltipText.includes(keyword) || 
-    elementId.includes(keyword) || 
-    elementClass.includes(keyword) ||
-    elementText.includes(keyword)
-  );
-
-  target.setAttribute('data-tooltip-level', isCritical ? 'partial' : 'full');
-});
 
 // Auto-detect viewport boundary collisions for all dropdown menus
 document.addEventListener('click', (e) => {
@@ -538,12 +466,36 @@ function renderPage(handler) {
       mainContent.classList.add('non-dashboard-schedule-page');
     }
 
-    handler(mainContent, params);
+    const result = handler(mainContent, params);
+    // Lazy routes hand back a promise; a chunk that fails to load (offline install,
+    // bad deploy) must not leave the user staring at a blank page.
+    if (result && typeof result.then === 'function') {
+      result.catch((err) => {
+        console.error('Failed to load page:', err);
+        mainContent.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span>'
+          + '<h3>This page could not be loaded</h3><p>Check your connection and try again.</p></div>';
+        import('./components/Notifications.js')
+          .then(({ showToast }) => showToast('This page could not be loaded.', 'error'))
+          .catch(() => {});
+      });
+    }
   };
 }
 
+// Resolves a route handler that lives in its own chunk. `load` is the dynamic
+// import, `name` the render export, and `mapParams` covers the handful of routes
+// whose handler needs a different argument than the URL params.
+function lazy(load, name, mapParams) {
+  return (container, params) =>
+    load().then((mod) => mod[name](container, mapParams ? mapParams(params) : params));
+}
+
 // Login
-router.register('/login', renderPage((container) => {
+router.register('/login', renderPage(async (container) => {
+  const [{ renderLaunchScreen }, { handleCloudLoginSuccess }] = await Promise.all([
+    import('./pages/launch/LaunchScreen.js'),
+    import('./pages/login/Login.js'),
+  ]);
   renderLaunchScreen(container, async (result) => {
     if (result.mode === 'local' || result.mode === 'local_multiuser') {
       const accountId = result.accountId;
@@ -568,13 +520,12 @@ router.register('/login', renderPage((container) => {
           role: 'admin',
           userTypeName: 'Admin',
           userTypeId: `${accountId}_ut_admin`,
-          color: acct?.avatarColor || '#FF5C00',
-          theme: 'light'
+          color: acct?.avatarColor || '#FF5C00'
         };
       }
 
       // Set currentUser in localStorage
-      localStorage.setItem('currentUser', JSON.stringify(localUser));
+      setSessionUser(localUser);
 
       // Show the shell elements
       const sidebar = document.querySelector('.sidebar');
@@ -594,7 +545,7 @@ router.register('/login', renderPage((container) => {
       const { updateTopbarAccess } = await import('./components/TopBar.js');
       if (updateTopbarAccess) updateTopbarAccess();
 
-      applyTheme('light');
+      applyTheme();
       router.navigate('/');
     } else if (result.mode === 'cloud') {
       try {
@@ -609,106 +560,106 @@ router.register('/login', renderPage((container) => {
 }));
 
 // Customer Portal
-router.register('/portal/customer', renderPage(renderCustomerPortal));
+router.register('/portal/customer', renderPage(lazy(() => import('./pages/portal/Portal.js'), 'renderCustomerPortal')));
 
 // Subcontractor Portal
-router.register('/contractor-portal/:token', renderPage(renderContractorPortal));
+router.register('/contractor-portal/:token', renderPage(lazy(() => import('./pages/portal/ContractorPortal.js'), 'renderContractorPortal')));
 
 // Dashboard
-router.register('/', renderPage(renderDashboard));
+router.register('/', renderPage(lazy(() => import('./pages/Dashboard.js'), 'renderDashboard')));
 
 // People
-router.register('/people', renderPage(renderPeopleList));
-router.register('/people/new', renderPage((c, p) => renderPersonForm(c, { id: 'new' })));
-router.register('/people/:id', renderPage(renderPersonDetail));
-router.register('/people/:id/edit', renderPage((c, p) => renderPersonForm(c, p)));
+router.register('/people', renderPage(lazy(() => import('./pages/people/PeopleList.js'), 'renderPeopleList')));
+router.register('/people/new', renderPage(lazy(() => import('./pages/people/PersonForm.js'), 'renderPersonForm', () => ({ id: 'new' }))));
+router.register('/people/:id', renderPage(lazy(() => import('./pages/people/PersonDetail.js'), 'renderPersonDetail')));
+router.register('/people/:id/edit', renderPage(lazy(() => import('./pages/people/PersonForm.js'), 'renderPersonForm')));
 
 // Contractors
-router.register('/contractors', renderPage(renderContractorsList));
-router.register('/contractors/new', renderPage((c, p) => renderContractorForm(c, { id: 'new' })));
-router.register('/contractors/:id', renderPage(renderContractorDetail));
-router.register('/contractors/:id/edit', renderPage((c, p) => renderContractorForm(c, p)));
+router.register('/contractors', renderPage(lazy(() => import('./pages/contractors/ContractorsList.js'), 'renderContractorsList')));
+router.register('/contractors/new', renderPage(lazy(() => import('./pages/contractors/ContractorForm.js'), 'renderContractorForm', () => ({ id: 'new' }))));
+router.register('/contractors/:id', renderPage(lazy(() => import('./pages/contractors/ContractorDetail.js'), 'renderContractorDetail')));
+router.register('/contractors/:id/edit', renderPage(lazy(() => import('./pages/contractors/ContractorForm.js'), 'renderContractorForm')));
 
 // Suppliers
-router.register('/suppliers', renderPage(renderSuppliersList));
-router.register('/suppliers/new', renderPage((c, p) => renderSupplierForm(c, { id: 'new' })));
-router.register('/suppliers/:id', renderPage(renderSupplierDetail));
-router.register('/suppliers/:id/edit', renderPage((c, p) => renderSupplierForm(c, p)));
+router.register('/suppliers', renderPage(lazy(() => import('./pages/suppliers/SuppliersList.js'), 'renderSuppliersList')));
+router.register('/suppliers/new', renderPage(lazy(() => import('./pages/suppliers/SupplierForm.js'), 'renderSupplierForm', () => ({ id: 'new' }))));
+router.register('/suppliers/:id', renderPage(lazy(() => import('./pages/suppliers/SupplierDetail.js'), 'renderSupplierDetail')));
+router.register('/suppliers/:id/edit', renderPage(lazy(() => import('./pages/suppliers/SupplierForm.js'), 'renderSupplierForm')));
 
 // Leads
-router.register('/leads', renderPage(renderLeadsList));
-router.register('/leads/new', renderPage((c, p) => renderLeadForm(c, { id: 'new', origin: p.origin })));
-router.register('/leads/:id', renderPage(renderLeadDetail));
-router.register('/leads/:id/edit', renderPage((c, p) => renderLeadForm(c, p)));
+router.register('/leads', renderPage(lazy(() => import('./pages/leads/LeadsList.js'), 'renderLeadsList')));
+router.register('/leads/new', renderPage(lazy(() => import('./pages/leads/LeadForm.js'), 'renderLeadForm', (p) => ({ id: 'new', origin: p.origin }))));
+router.register('/leads/:id', renderPage(lazy(() => import('./pages/leads/LeadDetail.js'), 'renderLeadDetail')));
+router.register('/leads/:id/edit', renderPage(lazy(() => import('./pages/leads/LeadForm.js'), 'renderLeadForm')));
 
 // Notifications
-router.register('/notifications', renderPage(renderNotificationsList));
+router.register('/notifications', renderPage(lazy(() => import('./pages/notifications/NotificationsList.js'), 'renderNotificationsList')));
 
 // Quotes
-router.register('/quotes', renderPage(renderQuotesList));
-router.register('/quotes/new', renderPage((c, p) => renderQuoteDetail(c, { id: 'new' })));
-router.register('/quotes/:id', renderPage(renderQuoteDetail));
+router.register('/quotes', renderPage(lazy(() => import('./pages/quotes/QuotesList.js'), 'renderQuotesList')));
+router.register('/quotes/new', renderPage(lazy(() => import('./pages/quotes/QuoteDetail.js'), 'renderQuoteDetail', () => ({ id: 'new' }))));
+router.register('/quotes/:id', renderPage(lazy(() => import('./pages/quotes/QuoteDetail.js'), 'renderQuoteDetail')));
 
 // Jobs
-router.register('/jobs', renderPage(renderJobsList));
-router.register('/jobs/new', renderPage((c, p) => renderJobForm(c, { id: 'new', ...p })));
-router.register('/jobs/:id', renderPage(renderJobDetail));
-router.register('/jobs/:id/edit', renderPage((c, p) => renderJobForm(c, p)));
-router.register('/recurring-templates', renderPage(renderRecurringTemplatesList));
+router.register('/jobs', renderPage(lazy(() => import('./pages/jobs/JobsList.js'), 'renderJobsList')));
+router.register('/jobs/new', renderPage(lazy(() => import('./pages/jobs/JobForm.js'), 'renderJobForm', (p) => ({ id: 'new', ...p }))));
+router.register('/jobs/:id', renderPage(lazy(() => import('./pages/jobs/JobDetail.js'), 'renderJobDetail')));
+router.register('/jobs/:id/edit', renderPage(lazy(() => import('./pages/jobs/JobForm.js'), 'renderJobForm')));
+router.register('/recurring-templates', renderPage(lazy(() => import('./pages/jobs/RecurringTemplatesList.js'), 'renderRecurringTemplatesList')));
 
 // Projects
-router.register('/projects', renderPage(renderProjectsList));
-router.register('/projects/:id', renderPage(renderProjectDetail));
+router.register('/projects', renderPage(lazy(() => import('./pages/projects/ProjectsList.js'), 'renderProjectsList')));
+router.register('/projects/:id', renderPage(lazy(() => import('./pages/projects/ProjectDetail.js'), 'renderProjectDetail')));
 
 // Timesheets
-router.register('/timesheets', renderPage(renderTimesheetsList));
+router.register('/timesheets', renderPage(lazy(() => import('./pages/timesheets/Timesheets.js'), 'renderTimesheetsList')));
 
 // Assets
-router.register('/assets', renderPage(renderAssetList));
-router.register('/assets/:id', renderPage(renderAssetDetail));
-router.register('/assets/:id/edit', renderPage((c, p) => renderAssetForm(c, p)));
+router.register('/assets', renderPage(lazy(() => import('./pages/assets/AssetList.js'), 'renderAssetList')));
+router.register('/assets/:id', renderPage(lazy(() => import('./pages/assets/AssetDetail.js'), 'renderAssetDetail')));
+router.register('/assets/:id/edit', renderPage(lazy(() => import('./pages/assets/AssetForm.js'), 'renderAssetForm')));
 
 // Schedule
-router.register('/schedule', renderPage(renderScheduleView));
+router.register('/schedule', renderPage(lazy(() => import('./pages/schedule/ScheduleView.js'), 'renderScheduleView')));
 
 // Stock
-router.register('/stock', renderPage(renderStockList));
-router.register('/stock/:id', renderPage(renderStockDetail));
-router.register('/stock/:id/edit', renderPage((c, p) => renderStockForm(c, p)));
+router.register('/stock', renderPage(lazy(() => import('./pages/stock/StockList.js'), 'renderStockList')));
+router.register('/stock/:id', renderPage(lazy(() => import('./pages/stock/StockDetail.js'), 'renderStockDetail')));
+router.register('/stock/:id/edit', renderPage(lazy(() => import('./pages/stock/StockForm.js'), 'renderStockForm')));
 
 // Invoices
-router.register('/invoices', renderPage(renderInvoicesList));
-router.register('/invoices/new', renderPage((c, p) => renderInvoiceDetail(c, { id: 'new' })));
-router.register('/invoices/:id', renderPage(renderInvoiceDetail));
+router.register('/invoices', renderPage(lazy(() => import('./pages/invoices/InvoicesList.js'), 'renderInvoicesList')));
+router.register('/invoices/new', renderPage(lazy(() => import('./pages/invoices/InvoiceDetail.js'), 'renderInvoiceDetail', () => ({ id: 'new' }))));
+router.register('/invoices/:id', renderPage(lazy(() => import('./pages/invoices/InvoiceDetail.js'), 'renderInvoiceDetail')));
 
 // Purchase Orders
-router.register('/purchase-orders', renderPage(renderPurchaseOrdersList));
-router.register('/purchase-orders/:id', renderPage(renderPurchaseOrderDetail));
+router.register('/purchase-orders', renderPage(lazy(() => import('./pages/purchaseOrders/PurchaseOrdersList.js'), 'renderPurchaseOrdersList')));
+router.register('/purchase-orders/:id', renderPage(lazy(() => import('./pages/purchaseOrders/PurchaseOrderDetail.js'), 'renderPurchaseOrderDetail')));
 
 // Kits
-router.register('/kits', renderPage((c, p) => renderStockList(c, { tab: 'kits' })));
-router.register('/kits/new', renderPage((c, p) => renderKitForm(c, { id: 'new' })));
-router.register('/kits/:id/edit', renderPage((c, p) => renderKitForm(c, p)));
-router.register('/kits/:id', renderPage(renderKitDetail));
+router.register('/kits', renderPage(lazy(() => import('./pages/stock/StockList.js'), 'renderStockList', () => ({ tab: 'kits' }))));
+router.register('/kits/new', renderPage(lazy(() => import('./pages/kits/KitDetail.js'), 'renderKitForm', () => ({ id: 'new' }))));
+router.register('/kits/:id/edit', renderPage(lazy(() => import('./pages/kits/KitDetail.js'), 'renderKitForm')));
+router.register('/kits/:id', renderPage(lazy(() => import('./pages/kits/KitDetail.js'), 'renderKitDetail')));
 
 // Documents
-router.register('/documents', renderPage(renderDocumentBrowser));
-router.register('/document/view', renderPage(renderDocumentViewer));
+router.register('/documents', renderPage(lazy(() => import('./pages/documents/DocumentBrowser.js'), 'renderDocumentBrowser')));
+router.register('/document/view', renderPage(lazy(() => import('./pages/documents/DocumentViewer.js'), 'renderDocumentViewer')));
 
 // Reports
-router.register('/reports', renderPage(renderReports));
+router.register('/reports', renderPage(lazy(() => import('./pages/reports/Reports.js'), 'renderReports')));
 
 // Settings
-router.register('/settings', renderPage(renderSettings));
-router.register('/settings/documents', renderPage(renderDocumentStudio));
-router.register('/settings/email-templates', renderPage(renderEmailStudio));
-router.register('/settings/forms/new', renderPage((c, p) => renderFormBuilder(c, { id: 'new' })));
-router.register('/settings/forms/:id/edit', renderPage((c, p) => renderFormBuilder(c, p)));
-router.register('/settings/quote-templates/new', renderPage((c, p) => renderQuoteDetail(c, { id: 'new', type: 'template' })));
-router.register('/settings/quote-templates/:id/edit', renderPage((c, p) => renderQuoteDetail(c, { id: p.id, type: 'template' })));
+router.register('/settings', renderPage(lazy(() => import('./pages/Settings.js'), 'renderSettings')));
+router.register('/settings/documents', renderPage(lazy(() => import('./pages/settings/DocumentStudio.js'), 'renderDocumentStudio')));
+router.register('/settings/email-templates', renderPage(lazy(() => import('./pages/settings/EmailStudio.js'), 'renderEmailStudio')));
+router.register('/settings/forms/new', renderPage(lazy(() => import('./pages/forms/FormBuilder.js'), 'renderFormBuilder', () => ({ id: 'new' }))));
+router.register('/settings/forms/:id/edit', renderPage(lazy(() => import('./pages/forms/FormBuilder.js'), 'renderFormBuilder')));
+router.register('/settings/quote-templates/new', renderPage(lazy(() => import('./pages/quotes/QuoteDetail.js'), 'renderQuoteDetail', () => ({ id: 'new', type: 'template' }))));
+router.register('/settings/quote-templates/:id/edit', renderPage(lazy(() => import('./pages/quotes/QuoteDetail.js'), 'renderQuoteDetail', (p) => ({ id: p.id, type: 'template' }))));
 
 // Profile
-router.register('/profile', renderPage(renderProfile));
+router.register('/profile', renderPage(lazy(() => import('./pages/Profile.js'), 'renderProfile')));
 
 // ---- Auth Guard Hook ----
 const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile'];
@@ -734,6 +685,9 @@ router.onNavigate = (path, params) => {
     if (sidebarEl) sidebarEl.style.display = '';
     if (topbarEl) topbarEl.style.display = '';
     if (breadcrumbEl) breadcrumbEl.style.display = '';
+    // The auth screens clear the theme attributes for a clean canvas, so the
+    // app shell re-applies the light appearance on entry.
+    applyTheme();
   }
 
   if (!currentUser && path !== '/login' && !isPortal) {
@@ -822,7 +776,7 @@ router.onNavigate = (path, params) => {
 
 // Handle logout events globally
 window.addEventListener('relay-logout', () => {
-  localStorage.removeItem('currentUser');
+  clearSessionUser();
   localStorage.removeItem('relay_login_mode');
   try { sessionStorage.removeItem('relay_active_account'); } catch {}
   import('./utils/supabase.js').then(({ supabase }) => supabase.auth.signOut());
@@ -895,6 +849,7 @@ if (store.initPromise && typeof store.initPromise.then === 'function') {
   store.initPromise
     .then(() => {
       repairMailerSettings();
+      migrateJobNumberPrefix();
       router.resolve();
     })
     .catch((err) => {

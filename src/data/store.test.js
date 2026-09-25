@@ -11,6 +11,7 @@ supabase.from = () => ({
     })
   }),
   insert: async () => ({ error: null, data: {} }),
+  upsert: async () => ({ error: null, data: {} }),
   update: () => ({
     eq: async () => ({ error: null, data: {} })
   }),
@@ -371,6 +372,49 @@ describe('DataStore', () => {
       assert.strictEqual(byId('inv_with_date').issueDate, '2026-08-01');
       assert.strictEqual(byId('inv_only_due').issueDate, '2026-08-21');
       assert.strictEqual(byId('inv_empty').issueDate, undefined);
+    });
+  });
+
+  describe('seedFormTemplates', () => {
+    test('namespaces prebuilt ids per company so a second company does not collide on the primary key', async () => {
+      const captured = [];
+      const originalFrom = supabase.from;
+      supabase.from = (table) => ({
+        ...originalFrom(table),
+        upsert: async (payload) => {
+          captured.push({ table, payload });
+          return { error: null, data: {} };
+        }
+      });
+
+      try {
+        store.companyId = 'company-a';
+        await store.seedFormTemplates();
+        const first = captured.pop();
+
+        store.companyId = 'company-b';
+        await store.seedFormTemplates();
+        const second = captured.pop();
+
+        assert.strictEqual(first.table, 'form_templates');
+        assert.ok(first.payload.length > 0);
+        assert.strictEqual(first.payload.length, second.payload.length);
+
+        const firstIds = first.payload.map(r => r.id);
+        const secondIds = second.payload.map(r => r.id);
+
+        assert.strictEqual(new Set(firstIds).size, firstIds.length);
+        assert.ok(firstIds.every(id => id.startsWith('company-a_')));
+        assert.ok(secondIds.every(id => id.startsWith('company-b_')));
+
+        // `form_templates.id` is the primary key, so the two companies must not share ids.
+        assert.strictEqual(new Set([...firstIds, ...secondIds]).size, firstIds.length + secondIds.length);
+
+        assert.ok(first.payload.every(r => r.company_id === 'company-a'));
+        assert.ok(second.payload.every(r => r.company_id === 'company-b'));
+      } finally {
+        supabase.from = originalFrom;
+      }
     });
   });
 });

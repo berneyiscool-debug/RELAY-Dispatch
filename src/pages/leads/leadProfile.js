@@ -170,7 +170,7 @@ export async function renderLeadProfileSetup(container, opts = {}) {
         <label class="form-label">Your base location</label>
         <input type="text" id="lead-profile-address" class="form-input" placeholder="e.g. 20 Enterprise Way, Sunshine West VIC 3020"
           value="${escapeHTML(current.service_geo?.formattedAddress || '')}" />
-        <p style="color:var(--text-tertiary); font-size:12px; margin:6px 0 0;">Leads are matched by distance from this location. On a Cloud account, coordinates are resolved automatically.</p>
+        <p class="text-tertiary lead-profile-hint">Leads are matched by distance from this location. On a Cloud account, coordinates are resolved automatically.</p>
       </div>
 
       <p id="lead-profile-error" style="color:var(--color-danger); display:none;"></p>

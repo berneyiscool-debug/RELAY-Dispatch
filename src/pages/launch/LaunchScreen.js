@@ -1,6 +1,10 @@
 import { supabase } from '../../utils/supabase.js';
-import { storageGet, storageSet } from '../../utils/tauriStore.js';
+import { storageGet, storageSet } from '../../utils/persist.js';
 import { applyTheme } from '../../utils/theme.js';
+import { hashPassword, verifyAndUpgrade, hasLocalPassword } from '../auth/password.js';
+import { findLocalUser, buildLocalUser } from '../auth/localUsers.js';
+import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '../auth/session.js';
+import { renderSetLocalPassword } from '../auth/setPassword.js';
 
 const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
@@ -16,14 +20,6 @@ const AVATAR_COLORS = [
   '#0891B2', // Cyan
   '#DB2777', // Pink
 ];
-
-// Helper to hash password using SHA-256 Web Crypto API
-async function hashPassword(password) {
-  const msgBuffer = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 // Helper for relative time formatting
 function formatRelativeTime(dateString) {
@@ -660,7 +656,7 @@ export function renderLaunchScreen(container, onComplete) {
 
             ${activeAuthMode === 'cloud' 
               ? (cloudView === 'signin' ? renderCloudSignInHTML() : renderCloudSignUpHTML())
-              : renderLocalServicesSignInHTML()
+              : `<div id="local-services-slot">${renderLocalServicesSignInHTML()}</div>`
             }
           </div>
         </div>
@@ -748,7 +744,7 @@ export function renderLaunchScreen(container, onComplete) {
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px; margin-top: -4px;">
-          <input type="checkbox" id="local-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${localStorage.getItem('relay_local_remember_me') === 'true' ? 'checked' : ''}>
+          <input type="checkbox" id="local-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${isRememberMeEnabled('local') ? 'checked' : ''}>
           <label for="local-remember-me" style="font-size: 13px; color: #8a8a87; cursor: pointer; user-select: none;">Remember me</label>
         </div>
 
@@ -792,7 +788,7 @@ export function renderLaunchScreen(container, onComplete) {
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px; margin-top: -4px;">
-          <input type="checkbox" id="cloud-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${localStorage.getItem('relay_cloud_remember_me') === 'true' ? 'checked' : ''}>
+          <input type="checkbox" id="cloud-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${isRememberMeEnabled('cloud') ? 'checked' : ''}>
           <label for="cloud-remember-me" style="font-size: 13px; color: #5c5c5a; cursor: pointer; user-select: none;">Remember me</label>
         </div>
 
@@ -1252,19 +1248,19 @@ export function renderLaunchScreen(container, onComplete) {
         render();
       });
     }
-    // Prefill Remembered Emails
-    if (localStorage.getItem('relay_local_remember_me') === 'true') {
-      const localUsername = localStorage.getItem('relay_local_remembered_email');
+    // Prefill remembered sign-in identities
+    const localUsername = getRememberedIdentity('local');
+    if (localUsername) {
       const input = container.querySelector('#local-signin-username');
-      if (input && localUsername) {
+      if (input) {
         input.value = localUsername;
         setTimeout(() => container.querySelector('#local-signin-password')?.focus(), 50);
       }
     }
-    if (localStorage.getItem('relay_cloud_remember_me') === 'true') {
-      const cloudEmail = localStorage.getItem('relay_cloud_remembered_email');
+    const cloudEmail = getRememberedIdentity('cloud');
+    if (cloudEmail) {
       const input = container.querySelector('#cloud-email');
-      if (input && cloudEmail) {
+      if (input) {
         input.value = cloudEmail;
         setTimeout(() => container.querySelector('#cloud-password')?.focus(), 50);
       }
@@ -1284,13 +1280,7 @@ export function renderLaunchScreen(container, onComplete) {
     const rawInput = container.querySelector('#cloud-email').value.trim();
     const password = container.querySelector('#cloud-password').value;
 
-    const rememberMe = container.querySelector('#cloud-remember-me')?.checked;
-    localStorage.setItem('relay_cloud_remember_me', rememberMe ? 'true' : 'false');
-    if (rememberMe) {
-      localStorage.setItem('relay_cloud_remembered_email', rawInput);
-    } else {
-      localStorage.removeItem('relay_cloud_remembered_email');
-    }
+    rememberIdentity('cloud', rawInput, !!container.querySelector('#cloud-remember-me')?.checked);
 
     let authEmail = rawInput;
     if (authEmail.includes('@')) {
@@ -1305,9 +1295,9 @@ export function renderLaunchScreen(container, onComplete) {
       // Sign in with password via Supabase
       let signInResult = await supabase.auth.signInWithPassword({ email: authEmail, password });
       
-      // Fallback for legacy .fieldforge.internal users if new domain fails
+      // Fallback for legacy .RELAY.internal users if new domain fails
       if (signInResult.error && authEmail.endsWith('.relay.internal')) {
-        const legacyEmail = authEmail.replace('.relay.internal', '.fieldforge.internal');
+        const legacyEmail = authEmail.replace('.relay.internal', '.RELAY.internal');
         const fallbackResult = await supabase.auth.signInWithPassword({ email: legacyEmail, password });
         if (!fallbackResult.error) {
           signInResult = fallbackResult;
@@ -1421,6 +1411,23 @@ export function renderLaunchScreen(container, onComplete) {
     }
   };
 
+  // A local user with no stored password picks one now instead of being told
+  // their password is wrong.
+  const offerSetLocalPassword = (tech, accountId) => {
+    renderSetLocalPassword(container.querySelector('#local-services-slot'), {
+      displayName: tech.name,
+      onSubmit: async (hashedPassword) => {
+        await window.__relay.store.update('technicians', tech.id, { password: hashedPassword });
+        onComplete({
+          mode: 'local_multiuser',
+          user: buildLocalUser(tech, { companyId: accountId, storeCompanyId: accountId }),
+          accountId
+        });
+      },
+      onCancel: () => render()
+    });
+  };
+
   const handleLocalMultiuserSignIn = async (e) => {
     e.preventDefault();
     const errorEl = container.querySelector('#local-auth-error');
@@ -1440,70 +1447,51 @@ export function renderLaunchScreen(container, onComplete) {
     submitBtn.innerText = 'Checking local database...';
 
     const accountId = profileSelect.value;
-    const usernameInput = container.querySelector('#local-signin-username').value.trim().toLowerCase();
+    const usernameInput = container.querySelector('#local-signin-username').value.trim();
     const passwordInput = container.querySelector('#local-signin-password').value;
 
-    const rememberMe = container.querySelector('#local-remember-me')?.checked;
-    localStorage.setItem('relay_local_remember_me', rememberMe ? 'true' : 'false');
-    if (rememberMe) {
-      localStorage.setItem('relay_local_remembered_email', usernameInput);
-    } else {
-      localStorage.removeItem('relay_local_remembered_email');
-    }
+    rememberIdentity('local', usernameInput.toLowerCase(), !!container.querySelector('#local-remember-me')?.checked);
 
     try {
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('relay_active_account', accountId);
       }
       const { store } = window.__relay;
-      
+
+      // A single-user marker left over from a previous session makes
+      // getAll('technicians') collapse to just that admin, so the multi-user
+      // lookup would never find anybody.
+      localStorage.removeItem('relay_login_mode');
+
       // Temporary connect to namespaced store to load its cache & technicians
       await store.initializeUser({ companyId: accountId });
 
       const technicians = store.getAll('technicians') || [];
-      const tech = technicians.find(t => 
-        (t.email && t.email.toLowerCase() === usernameInput) || 
-        (t.username && t.username.toLowerCase() === usernameInput) ||
-        (t.name && t.name.toLowerCase() === usernameInput)
-      );
+      const tech = findLocalUser(technicians, usernameInput);
 
       if (!tech) {
         throw new Error('User not found in local database. Check username/email.');
       }
 
-      // Default password is '123456' if not set
-      const expectedPassword = tech.password || '123456';
-      if (passwordInput !== expectedPassword) {
+      if (!hasLocalPassword(tech)) {
+        offerSetLocalPassword(tech, accountId);
+        return;
+      }
+
+      const verified = await verifyAndUpgrade(
+        (hashedPassword) => store.update('technicians', tech.id, { password: hashedPassword }),
+        tech.password,
+        passwordInput
+      );
+      if (!verified) {
         throw new Error('Incorrect offline password. Please try again.');
       }
 
-      // Build specific role
-      let role = 'technician';
-      let userTypeName = 'Technician';
-      const utId = tech.userTypeId || '';
-      if (utId === 'ut_admin' || utId.endsWith('_ut_admin')) {
-        role = 'admin';
-        userTypeName = 'Admin';
-      } else if (utId === 'ut_manager' || utId.endsWith('_ut_manager')) {
-        role = 'manager';
-        userTypeName = 'Manager';
-      } else if (utId === 'ut_office' || utId.endsWith('_ut_office')) {
-        role = 'office';
-        userTypeName = 'Office Staff';
-      }
-
-      const localUser = {
-        id: tech.id,
-        companyId: accountId,
-        name: tech.name,
-        role: role,
-        userTypeName: userTypeName,
-        userTypeId: tech.userTypeId || `${accountId}_ut_tech`,
-        color: tech.color || '#3B82F6',
-        theme: tech.theme || 'light'
-      };
-
-      onComplete({ mode: 'local_multiuser', user: localUser, accountId });
+      onComplete({
+        mode: 'local_multiuser',
+        user: buildLocalUser(tech, { companyId: accountId, storeCompanyId: accountId }),
+        accountId
+      });
 
     } catch (err) {
       console.error('Local Auth Error:', err);

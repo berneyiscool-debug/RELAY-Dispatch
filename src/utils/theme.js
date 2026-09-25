@@ -1,249 +1,71 @@
 // ============================================
-// RELAY — THEME MANAGEMENT SYSTEM
+// RELAY -- THEME MANAGEMENT
 // ============================================
+// LAUNCH: the app is light only. Dark mode is unfinished, so nothing follows the
+// OS scheme yet — set LIGHT_ONLY to false to bring the OS-driven behaviour back
+// (the dark palettes are still in components.css under [data-theme-mode="dark"]).
+// Both attributes are always kept in sync:
+//   data-theme       -- used by the light/dark palettes and by the portals
+//   data-theme-mode  -- used by the component-level dark overrides
 
-export const THEMES = {
-  'light': { name: 'Nordic Light (Default)', mode: 'light' },
-  'dark': { name: 'Nordic Volcanic (Default)', mode: 'dark' },
-  'nordic-aurora': { name: 'Nordic Aurora', mode: 'dark' },
-  'neon-cyberpunk': { name: 'Neon Cyberpunk', mode: 'dark' },
-  'calm-sunset': { name: 'Calm Sunset', mode: 'light' },
-  'forest-mist': { name: 'Forest Mist', mode: 'light' },
-  'deep-ocean': { name: 'Deep Ocean', mode: 'dark' },
-  'sakura-blossom': { name: 'Sakura Blossom', mode: 'light' },
-  'obsidian-gold': { name: 'Obsidian & Gold', mode: 'dark' },
-  'sweet-lavender': { name: 'Sweet Lavender', mode: 'light' },
-  'retro-arcade': { name: 'Retro Arcade', mode: 'dark' },
-  'coffee-cream': { name: 'Coffee & Cream', mode: 'light' },
-  'ballet-pointe': { name: 'Ballet Pointe', mode: 'light' }
-};
+const LIGHT_ONLY = true;
 
-// Decorative-theme web fonts load lazily — only when a theme that needs them is
-// applied — so the serif faces aren't downloaded on every boot for the users who
-// never switch to them. (Was a render-blocking @import in components.css.)
-const THEME_FONTS = {
-  'ballet-pointe': 'https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap',
-};
-function ensureThemeFonts(theme) {
-  const href = THEME_FONTS[theme];
-  if (!href) return;
-  const id = 'theme-font-' + theme;
-  if (document.getElementById(id)) return;
-  const link = document.createElement('link');
-  link.id = id; link.rel = 'stylesheet'; link.href = href;
-  document.head.appendChild(link);
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+function darkQuery() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null;
+  return window.matchMedia(DARK_QUERY);
 }
 
-export function applyTheme(theme, saveToDatabase = false) {
-  if (!theme || !THEMES[theme]) {
-    document.documentElement.removeAttribute('data-theme');
-    document.documentElement.removeAttribute('data-theme-mode');
-    const bgEffects = document.getElementById('theme-bg-effects');
-    if (bgEffects) {
-      bgEffects.remove();
-    }
-    return;
-  }
-  
-  const mode = THEMES[theme].mode;
-  document.documentElement.setAttribute('data-theme', theme);
-  document.documentElement.setAttribute('data-theme-mode', mode);
-  ensureThemeFonts(theme);
-  localStorage.setItem('simpro_theme', theme);
-  
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  if (currentUser && currentUser.id) {
-    currentUser.theme = theme;
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
-    localStorage.setItem(`simpro_theme_${currentUser.id}`, theme);
-
-    if (saveToDatabase) {
-      const loginMode = localStorage.getItem('relay_login_mode');
-      const isCloud = loginMode === 'cloud' && currentUser.companyId && !String(currentUser.companyId).startsWith('acct_');
-      if (isCloud) {
-        import('./supabase.js').then(({ supabase }) => {
-          supabase
-            .from('profiles')
-            .update({ theme })
-            .eq('id', currentUser.id)
-            .then(({ error }) => {
-              if (error) {
-                console.error('Failed to update theme in Supabase profiles:', error);
-              }
-            });
-        }).catch(err => {
-          console.error('Failed to load supabase module for theme update:', err);
-        });
-      }
-    }
-  }
-
-  // Apply visual background effects
-  applyBackgroundEffects(theme);
+/** The theme matching the current OS colour scheme (always light while LIGHT_ONLY). */
+export function systemTheme() {
+  if (LIGHT_ONLY) return 'light';
+  const query = darkQuery();
+  return query && query.matches ? 'dark' : 'light';
 }
 
-function applyBackgroundEffects(theme) {
-  let bgEffects = document.getElementById('theme-bg-effects');
-  if (!bgEffects) {
-    bgEffects = document.createElement('div');
-    bgEffects.id = 'theme-bg-effects';
-    document.body.prepend(bgEffects);
-  }
+/**
+ * Resolves a requested theme name to a supported one. 'light'/'dark' pass
+ * through, anything else (for example a decorative theme name saved by an older
+ * build) falls back to the OS scheme rather than leaving the app unstyled, and
+ * a null/empty request clears the attributes for the auth screens.
+ */
+export function resolveTheme(theme) {
+  if (theme === 'light' || theme === 'dark') return LIGHT_ONLY ? 'light' : theme;
+  if (theme) return systemTheme();
+  return null;
+}
 
-  // Clear existing animations
-  bgEffects.innerHTML = '';
-  bgEffects.setAttribute('data-active-theme', theme);
-
-  // Inject necessary elements for complex animations
-  if (theme === 'retro-arcade') {
-    bgEffects.innerHTML = `
-      <div class="retro-grid"></div>
-      <div class="retro-horizon"></div>
-    `;
-  } else if (theme === 'nordic-aurora') {
-    let html = `
-      <div class="aurora-glow"></div>
-      <div class="aurora-glow-2"></div>
-    `;
-    // Add drifting white stars/snow
-    for (let i = 0; i < 15; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 3 + 1.5; // 1.5px to 4.5px
-      const duration = Math.random() * 15 + 15; // 15s to 30s
-      const delay = Math.random() * -25;
-      const opacity = Math.random() * 0.4 + 0.3;
-      html += `<div class="aurora-star" style="left: ${left}%; width: ${size}px; height: ${size}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --star-opacity: ${opacity}"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'deep-ocean') {
-    let html = `
-      <div class="ocean-wave-1"></div>
-      <div class="ocean-wave-2"></div>
-      <div class="ocean-light-rays"></div>
-    `;
-    // Add rising water bubbles
-    for (let i = 0; i < 15; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 8 + 4; // 4px to 12px
-      const duration = Math.random() * 15 + 10; // 10s to 25s
-      const delay = Math.random() * -20;
-      const xDrift = Math.random() * 80 - 40; // -40px to 40px
-      html += `<div class="ocean-bubble" style="left: ${left}%; width: ${size}px; height: ${size}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --bubble-x-drift: ${xDrift}px;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'neon-cyberpunk') {
-    let html = `
-      <div class="cyber-grid"></div>
-      <div class="cyber-glow"></div>
-    `;
-    // Add falling neon digital rain
-    for (let i = 0; i < 20; i++) {
-      const left = Math.random() * 100;
-      const width = Math.random() * 1.5 + 1; // 1px to 2.5px
-      const height = Math.random() * 40 + 20; // 20px to 60px line
-      const duration = Math.random() * 3 + 2; // fast! 2s to 5s
-      const delay = Math.random() * -5;
-      const color = Math.random() > 0.5 ? '#ff007f' : '#00f0ff';
-      html += `<div class="cyber-particle" style="left: ${left}%; width: ${width}px; height: ${height}px; background: linear-gradient(180deg, ${color} 0%, transparent 100%); animation-duration: ${duration}s; animation-delay: ${delay}s;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'forest-mist') {
-    let html = `
-      <div class="mist-cloud-1"></div>
-      <div class="mist-cloud-2"></div>
-    `;
-    // Add slowly falling forest leaves
-    for (let i = 0; i < 10; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 8 + 8; // 8px to 16px
-      const duration = Math.random() * 18 + 12; // 12s to 30s
-      const delay = Math.random() * -25;
-      const colors = ['#8f9779', '#a9af90', '#c2a679', '#707a5d', '#b08d57'];
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      html += `<div class="forest-leaf" style="left: ${left}%; width: ${size}px; height: ${size * 1.5}px; background-color: ${color}; animation-duration: ${duration}s; animation-delay: ${delay}s;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'sakura-blossom') {
-    let html = '';
-    // Dynamic randomized cherry blossom petals
-    for (let i = 0; i < 12; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 8 + 6; // 6px to 14px
-      const duration = Math.random() * 15 + 10; // 10s to 25s
-      const delay = Math.random() * -20;
-      html += `<div class="sakura-petal" style="left: ${left}%; width: ${size}px; height: ${size * 0.7}px; animation-duration: ${duration}s; animation-delay: ${delay}s;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'calm-sunset') {
-    let html = '';
-    // Horizontal sunset breeze lines
-    for (let i = 0; i < 8; i++) {
-      const top = Math.random() * 80 + 10; // 10% to 90%
-      const width = Math.random() * 200 + 150; // 150px to 350px
-      const duration = Math.random() * 12 + 10; // 10s to 22s
-      const delay = Math.random() * -15;
-      const yDrift = Math.random() * 60 - 30; // -30px to 30px
-      html += `<div class="breeze-line" style="top: ${top}%; width: ${width}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --breeze-y-drift: ${yDrift}px;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'obsidian-gold') {
-    let html = '';
-    // Twinkling gold dust / sparkles
-    for (let i = 0; i < 20; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 4 + 2; // 2px to 6px
-      const duration = Math.random() * 12 + 10; // 10s to 22s
-      const delay = Math.random() * -20;
-      const xDrift = Math.random() * 60 - 30;
-      const opacity = Math.random() * 0.4 + 0.4;
-      html += `<div class="gold-sparkle" style="left: ${left}%; width: ${size}px; height: ${size}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --sparkle-opacity: ${opacity}; --sparkle-x: ${xDrift}px;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'sweet-lavender') {
-    let html = '';
-    // Soft lavender petals floating down
-    for (let i = 0; i < 12; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 8 + 6; // 6px to 14px
-      const duration = Math.random() * 18 + 12; // 12s to 30s
-      const delay = Math.random() * -25;
-      html += `<div class="lavender-petal" style="left: ${left}%; width: ${size}px; height: ${size * 1.2}px; animation-duration: ${duration}s; animation-delay: ${delay}s;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'coffee-cream') {
-    let html = '';
-    // Rising cozy coffee aroma waves
-    for (let i = 0; i < 8; i++) {
-      const left = Math.random() * 100;
-      const width = Math.random() * 30 + 20; // 20px to 50px wide wave shapes
-      const height = Math.random() * 150 + 100; // 100px to 250px tall
-      const duration = Math.random() * 12 + 10; // 10s to 22s
-      const delay = Math.random() * -20;
-      const x1 = Math.random() * 40 - 20;
-      const x2 = Math.random() * 80 - 40;
-      html += `<div class="steam-line" style="left: ${left}%; width: ${width}px; height: ${height}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --steam-x-1: ${x1}px; --steam-x-2: ${x2}px;"></div>`;
-    }
-    bgEffects.innerHTML = html;
-  } else if (theme === 'ballet-pointe') {
-    let html = '';
-    // Elegant drifting rose petals
-    for (let i = 0; i < 8; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 8 + 8; // 8px to 16px
-      const duration = Math.random() * 20 + 15; // 15s to 35s (slow and elegant)
-      const delay = Math.random() * -30;
-      html += `<div class="ballet-rose-petal" style="left: ${left}%; width: ${size}px; height: ${size * 0.9}px; animation-duration: ${duration}s; animation-delay: ${delay}s;"></div>`;
-    }
-    // Twinkling gold/champagne sparkles
-    for (let i = 0; i < 10; i++) {
-      const left = Math.random() * 100;
-      const size = Math.random() * 4 + 2; // 2px to 6px
-      const duration = Math.random() * 12 + 8; // 8s to 20s
-      const delay = Math.random() * -20;
-      const xDrift = Math.random() * 60 - 30;
-      const opacity = Math.random() * 0.4 + 0.4;
-      html += `<div class="ballet-sparkle" style="left: ${left}%; width: ${size}px; height: ${size}px; animation-duration: ${duration}s; animation-delay: ${delay}s; --sparkle-opacity: ${opacity}; --sparkle-x: ${xDrift}px;"></div>`;
-    }
-    bgEffects.innerHTML = html;
+/**
+ * Applies the OS theme, or an explicit one. Call with no argument to follow the
+ * OS. Returns the applied theme, or null when the attributes were cleared.
+ */
+export function applyTheme(theme = systemTheme()) {
+  if (typeof document === 'undefined') return null;
+  const resolved = resolveTheme(theme);
+  const root = document.documentElement;
+  if (!resolved) {
+    root.removeAttribute('data-theme');
+    root.removeAttribute('data-theme-mode');
+    return null;
   }
+  root.setAttribute('data-theme', resolved);
+  root.setAttribute('data-theme-mode', resolved);
+  return resolved;
+}
+
+// Re-applies the theme when the user changes their OS colour scheme. The auth
+// screens clear the attributes on purpose (applyTheme(null)), so those are left
+// alone rather than being forced back into the app shell's theme.
+let watchingSystem = false;
+export function watchSystemTheme() {
+  if (LIGHT_ONLY) return; // light only: an OS scheme change cannot affect the app
+  const query = darkQuery();
+  if (!query || watchingSystem) return;
+  watchingSystem = true;
+  const onChange = () => {
+    if (document.documentElement.getAttribute('data-theme')) applyTheme();
+  };
+  if (typeof query.addEventListener === 'function') query.addEventListener('change', onChange);
+  else if (typeof query.addListener === 'function') query.addListener(onChange);
 }

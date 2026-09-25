@@ -18,18 +18,16 @@ export const ENV_GOOGLE_MAPS_BROWSER_KEY =
 export function getEffectiveGoogleMapsKey() {
   const settings = store.getSettings() || {};
   const mapsConfig = settings.maps || {};
+  // A key saved by an older build still wins, so existing installs keep working.
   if (mapsConfig.apiKey && mapsConfig.apiKey.trim() !== '') {
     return mapsConfig.apiKey.trim();
   }
-  
-  // If no user-provided key, use our bundled key ONLY if they are a cloud user.
-  // Local trial/offline users (acct_...) must Bring Your Own Key.
-  const isCloudUser = !!(store.companyId && !store.companyId.startsWith('acct_'));
-  
-  if (isCloudUser) {
-    return ENV_GOOGLE_MAPS_BROWSER_KEY;
-  }
-  return undefined;
+
+  // Otherwise fall back to the bundled/self-hosted browser key. It is public by
+  // design and must be restricted to Places + Maps JS in Google Cloud, so it is
+  // safe to hand to every account type — offline and self-hosted builds set it
+  // with VITE_GOOGLE_MAPS_BROWSER_KEY.
+  return ENV_GOOGLE_MAPS_BROWSER_KEY;
 }
 
 let loadPromise = null;
@@ -42,7 +40,7 @@ export function loadGoogleMapsSdk() {
   }
   loadPromise = new Promise((resolve, reject) => {
     const activeKey = getEffectiveGoogleMapsKey();
-    if (!activeKey) return reject(new Error('Google Maps API key not configured. Cloud users get this automatically, local users must set it in Settings.'));
+    if (!activeKey) return reject(new Error('Google Maps is not configured for this build. Set VITE_GOOGLE_MAPS_BROWSER_KEY at build time to enable maps.'));
     try {
       ((g) => {
         let h, a, k, p = 'The Google Maps JavaScript API', c = 'google', l = 'importLibrary',

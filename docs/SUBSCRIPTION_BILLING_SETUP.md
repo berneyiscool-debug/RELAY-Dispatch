@@ -14,8 +14,10 @@ the customer-facing invoice payments in `007_invoice_payments.sql` /
   touches Stripe. "Upgrading" from Free = the existing *Migrate to Cloud* flow.
 - **Seats are per active (non-deactivated) user.** Adding/deactivating a user
   reconciles the Stripe subscription quantity, prorated.
-- **Managed (keyless) AI is the Cloud+ differentiator.** Cloud and local users
-  can still use AI by supplying their own API key (Settings → API Keys).
+- **Managed (keyless) AI comes with the paid plans.** Deputy runs against the
+  server-side key for any Cloud workspace, so there is no longer a Settings
+  screen for supplying your own API key. A Free (local) account gets the
+  rule-based assistant only.
 
 ## 1. Stripe dashboard — create the two Prices
 

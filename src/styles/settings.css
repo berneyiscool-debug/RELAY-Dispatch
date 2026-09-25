@@ -1,0 +1,392 @@
+/* ============================================================================
+   SETTINGS — READABILITY LAYER
+   ----------------------------------------------------------------------------
+   All nineteen settings tabs render into #settings-content, so this restyle is
+   scoped to that subtree and the rest of the app keeps its own (denser) rhythm.
+
+   What it establishes
+     · one reading scale — 13.5px body, 15px panel titles, 13px helper copy
+     · AA-contrast helper text (see the token block below)
+     · one panel convention: bordered card, uniform header/body/footer padding
+     · one control convention: labels, inputs, hints, errors, buttons, tables
+
+   Deliberately contains no !important: any inline style left in the markup
+   still wins, which keeps the blast radius of this layer obvious.
+
+   Companion change: the ad-hoc inline `font-size` declarations that used to
+   fight this scale were removed from src/pages/Settings.js.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1 · Scoped tokens
+   --text-tertiary (#8a8a87) is only 3.46:1 on white and 3.66:1 on the dark
+   panel — under the 4.5:1 AA floor — yet it carries most of the helper copy in
+   these pages. Remapping it here (5.4:1 light / 6.3:1 dark) lifts every
+   existing `color: var(--text-tertiary)` usage without touching the markup.
+   --------------------------------------------------------------------------- */
+.main-content:has(#settings-content) {
+  --text-tertiary: #6b6b68; /* 5.4:1 on --card-bg, 4.7:1 on --bg-color */
+  --text-muted: #7d7d7a; /* keeps the four-step ink order intact */
+  --settings-reading: 13.5px; /* body copy, inputs, table cells */
+  --settings-helper: 13px; /* hint + description paragraphs */
+  --settings-title: 15px; /* panel titles */
+  --settings-label: 11.5px; /* field labels (kept uppercase) */
+  --settings-gap: 20px; /* space between stacked panels */
+  --settings-panel-pad: 20px; /* panel body inset */
+  --settings-panel-radius: 10px;
+}
+
+[data-theme-mode="dark"] .main-content:has(#settings-content) {
+  --text-tertiary: #9a9aa2; /* 6.3:1 on #18181B */
+  --text-muted: #8a8a92;
+}
+
+/* ---------------------------------------------------------------------------
+   2 · Page shell
+   The header bar keeps the app-wide inset (the .main-content gutter) plus its own
+   16px inner padding, exactly like the form pages — so the title sits at the same
+   x as `New Lead`/`New Supplier` rather than being padded further than they are.
+   Only its size is lifted to the settings reading scale.
+   --------------------------------------------------------------------------- */
+.main-content:has(#settings-content) .page-header h1 {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+#settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--settings-gap);
+  padding-bottom: var(--space-2xl);
+  font-size: var(--settings-reading);
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+/* Stack wrapper for tabs that render several panels (was inline flex + gap). */
+#settings-content .settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--settings-gap);
+}
+
+/* ---------------------------------------------------------------------------
+   3 · Panels
+   Cards used to be borderless and rely on a single bottom hairline, which made
+   every tab read as one undifferentiated column. They are now real panels.
+   --------------------------------------------------------------------------- */
+#settings-content .card:not(.dashboard-card) {
+  border: 1px solid var(--card-border);
+  border-radius: var(--settings-panel-radius);
+  background: var(--card-bg);
+  overflow: visible; /* tooltip bubbles must escape the panel */
+}
+
+#settings-content .card-header {
+  gap: var(--space-md);
+  padding: 14px var(--settings-panel-pad);
+  border-bottom: 1px solid var(--border-color);
+}
+
+#settings-content .card-header h3,
+#settings-content .card-header h4,
+#settings-content .card-header h5 {
+  font-size: var(--settings-title);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+/* The one-line explanation that sits under a panel title. */
+#settings-content .card-header p {
+  margin-top: 3px;
+  font-size: var(--settings-helper);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+#settings-content .card-body {
+  padding: var(--settings-panel-pad);
+}
+
+#settings-content .card-footer {
+  padding: 14px var(--settings-panel-pad);
+  background: var(--bg-color);
+  border-top: 1px solid var(--border-color);
+  border-radius: 0 0 var(--settings-panel-radius) var(--settings-panel-radius);
+}
+
+/* ---------------------------------------------------------------------------
+   4 · Text scale
+   --------------------------------------------------------------------------- */
+#settings-content h3,
+#settings-content h4 {
+  font-size: var(--settings-title);
+  letter-spacing: -0.01em;
+}
+
+#settings-content h5 {
+  font-size: var(--settings-helper);
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+/* Hint / description copy (usually a .text-tertiary or .text-secondary block). */
+#settings-content .text-tertiary {
+  font-size: var(--settings-helper);
+  line-height: 1.55;
+}
+
+#settings-content .text-secondary {
+  font-size: var(--settings-reading);
+}
+
+/* Body paragraphs keep a comfortable measure instead of running the width of a
+   full-width panel. */
+#settings-content .card-body > p {
+  max-width: 92ch;
+  line-height: 1.6;
+}
+
+#settings-content code,
+#settings-content .field-hint {
+  font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------------------
+   5 · Forms
+   --------------------------------------------------------------------------- */
+#settings-content .form-group {
+  gap: 6px;
+  margin-bottom: var(--space-base);
+}
+
+#settings-content .form-label {
+  margin-bottom: 2px;
+  font-size: var(--settings-label);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+}
+
+#settings-content .form-input,
+#settings-content .form-select,
+#settings-content .form-textarea,
+#settings-content input[type="text"],
+#settings-content input[type="number"],
+#settings-content input[type="email"],
+#settings-content input[type="url"],
+#settings-content input[type="tel"],
+#settings-content input[type="search"],
+#settings-content input[type="password"],
+#settings-content select,
+#settings-content textarea {
+  font-size: var(--settings-reading);
+  padding: 9px 12px;
+  border-radius: 8px;
+}
+
+#settings-content .form-input::placeholder,
+#settings-content .form-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Compact controls (rate tiers, template value fields) keep a smaller box than
+   the default field so they still fit their dense rows. */
+#settings-content .input-sm {
+  height: 30px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+}
+
+#settings-content .form-error {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* #settings-content .grid-2 lives in layout.css: 2 columns, 20px gutter. */
+
+/* ---------------------------------------------------------------------------
+   6 · Tables
+   --------------------------------------------------------------------------- */
+#settings-content .data-table th {
+  height: 38px;
+  font-size: var(--settings-label);
+  letter-spacing: 0.04em;
+}
+
+#settings-content .data-table td {
+  height: 42px;
+  padding: 8px 10px;
+  font-size: var(--settings-reading);
+}
+
+/* ---------------------------------------------------------------------------
+   7 · Buttons & badges
+   --------------------------------------------------------------------------- */
+#settings-content .btn {
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border-radius: 8px;
+}
+
+#settings-content .btn-sm {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+#settings-content .badge {
+  padding: 3px 10px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+#settings-content .empty-state {
+  font-size: var(--settings-reading);
+}
+
+/* ---------------------------------------------------------------------------
+   8 · Tax tab — charge-out profile cards
+   These were styled entirely by inline attributes on the markup, which is why
+   they drifted away from every other panel. Same visuals, governed by CSS.
+   --------------------------------------------------------------------------- */
+#settings-content .labor-rate-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--content-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--settings-panel-radius);
+  overflow: visible; /* timeline tooltips must escape */
+}
+
+#settings-content .labor-rate-card.is-default {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+#settings-content .rate-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 12px 16px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color);
+  border-radius: var(--settings-panel-radius) var(--settings-panel-radius) 0 0;
+}
+
+#settings-content .labor-rate-card.is-default .rate-card-head {
+  background: var(--color-primary-light);
+}
+
+#settings-content .rate-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+#settings-content .rate-card-title .material-icons-outlined {
+  font-size: 20px;
+  color: var(--text-tertiary);
+}
+
+#settings-content .labor-rate-card.is-default .rate-card-title .material-icons-outlined {
+  color: var(--color-primary);
+}
+
+#settings-content .rate-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+#settings-content .rate-card-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px;
+}
+
+#settings-content .rate-name {
+  width: 200px;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: var(--settings-title);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+#settings-content .rate-default-badge {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+#settings-content .rate-day-pill {
+  display: inline-block;
+  padding: 5px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+#settings-content .rate-day-pill.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+/* Hour ruler above the active-hours grid — a chart axis, so it stays small. */
+#settings-content .timeline-hour-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+/* Inline hint beside the active-hours heading. */
+#settings-content .timeline-hint {
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---------------------------------------------------------------------------
+   9 · Lead & Market Profile (Company tab)
+   Rendered by leads/leadProfile.js, whose component styles live in
+   components.css. The size bump belongs here rather than at the source, so the
+   component stays reusable at its original sizing outside settings.
+   --------------------------------------------------------------------------- */
+#settings-content .market-sub {
+  font-size: 12.5px;
+}
+
+#settings-content .market-subs-hint {
+  font-size: var(--settings-helper);
+}
+
+/* ---------------------------------------------------------------------------
+   10 · Narrow windows
+   --------------------------------------------------------------------------- */
+@media (max-width: 1200px) {
+  .main-content:has(#settings-content) .page-header h1 {
+    font-size: 15px;
+  }
+
+  #settings-content .rate-card-body {
+    grid-template-columns: 1fr;
+  }
+}

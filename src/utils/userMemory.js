@@ -1,39 +1,10 @@
-// Simple client‑side memory store with optional cloud fallback using Microsoft Graph Copilot memory API
-
-function getCurrentUserId() {
-  try {
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-    return currentUser ? currentUser.id : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function getAuthToken() {
-  return null;
-}
+// Deputy's long-term memory about the user. Local-only: a small per-device
+// factsheet that never leaves the device.
 
 const LOCAL_KEY = 'deputyUserMemory';
 
-/** Load memory: try cloud via Graph API, fall back to localStorage */
+/** Load memory from this device. Async so existing callers can keep awaiting. */
 export const loadUserMemory = async () => {
-  const userId = getCurrentUserId?.();
-  const token = getAuthToken?.();
-  if (userId && token) {
-    try {
-      const resp = await fetch(
-        `https://graph.microsoft.com/v1.0/users/${userId}/enhancedPersonalizationSetting`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (resp.ok) {
-        const { value } = await resp.json();
-        return JSON.parse(value || '{}');
-      }
-    } catch (e) {
-      // ignore and fallback
-    }
-  }
-  // Local fallback
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
     return raw ? JSON.parse(raw) : {};
@@ -42,7 +13,7 @@ export const loadUserMemory = async () => {
   }
 };
 
-/** Synchronous local read — used by prompt builders that can't await (cloud token is always null here anyway). */
+/** Synchronous local read — used by prompt builders that can't await (local storage only). */
 export const loadUserMemorySync = () => {
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
@@ -52,31 +23,13 @@ export const loadUserMemorySync = () => {
   }
 };
 
-/** Save memory: try cloud, fall back to localStorage */
+/** Save memory to this device. Async so existing callers can keep awaiting. */
 export const saveUserMemory = async (mem) => {
-  const userId = getCurrentUserId?.();
-  const token = getAuthToken?.();
-  const json = JSON.stringify(mem);
-  if (userId && token) {
-    try {
-      const resp = await fetch(
-        `https://graph.microsoft.com/v1.0/users/${userId}/enhancedPersonalizationSetting`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ value: json }),
-        }
-      );
-      if (resp.ok) return;
-    } catch (e) {
-      // ignore and fallback
-    }
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(mem));
+  } catch (e) {
+    // Storage unavailable or full - memory simply will not persist.
   }
-  // Local fallback
-  localStorage.setItem(LOCAL_KEY, json);
 };
 
 /** Clear memory if inactive >7 days */

@@ -1,4 +1,3 @@
-import { store } from '../data/store.js';
 import { hasDeputyMax } from './aiTier.js';
 import { dispatchChat } from './aiEngine.js';
 
@@ -67,8 +66,6 @@ export async function triageMessage(text, context = {}) {
 
   // Lightweight LLM classification for ambiguous turns.
   try {
-    const ai = context.ai || (store.getSettings()?.ai) || {};
-    const model = context.model || ai.model || 'deepseek-chat';
     const history = (context.chatHistory || []).filter(m => m && (m.role === 'user' || m.role === 'assistant' || m.role === 'system'));
     const prompt = `You are a routing classifier. Decide the single best intent for the user's latest message from the options: QUESTION, ACTION, EXTERNAL, URGENT.
 - QUESTION: asking for information, metrics, explanations, or status. No changes requested.
@@ -80,7 +77,7 @@ Respond with ONLY a compact JSON object, no prose or code fences:
 {"intent":"QUESTION","needsLookup":false,"needsExternal":false,"entities":{}}
 "entities" (optional) may capture obvious entities such as a job id, customer name, technician, or date.`;
     const messages = [...history.slice(-6), { role: 'user', content: `${prompt}\n\nLatest message:\n"""${trimmed}"""` }];
-    const raw = await dispatchChat(messages, ai, model);
+    const raw = await dispatchChat(messages);
     const parsed = parseTriageJson(raw);
     if (parsed && INTENTS.includes(parsed.intent)) {
       return {

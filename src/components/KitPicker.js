@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — KIT PICKER MODAL (SHARED)
+// RELAY — KIT PICKER MODAL (SHARED)
 // ============================================
 
 import { store } from '../data/store.js';

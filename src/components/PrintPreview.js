@@ -4,6 +4,7 @@
 
 import { escapeHTML } from '../utils/security.js';
 import { store } from '../data/store.js';
+import { fontFaceCss } from '../utils/fonts.js';
 import { DOC_STATUS_COLORS } from '../utils/statusColors.js';
 const logoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
@@ -53,13 +54,9 @@ export function showPrintPreview({ type, data }) {
   // Scope the themed styles under the #print-document ID via CSS nesting. The ID
   // out-ranks the static `.print-document .pdf-*` fallback rules in components.css,
   // which otherwise override the user's documentTheme colours with the default blue.
-  // (@import must stay top-level — nesting it is invalid CSS.)
-  // NB: font URLs contain ';' inside url(…), so match through the closing paren.
-  const IMPORT_RE = /@import\s+url\([^)]*\)[^;]*;/g;
-  const rawStyles = getPrintStyles(settings);
-  const styleImports = (rawStyles.match(IMPORT_RE) || []).join('\n');
-  const styleRules = rawStyles.replace(IMPORT_RE, '').replace(/body\s*\{/g, '& {');
-  scopedStyle.innerHTML = `${styleImports}\n#print-document {\n${styleRules}\n}`;
+  // (@font-face can't be nested, so it is injected separately, ahead of the nest.)
+  const styleRules = getPrintStyles(settings).replace(/body\s*\{/g, '& {');
+  scopedStyle.innerHTML = `${fontFaceCss()}\n#print-document {\n${styleRules}\n}`;
   doc.appendChild(scopedStyle);
 
   const innerDoc = document.createElement('div');
@@ -94,7 +91,7 @@ export function showPrintPreview({ type, data }) {
       <html>
       <head>
         <title>${data.number} — ${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+        <style>${fontFaceCss()}</style>
         <style>${getPrintStyles(settings)}</style>
       </head>
       <body>
@@ -567,22 +564,17 @@ export function getPrintStyles(settings = store.getSettings()) {
     fontFamily: 'sans-serif'
   };
   
-  let fontImport = '';
   let fontStack = `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
   
   if (dt.fontFamily === 'serif') {
-    fontImport = `@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Lora:ital,wght@0,400..700;1,400..700&display=swap');`;
-    fontStack = `'Lora', 'Playfair Display', Georgia, serif`;
+    fontStack = `'Lora', Georgia, serif`;
   } else if (dt.fontFamily === 'monospace') {
-    fontImport = `@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');`;
-    fontStack = `'Fira Code', 'JetBrains Mono', Courier, monospace`;
+    fontStack = `'Fira Code', Courier, monospace`;
   } else if (dt.preset === 'electric') {
-    fontImport = `@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap');`;
     fontStack = `'Outfit', 'Inter', sans-serif`;
   }
   
   return `
-    ${fontImport}
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: ${fontStack}; color: #1A2332; font-size: 12px; line-height: 1.5; }
     .pdf-page { padding: 40px 48px; max-width: 210mm; margin: 0 auto; }

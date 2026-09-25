@@ -1,7 +1,7 @@
 -- 016_llm_usage.sql
 -- Internal AI usage metering for the relay-copilot edge function.
 -- Write-only from the app (insert policy, no select policy) so RELAY can watch
--- aggregate DeepSeek/Gemini spend per org without exposing it to end users.
+-- aggregate DeepSeek spend per org without exposing it to end users.
 
 CREATE TABLE IF NOT EXISTS public.llm_usage (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

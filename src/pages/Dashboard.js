@@ -19,6 +19,7 @@ import { FLAGS } from '../utils/flags.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
 import { showDrawer } from '../components/Drawer.js';
 import { renderDeputyAsksWidget } from '../components/DeputyAsksWidget.js';
+import Sortable from 'sortablejs';
 
 function getHeaderActionsHtml() {
   const canCreateJob = hasPermission('Jobs', 'create');
@@ -116,100 +117,6 @@ const MODULES = {
   'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', render: renderWeatherForecast },
   'notifications-widget': { title: 'Notifications',             defaultW: 'M',  defaultH: 'tall',     render: renderNotificationsWidget },
   'deputy-asks-widget':   { title: 'Deputy Proposals',          defaultW: 'M',  defaultH: 'tall',     render: renderDeputyAsksWidget },
-
-  // ── Live page widgets (full, interactive pages embedded in a widget) ──
-  // Workflow group
-  'page-leads': {
-    title: 'Leads Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./leads/LeadsList.js').then(m => m.renderLeadsList),
-      detail: () => import('./leads/LeadDetail.js').then(m => m.renderLeadDetail),
-    }),
-  },
-  'page-quotes': {
-    title: 'Quotes Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./quotes/QuotesList.js').then(m => m.renderQuotesList),
-      detail: () => import('./quotes/QuoteDetail.js').then(m => m.renderQuoteDetail),
-    }),
-  },
-  'page-jobs': {
-    title: 'Jobs Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./jobs/JobsList.js').then(m => m.renderJobsList),
-      detail: () => import('./jobs/JobDetail.js').then(m => m.renderJobDetail),
-    }),
-  },
-  'page-notifications': {
-    title: 'Notifications Page', defaultW: 'M', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list: () => import('./notifications/NotificationsList.js').then(m => m.renderNotificationsList),
-    }),
-  },
-  'page-invoices': {
-    title: 'Invoices Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./invoices/InvoicesList.js').then(m => m.renderInvoicesList),
-      detail: () => import('./invoices/InvoiceDetail.js').then(m => m.renderInvoiceDetail),
-    }),
-  },
-  // People group
-  'page-customers': {
-    title: 'Customers Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./people/PeopleList.js').then(m => m.renderPeopleList),
-      detail: () => import('./people/PersonDetail.js').then(m => m.renderPersonDetail),
-    }),
-  },
-  'page-contractors': {
-    title: 'Contractors Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./contractors/ContractorsList.js').then(m => m.renderContractorsList),
-      detail: () => import('./contractors/ContractorDetail.js').then(m => m.renderContractorDetail),
-    }),
-  },
-  'page-suppliers': {
-    title: 'Suppliers Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./suppliers/SuppliersList.js').then(m => m.renderSuppliersList),
-      detail: () => import('./suppliers/SupplierDetail.js').then(m => m.renderSupplierDetail),
-    }),
-  },
-  // Resources group
-  'page-assets': {
-    title: 'Assets Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./assets/AssetList.js').then(m => m.renderAssetList),
-      detail: () => import('./assets/AssetDetail.js').then(m => m.renderAssetDetail),
-    }),
-  },
-  'page-stock': {
-    title: 'Stock Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./stock/StockList.js').then(m => m.renderStockList),
-      detail: () => import('./stock/StockDetail.js').then(m => m.renderStockDetail),
-    }),
-  },
-  'page-purchase-orders': {
-    title: 'Purchase Orders Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list:   () => import('./purchaseOrders/PurchaseOrdersList.js').then(m => m.renderPurchaseOrdersList),
-      detail: () => import('./purchaseOrders/PurchaseOrderDetail.js').then(m => m.renderPurchaseOrderDetail),
-    }),
-  },
-  'page-timesheets': {
-    title: 'Timesheets Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list: () => import('./timesheets/Timesheets.js').then(m => m.renderTimesheetsList),
-    }),
-  },
-  // Schedule (single view)
-  'page-schedule': {
-    title: 'Schedule Page', defaultW: 'L', defaultH: 'xtall', page: true,
-    mount: (body) => mountPageWidget(body, {
-      list: () => import('./schedule/ScheduleView.js').then(m => m.renderScheduleView),
-    }),
-  },
 };
 
 // Module → permission required to even offer/show it. Absent = always allowed.
@@ -230,19 +137,6 @@ const WIDGET_PERMS = {
   'upcoming-maintenance': ['Assets', 'view'],
   'timesheet-exceptions': ['Timesheets', 'approve'],
   'deputy-asks-widget':   ['Dashboard', 'view'],
-  // Live page widgets — gated by their page's view permission
-  'page-leads':           ['Leads', 'view'],
-  'page-quotes':          ['Quotes', 'view'],
-  'page-jobs':            ['Jobs', 'view'],
-  'page-invoices':        ['Invoices', 'view'],
-  'page-customers':       ['Customers', 'view'],
-  'page-contractors':     ['Contractors', 'view'],
-  'page-suppliers':       ['Suppliers', 'view'],
-  'page-assets':          ['Assets', 'view'],
-  'page-stock':           ['Stock', 'view'],
-  'page-purchase-orders': ['Purchase Orders', 'view'],
-  'page-timesheets':      ['Timesheets', 'view_own'],
-  'page-schedule':        ['Schedule', 'view_own'],
 };
 
 function widgetAllowed(id) {
@@ -301,11 +195,11 @@ function refreshWidgetsForCollections(collections) {
   const data = live.data || {};
   live.widgets.forEach(item => {
     const mod = MODULES[item.id];
-    if (!mod || mod.page || !mod.render) return;
+    if (!mod || !mod.render) return;
     const deps = WIDGET_DEPS[item.id];
     if (!deps || !deps.some(d => collections.has(d))) return;
     const el = world.querySelector(`.dash-widget[data-instance-id="${item.instanceId}"]`);
-    if (!el || el.dataset.pwPending) return; // not yet mounted → renders fresh when scrolled into view
+    if (!el || el.dataset.mountPending) return; // not yet mounted → renders fresh when scrolled into view
     const body = el.querySelector('.card-body');
     if (!body) return;
     try {
@@ -437,8 +331,12 @@ async function loadLayout() {
   }
   if (!stored) widgets = defaultLayoutForUser();
 
-  // Ensure every widget has an instanceId + valid module + is permitted
+  // Drop modules that no longer exist (e.g. the removed embedded page widgets) and any
+  // widget the user can't see. A layout that consisted only of those would load empty, so
+  // fall back to the role default rather than showing a blank canvas.
+  const beforeFilter = widgets.length;
   widgets = widgets.filter(w => MODULES[w.id] && widgetAllowed(w.id));
+  if (!widgets.length && beforeFilter > 0) widgets = defaultLayoutForUser();
   widgets.forEach(w => {
     if (!w.instanceId) w.instanceId = 'inst_' + Math.random().toString(36).substr(2, 9);
     if (typeof w.x !== 'number') w.x = 40;
@@ -543,8 +441,7 @@ export async function renderDashboard(container) {
 
         <div class="dash-topbar">
           <div class="dash-topbar-left"></div>
-          <!-- In view mode this holds contextual actions for the page-widgets on screen;
-               in edit mode it holds the edit controls. -->
+          <!-- Holds the edit-mode controls. Empty outside edit mode. -->
           <div id="dashboard-header-actions" class="dash-topbar-right"></div>
         </div>
 
@@ -574,10 +471,9 @@ export async function renderDashboard(container) {
   const world = container.querySelector('#dash-world');
   const guides = container.querySelector('#dash-guides');
 
-  // Hooks used by the canvas (pan), context menu and page-widget mounts
+  // Hooks used by the canvas (pan), context menu and widget mounts
   window.__relay.enterEditMode = () => enterEditMode(container, viewport, world, guides, data);
   window.__relay.openAddWidget = () => openAddWidgetModal(container, viewport, world, guides, data);
-  window.__relay.refreshContextActions = () => updateContextActions(viewport, true);
 
   // Hooks the Relay assistant calls to perform real actions
   window.__relay.addWidgetById = (id) => {
@@ -615,7 +511,6 @@ export async function renderDashboard(container) {
   renderPins(world);
   wireCanvas(container, viewport, world, guides, data);
   applyTransform(viewport, world, guides);
-  updateContextActions(viewport, true);
   updateGlueAffordance(viewport);
   subscribeWidgetRefresh();
 }
@@ -636,63 +531,6 @@ function widgetInView(item, viewport) {
   const x = panX + item.x * zoom, y = panY + item.y * zoom;
   const w = item.w * zoom, h = item.h * zoom;
   return x < viewport.clientWidth && x + w > 0 && y < viewport.clientHeight && y + h > 0;
-}
-
-// Contextual top-bar actions: surface the primary actions of the page-widgets currently
-// on screen (list mode only). Cheap visible-set signature guards against rebuilding every
-// frame; `force` (after a mount / detail toggle) bypasses it.
-let _ctxVisibleSig = null;
-function updateContextActions(viewport, force) {
-  if (isEditMode) return; // edit controls own the bar in edit mode
-  const host = document.querySelector('#dashboard-header-actions');
-  if (!host) return;
-
-  const visible = live.widgets.filter(it => MODULES[it.id] && MODULES[it.id].page && widgetInView(it, viewport));
-  const visSig = visible.map(v => v.instanceId).join(',');
-  if (!force && visSig === _ctxVisibleSig) return;
-  _ctxVisibleSig = visSig;
-
-  const seen = new Set();
-  const proxies = [];
-  visible.forEach(it => {
-    const wEl = document.querySelector(`.dash-widget[data-instance-id="${it.instanceId}"]`);
-    if (!wEl || wEl.querySelector('.pw-backbar')) return; // skip widgets drilled into a detail
-    const acts = wEl.querySelector('.page-header-actions');
-    if (!acts) return;
-    acts.querySelectorAll('button').forEach(btn => {
-      const label = btnTextLabel(btn);
-      if (!label || seen.has(label)) return;
-      seen.add(label);
-      proxies.push({
-        label,
-        icon: btn.querySelector('.material-icons-outlined')?.textContent.trim() || 'bolt',
-        primary: btn.classList.contains('btn-primary'),
-        instanceId: it.instanceId,
-      });
-    });
-  });
-
-  host.innerHTML = '';
-  proxies.forEach(p => {
-    const b = document.createElement('button');
-    b.className = 'btn btn-sm ' + (p.primary ? 'btn-primary' : 'btn-secondary');
-    b.innerHTML = `<span class="material-icons-outlined" style="font-size:16px;">${p.icon}</span> ${p.label}`;
-    b.addEventListener('click', () => {
-      // Re-find the real button at click time (it may have re-rendered) and trigger it
-      const wEl = document.querySelector(`.dash-widget[data-instance-id="${p.instanceId}"]`);
-      const acts = wEl?.querySelector('.page-header-actions');
-      const real = acts && [...acts.querySelectorAll('button')].find(x => btnTextLabel(x) === p.label);
-      if (real) real.click();
-    });
-    host.appendChild(b);
-  });
-}
-
-// A button's text with any material-icon ligatures stripped out
-function btnTextLabel(btn) {
-  const clone = btn.cloneNode(true);
-  clone.querySelectorAll('.material-icons-outlined, .material-icons, .material-symbols-outlined').forEach(s => s.remove());
-  return clone.textContent.replace(/\s+/g, ' ').trim();
 }
 
 // ── Widget rendering (positioned absolutely in world space) ──────────────────────
@@ -727,7 +565,7 @@ function renderWidgets(world, data) {
       </div>` : '';
 
     const el = document.createElement('div');
-    el.className = 'dash-widget' + (isEditMode ? ' edit-mode' : '') + (mod.page ? ' page-widget' : '') + (item.glued ? ' glued' : '');
+    el.className = 'dash-widget' + (isEditMode ? ' edit-mode' : '') + (item.glued ? ' glued' : '');
     el.dataset.instanceId = item.instanceId;
     el.dataset.id = item.id;
     el.style.left = item.x + 'px';
@@ -749,94 +587,33 @@ function renderWidgets(world, data) {
     // the widget scrolls into view (and then stays mounted, so no state is lost).
     // Off-screen widgets show a light placeholder.
     const body = el.querySelector('.card-body');
-    if (mod.page && isEditMode) body.style.pointerEvents = 'none';
     body.innerHTML = renderPlaceholder('hourglass_empty', 'Loads when in view');
-    el.dataset.pwPending = '1';
+    el.dataset.mountPending = '1';
   });
 
   wireWidgetControls(world, data);
   if (isEditMode) wireEditControls(world, data);
 
-  // Mount any page widgets that are already on screen (synchronously, before paint)
+  // Mount any widgets that are already on screen (synchronously, before paint)
   const vp = document.querySelector('#dash-viewport');
-  if (vp) { mountVisiblePageWidgets(vp); applyGluedWidths(vp); updateGlueAffordance(vp); }
+  if (vp) { mountVisibleWidgets(vp); applyGluedWidths(vp); updateGlueAffordance(vp); }
 }
 
 // Mount any pending (placeholder) widget whose box is currently in the viewport.
 // Once mounted, the widget is never torn down on pan, so its in-widget state persists.
-function mountVisiblePageWidgets(viewport) {
+function mountVisibleWidgets(viewport) {
   if (!viewport) return;
-  document.querySelectorAll('.dash-widget[data-pw-pending]').forEach(el => {
+  document.querySelectorAll('.dash-widget[data-mount-pending]').forEach(el => {
     const item = live.widgets.find(w => w.instanceId === el.dataset.instanceId);
     if (!item || !widgetInView(item, viewport)) return;
     const mod = MODULES[item.id];
-    if (!mod) return;
-    
-    delete el.dataset.pwPending;
+    if (!mod || !mod.render) return;
+
+    delete el.dataset.mountPending;
     const body = el.querySelector('.card-body');
-    
-    if (mod.page && mod.mount) {
-      try { mod.mount(body, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Could not load page'); }
-    } else if (mod.render) {
-      try { body.innerHTML = mod.render(live.data || {}, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Error rendering widget'); }
-    }
+
+    try { body.innerHTML = mod.render(live.data || {}, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Error rendering widget'); }
   });
-}
-
-// ── Page widgets: render a real CRM page live inside a widget body ────────────────
-// The shared DataTable wires row clicks as bubble-phase listeners, so a capture-phase
-// listener here intercepts them first — letting us open the detail INSIDE the widget
-// (Back button returns to the list) instead of navigating the whole app away.
-function mountPageWidget(body, cfg) {
-  body.classList.add('pw-root');
-  body.innerHTML = renderPlaceholder('hourglass_empty', 'Loading…'); // covers the lazy import gap
-  let mode = 'list';
-  let listFn = null, detailFn = null;
-
-  const showList = () => {
-    mode = 'list';
-    body.innerHTML = '';
-    const host = document.createElement('div');
-    host.className = 'pw-host';
-    body.appendChild(host);
-    if (listFn) { try { listFn(host); } catch (e) { host.innerHTML = renderPlaceholder('error_outline', 'Failed to load'); } }
-    window.__relay?.refreshContextActions?.(); // list actions now available → surface them
-  };
-
-  const showDetail = (id) => {
-    if (!detailFn) return;
-    mode = 'detail';
-    body.innerHTML = '';
-    const bar = document.createElement('div');
-    bar.className = 'pw-backbar';
-    bar.innerHTML = `<button class="btn btn-secondary btn-sm pw-back"><span class="material-icons-outlined" style="font-size:16px;">arrow_back</span> Back to list</button>`;
-    const host = document.createElement('div');
-    host.className = 'pw-host';
-    body.appendChild(bar);
-    body.appendChild(host);
-    bar.querySelector('.pw-back').addEventListener('click', showList);
-    try { detailFn(host, { id }); } catch (e) { host.innerHTML = renderPlaceholder('error_outline', 'Failed to load detail'); }
-    window.__relay?.refreshContextActions?.(); // detail mode → drop this widget's list actions
-  };
-
-  // Intercept list row clicks (capture phase) → open detail in-widget.
-  // Only when this page has a detail view; otherwise rows behave normally.
-  if (cfg.detail) {
-    body.addEventListener('click', e => {
-      if (mode !== 'list') return;
-      const tr = e.target.closest('tbody tr[data-id]');
-      if (!tr) return;
-      if (e.target.closest('.dt-select-cell') || e.target.closest('input')) return;
-      e.stopPropagation();
-      e.preventDefault();
-      showDetail(tr.dataset.id);
-    }, true);
-  }
-
-  // Lazy-load the page modules, then render the list
-  Promise.all([cfg.list(), cfg.detail ? cfg.detail() : Promise.resolve(null)])
-    .then(([l, d]) => { listFn = l; detailFn = d; showList(); })
-    .catch(() => { body.innerHTML = renderPlaceholder('error_outline', 'Could not load page'); });
 }
 
 // ── Saved-view frames (edit mode) ────────────────────────────────────────────────
@@ -958,8 +735,7 @@ function applyTransform(viewport, world, guides) {
   const pct = viewport.querySelector('#zoom-pct');
   if (pct) pct.textContent = Math.round(zoom * 100) + '%';
   updateGuides(viewport, guides);
-  updateContextActions(viewport, false);
-  mountVisiblePageWidgets(viewport); // mount page widgets as they pan into view
+  mountVisibleWidgets(viewport);     // mount widgets as they pan into view
   applyGluedWidths(viewport);        // glued widgets track the current zoom
   updateGlueAffordance(viewport);    // the glue button follows its candidate widget
 }
@@ -1187,28 +963,26 @@ function renderViewsSection() {
     cont.appendChild(chip);
   });
 
-  if (window.Sortable) {
-    if (cont._sortable) {
-      cont._sortable.destroy();
-    }
-    cont._sortable = new window.Sortable(cont, {
-      animation: 150,
-      onEnd: () => {
-        const order = cont._sortable.toArray();
-        const orderedPins = [];
-        order.forEach(id => {
-          const pin = live.pins.find(p => p.id === id);
-          if (pin) orderedPins.push(pin);
-        });
-        live.pins = orderedPins;
-        saveLayout();
-        const world = document.querySelector('#dash-world');
-        if (world) {
-          renderPins(world);
-        }
-      }
-    });
+  if (cont._sortable) {
+    cont._sortable.destroy();
   }
+  cont._sortable = new Sortable(cont, {
+    animation: 150,
+    onEnd: () => {
+      const order = cont._sortable.toArray();
+      const orderedPins = [];
+      order.forEach(id => {
+        const pin = live.pins.find(p => p.id === id);
+        if (pin) orderedPins.push(pin);
+      });
+      live.pins = orderedPins;
+      saveLayout();
+      const world = document.querySelector('#dash-world');
+      if (world) {
+        renderPins(world);
+      }
+    }
+  });
 }
 
 // Fly so the world point (wx,wy) snaps to the viewport's TOP-LEFT. Anchoring the
@@ -1380,14 +1154,13 @@ function wireCanvas(container, viewport, world, guides, data) {
 
   // Recompute size-dependent UI whenever the viewport resizes — this catches the
   // sidebar expanding/collapsing (which resizes the canvas WITHOUT a window resize
-  // event), so edge-line indicators, contextual actions, lazy mounts and view frames
-  // stay glued to the walls instead of getting stuck mid-canvas until the next pan.
+  // event), so edge-line indicators, lazy mounts and view frames stay glued to the
+  // walls instead of getting stuck mid-canvas until the next pan.
   const recomputeForSize = (vp) => {
     const gd = vp.querySelector('#dash-guides');
     const wd = vp.querySelector('#dash-world');
     updateGuides(vp, gd);
-    updateContextActions(vp, true);
-    mountVisiblePageWidgets(vp);
+    mountVisibleWidgets(vp);
     applyGluedWidths(vp);        // grow/shrink glued widgets as the sidebar animates
     updateGlueAffordance(vp);    // keep the glue button glued to its widget's edge
     if (isEditMode) renderPins(wd);
@@ -1397,7 +1170,7 @@ function wireCanvas(container, viewport, world, guides, data) {
     const ro = new ResizeObserver(() => recomputeForSize(viewport));
     ro.observe(viewport);
   }
-  window.addEventListener('resize', () => { updateGuides(viewport, guides); updateContextActions(viewport, true); });
+  window.addEventListener('resize', () => { updateGuides(viewport, guides); });
 
   // The sidebar's width transition can finish AFTER the ResizeObserver's last tick, leaving
   // edge indicators a touch off the wall. A one-time transitionend on the sidebar guarantees
@@ -2101,8 +1874,6 @@ function showEditHeader(container, viewport, world, guides, data) {
     renderWidgets(world, data);
     renderPins(world);
     updateGuides(viewport, guides);
-    _ctxVisibleSig = null;
-    updateContextActions(viewport, true);
     applyGluedWidths(viewport);
     updateGlueAffordance(viewport);
   };
@@ -2171,17 +1942,15 @@ function showEditHeader(container, viewport, world, guides, data) {
 // Reusable Add-Widget picker (used by the edit header, the context menu and double-click)
 function openAddWidgetModal(container, viewport, world, guides, data) {
   const available = Object.entries(MODULES).filter(([id]) => widgetAllowed(id));
-  const dataWidgets = available.filter(([, mod]) => !mod.page);
-  const pageWidgets = available.filter(([, mod]) => mod.page);
 
   const card = ([id, mod]) => `
     <div data-id="${id}" style="padding:12px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;"
       onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
       onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
-      <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">${mod.page ? 'web_asset' : 'widgets'}</span>
+      <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">widgets</span>
       <div>
         <div style="font-weight:600;font-size:13px;">${mod.title}</div>
-        <div style="font-size:11px;color:var(--text-tertiary);">${mod.page ? 'Live page' : mod.defaultW + ' · ' + mod.defaultH}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);">${mod.defaultW} · ${mod.defaultH}</div>
       </div>
     </div>`;
 
@@ -2190,16 +1959,7 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
   const content = document.createElement('div');
   content.innerHTML = `
     <div style="max-height:440px;overflow-y:auto;">
-      ${grid(dataWidgets)}
-      ${pageWidgets.length ? `
-        <details style="margin-top:14px;">
-          <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary);padding:6px 2px;user-select:none;list-style:none;display:flex;align-items:center;gap:6px;">
-            <span class="material-icons-outlined" style="font-size:16px;">web_asset</span>
-            Advanced — Full Pages (${pageWidgets.length})
-            <span style="font-weight:400;color:var(--text-tertiary);font-size:11px;">embed a whole page as a widget</span>
-          </summary>
-          <div style="margin-top:10px;">${grid(pageWidgets)}</div>
-        </details>` : ''}
+      ${grid(available)}
     </div>`;
 
   import('../components/Modal.js').then(({ showModal }) => {

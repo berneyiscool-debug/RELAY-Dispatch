@@ -1,5 +1,5 @@
 /* ============================================
-   SIMPRO CLONE — LAYOUT STYLES
+   RELAY — LAYOUT STYLES
    ============================================ */
 
 /* ---- App Shell ---- */
@@ -763,6 +763,14 @@
   padding: 0 !important;
 }
 
+/* Settings pages embed those same table containers, but they are panels inside a
+   settings tab — not full-bleed list views — so the tab keeps the standard page
+   gutter. Without this, tab=materials and tab=storage_options render flush
+   against the window edges. */
+.main-content:has(#settings-content) {
+  padding: 20px 24px !important;
+}
+
 .main-content:has(#dash-viewport),
 .main-content:has(.dash-page) {
   overflow: hidden !important;
@@ -1391,7 +1399,7 @@
   overflow: hidden;
 }
 
-/* Keep every widget title (data + live-page widgets) the same colour */
+/* Keep every widget title the same colour */
 .dash-widget .card-header > span:first-child { color: var(--text-primary); }
 
 .dash-viewport {
@@ -1682,29 +1690,6 @@
   padding: 0;
 }
 .dash-view-chip:hover { transform: scale(1.12); }
-
-/* ── Live page widgets — make an embedded full page fit inside a widget ── */
-.dash-widget.page-widget .card-body { padding: 0; }
-.pw-root { display: flex; flex-direction: column; }
-.pw-host { flex: 1; min-height: 0; }
-.pw-backbar { padding: 8px 10px 2px; flex-shrink: 0; }
-
-/* The page's own header (title + action buttons) is hidden — the widget header shows the
-   name and the action buttons are promoted to the contextual top bar. */
-.dash-widget.page-widget .page-header { display: none; }
-.dash-widget.page-widget .page-toolbar { padding: 6px 12px 8px; }
-
-/* Neutralise the nested DataTable .card chrome so it isn't a card-in-a-card.
-   Scope to the body so the widget's OWN card keeps its solid header background. */
-.dash-widget.page-widget .card-body .card { box-shadow: none; border: none; background: transparent; margin: 0; padding: 0; }
-.dash-widget.page-widget .data-table-wrapper { border-radius: 0; }
-.dash-widget.page-widget .empty-state { padding: 24px 12px; }
-
-/* #3 Compact rows — denser tables inside page widgets so more rows show at a glance */
-.dash-widget.page-widget .data-table th,
-.dash-widget.page-widget .data-table td { padding: 5px 8px; font-size: 12px; }
-.dash-widget.page-widget .data-table { font-size: 12px; }
-.dash-widget.page-widget .pagination { padding: 6px 8px; font-size: 11px; }
 
 /* Right-click canvas context menu */
 .dash-context-menu {
