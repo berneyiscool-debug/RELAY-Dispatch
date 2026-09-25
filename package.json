@@ -58,5 +58,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "RELAY Dispatch"
     }
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.60.2"
   }
 }
