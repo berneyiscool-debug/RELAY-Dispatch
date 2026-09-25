@@ -105,7 +105,6 @@ const MODULES = {
   'low-stock':            { title: 'Low Stock Alerts',            defaultW: 'S',  defaultH: 'standard', render: renderLowStock },
   'profitability-chart':  { title: 'Projected Profitability',     defaultW: 'L',  defaultH: 'tall',     render: renderProfitabilityChart },
   'staff-availability':   { title: 'Staff Availability',          defaultW: 'M',  defaultH: 'tall',     render: renderStaffAvailability },
-  'timesheet-exceptions': { title: 'Timesheet Exceptions',        defaultW: 'M',  defaultH: 'standard', render: renderTimesheetExceptions },
   'asset-status':         { title: 'Asset Status',                defaultW: 'M',  defaultH: 'standard', render: renderAssetStatus },
   'overdue-maintenance':  { title: 'Overdue Maintenance',         defaultW: 'M',  defaultH: 'standard', render: renderOverdueMaintenance },
   'upcoming-maintenance': { title: 'Upcoming Maintenance (7d)',    defaultW: 'M',  defaultH: 'standard', render: renderUpcomingMaintenance },
@@ -139,7 +138,6 @@ const WIDGET_PERMS = {
   'asset-status':         ['Assets', 'view'],
   'overdue-maintenance':  ['Assets', 'view'],
   'upcoming-maintenance': ['Assets', 'view'],
-  'timesheet-exceptions': ['Timesheets', 'approve'],
   'deputy-asks-widget':   ['Dashboard', 'view'],
 };
 
@@ -164,12 +162,11 @@ const WIDGET_DEPS = {
   'low-stock':            ['stock'],
   'profitability-chart':  ['jobs', 'invoices'],
   'staff-availability':   ['jobs', 'technicians'],
-  'timesheet-exceptions': ['timesheets'],
   'asset-status':         ['assets'],
   'overdue-maintenance':  ['maintenancePlans'],
   'upcoming-maintenance': ['maintenancePlans'],
   'top-customers':        ['invoices'],
-  'pending-approvals':    ['quotes', 'timesheets'],
+  'pending-approvals':    ['quotes'],
   'cash-flow':            ['invoices'],
   'revenue-comparison':   ['invoices'],
   'invoice-aging':        ['invoices'],
@@ -1689,30 +1686,7 @@ function wireWidgetControls(grid, data) {
     });
   });
 
-  // 5. Timesheet exception quick approvals
-  grid.querySelectorAll('.btn-quick-ts-approve').forEach(btn => {
-    btn.addEventListener('click', e => {
-      const tsId = e.currentTarget.dataset.tsId;
-      store.update('timesheets', tsId, { status: 'Approved' });
-      import('../components/Notifications.js').then(({ showToast }) => {
-        showToast('Timesheet entry approved', 'success');
-      });
-      window.__relay.reloadDashboard?.();
-    });
-  });
-
-  grid.querySelectorAll('.btn-quick-ts-reject').forEach(btn => {
-    btn.addEventListener('click', e => {
-      const tsId = e.currentTarget.dataset.tsId;
-      store.update('timesheets', tsId, { status: 'Rejected' });
-      import('../components/Notifications.js').then(({ showToast }) => {
-        showToast('Timesheet entry rejected', 'error');
-      });
-      window.__relay.reloadDashboard?.();
-    });
-  });
-
-  // 7. Maintenance quick dispatching
+  // 5. Maintenance quick dispatching
   grid.querySelectorAll('.btn-maint-dispatch').forEach(btn => {
     btn.addEventListener('click', e => {
       const planId = e.currentTarget.dataset.planId;
@@ -2758,37 +2732,6 @@ function renderStaffAvailability(data, item) {
           </div>
         `;
       }).join('')}
-    </div>
-  `;
-}
-
-function renderTimesheetExceptions(data, item) {
-  const timesheets = store.getAll('timesheets') || [];
-  const pending = timesheets.filter(t => t.status === 'Pending');
-  if (!pending.length) return renderPlaceholder('schedule', 'No timesheet alerts');
-
-  return `
-    <div style="display:flex; flex-direction:column; gap:8px; padding:4px 0;">
-      ${pending.map(t => `
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
-          <div style="flex:1; min-width:0;">
-            <div style="font-weight:600; font-size:12px; margin-bottom:2px; color:var(--text-primary);">
-              ${escapeHTML(t.technicianName)}
-              <span style="color:var(--color-primary); font-weight:700; margin-left:6px;">${t.hours} hrs</span>
-            </div>
-            <div style="font-size:12px; color:var(--text-secondary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">Job ${escapeHTML(t.jobNumber || '')} : ${escapeHTML(t.description || '—')}</div>
-            <div style="font-size:11px; color:var(--text-tertiary);">${new Date(t.date).toLocaleDateString()}</div>
-          </div>
-          <div style="display:flex; gap:4px; flex-shrink:0;">
-            <button class="btn btn-ghost btn-icon btn-sm btn-quick-ts-approve" data-ts-id="${t.id}" title="Approve" style="color:var(--color-success); border:1px solid var(--border-color); background:white;">
-              <span class="material-icons-outlined" style="font-size:16px;">check</span>
-            </button>
-            <button class="btn btn-ghost btn-icon btn-sm btn-quick-ts-reject" data-ts-id="${t.id}" title="Reject" style="color:var(--color-danger); border:1px solid var(--border-color); background:white;">
-              <span class="material-icons-outlined" style="font-size:16px;">close</span>
-            </button>
-          </div>
-        </div>
-      `).join('')}
     </div>
   `;
 }

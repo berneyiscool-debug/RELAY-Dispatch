@@ -14,6 +14,8 @@ import { showConfirm } from '../../utils/confirmDialog.js';
 import { navigateLinkHTML } from '../../utils/mapsLinks.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { hasPermission } from '../../utils/permissions.js';
+import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { buildJobTimeLedger, summariseJobTimeLedger } from '../../utils/jobTimeLedger.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
@@ -55,6 +57,8 @@ export function renderJobDetail(container, { id, tab }) {
   let isRecordingValues = false;
   let cachedStockOptionsHtml = null;
   let stagedFiles = [];
+  // Ledger rows selected on the Schedule tab; drives the shared bulk action bar.
+  let ledgerSelection = [];
 
   function getJobTasklistHours(tasks) {
     if (!tasks || tasks.length === 0) return 0;
@@ -960,6 +964,12 @@ export function renderJobDetail(container, { id, tab }) {
   }
 
   function renderTabContent() {
+    // A ledger selection only exists on the Schedule tab; leaving it drops the
+    // bulk bar so the page header's own actions come back.
+    if (activeTab !== 'schedule' && ledgerSelection.length) {
+      ledgerSelection = [];
+      createBulkActionBar({ container, selectedIds: [], actions: [] });
+    }
 
       const recurringCardHtml = job.isRecurring === true ? `
         <div class="card" style="margin-bottom:24px">
@@ -1077,13 +1087,14 @@ export function renderJobDetail(container, { id, tab }) {
         </div>
       ` : '';
     // Sanitize activeTab based on user permissions
-    if ((activeTab === 'costs' || activeTab === 'financials') && !hasPermission('Jobs', 'view_costs')) {
+    // The job Timesheets tab merged into Schedule: old deep links land on the ledger.
+    if (activeTab === 'timesheets') {
+      activeTab = 'schedule';
+    } else if ((activeTab === 'costs' || activeTab === 'financials') && !hasPermission('Jobs', 'view_costs')) {
       activeTab = 'overview';
     } else if (activeTab === 'quotes' && !hasPermission('Jobs', 'view_quotes_tab')) {
       activeTab = 'overview';
     } else if (activeTab === 'materials' && !hasPermission('Jobs', 'view_materials_tab')) {
-      activeTab = 'overview';
-    } else if (activeTab === 'timesheets' && !hasPermission('Jobs', 'view_timesheets_tab')) {
       activeTab = 'overview';
     } else if (activeTab === 'invoices' && !hasPermission('Jobs', 'view_invoices_tab')) {
       activeTab = 'overview';
@@ -1098,155 +1109,398 @@ export function renderJobDetail(container, { id, tab }) {
     }
 
     if (activeTab === 'schedule') {
-      const schedules = store.getAll('schedule').filter(t => t.jobId === id);
+      // One ledger for the job: the plan (dispatches) and the record (booked hours).
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      const canSeeBookedTime = hasPermission('Jobs', 'view_timesheets_tab');
+      const canManageBookings = canSeeBookedTime
+        && (['admin', 'manager', 'office'].includes(currentUser.role) || hasPermission('Timesheets', 'delete'));
+      const canManageDispatch = hasPermission('Schedule', 'edit');
 
-      const techs = store.getAll('technicians').filter(t => !t.deactivated);
-      
-      let totalScheduled = 0;
-      schedules.forEach(s => totalScheduled += (parseFloat(s.hours) || 0));
+      const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
+      const ledger = buildJobTimeLedger({
+        schedule: store.getAll('schedule').filter(t => String(t.jobId) === String(id)),
+        timesheets: store.getAll('timesheets').filter(t => String(t.jobId) === String(id)),
+        includeBookings: canSeeBookedTime
+      });
+      const ledgerTotals = summariseJobTimeLedger(ledger);
+      ledgerSelection = ledgerSelection.filter(key => ledger.some(row => row.key === key));
+      const selectedKeys = ledgerSelection;
+
       const tasklistHours = getJobTasklistHours(job.tasks);
       const estHours = tasklistHours > 0 ? tasklistHours : (parseFloat(job.estimatedHours) || 0);
-      const hoursColor = (totalScheduled > estHours && estHours > 0) ? 'var(--color-danger)' : 'var(--text-primary)';
+      const plannedColor = (ledgerTotals.planned > estHours && estHours > 0) ? 'var(--color-danger)' : 'var(--text-primary)';
+      const varianceColor = ledgerTotals.variance > 0 ? 'var(--color-danger)' : 'var(--text-primary)';
 
-      let scheduleListHtml = '';
-      if (schedules.length === 0) {
-        scheduleListHtml = `
+      const timeWindow = (start, finish) => {
+        if (!start) return '—';
+        const from = new Date(start);
+        if (isNaN(from.getTime())) return '—';
+        const clock = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const to = finish ? new Date(finish) : null;
+        return to && !isNaN(to.getTime()) ? `${clock(from)} – ${clock(to)}` : clock(from);
+      };
+
+      const ledgerRowsHtml = ledger.map(row => {
+        const isBooked = row.type === 'Booked';
+        const day = row.day ? new Date(row.day) : null;
+        const hasDay = day && !isNaN(day.getTime());
+        const dayShort = hasDay ? day.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—';
+        // The full date is only a hover away — the table stays on one line.
+        const dayLong = hasDay ? day.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
+        const isOwnBooking = String(row.technicianId) === String(currentUser.id);
+        const editable = isBooked && !!row.bookingId && (canManageBookings || isOwnBooking);
+        const taskLabel = row.taskName || '—';
+        const plannedLabel = row.scheduledHours === null ? '—' : row.scheduledHours.toFixed(2);
+        const bookedLabel = row.bookedHours === null ? '—' : row.bookedHours.toFixed(2);
+        const plannedTitle = row.scheduledHours === null
+          ? 'Booked without a planned dispatch'
+          : `${row.scheduledHours.toFixed(2)} hrs planned`;
+        return `
+          <tr data-ledger-key="${escapeHTML(row.key)}" data-booking-id="${row.bookingId ? escapeHTML(row.bookingId) : ''}" data-editable="${editable ? '1' : '0'}"${editable ? ' style="cursor:pointer"' : ''}>
+            <td class="dt-select-cell">
+              <input type="checkbox" class="dt-select-row" data-key="${escapeHTML(row.key)}" ${selectedKeys.includes(row.key) ? 'checked' : ''} />
+            </td>
+            <td class="text-secondary" title="${escapeHTML(dayLong)}">${escapeHTML(dayShort)}</td>
+            <td>${escapeHTML(row.technicianName || '—')}</td>
+            <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block" title="${escapeHTML(taskLabel)}">${escapeHTML(taskLabel)}</span></td>
+            <td class="text-secondary">${escapeHTML(timeWindow(row.startTime, row.finishTime))}</td>
+            <td><span class="badge ${isBooked ? 'badge-info' : 'badge-neutral'}">${row.type}</span></td>
+            <td class="num" title="${escapeHTML(plannedTitle)}">${plannedLabel}</td>
+            <td class="num">${bookedLabel}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const ledgerTableHtml = ledger.length === 0
+        ? `
           <div class="empty-state" style="padding:48px 24px; text-align:center">
             <span class="material-icons-outlined" style="font-size:48px;color:var(--text-tertiary);margin-bottom:16px">event_busy</span>
-            <h3>No Scheduled Dispatches</h3>
-            <p class="text-secondary" style="margin-top:8px">This job hasn't been scheduled yet.</p>
+            <h3>Nothing Scheduled or Booked</h3>
+            <p class="text-secondary" style="margin-top:8px">Add a dispatch to plan this job, or log time once work starts.</p>
           </div>
-        `;
-      } else {
-        scheduleListHtml = `
-          <table class="data-table" style="width:100%; font-size:13px">
+        `
+        : `
+          <table class="data-table">
             <thead>
               <tr>
-                <th style="padding:8px 16px;text-align:left">Date</th>
-                <th style="padding:8px 16px;text-align:left">Technician</th>
-                <th style="padding:8px 16px;text-align:left">Task</th>
-                <th style="padding:8px 16px;text-align:left">Times</th>
-                <th style="padding:8px 16px;text-align:right">Hours</th>
-                <th style="padding:8px 16px;text-align:right"></th>
+                <th class="dt-select-col"><input type="checkbox" class="dt-select-all" ${selectedKeys.length === ledger.length ? 'checked' : ''} /></th>
+                <th style="width:10.5%">Date</th>
+                <th style="width:17.5%">Technician</th>
+                <th style="width:18.5%">Task</th>
+                <th style="width:17%">Times</th>
+                <th style="width:12%">Status</th>
+                <th class="num" style="width:10.5%">Scheduled</th>
+                <th class="num" style="width:8%">Booked</th>
               </tr>
             </thead>
-            <tbody>
-              ${schedules.map(s => {
-                const sDate = new Date(s.startTime || s.date);
-                const fDate = s.finishTime ? new Date(s.finishTime) : null;
-                const timeString = fDate 
-                  ? `${sDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${fDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
-                  : sDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                return `
-                  <tr>
-                    <td style="padding:12px 16px;font-weight:500">${sDate.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})}</td>
-                    <td style="padding:12px 16px">${escapeHTML(s.technicianName)}</td>
-                    <td style="padding:12px 16px;color:var(--text-secondary)">${escapeHTML(s.taskName || 'General Task')}</td>
-                    <td style="padding:12px 16px;color:var(--text-secondary)">${timeString}</td>
-                    <td style="padding:12px 16px;text-align:right;font-weight:600">${s.hours}h</td>
-                    <td style="padding:12px 16px;text-align:right">
-                      ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-ghost btn-remove-dispatch" data-id="${s.id}" style="color:var(--color-danger)"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
+            <tbody>${ledgerRowsHtml}</tbody>
           </table>
         `;
-      }
+
+      const rosterCardHtml = `
+        <div class="card">
+          <div class="card-header" style="padding:12px 16px">
+            <h4 style="margin:0; font-size:14px; font-weight:700">Roster & Budget</h4>
+          </div>
+          <div class="card-body" style="padding:16px">
+            <div style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:16px">
+              ${[
+                ['Estimated', estHours > 0 ? `${estHours}h` : '—', 'var(--text-primary)'],
+                ['Scheduled', `${ledgerTotals.planned.toFixed(2)}h`, plannedColor],
+                ['Booked', canSeeBookedTime ? `${ledgerTotals.booked.toFixed(2)}h` : '—', 'var(--text-primary)'],
+                ['Variance', canSeeBookedTime ? `${ledgerTotals.variance > 0 ? '+' : ''}${ledgerTotals.variance.toFixed(2)}h` : '—', varianceColor]
+              ].map(([label, value, color]) => `
+                <div>
+                  <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">${label}</div>
+                  <div style="font-size:18px;font-weight:700;color:${color}">${value}</div>
+                </div>
+              `).join('')}
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin:16px 0 8px;padding-top:16px;border-top:1px solid var(--border-color)">Assigned Techs</div>
+            ${job.technicians && job.technicians.length > 0
+              ? `<div style="display:flex; flex-wrap:wrap; gap:8px">
+                  ${job.technicians.map(t => `
+                    <div style="display:flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border:1px solid var(--border-color); border-radius:9999px">
+                      <div style="width:24px;height:24px;border-radius:12px;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">
+                        ${(t.name || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <span style="font-size:13px">${escapeHTML(t.name || '')}</span>
+                      <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">${t.hours}h</span>
+                    </div>
+                  `).join('')}
+                </div>`
+              : '<div style="font-size:13px;color:var(--text-tertiary)">No technicians assigned</div>'}
+          </div>
+        </div>
+      `;
+
+      const ledgerCardHtml = `
+        <div class="card">
+          <div class="card-header" style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:12px">
+            <h4 style="margin:0; font-size:14px;font-weight:700">Scheduled & Booked</h4>
+            <div style="display:flex; gap:8px">
+              ${canSeeBookedTime ? `<button class="btn btn-sm btn-secondary" id="btn-log-time-tab"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add_task</span> Log Time</button>` : ''}
+              ${canManageDispatch ? `<button class="btn btn-sm btn-primary" id="btn-add-schedule"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Add Dispatch</button>` : ''}
+            </div>
+          </div>
+          <div class="card-body" style="padding:0">
+            ${ledgerTableHtml}
+          </div>
+        </div>
+      `;
 
       tc.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:16px">
           ${recurringCardHtml}
-           <div class="grid-3" style="gap:16px; align-items:start">
-              <div class="card" style="grid-column: span 1">
-                <div class="card-header" style="padding:12px 16px">
-                  <h4 style="margin:0; font-size:14px; font-weight:700">Roster & Budget</h4>
-                </div>
-                <div class="card-body" style="padding:16px">
-                   <div style="display:flex; justify-content:space-between; margin-bottom:8px">
-                     <span style="color:var(--text-secondary)">Estimated Hours:</span>
-                     <span style="font-weight:600">${estHours > 0 ? estHours + 'h' : '—'}</span>
-                   </div>
-                   <div style="display:flex; justify-content:space-between; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border-color)">
-                     <span style="color:var(--text-secondary)">Scheduled Hours:</span>
-                     <span style="font-weight:600; color:${hoursColor}">${totalScheduled}h</span>
-                   </div>
-                   <div style="font-size:12px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:8px">Assigned Techs</div>
-                   ${job.technicians && job.technicians.length > 0 ? job.technicians.map(t => `
-                     <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0">
-                       <div style="display:flex; align-items:center; gap:8px">
-                          <div style="width:24px;height:24px;border-radius:12px;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">
-                            ${escapeHTML((t.name || '?').trim().charAt(0).toUpperCase() || '?')}
-                          </div>
-                          <span style="font-size:13px">${escapeHTML(t.name || '')}</span>
-                       </div>
-                       <span style="font-size:12px;font-weight:600">${t.hours}h</span>
-                     </div>
-                   `).join('') : '<div style="font-size:13px;color:var(--text-tertiary)">No technicians assigned</div>'}
-                </div>
-              </div>
-              
-              <div class="card" style="grid-column: span 2">
-                 <div class="card-header" style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center">
-                    <h4 style="margin:0; font-size:14px; font-weight:700">Dispatch Schedule</h4>
-                    ${hasPermission('Schedule', 'edit') ? `<button class="btn btn-sm btn-primary" id="btn-add-schedule"><span class="material-icons-outlined" style="font-size:16px; margin-right:4px">add</span> Add Dispatch</button>` : ''}
-                 </div>
-                 <div class="card-body">
-                    ${scheduleListHtml}
-                 </div>
-              </div>
-           </div>
+          ${rosterCardHtml}
+          ${ledgerCardHtml}
         </div>
       `;
 
-      tc.querySelectorAll('.btn-remove-dispatch').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const dispatchId = btn.dataset.id;
-          showModal({
-            title: 'Remove Dispatch Entry',
-            content: `
-              <div style="padding: 8px 0;">
-                <p style="margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 500;">Are you sure you want to remove this dispatch entry?</p>
-                <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 13px;">This will remove the technician dispatch schedule entry from the job.</p>
-              </div>
-            `,
-            actions: [
-              {
-                label: 'Cancel',
-                className: 'btn-secondary',
-                onClick: (close) => close()
-              },
-              {
-                label: 'Remove Dispatch',
-                className: 'btn-danger',
-                onClick: (close) => {
-                  store.delete('schedule', dispatchId);
-                  
-                  // Recompute job technicians aggregate
-                  const currentEntries = store.getAll('schedule').filter(t => t.jobId === id);
-                  const allTechIds = [...new Set(currentEntries.map(e => e.technicianId))];
-                  const jobTechs = allTechIds.map(tid => {
-                    const t = store.getById('technicians', tid);
-                    const th = currentEntries.filter(e => e.technicianId === tid).reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
-                    return { id: tid, name: t?.name || '', hours: Math.round(th * 100) / 100 };
-                  });
-                  store.update('jobs', id, {
-                    technicians: jobTechs,
-                    technicianName: jobTechs.map(t => t.name).join(', ')
-                  });
-                  
-                  showToast('Dispatch entry removed', 'info');
-                  close();
-                  renderTabContent();
-                }
+      const removeDispatchEntries = (dispatchIds) => {
+        showModal({
+          title: 'Remove Dispatch Entry',
+          content: `
+            <div style="padding: 8px 0;">
+              <p style="margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 500;">Are you sure you want to remove ${dispatchIds.length === 1 ? 'this dispatch entry' : `these ${dispatchIds.length} dispatch entries`}?</p>
+              <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 13px;">This removes the technician dispatch from the job's plan. Any booked hours stay on the timesheet.</p>
+            </div>
+          `,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Remove Dispatch', className: 'btn-danger', onClick: (close) => {
+                dispatchIds.forEach(dispatchId => store.delete('schedule', dispatchId));
+
+                // Recompute job technicians aggregate from what is left
+                const currentEntries = store.getAll('schedule').filter(t => t.jobId === id);
+                const allTechIds = [...new Set(currentEntries.map(e => e.technicianId))];
+                const jobTechs = allTechIds.map(tid => {
+                  const t = store.getById('technicians', tid);
+                  const th = currentEntries.filter(e => e.technicianId === tid).reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
+                  return { id: tid, name: t?.name || '', hours: Math.round(th * 100) / 100 };
+                });
+                store.update('jobs', id, {
+                  technicians: jobTechs,
+                  technicianName: jobTechs.map(t => t.name).join(', ')
+                });
+
+                ledgerSelection = [];
+                showToast(`${dispatchIds.length} dispatch ${dispatchIds.length === 1 ? 'entry' : 'entries'} removed`, 'info');
+                close();
+                renderTabContent();
               }
-            ]
+            }
+          ]
+        });
+      };
+
+      // Selection drives the shared bulk bar in the breadcrumb action row, exactly
+      // as on the list tables. Deferred: the app shell relocates the page header in
+      // a microtask and would otherwise wipe the bar on every re-render.
+      const syncBulkBar = () => {
+        const selected = ledger.filter(row => selectedKeys.includes(row.key));
+        const bookedRows = selected.filter(row => row.bookingId);
+        const plannedRows = selected.filter(row => !row.bookingId && row.dispatchId);
+        const actions = [];
+
+        if (bookedRows.length && canManageBookings) {
+          actions.push({
+            label: bookedRows.length === 1 ? 'Delete booking' : `Delete ${bookedRows.length} bookings`,
+            icon: 'delete',
+            className: 'btn-danger',
+            onClick: () => {
+              showModal({
+                title: 'Confirm Delete',
+                content: `<p>Delete ${bookedRows.length} selected booking${bookedRows.length === 1 ? '' : 's'}? The planned dispatch stays on the job.</p>`,
+                actions: [
+                  { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+                  {
+                    label: 'Delete', className: 'btn-danger', onClick: (close) => {
+                      bookedRows.forEach(row => store.delete('timesheets', row.bookingId));
+                      showToast(`Deleted ${bookedRows.length} booking${bookedRows.length === 1 ? '' : 's'} successfully`, 'success');
+                      ledgerSelection = [];
+                      close();
+                      renderTabContent();
+                    }
+                  }
+                ]
+              });
+            }
           });
+        }
+
+        if (plannedRows.length && canManageDispatch) {
+          actions.push({
+            label: plannedRows.length === 1 ? 'Remove dispatch' : `Remove ${plannedRows.length} dispatches`,
+            icon: 'event_busy',
+            onClick: () => removeDispatchEntries(plannedRows.map(row => row.dispatchId))
+          });
+        }
+
+        createBulkActionBar({
+          container: tc,
+          selectedIds: selectedKeys,
+          actions,
+          onClear: () => {
+            ledgerSelection = [];
+            renderTabContent();
+          }
+        });
+      };
+      setTimeout(syncBulkBar, 0);
+
+      tc.querySelector('.dt-select-all')?.addEventListener('change', (e) => {
+        ledgerSelection = e.target.checked ? ledger.map(row => row.key) : [];
+        renderTabContent();
+      });
+
+      tc.querySelectorAll('.dt-select-row').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const key = cb.dataset.key;
+          if (e.target.checked) {
+            if (!ledgerSelection.includes(key)) ledgerSelection = [...ledgerSelection, key];
+          } else {
+            ledgerSelection = ledgerSelection.filter(k => k !== key);
+          }
+          renderTabContent();
+        });
+      });
+
+      // Booked rows open the booking, matching the Timesheets table.
+      tc.querySelectorAll('tr[data-ledger-key]').forEach(row => {
+        if (row.dataset.editable !== '1') return;
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('a, button, input, label, .dt-select-row')) return;
+          showTimesheetEditModal(row.dataset.bookingId, renderTabContent);
         });
       });
 
       tc.querySelector('#btn-add-schedule')?.addEventListener('click', openAddDispatchModal);
+
+      tc.querySelector('#btn-log-time-tab')?.addEventListener('click', () => {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const now = new Date();
+        const p = n => n.toString().padStart(2, '0');
+        const dateStr = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+
+        function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
+          let result = [];
+          if (!tasks) return result;
+          tasks.forEach((p, i) => {
+            const path = [...currentPath, i].join('-');
+            const namePath = [...currentNamePath, p.name].join(' > ');
+            result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
+            if (p.subTasks) {
+              result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
+            }
+          });
+          return result;
+        }
+        // Ensure job tasks are initialized
+        if (!job.tasks || job.tasks.length === 0) {
+          job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
+        }
+        const flatTasks = getFlatTasks(job.tasks);
+        const leafTasks = flatTasks.filter(t => t.isLeaf);
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Date *</label>
+              <input type="date" class="form-input" id="lt-date" value="${dateStr}" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Technician *</label>
+              <select class="form-select" id="lt-tech" ${(() => {
+                const hasTechRecord = techs.some(t => t.id === currentUser.id);
+                return (currentUser.role === 'technician' && hasTechRecord) ? 'disabled' : '';
+              })()}>
+                <option value="">Select tech...</option>
+                ${(() => {
+                  const hasTechRecord = techs.some(t => t.id === currentUser.id);
+                  let html = '';
+                  if (!hasTechRecord) {
+                    html += `<option value="${currentUser.id}" selected>${currentUser.name} (You)</option>`;
+                  }
+                  html += techs.map(t => {
+                    const isSelected = hasTechRecord ? t.id === currentUser.id : t.name === currentUser.name;
+                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${t.name}</option>`;
+                  }).join('');
+                  return html;
+                })()}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1">
+              <label class="form-label">Task *</label>
+              <select class="form-select" id="lt-task" style="width:100%">
+                <option value="">Select task...</option>
+                ${leafTasks.map(t => `<option value="${t.path}">${escapeHTML(t.name)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Hours *</label>
+              <input type="number" class="form-input" id="lt-hours" value="1" min="0.5" step="0.5" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <input type="text" class="form-input" id="lt-desc" placeholder="Brief description..." />
+            </div>
+          </div>
+        `;
+
+        showDrawer({
+          title: 'Log Time',
+          content: content.outerHTML,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Save', className: 'btn-primary', onClick: (close) => {
+                const dOverlay = document.querySelector('.drawer-overlay');
+                const dateVal = dOverlay.querySelector('#lt-date').value;
+                const techId = dOverlay.querySelector('#lt-tech').value;
+                const taskPathVal = dOverlay.querySelector('#lt-task').value;
+                const hoursVal = parseFloat(dOverlay.querySelector('#lt-hours').value);
+                const descVal = dOverlay.querySelector('#lt-desc').value;
+
+                if (!dateVal || !techId || isNaN(hoursVal) || !taskPathVal) {
+                  showToast('Please fill all required fields, including the task', 'error');
+                  return;
+                }
+
+                const tech = techs.find(t => t.id === techId) || (techId === currentUser.id ? currentUser : null);
+                const selectedTask = leafTasks.find(t => t.path === taskPathVal);
+                if (!tech) {
+                  showToast('Could not resolve technician', 'error');
+                  return;
+                }
+                const taskNameVal = selectedTask ? selectedTask.name : '';
+
+                store.create('timesheets', {
+                  jobId: id,
+                  jobNumber: job.number,
+                  taskId: taskPathVal,
+                  taskName: taskNameVal,
+                  technicianId: techId,
+                  technicianName: tech.name,
+                  date: dateVal,
+                  hours: hoursVal,
+                  description: descVal,
+                });
+
+                showToast('Time logged successfully', 'success');
+                renderTabContent();
+                close();
+              }
+            }
+          ]
+        });
+      });
     }
 
     if (activeTab === 'overview') {
@@ -3573,214 +3827,6 @@ export function renderJobDetail(container, { id, tab }) {
           job.customerActivityLog = job.customerActivityLog.filter(l => l.id !== btn.dataset.id);
           store.update('jobs', id, { customerActivityLog: job.customerActivityLog });
           renderTabContent();
-        });
-      });
-    } else if (activeTab === 'timesheets') {
-      const timesheets = store.getAll('timesheets').filter(t => t.jobId === id);
-      const getTsHours = t => parseFloat(t.hours !== undefined ? t.hours : (t.durationHours !== undefined ? t.durationHours : (t.duration_hours !== undefined ? t.duration_hours : 0))) || 0;
-      const getTsTaskName = t => t.taskName || t.phaseName || t.task_name || t.description || '—';
-      const totalHours = timesheets.reduce((sum, t) => sum + getTsHours(t), 0);
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      const techs = store.getAll('technicians').filter(t => !t.deactivated || t.id === currentUser.id);
-
-      tc.innerHTML = `
-        <div class="card" style="margin-bottom:var(--space-lg)">
-          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0">Timesheets (${totalHours.toFixed(2)} hrs total)</h4>
-            <button class="btn btn-sm btn-primary" id="btn-log-time-tab"><span class="material-icons-outlined" style="font-size:16px;">add_task</span> Log Time</button>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead><tr><th>Date</th><th>Technician</th><th>Task</th><th>Description</th><th style="text-align:right">Hours</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
-              <tbody>
-                      ${timesheets.length ? timesheets.map(t => {
-        const isOwner = String(t.technicianId) === String(currentUser.id);
-        const canEdit = ['admin', 'manager', 'office'].includes(currentUser.role) || (isOwner && t.status !== 'Approved');
-        const canDelete = ['admin', 'manager', 'office'].includes(currentUser.role) || (isOwner && t.status !== 'Approved');
-        return `
-                  <tr>
-                    <td>${new Date(t.date).toLocaleDateString()}</td>
-                    <td>${escapeHTML(t.technicianName)}</td>
-                    <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(getTsTaskName(t))}</span></td>
-                    <td class="text-secondary">${escapeHTML(t.description || '—')}</td>
-                    <td style="text-align:right;font-weight:600">${getTsHours(t).toFixed(2)}</td>
-                    <td><span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">${t.status}</span></td>
-                    <td style="text-align:right">
-                      <div style="display:flex; justify-content:flex-end; gap:4px;">
-                        ${canEdit ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-edit-ts-job" data-id="${t.id}" title="Edit entry">
-                            <span class="material-icons-outlined" style="font-size:16px">edit</span>
-                          </button>
-                        ` : ''}
-                        ${canDelete ? `
-                          <button class="btn btn-ghost btn-sm btn-icon btn-delete-ts-job" data-id="${t.id}" title="Delete entry" style="color:var(--color-danger)">
-                            <span class="material-icons-outlined" style="font-size:16px">delete</span>
-                          </button>
-                        ` : ''}
-                      </div>
-                    </td>
-                  </tr>
-                `;
-      }).join('') : '<tr><td colspan="7" style="text-align:center;padding:20px" class="text-secondary">No time logged yet</td></tr>'}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-
-      tc.querySelectorAll('.btn-edit-ts-job').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const tsId = btn.dataset.id;
-          showTimesheetEditModal(tsId, renderTabContent);
-        });
-      });
-
-      tc.querySelectorAll('.btn-delete-ts-job').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const tsId = btn.dataset.id;
-          const ts = store.getById('timesheets', tsId);
-          if (!ts) return;
-
-          showModal({
-            title: 'Confirm Delete',
-            content: `<p>Are you sure you want to delete this timesheet entry for <strong>${ts.hours} hrs</strong>?</p>`,
-            actions: [
-              { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-              {
-                label: 'Delete', className: 'btn-danger', onClick: (close) => {
-                  store.delete('timesheets', tsId);
-                  showToast('Timesheet entry deleted successfully', 'success');
-                  close();
-                  renderTabContent();
-                }
-              }
-            ]
-          });
-        });
-      });
-
-      tc.querySelector('#btn-log-time-tab')?.addEventListener('click', () => {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-        const now = new Date();
-        const p = n => n.toString().padStart(2, '0');
-        const dateStr = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
-
-        function getFlatTasks(tasks, currentPath = [], currentNamePath = []) {
-          let result = [];
-          if (!tasks) return result;
-          tasks.forEach((p, i) => {
-            const path = [...currentPath, i].join('-');
-            const namePath = [...currentNamePath, p.name].join(' > ');
-            result.push({ path, name: namePath, isLeaf: !p.subTasks || p.subTasks.length === 0 });
-            if (p.subTasks) {
-              result = result.concat(getFlatTasks(p.subTasks, [...currentPath, i], [...currentNamePath, p.name]));
-            }
-          });
-          return result;
-        }
-        // Ensure job tasks are initialized
-        if (!job.tasks || job.tasks.length === 0) {
-          job.tasks = [{ id: store.generateId(), name: 'Main Task', status: 'Not Started', progress: 0, startDate: new Date().toISOString(), technicians: [], subTasks: [] }];
-        }
-        const flatTasks = getFlatTasks(job.tasks);
-        const leafTasks = flatTasks.filter(t => t.isLeaf);
-
-        const content = document.createElement('div');
-        content.innerHTML = `
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Date *</label>
-              <input type="date" class="form-input" id="lt-date" value="${dateStr}" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Technician *</label>
-              <select class="form-select" id="lt-tech" ${(() => {
-                const hasTechRecord = techs.some(t => t.id === currentUser.id);
-                return (currentUser.role === 'technician' && hasTechRecord) ? 'disabled' : '';
-              })()}>
-                <option value="">Select tech...</option>
-                ${(() => {
-                  const hasTechRecord = techs.some(t => t.id === currentUser.id);
-                  let html = '';
-                  if (!hasTechRecord) {
-                    html += `<option value="${currentUser.id}" selected>${escapeHTML(currentUser.name)} (You)</option>`;
-                  }
-                  html += techs.map(t => {
-                    const isSelected = hasTechRecord ? t.id === currentUser.id : t.name === currentUser.name;
-                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
-                  }).join('');
-                  return html;
-                })()}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group" style="grid-column: 1 / -1">
-              <label class="form-label">Task *</label>
-              <select class="form-select" id="lt-task" style="width:100%">
-                <option value="">Select task...</option>
-                ${leafTasks.map(t => `<option value="${t.path}">${escapeHTML(t.name)}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Hours *</label>
-              <input type="number" class="form-input" id="lt-hours" value="1" min="0.5" step="0.5" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Description</label>
-              <input type="text" class="form-input" id="lt-desc" placeholder="Brief description..." />
-            </div>
-          </div>
-        `;
-
-        showDrawer({
-          title: 'Log Time',
-          content: content.outerHTML,
-          actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            {
-              label: 'Save', className: 'btn-primary', onClick: (close) => {
-                const dOverlay = document.querySelector('.drawer-overlay');
-                const dateVal = dOverlay.querySelector('#lt-date').value;
-                const techId = dOverlay.querySelector('#lt-tech').value;
-                const taskPathVal = dOverlay.querySelector('#lt-task').value;
-                const hoursVal = parseFloat(dOverlay.querySelector('#lt-hours').value);
-                const descVal = dOverlay.querySelector('#lt-desc').value;
-
-                if (!dateVal || !techId || isNaN(hoursVal) || !taskPathVal) {
-                  showToast('Please fill all required fields, including the task', 'error');
-                  return;
-                }
-
-                const tech = techs.find(t => t.id === techId) || (techId === currentUser.id ? currentUser : null);
-                const selectedTask = leafTasks.find(t => t.path === taskPathVal);
-                if (!tech) {
-                  showToast('Could not resolve technician', 'error');
-                  return;
-                }
-                const taskNameVal = selectedTask ? selectedTask.name : '';
-
-                store.create('timesheets', {
-                  jobId: id,
-                  jobNumber: job.number,
-                  taskId: taskPathVal,
-                  taskName: taskNameVal,
-                  technicianId: techId,
-                  technicianName: tech.name,
-                  date: dateVal,
-                  hours: hoursVal,
-                  description: descVal,
-                  status: 'Pending'
-                });
-
-                showToast('Time logged successfully', 'success');
-                renderTabContent();
-                close();
-              }
-            }
-          ]
         });
       });
     } else if (activeTab === 'forms') {

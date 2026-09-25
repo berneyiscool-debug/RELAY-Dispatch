@@ -53,7 +53,7 @@ export function hasPermission(module, key) {
     if (module === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
     if (module === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
     if (module === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
-    if (module === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
+    if (module === 'Timesheets') return ['view_own', 'create', 'edit_all'].includes(key);
     if (module === 'Settings') return ['view', 'edit_company'].includes(key);
     if (module === 'Documents') return ['view', 'upload'].includes(key);
     if (module === 'Projects') return ['view', 'create', 'edit'].includes(key);

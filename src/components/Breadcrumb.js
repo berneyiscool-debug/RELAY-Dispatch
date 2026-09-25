@@ -10,7 +10,7 @@ const routeLabels = {
   '/stock': 'Stock',
   '/invoices': 'Invoices',
   '/settings': 'Settings',
-  '/timesheets': 'Timesheets',
+  '/timesheets': 'Time & Pay',
   '/contractors': 'Contractors',
   '/suppliers': 'Suppliers',
   '/assets': 'Assets',

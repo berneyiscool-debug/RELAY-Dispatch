@@ -10,22 +10,24 @@ import { showTimesheetEditModal } from '../../utils/timesheetModals.js';
 import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
+import { createDataTable } from '../../components/DataTable.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { setListSearch } from '../../utils/listSearch.js';
-import { getClockStatusForToday, getActiveClock, clockOut, formatDuration, mapsLink } from '../../utils/timeClock.js';
 import { renderAttendanceView } from './Attendance.js';
+import { renderHoursView } from './Hours.js';
+import { renderPayrollView } from './Payroll.js';
+import { resolveSection, sectionTitle } from '../../utils/timesheetSections.js';
 
 export function renderTimesheetsList(container, params = {}) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
   const userType = currentUser.userTypeId ? store.getById('userTypes', currentUser.userTypeId) : null;
   const permissions = userType ? userType.permissions?.find(p => p.module === 'Timesheets') : null;
 
-  let filterStatus = 'All';
   let filterTechId = 'All';
-  // The Timesheets / Who's-In selection now lives in the sidebar contextual menu
-  // and is driven by the URL (?tab=) rather than in-page tabs.
-  let showWhoIsIn = params.tab === 'whos-in';
+  // Section and view come from the URL (?tab= / ?view=): the sidebar picks the
+  // section, the pill strip in the page header picks the view inside it.
+  const nav = resolveSection(params.tab, params.view);
 
   // Initialize date range filter defaults (last 7 days to today)
   const today = new Date();
@@ -52,178 +54,33 @@ export function renderTimesheetsList(container, params = {}) {
   let currentPage = 1;
   let closePageSizePop = null; // outside-click handler, removed before each re-attach
 
+  // Job hours booked against jobs, and nothing else. Clocked time is attendance and
+  // lives on the Hours view; booked leave lives on the roster and is decided there too,
+  // so neither is merged into this list.
   function getCombinedTimesheets() {
     const rawTimesheets = store.getAll('timesheets') || [];
-    const schedules = store.getAll('schedule') || [];
-    
-    // Inject booked leave
-    const leaveBlocks = schedules.filter(s => s.type === 'leave').map(s => {
-      const startD = new Date(s.date + 'T' + String(Math.floor(s.startHour)).padStart(2, '0') + ':00');
-      const endD = new Date(s.date + 'T' + String(Math.floor(s.endHour)).padStart(2, '0') + ':00');
-      
-      return {
-        id: `leave_${s.id}`, // Prefix to intercept actions
-        isLeave: true,
-        originalScheduleId: s.id,
-        technicianId: s.technicianId,
-        date: s.date,
-        startTime: startD.toISOString(),
-        finishTime: endD.toISOString(),
-        hours: s.endHour - s.startHour,
-        jobNumber: 'LEAVE',
-        taskName: 'Leave / Time Off',
-        description: s.notes || 'Booked Leave',
-        status: s.status || 'Pending' // default to Pending
-      };
-    });
-
-    return [...rawTimesheets, ...leaveBlocks].sort((a, b) => new Date(b.date) - new Date(a.date));
-  }
-
-  function formatClockTime(iso) {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
-  }
-
-  // "Who's In Today" board: one row per technician with their live attendance status.
-  function renderWhosInBoard() {
-    const isLocalAdmin = localStorage.getItem('relay_login_mode') === 'local';
-    const canViewAll = ['admin', 'manager', 'office'].includes(currentUser.role) || (permissions && permissions.view) || isLocalAdmin;
-    let technicians = (store.getAll('technicians') || [])
-      .filter(t => !t.deactivated)
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-    // Technicians who aren't managers only see their own attendance.
-    if (!canViewAll) {
-      technicians = technicians.filter(t => String(t.id) === String(currentUser.id));
-    }
-
-    const rows = technicians.map(tech => {
-      const s = getClockStatusForToday(tech.id);
-      const isSelf = String(tech.id) === String(currentUser.id);
-      const canClockOut = s.status === 'in' && (canViewAll || isSelf);
-      return { tech, ...s, isSelf, canClockOut };
-    });
-
-    // Clocked-in technicians first, then alphabetical.
-    rows.sort((a, b) => {
-      const rank = (r) => (r.status === 'in' ? 0 : 1);
-      if (rank(a) !== rank(b)) return rank(a) - rank(b);
-      return 0;
-    });
-
-    const inCount = rows.filter(r => r.status === 'in').length;
-
-    container.innerHTML = `
-      <div id="whos-in-table-container">
-        <div class="card data-table-card">
-          ${
-            rows.length === 0 ? `
-            <div class="empty-state">
-              <span class="material-icons-outlined">access_time</span>
-              <h3>No staff to show</h3>
-              <p>Add technicians to your company to track who is in today.</p>
-            </div>` : `
-            <div class="whos-in-summary">
-              <span class="whos-in-dot"></span>
-              <strong>${inCount}</strong> of <strong>${rows.length}</strong> technician${rows.length === 1 ? '' : 's'} clocked in today
-            </div>
-            <div class="data-table-wrapper">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th style="width:24%">Technician</th>
-                    <th style="width:12%">Status</th>
-                    <th style="width:12%">Clock In</th>
-                    <th style="width:12%">Clock Out</th>
-                    <th style="width:10%">On Shift</th>
-                    <th style="width:18%">Location</th>
-                    <th style="width:12%; text-align:right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${rows.map(r => {
-                    const statusChip = r.status === 'in'
-                      ? `<span class="whos-status whos-in">In</span>`
-                      : r.status === 'out'
-                        ? `<span class="whos-status whos-out">Out</span>`
-                        : `<span class="whos-status whos-notin">Not In</span>`;
-                    const loc = mapsLink(r.location)
-                      ? `<a href="${mapsLink(r.location)}" target="_blank" rel="noopener" class="whos-loc-link" data-tooltip="View on map" data-tooltip-pos="top"><span class="material-icons-outlined" style="font-size:16px;">near_me</span> Map</a>`
-                      : `<span style="color:var(--text-tertiary);font-size:12px;">${r.location ? 'Location recorded' : '—'}</span>`;
-                    const action = r.canClockOut
-                      ? `<button class="btn btn-sm btn-danger" data-clockout="${escapeHTML(r.tech.id)}" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0;"><span class="material-icons-outlined" style="font-size:13px;">stop</span> <span class="btn-label">Clock Out</span></button>`
-                      : `<span style="color:var(--text-tertiary);font-size:12px;">—</span>`;
-                    return `
-                      <tr class="${r.status === 'in' ? 'whos-row-in' : ''}">
-                        <td>
-                          <div class="flex items-center" style="gap:8px;">
-                            <span class="whos-avatar" style="background:${escapeHTML(r.tech.color || '#666')};">${escapeHTML((r.tech.name || '?').charAt(0).toUpperCase())}</span>
-                            <span style="font-weight:500;">${escapeHTML(r.tech.name || 'Unknown')}</span>
-                            ${r.isSelf ? '<span style="font-size:10px;color:var(--text-tertiary);">(You)</span>' : ''}
-                          </div>
-                        </td>
-                        <td>${statusChip}</td>
-                        <td>${formatClockTime(r.clockInAt)}</td>
-                        <td>${formatClockTime(r.clockOutAt)}</td>
-                        <td>${r.status === 'in' ? formatDuration(r.durationMs) : '—'}</td>
-                        <td>${loc}</td>
-                        <td style="text-align:right;">${action}</td>
-                      </tr>`;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>`
-          }
-        </div>
-      </div>
-    `;
-
-    // Admin/manager (or self) force clock-out.
-    container.querySelectorAll('[data-clockout]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const techId = btn.getAttribute('data-clockout');
-        const tech = technicians.find(t => String(t.id) === String(techId));
-        const active = getActiveClock(techId);
-        if (!active) {
-          showToast('This technician is not currently clocked in.', 'info');
-          return;
-        }
-        showModal({
-          title: `Clock Out ${tech?.name || 'Technician'}`,
-          content: 'Are you sure you want to clock this technician out now?',
-          actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            {
-              label: 'Clock Out',
-              className: 'btn-danger',
-              onClick: async (close) => {
-                close();
-                try {
-                  await clockOut(active.id);
-                  showToast(`${tech?.name || 'Technician'} clocked out.`, 'success');
-                  render();
-                } catch (err) {
-                  showToast('Unable to clock out. Please try again.', 'error');
-                }
-              }
-            }
-          ]
-        });
-      });
-    });
+    return [...rawTimesheets].sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
   function render() {
-    const tab = params.tab;
-    if (tab === 'attendance' || tab === 'schedule-vs-actual' || tab === 'payroll' || tab === 'attendance-approvals') {
-      renderAttendanceView(container, params);
+    if (nav.section === 'hours') {
+      renderHoursView(container, params);
       return;
     }
 
-    if (showWhoIsIn) {
-      renderWhosInBoard();
+    if (nav.section === 'payroll') {
+      // The pay run is its own screen now; the roster-vs-worked comparison stays with
+      // the attendance views until the surplus ones are retired.
+      if (nav.view === 'variance') {
+        renderAttendanceView(container, params);
+        return;
+      }
+      renderPayrollView(container, params);
+      return;
+    }
+
+    if (nav.section === 'attendance') {
+      renderAttendanceView(container, params);
       return;
     }
 
@@ -242,9 +99,8 @@ export function renderTimesheetsList(container, params = {}) {
       visibleTimesheets = [];
     }
 
-    // Apply the tech + date-range filters first (across all statuses). This is the base
-    // set the status-count chips are computed from, so their numbers match what the table
-    // actually shows for the current tech/date window. The status filter is layered on top.
+    // Apply the tech + date-range filters. Job hours carry no approval state of their
+    // own — they are a record of what was booked to a job — so there is no status filter.
     let dateTechFiltered = [...visibleTimesheets];
     if (canViewAll && filterTechId !== 'All') {
       dateTechFiltered = dateTechFiltered.filter(t => String(t.technicianId) === String(filterTechId));
@@ -256,9 +112,7 @@ export function renderTimesheetsList(container, params = {}) {
       dateTechFiltered = dateTechFiltered.filter(t => (t.date ? t.date.split('T')[0] : '') <= filterEndDate);
     }
 
-    let filteredData = filterStatus === 'All' ? [...dateTechFiltered] : dateTechFiltered.filter(t => t.status === filterStatus);
-
-    const totalPending = filteredData.filter(t => t.status === 'Pending').reduce((s, t) => s + (t.hours || 0), 0);
+    const filteredData = dateTechFiltered;
 
     const allFilteredIds = filteredData.map(t => t.id);
     const allSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedIds.includes(id));
@@ -329,7 +183,7 @@ export function renderTimesheetsList(container, params = {}) {
 
     container.innerHTML = `
       <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-        <h1>Timesheets & Approval</h1>
+        <h1>${sectionTitle(nav.section)}</h1>
         <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
           <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
           <select id="filter-sort-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;" title="Sort Timesheets">
@@ -337,7 +191,6 @@ export function renderTimesheetsList(container, params = {}) {
             <option value="date_asc">Sort: Oldest First</option>
             <option value="technician_asc">Sort: Technician (A-Z)</option>
             <option value="hours_desc">Sort: Hours (High-Low)</option>
-            <option value="status_asc">Sort: Status</option>
           </select>
           ${(currentUser.role === 'admin' || currentUser.role === 'manager' || isLocalAdmin) ? `
           <select class="form-select" id="filter-tech" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
@@ -352,27 +205,16 @@ export function renderTimesheetsList(container, params = {}) {
               return html;
             })()}
           </select>` : ''}
-          <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
-            <option value="All" ${filterStatus === 'All' ? 'selected' : ''}>All Statuses (${dateTechFiltered.length})</option>
-            <option value="Pending" ${filterStatus === 'Pending' ? 'selected' : ''}>Pending (${dateTechFiltered.filter(t => t.status === 'Pending').length})</option>
-            <option value="Approved" ${filterStatus === 'Approved' ? 'selected' : ''}>Approved (${dateTechFiltered.filter(t => t.status === 'Approved').length})</option>
-            <option value="Rejected" ${filterStatus === 'Rejected' ? 'selected' : ''}>Rejected (${dateTechFiltered.filter(t => t.status === 'Rejected').length})</option>
-          </select>
           ${hasPermission('Timesheets', 'create') ? `
             <button class="btn btn-sm btn-primary" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
               <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">Log Time</span>
-            </button>
-          ` : ''}
-          ${(currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) ? `
-            <button class="btn btn-sm btn-primary" id="btn-approve-all-pending" data-tooltip="Instantly approve all pending timesheets in the active filtered view" data-tooltip-pos="left" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" ${!visibleTimesheets.some(t => t.status === 'Pending') ? 'disabled' : ''}>
-              <span class="material-icons-outlined" style="font-size:13px;">done_all</span> <span class="btn-label">Approve All</span>
             </button>
           ` : ''}
         </div>
       </div>
 
       <div id="timesheets-table-container">
-      <div class="card data-table-card">
+        <div class="card data-table-card">
         ${groups.length === 0 ? `
         <div class="empty-state">
           <span class="material-icons-outlined">schedule</span>
@@ -384,32 +226,25 @@ export function renderTimesheetsList(container, params = {}) {
           <table class="data-table">
             <thead>
               <tr>
-                <th class="dt-select-col" style="width:36px"><input type="checkbox" id="th-select-all" ${allSelected ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px; margin:0;" /></th>
-                <th style="width:12%">Date</th>
-                <th style="width:18%">Tech</th>
-                <th style="width:26%">Job</th>
-                <th style="width:18%">Task</th>
-                <th class="num" style="width:8%">Hrs</th>
-                <th style="width:9%">Status</th>
-                <th style="width:9%; text-align:right">Actions</th>
+                <th class="dt-select-col"><input type="checkbox" class="dt-select-all" ${allSelected ? 'checked' : ''} /></th>
+                <th style="width:16.8%">Date</th>
+                <th style="width:17.4%">Tech</th>
+                <th style="width:28.5%">Job</th>
+                <th style="width:18.3%">Task</th>
+                <th class="num" style="width:14.1%">Hrs</th>
               </tr>
             </thead>
             <tbody>
               ${groups.map(group => `
                 <tr class="group-header" style="background:var(--content-bg);">
                   <td></td>
-                  <td colspan="4" style="color:var(--text-primary)">${group.dateStr}</td>
-                  <td style="text-align:right; color:var(--color-primary)">${group.total.toFixed(2)} hrs</td>
-                  <td></td>
-                  <td></td>
+                  <td colspan="4">${group.dateStr}</td>
+                  <td class="num" style="color:var(--color-primary)">${group.total.toFixed(2)} hrs</td>
                 </tr>
                 ${group.items.map(t => {
                   const isOwner = String(t.technicianId) === String(currentUser.id);
-                  const hasEditPerm = (permissions && permissions.edit === true) || isOwner;
-                  const hasDeletePerm = (permissions && permissions.delete === true) || isOwner;
 
-                  const canEdit = ['admin', 'manager', 'office'].includes(currentUser.role) || (hasEditPerm && t.status !== 'Approved');
-                  const canDelete = ['admin', 'manager', 'office'].includes(currentUser.role) || (hasDeletePerm && t.status !== 'Approved');
+                  const canEdit = ['admin', 'manager', 'office'].includes(currentUser.role) || (permissions && permissions.edit === true) || isOwner;
                   const isRowChecked = selectedIds.includes(t.id);
 
                   const job = jobMap.get(t.jobId);
@@ -423,42 +258,15 @@ export function renderTimesheetsList(container, params = {}) {
                   }
 
                   return `
-                  <tr>
+                  <tr data-timesheet-id="${escapeHTML(t.id)}" data-editable="${canEdit ? '1' : '0'}">
                     <td class="dt-select-cell">
-                      <input type="checkbox" class="row-checkbox" data-id="${t.id}" ${isRowChecked ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px; margin:0;" />
+                      <input type="checkbox" class="dt-select-row" data-id="${t.id}" ${isRowChecked ? 'checked' : ''} />
                     </td>
-                    <td class="text-secondary">${new Date(t.date).toLocaleDateString()}</td>
+                    <td class="text-secondary">${new Date(t.date).toLocaleDateString('en-AU')}</td>
                     <td>${escapeHTML(t.technicianName)}</td>
                     <td><a href="#/jobs/${t.jobId}" class="cell-link" title="${escapeHTML(jobLabel)}">${escapeHTML(jobLabel)}</a></td>
                     <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || t.phaseName || t.task_name || '—')}</span></td>
                     <td class="num">${(t.hours ?? t.durationHours ?? t.duration_hours ?? 0).toFixed(2)}</td>
-                    <td>
-                      <span class="badge ${t.status === 'Approved' ? 'badge-success' : t.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">
-                        ${escapeHTML(t.status)}
-                      </span>
-                    </td>
-                    <td class="num" style="padding:2px 8px">
-                      <div style="display:flex; align-items:center; justify-content:flex-end; gap:2px;">
-                        ${canEdit ? `
-                          <button class="btn btn-sm btn-ghost btn-edit-timesheet" data-id="${t.id}" data-tooltip="Edit timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;">
-                            <span class="material-icons-outlined" style="font-size:16px">edit</span>
-                          </button>
-                        ` : ''}
-                        ${canDelete ? `
-                          <button class="btn btn-sm btn-ghost btn-delete-timesheet" data-id="${t.id}" data-tooltip="Delete timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;color:var(--color-danger)">
-                            <span class="material-icons-outlined" style="font-size:16px">delete</span>
-                          </button>
-                        ` : ''}
-                        ${['admin', 'manager'].includes(currentUser.role) && t.status === 'Pending' ? `
-                          <button class="btn btn-sm btn-ghost btn-approve-single" data-id="${t.id}" data-tooltip="Approve timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;color:var(--color-success)">
-                            <span class="material-icons-outlined" style="font-size:16px">check</span>
-                          </button>
-                          <button class="btn btn-sm btn-ghost btn-reject-single" data-id="${t.id}" data-tooltip="Reject timesheet entry" data-tooltip-pos="left" style="height:25px;padding:0 4px;color:var(--color-danger)">
-                            <span class="material-icons-outlined" style="font-size:16px">close</span>
-                          </button>
-                        ` : ''}
-                      </div>
-                    </td>
                   </tr>
                 `;}).join('')}
               `).join('')}
@@ -472,11 +280,6 @@ export function renderTimesheetsList(container, params = {}) {
     `;
 
     // Filter events
-    container.querySelector('#filter-status-select')?.addEventListener('change', (e) => {
-      filterStatus = e.target.value;
-      render();
-    });
-
     container.querySelector('#filter-tech')?.addEventListener('change', (e) => {
       filterTechId = e.target.value;
       render();
@@ -529,7 +332,7 @@ export function renderTimesheetsList(container, params = {}) {
     });
 
     // Checkbox and Bulk Actions wiring
-    container.querySelector('#th-select-all')?.addEventListener('change', (e) => {
+    container.querySelector('.dt-select-all')?.addEventListener('change', (e) => {
       if (e.target.checked) {
         allFilteredIds.forEach(id => {
           if (!selectedIds.includes(id)) selectedIds.push(id);
@@ -540,7 +343,7 @@ export function renderTimesheetsList(container, params = {}) {
       render();
     });
 
-    container.querySelectorAll('.row-checkbox').forEach(cb => {
+    container.querySelectorAll('.dt-select-row').forEach(cb => {
       cb.addEventListener('change', (e) => {
         const id = cb.dataset.id;
         if (e.target.checked) {
@@ -598,42 +401,6 @@ export function renderTimesheetsList(container, params = {}) {
     // by the lingering `has-bulk` class. A macrotask (setTimeout 0) runs after microtasks.
     const syncBulkBar = () => {
       const actions = [];
-      if (currentUser.role === 'admin' || currentUser.role === 'manager' || (permissions && permissions.approve)) {
-        actions.push({
-          label: 'Approve',
-          icon: 'done',
-          className: 'btn-success',
-          onClick: (ids) => {
-            ids.forEach(id => {
-              if (id.startsWith('leave_')) {
-                store.update('schedule', id.replace('leave_', ''), { status: 'Approved' });
-              } else {
-                store.update('timesheets', id, { status: 'Approved' });
-              }
-            });
-            showToast(`Approved ${ids.length} timesheets successfully`, 'success');
-            selectedIds = [];
-            render();
-          }
-        });
-        actions.push({
-          label: 'Reject',
-          icon: 'close',
-          className: 'btn-danger',
-          onClick: (ids) => {
-            ids.forEach(id => {
-              if (id.startsWith('leave_')) {
-                store.update('schedule', id.replace('leave_', ''), { status: 'Rejected' });
-              } else {
-                store.update('timesheets', id, { status: 'Rejected' });
-              }
-            });
-            showToast(`Rejected ${ids.length} timesheets`, 'error');
-            selectedIds = [];
-            render();
-          }
-        });
-      }
       if (hasPermission('Timesheets', 'delete') || ['admin', 'manager', 'office'].includes(currentUser.role)) {
         actions.push({
           label: 'Delete',
@@ -651,11 +418,7 @@ export function renderTimesheetsList(container, params = {}) {
                   className: 'btn-danger',
                   onClick: (close) => {
                     ids.forEach(id => {
-                      if (id.startsWith('leave_')) {
-                        store.delete('schedule', id.replace('leave_', ''));
-                      } else {
-                        store.delete('timesheets', id);
-                      }
+                      store.delete('timesheets', id);
                     });
                     showToast(`Deleted ${count} timesheet ${count === 1 ? 'entry' : 'entries'} successfully`, 'success');
                     selectedIds = [];
@@ -668,6 +431,13 @@ export function renderTimesheetsList(container, params = {}) {
           }
         });
       }
+
+      actions.push({
+        label: 'Export CSV',
+        icon: 'download',
+        className: 'btn-secondary',
+        onClick: () => triggerExportSelected()
+      });
 
       createBulkActionBar({
         container,
@@ -693,7 +463,7 @@ export function renderTimesheetsList(container, params = {}) {
       }
 
       // Generate CSV
-      const headers = ['Date', 'Technician', 'Job Number', 'Task Name', 'Start Time', 'Finish Time', 'Hours', 'Description', 'Status'];
+      const headers = ['Date', 'Technician', 'Job Number', 'Task Name', 'Start Time', 'Finish Time', 'Hours', 'Description'];
       const csvRows = [headers.join(',')];
 
       selectedEntries.forEach(entry => {
@@ -708,8 +478,7 @@ export function renderTimesheetsList(container, params = {}) {
           `"${start}"`,
           `"${finish}"`,
           entry.hours || 0,
-          `"${(entry.description || '').replace(/"/g, '""')}"`,
-          entry.status || ''
+          `"${(entry.description || '').replace(/"/g, '""')}"`
         ];
         csvRows.push(row.join(','));
       });
@@ -732,85 +501,13 @@ export function renderTimesheetsList(container, params = {}) {
       render();
     };
 
-    container.querySelector('#btn-bulk-export')?.addEventListener('click', triggerExportSelected);
-    container.querySelector('#btn-export-selected')?.addEventListener('click', triggerExportSelected);
-
-    // Bulk Approve All Pending
-    container.querySelector('#btn-approve-all-pending')?.addEventListener('click', () => {
-      const pending = visibleTimesheets.filter(t => t.status === 'Pending');
-      pending.forEach(ts => {
-        if (ts.isLeave) {
-          store.update('schedule', ts.originalScheduleId, { status: 'Approved' });
-        } else {
-          store.update('timesheets', ts.id, { status: 'Approved' });
-        }
-      });
-      showToast(`Approved ${pending.length} pending timesheets`, 'success');
-      render();
-    });
-
-    // Single approval/rejection events
-    container.querySelectorAll('.btn-approve-single').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.id;
-        if (id.startsWith('leave_')) {
-          store.update('schedule', id.replace('leave_', ''), { status: 'Approved' });
-        } else {
-          store.update('timesheets', id, { status: 'Approved' });
-        }
-        showToast('Timesheet entry approved', 'success');
-        render();
-      });
-    });
-
-    container.querySelectorAll('.btn-reject-single').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.id;
-        if (id.startsWith('leave_')) {
-          store.update('schedule', id.replace('leave_', ''), { status: 'Rejected' });
-        } else {
-          store.update('timesheets', id, { status: 'Rejected' });
-        }
-        showToast('Timesheet entry rejected', 'error');
-        render();
-      });
-    });
-
-    // Edit entry
-    container.querySelectorAll('.btn-edit-timesheet').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (btn.dataset.id.startsWith('leave_')) {
-          showToast('Leave blocks cannot be edited from timesheets. Edit them from the schedule.', 'info');
-          return;
-        }
-        openEditModal(btn.dataset.id);
-      });
-    });
-
-    // Delete entry
-    container.querySelectorAll('.btn-delete-timesheet').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tsId = btn.dataset.id;
-        const ts = getCombinedTimesheets().find(t => t.id === tsId);
-        if (!ts) return;
-
-        showModal({
-          title: 'Confirm Delete',
-          content: `<p>Are you sure you want to delete this ${ts.isLeave ? 'leave block' : 'timesheet entry'} for <strong>${ts.hours} hrs</strong> on <strong>${new Date(ts.date).toLocaleDateString()}</strong>?</p>`,
-          actions: [
-            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-            { label: 'Delete', className: 'btn-danger', onClick: (close) => {
-              if (ts.isLeave) {
-                store.delete('schedule', ts.originalScheduleId);
-              } else {
-                store.delete('timesheets', tsId);
-              }
-              showToast(`${ts.isLeave ? 'Leave block' : 'Timesheet entry'} deleted successfully`, 'success');
-              close();
-              render();
-            }}
-          ]
-        });
+    // Rows open the edit modal — job hours are not gated on an approval state.
+    container.querySelectorAll('tr[data-timesheet-id]').forEach(row => {
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('a, button, input, label, .dt-select-row')) return;
+        if (row.dataset.editable !== '1') return;
+        openEditModal(row.dataset.timesheetId);
       });
     });
 
@@ -1114,8 +811,7 @@ export function renderTimesheetsList(container, params = {}) {
             startTime: startVal,
             finishTime: finishVal,
             hours,
-            description: descVal || '',
-            status: 'Pending'
+            description: descVal || ''
           });
 
           showToast(isTech ? 'Time logged successfully' : 'Time logged successfully on behalf of staff', 'success');

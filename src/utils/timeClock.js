@@ -114,15 +114,62 @@ export async function clockIn(technician) {
 }
 
 // Clock an open record out. Captures location and sets clockOutAt + status.
+// @param {object} [options]
+// @param {boolean} [options.break] The session ended for a break rather than the end
+//   of the shift. Recorded as status 'break' so presence can tell "on a break" from
+//   "gone home" without a new column — `status` is free text (see
+//   supabase/migrations/022_time_clocks.sql) and nothing reads it as a closed set.
 // @returns {Promise<{record: object, location: object|null}>}
-export async function clockOut(recordId) {
+export async function clockOut(recordId, options = {}) {
   const location = await captureLocation();
   const record = store.update('timeClocks', recordId, {
     clockOutAt: new Date().toISOString(),
     clockOutLocation: location,
-    status: 'out'
+    status: options.break ? 'break' : 'out'
   });
   return { record, location };
+}
+
+// Where a technician is in the work/break cycle. Because a break is a clock-out, being
+// on a break isn't stored state: it's the most recent session having ended for a break
+// with nothing clocked in since.
+// @returns {{
+//   onBreak: boolean, breakStartedAt: string|null, breakDurationMs: number,
+//   sessionId: string|null
+// }}
+export function getBreakState(technicianId) {
+  const id = String(technicianId);
+  const idle = { onBreak: false, breakStartedAt: null, breakDurationMs: 0, sessionId: null };
+
+  const mine = (store.getAll('timeClocks') || [])
+    .filter(c => String(c.technicianId) === id && c.clockInAt);
+
+  // An open session anywhere means they're working — same rule as getActiveClock.
+  if (mine.some(c => !c.clockOutAt)) return idle;
+
+  // "On break" describes the last time they stopped working, so order by clockOutAt.
+  // Ordering by clockInAt instead is wrong: seeded, imported and manually corrected
+  // records can carry a clock-in that doesn't sort in real-world order, and a future
+  // clock-in would mask the session that actually just ended.
+  const lastEnded = mine
+    .filter(c => c.clockOutAt)
+    .sort((a, b) => new Date(b.clockOutAt) - new Date(a.clockOutAt))[0];
+
+  if (!lastEnded || lastEnded.status !== 'break') return idle;
+
+  return {
+    onBreak: true,
+    breakStartedAt: lastEnded.clockOutAt,
+    breakDurationMs: Date.now() - new Date(lastEnded.clockOutAt).getTime(),
+    sessionId: lastEnded.id
+  };
+}
+
+// End the day straight from a break, instead of returning to work first. Marks the
+// break session as the end of the shift so the record stops claiming they're on a break,
+// and avoids leaving a zero-length session behind.
+export function endShiftFromBreak(recordId) {
+  return store.update('timeClocks', recordId, { status: 'out' });
 }
 
 // Format a millisecond duration as "H:MM".

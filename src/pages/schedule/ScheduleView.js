@@ -13,7 +13,8 @@ import { parsePreferredTime, todayLocalISO, toDateKey } from '../../utils/dateUt
 import { JOB_STATUS_COLORS } from '../../utils/statusColors.js';
 import { FLAGS } from '../../utils/flags.js';
 import { getVirtualRecurringOccurrences, materializeVirtualOccurrence, collectTemplateChildren, occurrenceDateKey, canonicalSkippedDates } from '../../utils/maintenanceEngine.js';
-import { getActiveClock, clockIn, clockOut } from '../../utils/timeClock.js';
+import { getActiveClock, getClockStatusForToday, getBreakState, endShiftFromBreak, formatDuration, clockIn, clockOut } from '../../utils/timeClock.js';
+import { getNotArrived } from '../../utils/payrollExceptions.js';
 
 /**
  * Records an occurrence skip against the owning template. The date is stored as
@@ -105,6 +106,41 @@ export function renderScheduleView(container) {
     }
   }
 
+  // Breaks are clock-outs, so starting one closes the current session and finishing one
+  // opens a new session. No confirm prompt: unlike clocking out, a break is trivially
+  // reversible by finishing it.
+  async function handleStartBreak() {
+    const active = getActiveClock(currentUser.id);
+    if (!active) return;
+    try {
+      const { location } = await clockOut(active.id, { break: true });
+      showToast(location ? 'Break started.' : 'Break started. No location captured.', 'success');
+      render();
+    } catch (err) {
+      showToast('Unable to start your break. Please try again.', 'error');
+    }
+  }
+
+  async function handleFinishBreak() {
+    try {
+      const { location } = await clockIn(currentUser);
+      showToast(location ? 'Break finished — welcome back.' : 'Break finished. No location captured.', 'success');
+      render();
+    } catch (err) {
+      showToast('Unable to finish your break. Please try again.', 'error');
+    }
+  }
+
+  // Ends the day from a break. Offered so a technician who isn't coming back doesn't have
+  // to finish the break and then clock out, which would leave a zero-length session.
+  function handleEndShiftFromBreak() {
+    const { sessionId } = getBreakState(currentUser.id);
+    if (!sessionId) return;
+    endShiftFromBreak(sessionId);
+    showToast('Shift ended.', 'success');
+    render();
+  }
+
   function getVisibleTechsKey() {
     return `relay_schedule_visible_techs_${currentUser.id || 'anon'}`;
   }
@@ -118,6 +154,38 @@ export function renderScheduleView(container) {
   }
   function saveVisibleTechs() {
     try { localStorage.setItem(getVisibleTechsKey(), JSON.stringify([...visibleTechIds])); } catch { /* ignore */ }
+  }
+
+  // Bring a technician's column into view, adding them to the visible set first if the
+  // grid isn't already showing them. Called after render() has restored scroll, so the
+  // scrollIntoView below isn't undone.
+  function focusTechnician(technicianId) {
+    const id = String(technicianId);
+    if (!visibleTechIds.has(id)) {
+      visibleTechIds.add(id);
+      saveVisibleTechs();
+      render();
+    }
+    const col = container.querySelector(`.schedule-day-col[data-tech="${CSS.escape(id)}"]`);
+    if (col) col.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+
+  // One row in the presence panel. `metaHTML` is the second line — worked time for
+  // someone on the clock, break time for someone on a break.
+  function presenceRowHTML(tech, metaHTML, { onBreak = false } = {}) {
+    const shown = visibleTechIds.has(tech.id);
+    return `
+      <div class="presence-row${onBreak ? ' is-on-break' : ''}" data-tech-id="${tech.id}" title="Show ${escapeHTML(tech.name)} on the schedule" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border-color);cursor:pointer;background:${shown ? 'var(--color-primary-bg)' : 'transparent'};">
+        <input type="checkbox" class="presence-visible-checkbox" value="${tech.id}" ${shown ? 'checked' : ''} title="Show this column" style="flex-shrink:0;cursor:pointer;margin:0;">
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:${tech.color || '#10B981'};flex-shrink:0;${onBreak ? 'opacity:.45;' : ''}"></span>
+            <span style="font-size:var(--font-size-sm);font-weight:600;color:${onBreak ? 'var(--text-secondary)' : 'var(--text-primary)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHTML(tech.name)}</span>
+          </div>
+          <div style="font-size:10px;margin-top:1px;color:${onBreak ? 'var(--color-warning)' : 'var(--text-tertiary)'};">${metaHTML}</div>
+        </div>
+      </div>
+    `;
   }
 
   function getTechnicians() {
@@ -152,6 +220,9 @@ export function renderScheduleView(container) {
   const isTechnician = currentUser.role === 'technician' || (loginMode === 'local' && localStorage.getItem('uiMode') === 'technician');
   const hasTechRecord = technicians.some(t => t.id === currentUser.id);
   const isLocalAdminTechView = isTechnician && !hasTechRecord;
+  // A user who can only ever see their own schedule has no crew to show presence for.
+  // Same gate as the technician filter, which the presence panel sits alongside.
+  const canSeeCrew = (!isTechnician || isLocalAdminTechView) && !isLocalAdmin;
 
   let viewMode = 'week';
   let calendarType = 'schedule'; // 'schedule' or 'activity'
@@ -794,6 +865,34 @@ export function renderScheduleView(container) {
     // Clock in/out attendance state for the current user.
     const activeClock = getActiveClock(currentUser.id);
     const isClockedIn = !!activeClock;
+    const breakState = getBreakState(currentUser.id);
+    const isOnBreak = breakState.onBreak;
+
+    // Presence for the side panel. Derived from `technicians` (already scoped to the
+    // company) rather than scanning the timeClocks collection globally, so it can't
+    // leak between companies. Ordered by who arrived first.
+    const onSite = technicians
+      .map(t => ({ tech: t, clock: getClockStatusForToday(t.id) }))
+      .filter(p => p.clock.status === 'in')
+      .sort((a, b) => new Date(a.clock.clockInAt) - new Date(b.clock.clockInAt));
+
+    // Expected on site = rostered onto work today and not turned up at all. Leave,
+    // blockouts and meetings aren't work, so they raise no expectation; the roster never
+    // supplies hours, it only tells us somebody should have arrived. Roster and session
+    // resolution live in payrollExceptions so this panel, the hours grid and the pay run
+    // can't disagree about who was expected or who worked.
+    const today = todayLocalISO();
+    const notArrivedIds = new Set(getNotArrived(today, technicians.map(t => t.id)));
+    const expectedNotIn = technicians.filter(t => notArrivedIds.has(String(t.id)));
+
+    // Crew who are on site but on a break. They aren't clocked in, so they'd otherwise
+    // vanish from a panel titled "On Site" — which would make it lie by omission for
+    // dispatch. getBreakState returns false for anyone clocked in, so the two lists
+    // can't overlap.
+    const onBreakPeople = technicians
+      .map(t => ({ tech: t, state: getBreakState(t.id) }))
+      .filter(p => p.state.onBreak);
+    const onSiteTotal = onSite.length + onBreakPeople.length;
 
     // SUCCESSFUL RENDER LOG HOOK
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -816,11 +915,29 @@ export function renderScheduleView(container) {
             ${!isTechnician ? '' : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${escapeHTML(currentUser.name)}</span>`}
           </div>
           <div class="flex gap-sm items-center" data-breadcrumb-center>
-            <button class="btn ${isClockedIn ? 'btn-danger' : 'btn-success'}" id="btn-time-clock" style="height:28px;font-size:var(--font-size-sm);padding:0 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
-              <span class="material-icons-outlined" style="font-size:16px;">${isClockedIn ? 'logout' : 'login'}</span>
-              <span>${isClockedIn ? 'Clock Out' : 'Clock In'}</span>
-            </button>
+            ${isOnBreak ? `
+              <button class="btn btn-success" id="btn-finish-break" style="height:28px;font-size:var(--font-size-sm);padding:0 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+                <span class="material-icons-outlined" style="font-size:16px;">play_arrow</span>
+                <span>Finish Break</span>
+              </button>
+              <button class="btn btn-secondary" id="btn-end-shift" title="End your shift instead of going back to work" style="height:28px;font-size:var(--font-size-sm);padding:0 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+                <span class="material-icons-outlined" style="font-size:16px;">logout</span>
+                <span>End Shift</span>
+              </button>
+            ` : `
+              <button class="btn ${isClockedIn ? 'btn-danger' : 'btn-success'}" id="btn-time-clock" style="height:28px;font-size:var(--font-size-sm);padding:0 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+                <span class="material-icons-outlined" style="font-size:16px;">${isClockedIn ? 'logout' : 'login'}</span>
+                <span>${isClockedIn ? 'Clock Out' : 'Clock In'}</span>
+              </button>
+              ${isClockedIn ? `
+                <button class="btn btn-secondary" id="btn-start-break" title="Clock out for a break and clock back in when you return" style="height:28px;font-size:var(--font-size-sm);padding:0 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+                  <span class="material-icons-outlined" style="font-size:16px;">pause</span>
+                  <span>Start Break</span>
+                </button>
+              ` : ''}
+            `}
             ${isClockedIn ? `<span class="clock-live-indicator" title="You are clocked in right now"><span class="clock-live-dot"></span>On the clock</span>` : ''}
+            ${isOnBreak ? `<span class="clock-live-indicator is-break" title="You are on a break — break time is not counted as hours"><span class="clock-live-dot"></span>On break</span>` : ''}
           </div>
           <div class="flex gap-xs">
             <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
@@ -865,7 +982,7 @@ export function renderScheduleView(container) {
           </div>
 
           <!-- Team / Technician Filter Button & Dropdown -->
-          ${(!isTechnician || isLocalAdminTechView) && !isLocalAdmin ? `
+          ${canSeeCrew ? `
             <div style="position:relative;display:inline-flex;align-items:center;">
               <button class="btn btn-secondary btn-sm btn-icon" id="btn-tech-filter-trigger" title="Visible Team (${visibleTechIds.size})" style="position:relative; width:25px; height:25px; padding:0; display:inline-flex; align-items:center; justify-content:center;">
                 <span class="material-icons-outlined" style="font-size:16px">people</span>
@@ -1002,6 +1119,40 @@ export function renderScheduleView(container) {
               </div>
             `}
           </div>
+
+          ${canSeeCrew ? `
+            <!-- Presence panel: who is on site right now. Ticking a name shows their
+                 column in the grid, clicking a name scrolls to it. -->
+            <aside id="presence-panel" style="border-left:1px solid var(--border-color);background:var(--card-bg);display:flex;flex-direction:column;overflow:hidden;">
+              <div style="padding:10px 12px;border-bottom:1px solid var(--border-color);flex-shrink:0;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                  <span style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.04em;">On Site</span>
+                  <span style="background:${onSiteTotal ? 'var(--color-primary)' : 'transparent'};color:${onSiteTotal ? '#fff' : 'var(--text-tertiary)'};border:1px solid ${onSiteTotal ? 'transparent' : 'var(--border-color)'};font-size:10px;font-weight:700;border-radius:9px;min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;">${onSiteTotal}</span>
+                </div>
+                ${expectedNotIn.length ? `
+                  <div title="${escapeHTML(expectedNotIn.map(t => t.name).join(', '))}" style="margin-top:7px;display:flex;align-items:flex-start;gap:4px;font-size:10px;line-height:1.35;color:var(--color-warning);cursor:help;">
+                    <span class="material-icons-outlined" style="font-size:13px;flex-shrink:0;">error_outline</span>
+                    <span>${expectedNotIn.length} expected, not on site</span>
+                  </div>
+                ` : ''}
+              </div>
+              <div style="flex:1;min-height:0;overflow-y:auto;">
+                ${(onSite.length || onBreakPeople.length) ? `
+                  ${onSite.map(({ tech, clock }) => presenceRowHTML(
+                    tech,
+                    `${formatDuration(clock.durationMs)} · from ${new Date(clock.clockInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                  )).join('')}
+                  ${onBreakPeople.map(({ tech, state }) => presenceRowHTML(
+                    tech,
+                    `On break · ${formatDuration(state.breakDurationMs)}`,
+                    { onBreak: true }
+                  )).join('')}
+                ` : `
+                  <div style="padding:16px 12px;font-size:var(--font-size-sm);color:var(--text-tertiary);text-align:center;">No one is on site.</div>
+                `}
+              </div>
+            </aside>
+          ` : ''}
         </div>
       </div>
       </div>
@@ -2135,12 +2286,42 @@ export function renderScheduleView(container) {
       handleClockToggle();
     });
 
+    container.querySelector('#btn-start-break')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleStartBreak();
+    });
+
+    container.querySelector('#btn-finish-break')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleFinishBreak();
+    });
+
+    container.querySelector('#btn-end-shift')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleEndShiftFromBreak();
+    });
+
     container.querySelectorAll('.tech-visibility-checkbox').forEach(cb => {
       cb.addEventListener('change', (e) => {
         if (e.target.checked) visibleTechIds.add(e.target.value);
         else visibleTechIds.delete(e.target.value);
         render();
         saveVisibleTechs();
+      });
+    });
+
+    container.querySelectorAll('.presence-row').forEach(row => {
+      row.addEventListener('click', () => focusTechnician(row.dataset.techId));
+    });
+
+    container.querySelectorAll('.presence-visible-checkbox').forEach(cb => {
+      // Stop the row's own click handler so ticking doesn't also scroll the grid.
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) visibleTechIds.add(e.target.value);
+        else visibleTechIds.delete(e.target.value);
+        saveVisibleTechs();
+        render();
       });
     });
 

@@ -3594,7 +3594,7 @@ class DataStore {
           if (mod === 'Assets') return ['view', 'create', 'edit', 'delete'].includes(key);
           if (mod === 'Stock') return ['view', 'create', 'edit', 'delete'].includes(key);
           if (mod === 'Purchase Orders') return ['view', 'create', 'approve'].includes(key);
-          if (mod === 'Timesheets') return ['view_own', 'view', 'create', 'edit_all'].includes(key);
+          if (mod === 'Timesheets') return ['view_own', 'create', 'edit_all'].includes(key);
           if (mod === 'Settings') return ['view', 'edit_company'].includes(key);
           if (mod === 'Documents') return ['view', 'upload'].includes(key);
           return false;
