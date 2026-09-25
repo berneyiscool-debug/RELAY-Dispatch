@@ -37,8 +37,8 @@ const TENANT_TABLES = [
   'user_types', 'contractor_profile', 'quotes', 'materials', 'documents',
 ];
 
-// Live job_materials.company_id is text, not uuid, so it exercises the
-// type-aware branch of the tenant policy loop.
+// Live job_materials.company_id is text, not uuid, so the tenant policy loop has
+// to read the real column type instead of assuming uuid.
 const TEXT_TENANT_TABLES = ['job_materials'];
 
 const TENANT_HELPER = `
@@ -69,7 +69,7 @@ CREATE TABLE public.relay_reserved_email_slugs (slug text PRIMARY KEY);
 CREATE TABLE public.leads (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid REFERENCES public.companies(id), message text);
 CREATE TABLE public.notifications (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid REFERENCES public.companies(id), title text, message text);
 ${TENANT_TABLES.map((t) => `CREATE TABLE public.${t} (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid REFERENCES public.companies(id), label text);`).join('\n')}
-CREATE TABLE public.job_materials (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id text, label text);
+${TEXT_TENANT_TABLES.map((t) => `CREATE TABLE public.${t} (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id text, label text);`).join('\n')}
 
 GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
