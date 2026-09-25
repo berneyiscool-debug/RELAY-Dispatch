@@ -12,10 +12,12 @@
     "preview": "vite preview",
     "test": "node --test \"src/**/*.test.js\"",
     "test:watch": "node --test --watch \"src/**/*.test.js\"",
+    "test:migrations": "node --test \"supabase/tests/*.test.js\"",
     "electron:dev": "concurrently \"npm run dev -- --no-open\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build && electron-builder"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "concurrently": "^10.0.3",
     "electron": "^42.5.0",
     "electron-builder": "^26.15.3",

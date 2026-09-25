@@ -145,15 +145,18 @@ DO $$
 DECLARE
   r record;
   v_count integer := 0;
+  v_pred text;
 BEGIN
   FOR r IN
-    SELECT c.relname AS name
+    SELECT c.relname AS name,
+           format_type(a.atttypid, a.atttypmod) AS company_id_type
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    JOIN information_schema.columns col
-      ON col.table_schema = 'public'
-     AND col.table_name = c.relname
-     AND col.column_name = 'company_id'
+    JOIN pg_attribute a
+      ON a.attrelid = c.oid
+     AND a.attname = 'company_id'
+     AND a.attnum > 0
+     AND NOT a.attisdropped
     WHERE n.nspname = 'public'
       AND c.relkind IN ('r', 'p')
       AND c.relname NOT IN ('profiles', 'companies')
@@ -162,12 +165,21 @@ BEGIN
       )
     ORDER BY c.relname
   LOOP
+    -- company_id is not always uuid: job_materials uses text. Comparing the two
+    -- directly raises "operator does not exist: text = uuid" and rolls back this
+    -- whole script, so the predicate has to match the column's real type.
+    IF r.company_id_type = 'uuid' THEN
+      v_pred := 'company_id = public.get_user_company_id(auth.uid())';
+    ELSE
+      v_pred := 'company_id::text = public.get_user_company_id(auth.uid())::text';
+    END IF;
+
     EXECUTE format(
       'CREATE POLICY %I_tenant_policy ON public.%I
          FOR ALL TO authenticated
-         USING (company_id = public.get_user_company_id(auth.uid()))
-         WITH CHECK (company_id = public.get_user_company_id(auth.uid()));',
-      r.name, r.name);
+         USING (%s)
+         WITH CHECK (%s);',
+      r.name, r.name, v_pred, v_pred);
     v_count := v_count + 1;
   END LOOP;
   RAISE NOTICE 'Tenant policies created for % table(s).', v_count;
@@ -435,6 +447,7 @@ SELECT table_name,
        rls_on,
        policies,
        anon_policies,
+       tenant_keyed,
        CASE
          WHEN NOT rls_on THEN 'FAIL - RLS is off'
          WHEN anon_policies > 0 THEN 'FAIL - policy open to anon'
