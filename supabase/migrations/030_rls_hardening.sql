@@ -126,9 +126,11 @@ CREATE POLICY profile_update_tenant ON public.profiles
   USING (company_id = public.get_user_company_id(auth.uid()))
   WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
 
-CREATE POLICY profile_delete_tenant ON public.profiles
-  FOR DELETE TO authenticated
-  USING (company_id = public.get_user_company_id(auth.uid()) AND id <> auth.uid());
+-- No DELETE policy on purpose. Removing a staff member is a deactivation
+-- (`profiles.deactivated`), not a row delete, and nothing in the app or the
+-- edge functions deletes a profile. Leaving DELETE ungranted means a rogue
+-- client session cannot erase a colleague's profile or anyone's history.
+-- The service role (edge functions, dashboard) is unaffected.
 
 -- companies -----------------------------------------------------------
 CREATE POLICY companies_tenant_policy ON public.companies
@@ -312,13 +314,18 @@ BEGIN
 END;
 $$;
 
+-- Grants are stated explicitly for every role that needs them (rather than
+-- relying on the project's default privileges) so the functions keep working
+-- for the app and for the edge functions after the PUBLIC grant is removed.
 REVOKE EXECUTE ON FUNCTION public.create_company_and_admin(uuid, text, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.create_company_and_admin(uuid, text, text, text) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.create_company_and_admin(uuid, text, text, text) TO authenticated;
+GRANT  EXECUTE ON FUNCTION public.create_company_and_admin(uuid, text, text, text) TO service_role;
 
 REVOKE EXECUTE ON FUNCTION public.get_user_company_id(uuid) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.get_user_company_id(uuid) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.get_user_company_id(uuid) TO authenticated;
+GRANT  EXECUTE ON FUNCTION public.get_user_company_id(uuid) TO service_role;
 
 -- ---------------------------------------------------------------------
 -- 6. SYSTEM LOCKS (verbatim from 020_security_hardening.sql)
@@ -392,10 +399,12 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.acquire_lock(text, text, integer) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.acquire_lock(text, text, integer) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.acquire_lock(text, text, integer) TO authenticated;
+GRANT  EXECUTE ON FUNCTION public.acquire_lock(text, text, integer) TO service_role;
 
 REVOKE EXECUTE ON FUNCTION public.release_lock(text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.release_lock(text, text) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.release_lock(text, text) TO authenticated;
+GRANT  EXECUTE ON FUNCTION public.release_lock(text, text) TO service_role;
 
 -- ---------------------------------------------------------------------
 -- 7. AUDIT - read this result grid

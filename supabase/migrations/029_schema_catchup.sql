@@ -8,12 +8,12 @@
 -- profiles.dashboard_layout / leads.* / notifications.*).
 --
 -- Everything below is idempotent and purely additive: it creates missing
--- tables and columns only, and never reads, rewrites or deletes existing rows.
+-- tables and columns only, and never touches a single existing row.
 -- It is safe to paste into the Supabase SQL editor and safe to run twice.
 --
 -- Deliberately NOT included: migration 016's `llm_usage` table. It is
 -- referenced nowhere in src/ or supabase/functions/ (per-request usage logging
--- was dropped when every AI call was consolidated behind the relay-copilot
+-- was retired when every AI call was consolidated behind the relay-copilot
 -- edge function), and it is not part of the store's collection contract, so
 -- the app would never touch it. Better to leave dead schema uncreated.
 
@@ -34,14 +34,33 @@ CREATE TABLE IF NOT EXISTS public.password_reset_requests (
 
 ALTER TABLE public.password_reset_requests ENABLE ROW LEVEL SECURITY;
 
--- CREATE POLICY has no IF NOT EXISTS, so drop-then-create keeps this re-runnable.
+-- CREATE POLICY has no IF NOT EXISTS, so the create is guarded by catalog
+-- checks: re-runnable, and it leaves any existing policy of the same name alone.
 -- Scoped to `authenticated` with WITH CHECK, matching 020_security_hardening.sql
--- (which replaces this exact policy name when it is applied).
-DROP POLICY IF EXISTS password_reset_requests_tenant_policy ON public.password_reset_requests;
-CREATE POLICY password_reset_requests_tenant_policy ON public.password_reset_requests
-  FOR ALL TO authenticated
-  USING (company_id = public.get_user_company_id(auth.uid()))
-  WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
+-- (which rebuilds this policy from scratch when it is applied).
+--
+-- The second check matters: the policy body calls the tenant helper, and if
+-- that helper has not been created yet the CREATE fails outright (and would
+-- abort the rest of this script with it). Where it is missing, the table is
+-- simply left with RLS on and no policy - unreachable by clients, which is the
+-- safe direction - and 030 creates both the helper and the full policy set.
+DO $$
+BEGIN
+  IF to_regprocedure('public.get_user_company_id(uuid)') IS NOT NULL
+     AND NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'password_reset_requests'
+      AND policyname = 'password_reset_requests_tenant_policy'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY password_reset_requests_tenant_policy ON public.password_reset_requests
+        FOR ALL TO authenticated
+        USING (company_id = public.get_user_company_id(auth.uid()))
+        WITH CHECK (company_id = public.get_user_company_id(auth.uid()));
+    $policy$;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS password_reset_requests_company_idx
   ON public.password_reset_requests(company_id);
@@ -66,8 +85,9 @@ ALTER TABLE leads ADD COLUMN IF NOT EXISTS origin text DEFAULT 'Internal';
 -- ---------------------------------------------------------------------
 -- 015 tail — notifications maintenance-engine payload
 -- ---------------------------------------------------------------------
--- message became optional in 015 so a notification can carry a rich payload.
-ALTER TABLE notifications ALTER COLUMN message DROP NOT NULL;
+-- 015 also relaxed notifications.message so a notification can carry a rich
+-- payload instead. The live project already has it nullable (verified against
+-- the running project), so no ALTER is needed or included here.
 
 ALTER TABLE notifications
   ADD COLUMN IF NOT EXISTS maintenance_plan_id      text,

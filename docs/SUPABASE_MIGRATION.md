@@ -365,4 +365,5 @@ Recommend **A** to keep the polished demo dataset intact.
 - **`service_role` key**: server-side only, never in the frontend bundle.
 - **RLS policies are additive (`OR`)**: adding a policy never revokes another one. To tighten access you must `DROP` the old policy — this is why `030` sweeps `pg_policies` before creating anything.
 - **Client-side writes to `profiles` are not possible once `030` is applied** (RLS has no INSERT policy, and `profiles_security_guard` rejects self-provisioned rows). Staff profiles must be created by signup or by the `invite-user` edge function, which uses the service-role key.
+- **Client-side deletes of `profiles` do nothing once `030` is applied** (there is deliberately no DELETE policy). RLS makes the statement a silent 0-row no-op rather than an error, so a client `delete()` would report success without removing anything. Removing a staff member is `profiles.deactivated` (what the Settings page already does); a genuine row delete stays a service-role/dashboard operation.
 - Do the `store.js` swap **carefully / coordinated** — it's the spine of the app and the Antigravity agents also touch the codebase.
