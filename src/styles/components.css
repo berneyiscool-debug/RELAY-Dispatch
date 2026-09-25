@@ -110,6 +110,23 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.8); }
 }
+/* On break: still clocked for the day, but time isn't accruing, so drop the pulse and
+   use the warning colour to say so. */
+.clock-live-indicator.is-break {
+  color: var(--color-warning);
+}
+.clock-live-indicator.is-break .clock-live-dot {
+  background: var(--color-warning);
+  animation: none;
+}
+/* --color-warning is amber-700, too dark to read on the dark theme's surface, so the
+   break indicator uses a lighter amber there. */
+[data-theme-mode="dark"] .clock-live-indicator.is-break {
+  color: #F59E0B;
+}
+[data-theme-mode="dark"] .clock-live-indicator.is-break .clock-live-dot {
+  background: #F59E0B;
+}
 
 /* Who's In Today board */
 .whos-in-summary {
@@ -163,6 +180,10 @@
 }
 .whos-row-in {
   background: rgba(22, 163, 74, 0.05);
+}
+/* Days a pay run cannot clear without a decision. */
+.row-attention {
+  background: rgba(220, 38, 38, 0.05);
 }
 .whos-loc-link {
   display: inline-flex;
@@ -697,13 +718,25 @@ select.badge option {
   color: var(--text-primary);
 }
 /* Sort glyphs stay hidden until the column is hovered or is the active sort, so
-   the header row reads as labels instead of a wall of faint icons. */
+   the header row reads as labels instead of a wall of faint icons.
+   The glyph is positioned rather than inlined: an inline glyph reserves ~15px in
+   every header, which is invisible but real width, and it pushed the widest
+   tables (the Hours tab and Approvals) past the card. Positioned in the header's
+   padding gutter it costs nothing and still lands beside the label. */
 .data-table th .sort-icon {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
   font-size: 13px;
-  margin-left: 2px;
   opacity: 0;
-  vertical-align: middle;
   transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+/* Right-aligned headers hug the column's right edge, so their glyph goes in the
+   left gutter instead of over the label. */
+.data-table th.num .sort-icon {
+  right: auto;
+  left: 3px;
 }
 .data-table th:hover .sort-icon {
   opacity: 0.5;
@@ -1429,10 +1462,13 @@ select.badge {
 }
 
 .slide-up {
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideUpCentered 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes slideUp {
+/* Named separately from the global slideUp: this one carries the -50% that a
+   horizontally-centred element needs, and re-declaring the shared name here would
+   override the plain rise every other element (modals included) expects. */
+@keyframes slideUpCentered {
   from { opacity: 0; transform: translate(-50%, 20px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }

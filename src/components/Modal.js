@@ -51,12 +51,12 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
     if (e.target === overlay) close();
   });
 
-  // Action handlers
+  // Action handlers. An action with no handler is a dismissal ("Close"/"Cancel") — without
+  // this the button renders but does nothing.
   actions.forEach((action, i) => {
     const btn = modal.querySelector(`.modal-action-${i}`);
-    if (btn && action.onClick) {
-      btn.addEventListener('click', () => action.onClick(close));
-    }
+    if (!btn) return;
+    btn.addEventListener('click', () => (action.onClick ? action.onClick(close) : close()));
   });
 
   // ESC key

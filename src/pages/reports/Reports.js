@@ -376,12 +376,10 @@ export function renderReports(container, params) {
         csv += `"${t.name}","${t.role}",${t.totalJobs},${t.completed},${t.revenue}\n`;
       });
     } else if (activeReport === 'timesheets_labor') {
-      csv = 'Technician,Role,Approved Hrs,Pending Hrs,Utilization %,Total Cost\n';
+      csv = 'Technician,Role,Logged Hrs,Utilization %,Total Cost\n';
       d.technicians.forEach(t => {
         const tSheets = d.timesheets.filter(ts => ts.technicianId === t.id);
         const total = tSheets.reduce((s, ts) => s + (ts.hours || 0), 0);
-        const approved = tSheets.filter(ts => ts.status === 'Approved').reduce((s, ts) => s + (ts.hours || 0), 0);
-        const pending = tSheets.filter(ts => ts.status === 'Pending').reduce((s, ts) => s + (ts.hours || 0), 0);
         const billable = tSheets.filter(ts => ts.jobId).reduce((s, ts) => s + (ts.hours || 0), 0);
         const util = total > 0 ? (billable / total * 100) : 0;
         
@@ -391,7 +389,7 @@ export function renderReports(container, params) {
           payTotal += (ts.hours * rate);
         });
 
-        csv += `"${t.name}","${t.role}",${approved.toFixed(2)},${pending.toFixed(2)},${util.toFixed(1)}%,${payTotal.toFixed(2)}\n`;
+        csv += `"${t.name}","${t.role}",${total.toFixed(2)},${util.toFixed(1)}%,${payTotal.toFixed(2)}\n`;
       });
     } else if (activeReport === 'assets_maintenance') {
       csv = 'Asset,Serial,Customer,Plan Name,Frequency,Next Service,Priority (1-10),Maintenance Cost\n';
@@ -638,13 +636,9 @@ function getStatsSummaryText(reportId, d) {
     const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
     const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
     const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
-    const approvedHrs = d.timesheets.filter(t => t.status === 'Approved').reduce((s, t) => s + (t.hours || 0), 0);
-    const pendingHrs = d.timesheets.filter(t => t.status === 'Pending').reduce((s, t) => s + (t.hours || 0), 0);
     summary += `Total Logged Hours: ${totalHrs.toFixed(2)} hrs\n`;
     summary += `Billable Job Hours: ${billableHrs.toFixed(2)} hrs\n`;
     summary += `Labor Utilization: ${utilization.toFixed(1)}%\n`;
-    summary += `Approved Hours: ${approvedHrs.toFixed(2)} hrs\n`;
-    summary += `Pending Hours: ${pendingHrs.toFixed(2)} hrs\n`;
   } else if (reportId === 'technicians') {
     summary += `Total Technicians: ${d.technicians.length}\n`;
     const totalJobs = d.jobs.length;
@@ -868,10 +862,6 @@ function getLocalSimpleInsights(reportId, d) {
     } else {
       tips.push("Awesome job on team efficiency! The crew is spending a solid amount of their logged time on actual jobs.");
     }
-    const pending = d.timesheets.filter(t => t.status === 'Pending').reduce((s, t) => s + (t.hours || 0), 0);
-    if (pending > 10) {
-      tips.push("Remember to review and approve pending timesheets regularly so our job costings stay completely up-to-date.");
-    }
   } else if (reportId === 'assets_maintenance') {
     tips.push("Preventative check-ups are the best way to avoid emergency breakdowns. Let's keep those scheduled visits on track!");
     tips.push("Keep a close eye on maintenance agreements to ensure we are always meeting customer expectations.");
@@ -1054,7 +1044,6 @@ function getLocalInsightsJSON(reportId, d) {
     const totalHrs = d.timesheets.reduce((s, t) => s + (t.hours || 0), 0);
     const billableHrs = d.timesheets.filter(t => t.jobId).reduce((s, t) => s + (t.hours || 0), 0);
     const utilization = totalHrs > 0 ? (billableHrs / totalHrs * 100) : 0;
-    const pendingHrs = d.timesheets.filter(t => t.status === 'Pending').reduce((s, t) => s + (t.hours || 0), 0);
 
     if (utilization < 70) {
       insights.push({
@@ -1068,14 +1057,6 @@ function getLocalInsightsJSON(reportId, d) {
         headline: `Field Utilization: High at ${utilization.toFixed(1)}%`,
         detail: "Field personnel are spending the majority of their logged hours on billable site jobs.",
         action: "Optimize scheduling slots to maintain this high-efficiency threshold.",
-        confidence: "high"
-      });
-    }
-    if (pendingHrs > 10) {
-      insights.push({
-        headline: `${pendingHrs.toFixed(1)} hrs Pending Timesheet Approvals`,
-        detail: "Unresolved timesheet entries delay precise job labor costing calculations.",
-        action: "Send manager alerts to review and approve timesheets before billing cycles.",
         confidence: "high"
       });
     }
@@ -1471,8 +1452,6 @@ function renderTimesheetsLaborReport(d, mode) {
   const techRows = d.technicians.map(tech => {
     const tSheets = d.timesheets.filter(ts => ts.technicianId === tech.id);
     const techTotal = tSheets.reduce((s, ts) => s + (ts.hours || 0), 0);
-    const approved = tSheets.filter(ts => ts.status === 'Approved').reduce((s, ts) => s + (ts.hours || 0), 0);
-    const pending = tSheets.filter(ts => ts.status === 'Pending').reduce((s, ts) => s + (ts.hours || 0), 0);
     const billable = tSheets.filter(ts => ts.jobId).reduce((s, ts) => s + (ts.hours || 0), 0);
     const util = techTotal > 0 ? (billable / techTotal * 100) : 0;
     
@@ -1486,8 +1465,6 @@ function renderTimesheetsLaborReport(d, mode) {
       name: tech.name,
       role: tech.role,
       total: techTotal,
-      approved,
-      pending,
       util,
       cost: techCost,
       color: tech.color || '#3B82F6'
@@ -1513,8 +1490,6 @@ function renderTimesheetsLaborReport(d, mode) {
               <th>Technician</th>
               <th>Role</th>
               <th style="text-align:right">Logged Hrs</th>
-              <th style="text-align:right">Approved</th>
-              <th style="text-align:right">Pending</th>
               <th style="text-align:right">Utilization %</th>
               <th style="text-align:right">Est. Cost</th>
             </tr>
@@ -1525,8 +1500,6 @@ function renderTimesheetsLaborReport(d, mode) {
                 <td class="font-medium">${escapeHTML(tr.name)}</td>
                 <td class="text-secondary">${escapeHTML(tr.role)}</td>
                 <td style="text-align:right; font-weight:600">${tr.total.toFixed(2)}</td>
-                <td style="text-align:right; color:var(--color-success)">${tr.approved.toFixed(2)}</td>
-                <td style="text-align:right; color:var(--color-warning)">${tr.pending.toFixed(2)}</td>
                 <td style="text-align:right">
                   <span class="badge ${tr.util >= 75 ? 'badge-success' : tr.util >= 50 ? 'badge-warning' : 'badge-danger'}">
                     ${tr.util.toFixed(1)}%
@@ -1535,7 +1508,7 @@ function renderTimesheetsLaborReport(d, mode) {
                 <td style="text-align:right; font-weight:600">$${tr.cost.toFixed(2)}</td>
               </tr>
             `).join('')}
-            ${!techRows.length ? '<tr><td colspan="7" style="text-align:center;padding:20px" class="text-secondary">No timesheet records logged</td></tr>' : ''}
+            ${!techRows.length ? '<tr><td colspan="5" style="text-align:center;padding:20px" class="text-secondary">No timesheet records logged</td></tr>' : ''}
           </tbody>
         </table>
       </div>

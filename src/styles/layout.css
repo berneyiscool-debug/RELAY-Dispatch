@@ -2955,3 +2955,19 @@ body.sidebar-collapsed .relay-panel.expanded,
   border-radius: 8px;
   font-size: 13px;
 }
+
+/* ============================================
+   Schedule — Presence Panel (who is clocked in)
+   ============================================ */
+#presence-panel {
+  width: 200px;
+  flex: 0 0 200px;
+}
+/* The Electron window sets no minimum width, so on a narrow window give the
+   calendar its room back instead of letting the panel dominate it. */
+@media (max-width: 1100px) {
+  #presence-panel {
+    width: 168px;
+    flex: 0 0 168px;
+  }
+}

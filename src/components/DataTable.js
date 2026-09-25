@@ -4,7 +4,7 @@
 
 import { escapeHTML } from '../utils/security.js';
 
-export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc' }) {
+export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc', rowClass = null }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'card data-table-card';
   wrapper.style.cssText = 'width:100%; max-width:100%; overflow:hidden;';
@@ -122,7 +122,8 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     paged.forEach(row => {
       const rowId = String(getId ? getId(row) : row.id);
       const isSelected = selectedIds.has(rowId);
-      html += `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}">`;
+      const customClass = rowClass ? rowClass(row) : '';
+      html += `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}${customClass ? ' ' + escapeHTML(customClass) : ''}">`;
       
       if (selectable) {
         html += `<td class="dt-select-cell">

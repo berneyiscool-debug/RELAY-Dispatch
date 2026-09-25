@@ -8,6 +8,7 @@
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
+import { sectionNav, resolveSection } from '../utils/timesheetSections.js';
 
 // Primary sections. Items without `items[]` are direct pages (no submenu);
 // items with `items[]` open a secondary panel.
@@ -43,7 +44,7 @@ const navItems = [
       { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
       { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock', hasChildren: true },
       { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders', dividerAfter: true },
-      { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets', hasChildren: true },
+      { id: 'timesheets', icon: 'schedule', label: 'Time & Pay', path: '/timesheets', hasChildren: true },
     ],
   },
   {
@@ -171,6 +172,22 @@ export function createSidebar() {
       return;
     }
 
+    // A parent tab in a nested menu (Time & Pay sections) opens its own level, exactly
+    // like a rail category opening a submenu. The click still navigates, so menu and page
+    // agree; the level above stays one back-button away.
+    const drillBtn = e.target.closest('.submenu-item[data-drill-open]');
+    if (drillBtn) {
+      drillPanel(sidebar, path => path.concat(drillBtn.dataset.drillOpen));
+    }
+
+    // Back out of a nested level (no navigation — the page you are on is still that tab).
+    const drillBackBtn = e.target.closest('.submenu-context-back[data-drill-back]');
+    if (drillBackBtn) {
+      e.preventDefault();
+      drillPanel(sidebar, path => path.slice(0, -1));
+      return;
+    }
+
     // Any page link (direct rail page or submenu item).
     const navBtn = e.target.closest('[data-path]');
     if (navBtn) {
@@ -247,12 +264,15 @@ function escapeHTML(str) {
     .replace(/'/g, '&#039;');
 }
 
-// Helper to resolve dynamic entity/settings contextual submenus
-function getContextualMenu(hash) {
+// Helper to resolve dynamic entity/settings contextual submenus. `panelEl` is the live
+// contextual panel, if there is one: a nested menu remembers the level the user backed
+// out to on the panel itself, so it survives the re-render that follows every route change.
+function getContextualMenu(hash, panelEl) {
   const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
   const [pathOnly, queryString] = cleanHash.split('?');
   const params = new URLSearchParams(queryString || '');
   const activeTab = params.get('tab');
+  const panelDrill = (panelEl && panelEl._drill) || null;
 
   const parts = pathOnly.split('/').filter(Boolean);
   const resource = parts[0];
@@ -440,24 +460,29 @@ function getContextualMenu(hash) {
     };
   }
 
-  // Timesheets List (/timesheets)
+  // Time & Pay (/timesheets) — the sections inside it. A section with more than one
+  // screen (see utils/timesheetSections.js) opens as a second menu level, so the panel
+  // is three deep here: rail category → sections → that section's screens.
   if (resource === 'timesheets' && !id) {
-    const currentTab = activeTab || 'timesheets';
+    const { section, view } = resolveSection(activeTab, params.get('view'));
+    const items = sectionNav();
+
+    // The route is the source of truth for which level is open; `panelDrill` only
+    // remembers a deliberate step back out of a parent (see the panel sync below).
+    const backedOut = panelDrill && panelDrill.root === section ? panelDrill.path : null;
+    const openPath = backedOut || openChain(items, [section, view]);
+
     return {
       railId: 'cat-resources',
-      headerTitle: 'Timesheets',
+      headerTitle: 'Time & Pay',
       icon: 'schedule',
       backSection: 'cat-resources',
       backLabel: 'Back to Resources',
-      items: [
-        { id: 'timesheets', icon: 'schedule', label: 'Timesheets', path: '/timesheets?tab=timesheets' },
-        { id: 'whos-in', icon: 'group', label: "Who's In Today", path: '/timesheets?tab=whos-in' },
-        { id: 'attendance', icon: 'event_available', label: 'Attendance Records', path: '/timesheets?tab=attendance' },
-        { id: 'schedule-vs-actual', icon: 'compare_arrows', label: 'Schedule vs Actual', path: '/timesheets?tab=schedule-vs-actual' },
-        { id: 'payroll', icon: 'payments', label: 'Hours & Payroll', path: '/timesheets?tab=payroll' },
-        { id: 'attendance-approvals', icon: 'fact_check', label: 'Attendance Approvals', path: '/timesheets?tab=attendance-approvals' }
-      ],
-      activeTab: currentTab
+      items,
+      openPath,
+      drill: { root: section, path: openPath },
+      activeTab: section,
+      activeView: view
     };
   }
 
@@ -516,6 +541,7 @@ function getContextualMenu(hash) {
       { id: 'overview', icon: 'dashboard', label: 'Overview', path: `/jobs/${id}?tab=overview` },
       { id: 'schedule', icon: 'event', label: 'Schedule', path: `/jobs/${id}?tab=schedule` },
       { id: 'tasks', icon: 'checklist', label: 'Tasks', path: `/jobs/${id}?tab=tasks` },
+      // Schedule holds both the plan and the booked hours, so there is no separate Timesheets tab.
       { id: 'materials', icon: 'inventory_2', label: 'Materials & POs', path: `/jobs/${id}?tab=materials` },
       { id: 'financials', icon: 'price_check', label: isRecurring ? 'Contract Performance' : 'Financials', path: `/jobs/${id}?tab=financials` }
     ];
@@ -700,9 +726,11 @@ function getContextualMenu(hash) {
   return null;
 }
 
-// Render a contextual submenu's items. Supports two shapes:
+// Render a contextual submenu's items. Supports three shapes:
 //   1. Flat list of { id, icon, label, path, ... } page links.
-//   2. Grouped drill-down: `groups` = [{ id, label, icon, items: [...] }] with an
+//   2. Nested list: an item carrying `children` opens them as the next level of the same
+//      panel (the panel's `openPath` says which level is showing). Used by Time & Pay.
+//   3. Grouped drill-down: `groups` = [{ id, label, icon, items: [...] }] with an
 //      optional `openGroupId`. When a group is open, only its items render (the
 //      header back button returns to the group list); otherwise the groups render
 //      as plain links into their first enabled tab.
@@ -718,21 +746,64 @@ function renderContextualItems(contextual) {
     }).join('');
   }
 
-  return (contextual.items || []).map(item => renderSubmenuItem(contextual, item)).join('');
+  const level = openLevel(contextual.items, contextual.openPath);
+  return (level.children || []).map(item => renderSubmenuItem(contextual, item)).join('');
+}
+
+// Walk an open path (ids from the top level down) to the node it opens. An empty or
+// broken path leaves the panel on its top level, so a stale path can never blank the menu.
+function openLevel(items, openPath) {
+  let nodes = items || [];
+  let node = null;
+  for (const id of openPath || []) {
+    const match = nodes.find(n => n.id === id);
+    if (!match || !match.children) break;
+    node = match;
+    nodes = match.children;
+  }
+  return node ? { node, children: nodes } : { node: null, children: items || [] };
+}
+
+// The levels that should be open for a route: every ancestor of the current screen that
+// has children of its own. `ids` is the route's id chain (section, then view).
+function openChain(items, ids) {
+  let nodes = items || [];
+  const path = [];
+  for (const id of ids.filter(Boolean)) {
+    const match = nodes.find(n => n.id === id);
+    if (!match || !match.children) break;
+    path.push(match.id);
+    nodes = match.children;
+  }
+  return path;
 }
 
 function renderSubmenuItem(contextual, item) {
+  const isActive = item.active !== undefined
+    ? item.active
+    : (contextual.activeTab === item.id || contextual.activeView === item.id);
+  const hasChildren = !!(item.children && item.children.length);
   return `
-    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" ${item.disabled ? `data-tooltip="${escapeHTML(item.tooltip || 'Not available for this account type')}" data-tooltip-pos="right"` : ''} style="display:flex; align-items:center; width:100%">
+    <button class="submenu-item ${isActive ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" ${hasChildren ? `data-drill-open="${item.id}"` : ''} ${item.disabled ? `data-tooltip="${escapeHTML(item.tooltip || 'Not available for this account type')}" data-tooltip-pos="right"` : item.tooltip || item.hint ? `data-tooltip="${escapeHTML(item.tooltip || item.hint)}" data-tooltip-pos="right"` : ''} style="display:flex; align-items:center; width:100%">
       <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
       <span class="nav-label">${escapeHTML(item.label)}</span>
       ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
-      ${item.hasChildren ? `<span class="rail-caret material-icons-outlined" aria-hidden="true" style="font-size:16px;opacity:0.45;flex:none;margin-left:auto">chevron_right</span>` : ''}
+      ${hasChildren ? `<span class="rail-caret material-icons-outlined" aria-hidden="true" style="font-size:16px;opacity:0.45;flex:none;margin-left:auto">chevron_right</span>` : ''}
     </button>`;
 }
 
+// Change which level of a nested contextual menu is open and redraw it. `step` receives
+// the current path and returns the new one, so the caller only says "deeper" or "shallower".
+function drillPanel(sidebar, step) {
+  const ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+  if (!ctxPanel || !ctxPanel._drill) return;
+  ctxPanel._drill = { root: ctxPanel._drill.root, path: step(ctxPanel._drill.path) };
+  syncActiveFromRoute(sidebar, window.location.hash.slice(1) || '/');
+}
+
 // Show a section's submenu panel and mark its rail item active.
-function setActiveSection(sidebar, sectionId) {  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
+function setActiveSection(sidebar, sectionId) {
+  sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
   sidebar.querySelectorAll('.rail-item').forEach(r => {
     r.classList.toggle('active', r.dataset.id === sectionId);
@@ -752,8 +823,9 @@ function syncActiveFromRoute(sidebar, path) {
   if (!sidebar) return;
 
   const currentHash = window.location.hash || path || '/';
-  const contextual = getContextualMenu(currentHash);
   const submenuContainer = sidebar.querySelector('#sidebar-submenu');
+  let ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
+  const contextual = getContextualMenu(currentHash, ctxPanel);
 
   if (contextual) {
     sidebar.querySelectorAll('.rail-item').forEach(r => {
@@ -766,25 +838,32 @@ function syncActiveFromRoute(sidebar, path) {
       }
     });
 
-    let ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
     if (!ctxPanel) {
       ctxPanel = document.createElement('div');
       ctxPanel.className = 'submenu-panel contextual-panel';
       submenuContainer.appendChild(ctxPanel);
     }
 
+    // A nested panel shows one level at a time, headed by the parent tab it opened.
+    const level = openLevel(contextual.items, contextual.openPath);
+    const headerTitle = level.node ? level.node.label : contextual.headerTitle;
+    const headerIcon = level.node ? level.node.icon : contextual.icon;
+    const backButton = level.node
+      ? `<button class="submenu-context-back" data-drill-back="1" title="Back to ${escapeHTML(contextual.headerTitle)}">
+           <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
+         </button>`
+      : (contextual.backSection || contextual.backPath)
+        ? `<button class="submenu-context-back" ${contextual.backSection ? `data-back-section="${contextual.backSection}"` : `data-path="${contextual.backPath}"`} title="${escapeHTML(contextual.backLabel || 'Back')}">
+             <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
+           </button>`
+        : '';
+
     ctxPanel.innerHTML = `
       <div class="submenu-context-header">
-        ${(contextual.backPath || contextual.backSection) ? `
-          <div class="submenu-context-back-row">
-            <button class="submenu-context-back" ${contextual.backSection ? `data-back-section="${contextual.backSection}"` : `data-path="${contextual.backPath}"`} title="${escapeHTML(contextual.backLabel || 'Back')}">
-              <span class="material-icons-outlined" aria-hidden="true">chevron_left</span>
-            </button>
-          </div>
-        ` : ''}
+        ${backButton ? `<div class="submenu-context-back-row">${backButton}</div>` : ''}
         <div class="submenu-context-body">
-          ${contextual.icon ? `<span class="material-icons-outlined submenu-context-icon" aria-hidden="true">${contextual.icon}</span>` : ''}
-          <div class="submenu-context-title" title="${escapeHTML(contextual.headerTitle)}">${escapeHTML(contextual.headerTitle)}</div>
+          ${headerIcon ? `<span class="material-icons-outlined submenu-context-icon" aria-hidden="true">${headerIcon}</span>` : ''}
+          <div class="submenu-context-title" title="${escapeHTML(headerTitle)}">${escapeHTML(headerTitle)}</div>
         </div>
       </div>
       <nav class="submenu-nav" style="${(contextual.items && contextual.items.length > 0) || (contextual.groups && contextual.groups.length > 0) ? '' : 'display:none;'}">
@@ -792,12 +871,15 @@ function syncActiveFromRoute(sidebar, path) {
       </nav>
     `;
 
+    // Remember the level in play so the next route change keeps it (until the route moves
+    // to a different branch, which resets to that branch's own level — see panelDrill).
+    ctxPanel._drill = contextual.drill || null;
+
     ctxPanel.classList.add('active');
     sidebar.classList.add('submenu-open');
     return;
   }
 
-  const ctxPanel = sidebar.querySelector('.submenu-panel.contextual-panel');
   if (ctxPanel) {
     ctxPanel.remove();
   }
