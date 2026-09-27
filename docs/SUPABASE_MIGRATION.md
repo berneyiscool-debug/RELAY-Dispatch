@@ -370,3 +370,32 @@ Recommend **A** to keep the polished demo dataset intact.
 - **Client-side deletes of `profiles` do nothing once `030` is applied** (there is deliberately no DELETE policy). RLS makes the statement a silent 0-row no-op rather than an error, so a client `delete()` would report success without removing anything. Removing a staff member is `profiles.deactivated` (what the Settings page already does); a genuine row delete stays a service-role/dashboard operation.
 - **`company_id` is not always `uuid`**: the live `job_materials.company_id` is `text` (the table predates migration `013`, which declares `uuid`). Any policy that compares it directly to `get_user_company_id()` fails with `operator does not exist: text = uuid` and rolls the entire script back, so `030`'s catalog loop reads each column's real type with `format_type()` and casts to `text` when it is not `uuid`. Keep that branch when editing the loop.
 - Do the `store.js` swap **carefully / coordinated** — it's the spine of the app and the Antigravity agents also touch the codebase.
+
+---
+
+## 10. Live verification (applied 2026-09-27)
+
+`029` and `030` were both applied to the live project (ref `zufsncswsoqlomtqhkks`) and the result was verified from outside with the published anon key and with a throwaway two-tenant account. Everything below was observed, not inferred.
+
+| Probe | Result |
+| --- | --- |
+| Anon reads tenant rows (32 tables, `select=*`) | 0 rows anywhere |
+| Anon writes (8 representative tables, row echoed back) | 8/8 refused — none reached INSERT |
+| Anon executes `security-definer` helpers | all refused |
+| Anon reads `relay_reserved_email_slugs` | 0 rows |
+| Signed-in tenant reads own profile / company | works (1 row each) |
+| Signed-in tenant reads another tenant's profiles / jobs | 0 rows |
+| Signed-in tenant reads another tenant's `job_materials` (text key) | 0 rows |
+| Signed-in tenant re-points own row at another `company_id` | refused `403` |
+| Signed-in tenant rewrites `role` / `pay_rate` on own profile | frozen — values unchanged |
+| Signed-in tenant updates a non-frozen profile field (`name`) | works |
+| Signed-in tenant self-provisions a `profiles` row | refused `400 P0001` (guard trigger) |
+| Signed-in tenant deletes a profile | 0 rows affected, row survives |
+| Signed-in tenant runs `acquire_lock` / `release_lock` | works |
+| Every table the app reads while signed in (33 tables) | all `200` |
+| App writes: insert/update/read a customer, job and job material, then delete | all succeed |
+
+Two regressions the hardening would have caused were found and fixed before launch:
+
+- `store.js` `seedDefaultTechnicians()` wrote demo `profiles` rows from the client. `030` now rejects that (`400 P0001`), so the function early-returns unless the tenant is a local `acct_` account — cloud tenants get real profiles from signup or `invite-user`.
+- Migration `013` declares `job_materials.company_id uuid` while the live column is `text`; see the gotcha in Section 9.
