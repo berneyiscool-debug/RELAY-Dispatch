@@ -25,6 +25,7 @@ import { PGlite } from '@electric-sql/pglite';
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 const CATCHUP_SQL = readFileSync(join(MIGRATIONS_DIR, '029_schema_catchup.sql'), 'utf8');
 const HARDENING_SQL = readFileSync(join(MIGRATIONS_DIR, '030_rls_hardening.sql'), 'utf8');
+const SPEND_SQL = readFileSync(join(MIGRATIONS_DIR, '031_spend_and_signup_hardening.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -371,5 +372,149 @@ describe('030 RLS hardening', () => {
       assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.jobs'), 2);
       assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.notifications'), 1);
     });
+  });
+});
+
+describe('031 spend ledger and signup hardening', () => {
+  let db;
+  let grid;
+
+  const SPENDER = '44444444-4444-4444-4444-444444444444';
+  const INVITED = '55555555-5555-5555-5555-555555555555';
+  const SNEAKY = '66666666-6666-6666-6666-666666666666';
+
+  /** Signs a user up the way GoTrue does, then reads the side effects. */
+  const signup = (id, email, userMeta, appMeta) =>
+    db.query(
+      `INSERT INTO auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+       VALUES ('${id}', '${email}', '${JSON.stringify(userMeta)}'::jsonb, ${appMeta ? `'${JSON.stringify(appMeta)}'::jsonb` : 'NULL'})`
+    );
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    // 030 replaces the function but the trigger on auth.users predates every
+    // migration, so the fixture recreates it to mirror the live project.
+    await db.exec(`CREATE OR REPLACE TRIGGER on_auth_user_created
+      AFTER INSERT ON auth.users FOR EACH ROW
+      EXECUTE FUNCTION public.handle_new_user_profile();`);
+    const results = await db.exec(SPEND_SQL);
+    grid = results[results.length - 1].rows;
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('the verification grid reports no failures', () => {
+    assert.strictEqual(grid.length, 8);
+    assert.deepStrictEqual(grid.filter((r) => r.verdict !== 'ok').map((r) => `${r.check_name}: ${r.verdict}`), []);
+  });
+
+  test('a public signup can no longer provision its own company or admin profile', async () => {
+    // raw_user_meta_data is client-writable, so this payload is exactly what an
+    // attacker controls. Before 031 it minted a company plus an admin profile.
+    await signup(SPENDER, 'mallory@evil.test', {
+      company_name: 'Mallory Co',
+      name: 'Mallory',
+      phone: '0400000000',
+      role: 'admin',
+    });
+
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.companies'), 2);
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.profiles'), 3);
+    assert.strictEqual(await value(db, `SELECT count(*)::int FROM public.profiles WHERE id = '${SPENDER}'`), 0);
+    assert.strictEqual(await value(db, `SELECT count(*)::int FROM public.companies WHERE name = 'Mallory Co'`), 0);
+  });
+
+  test('the invitation path still provisions the invited user', async () => {
+    await signup(INVITED, 'invited@a.test', { company_name: 'Ignored Co' }, {
+      company_id: TENANT_A,
+      name: 'Invited Tech',
+      username: 'invited',
+      phone: '0411111111',
+      role: 'technician',
+    });
+
+    const row = await one(db, `SELECT company_id, role, name, username FROM public.profiles WHERE id = '${INVITED}'`);
+    assert.strictEqual(row.company_id, TENANT_A);
+    assert.strictEqual(row.role, 'technician');
+    assert.strictEqual(row.name, 'Invited Tech');
+    assert.strictEqual(row.username, 'invited');
+  });
+
+  test('an invitation payload still cannot mint an administrator', async () => {
+    await signup(SNEAKY, 'sneaky@a.test', null, { company_id: TENANT_A, name: 'Sneaky', role: 'admin' });
+    assert.strictEqual(await value(db, `SELECT role FROM public.profiles WHERE id = '${SNEAKY}'`), 'technician');
+  });
+
+  test('a client session cannot call the signup trigger directly', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      await assert.rejects(
+        () => db.query('SELECT public.handle_new_user_profile()'),
+        /permission denied|trigger functions/i
+      );
+    });
+  });
+
+  test('the spend ledger is invisible and unwritable to clients', async () => {
+    // Supabase grants new public tables to anon/authenticated by default, so
+    // reproduce that grant and prove RLS (no policies) is what protects it.
+    await db.exec('GRANT ALL ON public.api_usage TO anon, authenticated;');
+    await db.query(`INSERT INTO public.api_usage (company_id, kind, units) VALUES ('${TENANT_A}', 'copilot', 3)`);
+
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.api_usage'), 0);
+      await assert.rejects(
+        () => db.query(`INSERT INTO public.api_usage (company_id, kind) VALUES ('${TENANT_A}', 'copilot')`),
+        /row-level security/
+      );
+    });
+
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.api_usage'), 0);
+      await assert.rejects(
+        () => db.query(`INSERT INTO public.api_usage (company_id, kind) VALUES ('${TENANT_A}', 'copilot')`),
+        /row-level security/
+      );
+    });
+
+    await asRole(db, 'service_role', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.api_usage'), 1);
+      assert.strictEqual(await value(db, 'SELECT sum(units)::int FROM public.api_usage'), 3);
+    });
+  });
+
+  test('spend is counted per tenant, per kind, for the current UTC day', async () => {
+    // The exact predicate the three proxies use before calling a paid API.
+    await db.query(`INSERT INTO public.api_usage (company_id, kind, units, created_at) VALUES
+      ('${TENANT_A}', 'copilot', 5, now() - interval '2 days'),
+      ('${TENANT_B}', 'copilot', 7, now()),
+      ('${TENANT_A}', 'geocode', 9, now())`);
+
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage
+                        WHERE company_id = '${TENANT_A}' AND kind = 'copilot'
+                          AND created_at >= '${since.toISOString()}'`),
+      3
+    );
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage
+                        WHERE company_id = '${TENANT_B}' AND kind = 'copilot'
+                          AND created_at >= '${since.toISOString()}'`),
+      7
+    );
+  });
+
+  test('is idempotent - a second run produces the same grid', async () => {
+    const results = await db.exec(SPEND_SQL);
+    assert.deepStrictEqual(
+      results[results.length - 1].rows.map((r) => r.verdict),
+      grid.map((r) => r.verdict)
+    );
   });
 });

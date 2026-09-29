@@ -572,9 +572,10 @@ GRANT  EXECUTE ON FUNCTION public.get_user_company_id(uuid) TO authenticated;
 --
 -- Invitations arrive via raw_app_meta_data (only the server-side admin API
 -- can write it — clients can never set app_metadata), so the trigger trusts
--- that for company membership. user_metadata is client-editable and is only
--- used for the self-signup path, which creates a brand-new company for the
--- user rather than joining an existing one.
+-- that for company membership. user_metadata is client-editable and is not
+-- read at all: self-signup provisioning goes through the
+-- create_company_and_admin() RPC, which is the only path that checks
+-- auth.uid() = user_id (see 031_spend_and_signup_hardening.sql).
 CREATE OR REPLACE FUNCTION handle_new_user_profile()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -587,7 +588,6 @@ DECLARE
   user_username text;
   user_phone text;
   user_role text;
-  company_name text;
 BEGIN
   -- Invitation path (server-only metadata)
   IF new.raw_app_meta_data IS NOT NULL THEN
@@ -603,19 +603,6 @@ BEGIN
   -- Never let an invitation payload mint an administrator.
   IF user_role IS DISTINCT FROM 'manager' AND user_role IS DISTINCT FROM 'technician' THEN
     user_role := 'technician';
-  END IF;
-
-  -- Self-signup path: the new user gets their own brand-new company.
-  IF company_uuid IS NULL AND new.raw_user_meta_data IS NOT NULL THEN
-    company_name := new.raw_user_meta_data->>'company_name';
-    IF company_name IS NOT NULL AND length(trim(company_name)) > 0 THEN
-      INSERT INTO public.companies (name, settings)
-      VALUES (company_name, '{"markupPercent": 20}'::jsonb)
-      RETURNING id INTO company_uuid;
-      user_role := 'admin';
-      user_name := new.raw_user_meta_data->>'name';
-      user_phone := new.raw_user_meta_data->>'phone';
-    END IF;
   END IF;
 
   IF company_uuid IS NOT NULL THEN

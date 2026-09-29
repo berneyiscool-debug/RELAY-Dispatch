@@ -354,7 +354,9 @@ Recommend **A** to keep the polished demo dataset intact.
 
 **Is the live project closed to the internet?** Not until `supabase/migrations/030_rls_hardening.sql` is applied. Probing the live project with a throwaway account showed that the published anon key could read *and* write every tenant table, and that `mailer_autoconfirm: true` let anyone self-register — so a stranger could sign up, write a `profiles` row with `role = 'admin'` and a victim's `company_id`, and take over that tenant. `030` is also idempotent: it enables RLS on every `public` table, drops **every** pre-existing policy (Postgres ORs policies together, so a single survivor would undo the fix), rebuilds the canonical tenant policies, and applies the signup-trigger / profile-guard hardening first written in `020` that never landed. Apply `029` first, then `030`, and read the audit grid it prints last — every row must read `ok` or `LOCKED (service role only)`.
 
-**Run the migrations locally before pasting them.** Both files are treated as one implicit transaction by the SQL editor, so a single failing statement silently rolls back the whole script. `npm run test:migrations` executes `029` and `030` against an in-memory Postgres (`@electric-sql/pglite`) with a two-tenant Supabase-shaped fixture and asserts the security outcome — signed-out clients read nothing, tenants cannot see or re-point another tenant's rows, and the audit grid reports no failures. Run it after any change to a migration.
+**Is one tenant able to burn the shared AI/Maps budget?** Not once `supabase/migrations/031_spend_and_signup_hardening.sql` is applied (after `029` and `030`). It adds `public.api_usage` — a service-role-only ledger of what each tenant spent on the paid proxies — which `relay-copilot`, `relay-geocode` and `relay-route` now read before every paid call and write after every successful one, the same pattern `relay-email` has used since launch. It also replaces `handle_new_user_profile()` without the self-signup branch that trusted `raw_user_meta_data->>'company_name'`: client-writable metadata could mint a company plus an admin profile without passing through `create_company_and_admin()`, the only path that checks `auth.uid() = user_id`. No shipped flow sends that key (the launch screen and the Settings cloud upgrade both call the RPC), so the branch was deleted rather than guarded. Its verification grid must report `ok` on every row; see Section 11 for the caps themselves.
+
+**Run the migrations locally before pasting them.** These files are treated as one implicit transaction by the SQL editor, so a single failing statement silently rolls back the whole script. `npm run test:migrations` executes `029`, `030` and `031` against an in-memory Postgres (`@electric-sql/pglite`) with a two-tenant Supabase-shaped fixture and asserts the security outcome — signed-out clients read nothing, tenants cannot see or re-point another tenant's rows, a public signup cannot provision itself a company, and the audit grid reports no failures. The same command runs `supabase/tests/proxy-caps.test.js`, which statically asserts that each paid proxy counts a tenant's spend *before* calling the provider. Run it after any change to a migration or to an edge function that spends money.
 
 ---
 
@@ -369,6 +371,8 @@ Recommend **A** to keep the polished demo dataset intact.
 - **Client-side writes to `profiles` are not possible once `030` is applied** (RLS has no INSERT policy, and `profiles_security_guard` rejects self-provisioned rows). Staff profiles must be created by signup or by the `invite-user` edge function, which uses the service-role key.
 - **Client-side deletes of `profiles` do nothing once `030` is applied** (there is deliberately no DELETE policy). RLS makes the statement a silent 0-row no-op rather than an error, so a client `delete()` would report success without removing anything. Removing a staff member is `profiles.deactivated` (what the Settings page already does); a genuine row delete stays a service-role/dashboard operation.
 - **`company_id` is not always `uuid`**: the live `job_materials.company_id` is `text` (the table predates migration `013`, which declares `uuid`). Any policy that compares it directly to `get_user_company_id()` fails with `operator does not exist: text = uuid` and rolls the entire script back, so `030`'s catalog loop reads each column's real type with `format_type()` and casts to `text` when it is not `uuid`. Keep that branch when editing the loop.
+- **`raw_user_meta_data` provisions nothing once `031` is applied.** Signup metadata is client-writable, so the signup trigger reads only `raw_app_meta_data` (server-written invitations). Self-signup must call the `create_company_and_admin` RPC — passing `company_name` in `signUp({ options: { data } })` creates the auth user but **no** company and **no** profile.
+- **`api_usage` is invisible to clients by design** (`031`): RLS on with zero policies, and `ALL` revoked from `anon`/`authenticated`. Only the edge functions, which hold the service-role key, may read or write it.
 - Do the `store.js` swap **carefully / coordinated** — it's the spine of the app and the Antigravity agents also touch the codebase.
 
 ---
@@ -399,3 +403,31 @@ Two regressions the hardening would have caused were found and fixed before laun
 
 - `store.js` `seedDefaultTechnicians()` wrote demo `profiles` rows from the client. `030` now rejects that (`400 P0001`), so the function early-returns unless the tenant is a local `acct_` account — cloud tenants get real profiles from signup or `invite-user`.
 - Migration `013` declares `job_materials.company_id uuid` while the live column is `text`; see the gotcha in Section 9.
+
+---
+
+## 11. Abuse controls on the paid APIs (031)
+
+Launch allows self-serve signup, so every caller of a paid API is capped **per tenant, per UTC day**. The caps are edge-function secrets: change the value in the Supabase dashboard and the next invocation picks it up, no client release needed. The defaults are deliberately generous for a small trade business — a busy technician will not reach them — while still bounding what one account can spend of a budget that every tenant shares.
+
+| Proxy | Provider | Secret | Default | Unit |
+| --- | --- | --- | --- | --- |
+| `relay-copilot` | DeepSeek | `RELAY_COPILOT_DAILY_CAP` | 500 | requests |
+| `relay-geocode` | Google Maps | `RELAY_GEOCODE_DAILY_CAP` | 1000 | addresses (a 50-address batch costs 50) |
+| `relay-route` | Google Routes | `RELAY_ROUTE_DAILY_CAP` | 300 | routes |
+| `relay-email` | Resend | `RELAY_EMAIL_DAILY_CAP` | 500 | emails |
+
+How it behaves:
+
+- **At the cap** the proxy answers `429` with `Daily … limit reached (N). Try again tomorrow or contact RELAY support.` Deputy shows that sentence in the chat; geocoding and routing degrade to "no result", exactly like any other provider failure, so background backfills stay quiet.
+- **Unit accounting is per address/stops-request**, so one batch cannot spend the whole day's allowance in a single round trip.
+- **Failed provider calls are not charged** — the ledger row is written only after the provider answers successfully.
+- **A missing secret never disables the cap**: an unset or unparsable value falls back to the default above.
+- **If `031` has not been applied yet**, the proxies log `api_usage read failed` and run uncapped rather than break for every user. The cap is protection, not a hard dependency — which is why the functions can be deployed before the migration.
+- `api_usage` grows one row per paid call. It is tiny (a few hundred rows per tenant per day); prune rows older than a few months with `pg_cron` once there is any reason to.
+
+Dashboard-only items this migration deliberately does **not** change, because they are launch decisions rather than code:
+
+- **CAPTCHA (Turnstile) on signup, `mailer_autoconfirm`, and per-IP signup rate limits.** A probe with the published anon key confirmed that signups are unthrottled and auto-confirmed (`disable_signup` is `false` by design — launch needs self-serve signup). Turning on Turnstile or per-IP limits is an Auth setting in the dashboard; the tenant-isolation work in `030` is what makes unthrottled signup survivable in the meantime: a spam tenant can only ever see its own empty workspace.
+- **Usage metering and paid tiers for the AI.** Out of scope until the launch feature set is settled; `api_usage` is the table a visible usage meter would read when that ships.
+
