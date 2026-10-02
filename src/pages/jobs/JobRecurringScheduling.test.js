@@ -812,4 +812,285 @@ describe('Job Recurring Scheduling Integrations', () => {
   });
 });
 
+describe('Recurring occurrence identity', () => {
+  beforeEach(() => {
+    store.clearSync();
+    store.listeners = {};
+  });
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const dayKey = (offset) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const todayKey = dayKey(0);
+  const childrenOf = (templateId) => (store.getAll('jobs') || []).filter(j => j.parentJobId === templateId);
+
+  test('Skip Occurrence permanently suppresses that occurrence', () => {
+    const template = store.create('jobs', {
+      number: 'T-04001',
+      title: 'Gracie Dance Lesson',
+      isRecurring: true,
+      recurringConfig: { freq: 'Daily', start: dayKey(0), end: dayKey(2), skippedDates: [dayKey(0)] }
+    });
+
+    checkRecurringJobs();
+
+    const afterFirstRun = childrenOf(template.id).map(c => c.templateDate).sort();
+    assert.deepStrictEqual(afterFirstRun, [dayKey(1), dayKey(2)], 'skipped occurrence must never be spawned');
+
+    // Repeated engine passes must not back-fill the skipped occurrence.
+    checkRecurringJobs();
+    checkRecurringJobs();
+    assert.deepStrictEqual(childrenOf(template.id).map(c => c.templateDate).sort(), afterFirstRun);
+  });
+
+  test('skips written by older builds (day-first / ISO timestamp) still suppress the occurrence', () => {
+    const now = new Date();
+    const dayFirst = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+
+    const dayFirstTemplate = store.create('jobs', {
+      number: 'T-04002',
+      title: 'Day-first skip',
+      isRecurring: true,
+      recurringConfig: { freq: 'Daily', start: todayKey, end: todayKey, skippedDates: [dayFirst] }
+    });
+    const isoTemplate = store.create('jobs', {
+      number: 'T-04003',
+      title: 'ISO skip',
+      isRecurring: true,
+      recurringConfig: { freq: 'Daily', start: todayKey, end: todayKey, skippedDates: [`${todayKey}T09:30:00`] }
+    });
+
+    checkRecurringJobs();
+
+    assert.strictEqual(childrenOf(dayFirstTemplate.id).length, 0);
+    assert.strictEqual(childrenOf(isoTemplate.id).length, 0);
+
+    // The repair pass rewrites legacy values to canonical keys so the skip keeps working.
+    assert.deepStrictEqual(store.getById('jobs', dayFirstTemplate.id).recurringConfig.skippedDates, [todayKey]);
+    assert.deepStrictEqual(store.getById('jobs', isoTemplate.id).recurringConfig.skippedDates, [todayKey]);
+  });
+
+  test('an orphaned child (lost parentJobId) fills its occurrence instead of being duplicated', () => {
+    const template = store.create('jobs', {
+      number: 'T-05002',
+      title: 'Weekly Service',
+      isRecurring: true,
+      recurringConfig: { freq: 'Daily', start: todayKey, end: todayKey }
+    });
+
+    // Legacy row: the parentJobId only ever lived in the serialised notes blob, so
+    // rows written by older builds come back orphaned while still holding J-XXXX.1.
+    const orphan = store.create('jobs', {
+      number: 'J-05002.1',
+      title: 'Weekly Service',
+      status: 'Pending',
+      scheduledDate: todayKey,
+      createdAt: new Date(Date.now() - 60000).toISOString()
+    });
+
+    checkRecurringJobs();
+
+    assert.strictEqual(childrenOf(template.id).length, 1, 'no duplicate spawned into the filled occurrence');
+    const healed = store.getById('jobs', orphan.id);
+    assert.strictEqual(healed.parentJobId, template.id, 'orphan must be re-linked to its template');
+    assert.strictEqual(healed.templateDate, todayKey, 'orphan must be anchored to the occurrence it fills');
+  });
+
+  test('engine repair removes duplicate occurrences and keeps the copies with work on them', () => {
+    const template = store.create('jobs', {
+      number: 'T-06003',
+      title: 'Duplicate Repair',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: todayKey, end: todayKey, daysOfWeek: [] }
+    });
+
+    const pristineOld = store.create('jobs', {
+      number: 'J-06003.1', parentJobId: template.id, templateDate: todayKey, scheduledDate: todayKey,
+      status: 'Pending', tasks: [{ id: 't1', name: 'Check', status: 'Not Started', progress: 0 }],
+      createdAt: '2026-01-01T00:00:00.000Z'
+    });
+    const pristineNew = store.create('jobs', {
+      number: 'J-06003.2', parentJobId: template.id, templateDate: todayKey, scheduledDate: todayKey,
+      status: 'Scheduled', tasks: [{ id: 't2', name: 'Check', status: 'Not Started', progress: 0 }],
+      createdAt: '2026-01-02T00:00:00.000Z'
+    });
+    const started = store.create('jobs', {
+      number: 'J-06003.3', parentJobId: template.id, templateDate: todayKey, scheduledDate: todayKey,
+      status: 'In Progress', tasks: [{ id: 't3', name: 'Check', status: 'In Progress', progress: 40 }]
+    });
+    const invoiced = store.create('jobs', {
+      number: 'J-06003.4', parentJobId: template.id, templateDate: todayKey, scheduledDate: todayKey,
+      status: 'Invoiced'
+    });
+
+    checkRecurringJobs();
+
+    const remainingIds = childrenOf(template.id).map(j => j.id).sort();
+    assert.deepStrictEqual(remainingIds, [invoiced.id, started.id].sort(),
+      'only untouched duplicates may be removed');
+    assert.strictEqual(store.getById('jobs', pristineOld.id), null);
+    assert.strictEqual(store.getById('jobs', pristineNew.id), null);
+
+    const cleanups = () => (store.getAll('notifications') || []).filter(n => n.type === 'Recurring Job Cleanup');
+    assert.strictEqual(cleanups().length, 1, 'cleanup is reported once');
+
+    checkRecurringJobs();
+    assert.strictEqual(cleanups().length, 1, 'the cleanup notification must not stack across runs');
+    assert.deepStrictEqual(childrenOf(template.id).map(j => j.id).sort(), remainingIds, 'repair must be idempotent');
+  });
+
+  test('spawned children never reuse a number taken by an orphan sibling', () => {
+    const template = store.create('jobs', {
+      number: 'T-08005',
+      title: 'Number Collision',
+      isRecurring: true,
+      recurringConfig: { freq: 'Daily', start: dayKey(0), end: dayKey(1) }
+    });
+
+    store.create('jobs', {
+      number: 'J-08005.1', title: 'Number Collision', status: 'Pending',
+      templateDate: todayKey, scheduledDate: todayKey
+    });
+
+    checkRecurringJobs();
+
+    const children = childrenOf(template.id);
+    assert.strictEqual(children.length, 2);
+    const numbers = children.map(c => c.number);
+    assert.strictEqual(new Set(numbers).size, 2, `duplicate job number minted for one template: ${numbers.join(', ')}`);
+    assert.ok(numbers.includes('J-08005.2'), `expected the orphan's number to be respected, got ${numbers.join(', ')}`);
+
+    // The real symptom: one job per occurrence, never two in the same slot.
+    const occurrenceKeys = children.map(c => c.templateDate || c.scheduledDate);
+    assert.strictEqual(new Set(occurrenceKeys).size, children.length,
+      `two jobs spawned into the same occurrence: ${occurrenceKeys.join(', ')}`);
+
+    const abandoned = (store.getAll('jobs') || []).filter(j => !j.parentJobId && j.number && j.number.startsWith('J-08005'));
+    assert.strictEqual(abandoned.length, 0, 'the orphan must be adopted, not left beside a freshly spawned twin');
+  });
+
+  test('repairAnomalousJobNumbers leaves healthy template/child pairs alone', async () => {
+    const { repairAnomalousJobNumbers } = await import('../../utils/maintenanceEngine.js');
+
+    const template = store.create('jobs', {
+      number: 'T-07004',
+      title: 'Healthy Pair',
+      status: 'Recurring Template',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: todayKey, end: dayKey(60), daysOfWeek: [] }
+    });
+    const child = store.create('jobs', {
+      number: 'J-07004.1', parentJobId: template.id, title: 'Healthy Pair',
+      templateDate: todayKey, scheduledDate: todayKey, status: 'Scheduled'
+    });
+
+    assert.strictEqual(repairAnomalousJobNumbers(), 0, 'nothing to repair');
+    assert.strictEqual(repairAnomalousJobNumbers(), 0,
+      'healthy data must not be renumbered on every engine pass (T- parent vs J- child)');
+    assert.strictEqual(store.getById('jobs', template.id).number, 'T-07004');
+    assert.strictEqual(store.getById('jobs', child.id).number, 'J-07004.1');
+  });
+
+  test('repairRecurringOccurrences anchors a moved legacy child and is idempotent', async () => {
+    const { repairRecurringOccurrences } = await import('../../utils/maintenanceEngine.js');
+
+    const template = store.create('jobs', {
+      number: 'T-07005',
+      title: 'Moved Legacy Child',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: todayKey, end: todayKey, daysOfWeek: [] }
+    });
+
+    // Legacy child: dragged two days off its occurrence, so it only has a scheduledDate.
+    const child = store.create('jobs', {
+      number: 'J-07005.1', parentJobId: template.id, title: 'Moved Legacy Child',
+      scheduledDate: dayKey(2), status: 'Pending'
+    });
+
+    const summary = repairRecurringOccurrences();
+    assert.strictEqual(summary.anchored, 1, 'the moved child must be anchored to the occurrence it fulfils');
+    assert.strictEqual(store.getById('jobs', child.id).templateDate, todayKey,
+      'the anchor must be its real occurrence, not the day it was dragged to');
+
+    assert.deepStrictEqual(repairRecurringOccurrences(),
+      { relinked: 0, anchored: 0, duplicatesRemoved: 0, skipsNormalised: 0 },
+      'a second pass must find nothing left to repair');
+
+    // With the child anchored, the engine must not spawn a second job for today.
+    checkRecurringJobs();
+    assert.strictEqual(childrenOf(template.id).length, 1);
+  });
+
+  test('forecast blocks are suppressed for materialized and skipped occurrences', async () => {
+    const { getVirtualRecurringOccurrences, materializeVirtualOccurrence } = await import('../../utils/maintenanceEngine.js');
+
+    const filled = store.create('jobs', {
+      number: 'T-09006',
+      title: 'Forecast Filled',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: todayKey, end: dayKey(30), daysOfWeek: [] }
+    });
+    const skipped = store.create('jobs', {
+      number: 'T-09007',
+      title: 'Forecast Skipped',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: todayKey, end: dayKey(30), daysOfWeek: [], skippedDates: [todayKey] }
+    });
+    const orphanFilled = store.create('jobs', {
+      number: 'T-09008',
+      title: 'Forecast Orphan',
+      isRecurring: true,
+      recurringConfig: { freq: 'Weekly', start: todayKey, end: dayKey(30), daysOfWeek: [] }
+    });
+    store.create('jobs', {
+      number: 'J-09008.1', title: 'Forecast Orphan', status: 'Scheduled',
+      templateDate: todayKey, scheduledDate: todayKey
+    });
+
+    const child = materializeVirtualOccurrence(filled.id, todayKey);
+    // User drags the real block onto another day; the occurrence stays fulfilled.
+    store.update('jobs', child.id, { scheduledDate: dayKey(2) });
+
+    const occurrences = getVirtualRecurringOccurrences(todayKey, dayKey(6));
+    assert.ok(!occurrences.some(o => o.parentJobId === filled.id),
+      'no forecast for a filled occurrence, even after the real block moved');
+    assert.ok(!occurrences.some(o => o.parentJobId === skipped.id),
+      'no forecast for a skipped occurrence');
+    assert.ok(!occurrences.some(o => o.parentJobId === orphanFilled.id),
+      'no forecast when an orphaned real job already covers the occurrence (ghost block = collision)');
+  });
+
+  test('occurrence anchor and skip list survive a cloud serialization round-trip', () => {
+    const now = new Date();
+    const dayFirst = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+
+    const template = store.create('jobs', {
+      number: 'T-10008',
+      title: 'Round Trip Occurrence',
+      isRecurring: true,
+      recurringConfig: { freq: 'Daily', start: dayKey(0), end: dayKey(2), skippedDates: [dayFirst] }
+    });
+
+    checkRecurringJobs();
+
+    const templateBack = store.normalizeRecord(store.denormalizeRecord(store.getById('jobs', template.id), 'jobs'), 'jobs');
+    assert.strictEqual(templateBack.isRecurring, true, 'template must still be recurring after a reload');
+    assert.deepStrictEqual(templateBack.recurringConfig, store.getById('jobs', template.id).recurringConfig,
+      'skip list must round-trip unchanged');
+
+    const childRecord = childrenOf(template.id)[0];
+    const childBack = store.normalizeRecord(store.denormalizeRecord(childRecord, 'jobs'), 'jobs');
+    assert.strictEqual(childBack.parentJobId, template.id, 'parent link must survive the notes blob');
+    assert.strictEqual(childBack.templateDate, childRecord.templateDate, 'occurrence anchor must survive the notes blob');
+
+    // Engine pass after a reload must still see both occurrences as filled.
+    const before = childrenOf(template.id).map(j => j.number).sort();
+    checkRecurringJobs();
+    assert.deepStrictEqual(childrenOf(template.id).map(j => j.number).sort(), before);
+  });
+});
+
 

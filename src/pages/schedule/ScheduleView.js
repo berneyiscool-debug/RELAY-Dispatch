@@ -9,10 +9,49 @@ import { escapeHTML } from '../../utils/security.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showModal } from '../../components/Modal.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
-import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
+import { parsePreferredTime, todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
 import { JOB_STATUS_COLORS } from '../../utils/statusColors.js';
 import { FLAGS } from '../../utils/flags.js';
-import { getVirtualRecurringOccurrences, materializeVirtualOccurrence } from '../../utils/maintenanceEngine.js';
+import { getVirtualRecurringOccurrences, materializeVirtualOccurrence, collectTemplateChildren, occurrenceDateKey, canonicalSkippedDates } from '../../utils/maintenanceEngine.js';
+
+/**
+ * Records an occurrence skip against the owning template. The date is stored as
+ * a canonical YYYY-MM-DD key because that is what the engine compares skips
+ * against — writing the raw scheduledDate (or a moved date) meant the skip was
+ * never seen and the occurrence was spawned straight back.
+ * @returns {boolean} whether the skip was recorded
+ */
+function addSkippedOccurrence(parentJob, dateStr) {
+  const key = toDateKey(dateStr);
+  if (!parentJob || !key) return false;
+  const recurringConfig = {
+    ...(parentJob.recurringConfig || {}),
+    skippedDates: canonicalSkippedDates({
+      skippedDates: [...(parentJob.recurringConfig?.skippedDates || []), key]
+    })
+  };
+  store.update('jobs', parentJob.id, { recurringConfig });
+  return true;
+}
+
+/**
+ * The recurring template that owns a job. Falls back to the job-number form for
+ * children whose parentJobId link was lost, so they still offer Skip Occurrence
+ * and the skip lands on the right template.
+ */
+function resolveRecurringParent(job) {
+  if (!job) return null;
+  if (job.parentJobId) {
+    const linkedParent = store.getById('jobs', job.parentJobId);
+    if (linkedParent) return linkedParent;
+  }
+  const jobs = store.getAll('jobs') || [];
+  const jobIds = new Set(jobs.map(j => j.id));
+  return jobs.find(candidate =>
+    candidate && candidate.isRecurring === true && candidate.id !== job.id &&
+    collectTemplateChildren(candidate, [job], jobIds).length > 0
+  ) || null;
+}
 
 export function renderScheduleView(container) {
   document.querySelectorAll('.schedule-tooltip-popover').forEach(t => t.remove());
@@ -2300,18 +2339,11 @@ export function renderScheduleView(container) {
           contextMenu.querySelector('#ctx-skip-occurrence').addEventListener('click', () => {
             closeContextMenu();
             const parentJobId = block.dataset.parentJobId;
-            const dateStr = block.dataset.date;
+            const dateStr = toDateKey(block.dataset.date);
             const parentJob = store.getById('jobs', parentJobId);
-            if (parentJob && parentJob.recurringConfig) {
-              if (!parentJob.recurringConfig.skippedDates) {
-                parentJob.recurringConfig.skippedDates = [];
-              }
-              if (!parentJob.recurringConfig.skippedDates.includes(dateStr)) {
-                parentJob.recurringConfig.skippedDates.push(dateStr);
-                store.update('jobs', parentJobId, { recurringConfig: parentJob.recurringConfig });
-                showToast(`Skipped occurrence on ${dateStr}`, 'success');
-                render();
-              }
+            if (parentJob && parentJob.recurringConfig && addSkippedOccurrence(parentJob, dateStr)) {
+              showToast(`Skipped occurrence on ${dateStr}`, 'success');
+              render();
             }
           });
 
@@ -2344,8 +2376,8 @@ export function renderScheduleView(container) {
           const isRealSchedule = blockType === 'schedule';
           const jobId = block.dataset.blockJobId;
           const job = store.getById('jobs', jobId);
-          const parentJob = job?.parentJobId ? store.getById('jobs', job.parentJobId) : null;
-          const isRecurringChild = parentJob && parentJob.isRecurring === true;
+          const parentJob = resolveRecurringParent(job);
+          const isRecurringChild = !!(parentJob && parentJob.isRecurring === true);
 
           const isBatch = selectedScheduleIds.size > 1 && selectedScheduleIds.has(scheduleId);
 
@@ -2412,19 +2444,12 @@ export function renderScheduleView(container) {
           if (isRecurringChild) {
             contextMenu.querySelector('#ctx-skip-occurrence').addEventListener('click', () => {
               closeContextMenu();
-              const dateStr = job.scheduledDate;
-              if (dateStr) {
-                if (!parentJob.recurringConfig.skippedDates) {
-                  parentJob.recurringConfig.skippedDates = [];
-                }
-                if (!parentJob.recurringConfig.skippedDates.includes(dateStr)) {
-                  parentJob.recurringConfig.skippedDates.push(dateStr);
-                  store.update('jobs', parentJob.id, { recurringConfig: parentJob.recurringConfig });
-                }
-              }
+              // Skip the occurrence this job fulfils (its anchor), not wherever
+              // it happens to be sitting after a drag.
+              const skipped = addSkippedOccurrence(parentJob, occurrenceDateKey(job));
               // Also delete the job instance so it disappears
               store.delete('jobs', jobId);
-              showToast('Occurrence skipped and removed from schedule', 'success');
+              showToast(skipped ? 'Occurrence skipped and removed from schedule' : 'Occurrence removed from schedule', 'success');
               render();
             });
           }
