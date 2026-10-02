@@ -7,7 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
-import { todayLocalISO } from '../../utils/dateUtils.js';
+import { todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
 
 const AVAILABLE_TAGS = [
   'Urgent', 'Follow-up', 'Warranty', 'Inspection', 'After-Hours',
@@ -1646,7 +1646,10 @@ export function renderJobForm(container, params) {
         defaultTechnicianId: container.querySelector('#recurring-tech')?.value || job.recurringConfig?.defaultTechnicianId || null,
         daysOfWeek: [...selectedDaysOfWeek],
         daysOfMonth: [...selectedDaysOfMonth],
-        skippedDates: job.recurringConfig?.skippedDates || []
+        // Skipped occurrences are matched by calendar date, so keep them
+        // canonical — a legacy "3/10/2026" entry would otherwise survive the
+        // save and never match the engine's YYYY-MM-DD comparison.
+        skippedDates: [...new Set((job.recurringConfig?.skippedDates || []).map(toDateKey).filter(Boolean))]
       };
     } else {
       if (!isEdit) {
