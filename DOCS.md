@@ -55,7 +55,7 @@ regional. RELAY flips both:
 - Reports & analytics (P&L by job, revenue by customer, tech productivity)
   with CSV export
 - Role-based permissions (Admin / Manager / Office / Technician)
-- 13 themes including a light/dark toggle
+- Light appearance only at launch; dark mode follows in a later release
 
 **Cloud mode (optional, paid)**
 Adds only what genuinely needs the internet:
@@ -76,6 +76,8 @@ RELAY runs as a native desktop application (powered by Electron) or directly in 
 - **Desktop Wrapper:** Electron — runs natively on your machine
 - **Installer & Updates:** electron-builder — packages into a Windows NSIS Installer (.exe) with automatic background updates via GitHub Releases
 - **Local storage:** browser localStorage (offline-first)
+- **Fonts:** self-hosted via `@fontsource` (Inter, Material Icons Outlined, plus the
+  document faces) — bundled with the build, so nothing is fetched from a CDN
 - **Cloud backend:** Supabase (Postgres, Auth, Storage) — Cloud mode only
 - **Charts/PDF:** print-friendly HTML render pipeline
 
@@ -100,6 +102,27 @@ npm run electron:build  # build Vite production assets and compile the Windows N
 The app boots straight into **local mode** — no account needed. To enable Cloud
 mode, point it at a Supabase project using the schema in
 `supabase/migrations/schema.sql` (see `docs/SUPABASE_MIGRATION.md`).
+
+### Local demo accounts
+
+A brand-new local company is seeded with four demo technicians so there is
+something to schedule and assign:
+
+| Username | Name          | Position             |
+| -------- | ------------- | -------------------- |
+| `jake`   | Jake Morrow   | Senior Electrician   |
+| `ryan`   | Ryan Holt     | Service Manager      |
+| `sandra` | Sandra Okafor | Electrician          |
+| `dean`   | Dean Caruso   | Office Administrator |
+
+The shared **demo password is `123456`**; each user can also sign in with their
+`@apexpowerservices.local` email address. Local passwords are stored as hashes,
+and the plaintext demo password is upgraded to a hash the first time a user
+signs in with it. A user with no password stored is prompted to set one on
+first sign-in instead of being told the password is wrong.
+
+Change these credentials before using RELAY for real work: an administrator can
+rename users or reset their passwords in **Settings → Users**.
 
 ## Project status
 

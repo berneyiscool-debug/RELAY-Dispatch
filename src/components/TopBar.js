@@ -4,12 +4,12 @@
 
 import { store } from '../data/store.js';
 import { router } from '../router.js';
-import { applyTheme, THEMES } from '../utils/theme.js';
 import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssistant.js';
 import { showModal } from './Modal.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 import { escapeHTML } from '../utils/security.js';
+import { setSessionUser } from '../pages/auth/session.js';
 
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
@@ -34,9 +34,6 @@ export function createTopBar() {
         <input type="text" id="global-search" placeholder="Search…" autocomplete="off" />
         <span class="topbar-search-kbd">Ctrl K</span>
       </div>
-      <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode">
-        <span class="material-icons-outlined" id="theme-icon">${(THEMES[getStoredTheme()] ? THEMES[getStoredTheme()].mode : 'light') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-      </button>
       <button class="topbar-action-btn" id="btn-help" title="Help">
         <span class="material-icons-outlined">help_outline</span>
       </button>
@@ -120,16 +117,6 @@ export function createTopBar() {
     setTimeout(hideSearchResults, 200);
   });
 
-    // Theme toggle
-  const themeBtn = topbar.querySelector('#btn-theme-toggle');
-  themeBtn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'light';
-    const currentMode = THEMES[current] ? THEMES[current].mode : 'light';
-    const next = currentMode === 'dark' ? 'light' : 'dark';
-    applyTheme(next, true);
-    topbar.querySelector('#theme-icon').textContent = next === 'dark' ? 'light_mode' : 'dark_mode';
-  });
-
 // UI Mode toggle — just wire up the change listener here.
   // Visibility is handled in updateTopbarAccess() which runs after login.
   const uiToggle = topbar.querySelector('#ui-mode-toggle');
@@ -151,7 +138,7 @@ export function createTopBar() {
           currentUser.userTypeId = `${currentUser.companyId}_ut_tech`;
         }
       }
-      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      setSessionUser(currentUser);
       // Refresh top-bar display to reflect role change
       updateTopbarAccess(topbar);
       // Refresh sidebar to show/hide items based on new role
@@ -164,9 +151,6 @@ export function createTopBar() {
       }
     });
   }
-
-  // Apply stored theme on load
-  applyStoredTheme();
 
   // Notices logic
   const notifBtn = topbar.querySelector('#btn-notifications');
@@ -228,12 +212,12 @@ export function createTopBar() {
   if (brandEl) {
     brandEl.addEventListener('click', () => router.navigate('/'));
     const refreshBrand = () => { const el = topbar.querySelector('#topbar-brand'); if (el) el.innerHTML = buildBrandHtml(); };
-    window.addEventListener('simpro-settings-updated', refreshBrand);
+    window.addEventListener('relay:settings-updated', refreshBrand);
     store.on('settings', refreshBrand);
   }
 
   // Profile display moved to the sidebar footer (see Sidebar.js). The top bar
-  // now only carries search + theme/help/notifications + the Deputy controls
+  // now only carries search + help/notifications + the Deputy controls
   // (right-most) + the mode toggle.
 
   // Update on profile details update
@@ -537,19 +521,6 @@ function showSearchResults(query) {
 function hideSearchResults() {
   const el = document.querySelector('#search-results');
   if (el) el.remove();
-}
-
-function getStoredTheme() {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  if (currentUser && currentUser.id) {
-    return currentUser.theme || localStorage.getItem(`simpro_theme_${currentUser.id}`) || 'light';
-  }
-  return 'light';
-}
-
-function applyStoredTheme() {
-  const theme = getStoredTheme();
-  applyTheme(theme);
 }
 
 function openHelpModal() {

@@ -17,11 +17,12 @@ import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptio
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
-import { applyTheme, THEMES } from '../utils/theme.js';
-import { storageGet, storageSet } from '../utils/tauriStore.js';
-import { getAITier, AI_TIERS } from '../utils/aiTier.js';
+import { storageGet, storageSet } from '../utils/persist.js';
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 import { renderLeadProfileSetup } from './leads/leadProfile.js';
+import { hashPassword, verifyPassword } from './auth/password.js';
+import { buildLocalUser } from './auth/localUsers.js';
+import { setSessionUser, clearSessionUser } from './auth/session.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -72,14 +73,6 @@ function compressImage(dataUrl, maxWidth, maxHeight) {
   });
 }
 
-// Helper to hash password using SHA-256 Web Crypto API
-async function hashPassword(password) {
-  const msgBuffer = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 // Build a permissions array with all granular keys
 function buildGranularPerms(valueFn) {
   return Object.entries(MODULE_PERMS).map(([module, perms]) => {
@@ -87,6 +80,53 @@ function buildGranularPerms(valueFn) {
     perms.forEach(({ key }) => { obj[key] = valueFn(module, key); });
     return obj;
   });
+}
+
+// Collections that only hold data once a company starts entering real (or demo) work
+const BUSINESS_COLLECTIONS = ['customers', 'quotes', 'jobs', 'invoices', 'assets', 'suppliers', 'contractors', 'purchaseOrders', 'formInstances', 'leads', 'schedule', 'stock', 'timesheets'];
+
+function hasAnyBusinessData() {
+  return BUSINESS_COLLECTIONS.some(col => (store.getAll(col) || []).length > 0);
+}
+
+// Save a portable JSON copy of every collection, used before destructive actions
+function downloadDataSnapshot(prefix = 'relay-data') {
+  const snapshot = store.exportSnapshot();
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const fileName = `${prefix}-${stamp}.json`;
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return fileName;
+}
+
+// Standard "download a copy first" opt-out used by every destructive action
+function backupCheckboxHtml(prefix) {
+  return `
+    <label style="display:flex; align-items:flex-start; gap:8px; color:var(--text-secondary); margin-bottom:16px; cursor:pointer;">
+      <input type="checkbox" id="danger-backup-first" checked data-backup-prefix="${escapeHTML(prefix)}" style="margin-top:2px;" />
+      <span>Download a copy of my data (JSON) before continuing</span>
+    </label>
+  `;
+}
+
+function runBackupIfRequested(root, fallbackPrefix) {
+  const box = root.querySelector('#danger-backup-first');
+  if (!box || !box.checked) return null;
+  const prefix = box.dataset.backupPrefix || fallbackPrefix;
+  try {
+    return downloadDataSnapshot(prefix);
+  } catch (err) {
+    console.error('Snapshot download failed:', err);
+    showToast('Could not download your data copy. Continuing.', 'error');
+    return null;
+  }
 }
 
 // Helper to render visual timeline
@@ -121,25 +161,23 @@ function renderTimelineHtml(activeHours = []) {
           <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary)">schedule</span>
           Active Hours Timeline
         </span>
-        <span class="text-tertiary" style="font-size:11px; font-weight:normal;">Click & drag to highlight active hours</span>
+        <span class="text-tertiary timeline-hint">Click & drag to highlight active hours</span>
       </label>
       
       <!-- Hour labels -->
-      <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:10px; color:var(--text-tertiary); font-weight:600; padding:0 2px;">
+      <div class="timeline-hour-labels">
         ${hours.map(h => `<span>${h}</span>`).join('')}
       </div>
       
       <!-- Grid -->
-      <div class="timeline-grid" style="
-        display:grid; 
+      <div class="timeline-grid" style="display:grid; 
         grid-template-columns:repeat(48, 1fr); 
         gap:3px; 
         background: rgba(0, 0, 0, 0.2); 
         padding:6px; 
         border-radius:8px; 
         border:1px solid var(--border-color);
-        touch-action:none;
-      ">
+        touch-action:none;">
         ${blocksHtml}
       </div>
     </div>
@@ -235,7 +273,6 @@ export function renderSettings(container) {
   const isUsersDisabled = isLocalMode && localDeploymentType === 'single_user';
   const isPortalDisabled = isLocalMode;
   const isCloudGated = isLocalMode; // online payments + email are cloud-only
-  const isFolderSyncDisabled = !isLocalMode;
 
   if (isUsersDisabled && activeTab === 'users') {
     activeTab = 'company';
@@ -246,9 +283,6 @@ export function renderSettings(container) {
   if (isPortalDisabled && activeTab === 'portal_contractor') {
     activeTab = 'company';
   }
-  if (isFolderSyncDisabled && activeTab === 'folder_sync') {
-    activeTab = 'company';
-  }
   if (isCloudGated && activeTab === 'payments') {
     activeTab = 'company';
   }
@@ -256,33 +290,32 @@ export function renderSettings(container) {
     activeTab = 'company';
   }
   
-  // AI Assistant merged into the API Keys tab — keep old links working.
-  if (activeTab === 'ai_assistant') {
-    activeTab = 'api_keys';
+  // The model provider and credentials are RELAY's own (see utils/aiTier.js), and
+  // the maps key is a build-time constant — neither has anything for a customer to
+  // configure, so the old AI/API sub-tabs are gone. Keep old links working.
+  if (activeTab === 'api_keys' || activeTab === 'ai_assistant') {
+    activeTab = 'company';
   }
 
-  function getCategoryForTab(tab) {
-    if (['company', 'billing', 'portal', 'portal_contractor', 'folder_sync', 'ai_assistant', 'system'].includes(tab)) return 'general';
-    if (['templates_forms', 'invoices_quotes', 'payments', 'email'].includes(tab)) return 'workflow';
-    if (['users', 'suppliers'].includes(tab)) return 'people';
-    if (['materials', 'storage_options', 'cost_centers', 'tax'].includes(tab)) return 'resources';
-    return 'general';
+  // Folder Sync and Local Data Backup described the same directory handle in two
+  // vocabularies; they are now one "Local Storage" tab. Keep old links working.
+  if (activeTab === 'folder_sync') {
+    activeTab = 'local_storage';
   }
-
-  let activeCategory = getCategoryForTab(activeTab);
 
   const openMigrationModal = () => {
     const modalContent = document.createElement('div');
+    const expectedName = (store.getSettings().name || '').trim();
     modalContent.innerHTML = `
       <form id="convert-cloud-form" style="display:flex; flex-direction:column; gap:16px;">
-        <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-danger); display:flex; gap:8px;">
+        <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); display:flex; gap:8px;">
           <span class="material-icons-outlined" style="color:var(--color-danger);">warning</span>
           <div>
             <strong>CRITICAL WARNING:</strong> Converting to Cloud Sync is a permanent, one-way transition. Once converted, you cannot revert this profile back to a local/offline account. All data will be migrated to the secure cloud database.
           </div>
         </div>
 
-        <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-info); display:flex; gap:8px;">
+        <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; color:var(--color-info); display:flex; gap:8px;">
           <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
           <div>
             Configure your cloud administrator credentials. This username and password will be your new secure login.
@@ -290,8 +323,8 @@ export function renderSettings(container) {
         </div>
 
         <div class="form-group">
-          <label class="form-label" style="font-weight:600;">Confirm Business Name</label>
-          <input class="form-input" id="migrate-company-name" required value="${escapeHTML(store.getSettings().name || '')}" placeholder="Company Name" />
+          <label class="form-label" style="font-weight:600;">${expectedName ? `Type <strong>${escapeHTML(expectedName)}</strong> to confirm` : 'Business Name'}</label>
+          <input class="form-input" id="migrate-company-name" required autocomplete="off" placeholder="${escapeHTML(expectedName || 'Your business name')}" />
         </div>
 
         <div class="form-group">
@@ -314,7 +347,9 @@ export function renderSettings(container) {
           <input class="form-input" type="password" id="migrate-admin-password" required minlength="6" placeholder="At least 6 characters" />
         </div>
 
-        <div id="migration-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
+        ${backupCheckboxHtml('relay-backup-before-cloud-upgrade')}
+
+        <div id="migration-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
           <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
           <span id="migration-error-text"></span>
         </div>
@@ -356,13 +391,22 @@ export function renderSettings(container) {
       submitIcon.textContent = 'sync';
       submitIcon.style.animation = 'spin 1s linear infinite';
 
-      const companyName = modalContent.querySelector('#migrate-company-name').value.trim();
+      const confirmName = modalContent.querySelector('#migrate-company-name').value.trim();
       const adminName = modalContent.querySelector('#migrate-admin-name').value.trim();
       const adminPhone = modalContent.querySelector('#migrate-admin-phone').value.trim();
       const email = modalContent.querySelector('#migrate-admin-email').value.trim();
       const password = modalContent.querySelector('#migrate-admin-password').value;
 
       try {
+        if (!confirmName) {
+          throw new Error('Enter your business name to continue.');
+        }
+        if (expectedName && confirmName !== expectedName) {
+          throw new Error('The business name does not match. Type it exactly as shown to confirm.');
+        }
+        const companyName = confirmName;
+        const backupFile = runBackupIfRequested(modalContent, 'relay-backup-before-cloud-upgrade');
+
         const settings = store.getSettings();
         settings.name = companyName;
         await store.saveSettings(settings);
@@ -427,20 +471,40 @@ export function renderSettings(container) {
           role: profile.role,
           userTypeName: 'Admin',
           userTypeId: `${profile.company_id}_ut_admin`,
-          color: profile.color || '#FF5C00',
-          theme: 'light'
+          color: profile.color || '#FF5C00'
         };
 
-        localStorage.setItem('currentUser', JSON.stringify(user));
+        setSessionUser(user);
         sessionStorage.removeItem('relay_active_account');
 
-        showToast('Migration completed successfully! Redirecting...', 'success');
+        showToast('Migration completed successfully.', 'success');
         close();
 
-        setTimeout(() => {
-          window.location.hash = '#/';
-          window.location.reload();
-        }, 1500);
+        const summary = document.createElement('div');
+        summary.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+        summary.innerHTML = `
+          <p style="margin-bottom:12px">Your profile now runs on RELAY Cloud, and every local record has been copied across.</p>
+          <ul style="margin:0 0 12px 18px; color:var(--text-secondary); line-height:1.7;">
+            <li>Signed in as <strong>${escapeHTML(email)}</strong></li>
+            <li>Company: <strong>${escapeHTML(companyName)}</strong></li>
+            ${backupFile ? `<li>A copy of your local data was saved as <strong>${escapeHTML(backupFile)}</strong></li>` : ''}
+          </ul>
+          <p style="color:var(--text-secondary)">Next: add team members from Settings → Users, or open RELAY on another device and sign in with the same email address.</p>
+        `;
+
+        showModal({
+          title: 'Migration Complete',
+          content: summary,
+          size: 'modal-md',
+          // The store is already reading from the cloud company, so reload on any dismissal
+          onClose: () => {
+            window.location.hash = '#/';
+            window.location.reload();
+          },
+          actions: [
+            { label: 'Open RELAY', className: 'btn-primary', onClick: (closeSummary) => closeSummary() }
+          ]
+        });
 
       } catch (err) {
         console.error('Migration failed:', err);
@@ -459,208 +523,29 @@ export function renderSettings(container) {
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
-  const categories = [
-    {
-      id: 'general',
-      label: 'General',
-      icon: 'settings',
-      tabs: [
-        { id: 'company', label: 'Company Profile' },
-        { id: 'billing', label: 'Plan & Billing' },
-        { id: 'portal', label: 'Customer Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
-        { id: 'portal_contractor', label: 'Contractor Portal', disabled: isPortalDisabled, tooltip: 'Requires Cloud Account' },
-        { id: 'folder_sync', label: 'Folder Sync', disabled: isFolderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
-        { id: 'api_keys', label: 'API Keys' },
-        { id: 'system', label: 'System Options' }
-      ]
-    },
-    {
-      id: 'workflow',
-      label: 'Workflow',
-      icon: 'account_tree',
-      tabs: [
-        { id: 'templates_forms', label: 'Templates & Forms' },
-        { id: 'invoices_quotes', label: 'Quotes & Invoices' },
-        // v1.3 #3 — dark until FLAGS.payments flips on for launch
-        ...(FLAGS.payments ? [{ id: 'payments', label: 'Payments', disabled: isCloudGated, tooltip: 'Requires Cloud Account' }] : []),
-        // v1.3 #5 — dark until FLAGS.email flips on for launch
-        ...(FLAGS.email ? [{ id: 'email', label: 'Email & Domain', disabled: isCloudGated, tooltip: 'Requires Cloud Account' }] : [])
-      ]
-    },
-    {
-      id: 'people',
-      label: 'People',
-      icon: 'groups',
-      tabs: [
-        { id: 'users', label: 'Users & Permissions', disabled: isUsersDisabled, tooltip: 'Requires Cloud Account or Local Server' },
-        { id: 'suppliers', label: 'Suppliers Configuration' }
-      ]
-    },
-    {
-      id: 'resources',
-      label: 'Resources',
-      icon: 'widgets',
-      tabs: [
-        { id: 'materials', label: 'Materials & Catalog' },
-        { id: 'storage_options', label: 'Storage Options' },
-        { id: 'cost_centers', label: 'Cost Centers & Xero' },
-        { id: 'tax', label: 'Tax & Labor Rates' }
-      ]
-    }
-  ];
+  container.innerHTML = `
+    <style>
+      #settings-content {
+        animation: settings-fade-in 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      @keyframes settings-fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
 
-  function render() {
-    const categoryTabsHtml = categories.map(cat => {
-      const isActive = activeCategory === cat.id;
-      return `
-        <button class="settings-category-btn ${isActive ? 'active' : ''}" data-category="${cat.id}">
-          <span class="material-icons-outlined">${cat.icon}</span>
-          <span>${cat.label}</span>
-        </button>
-      `;
-    }).join('');
+    <div class="page-header"><h1>Settings</h1></div>
 
-    const activeCatData = categories.find(cat => cat.id === activeCategory) || categories[0];
-    const subTabsHtml = activeCatData.tabs.map(tab => {
-      const isActive = activeTab === tab.id;
-      const isDisabled = tab.disabled;
-      const tooltipAttr = isDisabled ? `data-tooltip="${tab.tooltip}" data-tooltip-pos="top"` : '';
-      return `
-        <button class="settings-tab-btn ${isActive ? 'active' : ''} ${isDisabled ? 'disabled-local' : ''}" data-tab="${tab.id}" ${tooltipAttr}>
-          ${tab.label}
-        </button>
-      `;
-    }).join('');
+    <div id="settings-content" style="padding-top:0;"></div>
+  `;
 
-    container.innerHTML = `
-      <style>
-        .settings-nav-categories {
-          display: flex;
-          gap: 8px;
-          border-bottom: 2px solid var(--border-color);
-          padding-bottom: 12px;
-          margin-bottom: 20px;
-        }
-        .settings-category-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 20px;
-          font-size: 15px;
-          font-weight: 600;
-          color: var(--text-secondary);
-          background: transparent;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .settings-category-btn .material-icons-outlined {
-          font-size: 20px;
-          transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .settings-category-btn:hover {
-          color: var(--text-primary);
-          background: var(--bg-color);
-        }
-        .settings-category-btn:hover .material-icons-outlined {
-          transform: scale(1.08);
-        }
-        .settings-category-btn.active {
-          color: white;
-          background: var(--color-primary);
-          box-shadow: 0 4px 14px rgba(255, 92, 0, 0.25);
-          transform: translateY(-1px);
-        }
-        
-        .settings-nav-tabs {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-bottom: 24px;
-          background: var(--bg-color);
-          padding: 6px;
-          border-radius: 10px;
-          border: 1px solid var(--border-color);
-          animation: subtabs-slide-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        @keyframes subtabs-slide-in {
-          from {
-            opacity: 0;
-            transform: translateX(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-        .settings-tab-btn {
-          padding: 8px 16px;
-          font-size: var(--font-size-sm);
-          font-weight: 500;
-          color: var(--text-secondary);
-          background: transparent;
-          border: none;
-          border-radius: 20px;
-          cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .settings-tab-btn:hover:not(.disabled-local) {
-          color: var(--text-primary);
-          background: rgba(128, 128, 128, 0.08);
-        }
-        .settings-tab-btn.active {
-          color: var(--color-primary);
-          background: var(--content-bg);
-          font-weight: 600;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-          transform: scale(1.02);
-        }
-        
-        #settings-content {
-          animation: settings-fade-in 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        @keyframes settings-fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(6px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      </style>
-
-      <div class="page-header"><h1>Settings</h1></div>
-
-      <div id="settings-content" style="padding-top:0;"></div>
-    `;
-
-    renderContent();
-
-    container.querySelectorAll('.settings-category-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const catId = btn.dataset.category;
-        if (activeCategory === catId) return;
-
-        activeCategory = catId;
-        const catData = categories.find(c => c.id === catId);
-        const firstActiveTab = catData.tabs.find(t => !t.disabled) || catData.tabs[0];
-        activeTab = firstActiveTab.id;
-
-        render();
-      });
-    });
-
-    container.querySelectorAll('.settings-tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (btn.classList.contains('disabled-local')) return;
-        activeTab = btn.dataset.tab;
-        render();
-      });
-    });
-  }
+  renderContent();
 
   function renderContent() {
     const tc = container.querySelector('#settings-content');
@@ -670,13 +555,8 @@ export function renderSettings(container) {
       return;
     }
 
-    if (activeTab === 'folder_sync') {
-      renderFolderSyncTab(tc);
-      return;
-    }
-
-    if (activeTab === 'api_keys') {
-      renderApiKeysTab(tc);
+    if (activeTab === 'local_storage') {
+      renderLocalStorageTab(tc, currentUser);
       return;
     }
 
@@ -726,7 +606,7 @@ export function renderSettings(container) {
             <div class="card-header"><h4>Company Information</h4></div>
             <div class="card-body">
               <div style="display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:var(--space-lg)">
-                <div style="display:flex; flex-direction:column; gap:16px">
+                <div class="settings-stack">
                   <div class="form-group">
                     <label class="form-label">Company Name</label>
                     <input class="form-input" value="${s.name || 'Company Name'}" id="company-name" placeholder="Company Name" />
@@ -762,12 +642,12 @@ export function renderSettings(container) {
                   
                   <!-- Main Logo -->
                   <div style="display:flex; flex-direction:column; align-items:center; width:100%">
-                    <label class="form-label" style="align-self:flex-start">Company Logo (Large / Standard)</label>
+                    <label class="form-label" style="align-self:flex-start">Company Logo</label>
                     <div id="logo-preview-container" style="width:100%; height:75px; margin:8px 0; background:var(--bg-color); border:1px dashed var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden">
                       ${pendingLogo ? `<img src="${pendingLogo}" style="max-width:90%; max-height:90%; object-fit:contain" />` : `
                         <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
                           <span class="material-icons-outlined" style="font-size:24px">image</span>
-                          <span style="font-size:10px; margin-top:2px">No custom logo</span>
+                          <span style="margin-top:2px">No custom logo</span>
                         </div>
                       `}
                     </div>
@@ -780,27 +660,7 @@ export function renderSettings(container) {
                     </div>
                   </div>
 
-                  <!-- Small Logo -->
-                  <div style="display:flex; flex-direction:column; align-items:center; width:100%">
-                    <label class="form-label" style="align-self:flex-start">Company Logo (Small / Shrunk)</label>
-                    <div id="logo-small-preview-container" style="width:100%; height:75px; margin:8px 0; background:var(--bg-color); border:1px dashed var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden">
-                      ${pendingLogoSmall ? `<img src="${pendingLogoSmall}" style="max-width:90%; max-height:90%; object-fit:contain" />` : `
-                        <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
-                          <span class="material-icons-outlined" style="font-size:24px">image</span>
-                          <span style="font-size:10px; margin-top:2px">No small logo</span>
-                        </div>
-                      `}
-                    </div>
-                    <input type="file" id="logo-small-upload" accept="image/*" style="display:none" />
-                    <div style="display:flex; gap:6px; width:100%">
-                      <button class="btn btn-secondary btn-sm" id="btn-upload-logo-small" data-tooltip="Upload new small company logo" data-tooltip-pos="top" style="flex:1">
-                        <span class="material-icons-outlined" style="font-size:14px">upload</span> Upload
-                      </button>
-                      ${pendingLogoSmall ? `<button class="btn btn-ghost btn-sm" id="btn-remove-logo-small" data-tooltip="Remove small company logo" data-tooltip-pos="top" style="color:var(--color-danger); padding:0 8px" title="Remove small logo"><span class="material-icons-outlined" style="font-size:16px">delete</span></button>` : ''}
-                    </div>
-                  </div>
-
-                  <div id="unsaved-logo-hint" style="display:none; margin-top:4px; color:var(--color-warning); font-size:11px; font-weight:600">UNSAVED PREVIEW</div>
+                  <div id="unsaved-logo-hint" style="display:none; margin-top:4px; color:var(--color-warning); font-weight:600">UNSAVED PREVIEW</div>
                 </div>
               </div>
             </div>
@@ -826,10 +686,8 @@ export function renderSettings(container) {
 
         // Handlers for Company Tab
         const logoInput = tc.querySelector('#logo-upload');
-        const logoSmallInput = tc.querySelector('#logo-small-upload');
         
         tc.querySelector('#btn-upload-logo').addEventListener('click', () => logoInput.click());
-        tc.querySelector('#btn-upload-logo-small').addEventListener('click', () => logoSmallInput.click());
         
         const removeLogoHandler = () => {
           pendingLogo = null;
@@ -837,24 +695,11 @@ export function renderSettings(container) {
           container.innerHTML = `
             <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
               <span class="material-icons-outlined" style="font-size:24px">image</span>
-              <span style="font-size:10px; margin-top:2px">No custom logo</span>
+              <span style="margin-top:2px">No custom logo</span>
             </div>
           `;
           tc.querySelector('#unsaved-logo-hint').style.display = 'block';
           tc.querySelector('#btn-remove-logo')?.remove();
-        };
-
-        const removeLogoSmallHandler = () => {
-          pendingLogoSmall = null;
-          const container = tc.querySelector('#logo-small-preview-container');
-          container.innerHTML = `
-            <div style="display:flex; flex-direction:column; align-items:center; color:var(--text-tertiary)">
-              <span class="material-icons-outlined" style="font-size:24px">image</span>
-              <span style="font-size:10px; margin-top:2px">No small logo</span>
-            </div>
-          `;
-          tc.querySelector('#unsaved-logo-hint').style.display = 'block';
-          tc.querySelector('#btn-remove-logo-small')?.remove();
         };
 
         logoInput.addEventListener('change', (e) => {
@@ -887,38 +732,7 @@ export function renderSettings(container) {
           }
         });
 
-        logoSmallInput.addEventListener('change', (e) => {
-          const file = e.target.files[0];
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = (re) => {
-              // Compress the Small/Shrunk Logo using Canvas to ~200x100 max bounding box
-              compressImage(re.target.result, 200, 100).then((compressed) => {
-                pendingLogoSmall = compressed;
-                const container = tc.querySelector('#logo-small-preview-container');
-                container.innerHTML = `<img src="${pendingLogoSmall}" style="max-width:90%; max-height:90%; object-fit:contain" />`;
-                tc.querySelector('#unsaved-logo-hint').style.display = 'block';
-                showToast('Small logo preview updated. Click Save to apply.', 'info');
-                
-                let removeBtn = tc.querySelector('#btn-remove-logo-small');
-                if (!removeBtn) {
-                  removeBtn = document.createElement('button');
-                  removeBtn.className = 'btn btn-ghost btn-sm';
-                  removeBtn.id = 'btn-remove-logo-small';
-                  removeBtn.style.cssText = 'color:var(--color-danger); padding:0 8px';
-                  removeBtn.title = 'Remove small logo';
-                  removeBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:16px">delete</span>';
-                  tc.querySelector('#btn-upload-logo-small').parentNode.appendChild(removeBtn);
-                  removeBtn.addEventListener('click', removeLogoSmallHandler);
-                }
-              });
-            };
-            reader.readAsDataURL(file);
-          }
-        });
-
         tc.querySelector('#btn-remove-logo')?.addEventListener('click', removeLogoHandler);
-        tc.querySelector('#btn-remove-logo-small')?.addEventListener('click', removeLogoSmallHandler);
 
 
 
@@ -937,13 +751,15 @@ export function renderSettings(container) {
             settings.email = tc.querySelector('#company-email').value;
             settings.address = tc.querySelector('#company-address').value;
             settings.logo = pendingLogo;
+            // logoSmall is no longer user-supplied — any existing mark is kept as-is,
+            // and the app falls back to the standard logo wherever it is absent.
             settings.logoSmall = pendingLogoSmall;
             
             await store.saveSettings(settings);
             showToast('Company information saved successfully to database', 'success');
             tc.querySelector('#unsaved-logo-hint').style.display = 'none';
-            window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
-            render();
+            window.dispatchEvent(new CustomEvent('relay:settings-updated'));
+            renderCompanyTabAll();
           } catch (err) {
             console.error('Error saving company profile settings:', err);
             showToast('Failed to save settings: ' + (err.message || err), 'error');
@@ -954,10 +770,16 @@ export function renderSettings(container) {
         });
       };
 
-      renderCompanyTab();
-      renderLeadProfileSetup(tc.querySelector('#lead-profile-root')).catch((err) => {
-        console.error('Error rendering lead profile setup:', err);
-      });
+      // The company tab is one details card plus the lead-profile card, so a full
+      // redraw has to re-run both (the save handler refreshes through this too).
+      const renderCompanyTabAll = () => {
+        renderCompanyTab();
+        renderLeadProfileSetup(tc.querySelector('#lead-profile-root')).catch((err) => {
+          console.error('Error rendering lead profile setup:', err);
+        });
+      };
+
+      renderCompanyTabAll();
     } else if (activeTab === 'users') {
       renderUsersSettings(tc);
     } else if (activeTab === 'materials') {
@@ -997,7 +819,7 @@ export function renderSettings(container) {
                   <option value="30" ${(settings.laborRounding || 15) === 30 ? 'selected' : ''}>Nearest 30 Minutes</option>
                   <option value="60" ${(settings.laborRounding || 15) === 60 ? 'selected' : ''}>Nearest Hour</option>
                 </select>
-                <p class="text-tertiary" style="font-size:12px;margin-top:8px">Standardizes billing and ensures technicians are paid consistently for small increments.</p>
+                <p class="text-tertiary" style="margin-top:8px">Standardizes billing and ensures technicians are paid consistently for small increments.</p>
               </div>
             </div>
           </div>
@@ -1007,7 +829,7 @@ export function renderSettings(container) {
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
             <div>
               <h4 style="margin:0">Labour Rate Profiles</h4>
-              <p class="text-secondary" style="font-size:var(--font-size-sm);margin:4px 0 0">Define charge-out rates for different job types or time periods. These appear as selectable options when adding labour to a quote or job.</p>
+              <p class="text-secondary" style="margin:4px 0 0">Define charge-out rates for different job types or time periods. These appear as selectable options when adding labour to a quote or job.</p>
             </div>
             <button class="btn btn-primary btn-sm" id="add-rate-btn" data-tooltip="Create a new custom charge-out rate profile">
               <span class="material-icons-outlined" style="font-size:16px">add</span> Add Profile
@@ -1020,15 +842,15 @@ export function renderSettings(container) {
                 const dayLabels = { Mon:'Mon', Tue:'Tue', Wed:'Wed', Thu:'Thu', Fri:'Fri', Sat:'Sat', Sun:'Sun', PH:'P.H.' };
                 const applicable = rate.applicableDays || ['Mon','Tue','Wed','Thu','Fri'];
                 return `
-                <div class="labor-rate-card" data-id="${rate.id}" style="border:2px solid ${rate.isDefault ? 'var(--color-primary)' : 'var(--border-color)'}; border-radius:10px; overflow:hidden; background:var(--content-bg);">
+                <div class="labor-rate-card${rate.isDefault ? ' is-default' : ''}" data-id="${rate.id}">
                   <!-- Card Header -->
-                  <div style="padding:12px 16px; background:${rate.isDefault ? 'var(--color-primary-light)' : 'var(--bg-color)'}; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border-color);">
-                    <div style="display:flex;align-items:center;gap:10px;flex:1">
-                      <span class="material-icons-outlined" style="color:${rate.isDefault ? 'var(--color-primary)' : 'var(--text-tertiary)'}; font-size:20px">sell</span>
-                      <input class="rate-name" value="${escapeHTML(rate.name)}" style="background:transparent;border:none;outline:none;font-weight:600;font-size:15px;color:var(--text-primary);width:200px;" placeholder="Rate Profile Name" />
-                      ${rate.isDefault ? '<span class="badge" style="background:var(--color-primary);color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">DEFAULT</span>' : ''}
+                  <div class="rate-card-head">
+                    <div class="rate-card-title">
+                      <span class="material-icons-outlined">sell</span>
+                      <input class="rate-name" value="${escapeHTML(rate.name)}" placeholder="Rate Profile Name" />
+                      ${rate.isDefault ? '<span class="badge rate-default-badge">DEFAULT</span>' : ''}
                     </div>
-                    <div style="display:flex;align-items:center;gap:8px">
+                    <div class="rate-card-actions">
                       ${!rate.isDefault ? `<button class="btn btn-ghost btn-sm btn-set-default" data-id="${rate.id}" title="Set as default rate">Set Default</button>` : ''}
                       <button class="btn btn-ghost btn-sm btn-icon remove-rate-btn" data-id="${rate.id}" title="Delete profile" ${rate.isDefault ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>
                         <span class="material-icons-outlined" style="font-size:18px;pointer-events:none">delete</span>
@@ -1036,7 +858,7 @@ export function renderSettings(container) {
                     </div>
                   </div>
                   <!-- Card Body -->
-                  <div style="padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                  <div class="rate-card-body">
                     <!-- Charge-out Rate -->
                     <div class="form-group" style="margin:0">
                       <label class="form-label" data-tooltip="Base hourly charge billed to the client for this labor type" data-tooltip-pos="right">Charge-out Rate ($/hr)</label>
@@ -1069,7 +891,7 @@ export function renderSettings(container) {
                           return `
                           <label style="cursor:pointer">
                             <input type="checkbox" class="rate-day" data-day="${day}" ${active ? 'checked' : ''} style="display:none" />
-                            <span class="rate-day-pill" data-day="${day}" style="display:inline-block;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid ${active ? 'var(--color-primary)' : 'var(--border-color)'};background:${active ? 'var(--color-primary-light)' : 'transparent'};color:${active ? 'var(--color-primary)' : 'var(--text-secondary)'}">
+                            <span class="rate-day-pill${active ? ' is-active' : ''}" data-day="${day}">
                               ${dayLabels[day]}
                             </span>
                           </label>
@@ -1104,14 +926,16 @@ export function renderSettings(container) {
       tc.addEventListener('click', (e) => {
         const pill = e.target.closest('.rate-day-pill');
         if (pill) {
+          // The pill lives inside a <label> wrapping the hidden checkbox, so the browser
+          // would also toggle the checkbox here. Suppress that and own the toggle below,
+          // otherwise the pill state and the saved checkbox state drift apart.
+          e.preventDefault();
           const day = pill.dataset.day;
           const card = pill.closest('.labor-rate-card');
           const chk = card.querySelector(`.rate-day[data-day="${day}"]`);
           chk.checked = !chk.checked;
           const active = chk.checked;
-          pill.style.border = `1px solid ${active ? 'var(--color-primary)' : 'var(--border-color)'}`;
-          pill.style.background = active ? 'var(--color-primary-light)' : 'transparent';
-          pill.style.color = active ? 'var(--color-primary)' : 'var(--text-secondary)';
+          pill.classList.toggle('is-active', active);
         }
       });
 
@@ -1124,19 +948,18 @@ export function renderSettings(container) {
         const div = document.createElement('div');
         div.className = "labor-rate-card";
         div.dataset.id = id;
-        div.style.cssText = "border:2px solid var(--border-color); border-radius:10px; overflow:hidden; background:var(--content-bg);";
         div.innerHTML = `
-          <div style="padding:12px 16px; background:var(--bg-color); display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border-color);">
-            <div style="display:flex;align-items:center;gap:10px;flex:1">
-              <span class="material-icons-outlined" style="color:var(--text-tertiary); font-size:20px">sell</span>
-              <input class="rate-name" value="New Rate Profile" style="background:transparent;border:none;outline:none;font-weight:600;font-size:15px;color:var(--text-primary);width:200px;" />
+          <div class="rate-card-head">
+            <div class="rate-card-title">
+              <span class="material-icons-outlined">sell</span>
+              <input class="rate-name" value="New Rate Profile" />
             </div>
-            <div style="display:flex;align-items:center;gap:8px">
+            <div class="rate-card-actions">
               <button class="btn btn-ghost btn-sm btn-set-default" data-id="${id}">Set Default</button>
               <button class="btn btn-ghost btn-sm btn-icon remove-rate-btn" data-id="${id}"><span class="material-icons-outlined" style="font-size:18px">delete</span></button>
             </div>
           </div>
-          <div style="padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <div class="rate-card-body">
             <div class="form-group" style="margin:0">
               <label class="form-label" data-tooltip="Base hourly charge billed to the client for this labor type" data-tooltip-pos="right">Charge-out Rate ($/hr)</label>
               <div style="display:flex;align-items:center;gap:6px">
@@ -1160,7 +983,7 @@ export function renderSettings(container) {
                 ${allDays.map(day => `
                   <label style="cursor:pointer">
                     <input type="checkbox" class="rate-day" data-day="${day}" ${['Mon','Tue','Wed','Thu','Fri'].includes(day) ? 'checked' : ''} style="display:none" />
-                    <span class="rate-day-pill" data-day="${day}" style="display:inline-block;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid ${['Mon','Tue','Wed','Thu','Fri'].includes(day) ? 'var(--color-primary)' : 'var(--border-color)'};background:${['Mon','Tue','Wed','Thu','Fri'].includes(day) ? 'var(--color-primary-light)' : 'transparent'};color:${['Mon','Tue','Wed','Thu','Fri'].includes(day) ? 'var(--color-primary)' : 'var(--text-secondary)'}">
+                    <span class="rate-day-pill${['Mon','Tue','Wed','Thu','Fri'].includes(day) ? ' is-active' : ''}" data-day="${day}">
                       ${dayLabels[day]}
                     </span>
                   </label>
@@ -1187,44 +1010,36 @@ export function renderSettings(container) {
           const currentRates = _collectRates(tc);
           currentRates.forEach(r => r.isDefault = (r.id === targetId));
           
-          // Re-render the container with the new default state WITHOUT saving to store
-          const container = tc.querySelector('#labor-rates-container');
-          container.innerHTML = currentRates.map((rate) => {
-            // ... (I'll just trigger a refresh of the tax tab with the new data)
-            // Actually, for simplicity and to avoid losing other unsaved field data, 
-            // I will just update the UI classes manually.
-            tc.querySelectorAll('.labor-rate-card').forEach(card => {
-              const isTarget = card.dataset.id === targetId;
-              card.style.border = `2px solid ${isTarget ? 'var(--color-primary)' : 'var(--border-color)'}`;
-              const header = card.querySelector('div[style*="padding:12px 16px"]');
-              if (header) header.style.background = isTarget ? 'var(--color-primary-light)' : 'var(--bg-color)';
-              
-              // Toggle badge
-              let badge = card.querySelector('.badge');
-              if (isTarget && !badge) {
-                 const nameContainer = card.querySelector('div[style*="flex:1"]');
-                 const b = document.createElement('span');
-                 b.className = 'badge';
-                 b.style.cssText = 'background:var(--color-primary);color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600';
-                 b.textContent = 'DEFAULT';
-                 nameContainer.appendChild(b);
-              } else if (!isTarget && badge) {
-                 badge.remove();
-              }
-              
-              // Toggle button
-              let setDefBtn = card.querySelector('.btn-set-default');
-              if (isTarget && setDefBtn) {
-                 setDefBtn.remove();
-              } else if (!isTarget && !setDefBtn) {
-                 const actions = card.querySelector('div[style*="gap:8px"]');
-                 const b = document.createElement('button');
-                 b.className = 'btn btn-ghost btn-sm btn-set-default';
-                 b.dataset.id = card.dataset.id;
-                 b.textContent = 'Set Default';
-                 actions.prepend(b);
-              }
-            });
+          // Flip the default flag in the UI only — nothing is persisted until the user
+          // clicks Save, so unsaved field edits elsewhere on the tab survive.
+          tc.querySelectorAll('.labor-rate-card').forEach(card => {
+            const isTarget = card.dataset.id === targetId;
+            card.classList.toggle('is-default', isTarget);
+            
+            // Toggle badge
+            let badge = card.querySelector('.badge');
+            if (isTarget && !badge) {
+               const nameContainer = card.querySelector('.rate-card-title');
+               const b = document.createElement('span');
+               b.className = 'badge rate-default-badge';
+               b.textContent = 'DEFAULT';
+               nameContainer.appendChild(b);
+            } else if (!isTarget && badge) {
+               badge.remove();
+            }
+            
+            // Toggle button
+            let setDefBtn = card.querySelector('.btn-set-default');
+            if (isTarget && setDefBtn) {
+               setDefBtn.remove();
+            } else if (!isTarget && !setDefBtn) {
+               const actions = card.querySelector('.rate-card-actions');
+               const b = document.createElement('button');
+               b.className = 'btn btn-ghost btn-sm btn-set-default';
+               b.dataset.id = card.dataset.id;
+               b.textContent = 'Set Default';
+               actions.prepend(b);
+            }
           });
           showToast('Default rate updated in view. Click Save to apply.', 'info');
         }
@@ -1292,8 +1107,8 @@ export function renderSettings(container) {
             <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
               <input type="checkbox" id="portal-enable" class="form-checkbox" style="width:20px; height:20px; cursor:pointer;" ${portalEnabled ? 'checked' : ''} />
               <div style="cursor:pointer;" onclick="document.getElementById('portal-enable').click()">
-                <strong style="display:block; font-size:14px; color:var(--text-primary);">Enable Customer Portal Link Access</strong>
-                <span style="font-size:12px; color:var(--text-secondary);">When disabled, any attempt to visit a customer portal link will show an access restricted notice.</span>
+                <strong style="display:block; color:var(--text-primary);">Enable Customer Portal Link Access</strong>
+                <span style="color:var(--text-secondary);">When disabled, any attempt to visit a customer portal link will show an access restricted notice.</span>
               </div>
             </div>
 
@@ -1301,13 +1116,13 @@ export function renderSettings(container) {
               <div class="form-group">
                 <label class="form-label" style="font-weight:600;">Custom Portal Welcome Message</label>
                 <textarea class="form-textarea" id="portal-welcome" rows="3" placeholder="Enter a custom message displayed to customers on their dashboard...">${escapeHTML(portalWelcome)}</textarea>
-                <p class="text-tertiary" style="font-size:11px; margin-top:4px;">This message will appear prominently at the top of the customer's portal dashboard.</p>
+                <p class="text-tertiary" style="margin-top:4px;">This message will appear prominently at the top of the customer's portal dashboard.</p>
               </div>
 
               <div class="form-group">
                 <label class="form-label" style="font-weight:600;">Invoice Payment Instructions</label>
                 <textarea class="form-textarea" id="portal-payment" rows="3" placeholder="BSB, Account Number, and payment instructions...">${escapeHTML(portalPayment)}</textarea>
-                <p class="text-tertiary" style="font-size:11px; margin-top:4px;">These bank details and instructions will be shown to customers when reviewing outstanding invoices in their portal.</p>
+                <p class="text-tertiary" style="margin-top:4px;">These bank details and instructions will be shown to customers when reviewing outstanding invoices in their portal.</p>
               </div>
             </div>
           </div>
@@ -1353,8 +1168,8 @@ export function renderSettings(container) {
             <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
               <input type="checkbox" id="contractor-portal-enable" class="form-checkbox" style="width:20px; height:20px; cursor:pointer;" ${portalEnabled ? 'checked' : ''} />
               <div style="cursor:pointer;" onclick="document.getElementById('contractor-portal-enable').click()">
-                <strong style="display:block; font-size:14px; color:var(--text-primary);">Enable Contractor Portal Link Access</strong>
-                <span style="font-size:12px; color:var(--text-secondary);">When disabled, any subcontractor attempting to load their portal token will see an access deactivated notice.</span>
+                <strong style="display:block; color:var(--text-primary);">Enable Contractor Portal Link Access</strong>
+                <span style="color:var(--text-secondary);">When disabled, any subcontractor attempting to load their portal token will see an access deactivated notice.</span>
               </div>
             </div>
           </div>
@@ -1389,10 +1204,6 @@ export function renderSettings(container) {
 
     } else if (activeTab === 'system') {
 
-      const s = store.getSettings();
-      const currentPref = s.tooltipPreference || 'full';
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-      const currentTheme = (currentUser && currentUser.id) ? (currentUser.theme || localStorage.getItem(`simpro_theme_${currentUser.id}`) || 'light') : 'light';
       tc.innerHTML = `
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:var(--space-lg); max-width:100%; align-items:start;">
           <!-- Left Column -->
@@ -1404,134 +1215,110 @@ export function renderSettings(container) {
                 <p class="text-secondary" style="margin-bottom:var(--space-lg)">
                   ${isLocalMode ? 'Manage your application data. All data is stored locally in your browser.' : 'Manage database records for your cloud company account.'}
                 </p>
-                <div style="display:flex;flex-direction:column;gap:12px">
-                  ${currentUser.role === 'admin' ? `
-                    <div style="background:var(--color-danger-bg); padding:var(--space-md); border-radius:var(--border-radius); border:1px solid rgba(220, 38, 38, 0.15)">
-                      <h5 style="color:var(--color-danger); margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:600;">
-                        <span class="material-icons-outlined">admin_panel_settings</span> Administrator Actions
-                      </h5>
-                      <p style="font-size:var(--font-size-sm); color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
-                        Configure clean setups, seed a single test sample, or convert your company account deployment profile.
+                ${currentUser.role === 'admin' ? `
+                  <button class="btn btn-secondary" id="btn-export-snapshot" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
+                    <span class="material-icons-outlined">download</span> Download a Copy of My Data
+                  </button>
+
+                  ${!hasAnyBusinessData() ? `
+                    <div style="margin-top:var(--space-md); padding-top:var(--space-md); border-top:1px solid var(--border-color)">
+                      <p style="color:var(--text-secondary); margin-bottom:12px; line-height:1.4;">
+                        This database is empty, so you can load a complete demonstration dataset — customers with quotes, jobs, assets, materials and timesheets — to walk through RELAY before entering real work.
                       </p>
-                      <button class="btn btn-secondary" id="btn-seed-minimal" data-tooltip="Clean database and seed a complete demonstration dataset" data-tooltip-pos="left" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid rgba(0,0,0,0.12)">
+                      <button class="btn btn-secondary" id="btn-seed-minimal" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
                         <span class="material-icons-outlined">science</span> Seed Demonstration Data
                       </button>
-                      <button class="btn btn-danger" id="btn-restore-new" data-tooltip="Delete all data and return system to a clean blank state" data-tooltip-pos="left" style="width:100%; justify-content:center; margin-bottom:12px;">
-                        <span class="material-icons-outlined">cleaning_services</span> Restore to New (Blank State)
-                      </button>
-                      <button class="btn btn-danger" id="btn-delete-company" data-tooltip="Permanently delete the entire company profile and all data" data-tooltip-pos="left" style="width:100%; justify-content:center; background:var(--color-danger); border-color:var(--color-danger); color:#fff; display:flex; align-items:center; gap:6px;">
-                        <span class="material-icons-outlined">delete_forever</span> Delete Company Profile
-                      </button>
-
-                      ${isLocalMode ? `
-                        <div style="margin-top:16px; padding-top:12px; border-top:1px dashed rgba(220, 38, 38, 0.2)">
-                          <h6 style="color:var(--color-warning); margin-bottom:8px; font-weight:600; display:flex; align-items:center; gap:4px;">
-                            <span class="material-icons-outlined" style="font-size:16px">warning</span> Irreversible Profile Conversions
-                          </h6>
-                          <p style="font-size:11px; color:var(--text-secondary); margin-bottom:12px; line-height:1.3;">
-                            Convert your deployment type. These transitions are permanent and one-way.
-                          </p>
-                          ${localDeploymentType === 'single_user' ? `
-                            <button class="btn" id="btn-convert-multiuser" style="width:100%; justify-content:center; margin-bottom:12px; background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px; font-size:12.5px;">
-                              <span class="material-icons-outlined" style="font-size:16px">lan</span> Convert to Multi-User Local Network Sync
-                            </button>
-                          ` : ''}
-                          <button class="btn" id="btn-convert-cloud-action" style="width:100%; justify-content:center; background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px; font-size:12.5px;">
-                            <span class="material-icons-outlined" style="font-size:16px">cloud_upload</span> Convert to Cloud Sync
-                          </button>
-                        </div>
-                      ` : ''}
                     </div>
-                  ` : '<div style="font-size:12.5px; color:var(--text-tertiary)">Administrative actions are restricted to company administrators.</div>'}
-                </div>
+                  ` : `
+                    <p class="text-tertiary" style="margin-top:var(--space-md); line-height:1.4;">
+                      Demonstration data can only be loaded into an empty database. Restore to a blank state below if you want to run a walkthrough.
+                    </p>
+                  `}
+                ` : '<div style="color:var(--text-tertiary)">Data management is restricted to company administrators.</div>'}
               </div>
             </div>
 
-            <!-- Local Data Backup -->
-            ${!isLocalMode && currentUser.role === 'admin' ? `
-              <div class="card">
-                <div class="card-header" style="display:flex; align-items:center; gap:8px;">
-                  <span class="material-icons-outlined" style="color:var(--color-primary)">backup</span>
-                  <h4 style="margin:0;">Local Data Backup</h4>
+            ${currentUser.role === 'admin' ? `
+              <!-- Danger Zone -->
+              <div class="card" style="border:1px solid rgba(220, 38, 38, 0.28)">
+                <div class="card-header">
+                  <h4 style="color:var(--color-danger); display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons-outlined">report_gmailerrorred</span> Danger Zone
+                  </h4>
                 </div>
-                <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
-                  <p class="text-secondary" style="font-size:var(--font-size-sm); line-height:1.4; margin:0;">
-                    To keep your data completely safe, configure a local directory to back up all your cloud database records as JSON files.
+                <div class="card-body">
+                  <p style="color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
+                    These actions replace or delete everything in this database and cannot be undone. Each one asks you to type a confirmation, and offers to download a copy of your data first.
                   </p>
-                  <div id="backup-status-container"></div>
+                  <button class="btn btn-danger" id="btn-restore-new" style="width:100%; justify-content:center; margin-bottom:12px;">
+                    <span class="material-icons-outlined">cleaning_services</span> Restore to New (Blank State)
+                  </button>
+                  <button class="btn btn-danger" id="btn-delete-company" style="width:100%; justify-content:center; background:var(--color-danger); border-color:var(--color-danger); color:#fff;">
+                    <span class="material-icons-outlined">delete_forever</span> Delete Company Profile
+                  </button>
+                </div>
+              </div>
+            ` : ''}
+
+            ${isLocalMode && currentUser.role === 'admin' ? `
+              <!-- Deployment Profile -->
+              <div class="card">
+                <div class="card-header"><h4>Deployment Profile</h4></div>
+                <div class="card-body">
+                  <p style="color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
+                    This profile keeps all of its data on this device. The upgrades below change that permanently — RELAY downloads a copy of your data before it starts and shows you a summary when it is done.
+                  </p>
+                  ${localDeploymentType === 'single_user' ? `
+                    <button class="btn btn-secondary" id="btn-convert-multiuser" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid var(--border-color)">
+                      <span class="material-icons-outlined">group_add</span>
+                      <span style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
+                        <span style="font-weight:600;">Add team members</span>
+                        <span style="color:var(--text-tertiary); font-weight:400;">Multi-user sync across your local network</span>
+                      </span>
+                    </button>
+                  ` : ''}
+                  <button class="btn btn-secondary" id="btn-convert-cloud-action" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
+                    <span class="material-icons-outlined">cloud_upload</span>
+                    <span style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
+                      <span style="font-weight:600;">Move to cloud</span>
+                      <span style="color:var(--text-tertiary); font-weight:400;">Sign in from any device with RELAY Cloud</span>
+                    </span>
+                  </button>
                 </div>
               </div>
             ` : ''}
           </div>
-
-          <!-- Right Column -->
-          <!-- Interface Preferences -->
-          <div class="card">
-            <div class="card-header"><h4>Interface Preferences</h4></div>
-            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-              <div class="form-group">
-                <label class="form-label" style="font-weight:600;">Information Popups (Tooltips)</label>
-                <select class="form-select" id="tooltip-preference" style="width:100%">
-                  <option value="full" ${currentPref === 'full' ? 'selected' : ''}>Full Info (Show all tooltips)</option>
-                  <option value="partial" ${currentPref === 'partial' ? 'selected' : ''}>Partial Info (Critical & destructive actions only)</option>
-                  <option value="none" ${currentPref === 'none' ? 'selected' : ''}>No Info (Disable all tooltips)</option>
-                </select>
-                <p class="text-tertiary" style="font-size:12px; margin-top:8px; line-height:1.4;">
-                  Controls the descriptive popup helpers shown when hovering over buttons, actions, and categories.
-                </p>
-              </div>
-              <div class="form-group">
-                <label class="form-label" style="font-weight:600;">System Color Theme</label>
-                <select class="form-select" id="system-theme-select" style="width:100%">
-                  ${Object.entries(THEMES).map(([key, val]) => `
-                    <option value="${key}" ${currentTheme === key ? 'selected' : ''}>${val.name}</option>
-                  `).join('')}
-                </select>
-                <p class="text-tertiary" style="font-size:12px; margin-top:8px; line-height:1.4;">
-                  Select a color profile and visual background effect for your user interface.
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
+
+        <p class="text-tertiary" style="margin-top:var(--space-md);">
+          RELAY runs in light mode on every device. Dark mode is coming in a later release.
+        </p>
       `;
 
-      tc.querySelector('#tooltip-preference')?.addEventListener('change', async (e) => {
-        const select = e.target;
-        select.disabled = true;
+      tc.querySelector('#btn-export-snapshot')?.addEventListener('click', () => {
         try {
-          const settings = store.getSettings();
-          settings.tooltipPreference = select.value;
-          await store.saveSettings(settings);
-          window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
-          showToast('Interface preferences saved successfully', 'success');
+          const fileName = downloadDataSnapshot('relay-data-copy');
+          showToast(`Saved ${fileName} to your downloads.`, 'success');
         } catch (err) {
-          console.error('Error saving tooltip preference:', err);
-          showToast('Failed to save preferences: ' + (err.message || err), 'error');
-        } finally {
-          select.disabled = false;
+          console.error('Snapshot download failed:', err);
+          showToast('Could not create the data copy.', 'error');
         }
-      });
-
-      tc.querySelector('#system-theme-select')?.addEventListener('change', (e) => {
-        applyTheme(e.target.value, true);
-        showToast('System theme updated successfully', 'success');
       });
 
       tc.querySelector('#btn-seed-minimal')?.addEventListener('click', () => {
         const content = document.createElement('div');
         content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
         content.innerHTML = `
-          <p style="margin-bottom:12px">You are about to seed a complete demonstration dataset.</p>
-          <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-info); font-weight:500; display:flex; align-items:center; gap:8px;">
+          <p style="margin-bottom:12px">You are about to load a complete demonstration dataset.</p>
+          <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; margin-bottom:16px; border-radius:4px; color:var(--color-info); font-weight:500; display:flex; align-items:center; gap:8px;">
             <span class="material-icons-outlined">info</span>
-            <span>This will clear current database records and load a complete, realistic demonstration dataset representing an active trade business (5 customers, 5 quotes/jobs per customer, 5 assets per customer, 5 materials, 5 users/timesheets, etc.) for testing.</span>
+            <span>A realistic trade business to walk through: 5 customers with quotes, jobs, assets and materials, plus users, timesheets and stock.</span>
           </div>
-          <p style="font-size:12px; color:var(--text-secondary)">This is highly recommended for testing and walkthroughs.</p>
+          <p style="color:var(--text-secondary)">Loading it also sets your company profile to the demonstration company "Apex Power Services", so download a copy of your data first if you have entered company details.</p>
         `;
 
         showModal({
-          title: "Seed Demonstration Data",
+          title: "Load Demonstration Data",
           content: content,
           actions: [
             {
@@ -1540,14 +1327,19 @@ export function renderSettings(container) {
               onClick: (close) => close()
             },
             {
-              label: "Seed Demo Data",
+              label: "Load Demo Data",
               className: "btn-primary",
               onClick: async (close) => {
                 close();
-                showToast('Seeding demonstration data...', 'info');
-                await seedMinimalData();
-                showToast('Demonstration data seeded. Reloading...', 'success');
-                setTimeout(() => window.location.reload(), 1200);
+                showToast('Loading demonstration data...', 'info');
+                try {
+                  await seedMinimalData();
+                  showToast('Demonstration data loaded. Reloading...', 'success');
+                  setTimeout(() => window.location.reload(), 1200);
+                } catch (err) {
+                  console.error('Seeding failed:', err);
+                  showToast('Could not load the demonstration data.', 'error');
+                }
               }
             }
           ]
@@ -1555,93 +1347,99 @@ export function renderSettings(container) {
       });
 
       tc.querySelector('#btn-restore-new')?.addEventListener('click', () => {
-        const content1 = document.createElement('div');
-        content1.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-        content1.innerHTML = `
-          <p style="margin-bottom:12px">You are about to restore the application to a blank state.</p>
-          <div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-warning); font-weight:500; display:flex; align-items:center; gap:8px;">
-            <span class="material-icons-outlined">warning</span>
-            <span><strong>What gets wiped:</strong> Customers, Jobs, Tasks, Quotes, Invoices, Purchase Orders, Suppliers, Contractors, Assets, and Schedule Blocks.</span>
-          </div>
-          <p style="font-size:12px; color:var(--text-secondary)">Only default User Types and Technician login credentials will be retained so you can log back in.</p>
+        const content = document.createElement('div');
+        content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+        content.innerHTML = `
+          <form id="restore-blank-form" style="display:flex; flex-direction:column; gap:12px;">
+            <p style="margin:0; font-weight:600; color:var(--color-danger)">This replaces everything in your database with a clean slate.</p>
+            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); display:flex; gap:8px;">
+              <span class="material-icons-outlined" style="font-size:20px">warning</span>
+              <span><strong>What gets wiped:</strong> customers, jobs, tasks, quotes, invoices, purchase orders, suppliers, contractors, assets, schedule blocks, forms and documents. Your user types and login credentials stay so you can sign back in.</span>
+            </div>
+            ${backupCheckboxHtml('relay-backup-before-restore')}
+            <div class="form-group" style="margin:0;">
+              <label class="form-label" style="font-weight:600;">Type RESTORE to confirm</label>
+              <input class="form-input" id="restore-confirm-input" autocomplete="off" placeholder="RESTORE" />
+            </div>
+            <div id="restore-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
+              <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
+              <span id="restore-error-text"></span>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:4px;">
+              <button type="button" class="btn btn-secondary" id="btn-restore-abort">Cancel</button>
+              <button type="submit" class="btn btn-danger" id="btn-restore-submit" style="display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-outlined">cleaning_services</span>
+                <span>Wipe and Start Fresh</span>
+              </button>
+            </div>
+          </form>
         `;
 
-        showModal({
+        const { close } = showModal({
           title: "Restore to New (Blank State)",
-          content: content1,
-          actions: [
-            {
-              label: "Cancel",
-              className: "btn-secondary",
-              onClick: (close1) => close1()
-            },
-            {
-              label: "Continue Wiping",
-              className: "btn-danger",
-              onClick: (close1) => {
-                close1();
-                
-                const content2 = document.createElement('div');
-                content2.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-                content2.innerHTML = `
-                  <p style="margin-bottom:12px; font-weight:600; color:var(--color-danger)">THIS ACTION IS IRREVERSIBLE AND CANNOT BE UNDONE!</p>
-                  <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
-                    <span class="material-icons-outlined">error_outline</span>
-                    <span>Confirming will permanently delete all local storage records and start completely fresh from scratch for your real company.</span>
-                  </div>
-                  <p style="font-size:12px; color:var(--text-secondary)">Are you absolutely 100% sure you want to proceed?</p>
-                `;
+          content: content,
+          size: "modal-md"
+        });
 
-                showModal({
-                  title: "⚠️ Permanent Database Wipe",
-                  content: content2,
-                  actions: [
-                    {
-                      label: "Abort Wiping",
-                      className: "btn-secondary",
-                      onClick: (close2) => close2()
-                    },
-                    {
-                      label: "Yes, Wipe Everything!",
-                      className: "btn-danger",
-                      onClick: (close2) => {
-                        close2();
-                        
-                        store.clearAll();
-                        localStorage.setItem('simpro__prevent_seeding', 'true');
-                        store.markSeeded();
-                        localStorage.removeItem('currentUser');
-                        
-                        showToast('App restored to fresh state. Reloading...', 'success');
-                        
-                        setTimeout(() => {
-                          window.location.hash = '#/login';
-                          window.location.reload();
-                        }, 1200);
-                      }
-                    }
-                  ]
-                });
-              }
-            }
-          ]
+        const errorEl = content.querySelector('#restore-error');
+        const errorTextEl = content.querySelector('#restore-error-text');
+        const submitBtn = content.querySelector('#btn-restore-submit');
+        const submitLabel = submitBtn.innerHTML;
+
+        content.querySelector('#btn-restore-abort').addEventListener('click', close);
+
+        content.querySelector('#restore-blank-form').addEventListener('submit', async (ev) => {
+          ev.preventDefault();
+          errorEl.style.display = 'none';
+
+          const typed = content.querySelector('#restore-confirm-input').value.trim();
+          if (typed !== 'RESTORE') {
+            errorTextEl.textContent = 'Type RESTORE exactly, in capitals, to confirm.';
+            errorEl.style.display = 'flex';
+            return;
+          }
+
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Wiping...';
+
+          try {
+            const backupFile = runBackupIfRequested(content, 'relay-backup-before-restore');
+            if (backupFile) showToast(`Saved ${backupFile} to your downloads.`, 'info');
+
+            await store.clearAll();
+            store.markSeeded();
+            clearSessionUser();
+
+            showToast('Database cleared. Reloading...', 'success');
+            close();
+
+            setTimeout(() => {
+              window.location.hash = '#/login';
+              window.location.reload();
+            }, 1200);
+          } catch (err) {
+            console.error('Restore to blank state failed:', err);
+            errorTextEl.textContent = err.message || 'Could not complete the restore.';
+            errorEl.style.display = 'flex';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = submitLabel;
+          }
         });
       });
-
       tc.querySelector('#btn-delete-company')?.addEventListener('click', () => {
         // Modal Warning 1 of 2
         const content1 = document.createElement('div');
         content1.style.cssText = 'line-height:1.6; color:var(--text-primary);';
         content1.innerHTML = `
           <p style="margin-bottom:12px; font-weight:600; color:var(--color-danger)">WARNING: CRITICAL DESTRUCTIVE ACTION (1 of 2)</p>
-          <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; margin-bottom:16px; border-radius:4px; font-size:12.5px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
+          <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; margin-bottom:16px; border-radius:4px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
             <span class="material-icons-outlined" style="font-size:24px">warning</span>
             <span>You are about to permanently delete the entire company profile for <strong>${escapeHTML(store.getSettings().name || '')}</strong> and all associated database records (jobs, quotes, invoices, people, assets, forms, etc.).</span>
           </div>
-          <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:12px">
+          <p style="color:var(--text-secondary); margin-bottom:12px">
             This action is final, irreversible, and cannot be undone under any circumstances.
           </p>
-          <p style="font-size:12px; color:var(--text-secondary)">Do you want to proceed to password confirmation?</p>
+          <p style="color:var(--text-secondary)">Do you want to proceed to name and password confirmation?</p>
         `;
 
         showModal({
@@ -1662,20 +1460,28 @@ export function renderSettings(container) {
                 // Modal Warning 2 of 2
                 const content2 = document.createElement('div');
                 content2.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+                const companyName = store.getSettings().name || '';
                 content2.innerHTML = `
                   <form id="delete-company-confirm-form" style="display:flex; flex-direction:column; gap:16px;">
                     <p style="margin-bottom:8px; font-weight:600; color:var(--color-danger)">FINAL CONFIRMATION (2 of 2)</p>
-                    <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
+                    <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); font-weight:500; display:flex; align-items:center; gap:8px;">
                       <span class="material-icons-outlined" style="font-size:24px">gavel</span>
-                      <span>To authorize the permanent destruction of this company, you must enter the Administrator password.</span>
+                      <span>To authorize the permanent destruction of <strong>${escapeHTML(companyName)}</strong>, type the company name and enter the Administrator password.</span>
                     </div>
 
                     <div class="form-group" style="margin-top:12px;">
+                      <label class="form-label" style="font-weight:600;">Type the company name to confirm</label>
+                      <input class="form-input" id="delete-confirm-name" required autocomplete="off" placeholder="${escapeHTML(companyName)}" />
+                    </div>
+
+                    <div class="form-group">
                       <label class="form-label" style="font-weight:600;">Administrator Password</label>
                       <input class="form-input" type="password" id="delete-confirm-password" required placeholder="Enter admin password to proceed" />
                     </div>
 
-                    <div id="delete-confirm-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
+                    ${backupCheckboxHtml('relay-backup-before-company-delete')}
+
+                    <div id="delete-confirm-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
                       <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
                       <span id="delete-confirm-error-text"></span>
                     </div>
@@ -1707,8 +1513,15 @@ export function renderSettings(container) {
                   const submitBtn = content2.querySelector('#btn-delete-confirm-submit');
                   const abortBtn = content2.querySelector('#btn-delete-abort');
                   const passwordInput = content2.querySelector('#delete-confirm-password').value;
+                  const typedName = content2.querySelector('#delete-confirm-name').value.trim();
 
                   errorEl.style.display = 'none';
+
+                  if (typedName !== companyName) {
+                    errorTextEl.textContent = 'The company name does not match. Type it exactly as shown to confirm.';
+                    errorEl.style.display = 'flex';
+                    return;
+                  }
                   submitBtn.disabled = true;
                   abortBtn.disabled = true;
                   const origSubmitText = submitBtn.innerHTML;
@@ -1737,8 +1550,10 @@ export function renderSettings(container) {
                         // local_multiuser
                         const techs = store.getAll('technicians') || [];
                         const currentTech = techs.find(t => t.id === currentUser.id);
-                        const expectedPassword = currentTech ? currentTech.password : '123456';
-                        if (passwordInput === expectedPassword) {
+                        if (!currentTech?.password) {
+                          // No password set — nothing to check against
+                          passwordVerified = true;
+                        } else if ((await verifyPassword(currentTech.password, passwordInput)).ok) {
                           passwordVerified = true;
                         } else {
                           throw new Error('Incorrect administrator password.');
@@ -1764,6 +1579,9 @@ export function renderSettings(container) {
                     }
 
                     if (passwordVerified) {
+                      const backupFile = runBackupIfRequested(content2, 'relay-backup-before-company-delete');
+                      if (backupFile) showToast(`Saved ${backupFile} to your downloads.`, 'info');
+
                       // 1. If cloud mode, delete tenant data and its Auth users
                       if (!isLocalMode) {
                         const { supabase } = await import('../utils/supabase.js');
@@ -1789,7 +1607,7 @@ export function renderSettings(container) {
                       }
 
                       // 4. Remove session user & active account
-                      localStorage.removeItem('currentUser');
+                      clearSessionUser();
                       sessionStorage.removeItem('relay_active_account');
 
                       showToast('Company profile deleted successfully.', 'success');
@@ -1826,17 +1644,18 @@ export function renderSettings(container) {
 
         const currentTechName = existingAdmin ? existingAdmin.name : (currentUser.name && currentUser.name !== 'Local Admin' ? currentUser.name : '');
         const currentTechUsernameOrEmail = existingAdmin ? (existingAdmin.email || existingAdmin.username || '') : '';
+        const expectedName = (store.getSettings().name || '').trim();
 
         content.innerHTML = `
           <form id="convert-multiuser-form" style="display:flex; flex-direction:column; gap:16px;">
-            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-danger); display:flex; gap:8px;">
+            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); display:flex; gap:8px;">
               <span class="material-icons-outlined" style="color:var(--color-danger);">warning</span>
               <div>
                 <strong>CRITICAL WARNING:</strong> Converting to Multi-User Local Network Sync is a permanent, one-way transition. Once converted, you cannot revert this profile back to a single-user Local Admin profile.
               </div>
             </div>
 
-            <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; font-size:12.5px; color:var(--color-info); display:flex; gap:8px;">
+            <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; color:var(--color-info); display:flex; gap:8px;">
               <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
               <div>
                 Configure the administrator user credentials. This user will have admin access to add other users in the unlocked Users tab.
@@ -1844,8 +1663,8 @@ export function renderSettings(container) {
             </div>
 
             <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Confirm Business Name</label>
-              <input class="form-input" id="multiuser-company-name" required value="${escapeHTML(store.getSettings().name || '')}" placeholder="e.g. Apex Power Services" />
+              <label class="form-label" style="font-weight:600;">${expectedName ? `Type <strong>${escapeHTML(expectedName)}</strong> to confirm` : 'Business Name'}</label>
+              <input class="form-input" id="multiuser-company-name" required autocomplete="off" placeholder="${escapeHTML(expectedName || 'Your business name')}" />
             </div>
 
             <div class="form-group">
@@ -1863,7 +1682,9 @@ export function renderSettings(container) {
               <input class="form-input" type="password" id="multiuser-admin-password" required minlength="6" placeholder="At least 6 characters" />
             </div>
 
-            <div id="multiuser-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-size:13px; font-weight:500; align-items:center; gap:8px;">
+            ${backupCheckboxHtml('relay-backup-before-upgrade')}
+
+            <div id="multiuser-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
               <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
               <span id="multiuser-error-text"></span>
             </div>
@@ -1898,18 +1719,29 @@ export function renderSettings(container) {
           submitBtn.disabled = true;
           cancelBtn.disabled = true;
 
-          const businessName = content.querySelector('#multiuser-company-name').value.trim();
+          const confirmName = content.querySelector('#multiuser-company-name').value.trim();
           const adminName = content.querySelector('#multiuser-admin-name').value.trim();
           const adminEmail = content.querySelector('#multiuser-admin-email').value.trim();
           const adminPassword = content.querySelector('#multiuser-admin-password').value;
 
           try {
-            if (!businessName || !adminName || !adminEmail || !adminPassword) {
+            if (!confirmName) {
+              throw new Error('Enter your business name to continue.');
+            }
+            if (expectedName && confirmName !== expectedName) {
+              throw new Error('The business name does not match. Type it exactly as shown to confirm.');
+            }
+            if (!adminName || !adminEmail || !adminPassword) {
               throw new Error('All fields are required.');
             }
             if (adminPassword.length < 6) {
               throw new Error('Password must be at least 6 characters.');
             }
+
+            // The confirmation field must match the existing profile name, so the
+            // business name is never changed by this upgrade.
+            const businessName = expectedName || confirmName;
+            const backupFile = runBackupIfRequested(content, 'relay-backup-before-upgrade');
 
             // 1. Update settings
             const settings = store.getSettings();
@@ -1949,27 +1781,39 @@ export function renderSettings(container) {
             adminTech.name = adminName;
             adminTech.username = adminEmail.split('@')[0];
             adminTech.email = adminEmail;
-            adminTech.password = adminPassword;
+            adminTech.password = await hashPassword(adminPassword);
 
             store.save('technicians', techs);
 
             // 4. Update currentUser session in localStorage
-            const localUser = {
-              id: adminTech.id,
-              companyId: companyId,
-              name: adminTech.name,
-              role: 'admin',
-              userTypeName: 'Admin',
-              userTypeId: adminTech.userTypeId,
-              color: adminTech.color || '#FF5C00',
-              theme: 'light'
-            };
-            localStorage.setItem('currentUser', JSON.stringify(localUser));
+            setSessionUser(buildLocalUser(adminTech, { companyId, storeCompanyId: companyId }));
 
-            showToast('Converted to Multi-User Local Network Sync. Reloading...', 'success');
+            showToast('Converted to Multi-User Local Network Sync.', 'success');
             close();
-            window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
-            setTimeout(() => window.location.reload(), 1200);
+            window.dispatchEvent(new CustomEvent('relay:settings-updated'));
+
+            const summary = document.createElement('div');
+            summary.style.cssText = 'line-height:1.6; color:var(--text-primary);';
+            summary.innerHTML = `
+              <p style="margin-bottom:12px">This profile is now a multi-user local network profile.</p>
+              <ul style="margin:0 0 12px 18px; color:var(--text-secondary); line-height:1.7;">
+                <li>Administrator: <strong>${escapeHTML(adminName)}</strong> (${escapeHTML(adminEmail)})</li>
+                <li>Everyone signs in with their own account instead of the single Local Admin login.</li>
+                <li>Your existing data is unchanged and stays on this machine.</li>
+                ${backupFile ? `<li>A copy of your data was saved as <strong>${escapeHTML(backupFile)}</strong></li>` : ''}
+              </ul>
+              <p style="color:var(--text-secondary)">Next: add team members from Settings → Users.</p>
+            `;
+
+            showModal({
+              title: 'Upgrade Complete',
+              content: summary,
+              size: 'modal-md',
+              onClose: () => window.location.reload(),
+              actions: [
+                { label: 'Continue to RELAY', className: 'btn-primary', onClick: (closeSummary) => closeSummary() }
+              ]
+            });
           } catch (err) {
             console.error('Conversion failed:', err);
             errorTextEl.textContent = err.message || 'An error occurred during conversion.';
@@ -1984,137 +1828,6 @@ export function renderSettings(container) {
         openMigrationModal();
       });
 
-      const renderBackupStatus = () => {
-        const bsc = tc.querySelector('#backup-status-container');
-        if (!bsc) return;
-
-        const hasHandle = !!store.backupDirHandle;
-        const isPermissionGranted = store.backupDirPermissionGranted;
-        const lastBackup = localStorage.getItem('relay_last_backup_time');
-        const formattedLastBackup = lastBackup ? new Date(lastBackup).toLocaleString() : 'Never';
-        const isSupported = typeof window !== 'undefined' && window.showDirectoryPicker;
-
-        if (!isSupported) {
-          bsc.innerHTML = `
-            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 12px; border-radius:4px; font-size:12px; color:var(--color-danger); line-height:1.4;">
-              <strong style="display:block; margin-bottom:4px;">Browser Local Folder Access Unsupported</strong>
-              Your current browser does not support local folder access. Please use Chrome, Edge, or a Chromium-based browser to configure local backups.
-            </div>
-          `;
-          return;
-        }
-
-        if (!hasHandle) {
-          bsc.innerHTML = `
-            <div style="background:var(--bg-color); border:1px solid var(--border-color); padding:12px; border-radius:6px; margin-bottom:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
-              <span class="material-icons-outlined" style="color:var(--text-tertiary);">folder_off</span>
-              <div style="font-size:12.5px;">No backup folder configured.</div>
-            </div>
-            <button class="btn btn-secondary" id="btn-backup-pick" style="width:100%; justify-content:center;">
-              <span class="material-icons-outlined">folder</span> Choose Backup Folder...
-            </button>
-          `;
-        } else if (!isPermissionGranted) {
-          bsc.innerHTML = `
-            <div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:10px 12px; border-radius:4px; font-size:12px; color:var(--color-warning); line-height:1.4; margin-bottom:12px;">
-              <strong>Permission Required</strong><br/>
-              Access permission to <strong>${escapeHTML(store.backupDirHandle.name)}</strong> has expired. Please re-authorize.
-            </div>
-            <div style="display:flex; gap:8px;">
-              <button class="btn btn-warning" id="btn-backup-auth" style="flex:1; justify-content:center;">
-                <span class="material-icons-outlined">vpn_key</span> Re-authorize & Backup
-              </button>
-              <button class="btn btn-ghost" id="btn-backup-disconnect" style="color:var(--color-danger); border:1px solid var(--border-color);" title="Disconnect Folder">
-                <span class="material-icons-outlined">link_off</span>
-              </button>
-            </div>
-          `;
-        } else {
-          bsc.innerHTML = `
-            <div style="background:var(--color-success-bg); border-left:4px solid var(--color-success); padding:10px 12px; border-radius:4px; font-size:12px; color:var(--color-success); line-height:1.4; margin-bottom:12px;">
-              <strong>Backup Configured</strong><br/>
-              Folder: <strong>${escapeHTML(store.backupDirHandle.name)}</strong><br/>
-              Last Backup: <strong>${formattedLastBackup}</strong>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              <button class="btn btn-primary" id="btn-backup-now" style="width:100%; justify-content:center;">
-                <span class="material-icons-outlined">backup</span> Backup Now
-              </button>
-              <div style="display:flex; gap:8px;">
-                <button class="btn btn-secondary" id="btn-backup-pick" style="flex:1; justify-content:center; border:1px solid var(--border-color);">
-                  <span class="material-icons-outlined">folder</span> Change Folder...
-                </button>
-                <button class="btn btn-ghost" id="btn-backup-disconnect" style="color:var(--color-danger); border:1px solid var(--border-color);" title="Disconnect Folder">
-                  <span class="material-icons-outlined">link_off</span>
-                </button>
-              </div>
-            </div>
-          `;
-        }
-
-        // Attach event listeners for backup buttons inside container
-        bsc.querySelector('#btn-backup-pick')?.addEventListener('click', async () => {
-          try {
-            const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-            await store.setBackupDirectory(handle);
-            showToast('Backup directory selected successfully.', 'success');
-            showToast('Running initial backup...', 'info');
-            await store.backupToFolder(handle);
-            showToast('Backup completed successfully!', 'success');
-            renderBackupStatus();
-          } catch (err) {
-            console.error('Failed to select backup directory:', err);
-            if (err.name !== 'AbortError') {
-              showToast('Failed to configure backup: ' + err.message, 'error');
-            }
-          }
-        });
-
-        bsc.querySelector('#btn-backup-auth')?.addEventListener('click', async () => {
-          const granted = await store.verifyBackupDirPermission(true);
-          if (granted) {
-            showToast('Permission re-authorized. Backing up...', 'info');
-            try {
-              await store.backupToFolder();
-              showToast('Backup completed successfully!', 'success');
-            } catch (err) {
-              showToast('Backup failed: ' + err.message, 'error');
-            }
-          } else {
-            showToast('Failed to acquire write permission.', 'error');
-          }
-          renderBackupStatus();
-        });
-
-        bsc.querySelector('#btn-backup-now')?.addEventListener('click', async (e) => {
-          const btn = e.currentTarget;
-          const origHtml = btn.innerHTML;
-          btn.disabled = true;
-          btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Backing up...';
-          
-          try {
-            await store.backupToFolder();
-            showToast('Backup completed successfully!', 'success');
-          } catch (err) {
-            console.error(err);
-            showToast('Backup failed: ' + err.message, 'error');
-          } finally {
-            btn.disabled = false;
-            btn.innerHTML = origHtml;
-            renderBackupStatus();
-          }
-        });
-
-        bsc.querySelector('#btn-backup-disconnect')?.addEventListener('click', async () => {
-          await store.setBackupDirectory(null);
-          showToast('Backup folder disconnected.', 'info');
-          renderBackupStatus();
-        });
-      };
-
-      if (!isLocalMode && currentUser.role === 'admin') {
-        renderBackupStatus();
-      }
     }
   }
 
@@ -2236,7 +1949,7 @@ export function renderSettings(container) {
       const existing = permsMap[module] || {};
       const allChecked = permDefs.every(({ key }) => existing[key]);
       const permCheckboxes = permDefs.map(({ key, label }) => `
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; padding:4px 0">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:4px 0">
           <input type="checkbox" class="perm-chk" data-module="${module}" data-key="${key}" ${existing[key] ? 'checked' : ''}
             style="width:15px;height:15px;cursor:pointer" />
           <span>${label}</span>
@@ -2245,8 +1958,8 @@ export function renderSettings(container) {
       return `
         <div style="border:1px solid var(--border-color); border-radius:6px; overflow:hidden; margin-bottom:8px">
           <div style="padding:8px 14px; background:var(--content-bg); display:flex; align-items:center; justify-content:space-between">
-            <span style="font-weight:600; font-size:13px">${module}</span>
-            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:var(--text-secondary)">
+            <span style="font-weight:600">${module}</span>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--text-secondary)">
               <input type="checkbox" class="module-select-all" data-module="${module}" ${allChecked ? 'checked' : ''}
                 style="width:14px;height:14px;cursor:pointer" />
               Select All
@@ -2332,7 +2045,7 @@ export function renderSettings(container) {
         <label class="form-label">Username</label>
         <input class="form-input" id="u-username" value="${t.username || (t.email ? t.email.split('@')[0] : '')}" ${editId ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''} placeholder="e.g. joshua" />
         ${!editId ? `
-        <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px; font-weight: 500;">
+        <div style="color: var(--text-tertiary); margin-top: 4px; font-weight: 500;">
           Company login code is: <strong style="color: var(--color-primary)">${companySlug}</strong>. User will log in with <strong style="color: var(--color-primary)">username@${companySlug}</strong>
         </div>
         ` : ''}
@@ -2361,9 +2074,9 @@ export function renderSettings(container) {
       <div class="form-group">
         <label class="form-label">Pay Rate ($/hr)</label>
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="color:var(--text-secondary);font-size:15px">$</span>
+          <span style="color:var(--text-secondary)">$</span>
           <input class="form-input" id="u-payrate" type="number" min="0" step="0.50" value="${t.payRate || ''}" placeholder="e.g. 45.00" style="width:140px" />
-          <span class="text-secondary" style="font-size:var(--font-size-sm)">/hr — used in job cost &amp; P&amp;L calculations</span>
+          <span class="text-secondary">/hr — used in job cost &amp; P&amp;L calculations</span>
         </div>
       </div>
       <div class="form-group">
@@ -2425,7 +2138,10 @@ export function renderSettings(container) {
           try {
             const updates = { name, username, role, userTypeId, color, payRate };
             if (password) {
-              updates.password = password;
+              // Cloud accounts hand the raw password to Supabase Auth (the
+              // invite-user function hashes it server-side); local accounts
+              // store the hash themselves, like every other local password.
+              updates.password = isLocalAccount() ? await hashPassword(password) : password;
             }
 
             if (editId) {
@@ -2477,7 +2193,7 @@ export function renderSettings(container) {
                   <td class="text-secondary" style="max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHTML(t.description || '—')}</td>
                   <td>
                     <div style="display:flex; gap:4px; flex-wrap:wrap">
-                      ${(t.tags || []).map(tag => `<span class="badge badge-neutral" style="font-size:10px">${escapeHTML(tag)}</span>`).join('')}
+                      ${(t.tags || []).map(tag => `<span class="badge badge-neutral">${escapeHTML(tag)}</span>`).join('')}
                     </div>
                   </td>
                   <td style="text-align:right">
@@ -2617,7 +2333,7 @@ export function renderSettings(container) {
                         </div>
                       `;
                     }).join('')}
-                    ${viewList.length === 0 ? '<div style="color:var(--text-tertiary);font-size:12px;text-align:center;padding:12px">No items. Click + to add.</div>' : ''}
+                    ${viewList.length === 0 ? '<div style="color:var(--text-tertiary);text-align:center;padding:12px">No items. Click + to add.</div>' : ''}
                   </div>
                 </div>
               `;
@@ -2641,40 +2357,40 @@ export function renderSettings(container) {
                     </div>
                   </div>
                   <div class="form-group" style="margin-bottom:12px">
-                    <label class="form-label" style="font-size:11px">Name *</label>
-                    <input type="text" class="form-input tmpl-detail-input" data-field="name" value="${escapeHTML(node.name)}" style="font-size:13px" />
+                    <label class="form-label">Name *</label>
+                    <input type="text" class="form-input tmpl-detail-input" data-field="name" value="${escapeHTML(node.name)}" />
                   </div>
                   ${hasSubs ? `
                     <div style="margin-bottom:12px">
-                      <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:2px">Total Hours (Rollup)</div>
-                      <div style="font-size:13px; font-weight:500">${calculateTotalHours(node)} hrs</div>
+                      <div style="color:var(--text-tertiary); margin-bottom:2px">Total Hours (Rollup)</div>
+                      <div style="font-weight:500">${calculateTotalHours(node)} hrs</div>
                     </div>
                   ` : `
                     <div class="form-row" style="margin-bottom:12px; gap:8px">
                       <div class="form-group">
-                        <label class="form-label" style="font-size:11px">Est. Hours</label>
-                        <input type="number" class="form-input tmpl-detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.25" style="font-size:13px" />
+                        <label class="form-label">Est. Hours</label>
+                        <input type="number" class="form-input tmpl-detail-input" data-field="estimatedHours" value="${node.estimatedHours || ''}" min="0" step="0.25" />
                       </div>
                       <div class="form-group">
-                        <label class="form-label" style="font-size:11px">People</label>
-                        <input type="number" class="form-input tmpl-detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" style="font-size:13px" />
+                        <label class="form-label">People</label>
+                        <input type="number" class="form-input tmpl-detail-input" data-field="people" value="${node.people || '1'}" min="1" step="1" />
                       </div>
                     </div>
                   `}
                   <div class="form-group" style="margin-bottom:12px">
-                    <label class="form-label" style="font-size:11px">Description</label>
-                    <textarea class="form-input tmpl-detail-input" data-field="description" rows="3" style="font-size:13px">${escapeHTML(node.description || '')}</textarea>
+                    <label class="form-label">Description</label>
+                    <textarea class="form-input tmpl-detail-input" data-field="description" rows="3">${escapeHTML(node.description || '')}</textarea>
                   </div>
                   ${!hasSubs ? `
                   <div style="margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
                       <div style="display:flex; align-items:center; gap:6px">
                         <span class="material-icons-outlined" style="font-size:18px; color:var(--color-primary)">assignment</span>
-                        <span style="font-size:13px; font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Fields</span>
+                        <span style="font-weight:700; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.3px">Value Fields</span>
                       </div>
                       <button class="btn btn-sm btn-secondary btn-add-value-field-tmpl" data-path="${path.join('-')}"><span class="material-icons-outlined" style="font-size:14px">add</span> Add Field</button>
                     </div>
-                    <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:10px">Define the values a technician needs to record for this task (e.g. pressure readings, temperatures).</div>
+                    <div style="color:var(--text-tertiary); margin-bottom:10px">Define the values a technician needs to record for this task (e.g. pressure readings, temperatures).</div>
                     <div style="display:flex; flex-direction:column; gap:8px" id="value-fields-config-tmpl">
                       ${(node.valueFields || []).map((vf, vi) => {
                         const ft = vf.fieldType || 'text';
@@ -2682,8 +2398,8 @@ export function renderSettings(container) {
                         <div style="padding:10px 12px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px" data-vf-idx="${vi}">
                           <div style="display:flex; align-items:center; gap:8px; margin-bottom:${ft !== 'text' ? '8px' : '0'}">
                             <span class="material-icons-outlined" style="font-size:16px; color:var(--text-tertiary); cursor:grab">drag_indicator</span>
-                            <input type="text" class="form-input vf-tmpl-label-input" data-vf-idx="${vi}" value="${escapeHTML(vf.label)}" placeholder="Field label (e.g. Oil Pressure)" style="flex:2; height:32px; font-size:13px" />
-                            <select class="form-input vf-tmpl-type-select" data-vf-idx="${vi}" style="flex:0 0 110px; height:32px; font-size:12px">
+                            <input type="text" class="form-input vf-tmpl-label-input" data-vf-idx="${vi}" value="${escapeHTML(vf.label)}" placeholder="Field label (e.g. Oil Pressure)" style="flex:2; height:32px" />
+                            <select class="form-input input-sm vf-tmpl-type-select" data-vf-idx="${vi}" style="flex:0 0 110px">
                               <option value="text"${ft === 'text' ? ' selected' : ''}>Text</option>
                               <option value="number"${ft === 'number' ? ' selected' : ''}>Number</option>
                               <option value="dropdown"${ft === 'dropdown' ? ' selected' : ''}>Dropdown</option>
@@ -2692,29 +2408,29 @@ export function renderSettings(container) {
                           </div>
                           ${ft === 'number' ? `
                           <div style="display:flex; align-items:center; gap:8px; margin-left:28px">
-                            <input type="text" class="form-input vf-tmpl-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                            <input type="text" class="form-input vf-tmpl-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (e.g. PSI)" style="flex:1; height:30px" />
                             <div style="display:flex; align-items:center; gap:4px; flex:2">
-                              <span style="font-size:11px; color:var(--text-tertiary); white-space:nowrap">Range:</span>
-                              <input type="number" class="form-input vf-tmpl-min-input" data-vf-idx="${vi}" value="${vf.min !== undefined ? vf.min : ''}" placeholder="Min" style="flex:1; height:30px; font-size:12px" />
+                              <span style="color:var(--text-tertiary); white-space:nowrap">Range:</span>
+                              <input type="number" class="form-input vf-tmpl-min-input" data-vf-idx="${vi}" value="${vf.min !== undefined ? vf.min : ''}" placeholder="Min" style="flex:1; height:30px" />
                               <span style="color:var(--text-tertiary)">–</span>
-                              <input type="number" class="form-input vf-tmpl-max-input" data-vf-idx="${vi}" value="${vf.max !== undefined ? vf.max : ''}" placeholder="Max" style="flex:1; height:30px; font-size:12px" />
+                              <input type="number" class="form-input vf-tmpl-max-input" data-vf-idx="${vi}" value="${vf.max !== undefined ? vf.max : ''}" placeholder="Max" style="flex:1; height:30px" />
                             </div>
                           </div>
                           ` : ''}
                           ${ft === 'text' ? `
                           <div style="display:flex; align-items:center; gap:8px; margin-left:28px; margin-top:4px">
-                            <input type="text" class="form-input vf-tmpl-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (optional, e.g. PSI)" style="flex:1; height:30px; font-size:12px" />
+                            <input type="text" class="form-input vf-tmpl-unit-input" data-vf-idx="${vi}" value="${escapeHTML(vf.unit || '')}" placeholder="Unit (optional, e.g. PSI)" style="flex:1; height:30px" />
                           </div>
                           ` : ''}
                           ${ft === 'dropdown' ? `
                           <div style="margin-left:28px; display:flex; flex-direction:column; gap:6px">
                             <div>
-                              <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Options (one per line)</div>
-                              <textarea class="form-input vf-tmpl-options-input" data-vf-idx="${vi}" rows="3" placeholder="Low\nAs Expected\nHigh" style="font-size:12px; line-height:1.5">${escapeHTML((vf.options || []).join('\n'))}</textarea>
+                              <div style="color:var(--text-tertiary); margin-bottom:4px">Options (one per line)</div>
+                              <textarea class="form-input vf-tmpl-options-input" data-vf-idx="${vi}" rows="3" placeholder="Low\nAs Expected\nHigh" style="line-height:1.5">${escapeHTML((vf.options || []).join('\n'))}</textarea>
                             </div>
                             <div>
-                              <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px">Expected / Ideal Value <span style="font-weight:400">(flags others as out of range)</span></div>
-                              <select class="form-input vf-tmpl-expected-select" data-vf-idx="${vi}" style="height:30px; font-size:12px">
+                              <div style="color:var(--text-tertiary); margin-bottom:4px">Expected / Ideal Value <span style="font-weight:400">(flags others as out of range)</span></div>
+                              <select class="form-input input-sm vf-tmpl-expected-select" data-vf-idx="${vi}">
                                 <option value=""${!vf.expectedValue ? ' selected' : ''}>— No expected value —</option>
                                 ${(vf.options || []).map(opt => `<option value="${escapeHTML(opt)}"${vf.expectedValue === opt ? ' selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
                               </select>
@@ -2723,7 +2439,7 @@ export function renderSettings(container) {
                           ` : ''}
                         </div>`;
                       }).join('')}
-                      ${(!node.valueFields || node.valueFields.length === 0) ? '<div style="color:var(--text-tertiary); font-size:12px; text-align:center; padding:16px; border:1px dashed var(--border-color); border-radius:6px">No value fields defined. Click "Add Field" to create one.</div>' : ''}
+                      ${(!node.valueFields || node.valueFields.length === 0) ? '<div style="color:var(--text-tertiary); text-align:center; padding:16px; border:1px dashed var(--border-color); border-radius:6px">No value fields defined. Click "Add Field" to create one.</div>' : ''}
                     </div>
                   </div>
                   ` : ''}
@@ -3072,7 +2788,8 @@ export function renderSettings(container) {
     const categories = settings.materialCategories || ['General'];
 
     tc.innerHTML = `
-      <div style="max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:24px; align-items:start;">
+      <!-- Cards never go narrower than 520px: the tier table below needs ~480px. -->
+      <div style="max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(520px, 1fr)); gap:24px; align-items:start;">
         <div class="card" style="margin-bottom:0">
           <div class="card-header"><h4 style="margin:0">Markup Configuration</h4></div>
           <div class="card-body">
@@ -3083,7 +2800,7 @@ export function renderSettings(container) {
                   <input type="number" class="form-input" id="mat-default-markup" value="${markup.defaultPercent}" style="width:100px" />
                   <span class="text-secondary">%</span>
                 </div>
-                <p class="text-tertiary" style="font-size:12px;margin-top:4px">Applied to items not covered by tiers or categories.</p>
+                <p class="text-tertiary" style="margin-top:4px">Applied to items not covered by tiers or categories.</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Minimum Markup Amount ($)</label>
@@ -3091,7 +2808,7 @@ export function renderSettings(container) {
                   <span class="text-secondary">$</span>
                   <input type="number" class="form-input" id="mat-min-markup" value="${markup.minMarkupAmount}" step="0.50" style="width:100px" />
                 </div>
-                <p class="text-tertiary" style="font-size:12px;margin-top:4px">Ensures a base profit on even the smallest components.</p>
+                <p class="text-tertiary" style="margin-top:4px">Ensures a base profit on even the smallest components.</p>
               </div>
             </div>
 
@@ -3099,20 +2816,20 @@ export function renderSettings(container) {
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                 <div>
                   <h5 style="margin:0">Tiered Pricing</h5>
-                  <p class="text-secondary" style="font-size:12px;margin:4px 0 0 0">Automatically adjust markup based on the unit cost of the item.</p>
+                  <p class="text-secondary" style="margin:4px 0 0 0">Automatically adjust markup based on the unit cost of the item.</p>
                 </div>
-                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                   <input type="checkbox" id="mat-use-tiers" ${markup.useTiers ? 'checked' : ''} /> Enable Tiers
                 </label>
               </div>
 
               <div id="tiers-container" style="display:flex;flex-direction:column;gap:8px; ${markup.useTiers ? '' : 'opacity:0.5;pointer-events:none'}">
-                <table class="data-table" style="font-size:13px">
+                <table class="data-table">
                   <thead>
                     <tr>
                       <th>Item Cost Range</th>
                       <th style="width:120px">Markup %</th>
-                      <th style="width:40px"></th>
+                      <th style="width:60px"></th>
                     </tr>
                   </thead>
                   <tbody id="tier-rows">
@@ -3123,13 +2840,13 @@ export function renderSettings(container) {
                             ${i === 0 ? 'Up to' : 'From previous up to'} 
                             <div style="display:flex;align-items:center;gap:4px">
                               <span class="text-tertiary">$</span>
-                              <input type="number" class="form-input tier-upto" value="${t.upTo || ''}" placeholder="Infinity" style="height:28px;padding:2px 8px;width:100px" />
+                              <input type="number" class="form-input input-sm tier-upto" value="${t.upTo || ''}" placeholder="Infinity" style="width:100px" />
                             </div>
                           </div>
                         </td>
                         <td>
                           <div style="display:flex;align-items:center;gap:4px">
-                            <input type="number" class="form-input tier-percent" value="${t.percent}" style="height:28px;padding:2px 8px;width:80px" />
+                            <input type="number" class="form-input input-sm tier-percent" value="${t.percent}" style="width:80px" />
                             <span class="text-tertiary">%</span>
                           </div>
                         </td>
@@ -3151,10 +2868,10 @@ export function renderSettings(container) {
         <div class="card">
           <div class="card-header"><h4 style="margin:0">Material Categories</h4></div>
           <div class="card-body">
-            <p class="text-secondary" style="font-size:13px;margin-bottom:16px">Group items for reporting and bulk adjustments.</p>
+            <p class="text-secondary" style="margin-bottom:16px">Group items for reporting and bulk adjustments.</p>
             <div style="display:flex;flex-wrap:wrap;gap:8px" id="categories-container">
               ${categories.map(c => `
-                <div class="badge badge-neutral" style="padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px">
+                <div class="badge badge-neutral" style="padding:8px 12px;display:flex;align-items:center;gap:8px">
                   ${c}
                   <span class="material-icons-outlined btn-remove-cat" data-name="${c}" style="font-size:14px;cursor:pointer">close</span>
                 </div>
@@ -3228,13 +2945,13 @@ export function renderSettings(container) {
             From previous up to 
             <div style="display:flex;align-items:center;gap:4px">
               <span class="text-tertiary">$</span>
-              <input type="number" class="form-input tier-upto" value="" placeholder="Infinity" style="height:28px;padding:2px 8px;width:100px" />
+              <input type="number" class="form-input input-sm tier-upto" value="" placeholder="Infinity" style="width:100px" />
             </div>
           </div>
         </td>
         <td>
           <div style="display:flex;align-items:center;gap:4px">
-            <input type="number" class="form-input tier-percent" value="20" style="height:28px;padding:2px 8px;width:80px" />
+            <input type="number" class="form-input input-sm tier-percent" value="20" style="width:80px" />
             <span class="text-tertiary">%</span>
           </div>
         </td>
@@ -3272,8 +2989,19 @@ export function renderSettings(container) {
     tc.querySelector('#btn-save-materials').addEventListener('click', save);
   }
 
+  // Stock-location registry (warehouses, vans, utes) — the name collides with file
+  // storage, so the tab leads with what it actually manages and links to the
+  // separate "Local Storage" tab.
   function renderStorageOptionsTab(tc) {
-    tc.innerHTML = '<div style="max-width:900px" id="storage-options-section"></div>';
+    tc.innerHTML = `
+      <div style="max-width:900px">
+        <p class="text-secondary" style="margin:0 0 var(--space-lg); line-height:1.6;">
+          Where your stock physically sits — warehouses, vehicles and site containers. Looking for where the app
+          keeps its own data files? That is the <a href="#/settings?tab=local_storage" style="color:var(--color-primary)">Local Storage</a> tab.
+        </p>
+        <div id="storage-options-section"></div>
+      </div>
+    `;
     renderStorageOptions(tc.querySelector('#storage-options-section'));
   }
 
@@ -3313,7 +3041,7 @@ export function renderSettings(container) {
 
   function renderUsersSubTab(subcontent, techs, companySlug, userTypes) {
     subcontent.innerHTML = `
-      <div style="background:rgba(59, 130, 246, 0.1); border-left:4px solid #3b82f6; padding:12px 16px; margin-bottom:var(--space-md); border-radius:4px; font-size:13px; color:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
+      <div style="background:rgba(59, 130, 246, 0.1); border-left:4px solid #3b82f6; padding:12px 16px; margin-bottom:var(--space-md); border-radius:4px; color:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
         <span style="display:flex; align-items:center; gap:8px;">
           <span class="material-icons-outlined" style="color:#3b82f6; font-size:18px;">info</span>
           <span>Your company login code is <strong style="color:#60a5fa">${companySlug}</strong>. Technicians log in using <strong style="color:#60a5fa">username@${companySlug}</strong>.</span>
@@ -3343,7 +3071,7 @@ export function renderSettings(container) {
                 const ut = userTypes.find(ut => ut.id === t.userTypeId);
                 const avatarCell = t.avatarUrl
                   ? `<img src="${t.avatarUrl}" style="width:32px; height:32px; border-radius:50%; object-fit:cover; display:block;" />`
-                  : `<div style="width:32px; height:32px; border-radius:50%; background:${t.color}; align-items:center; justify-content:center; display:flex; color:#fff; font-weight:600; font-size:12px;">${(t.name || 'U').trim().charAt(0).toUpperCase()}</div>`;
+                  : `<div style="width:32px; height:32px; border-radius:50%; background:${t.color}; align-items:center; justify-content:center; display:flex; color:#fff; font-weight:600;">${(t.name || 'U').trim().charAt(0).toUpperCase()}</div>`;
                 return `
                   <tr>
                     <td>${avatarCell}</td>
@@ -3708,7 +3436,6 @@ export function renderSettings(container) {
     });
   }
 
-  render();
 }
   function renderFormsTab(tc) {
     const templates = store.getAll('formTemplates');
@@ -3722,7 +3449,7 @@ export function renderSettings(container) {
           </button>
         </div>
         <div class="card-body" style="padding:0">
-          <div style="padding:16px; font-size:13px; color:var(--text-tertiary); border-bottom:1px solid var(--border-color)">
+          <div style="padding:16px; color:var(--text-tertiary); border-bottom:1px solid var(--border-color)">
             Create reusable forms that can be attached to jobs for technicians to fill out in the field (e.g. Safety Audits, Site Inspections).
           </div>
           <table class="data-table">
@@ -3738,7 +3465,7 @@ export function renderSettings(container) {
               ${templates.map(t => `
                 <tr>
                   <td class="font-medium">${escapeHTML(t.name)}</td>
-                  <td style="color:var(--text-secondary); font-size:13px">${escapeHTML(t.description || '—')}</td>
+                  <td style="color:var(--text-secondary)">${escapeHTML(t.description || '—')}</td>
                   <td><span class="badge badge-neutral">${(t.sections || []).reduce((sum, s) => sum + s.fields.length, 0)} Fields</span></td>
                   <td style="text-align:right">
                     <button class="btn btn-ghost btn-icon btn-sm edit-form-template" data-id="${t.id}"><span class="material-icons-outlined">edit</span></button>
@@ -3812,15 +3539,15 @@ export function renderSettings(container) {
     const billingResult = params.get('billing');
     let banner = '';
     if (billingResult === 'success') {
-      banner = `<div style="background:var(--color-info-bg);border-left:4px solid var(--color-info);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-info);display:flex;gap:8px;align-items:center;">
+      banner = `<div style="background:var(--color-info-bg);border-left:4px solid var(--color-info);padding:12px 16px;border-radius:6px;margin-bottom:16px;color:var(--color-info);display:flex;gap:8px;align-items:center;">
         <span class="material-icons-outlined">check_circle</span>
         <span>Thanks! Your subscription is being activated — it can take a moment to confirm. Refresh if the plan below hasn't updated yet.</span></div>`;
     } else if (billingResult === 'cancelled') {
-      banner = `<div style="background:var(--color-warning-bg,#fff7ed);border-left:4px solid var(--color-warning);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-warning);display:flex;gap:8px;align-items:center;">
+      banner = `<div style="background:var(--color-warning-bg,#fff7ed);border-left:4px solid var(--color-warning);padding:12px 16px;border-radius:6px;margin-bottom:16px;color:var(--color-warning);display:flex;gap:8px;align-items:center;">
         <span class="material-icons-outlined">info</span><span>Checkout cancelled — no changes were made.</span></div>`;
     }
     if (pastDue) {
-      banner += `<div style="background:var(--color-danger-bg);border-left:4px solid var(--color-danger);padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:var(--color-danger);display:flex;gap:8px;align-items:center;">
+      banner += `<div style="background:var(--color-danger-bg);border-left:4px solid var(--color-danger);padding:12px 16px;border-radius:6px;margin-bottom:16px;color:var(--color-danger);display:flex;gap:8px;align-items:center;">
         <span class="material-icons-outlined">error_outline</span>
         <span>Your last payment failed. Update your card in "Manage billing" to keep your team's cloud access.</span></div>`;
     }
@@ -3829,19 +3556,19 @@ export function renderSettings(container) {
     const planCard = (plan) => {
       const isCurrent = (plan.id === tier) && (plan.id === 'free' ? !isCloud : active);
       const priceLine = plan.price === 0
-        ? `<div style="font-size:26px;font-weight:700;">Free</div>`
-        : `<div style="font-size:26px;font-weight:700;">$${plan.price}<span style="font-size:13px;font-weight:500;color:var(--text-tertiary);"> /user /mo</span></div>`;
+        ? `<div style="font-weight:700;">Free</div>`
+        : `<div style="font-weight:700;">$${plan.price}<span style="font-weight:500;color:var(--text-tertiary);"> /user /mo</span></div>`;
 
       let action = '';
       if (comp && isCloud && plan.id !== 'free') {
         // Complimentary account: no self-serve billing actions.
         action = isCurrent
           ? `<button class="btn btn-secondary" disabled style="width:100%;justify-content:center;">Current plan · complimentary</button>`
-          : `<div style="font-size:11px;color:var(--text-tertiary);text-align:center;">Complimentary access is managed by RELAY.</div>`;
+          : `<div style="color:var(--text-tertiary);text-align:center;">Complimentary access is managed by RELAY.</div>`;
       } else if (isCurrent) {
         action = `<button class="btn btn-secondary" disabled style="width:100%;justify-content:center;">Current plan</button>`;
       } else if (plan.id === 'free') {
-        action = `<div style="font-size:11px;color:var(--text-tertiary);text-align:center;">Runs offline on-device. No account.</div>`;
+        action = `<div style="color:var(--text-tertiary);text-align:center;">Runs offline on-device. No account.</div>`;
       } else if (!isCloud) {
         // Local account: must migrate to cloud before subscribing.
         action = `<button class="btn btn-primary" data-migrate="1" ${isAdmin ? '' : 'disabled'} style="width:100%;justify-content:center;">Move to Cloud &amp; subscribe</button>`;
@@ -3857,11 +3584,11 @@ export function renderSettings(container) {
           <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
             <div style="display:flex;align-items:baseline;justify-content:space-between;">
               <h4 style="margin:0;">${plan.name}</h4>
-              ${isCurrent ? '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--color-accent,#FF5C00);">CURRENT</span>' : ''}
+              ${isCurrent ? '<span style="font-weight:700;letter-spacing:.5px;color:var(--color-accent,#FF5C00);">CURRENT</span>' : ''}
             </div>
             ${priceLine}
-            <div style="font-size:12px;color:var(--text-secondary);min-height:32px;">${plan.tagline}</div>
-            <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
+            <div style="color:var(--text-secondary);min-height:32px;">${plan.tagline}</div>
+            <ul style="margin:0;padding-left:18px;color:var(--text-secondary);line-height:1.7;">
               ${plan.features.map(f => `<li>${escapeHTML(f)}</li>`).join('')}
             </ul>
             <div style="margin-top:auto;padding-top:8px;">${action}</div>
@@ -3876,21 +3603,21 @@ export function renderSettings(container) {
         <div class="card-body">
           <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;">
             <div>
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Plan</div>
-              <div style="font-size:20px;font-weight:700;">${active ? (PLAN_CATALOG[tier]?.name || 'Cloud') : (isCloud ? 'No plan yet' : 'Free')}</div>
-              <div style="font-size:12px;color:${pastDue ? 'var(--color-danger)' : 'var(--text-secondary)'};margin-top:2px;">${statusLabel}</div>
+              <div style="text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Plan</div>
+              <div style="font-weight:700;">${active ? (PLAN_CATALOG[tier]?.name || 'Cloud') : (isCloud ? 'No plan yet' : 'Free')}</div>
+              <div style="color:${pastDue ? 'var(--color-danger)' : 'var(--text-secondary)'};margin-top:2px;">${statusLabel}</div>
             </div>
             ${isCloud ? `
             <div>
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Active users (seats)</div>
-              <div style="font-size:20px;font-weight:700;">${active && sub.seats != null ? sub.seats : activeSeats}</div>
-              <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${comp ? 'Included at no charge' : 'Billed per active user'}</div>
+              <div style="text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Active users (seats)</div>
+              <div style="font-weight:700;">${active && sub.seats != null ? sub.seats : activeSeats}</div>
+              <div style="color:var(--text-secondary);margin-top:2px;">${comp ? 'Included at no charge' : 'Billed per active user'}</div>
             </div>` : ''}
             ${active && !comp && tier !== 'free' ? `
             <div>
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Est. monthly</div>
-              <div style="font-size:20px;font-weight:700;">$${(PLAN_CATALOG[tier].price * (sub.seats != null ? sub.seats : activeSeats)).toFixed(0)}</div>
-              ${renew ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Renews ${renew}</div>` : ''}
+              <div style="text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);">Est. monthly</div>
+              <div style="font-weight:700;">$${(PLAN_CATALOG[tier].price * (sub.seats != null ? sub.seats : activeSeats)).toFixed(0)}</div>
+              ${renew ? `<div style="color:var(--text-secondary);margin-top:2px;">Renews ${renew}</div>` : ''}
             </div>` : ''}
           </div>
           ${isCloud && sub.hasCustomer ? `
@@ -3898,9 +3625,9 @@ export function renderSettings(container) {
             <button class="btn btn-secondary" id="billing-portal" ${isAdmin ? '' : 'disabled'}>
               <span class="material-icons-outlined">receipt_long</span> Manage billing &amp; invoices
             </button>
-            <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Update your card, download receipts, or cancel — via Stripe's secure portal.</div>
+            <div style="color:var(--text-tertiary);margin-top:6px;">Update your card, download receipts, or cancel — via Stripe's secure portal.</div>
           </div>` : ''}
-          ${!isAdmin ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:14px;">Only an administrator can change the plan or billing.</div>` : ''}
+          ${!isAdmin ? `<div style="color:var(--text-tertiary);margin-top:14px;">Only an administrator can change the plan or billing.</div>` : ''}
         </div>
       </div>
 
@@ -3910,7 +3637,7 @@ export function renderSettings(container) {
         ${planCard(PLAN_CATALOG.cloud_plus)}
       </div>
 
-      <p style="font-size:11px;color:var(--text-tertiary);margin-top:16px;max-width:760px;">
+      <p style="color:var(--text-tertiary);margin-top:16px;max-width:760px;">
         Prices are in AUD per active user, per month. Adding or deactivating a user adjusts your next
         invoice automatically (prorated). Cloud and Cloud+ are the same app; Cloud+ adds Deputy Max — expanding the Deputy assistant to the full workspace.
       </p>
@@ -3971,8 +3698,6 @@ export function renderSettings(container) {
     const ready = connectReady();
     const started = !!conn.accountId;
     const enabledFor = pay.enabledFor || {};
-    const currencies = ['AUD', 'USD', 'NZD', 'GBP', 'EUR'];
-    const cur = (pay.currency || 'AUD').toUpperCase();
 
     // Returning from Stripe onboarding? Pull fresh status and re-render.
     const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
@@ -3990,15 +3715,15 @@ export function renderSettings(container) {
     if (ready) {
       status = `<div style="display:flex;align-items:center;gap:10px;background:var(--color-info-bg);border:1px solid var(--color-info);border-radius:8px;padding:12px 14px;">
         <span class="material-icons-outlined" style="color:var(--color-info);">verified</span>
-        <div><div style="font-weight:600;font-size:13px;">Connected — you can accept card payments</div>
-        <div style="font-size:11px;color:var(--text-tertiary);">Payments go straight to your Stripe account.</div></div></div>`;
+        <div><div style="font-weight:600;">Connected — you can accept card payments</div>
+        <div style="color:var(--text-tertiary);">Payments go straight to your Stripe account.</div></div></div>`;
     } else if (started) {
       status = `<div style="display:flex;align-items:center;gap:10px;background:var(--color-warning-bg,#fff7ed);border:1px solid var(--color-warning);border-radius:8px;padding:12px 14px;">
         <span class="material-icons-outlined" style="color:var(--color-warning);">hourglass_top</span>
-        <div><div style="font-weight:600;font-size:13px;">Setup not finished</div>
-        <div style="font-size:11px;color:var(--text-tertiary);">Stripe still needs a few details before you can take payments.</div></div></div>`;
+        <div><div style="font-weight:600;">Setup not finished</div>
+        <div style="color:var(--text-tertiary);">Stripe still needs a few details before you can take payments.</div></div></div>`;
     } else {
-      status = `<div style="font-size:13px;color:var(--text-secondary);">Connect your Stripe account so customers can pay their invoices by card — the money goes directly to you. No Stripe account yet? You'll create one in a minute during setup.</div>`;
+      status = `<div style="color:var(--text-secondary);">Connect your Stripe account so customers can pay their invoices by card — the money goes directly to you. No Stripe account yet? You'll create one in a minute during setup.</div>`;
     }
 
     const primaryBtn = ready
@@ -4021,16 +3746,9 @@ export function renderSettings(container) {
             ${started ? `<button class="btn btn-secondary" id="pay-refresh"><span class="material-icons-outlined">refresh</span> Refresh status</button>` : ''}
           </div>
 
-          <div class="form-group" style="max-width:220px;">
-            <label class="form-label">Currency</label>
-            <select class="form-input" id="pay-currency">
-              ${currencies.map(c => `<option value="${c}" ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}
-            </select>
-          </div>
-
           <div class="form-group" style="display:flex;align-items:center;gap:10px;">
             <input type="checkbox" id="pay-enable-invoice" style="width:16px;height:16px;" ${enabledFor.invoice !== false ? 'checked' : ''} />
-            <label for="pay-enable-invoice" style="margin:0;font-size:13px;">Offer a "Pay" action on sent invoices &amp; the customer portal</label>
+            <label for="pay-enable-invoice" style="margin:0;">Offer a "Pay" action on sent invoices &amp; the customer portal</label>
           </div>
 
           <div class="form-group" style="max-width:340px;">
@@ -4039,7 +3757,7 @@ export function renderSettings(container) {
               <option value="relay" ${pay.receiptSource !== 'stripe' ? 'selected' : ''}>RELAY emails the receipt (recommended)</option>
               <option value="stripe" ${pay.receiptSource === 'stripe' ? 'selected' : ''}>Let Stripe email the receipt</option>
             </select>
-            <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">
+            <div style="color:var(--text-tertiary);margin-top:6px;">
               Sent automatically when an invoice is paid online — only one receipt goes out. RELAY needs no email setup.
               If you pick Stripe, turn off RELAY here so the customer doesn't get two.
             </div>
@@ -4073,9 +3791,10 @@ export function renderSettings(container) {
     tc.querySelector('#pay-save')?.addEventListener('click', async () => {
       try {
         const s = store.getSettings() || {};
+        // Currency is not editable — it follows the connected Stripe account, so the
+        // stored value is preserved rather than re-written here.
         s.payments = {
           ...(s.payments || {}),
-          currency: tc.querySelector('#pay-currency').value,
           receiptSource: tc.querySelector('#pay-receipt-source').value === 'stripe' ? 'stripe' : 'relay',
           enabledFor: {
             ...((s.payments || {}).enabledFor || {}),
@@ -4084,7 +3803,7 @@ export function renderSettings(container) {
         };
         await store.saveSettings(s);
         showToast('Payment settings saved', 'success');
-        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+        window.dispatchEvent(new CustomEvent('relay:settings-updated'));
       } catch (err) {
         console.error('Error saving payment settings:', err);
         showToast('Could not save payment settings', 'error');
@@ -4138,18 +3857,18 @@ export function renderSettings(container) {
             return `<div style="display:flex;gap:10px;align-items:flex-start;background:color-mix(in srgb, var(--color-warning) 12%, transparent);border:1px solid var(--color-warning);border-radius:8px;padding:12px 14px;margin:14px 0;">
               <span class="material-icons-outlined" style="color:var(--color-warning);font-size:20px;flex-shrink:0;">warning_amber</span>
               <div>
-                <div style="font-weight:600;font-size:13px;margin-bottom:2px;">Email is not sending right now</div>
-                <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">${escapeHTML(reason)}</div>
+                <div style="font-weight:600;margin-bottom:2px;">Email is not sending right now</div>
+                <div style="color:var(--text-secondary);line-height:1.5;">${escapeHTML(reason)}</div>
               </div>
             </div>`;
           })()}
 
           <h5 style="margin:18px 0 8px;">Your sending addresses</h5>
           <div id="em-sender-box" style="background:var(--content-bg);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin-bottom:6px;">
-            <div style="font-size:12px;color:var(--text-tertiary);">Loading…</div>
+            <div style="color:var(--text-tertiary);">Loading…</div>
           </div>
-          <p style="font-size:11px;color:var(--text-tertiary);margin:0 0 8px;">
-            These are issued by RELAY and can't be edited — it's what keeps one business from sending mail as another. Replies go to your reply-to address below.
+          <p style="color:var(--text-tertiary);margin:0 0 8px;">
+            These are issued by RELAY and can't be edited — it's what keeps one business from sending mail as another.             Replies go to your reply-to address in Advanced delivery settings.
           </p>
 
           <div style="display:flex;gap:8px;align-items:flex-end;max-width:520px;margin-bottom:4px;">
@@ -4159,32 +3878,40 @@ export function renderSettings(container) {
             </div>
             <button class="btn btn-secondary" id="em-test-send">Send test</button>
           </div>
-          <p style="font-size:11px;color:var(--text-tertiary);margin:0 0 8px;">Proves the whole chain end to end. Counts toward your daily limit; the result appears in Recent sends below.</p>
+          <p style="color:var(--text-tertiary);margin:0 0 8px;">Proves the whole chain end to end. Counts toward your daily limit; the result appears in Recent sends below.</p>
 
           <h5 style="margin:18px 0 8px;">Sender details</h5>
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:12px;">
             <div class="form-group">
               <label class="form-label">Display name</label>
               <input class="form-input" id="em-from-name" value="${escapeHTML(email.fromName || settings.name || '')}" placeholder="Grace Dance" />
-              <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">What customers see as the sender name.</div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Reply-to</label>
-              <input class="form-input" id="em-reply-to" value="${escapeHTML(email.replyTo || (typeof settings.email === 'string' ? settings.email : '') || '')}" placeholder="office@yourdomain.com" />
-              <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">Where customer replies land. Defaults to your company email.</div>
+              <div style="color:var(--text-tertiary);margin-top:2px;">What customers see as the sender name.</div>
             </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Signature (optional)</label>
-            <textarea class="form-input" id="em-signature" rows="3" placeholder="Grace Dance • 02 4900 0000 • gracedance.com">${escapeHTML(email.signature || '')}</textarea>
-          </div>
+          <p style="color:var(--text-secondary);margin:8px 0 14px;">
+            Replies come back to <strong>${escapeHTML(email.replyTo || (typeof settings.email === 'string' ? settings.email : '') || 'your company email')}</strong>.
+            Reply-to, signature and sending from your own domain are under <em>Advanced delivery settings</em>.
+          </p>
 
           <details style="margin:18px 0 8px;border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;" ${email.mode === 'own-domain' ? 'open' : ''}>
-            <summary style="cursor:pointer;font-weight:600;font-size:13px;">Advanced: send from your own domain</summary>
-            <p style="font-size:12px;color:var(--text-secondary);margin:10px 0;">
-              Optional. Most businesses should stay on RELAY sending. Use this only if you need mail to come from your own domain — you'll need to add DNS records at your registrar.
+            <summary style="cursor:pointer;font-weight:600;">Advanced delivery settings</summary>
+
+            <div class="form-group" style="margin-top:12px;max-width:420px;">
+              <label class="form-label">Reply-to address</label>
+              <input class="form-input" id="em-reply-to" value="${escapeHTML(email.replyTo || (typeof settings.email === 'string' ? settings.email : '') || '')}" placeholder="office@yourdomain.com" />
+              <div style="color:var(--text-tertiary);margin-top:2px;">Where customer replies land. Defaults to your company email.</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Signature (optional)</label>
+              <textarea class="form-input" id="em-signature" rows="3" placeholder="Grace Dance • 02 4900 0000 • gracedance.com">${escapeHTML(email.signature || '')}</textarea>
+              <div style="color:var(--text-tertiary);margin-top:2px;">Added to the bottom of every email RELAY sends for you.</div>
+            </div>
+
+            <p style="color:var(--text-secondary);margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border-color);">
+              Optional. Most businesses should stay on RELAY sending. Use the rest of this section only if you need mail to come from your own domain — you'll need to add DNS records at your registrar.
             </p>
-            <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:10px;">
+            <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
               <input type="checkbox" id="em-own-domain" style="width:16px;height:16px;" ${email.mode === 'own-domain' ? 'checked' : ''} />
               Use my own domain instead of RELAY sending
             </label>
@@ -4194,13 +3921,13 @@ export function renderSettings(container) {
             </div>
           ${email.domainId ? `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-              <strong style="font-size:13px;">${escapeHTML(email.domain || '')}</strong>
-              <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${statusColor}1f;color:${statusColor};text-transform:capitalize;">${escapeHTML(status)}</span>
+              <strong>${escapeHTML(email.domain || '')}</strong>
+              <span style="font-weight:700;padding:2px 8px;border-radius:10px;background:${statusColor}1f;color:${statusColor};text-transform:capitalize;">${escapeHTML(status)}</span>
             </div>
             ${records.length ? `
-              <p style="font-size:12px;color:var(--text-secondary);margin:0 0 8px;">Add these DNS records at your domain registrar, then re-check:</p>
+              <p style="color:var(--text-secondary);margin:0 0 8px;">Add these DNS records at your domain registrar, then re-check:</p>
               <div style="overflow-x:auto;">
-                <table class="data-table" style="font-size:11px;">
+                <table class="data-table">
                   <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Status</th></tr></thead>
                   <tbody>
                     ${records.map(r => `<tr>
@@ -4230,7 +3957,7 @@ export function renderSettings(container) {
           <h5 style="margin:18px 0 8px;">Send these</h5>
           <div style="display:flex;flex-direction:column;gap:8px;">
             ${templates.map(t => `
-              <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+              <label style="display:flex;align-items:center;gap:10px;">
                 <input type="checkbox" class="em-tpl" data-key="${t.key}" style="width:16px;height:16px;" ${enabledFor[t.key] !== false ? 'checked' : ''} />
                 ${t.label}
               </label>`).join('')}
@@ -4239,7 +3966,7 @@ export function renderSettings(container) {
           <div style="margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:24px; align-items:start;">
           <div>
           <h5 style="margin:0 0 8px;">Wording &amp; branding</h5>
-          <p style="font-size:12px;color:var(--text-secondary);margin:0 0 10px;max-width:60ch;">
+          <p style="color:var(--text-secondary);margin:0 0 10px;max-width:60ch;">
             ${(() => {
               const tmpl = email.templates || {};
               const customised = EMAIL_TEMPLATES.filter(t => { const v = tmpl[t.key] || {}; return !!(v.subject || v.intro || v.note || v.ctaLabel); });
@@ -4255,7 +3982,7 @@ export function renderSettings(container) {
           </div>
           <div>
           <h5 style="margin:0 0 8px;">Automatic payment reminders</h5>
-          <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;">
+          <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
             <input type="checkbox" id="em-rem-enabled" style="width:16px;height:16px;" ${(email.reminders || {}).enabled ? 'checked' : ''} />
             Send reminders automatically
           </label>
@@ -4269,7 +3996,7 @@ export function renderSettings(container) {
               <input type="number" min="1" class="form-input" id="em-rem-after" value="${escapeHTML(String((email.reminders || {}).afterDays ?? 7))}" />
             </div>
           </div>
-          <p style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">One nudge that many days before the due date, then a repeat every N days while overdue. Uses the “Payment reminder” template; runs while the app is open.</p>
+          <p style="color:var(--text-tertiary);margin-top:4px;">One nudge that many days before the due date, then a repeat every N days while overdue. Uses the “Payment reminder” template; runs while the app is open.</p>
           </div>
           </div>
 
@@ -4282,8 +4009,8 @@ export function renderSettings(container) {
             ${(() => {
               const logs = (store.getAll('emailLog') || []).slice()
                 .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 15);
-              if (!logs.length) return `<p style="font-size:12px;color:var(--text-tertiary);">No emails sent yet.</p>`;
-              return `<table class="data-table" style="font-size:12px;"><thead><tr><th>When</th><th>To</th><th>Sent as</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead><tbody>
+              if (!logs.length) return `<p style="color:var(--text-tertiary);">No emails sent yet.</p>`;
+              return `<table class="data-table"><thead><tr><th>When</th><th>To</th><th>Sent as</th><th>Type</th><th>Subject</th><th>Status</th></tr></thead><tbody>
                 ${logs.map(l => `<tr${l.status === 'failed' && l.error ? ` title="${escapeHTML(l.error)}"` : ''}>
                   <td style="white-space:nowrap;">${escapeHTML(l.createdAt ? new Date(l.createdAt).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')}</td>
                   <td>${escapeHTML(l.toEmail || '')}</td>
@@ -4293,7 +4020,7 @@ export function renderSettings(container) {
                   <td><span style="font-weight:600;color:${l.status === 'sent' ? 'var(--color-success)' : 'var(--color-danger)'};">${escapeHTML(l.status || '')}</span></td>
                 </tr>`).join('')}
               </tbody></table>
-              <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Hover a failed row to see the error.</p>`;
+              <p style="color:var(--text-tertiary);margin-top:6px;">Hover a failed row to see the error.</p>`;
             })()}
           </div>
         </div>
@@ -4327,7 +4054,7 @@ export function renderSettings(container) {
         s.email = s.mailer.replyTo || '';
       }
       await store.saveSettings(s);
-      window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+      window.dispatchEvent(new CustomEvent('relay:settings-updated'));
       return s;
     };
 
@@ -4392,9 +4119,9 @@ export function renderSettings(container) {
 
         box.innerHTML = `
           ${info.mode === 'own-domain'
-            ? `<div style="font-size:12px;color:var(--color-success);font-weight:600;margin-bottom:8px;">Sending from your own domain (${escapeHTML(info.domain || '')})</div>`
+            ? `<div style="color:var(--color-success);font-weight:600;margin-bottom:8px;">Sending from your own domain (${escapeHTML(info.domain || '')})</div>`
             : ''}
-          <table class="data-table" style="width:100%;font-size:12px;">
+          <table class="data-table" style="width:100%;">
             ${rows.map(r => `<tr>
               <td style="padding:3px 12px 3px 0;color:var(--text-secondary);white-space:nowrap;">${escapeHTML(
                 Object.keys(labels).filter(k => ((info.addresses || {})[k] || '').toLowerCase() === r.addr.toLowerCase()).map(k => labels[k]).join(', ')
@@ -4403,12 +4130,12 @@ export function renderSettings(container) {
             </tr>`).join('')}
           </table>
           ${info.replyTo
-            ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:8px;">Replies go to <strong>${escapeHTML(info.replyTo)}</strong></div>`
-            : `<div style="font-size:11px;color:var(--color-warning);margin-top:8px;">No reply-to set — customer replies will go nowhere. Add one below.</div>`}
-          ${info.dailyCap ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">Daily send limit: ${escapeHTML(String(info.dailyCap))} emails</div>` : ''}
+            ? `<div style="color:var(--text-tertiary);margin-top:8px;">Replies go to <strong>${escapeHTML(info.replyTo)}</strong></div>`
+            : `<div style="color:var(--color-warning);margin-top:8px;">No reply-to set — customer replies will go nowhere. Add one under Advanced delivery settings.</div>`}
+          ${info.dailyCap ? `<div style="color:var(--text-tertiary);margin-top:4px;">Daily send limit: ${escapeHTML(String(info.dailyCap))} emails</div>` : ''}
         `;
       } catch (err) {
-        box.innerHTML = `<div style="font-size:12px;color:var(--color-danger);">Couldn't load your sending addresses: ${escapeHTML(err.message || String(err))}</div>`;
+        box.innerHTML = `<div style="color:var(--color-danger);">Couldn't load your sending addresses: ${escapeHTML(err.message || String(err))}</div>`;
       }
     })();
 
@@ -4469,7 +4196,7 @@ export function renderSettings(container) {
       luxury: 'Velvet', steel: 'Steel', ballet: 'Ballet', custom: 'Custom',
     };
     const themeLabel = presetNames[dt.preset] || 'Relay';
-    const chip = (label) => `<span style="padding:3px 10px; border:1px solid var(--border-color-dark); border-radius:999px; font-size:11.5px; font-weight:600; color:var(--text-secondary)">${escapeHTML(label)}</span>`;
+    const chip = (label) => `<span style="padding:3px 10px; border:1px solid var(--border-color-dark); border-radius:999px; font-weight:600; color:var(--text-secondary)">${escapeHTML(label)}</span>`;
 
     tc.innerHTML = `
       <div class="card" style="max-width:100%">
@@ -4503,7 +4230,22 @@ export function renderSettings(container) {
     tc.querySelector('#open-doc-studio')?.addEventListener('click', () => router.navigate('/settings/documents'));
   }
 
-  function renderFolderSyncTab(tc) {
+  // Local/offline accounts keep their own database in a folder on this machine;
+  // cloud accounts have server rows and use the same tab to mirror them to a folder.
+  // Mirrors the isLocalMode check inside renderSettings (module scope can't see it).
+  function isLocalAccount() {
+    return !store.companyId || store.companyId.startsWith('acct_');
+  }
+
+  // One tab for the on-disk side of RELAY: local accounts write their database to
+  // a folder here, cloud accounts mirror their records here as JSON.
+  // currentUser is a renderSettings local, so it is passed in (same as renderBillingTab).
+  function renderLocalStorageTab(tc, currentUser) {
+    if (isLocalAccount()) renderLocalFolderSync(tc);
+    else renderLocalBackup(tc, currentUser);
+  }
+
+  function renderLocalFolderSync(tc) {
     const isSupported = typeof window !== 'undefined' && (
       (window.indexedDB && window.showDirectoryPicker) ||
       (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem)
@@ -4515,7 +4257,6 @@ export function renderSettings(container) {
     const isLocalCompany = !!activeAccountId;
 
     function render() {
-      console.log('[DEBUG Settings] render: isLocalCompany =', isLocalCompany, 'store.dirHandle =', store.dirHandle, 'permissionGranted =', store.folderSyncPermissionGranted);
       const isEnabled = isLocalCompany ? true : store.folderSyncEnabled;
       const isPermissionGranted = store.folderSyncPermissionGranted;
       const hasHandle = !!store.dirHandle;
@@ -4528,7 +4269,7 @@ export function renderSettings(container) {
               <span class="material-icons-outlined">error_outline</span>
               <span>Browser Directory Access Unsupported</span>
             </div>
-            <p style="font-size:var(--font-size-sm); margin:0; line-height:1.4;">
+            <p style="margin:0; line-height:1.4;">
               Your current browser does not support local folder access. To enable direct folder synchronization, please run this app in a Chromium-based browser (Chrome, Edge, Opera, or as a compiled native app). High-capacity IndexedDB storage remains active.
             </p>
           </div>
@@ -4539,7 +4280,7 @@ export function renderSettings(container) {
             <span class="material-icons-outlined" style="font-size:32px; color:var(--text-tertiary);">folder_off</span>
             <div>
               <div style="font-weight:600; color:var(--text-primary); margin-bottom:2px;">Folder Synchronization Inactive</div>
-              <p style="font-size:12.5px; margin:0; line-height:1.4;">All data is currently stored in your browser's private IndexedDB database sandbox.</p>
+              <p style="margin:0; line-height:1.4;">All data is currently stored in your browser's private IndexedDB database sandbox.</p>
             </div>
           </div>
         `;
@@ -4549,7 +4290,7 @@ export function renderSettings(container) {
             <span class="material-icons-outlined" style="font-size:32px;">cloud_done</span>
             <div>
               <div style="font-weight:600; margin-bottom:2px;">Capacitor Direct Folder Sync Active</div>
-              <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">
+              <p style="margin:0; line-height:1.4; color:var(--text-secondary);">
                 Data is synchronizing directly to the application's native <strong>Documents/RelayDispatchData</strong> directory on your iPad/device.
               </p>
             </div>
@@ -4561,7 +4302,7 @@ export function renderSettings(container) {
             <span class="material-icons-outlined" style="font-size:32px;">warning</span>
             <div>
               <div style="font-weight:600; margin-bottom:2px;">No Directory Selected</div>
-              <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">Please select a directory folder on your computer to begin syncing.</p>
+              <p style="margin:0; line-height:1.4; color:var(--text-secondary);">Please select a directory folder on your computer to begin syncing.</p>
             </div>
           </div>
         `;
@@ -4572,7 +4313,7 @@ export function renderSettings(container) {
               <span class="material-icons-outlined" style="font-size:32px;">lock</span>
               <div>
                 <div style="font-weight:600; margin-bottom:2px;">Access Permission Suspended</div>
-                <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">
+                <p style="margin:0; line-height:1.4; color:var(--text-secondary);">
                   The browser requires re-authorization to read/write files in <strong>${escapeHTML(store.dirHandle.name)}</strong>.
                 </p>
               </div>
@@ -4588,7 +4329,7 @@ export function renderSettings(container) {
             <span class="material-icons-outlined" style="font-size:32px;">check_circle</span>
             <div>
               <div style="font-weight:600; margin-bottom:2px;">Folder Sync Active & Synchronized</div>
-              <p style="font-size:12.5px; margin:0; line-height:1.4; color:var(--text-secondary);">
+              <p style="margin:0; line-height:1.4; color:var(--text-secondary);">
                 Active Folder: <strong>${escapeHTML(store.dirHandle.name)}</strong>. All data edits are writing dynamically.
               </p>
             </div>
@@ -4600,7 +4341,7 @@ export function renderSettings(container) {
         <div style="display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:var(--space-lg); max-width:100%; align-items:start;">
           <!-- Folder Configuration -->
           <div class="card">
-            <div class="card-header"><h4>Direct Directory Sync</h4></div>
+            <div class="card-header"><h4>Database Folder</h4></div>
             <div class="card-body">
               ${statusHtml}
 
@@ -4610,7 +4351,7 @@ export function renderSettings(container) {
                   <input type="checkbox" id="toggle-folder-sync" ${isEnabled ? 'checked' : ''} ${(!isSupported || isLocalCompany) ? 'disabled' : ''} style="width:20px; height:20px; cursor:${(!isSupported || isLocalCompany) ? 'not-allowed' : 'pointer'};" />
                   <div>
                     <span style="font-weight:500;">Enable Direct Local Folder Storage</span>
-                    <div class="text-tertiary" style="font-size:12px; margin-top:2px;">
+                    <div class="text-tertiary" style="margin-top:2px;">
                       ${isLocalCompany ? 'Mandatory for offline/local company profile storage.' : 'Saves all data records and attachments straight to your machine.'}
                     </div>
                   </div>
@@ -4639,8 +4380,8 @@ export function renderSettings(container) {
 
           <!-- Instructions Card -->
           <div class="card" style="background:var(--content-bg);">
-            <div class="card-header"><h4>How Self-Hosting Works</h4></div>
-            <div class="card-body" style="font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
+            <div class="card-header"><h4>How it works</h4></div>
+            <div class="card-body" style="line-height:1.6; display:flex; flex-direction:column; gap:12px; color:var(--text-secondary);">
               <p>
                 By linking a local folder, you establish a <strong>serverless self-hosted data hub</strong>.
               </p>
@@ -4742,370 +4483,159 @@ export function renderSettings(container) {
     render();
   }
 
-  function renderApiKeysTab(tc) {
-    const s = store.getSettings();
-    const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
-    const tier = getAITier();
-    const tierLabel = tier === AI_TIERS.CLOUD_PLUS ? 'Cloud+ Deputy Max' : tier === AI_TIERS.CLOUD ? 'Cloud' : 'Local';
-    const maps = s.maps || { apiKey: '' };
-    const ai = s.ai || {
-      enabled: false,
-      apiKey: '',
-      visionApiKey: '',
-      useSameKey: true,
-      endpoint: 'https://api.deepseek.com/chat/completions',
-      model: 'deepseek-chat',
-      visionEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-      visionModel: 'gemini-2.0-flash',
-      systemPrompt: 'You are Deputy, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
-    };
-    if (ai.useSameKey === undefined) ai.useSameKey = true;
-
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null') || { id: 'default' };
-    const userId = currentUser.id || 'default';
-    const factsheetKey = `relay_factsheet_${userId}`;
-    const enabledKey = `relay_factsheet_enabled_${userId}`;
-    const factsheetVal = localStorage.getItem(factsheetKey) || '';
-    const memoryEnabled = localStorage.getItem(enabledKey) !== 'false';
-
-    function render() {
-      tc.innerHTML = `
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:var(--space-lg); max-width:100%; align-items:start;">
-
-          <p style="color:var(--text-secondary); margin:0; font-size:13px; line-height:1.6; grid-column:1/-1;">
-            Connect the two outside services RELAY can use. You only need to do this once — open a
-            <strong>“Where do I get a key?”</strong> box, follow the numbered steps, paste the key in, and save.
-          </p>
-
-          <!-- DEPUTY AI -->
-          <div class="card">
-            <div class="card-header">
-              <h4 style="display:flex; align-items:center; gap:8px; margin:0; flex:1;">
-                <span class="material-icons-outlined" style="color:var(--color-primary);">smart_toy</span>
-                Deputy — your AI assistant
-              </h4>
-              <span style="font-size:11px; font-weight:600; color:var(--color-primary); background:rgba(255,92,0,0.12); padding:3px 10px; border-radius:999px; white-space:nowrap;">${tierLabel}</span>
-            </div>
-            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-
-              <label class="switch-container" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
-                <input type="checkbox" id="ai-enabled" ${ai.enabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;" />
-                <div>
-                  <span style="font-weight:600;">Turn on Deputy AI</span>
-                  <div class="text-tertiary" style="font-size:12px; margin-top:2px;">A smart chat assistant that helps with jobs, quotes, invoices and scheduling.</div>
-                </div>
-              </label>
-
-              <div class="form-group" style="margin:0; ${isLocalMode ? 'display:none' : ''}" id="ai-tier-group">
-                <label class="form-label" style="font-weight:600;">Deputy tier</label>
-                <div style="display:flex; gap:8px; margin-top:8px;">
-                  <button type="button" class="btn btn-sm ai-tier-option ${tier === AI_TIERS.CLOUD ? 'btn-primary' : 'btn-secondary'}" data-tier="${AI_TIERS.CLOUD}" style="flex:1;">Cloud</button>
-                  <button type="button" class="btn btn-sm ai-tier-option ${tier === AI_TIERS.CLOUD_PLUS ? 'btn-primary' : 'btn-secondary'}" data-tier="${AI_TIERS.CLOUD_PLUS}" style="flex:1;">Cloud+ Deputy Max</button>
-                </div>
-                <div class="text-tertiary" style="font-size:12px; margin-top:6px;" id="ai-tier-hint">
-                  ${tier === AI_TIERS.CLOUD_PLUS
-                    ? 'Deputy Max: image/attachment extraction, autopilot conflict proposals, longer chat memory, richer context.'
-                    : 'Cloud: chat assistant. Upgrade to Cloud+ for attachment extraction, autopilot conflict proposals and longer memory.'}
-                </div>
-              </div>
-
-              <div id="ai-fields" style="display: ${ai.enabled ? 'flex' : 'none'}; flex-direction:column; gap:16px; border-top:1px solid var(--border-color); padding-top:16px;">
-
-                <div class="form-group" style="margin:0;">
-                  <label class="form-label" style="font-weight:600;">Deputy API key</label>
-                  <input type="password" class="form-input" id="ai-apikey" value="${ai.apiKey || ''}" placeholder="${isLocalMode ? 'Paste your key here (starts with sk-…)' : 'Optional — leave blank to use RELAY’s secure cloud key'}" />
-                  <div class="text-tertiary" style="font-size:12px; margin-top:4px;">${isLocalMode ? 'Stored only on this device. Deputy won’t answer without a key.' : 'Optional — leave blank and RELAY handles the connection securely for you.'}</div>
-                </div>
-
-                <details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 14px;">
-                  <summary style="cursor:pointer; font-weight:600; font-size:13px; color:var(--color-primary);">Where do I get a key? (about 2 minutes)</summary>
-                  <ol style="margin:12px 0 0; padding-left:20px; font-size:13px; line-height:1.8; color:var(--text-secondary);">
-                    <li>Go to <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> and create a free account.</li>
-                    <li>Open <strong>API keys</strong>, then click <strong>Create new key</strong>.</li>
-                    <li>Copy the key it shows you and paste it into the box above.</li>
-                    <li>Click <strong>Test connection</strong>, then <strong>Save Deputy settings</strong>.</li>
-                  </ol>
-                  <p style="margin:10px 0 0; font-size:12px; color:var(--text-tertiary);">DeepSeek is a low-cost provider that works straight away. Prefer OpenAI, Anthropic or Google? Add their key, then switch the provider under <strong>Advanced settings</strong>.</p>
-                </details>
-
-                <div style="display:flex; gap:12px; align-items:center;">
-                  <button class="btn btn-secondary" id="btn-test-ai" style="display:flex; align-items:center; gap:6px;">
-                    <span class="material-icons-outlined" style="font-size:18px;">bolt</span> Test connection
-                  </button>
-                  <span id="test-status" style="font-size:13px; font-weight:500;"></span>
-                </div>
-                <div id="test-error-details" style="display:none; font-size:12px; color:var(--color-danger); background:var(--color-danger-bg); border-left:3px solid var(--color-danger); padding:8px; border-radius:4px; line-height:1.4;"></div>
-
-                <details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 14px;">
-                  <summary style="cursor:pointer; font-weight:600; font-size:13px;">Advanced settings (provider, model, vision, persona)</summary>
-                  <div style="display:flex; flex-direction:column; gap:16px; margin-top:14px;">
-                    <div class="form-row">
-                      <div class="form-group">
-                        <label class="form-label" style="font-weight:600;">Text API endpoint</label>
-                        <input type="text" class="form-input" id="ai-endpoint" value="${ai.endpoint || 'https://api.deepseek.com/chat/completions'}" placeholder="https://api.deepseek.com/chat/completions" />
-                      </div>
-                      <div class="form-group">
-                        <label class="form-label" style="font-weight:600;">Text model name</label>
-                        <input type="text" class="form-input" id="ai-model" value="${ai.model || 'deepseek-chat'}" placeholder="deepseek-chat" />
-                      </div>
-                    </div>
-                    <div class="form-row">
-                      <div class="form-group">
-                        <label class="form-label" style="font-weight:600;">Vision API endpoint (multimodal)</label>
-                        <input type="text" class="form-input" id="ai-vision-endpoint" value="${ai.visionEndpoint || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'}" placeholder="https://api.openai.com/v1/chat/completions" />
-                      </div>
-                      <div class="form-group">
-                        <label class="form-label" style="font-weight:600;">Vision model name</label>
-                        <input type="text" class="form-input" id="ai-vision-model" value="${ai.visionModel || 'gemini-2.0-flash'}" placeholder="gpt-4o-mini" />
-                      </div>
-                    </div>
-                    <div class="form-group" style="margin:0;">
-                      <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <label class="form-label" style="font-weight:600; margin-bottom:0;">Vision API key</label>
-                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-                          <input type="checkbox" id="ai-use-same-key" ${ai.useSameKey ? 'checked' : ''} style="width:14px; height:14px;" /> Same as Deputy key
-                        </label>
-                      </div>
-                      <input type="password" class="form-input" id="ai-vision-apikey" value="${ai.useSameKey ? (ai.apiKey || '') : (ai.visionApiKey || '')}" placeholder="Key for the vision model" style="margin-top:6px; ${ai.useSameKey ? 'opacity:0.5; pointer-events:none;' : ''}" />
-                    </div>
-                    <div class="form-group" style="margin:0;">
-                      <label class="form-label" style="font-weight:600;">Deputy’s persona (system prompt)</label>
-                      <textarea class="form-input" id="ai-systemprompt" rows="4" style="font-family:inherit; resize:vertical;">${ai.systemPrompt || ''}</textarea>
-                      <div class="text-tertiary" style="font-size:11px; margin-top:4px;">Sets Deputy’s tone and rules. Your job, quote and staff data is added automatically in the background.</div>
-                    </div>
-                    <p style="margin:0; font-size:12px; color:var(--text-tertiary);">On a local browser build and seeing connection errors? Some providers block direct calls — route through <strong>OpenRouter</strong> or a local runner like <strong>Ollama</strong> (paste their endpoint above).</p>
-                  </div>
-                </details>
-              </div>
-
-              <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
-                <button class="btn btn-primary" id="btn-save-ai">Save Deputy settings</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- GOOGLE MAPS -->
-          <div class="card">
-            <div class="card-header">
-              <h4 style="display:flex; align-items:center; gap:8px; margin:0;">
-                <span class="material-icons-outlined" style="color:var(--color-primary);">map</span>
-                Google Maps
-              </h4>
-            </div>
-            <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
-              <p style="margin:0; color:var(--text-secondary); font-size:13px; line-height:1.6;">Powers address autocomplete, drive-time and distance, and the map views.</p>
-
-              <div class="form-group" style="margin:0;">
-                <label class="form-label" style="font-weight:600;">Google Maps API key</label>
-                <input type="password" class="form-input" id="maps-apikey" value="${maps.apiKey || ''}" placeholder="Paste your key here (starts with AIza…)" />
-              </div>
-
-              <details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 14px;">
-                <summary style="cursor:pointer; font-weight:600; font-size:13px; color:var(--color-primary);">Where do I get a key? (about 5 minutes)</summary>
-                <ol style="margin:12px 0 0; padding-left:20px; font-size:13px; line-height:1.8; color:var(--text-secondary);">
-                  <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and sign in.</li>
-                  <li>Top bar → <strong>New Project</strong>, give it a name, then open <strong>APIs &amp; Services</strong>.</li>
-                  <li>Under <strong>Enable APIs</strong>, turn on <strong>Maps JavaScript API</strong>, <strong>Places API</strong> and <strong>Distance Matrix API</strong>.</li>
-                  <li>Open <strong>Credentials</strong> → <strong>Create credentials</strong> → <strong>API key</strong>, copy it, paste it above and save.</li>
-                </ol>
-                <p style="margin:10px 0 0; font-size:12px; color:var(--text-tertiary);">Google may ask for a billing card, but map usage at this size normally stays within the free monthly allowance.</p>
-              </details>
-
-              <div style="border-top:1px solid var(--border-color); padding-top:16px; display:flex; justify-content:flex-end;">
-                <button class="btn btn-primary" id="btn-save-maps">Save Maps key</button>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      `;
-
-      // Toggle display of fields based on enabled checkbox
-      const enabledCheckbox = tc.querySelector('#ai-enabled');
-      const fieldsContainer = tc.querySelector('#ai-fields');
-      enabledCheckbox.addEventListener('change', (e) => {
-        fieldsContainer.style.display = e.target.checked ? 'flex' : 'none';
-      });
-
-      const useSameKeyCheckbox = tc.querySelector('#ai-use-same-key');
-      const visionApiKeyInput = tc.querySelector('#ai-vision-apikey');
-      const textApiKeyInput = tc.querySelector('#ai-apikey');
-      if (useSameKeyCheckbox && visionApiKeyInput) {
-        useSameKeyCheckbox.addEventListener('change', (e) => {
-          if (e.target.checked) {
-            visionApiKeyInput.style.opacity = '0.5';
-            visionApiKeyInput.style.pointerEvents = 'none';
-            if (textApiKeyInput) visionApiKeyInput.value = textApiKeyInput.value;
-          } else {
-            visionApiKeyInput.style.opacity = '1';
-            visionApiKeyInput.style.pointerEvents = 'auto';
-            visionApiKeyInput.focus();
-          }
-        });
-        
-        if (textApiKeyInput) {
-          textApiKeyInput.addEventListener('input', (e) => {
-            if (useSameKeyCheckbox.checked) {
-              visionApiKeyInput.value = e.target.value;
-            }
-          });
-        }
-      }
-
-
-
-      // Tier toggle (cloud users only). Track the selection locally so switching
-      // without saving doesn't show an unexpected badge.
-      let selectedTier = tier;
-      tc.querySelectorAll('.ai-tier-option').forEach(btn => {
-        btn.addEventListener('click', () => {
-          selectedTier = btn.dataset.tier;
-          tc.querySelectorAll('.ai-tier-option').forEach(b => {
-            const on = b.dataset.tier === selectedTier;
-            b.classList.toggle('btn-primary', on);
-            b.classList.toggle('btn-secondary', !on);
-          });
-          const hint = tc.querySelector('#ai-tier-hint');
-          if (hint) {
-            hint.textContent = selectedTier === AI_TIERS.CLOUD_PLUS
-              ? 'Deputy Max: image/attachment extraction, autopilot conflict proposals, longer chat memory, richer context.'
-              : 'Cloud: chat assistant. Upgrade to Cloud+ for attachment extraction, autopilot conflict proposals and longer memory.';
-          }
-        });
-      });
-
-      // Save handler
-      tc.querySelector('#btn-save-ai').addEventListener('click', () => {
-        const enabled = enabledCheckbox.checked;
-        const apiKey = tc.querySelector('#ai-apikey').value.trim();
-        const useSameKey = tc.querySelector('#ai-use-same-key') ? tc.querySelector('#ai-use-same-key').checked : true;
-        const visionApiKey = useSameKey ? apiKey : tc.querySelector('#ai-vision-apikey').value.trim();
-        const endpoint = tc.querySelector('#ai-endpoint').value.trim();
-        const model = tc.querySelector('#ai-model').value.trim();
-        const visionEndpoint = tc.querySelector('#ai-vision-endpoint').value.trim();
-        const visionModel = tc.querySelector('#ai-vision-model').value.trim();
-        const systemPrompt = tc.querySelector('#ai-systemprompt').value.trim();
-
-        if (isLocalMode && enabled && !apiKey) {
-          showToast('Text API Key is required when enabling the AI assistant.', 'error');
-          return;
-        }
-
-        const settings = store.getSettings();
-        settings.ai = {
-          enabled,
-          apiKey,
-          visionApiKey,
-          useSameKey,
-          endpoint,
-          model,
-          visionEndpoint,
-          visionModel,
-          systemPrompt,
-          tier: selectedTier
-        };
-
-        store.saveSettings(settings);
-        showToast('AI settings saved successfully', 'success');
-      });
-
-      // Test handler
-      tc.querySelector('#btn-test-ai').addEventListener('click', async () => {
-        const apiKey = tc.querySelector('#ai-apikey').value.trim();
-        const endpoint = tc.querySelector('#ai-endpoint').value.trim();
-        const model = tc.querySelector('#ai-model').value.trim();
-        const statusEl = tc.querySelector('#test-status');
-        const errEl = tc.querySelector('#test-error-details');
-
-        const inElectron = !!(window.electronAPI && window.electronAPI.callDeepSeek);
-        const isCloudUser = !!(store.companyId && !store.companyId.startsWith('acct_'));
-
-        if (!apiKey && !inElectron && !isCloudUser) {
-          showToast('Enter an API key to test.', 'error');
-          return;
-        }
-
-        statusEl.style.color = 'var(--text-secondary)';
-        statusEl.textContent = 'Testing connection...';
-        errEl.style.display = 'none';
-
-        const startTime = Date.now();
-        try {
-          if (apiKey) {
-            const res = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-              },
-              body: JSON.stringify({
-                model: model || 'deepseek-chat',
-                messages: [
-                  { role: 'user', content: 'respond only with the word OK' }
-                ],
-                max_tokens: 5
-              })
-            });
-
-            if (!res.ok) {
-              const body = await res.text();
-              throw new Error(`HTTP ${res.status}: ${body}`);
-            }
-
-            const data = await res.json();
-            const latency = Date.now() - startTime;
-            const reply = data.choices?.[0]?.message?.content || 'No reply';
-            statusEl.style.color = 'var(--color-success)';
-            statusEl.textContent = `Success! Latency: ${latency}ms (Reply: "${reply}")`;
-          } else if (inElectron) {
-            const data = await window.electronAPI.callDeepSeek({
-              messages: [{ role: 'user', content: 'respond only with the word OK' }],
-              endpoint,
-              model,
-              apiKey
-            });
-            const latency = Date.now() - startTime;
-            const reply = data.choices?.[0]?.message?.content || 'No reply';
-            statusEl.style.color = 'var(--color-success)';
-            statusEl.textContent = `Success (via Electron IPC)! Latency: ${latency}ms (Reply: "${reply}")`;
-          } else if (isCloudUser) {
-            const { data, error } = await supabase.functions.invoke('relay-copilot', {
-              body: {
-                messages: [{ role: 'user', content: 'respond only with the word OK' }],
-                endpoint,
-                model
-              }
-            });
-            if (error) throw error;
-            const latency = Date.now() - startTime;
-            const reply = data.choices?.[0]?.message?.content || 'No reply';
-            statusEl.style.color = 'var(--color-success)';
-            statusEl.textContent = `Success (via Supabase Edge Function)! Latency: ${latency}ms (Reply: "${reply}")`;
-          }
-        } catch (err) {
-          console.error('AI test connection failed:', err);
-          statusEl.style.color = 'var(--color-danger)';
-          statusEl.textContent = 'Test failed';
-          errEl.style.display = 'block';
-
-          let errMsg = err.message;
-          if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
-            errMsg = 'CORS Blocked or Offline. The browser blocked this cross-origin request. Please use a CORS proxy, an API gateway like OpenRouter, or check your internet connection.';
-          }
-          errEl.textContent = errMsg;
-        }
-      });
-
-      tc.querySelector('#btn-save-maps')?.addEventListener('click', () => {
-        const apiKey = tc.querySelector('#maps-apikey').value.trim();
-        const settings = store.getSettings();
-        settings.maps = { apiKey };
-        store.saveSettings(settings);
-        showToast('Maps key saved', 'success');
-      });
+  // Cloud accounts: mirror the cloud records into a local folder as JSON so there
+  // is always an offline, inspectable copy.
+  function renderLocalBackup(tc, currentUser) {
+    if (currentUser.role !== 'admin') {
+      tc.innerHTML = '<p class="text-tertiary">Local storage is restricted to company administrators.</p>';
+      return;
     }
 
-    render();
+    tc.innerHTML = `
+      <div class="card" style="max-width:100%">
+        <div class="card-header" style="display:flex; align-items:center; gap:8px;">
+          <span class="material-icons-outlined" style="color:var(--color-primary)">backup</span>
+          <h4 style="margin:0;">Local Storage</h4>
+        </div>
+        <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
+          <p class="text-secondary" style="line-height:1.4; margin:0;">
+            Pick a folder on this machine and RELAY mirrors your cloud records into it as JSON files, so you
+            always have an offline copy you can inspect or restore from.
+          </p>
+          <div id="backup-status-container"></div>
+        </div>
+      </div>
+    `;
+
+    const renderBackupStatus = () => {
+      const bsc = tc.querySelector('#backup-status-container');
+      if (!bsc) return;
+
+      const hasHandle = !!store.backupDirHandle;
+      const isPermissionGranted = store.backupDirPermissionGranted;
+      const lastBackup = localStorage.getItem('relay_last_backup_time');
+      const formattedLastBackup = lastBackup ? new Date(lastBackup).toLocaleString() : 'Never';
+      const isSupported = typeof window !== 'undefined' && window.showDirectoryPicker;
+
+      if (!isSupported) {
+        bsc.innerHTML = `
+          <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 12px; border-radius:4px; color:var(--color-danger); line-height:1.4;">
+            <strong style="display:block; margin-bottom:4px;">Browser Local Folder Access Unsupported</strong>
+            Your current browser does not support local folder access. Please use Chrome, Edge, or a Chromium-based browser to configure local backups.
+          </div>
+        `;
+        return;
+      }
+
+      if (!hasHandle) {
+        bsc.innerHTML = `
+          <div style="background:var(--bg-color); border:1px solid var(--border-color); padding:12px; border-radius:6px; margin-bottom:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-outlined" style="color:var(--text-tertiary);">folder_off</span>
+            <div>No backup folder configured.</div>
+          </div>
+          <button class="btn btn-secondary" id="btn-backup-pick" style="width:100%; justify-content:center;">
+            <span class="material-icons-outlined">folder</span> Choose Backup Folder...
+          </button>
+        `;
+      } else if (!isPermissionGranted) {
+        bsc.innerHTML = `
+          <div style="background:var(--color-warning-bg); border-left:4px solid var(--color-warning); padding:10px 12px; border-radius:4px; color:var(--color-warning); line-height:1.4; margin-bottom:12px;">
+            <strong>Permission Required</strong><br/>
+            Access permission to <strong>${escapeHTML(store.backupDirHandle.name)}</strong> has expired. Please re-authorize.
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-warning" id="btn-backup-auth" style="flex:1; justify-content:center;">
+              <span class="material-icons-outlined">vpn_key</span> Re-authorize & Backup
+            </button>
+            <button class="btn btn-ghost" id="btn-backup-disconnect" style="color:var(--color-danger); border:1px solid var(--border-color);" title="Disconnect Folder">
+              <span class="material-icons-outlined">link_off</span>
+            </button>
+          </div>
+        `;
+      } else {
+        bsc.innerHTML = `
+          <div style="background:var(--color-success-bg); border-left:4px solid var(--color-success); padding:10px 12px; border-radius:4px; color:var(--color-success); line-height:1.4; margin-bottom:12px;">
+            <strong>Backup Configured</strong><br/>
+            Folder: <strong>${escapeHTML(store.backupDirHandle.name)}</strong><br/>
+            Last Backup: <strong>${formattedLastBackup}</strong>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <button class="btn btn-primary" id="btn-backup-now" style="width:100%; justify-content:center;">
+              <span class="material-icons-outlined">backup</span> Backup Now
+            </button>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary" id="btn-backup-pick" style="flex:1; justify-content:center; border:1px solid var(--border-color);">
+                <span class="material-icons-outlined">folder</span> Change Folder...
+              </button>
+              <button class="btn btn-ghost" id="btn-backup-disconnect" style="color:var(--color-danger); border:1px solid var(--border-color);" title="Disconnect Folder">
+                <span class="material-icons-outlined">link_off</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      // Attach event listeners for backup buttons inside container
+      bsc.querySelector('#btn-backup-pick')?.addEventListener('click', async () => {
+        try {
+          const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+          await store.setBackupDirectory(handle);
+          showToast('Backup directory selected successfully.', 'success');
+          showToast('Running initial backup...', 'info');
+          await store.backupToFolder(handle);
+          showToast('Backup completed successfully!', 'success');
+          renderBackupStatus();
+        } catch (err) {
+          console.error('Failed to select backup directory:', err);
+          if (err.name !== 'AbortError') {
+            showToast('Failed to configure backup: ' + err.message, 'error');
+          }
+        }
+      });
+
+      bsc.querySelector('#btn-backup-auth')?.addEventListener('click', async () => {
+        const granted = await store.verifyBackupDirPermission(true);
+        if (granted) {
+          showToast('Permission re-authorized. Backing up...', 'info');
+          try {
+            await store.backupToFolder();
+            showToast('Backup completed successfully!', 'success');
+          } catch (err) {
+            showToast('Backup failed: ' + err.message, 'error');
+          }
+        } else {
+          showToast('Failed to acquire write permission.', 'error');
+        }
+        renderBackupStatus();
+      });
+
+      bsc.querySelector('#btn-backup-now')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons-outlined spinner" style="font-size:16px; margin-right:4px; animation: spin 1s linear infinite">sync</span> Backing up...';
+        
+        try {
+          await store.backupToFolder();
+          showToast('Backup completed successfully!', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('Backup failed: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origHtml;
+          renderBackupStatus();
+        }
+      });
+
+      bsc.querySelector('#btn-backup-disconnect')?.addEventListener('click', async () => {
+        await store.setBackupDirectory(null);
+        showToast('Backup folder disconnected.', 'info');
+        renderBackupStatus();
+      });
+    };
+
+    renderBackupStatus();
   }
 
   function renderCostCentersTab(tc) {
@@ -5144,12 +4674,12 @@ export function renderSettings(container) {
                       <td>${escapeHTML(cc.name)}</td>
                       <td>
                         ${cc.xeroSalesAccountCode || cc.xeroTrackingOptionName ? `
-                          <div style="font-size:11px; line-height:1.4">
+                          <div style="line-height:1.4">
                             ${cc.xeroSalesAccountCode ? `<div><span class="text-tertiary">Sales Code:</span> <strong>${escapeHTML(cc.xeroSalesAccountCode)}</strong></div>` : ''}
                             ${cc.xeroExpenseAccountCode ? `<div><span class="text-tertiary">Expense Code:</span> <strong>${escapeHTML(cc.xeroExpenseAccountCode)}</strong></div>` : ''}
                             ${cc.xeroTrackingOptionName ? `<div><span class="text-tertiary">Tracking:</span> <strong>${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}:${escapeHTML(cc.xeroTrackingOptionName)}</strong></div>` : ''}
                           </div>
-                        ` : '<span class="text-tertiary" style="font-size:11px">— Unmapped —</span>'}
+                        ` : '<span class="text-tertiary">— Unmapped —</span>'}
                       </td>
                       <td>
                         <span class="badge ${cc.active ? 'badge-success' : 'badge-neutral'}">
@@ -5213,26 +4743,26 @@ export function renderSettings(container) {
         </div>
         
         <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; margin-bottom: 16px; background:var(--card-bg)">
-          <legend style="padding: 0 6px; font-size: 11px; font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 4px; margin: 0">
+          <legend style="padding: 0 6px; font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 4px; margin: 0">
             <span class="material-icons-outlined" style="font-size:15px">sync</span> Xero Integration (Optional)
           </legend>
           <div class="form-row" style="margin-bottom:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
-              <label class="form-label" style="font-size:11px; margin-bottom:4px">Sales Account Code</label>
+              <label class="form-label" style="margin-bottom:4px">Sales Account Code</label>
               <input class="form-input" id="cc-xero-sales" value="${escapeHTML(cc.xeroSalesAccountCode || '')}" placeholder="e.g. 200" style="width:100%" />
             </div>
             <div class="form-group">
-              <label class="form-label" style="font-size:11px; margin-bottom:4px">Expense Account Code</label>
+              <label class="form-label" style="margin-bottom:4px">Expense Account Code</label>
               <input class="form-input" id="cc-xero-expense" value="${escapeHTML(cc.xeroExpenseAccountCode || '')}" placeholder="e.g. 300" style="width:100%" />
             </div>
           </div>
           <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
-              <label class="form-label" style="font-size:11px; margin-bottom:4px">Tracking Category</label>
+              <label class="form-label" style="margin-bottom:4px">Tracking Category</label>
               <input class="form-input" id="cc-xero-category" value="${escapeHTML(cc.xeroTrackingCategoryName || 'Department')}" placeholder="e.g. Department" style="width:100%" />
             </div>
             <div class="form-group">
-              <label class="form-label" style="font-size:11px; margin-bottom:4px">Tracking Option</label>
+              <label class="form-label" style="margin-bottom:4px">Tracking Option</label>
               <input class="form-input" id="cc-xero-option" value="${escapeHTML(cc.xeroTrackingOptionName || '')}" placeholder="e.g. Electrical" style="width:100%" />
             </div>
           </div>
@@ -5301,10 +4831,10 @@ export function renderSettings(container) {
         <div class="card" style="margin-bottom:24px">
           <div class="card-header"><h4 style="margin:0">Supplier Categories</h4></div>
           <div class="card-body">
-            <p class="text-secondary" style="font-size:13px;margin-bottom:16px">Define classifications/categories for your suppliers (e.g. Electrical, Plumbing, HVAC). These categories are used to group suppliers in the Suppliers directory.</p>
+            <p class="text-secondary" style="margin-bottom:16px">Define classifications/categories for your suppliers (e.g. Electrical, Plumbing, HVAC). These categories are used to group suppliers in the Suppliers directory.</p>
             <div style="display:flex;flex-wrap:wrap;gap:8px" id="supplier-categories-container">
               ${categories.map(c => `
-                <div class="badge badge-neutral" style="padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px">
+                <div class="badge badge-neutral" style="padding:8px 12px;display:flex;align-items:center;gap:8px">
                   ${escapeHTML(c)}
                   <span class="material-icons-outlined btn-remove-supplier-cat" data-name="${escapeHTML(c)}" style="font-size:14px;cursor:pointer">close</span>
                 </div>

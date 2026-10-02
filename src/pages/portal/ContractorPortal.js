@@ -3,15 +3,19 @@ import { escapeHTML } from '../../utils/security.js';
 import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { showToast } from '../../components/Notifications.js';
+import { applyTheme } from '../../utils/theme.js';
 
 export function renderContractorPortal(container, params) {
   const token = params.token;
   const contractors = store.getAll('contractors');
   const contractor = contractors.find(c => c.portalToken === token);
 
-  // Ensure the stored theme is applied on portal load
-  const storedTheme = contractor ? (localStorage.getItem(`simpro_theme_contractor_${contractor.id}`) || 'light') : 'light';
-  document.documentElement.setAttribute('data-theme', storedTheme);
+  // Appearance is light only at launch (see utils/theme.js), which resolves the
+  // stored preference for us. The per-contractor value is still read but never
+  // rewritten, so a contractor who picked dark keeps that choice for when dark
+  // mode ships.
+  const storedTheme = contractor ? (localStorage.getItem(`relay_theme_contractor_${contractor.id}`) || localStorage.getItem(`simpro_theme_contractor_${contractor.id}`) || 'light') : 'light';
+  applyTheme(storedTheme);
 
   if (!contractor) {
     container.innerHTML = `
@@ -53,9 +57,6 @@ export function renderContractorPortal(container, params) {
   if (!contractor.portalPasscode) {
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
-        <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
-          <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-        </button>
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-success-bg); display:flex; align-items:center; justify-content:center; color:var(--color-success); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">gpp_good</span>
@@ -116,14 +117,6 @@ export function renderContractorPortal(container, params) {
       renderContractorPortal(container, params);
     });
 
-    container.querySelector('#btn-contractor-theme')?.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem(`simpro_theme_contractor_${contractor.id}`, next);
-      renderContractorPortal(container, params);
-    });
-
     return;
   }
 
@@ -134,9 +127,6 @@ export function renderContractorPortal(container, params) {
   if (!isUnlocked) {
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
-        <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
-          <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-        </button>
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-danger-bg); display:flex; align-items:center; justify-content:center; color:var(--color-danger); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">lock</span>
@@ -178,14 +168,6 @@ export function renderContractorPortal(container, params) {
         container.querySelector('#portal-pin').value = '';
         container.querySelector('#portal-pin').focus();
       }
-    });
-
-    container.querySelector('#btn-contractor-theme')?.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem(`simpro_theme_contractor_${contractor.id}`, next);
-      renderContractorPortal(container, params);
     });
 
     return;
@@ -721,9 +703,6 @@ export function renderContractorPortal(container, params) {
             <p>Relay — Dispatch dispatch & subcontractor portal | Contact: ${escapeHTML(contractor.contactName)}</p>
           </div>
           <div style="display: flex; align-items: center; gap: 16px;">
-            <button class="btn btn-outline btn-sm" id="btn-contractor-theme" title="Toggle theme" style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #ffffff;">
-              <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-            </button>
             <div style="font-size: 11px; padding: 6px 12px; background: rgba(255,255,255,0.08); border-radius: 6px; border: 1px solid rgba(255,255,255,0.12)">
               System Agency ID: <strong style="font-family:monospace; color:#ffffff">${contractor.id}</strong>
             </div>
@@ -1224,17 +1203,6 @@ export function renderContractorPortal(container, params) {
       const tabBtn = e.target.closest('.tab-btn');
       if (tabBtn) {
         activeTab = tabBtn.dataset.tab;
-        render();
-        return;
-      }
-
-      // Theme toggle
-      const themeBtn = e.target.closest('#btn-contractor-theme');
-      if (themeBtn) {
-        const current = document.documentElement.getAttribute('data-theme');
-        const next = current === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', next);
-        localStorage.setItem(`simpro_theme_contractor_${contractor.id}`, next);
         render();
         return;
       }

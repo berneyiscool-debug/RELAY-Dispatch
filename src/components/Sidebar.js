@@ -79,7 +79,8 @@ export function createSidebar() {
   sidebar.id = 'sidebar';
   sidebarRef = sidebar;
 
-  const railCollapsed = localStorage.getItem('simpro_rail_collapsed') === 'true';
+  const railCollapsed = localStorage.getItem('relay_rail_collapsed') === 'true'
+    || localStorage.getItem('simpro_rail_collapsed') === 'true';
   if (railCollapsed) sidebar.classList.add('rail-collapsed');
 
   const settings = store.getSettings();
@@ -191,7 +192,7 @@ export function createSidebar() {
   const toggleBtn = sidebar.querySelector('#sidebar-toggle');
   toggleBtn.addEventListener('click', () => {
     sidebar.classList.toggle('rail-collapsed');
-    localStorage.setItem('simpro_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
+    localStorage.setItem('relay_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
   });
 
   // Logout confirm-in-place.
@@ -300,7 +301,6 @@ function getContextualMenu(hash) {
     const local = isLocalMode();
     const deploymentType = (store.getSettings().localDeploymentType) || 'single_user';
     const portalDisabled = local;                                     // portals are cloud-only
-    const folderSyncDisabled = !local;                                // folder sync is local-only
     const usersDisabled = local && deploymentType === 'single_user';  // needs cloud or multi-user local
 
     const groups = [
@@ -311,8 +311,7 @@ function getContextualMenu(hash) {
           { id: 'billing', icon: 'credit_card', label: 'Plan & Billing', path: '/settings?tab=billing' },
           { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
           { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
-          { id: 'folder_sync', icon: 'sync', label: 'Folder Sync', path: '/settings?tab=folder_sync', disabled: folderSyncDisabled, tooltip: 'Requires Local Folder Storage' },
-          { id: 'api_keys', icon: 'vpn_key', label: 'API Keys', path: '/settings?tab=api_keys' },
+          { id: 'local_storage', icon: 'folder', label: 'Local Storage', path: '/settings?tab=local_storage' },
           { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' }
         ]
       },
@@ -338,11 +337,9 @@ function getContextualMenu(hash) {
         id: 'resources', label: 'Resources', icon: 'widgets',
         items: [
           { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
-          { id: 'storage_options', icon: 'warehouse', label: 'Storage Options', path: '/settings?tab=storage_options' },
+          { id: 'storage_options', icon: 'warehouse', label: 'Storage Locations', path: '/settings?tab=storage_options' },
           { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
-          { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' },
-          // No Settings page behind this yet — shown greyed so it's discoverable.
-          { id: 'integrations', icon: 'hub', label: 'Integrations', path: '/settings?tab=integrations', disabled: true, tooltip: 'Coming soon — third-party integrations' }
+          { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' }
         ]
       }
     ];
@@ -907,7 +904,7 @@ export function toggleSidebar(sidebar) {
   sidebar = sidebar || sidebarRef || document.getElementById('sidebar');
   if (!sidebar) return;
   sidebar.classList.toggle('rail-collapsed');
-  localStorage.setItem('simpro_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
+  localStorage.setItem('relay_rail_collapsed', sidebar.classList.contains('rail-collapsed'));
 }
 
 export function updateSidebarActive(path) {

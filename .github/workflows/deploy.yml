@@ -3,6 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,12 +17,33 @@ permissions:
 # "deployment_in_progress", which makes the next run hang until it times out
 # ("Timeout reached, aborting!"). Letting each deploy finish before the next
 # starts is GitHub's recommended setting for Pages.
+#
+# PR validation gets its own group so it can neither queue behind a deploy nor
+# delay one. It never touches Pages, so cancelling a superseded run is safe.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && 'pr-validation' || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # `npm test` hands a glob to `node --test`, which only expands globs
+          # from Node 21 on. On 20 the pattern is read as a literal path and the
+          # job dies with "Could not find '.../src/**/*.test.js'".
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
   build:
+    needs: test
+    # A PR only needs the tests. Without this guard the PR would build and try
+    # to publish Pages from an unreviewed branch.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +62,8 @@ jobs:
           path: dist
 
   deploy:
-    needs: build
+    needs: [build, test]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

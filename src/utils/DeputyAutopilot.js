@@ -16,10 +16,9 @@ store.on('jobs', triggerAutopilotEvaluation);
 store.on('schedule', triggerAutopilotEvaluation);
 
 async function evaluateStoreState() {
+  if (!hasDeputyMax()) return;
   const s = store.getSettings();
   const ai = s.ai || {};
-  if (!ai.enabled) return;
-  if (!hasDeputyMax()) return;
 
   const jobs = store.getAll('jobs') || [];
   const activeJobsList = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress');
@@ -82,7 +81,7 @@ I propose moving Job #1002 to John Doe since he is available on this date.
       { role: 'user', content: prompt }
     ];
 
-    const reply = await dispatchChat(messages, ai, ai.model || 'deepseek-chat');
+    const reply = await dispatchChat(messages);
 
     // Extract the action
     const actionRegex = /\[ACTION:\s*([A-Z_]+)(?:,\s*(\{.*?\}|.*?))?\]/s;

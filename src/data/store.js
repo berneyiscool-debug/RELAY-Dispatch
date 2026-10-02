@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — CLOUD DATA STORE (Supabase Sync)
+// RELAY — CLOUD DATA STORE (Supabase Sync)
 // ============================================
 import { supabase } from '../utils/supabase.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
@@ -641,6 +641,7 @@ class DataStore {
     if (activeAccount) {
       return `relay_${activeAccount}_${collection}`;
     }
+    // Legacy prefix: single-profile installs already store their collections here, so it must not be renamed.
     return `simpro_${collection}`;
   }
 
@@ -747,15 +748,12 @@ class DataStore {
               const getSync = new Promise((resolve) => {
                 const req = configStore.get('directory_handle');
                 req.onsuccess = () => {
-                  console.log('[DEBUG Store] getSync onsuccess result:', req.result);
                   if (req.result) {
                     this.dirHandle = req.result.value;
-                    console.log('[DEBUG Store] loaded dirHandle:', this.dirHandle ? this.dirHandle.name : null);
                   }
                   resolve();
                 };
                 req.onerror = (e) => {
-                  console.error('[DEBUG Store] getSync onerror:', e);
                   resolve();
                 };
               });
@@ -1061,6 +1059,23 @@ class DataStore {
         }
       });
     }
+  }
+
+  // Portable JSON snapshot of every collection plus the company settings,
+  // used by the "Download a Copy of My Data" action and before destructive upgrades.
+  exportSnapshot() {
+    const collections = {};
+    Object.keys(TABLE_MAP).forEach(col => {
+      collections[col] = this.cache[col] || [];
+    });
+    return {
+      generatedBy: 'RELAY Dispatch',
+      exportedAt: new Date().toISOString(),
+      companyId: this.companyId || null,
+      companyName: this.companySettings?.name || null,
+      settings: this.companySettings || null,
+      collections
+    };
   }
 
   async backupToFolder(dirHandle) {
@@ -3123,11 +3138,11 @@ class DataStore {
         quoteStartingNumber: 1
       },
       ai: {
-        enabled: (this.companyId && !this.companyId.startsWith('acct_')) ? true : false,
+        // Deputy ships with a paid Cloud workspace, so there is no on/off switch,
+        // client key, model or endpoint to configure: every AI call goes to the
+        // DeepSeek API through the relay-copilot edge function. `tier` is the only
+        // field here that varies, and it is written server-side (see aiTier.js).
         tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local',
-        apiKey: '',
-        endpoint: 'https://api.deepseek.com/chat/completions',
-        model: 'deepseek-chat',
         systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
       }
     };
@@ -3302,8 +3317,14 @@ class DataStore {
   async seedFormTemplates() {
     if (!this.companyId) return;
 
+    // `form_templates.id` is the primary key, so the prebuilt ids have to be scoped per
+    // company. With shared ids only the first company ever wins them and every company
+    // created afterwards fails its insert and silently ends up with no forms at all.
+    const companyPrefix = `${this.companyId}_`;
+
     const templates = prebuiltForms.map(tmpl => ({
       ...tmpl,
+      id: `${companyPrefix}${tmpl.id}`,
       company_id: this.companyId
     }));
 
@@ -3316,7 +3337,10 @@ class DataStore {
     }
 
     const dbPayload = templates.map(t => this.denormalizeRecord(t, 'formTemplates'));
-    const { error } = await supabase.from('form_templates').insert(dbPayload);
+    // Upsert so a re-run is a no-op rather than a primary key collision.
+    const { error } = await supabase
+      .from('form_templates')
+      .upsert(dbPayload, { onConflict: 'id', ignoreDuplicates: true });
     if (error) console.error('Error seeding form templates:', error);
   }
 
@@ -3389,12 +3413,17 @@ class DataStore {
 
   async seedDefaultTechnicians() {
     const companyId = this.companyId;
-    if (!companyId) return;
-    const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
-    const managerTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_manager` : 'ut_manager';
-    const techTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_tech` : 'ut_tech';
-    const officeTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_office` : 'ut_office';
+    // Demo staff are a local-account fixture. Cloud tenants get real profiles
+    // from signup or the invite-user function; clients cannot insert into
+    // `profiles` once RLS is enforced (see 030_rls_hardening.sql).
+    if (!companyId || !companyId.startsWith('acct_')) return;
+    const adminTypeId = `${companyId}_ut_admin`;
+    const managerTypeId = `${companyId}_ut_manager`;
+    const techTypeId = `${companyId}_ut_tech`;
+    const officeTypeId = `${companyId}_ut_office`;
 
+    // Demo logins are documented in DOCS.md. The shared password is stored as
+    // plaintext here and upgraded to a hash on the first successful sign-in.
     const defaultTechs = [
       { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.local',  phone: '0491 570 001', username: 'jake', password: '123456' },
       { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: managerTypeId, payRate: 85.00,  email: 'ryan@apexpowerservices.local',  phone: '0491 570 002', username: 'ryan', password: '123456' },
@@ -3405,19 +3434,12 @@ class DataStore {
     this.cache.technicians = defaultTechs;
     this.emit('technicians', defaultTechs);
 
-    if (companyId.startsWith('acct_')) {
-      await this.writeAllToIndexedDB('technicians', defaultTechs);
-      if (this.folderSyncEnabled) {
-        this.writeCollectionToFolder('technicians', defaultTechs).catch(err => {
-          console.error('Error writing seeded technicians to local folder:', err);
-        });
-      }
-      return;
+    await this.writeAllToIndexedDB('technicians', defaultTechs);
+    if (this.folderSyncEnabled) {
+      this.writeCollectionToFolder('technicians', defaultTechs).catch(err => {
+        console.error('Error writing seeded technicians to local folder:', err);
+      });
     }
-
-    const dbPayload = defaultTechs.map(t => this.denormalizeRecord({ ...t, companyId }, 'technicians'));
-    const { error } = await supabase.from('profiles').insert(dbPayload);
-    if (error) console.error('Error seeding default technicians:', error);
   }
 
   async migrateLocalToCloud(companyId, adminUserId) {

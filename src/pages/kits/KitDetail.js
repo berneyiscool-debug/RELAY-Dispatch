@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — KIT DETAIL / BUILDER
+// RELAY — KIT DETAIL / BUILDER
 // ============================================
 
 import { store } from '../../data/store.js';

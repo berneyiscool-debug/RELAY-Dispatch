@@ -100,6 +100,17 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── Per-tenant daily cap ───────────────────────────────────────────
+    // Google Maps quota is shared by every tenant, so no single account may
+    // drain it. Spend is ledgered in public.api_usage (migration 031).
+    const dailyCap = Number(Deno.env.get('RELAY_GEOCODE_DAILY_CAP') || '1000') || 1000
+    const { data: profile, error: profErr } = await admin
+      .from('profiles').select('company_id').eq('id', user.id).single()
+    if (profErr || !profile?.company_id) {
+      return new Response(JSON.stringify({ error: 'No company is linked to this user' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY')
     if (!apiKey) {
       return new Response(
@@ -110,6 +121,14 @@ serve(async (req) => {
 
     const body = await req.json()
     const { address, addresses } = body
+
+    // One unit per address, so a 50-address backfill batch costs 50.
+    const units = Array.isArray(addresses) ? addresses.length : 1
+    if ((await spentToday(admin, profile.company_id, 'geocode')) + units > dailyCap) {
+      return new Response(
+        JSON.stringify({ error: `Daily geocoding limit reached (${dailyCap} addresses). Try again tomorrow or contact RELAY support.` }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
 
     // Batch mode -------------------------------------------------------------
     if (Array.isArray(addresses)) {
@@ -125,6 +144,7 @@ serve(async (req) => {
       for (const a of addresses) {
         results.push(await geocodeOne(a, apiKey))
       }
+      await recordUsage(admin, profile.company_id, 'geocode', units)
       return new Response(
         JSON.stringify({ results }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -133,6 +153,7 @@ serve(async (req) => {
 
     // Single mode ------------------------------------------------------------
     const result = await geocodeOne(address, apiKey)
+    await recordUsage(admin, profile.company_id, 'geocode', units)
     return new Response(
       JSON.stringify({ result }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -144,3 +165,32 @@ serve(async (req) => {
     )
   }
 })
+
+/** Units already spent by one tenant today (UTC). */
+async function spentToday(admin: any, companyId: string, kind: string) {
+  const since = new Date()
+  since.setUTCHours(0, 0, 0, 0)
+  const { data, error } = await admin
+    .from('api_usage')
+    .select('units')
+    .eq('company_id', companyId)
+    .eq('kind', kind)
+    .gte('created_at', since.toISOString())
+  if (error) {
+    // Migration 031 not applied yet: stay uncapped rather than break every user.
+    console.error('api_usage read failed:', error.message)
+    return 0
+  }
+  return (data || []).reduce((sum: number, row: any) => sum + (row.units || 0), 0)
+}
+
+/** Ledger write. Never fails the caller's request. */
+async function recordUsage(admin: any, companyId: string, kind: string, units: number) {
+  if (!(units > 0)) return
+  try {
+    const { error } = await admin.from('api_usage').insert({ company_id: companyId, kind, units })
+    if (error) console.error('api_usage write failed:', error.message)
+  } catch (err) {
+    console.error('api_usage write threw:', err)
+  }
+}

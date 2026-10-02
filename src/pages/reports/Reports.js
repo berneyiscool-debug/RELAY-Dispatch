@@ -421,7 +421,7 @@ export function renderReports(container, params) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `simpro_${activeReport}_report.csv`;
+    a.download = `relay_${activeReport}_report.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -477,9 +477,9 @@ async function fetchAIInsights(reportId, d, cacheKey) {
   const mode = isSimpleMode ? 'simple' : 'detailed';
 
   const s = store.getSettings();
-  const ai = s.ai || {};
   const isCloudUser = !!(store.companyId && !store.companyId.startsWith('acct_'));
-  const canUseAI = ai.enabled !== false && (isCloudUser || !!ai.apiKey);
+  // Deputy's hosted AI is part of a paid Cloud workspace — no per-account switch.
+  const canUseAI = isCloudUser;
 
   let insightsHTML = '';
 
@@ -542,12 +542,7 @@ You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks).
         ];
       }
 
-      const model = ai.model || 'deepseek-chat';
-      let reply = '[]';
-
-      if (ai.apiKey || isCloudUser) {
-        reply = await dispatchChat(messages, ai, model);
-      }
+      let reply = await dispatchChat(messages);
 
       if (reply.includes('```')) {
         reply = reply.replace(/```json/g, '').replace(/```/g, '').trim();

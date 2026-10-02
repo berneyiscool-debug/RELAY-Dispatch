@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — STOCK FORM (Create/Edit)
+// RELAY — STOCK FORM (Create/Edit)
 // ============================================
 
 import { store } from '../../data/store.js';

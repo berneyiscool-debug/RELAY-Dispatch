@@ -1,16 +1,17 @@
 // ============================================
 // RELAY — Central AI engine / pipeline
 // ============================================
-// Single transport for every AI call (Deputy chat, autopilot, RELAY Insights).
-// Pipeline: redact PII -> request provider -> rehydrate PII. Returns the full
-// completion (content + usage) so callers can observe token usage where needed.
+// The single transport for every AI call in the app: Deputy chat, autopilot,
+// RELAY Insights and the attachment batches. Pipeline: redact PII -> request the
+// provider -> rehydrate PII. Returns the full completion (content + usage) so
+// callers can observe token usage where needed.
 //
-// Transport routes the same way the old RelayAssistant.dispatchChat did:
-//   cloud   -> Supabase edge function `relay-copilot` (server-side keys)
-//   desktop -> Electron secure IPC handler
-//   local   -> direct fetch with the user's own API key
+// Provider routing is deliberately not a caller concern. The Supabase edge
+// function `relay-copilot` holds the DeepSeek key server-side and is hard-coded
+// to api.deepseek.com, so no caller - and no stale saved setting - can point
+// Deputy at another vendor or reach for a client-side key. Deputy ships with a
+// paid Cloud workspace, so there is deliberately no local key path either.
 
-import { store } from '../data/store.js';
 import { supabase } from './supabase.js';
 import { isCloudUser } from './aiTier.js';
 import { createRedactionContext, redactText, rehydrateText } from './piiRedaction.js';
@@ -29,12 +30,12 @@ function redactMessageContent(content, ctx) {
 }
 
 // Low-level provider request. Returns the raw provider payload (choices + usage).
-async function requestCompletion(messages, ai, model, endpoint) {
-  const ep = endpoint || ai?.endpoint;
-
+// The edge function owns the host and the model, so there is nothing
+// provider-related left for a caller to pass in.
+async function requestCompletion(messages) {
   if (isCloudUser()) {
     const { data, error } = await supabase.functions.invoke('relay-copilot', {
-      body: { messages, endpoint: ep, model },
+      body: { messages },
     });
     if (error) {
       // supabase-js hides the real upstream message on non-2xx; the actual body
@@ -56,32 +57,16 @@ async function requestCompletion(messages, ai, model, endpoint) {
     return data;
   }
 
-  if (window.electronAPI && window.electronAPI.callAIAssistant) {
-    return await window.electronAPI.callAIAssistant({ messages, endpoint: ep, model });
-  }
-
-  const res = await fetch(ep || 'https://api.deepseek.com/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${ai.apiKey}`,
-    },
-    body: JSON.stringify({ model: model || 'deepseek-chat', messages, temperature: 0.3 }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`HTTP ${res.status}: ${body}`);
-  }
-
-  return await res.json();
+  // Local (non-Cloud) workspaces never reach the edge function above and have no
+  // key of their own; they run the rule-based local assistant instead.
+  throw new Error('Deputy needs a paid Cloud workspace - sign in to a Cloud account to use the managed AI service.');
 }
 
 // Redact -> call -> rehydrate. Returns { content, usage }.
-export async function completeChat(messages, ai, model, endpoint) {
+export async function completeChat(messages) {
   const ctx = createRedactionContext();
   const redacted = messages.map((m) => ({ ...m, content: redactMessageContent(m.content, ctx) }));
-  const data = await requestCompletion(redacted, ai, model, endpoint);
+  const data = await requestCompletion(redacted);
   const raw = data?.choices?.[0]?.message?.content || '';
   return {
     content: rehydrateText(raw, ctx),
@@ -90,7 +75,7 @@ export async function completeChat(messages, ai, model, endpoint) {
 }
 
 // Back-compatible wrapper: returns just the content string.
-export async function dispatchChat(messages, ai, model, endpoint) {
-  const result = await completeChat(messages, ai, model, endpoint);
+export async function dispatchChat(messages) {
+  const result = await completeChat(messages);
   return result.content;
 }

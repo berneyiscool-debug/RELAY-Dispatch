@@ -432,7 +432,7 @@ export function renderEmailStudio(container) {
         saved = JSON.stringify(draft);
         markDirty();
         showToast('Email templates saved', 'success');
-        window.dispatchEvent(new CustomEvent('simpro-settings-updated'));
+        window.dispatchEvent(new CustomEvent('relay:settings-updated'));
       } catch (err) {
         console.error('Error saving email templates:', err);
         showToast('Could not save email templates', 'error');

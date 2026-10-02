@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — PERMISSION DEFINITIONS
+// RELAY — PERMISSION DEFINITIONS
 // ============================================
 
 import { store } from '../data/store.js';

@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — SEED DATA (APEX POWER SERVICES)
+// RELAY — SEED DATA (APEX POWER SERVICES)
 // ============================================
 
 import { store } from './store.js';
@@ -1118,7 +1118,6 @@ export async function seedData(force = false) {
   await store.save('kits', kits);
 
   // Mark seeded
-  localStorage.removeItem('simpro__prevent_seeding');
   store.markSeeded();
 }
 

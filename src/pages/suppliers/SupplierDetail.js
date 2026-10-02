@@ -1,5 +1,5 @@
 // ============================================
-// FIELDFORGE — SUPPLIER DETAIL PAGE
+// RELAY — SUPPLIER DETAIL PAGE
 // ============================================
 
 import { store } from '../../data/store.js';

@@ -1050,7 +1050,7 @@ function renderRoutinesView(container) {
       if (!r) return;
       const s = store.getSettings();
       const ai = s.ai || {};
-      if (!ai.enabled) { showToast('Routines need the cloud AI enabled.', 'error'); return; }
+      if (!hasDeputyMax()) { showToast('Routines are part of Deputy Max — upgrade to Cloud+ to run them.', 'error'); return; }
       showToast(`Running "${r.title}"…`, 'info');
       await runRoutine(r, ai);
     });
@@ -1139,8 +1139,8 @@ function openRoutineEditor(routine, container) {
     if (!describe) { showToast('Describe what you want the routine to do first.', 'info'); return; }
     const s = store.getSettings();
     const ai = s.ai || {};
-    if (!ai.enabled || !hasDeputyMax()) {
-      showToast('Design with Deputy needs the cloud AI enabled.', 'error');
+    if (!hasDeputyMax()) {
+      showToast('Design with Deputy is part of Deputy Max — upgrade to Cloud+.', 'error');
       return;
     }
     // Run the guided, multiple-choice routine designer inside this modal.
@@ -1156,14 +1156,14 @@ function openRoutineEditor(routine, container) {
 // Ask Deputy to come up with a couple of multiple-choice clarifying questions for
 // the routine's purpose. Returns [{ text, options: [] }]. Falls back to generic
 // questions (or none) if the AI is unavailable or returns unparseable output.
-async function generateRoutineClarifications(intent, ai, model) {
+async function generateRoutineClarifications(intent) {
   const fallback = [
     { text: 'What should the routine focus on?', options: ['Jobs only', 'Jobs and invoices', 'Overdue items', 'Everything needing attention'] },
     { text: 'How detailed should the result be?', options: ['A quick summary', 'A detailed report', 'A checklist of action items'] },
     { text: 'How should urgent issues be handled?', options: ['Just mention them', 'Flag them as critical', 'List them at the top'] },
     { text: 'The next run should show?', options: ['Only new changes', 'Everything, every time', 'Just a short update'] }
   ];
-  if (!ai || !ai.enabled) return fallback;
+  if (!canUseAI()) return fallback;
   const messages = [
     {
       role: 'system',
@@ -1172,7 +1172,7 @@ async function generateRoutineClarifications(intent, ai, model) {
     { role: 'user', content: `ROUTINE PURPOSE: ${intent}` }
   ];
   let raw = '';
-  try { raw = await dispatchChat(messages, ai, model); } catch { return fallback; }
+  try { raw = await dispatchChat(messages); } catch { return fallback; }
   try {
     const start = raw.indexOf('{');
     const end = raw.lastIndexOf('}');
@@ -1199,7 +1199,6 @@ async function runRoutineDesignWizard(modal, describe, container, ai) {
   const footer = modalEl.querySelector('.modal-footer');
   if (footer) footer.style.display = 'none';
 
-  const model = (ai && ai.model) || 'deepseek-chat';
   const ctx = {
     describe,
     trigger: null,
@@ -1253,7 +1252,7 @@ async function runRoutineDesignWizard(modal, describe, container, ai) {
   const fetchClarifications = async () => {
     ctx.loading = true;
     render();
-    const questions = await generateRoutineClarifications(ctx.describe, ai, model);
+    const questions = await generateRoutineClarifications(ctx.describe);
     ctx.questions = questions;
     ctx.loading = false;
     render();
@@ -1381,7 +1380,6 @@ async function evaluateRoutines({ reason = 'timer' } = {}) {
   if (!hasDeputyMax()) return;
   const s = store.getSettings();
   const ai = s.ai || {};
-  if (!ai.enabled) return;
   if (routineRunning) return;
 
   const routines = getRoutines();
@@ -1404,13 +1402,12 @@ async function evaluateRoutines({ reason = 'timer' } = {}) {
 // surface the result in chat.
 async function runRoutine(routine, ai) {
   const systemPrompt = buildSystemPrompt(ai);
-  const model = ai.model || 'deepseek-chat';
   try {
     const reply = await dispatchChat([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: routine.prompt }
-    ], ai, model);
-    const clean = await finaliseRoutineReply(reply, systemPrompt, ai, model);
+    ]);
+    const clean = await finaliseRoutineReply(reply, systemPrompt);
     const surfaceText = (clean && clean.trim()) || `Ran "${routine.title}" — ${describeTrigger(routine.trigger)}.`;
     await surfaceRoutineResult(routine, surfaceText);
     const t = await markRoutineRun(routine.id);
@@ -1664,10 +1661,11 @@ let pendingAttachments = [];
 // summary toast instead of dozens.
 let suppressActionToasts = false;
 
-// Whether the AI backend is usable right now. Cloud users go through the secure
-// edge function (no client key needed); local users must enable AI + supply a key.
-function canUseAI(ai) {
-  return isCloudUser() ? (ai.enabled !== false) : !!(ai.enabled && ai.apiKey);
+// Whether Deputy's hosted AI is usable right now. It ships with a paid Cloud
+// workspace and is called through the secure edge function (no client key), so
+// there is no per-account switch. Local accounts get the rule-based assistant.
+function canUseAI() {
+  return isCloudUser();
 }
 
 function getUserId() {
@@ -1882,22 +1880,9 @@ export async function openRelay() {
       input.value = '';
       autoGrow(input);
 
-      const ai = (store.getSettings() || {}).ai || {};
-      if (isCloudUser()) {
-        if (!hasDeputyMax()) {
-          const reply = "Attachments and document extraction are a Deputy Max feature — upgrade your plan to Cloud+ to use them.";
-          pushAssistant(reply);
-          addMessage(thread, 'relay', reply);
-          return;
-        }
-        if (!canUseAI(ai)) {
-          const reply = "Attachments need the cloud AI assistant enabled. An admin can turn it on in Settings → AI.";
-          pushAssistant(reply);
-          addMessage(thread, 'relay', reply);
-          return;
-        }
-      } else if (!canUseAI(ai)) {
-        const reply = "Attachments need the AI assistant enabled with an API key. An admin can turn it on in Settings → AI.";
+      // Attachments run through Deputy's vision pipeline, which is Max-only.
+      if (!hasDeputyMax()) {
+        const reply = "Attachments and document extraction are a Deputy Max feature — upgrade your plan to Cloud+ to use them.";
         pushAssistant(reply);
         addMessage(thread, 'relay', reply);
         return;
@@ -1940,10 +1925,7 @@ export async function openRelay() {
     const typing = addTyping(thread);
 
     try {
-      const s = store.getSettings();
-      const ai = s.ai || {};
-
-      if (canUseAI(ai)) {
+      if (canUseAI()) {
         const response = hasDeputyMax() ? await callAIEngineWithTriage() : await callAIEngine();
         typing.remove();
         addMessage(thread, 'relay', response);
@@ -2549,14 +2531,6 @@ async function runVisionExtraction(userText, files, thread, typing) {
     return;
   }
 
-  const ai = (store.getSettings() || {}).ai || {};
-  const isDeepSeek = (ai.model || '').toLowerCase().includes('deepseek') || (ai.visionModel || '').toLowerCase().includes('deepseek');
-  if (isDeepSeek) {
-    const note = "⚠️ Note: The DeepSeek API does not currently support multimodal/image inputs natively. I'm passing this to the vision endpoint, but it may be ignored or fail until multimodal support is fully rolled out.";
-    pushAssistant(note);
-    addMessage(thread, 'relay', note);
-  }
-
   // Send page-images in batches so no single request carries the whole catalogue.
   const batches = chunk(images, VISION_BATCH_SIZE);
   const allActions = [];
@@ -2593,7 +2567,6 @@ async function runVisionExtraction(userText, files, thread, typing) {
 
 async function callVisionEngine(userText, images, batchIndex, batchCount) {
   const ai = (store.getSettings() || {}).ai || {};
-  const model = ai.visionModel || 'gemini-2.0-flash';
   const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant.';
   const systemPrompt = `${basePrompt}\n\n${getVisionContext()}`;
 
@@ -2609,7 +2582,7 @@ async function callVisionEngine(userText, images, batchIndex, batchCount) {
   return dispatchChat([
     { role: 'system', content: systemPrompt },
     { role: 'user', content }
-  ], ai, model, ai.visionEndpoint);
+  ]);
 }
 
 function getVisionContext() {
@@ -2698,12 +2671,14 @@ function firstPipeValue(parts) {
 }
 
 // ── Local (no-LLM) command handler — performs real dashboard/data actions ──────────
-const PAGE_WIDGETS = {
-  jobs: 'page-jobs', quotes: 'page-quotes', leads: 'page-leads', invoices: 'page-invoices',
-  notifications: 'page-notifications', customers: 'page-customers', contractors: 'page-contractors',
-  suppliers: 'page-suppliers', assets: 'page-assets', stock: 'page-stock', timesheets: 'page-timesheets',
-  timesheet: 'page-timesheets', schedule: 'page-schedule', 'purchase orders': 'page-purchase-orders',
-  'purchase order': 'page-purchase-orders', po: 'page-purchase-orders', pos: 'page-purchase-orders',
+// Page names the local handler understands. Naming a page opens it: the embedded
+// "page widget" copies of these screens no longer exist on the canvas.
+const PAGE_ROUTES = {
+  jobs: '/jobs', quotes: '/quotes', leads: '/leads', invoices: '/invoices',
+  notifications: '/notifications', customers: '/people', contractors: '/contractors',
+  suppliers: '/suppliers', assets: '/assets', stock: '/stock', timesheets: '/timesheets',
+  timesheet: '/timesheets', schedule: '/schedule', 'purchase orders': '/purchase-orders',
+  'purchase order': '/purchase-orders', po: '/purchase-orders', pos: '/purchase-orders',
 };
 
 function onDashboard() { return !!document.querySelector('#dash-viewport'); }
@@ -2714,7 +2689,7 @@ function runLocalCommand(raw) {
   const t = raw.toLowerCase().trim();
 
   if (/\b(help|what can you|commands|capabilities)\b/.test(t)) {
-    return "Right now I'm running in local mode. I can:\n• Add a page widget — “add a jobs widget”\n• Jump to a saved view — “go to the finance view”\n• Fit everything — “fit the canvas”\n• Lock / unlock — “lock the canvas”\n• Quick counts — “how many overdue invoices?”\n\nTo chat freely, connect your own API key in Settings or upgrade to a paid Cloud account.";
+    return "Right now I'm running in local mode. I can:\n• Open a page — “open jobs”\n• Jump to a saved view — “go to the finance view”\n• Fit everything — “fit the canvas”\n• Lock / unlock — “lock the canvas”\n• Quick counts — “how many overdue invoices?”\n\nTo chat freely, upgrade your workspace to a paid Cloud account.";
   }
 
   // Lock / unlock (dashboard canvas)
@@ -2724,17 +2699,13 @@ function runLocalCommand(raw) {
   // Fit all
   if (/\b(fit|reset view|show everything|zoom to fit|fit all)\b/.test(t)) { if (!onDashboard()) return NOT_ON_DASH; ff.fitAll?.(); return "Fitted everything to the screen."; }
 
-  // Add a widget
-  if (/\badd\b/.test(t)) {
-    const key = Object.keys(PAGE_WIDGETS).sort((a, b) => b.length - a.length).find(k => t.includes(k));
+  // Open a page by name (works from anywhere, not just the dashboard)
+  if (/\b(open|add|show me|go to|take me to|jump to|view)\b/.test(t)) {
+    const key = Object.keys(PAGE_ROUTES).sort((a, b) => b.length - a.length).find(k => t.includes(k));
     if (key) {
-      if (!onDashboard()) return NOT_ON_DASH;
-      const title = ff.addWidgetById?.(PAGE_WIDGETS[key]);
-      if (title === false) return `You don't have access to ${key}, so I can't add that one.`;
-      if (title) return `Added the ${title} widget for you.`;
-      return "I couldn't add that widget.";
+      window.location.hash = PAGE_ROUTES[key];
+      return `Opening ${key.charAt(0).toUpperCase() + key.slice(1)}…`;
     }
-    return "Which page? Try “add a jobs widget” — I know jobs, quotes, leads, invoices, customers, assets, stock, schedule and more.";
   }
 
   // Jump to a saved view
@@ -2761,10 +2732,10 @@ function runLocalCommand(raw) {
     if (/asset/.test(t)) return countMsg('assets', store.getAll('assets').length);
   }
 
-  if (/\b(hi|hello|hey|yo)\b/.test(t)) return "Hey! Ask me to add a widget, jump to a view, or fit/lock the canvas.";
+  if (/\b(hi|hello|hey|yo)\b/.test(t)) return "Hey! Ask me to open a page, jump to a view, or fit/lock the canvas.";
   if (/\b(thanks|thank you|cheers|ta)\b/.test(t)) return "Anytime. 👍";
 
-  return "To chat freely with Deputy, please connect your own API key in **Settings → AI**, or upgrade your workspace to a **paid Cloud account**.";
+  return "To chat freely with Deputy, upgrade your workspace to a **paid Cloud account**.";
 }
 
 function countMsg(label, n) {
@@ -2870,7 +2841,6 @@ async function renderWeeklyReportWidget(container) {
 async function callAIEngine() {
   const s = store.getSettings();
   const ai = s.ai || {};
-  const model = ai.model || 'deepseek-chat';
   const systemPrompt = buildSystemPrompt(ai);
 
   const messages = [
@@ -2878,8 +2848,8 @@ async function callAIEngine() {
     ...aiHistory()
   ];
 
-  const reply = await dispatchChat(messages, ai, model);
-  return finaliseExternalReply(reply, systemPrompt, ai, model);
+  const reply = await dispatchChat(messages);
+  return finaliseExternalReply(reply, systemPrompt);
 }
 
 function buildSystemPrompt(ai) {
@@ -2891,7 +2861,7 @@ function buildSystemPrompt(ai) {
 // (drive times from the routing service, live forecasts). Fetch it, then feed
 // the result back so Deputy phrases the final answer with real numbers instead
 // of an empty tag.
-async function finaliseExternalReply(reply, systemPrompt, ai, model, { parseActions = true } = {}) {
+async function finaliseExternalReply(reply, systemPrompt, { parseActions = true } = {}) {
   let externalData = '';
   if (FLAGS.maps && hasMapsAction(reply)) {
     const routeData = await runMapsActions(reply);
@@ -2932,7 +2902,7 @@ async function finaliseExternalReply(reply, systemPrompt, ai, model, { parseActi
       { role: 'assistant', content: reply },
       { role: 'user', content: `[LIVE SERVICE RESULTS / LOOKUP DATA]\n${externalData}\n\nUsing only this additional data, answer my previous question concisely and naturally. Do NOT emit any action tags in this response.` }
     ];
-    const finalReply = await dispatchChat(followup, ai, model);
+    const finalReply = await dispatchChat(followup);
     pushAssistant(finalReply);
     return parseActions ? parseAndExecuteActions(finalReply) : finalReply;
   }
@@ -2944,7 +2914,7 @@ async function finaliseExternalReply(reply, systemPrompt, ai, model, { parseActi
 // Routines run outside the user's chat thread, so they need their own two-stage
 // lookup flow: fetch any LOOKUP_RECORD / live-data results and feed them back in a
 // clean follow-up, without contaminating the routine with unrelated chat history.
-async function finaliseRoutineReply(reply, systemPrompt, ai, model) {
+async function finaliseRoutineReply(reply, systemPrompt) {
   let externalData = '';
   if (FLAGS.maps && hasMapsAction(reply)) {
     const routeData = await runMapsActions(reply);
@@ -2984,7 +2954,7 @@ async function finaliseRoutineReply(reply, systemPrompt, ai, model) {
       { role: 'assistant', content: reply },
       { role: 'user', content: `[LIVE SERVICE RESULTS / LOOKUP DATA]\n${externalData}\n\nUsing only this additional data, produce your final routine output now. Do NOT emit any action tags, and do NOT narrate your process or thinking.` }
     ];
-    const finalReply = await dispatchChat(followup, ai, model);
+    const finalReply = await dispatchChat(followup);
     return parseAndExecuteActions(finalReply);
   }
 
@@ -2993,22 +2963,22 @@ async function finaliseRoutineReply(reply, systemPrompt, ai, model) {
 
 // ── 2-stage triage route handlers (Deputy Max) ────────────────────────────────
 // QUESTION: synthesis prompt, no action parsing.
-async function answerSynthesisPrompt(systemPrompt, ai, model) {
-  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()], ai, model);
+async function answerSynthesisPrompt(systemPrompt) {
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()]);
   pushAssistant(reply);
   return reply;
 }
 
 // ACTION: focused prompt, execute action tags immediately (with permission checks).
-async function runActionPrompt(systemPrompt, ai, model) {
-  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()], ai, model);
-  return finaliseExternalReply(reply, systemPrompt, ai, model);
+async function runActionPrompt(systemPrompt) {
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()]);
+  return finaliseExternalReply(reply, systemPrompt);
 }
 
 // EXTERNAL: gather live data first, then answer (no action tags executed).
-async function resolveExternalPrompt(systemPrompt, ai, model) {
-  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()], ai, model);
-  return finaliseExternalReply(reply, systemPrompt, ai, model, { parseActions: false });
+async function resolveExternalPrompt(systemPrompt) {
+  const reply = await dispatchChat([{ role: 'system', content: systemPrompt }, ...aiHistory()]);
+  return finaliseExternalReply(reply, systemPrompt, { parseActions: false });
 }
 
 // URGENT: run the emergency scan, surface critical findings as proposals,
@@ -3033,16 +3003,15 @@ async function handleUrgentIntent() {
 async function callAIEngineWithTriage() {
   const s = store.getSettings();
   const ai = s.ai || {};
-  const model = ai.model || 'deepseek-chat';
   const systemPrompt = buildSystemPrompt(ai);
   const lastUser = [...chatHistory].reverse().find(m => m.role === 'user');
   const text = lastUser ? lastUser.content : '';
-  const triage = await triageMessage(text, { ai, model, chatHistory });
+  const triage = await triageMessage(text, { ai, chatHistory });
   const ctx = {
     text,
-    answerQuestion: () => answerSynthesisPrompt(systemPrompt, ai, model),
-    runAction: () => runActionPrompt(systemPrompt, ai, model),
-    resolveExternal: () => resolveExternalPrompt(systemPrompt, ai, model),
+    answerQuestion: () => answerSynthesisPrompt(systemPrompt),
+    runAction: () => runActionPrompt(systemPrompt),
+    resolveExternal: () => resolveExternalPrompt(systemPrompt),
     handleUrgent: () => handleUrgentIntent()
   };
   return routeIntent(triage.intent, ctx);

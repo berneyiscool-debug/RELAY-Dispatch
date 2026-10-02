@@ -7,16 +7,10 @@ import { router } from '../router.js';
 import { showToast } from '../components/Notifications.js';
 import { escapeHTML } from '../utils/security.js';
 import { supabase } from '../utils/supabase.js';
-import { storageGet, storageSet } from '../utils/tauriStore.js';
+import { storageGet, storageSet } from '../utils/persist.js';
 import { FLAGS } from '../utils/flags.js';
-
-// Helper to hash password using SHA-256 Web Crypto API
-async function hashPassword(password) {
-  const msgBuffer = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+import { hashPassword } from './auth/password.js';
+import { setSessionUser } from './auth/session.js';
 
 const PRESET_AVATAR_COLORS = [
   '#FF5C00', // Orange
@@ -512,7 +506,7 @@ export function renderProfile(container) {
       currentUser.name = name;
       currentUser.color = activeAvatarColor;
       currentUser.avatarUrl = uploadedAvatarUrl;
-      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      setSessionUser(currentUser);
 
       try {
         if (loginMode === 'cloud') {

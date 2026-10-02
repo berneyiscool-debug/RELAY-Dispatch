@@ -350,6 +350,14 @@ Recommend **A** to keep the polished demo dataset intact.
 8. [ ] Deploy to Netlify with env vars; verify against the live Supabase project.
 9. [ ] **Later:** Supabase Auth (email/pw sign-up) → real RLS policies + `orgId` → portal-token path via Netlify Function → Realtime subscriptions → move cascade logic to DB triggers.
 
+**Already-live project?** Steps 1–8 describe the original one-time cutover. Since then, incremental migrations `002`–`028` were applied ad-hoc and some never landed (`014`, `019`, and the tail of `015`), leaving the live schema behind the repo. `supabase/migrations/029_schema_catchup.sql` repairs that drift: it is idempotent and purely additive, so paste it into the Supabase SQL editor and confirm its final verification query reports `is_present = true` for every row.
+
+**Is the live project closed to the internet?** Not until `supabase/migrations/030_rls_hardening.sql` is applied. Probing the live project with a throwaway account showed that the published anon key could read *and* write every tenant table, and that `mailer_autoconfirm: true` let anyone self-register — so a stranger could sign up, write a `profiles` row with `role = 'admin'` and a victim's `company_id`, and take over that tenant. `030` is also idempotent: it enables RLS on every `public` table, drops **every** pre-existing policy (Postgres ORs policies together, so a single survivor would undo the fix), rebuilds the canonical tenant policies, and applies the signup-trigger / profile-guard hardening first written in `020` that never landed. Apply `029` first, then `030`, and read the audit grid it prints last — every row must read `ok` or `LOCKED (service role only)`.
+
+**Is one tenant able to burn the shared AI/Maps budget?** Not once `supabase/migrations/031_spend_and_signup_hardening.sql` is applied (after `029` and `030`). It adds `public.api_usage` — a service-role-only ledger of what each tenant spent on the paid proxies — which `relay-copilot`, `relay-geocode` and `relay-route` now read before every paid call and write after every successful one, the same pattern `relay-email` has used since launch. It also replaces `handle_new_user_profile()` without the self-signup branch that trusted `raw_user_meta_data->>'company_name'`: client-writable metadata could mint a company plus an admin profile without passing through `create_company_and_admin()`, the only path that checks `auth.uid() = user_id`. No shipped flow sends that key (the launch screen and the Settings cloud upgrade both call the RPC), so the branch was deleted rather than guarded. Its verification grid must report `ok` on every row; see Section 11 for the caps themselves.
+
+**Run the migrations locally before pasting them.** These files are treated as one implicit transaction by the SQL editor, so a single failing statement silently rolls back the whole script. `npm run test:migrations` executes `029`, `030` and `031` against an in-memory Postgres (`@electric-sql/pglite`) with a two-tenant Supabase-shaped fixture and asserts the security outcome — signed-out clients read nothing, tenants cannot see or re-point another tenant's rows, a public signup cannot provision itself a company, and the audit grid reports no failures. The same command runs `supabase/tests/proxy-caps.test.js`, which statically asserts that each paid proxy counts a tenant's spend *before* calling the provider. Run it after any change to a migration or to an edge function that spends money.
+
 ---
 
 ## 9. Risks & gotchas
@@ -359,4 +367,99 @@ Recommend **A** to keep the polished demo dataset intact.
 - **Denormalised name fields** can drift (rename a customer → old jobs keep the old name). Acceptable now; a DB trigger can sync later.
 - **Portals** authenticate by `portalToken`, not Supabase Auth — needs the Netlify-Function path, don't expose all rows to anon.
 - **`service_role` key**: server-side only, never in the frontend bundle.
+- **RLS policies are additive (`OR`)**: adding a policy never revokes another one. To tighten access you must `DROP` the old policy — this is why `030` sweeps `pg_policies` before creating anything.
+- **Client-side writes to `profiles` are not possible once `030` is applied** (RLS has no INSERT policy, and `profiles_security_guard` rejects self-provisioned rows). Staff profiles must be created by signup or by the `invite-user` edge function, which uses the service-role key.
+- **Client-side deletes of `profiles` do nothing once `030` is applied** (there is deliberately no DELETE policy). RLS makes the statement a silent 0-row no-op rather than an error, so a client `delete()` would report success without removing anything. Removing a staff member is `profiles.deactivated` (what the Settings page already does); a genuine row delete stays a service-role/dashboard operation.
+- **`company_id` is not always `uuid`**: the live `job_materials.company_id` is `text` (the table predates migration `013`, which declares `uuid`). Any policy that compares it directly to `get_user_company_id()` fails with `operator does not exist: text = uuid` and rolls the entire script back, so `030`'s catalog loop reads each column's real type with `format_type()` and casts to `text` when it is not `uuid`. Keep that branch when editing the loop.
+- **`raw_user_meta_data` provisions nothing once `031` is applied.** Signup metadata is client-writable, so the signup trigger reads only `raw_app_meta_data` (server-written invitations). Self-signup must call the `create_company_and_admin` RPC — passing `company_name` in `signUp({ options: { data } })` creates the auth user but **no** company and **no** profile.
+- **`api_usage` is invisible to clients by design** (`031`): RLS on with zero policies, and `ALL` revoked from `anon`/`authenticated`. Only the edge functions, which hold the service-role key, may read or write it.
 - Do the `store.js` swap **carefully / coordinated** — it's the spine of the app and the Antigravity agents also touch the codebase.
+
+---
+
+## 10. Live verification (applied 2026-09-27)
+
+`029` and `030` were both applied to the live project (ref `zufsncswsoqlomtqhkks`) and the result was verified from outside with the published anon key and with a throwaway two-tenant account. Everything below was observed, not inferred.
+
+| Probe | Result |
+| --- | --- |
+| Anon reads tenant rows (32 tables, `select=*`) | 0 rows anywhere |
+| Anon writes (8 representative tables, row echoed back) | 8/8 refused — none reached INSERT |
+| Anon executes `security-definer` helpers | all refused |
+| Anon reads `relay_reserved_email_slugs` | 0 rows |
+| Signed-in tenant reads own profile / company | works (1 row each) |
+| Signed-in tenant reads another tenant's profiles / jobs | 0 rows |
+| Signed-in tenant reads another tenant's `job_materials` (text key) | 0 rows |
+| Signed-in tenant re-points own row at another `company_id` | refused `403` |
+| Signed-in tenant rewrites `role` / `pay_rate` on own profile | frozen — values unchanged |
+| Signed-in tenant updates a non-frozen profile field (`name`) | works |
+| Signed-in tenant self-provisions a `profiles` row | refused `400 P0001` (guard trigger) |
+| Signed-in tenant deletes a profile | 0 rows affected, row survives |
+| Signed-in tenant runs `acquire_lock` / `release_lock` | works |
+| Every table the app reads while signed in (33 tables) | all `200` |
+| App writes: insert/update/read a customer, job and job material, then delete | all succeed |
+
+Two regressions the hardening would have caused were found and fixed before launch:
+
+- `store.js` `seedDefaultTechnicians()` wrote demo `profiles` rows from the client. `030` now rejects that (`400 P0001`), so the function early-returns unless the tenant is a local `acct_` account — cloud tenants get real profiles from signup or `invite-user`.
+- Migration `013` declares `job_materials.company_id uuid` while the live column is `text`; see the gotcha in Section 9.
+
+---
+
+## 11. Abuse controls on the paid APIs (031)
+
+Launch allows self-serve signup, so every caller of a paid API is capped **per tenant, per UTC day**. The caps are edge-function secrets: change the value in the Supabase dashboard and the next invocation picks it up, no client release needed. The defaults are deliberately generous for a small trade business — a busy technician will not reach them — while still bounding what one account can spend of a budget that every tenant shares.
+
+| Proxy | Provider | Secret | Default | Unit |
+| --- | --- | --- | --- | --- |
+| `relay-copilot` | DeepSeek | `RELAY_COPILOT_DAILY_CAP` | 500 | requests |
+| `relay-geocode` | Google Maps | `RELAY_GEOCODE_DAILY_CAP` | 1000 | addresses (a 50-address batch costs 50) |
+| `relay-route` | Google Routes | `RELAY_ROUTE_DAILY_CAP` | 300 | routes |
+| `relay-email` | Resend | `RELAY_EMAIL_DAILY_CAP` | 500 | emails |
+
+How it behaves:
+
+- **At the cap** the proxy answers `429` with `Daily … limit reached (N). Try again tomorrow or contact RELAY support.` Deputy shows that sentence in the chat; geocoding and routing degrade to "no result", exactly like any other provider failure, so background backfills stay quiet.
+- **Unit accounting is per address/stops-request**, so one batch cannot spend the whole day's allowance in a single round trip.
+- **Failed provider calls are not charged** — the ledger row is written only after the provider answers successfully.
+- **A missing secret never disables the cap**: an unset or unparsable value falls back to the default above.
+- **If `031` has not been applied yet**, the proxies log `api_usage read failed` and run uncapped rather than break for every user. The cap is protection, not a hard dependency — which is why the functions can be deployed before the migration.
+- `api_usage` grows one row per paid call. It is tiny (a few hundred rows per tenant per day); prune rows older than a few months with `pg_cron` once there is any reason to.
+
+Dashboard-only items this migration deliberately does **not** change, because they are launch decisions rather than code:
+
+- **CAPTCHA (Turnstile) on signup, `mailer_autoconfirm`, and per-IP signup rate limits.** A probe with the published anon key confirmed that signups are unthrottled and auto-confirmed (`disable_signup` is `false` by design — launch needs self-serve signup). Turning on Turnstile or per-IP limits is an Auth setting in the dashboard; the tenant-isolation work in `030` is what makes unthrottled signup survivable in the meantime: a spam tenant can only ever see its own empty workspace.
+- **Usage metering and paid tiers for the AI.** Out of scope until the launch feature set is settled; `api_usage` is the table a visible usage meter would read when that ships.
+
+---
+
+## 12. Deploying an edge function
+
+Every function in `supabase/functions/` is a single self-contained file with URL imports (`esm.sh`), so deploying one is a copy-paste in the dashboard: no local bundler, no Docker, no CLI.
+
+1. Dashboard → the project → **Edge Functions** → pick the function, e.g. `relay-copilot`.
+2. Select everything in the editor, delete it, and paste the whole local `index.ts`.
+3. **Deploy**. The header shows the version timestamp once it is live.
+4. Leave **Enforce JWT verification** on for every function except two: `relay-create-payment` (public by design, authorises by invoice id) and `relay-stripe-webhook` (verifies Stripe's HMAC signature itself).
+
+Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_COPILOT_DAILY_CAP` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
+
+To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. That exercises the read, the write and the refusal without waiting for a real daily budget to run out. Cheaper still, and what was actually used on 2026-10-02: insert the remaining units straight into `api_usage` for a throwaway tenant and call again. No secret is touched, and the real ceiling is the one being tested.
+
+The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps.
+
+### Deploying without the dashboard (Management API)
+
+`POST /v1/projects/{ref}/functions/deploy?slug={slug}` takes the source plus a metadata part. PowerShell mangles the inner quotes of `-F metadata='{"…"}'`, so put the metadata in a file:
+
+```
+curl.exe -s -X POST "https://api.supabase.com/v1/projects/{ref}/functions/deploy?slug=relay-copilot" \
+  -H "Authorization: Bearer {personal_access_token}" \
+  -F "file=@supabase/functions/relay-copilot/index.ts" \
+  -F "metadata=<metadata.json"   # {"entrypoint_path":"index.ts","verify_jwt":true,"name":"relay-copilot"}
+```
+
+A `201` response carries the new `version` and an `entrypoint_path` ending in `…/source/index.ts`. **Do not deploy with `PATCH /functions/{slug}`**: it accepts the source and bumps the version, but leaves `entrypoint_path` pointing at the previous revision's temp directory, so every invocation then answers `503 BOOT_ERROR` until the function is deployed again. Always confirm a deploy by calling the function — an empty body must answer `400` (a validation error), never `503`.
+
+Live as of 2026-10-02 (`zufsncswsoqlomtqhkks`, all with JWT verification on): `relay-copilot` v20, `relay-geocode` v17, `relay-route` v15. Verified in that state: all three return real answers (DeepSeek completion, a Sydney geocode, an 18.8 km route), each writes exactly one `api_usage` row of the right `kind`, and each answers `429` with its message once the tenant is over its cap.
+

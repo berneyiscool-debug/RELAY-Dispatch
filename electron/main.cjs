@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 
@@ -14,7 +14,6 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
@@ -159,50 +158,3 @@ try {
 } catch (e) {
   console.warn('Failed to load local .env file in Electron main process:', e);
 }
-
-// The only hosts a local-mode AI call may reach. Never forward the user's key
-// to an arbitrary URL — a compromised renderer could otherwise exfiltrate it.
-const ALLOWED_AI_HOSTS = new Set(['api.deepseek.com', 'generativelanguage.googleapis.com']);
-
-// IPC handler for DeepSeek API calls
-ipcMain.handle('call-deepseek', async (event, { messages, endpoint, model, apiKey }) => {
-  // Cloud accounts never reach this handler — their AI goes through the
-  // `relay-copilot` edge function using the server-side DEEPSEEK_API_KEY secret.
-  // This desktop path is only for local/offline accounts, which supply their own
-  // key in Settings → AI. (The old process.env.VITE_DEEPSEEK_API_KEY fallback was
-  // removed: the VITE_ prefix made Vite inline that key into the web bundle.)
-  const key = apiKey;
-  if (!key) {
-    throw new Error('No AI API key configured. Add one in Settings → AI Assistant, or sign in to a cloud account to use the managed AI service.');
-  }
-
-  let target;
-  try {
-    target = new URL(endpoint || 'https://api.deepseek.com/chat/completions');
-  } catch {
-    throw new Error('Invalid AI endpoint URL.');
-  }
-  if (target.protocol !== 'https:' || !ALLOWED_AI_HOSTS.has(target.hostname)) {
-    throw new Error('AI endpoint is not allowed.');
-  }
-
-  const response = await fetch(target.toString(), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`
-    },
-    body: JSON.stringify({
-      model: model || 'deepseek-chat',
-      messages: messages,
-      temperature: 0.3
-    })
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`DeepSeek API error: ${response.status} - ${text}`);
-  }
-
-  return await response.json();
-});

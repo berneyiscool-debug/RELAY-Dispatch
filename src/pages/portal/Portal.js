@@ -4,16 +4,19 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 import { roundCurrency } from '../../utils/pricing.js';
+import { applyTheme } from '../../utils/theme.js';
 
 export function renderCustomerPortal(container, params) {
   const token = params.token;
   const customers = store.getAll('customers');
   const customer = customers.find(c => c.portalToken === token);
 
-  // Ensure the stored theme is applied on portal load
-  const storedTheme = customer ? (localStorage.getItem(`simpro_theme_customer_${customer.id}`) || 'light') : 'light';
-  document.documentElement.setAttribute('data-theme', storedTheme);
-  document.documentElement.setAttribute('data-theme-mode', storedTheme); // component dark layer keys on this
+  // Appearance is light only at launch (see utils/theme.js), which resolves the
+  // stored preference for us. The per-customer value is still read but never
+  // rewritten, so a customer who picked dark keeps that choice for when dark
+  // mode ships.
+  const storedTheme = customer ? (localStorage.getItem(`relay_theme_customer_${customer.id}`) || localStorage.getItem(`simpro_theme_customer_${customer.id}`) || 'light') : 'light';
+  applyTheme(storedTheme);
 
   const settings = store.getSettings();
 
@@ -61,9 +64,6 @@ export function renderCustomerPortal(container, params) {
   if (!customer.portalPasscode) {
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
-        <button class="btn btn-outline btn-sm" id="btn-portal-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
-          <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-        </button>
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-success-bg); display:flex; align-items:center; justify-content:center; color:var(--color-success); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">gpp_good</span>
@@ -124,15 +124,6 @@ export function renderCustomerPortal(container, params) {
       renderCustomerPortal(container, params);
     });
 
-    container.querySelector('#btn-portal-theme')?.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      document.documentElement.setAttribute('data-theme-mode', next); // component dark layer keys on this
-      localStorage.setItem(`simpro_theme_customer_${customer.id}`, next);
-      renderCustomerPortal(container, params);
-    });
-
     return;
   }
 
@@ -143,9 +134,6 @@ export function renderCustomerPortal(container, params) {
   if (!isUnlocked) {
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
-        <button class="btn btn-outline btn-sm" id="btn-portal-theme" title="Toggle theme" style="position: absolute; top: 20px; right: 20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary);">
-          <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-        </button>
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
           <div style="width:56px; height:56px; border-radius:50%; background:var(--color-danger-bg); display:flex; align-items:center; justify-content:center; color:var(--color-danger); margin:0 auto 20px auto;">
             <span class="material-icons-outlined" style="font-size:28px;">lock</span>
@@ -187,15 +175,6 @@ export function renderCustomerPortal(container, params) {
         container.querySelector('#portal-pin').value = '';
         container.querySelector('#portal-pin').focus();
       }
-    });
-
-    container.querySelector('#btn-portal-theme')?.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      document.documentElement.setAttribute('data-theme-mode', next); // component dark layer keys on this
-      localStorage.setItem(`simpro_theme_customer_${customer.id}`, next);
-      renderCustomerPortal(container, params);
     });
 
     return;
@@ -548,9 +527,6 @@ export function renderCustomerPortal(container, params) {
           </div>
 
           <div style="display: flex; align-items: center; gap: 16px;">
-            <button class="btn btn-outline btn-sm" id="btn-portal-theme" title="Toggle theme" style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0;">
-              <span class="material-icons-outlined" style="font-size: 18px;">${document.documentElement.getAttribute('data-theme') === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-            </button>
             <div style="text-align: right; font-size: 13px;">
               <div style="font-weight: 600; color: var(--text-primary);">${escapeHTML(customer.firstName)} ${escapeHTML(customer.lastName)}</div>
               <div style="color: var(--text-secondary); font-size:11px;">${escapeHTML(customer.company)}</div>
@@ -1633,16 +1609,6 @@ export function renderCustomerPortal(container, params) {
   function bindPortalEvents(jobs, quotes, invoices, assets) {
     const portalShell = container.querySelector('.customer-portal-shell');
     if (!portalShell) return;
-
-    // Theme toggle
-    portalShell.querySelector('#btn-portal-theme')?.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      document.documentElement.setAttribute('data-theme-mode', next); // component dark layer keys on this
-      localStorage.setItem(`simpro_theme_customer_${customer.id}`, next);
-      render();
-    });
 
     // 1. Tab switches
     portalShell.querySelectorAll('.portal-nav-tab').forEach(tab => {
