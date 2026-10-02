@@ -444,7 +444,22 @@ Every function in `supabase/functions/` is a single self-contained file with URL
 
 Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_COPILOT_DAILY_CAP` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
 
-To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. That exercises the read, the write and the refusal without waiting for a real daily budget to run out.
+To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. That exercises the read, the write and the refusal without waiting for a real daily budget to run out. Cheaper still, and what was actually used on 2026-10-02: insert the remaining units straight into `api_usage` for a throwaway tenant and call again. No secret is touched, and the real ceiling is the one being tested.
 
 The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps.
+
+### Deploying without the dashboard (Management API)
+
+`POST /v1/projects/{ref}/functions/deploy?slug={slug}` takes the source plus a metadata part. PowerShell mangles the inner quotes of `-F metadata='{"…"}'`, so put the metadata in a file:
+
+```
+curl.exe -s -X POST "https://api.supabase.com/v1/projects/{ref}/functions/deploy?slug=relay-copilot" \
+  -H "Authorization: Bearer {personal_access_token}" \
+  -F "file=@supabase/functions/relay-copilot/index.ts" \
+  -F "metadata=<metadata.json"   # {"entrypoint_path":"index.ts","verify_jwt":true,"name":"relay-copilot"}
+```
+
+A `201` response carries the new `version` and an `entrypoint_path` ending in `…/source/index.ts`. **Do not deploy with `PATCH /functions/{slug}`**: it accepts the source and bumps the version, but leaves `entrypoint_path` pointing at the previous revision's temp directory, so every invocation then answers `503 BOOT_ERROR` until the function is deployed again. Always confirm a deploy by calling the function — an empty body must answer `400` (a validation error), never `503`.
+
+Live as of 2026-10-02 (`zufsncswsoqlomtqhkks`, all with JWT verification on): `relay-copilot` v20, `relay-geocode` v17, `relay-route` v15. Verified in that state: all three return real answers (DeepSeek completion, a Sydney geocode, an 18.8 km route), each writes exactly one `api_usage` row of the right `kind`, and each answers `429` with its message once the tenant is over its cap.
 
