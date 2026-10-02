@@ -431,3 +431,20 @@ Dashboard-only items this migration deliberately does **not** change, because th
 - **CAPTCHA (Turnstile) on signup, `mailer_autoconfirm`, and per-IP signup rate limits.** A probe with the published anon key confirmed that signups are unthrottled and auto-confirmed (`disable_signup` is `false` by design — launch needs self-serve signup). Turning on Turnstile or per-IP limits is an Auth setting in the dashboard; the tenant-isolation work in `030` is what makes unthrottled signup survivable in the meantime: a spam tenant can only ever see its own empty workspace.
 - **Usage metering and paid tiers for the AI.** Out of scope until the launch feature set is settled; `api_usage` is the table a visible usage meter would read when that ships.
 
+---
+
+## 12. Deploying an edge function
+
+Every function in `supabase/functions/` is a single self-contained file with URL imports (`esm.sh`), so deploying one is a copy-paste in the dashboard: no local bundler, no Docker, no CLI.
+
+1. Dashboard → the project → **Edge Functions** → pick the function, e.g. `relay-copilot`.
+2. Select everything in the editor, delete it, and paste the whole local `index.ts`.
+3. **Deploy**. The header shows the version timestamp once it is live.
+4. Leave **Enforce JWT verification** on for every function except two: `relay-create-payment` (public by design, authorises by invoice id) and `relay-stripe-webhook` (verifies Stripe's HMAC signature itself).
+
+Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_COPILOT_DAILY_CAP` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
+
+To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. That exercises the read, the write and the refusal without waiting for a real daily budget to run out.
+
+The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps.
+
