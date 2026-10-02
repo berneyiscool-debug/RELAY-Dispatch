@@ -21,6 +21,44 @@ export function todayLocalISO(d = new Date()) {
 }
 
 /**
+ * Normalises anything date-like to a canonical local "YYYY-MM-DD" key.
+ *
+ * Recurring occurrences are identified by calendar date, so every producer and
+ * consumer of `templateDate` / `scheduledDate` / `skippedDates` has to agree on
+ * one format. Without this, a skip stored as "3/10/2026" or an ISO timestamp
+ * never compares equal to the "2026-10-03" the engine generates, and the engine
+ * treats the occurrence as unfilled and spawns another job on top of it.
+ *
+ * @param {string|Date|null|undefined} value
+ * @returns {string|null} YYYY-MM-DD, or null when the value is not a date
+ */
+export function toDateKey(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : todayLocalISO(value);
+  }
+
+  const str = String(value).trim();
+  // Already canonical (also the common case: a date-only column value).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // Australian day-first formats stored by earlier versions of the UI/CSV import.
+  const dayFirst = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
+  if (dayFirst) {
+    const year = dayFirst[3].length === 2 ? `20${dayFirst[3]}` : dayFirst[3];
+    return `${year}-${dayFirst[2].padStart(2, '0')}-${dayFirst[1].padStart(2, '0')}`;
+  }
+
+  // ISO timestamps and anything else Date can parse — read back in local time so
+  // a late-evening timestamp does not roll over to the next day.
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) return todayLocalISO(parsed);
+
+  const leading = str.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(leading) ? leading : null;
+}
+
+/**
  * Safe formatter for date-only strings ("YYYY-MM-DD"). Parsing such strings
  * with new Date() treats them as UTC midnight, which renders one day earlier
  * in negative-offset timezones. This pins them to local midnight first.

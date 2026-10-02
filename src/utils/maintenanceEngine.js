@@ -1,5 +1,5 @@
 import { store } from '../data/store.js';
-import { parsePreferredTime } from './dateUtils.js';
+import { parsePreferredTime, toDateKey, todayLocalISO } from './dateUtils.js';
 import { supabase } from './supabase.js';
 import { checkPaymentReminders } from './paymentReminders.js';
 
@@ -524,33 +524,235 @@ async function runEngineCore(userId, isCloud) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Recurring occurrence identity
+//
+// A recurring template ("T-00012") owns exactly one child job per occurrence.
+// Deciding whether an occurrence is already filled is the most fragile part of
+// this engine: templates are T- while their children are re-prefixed to J-, the
+// `parentJobId` link lives inside the serialised notes blob (so it is missing on
+// rows written before it was persisted), and the occurrence date arrives as a
+// date-only string, an ISO timestamp or a raw scheduledDate. These helpers
+// normalise all of that so the spawn check, the forecast, materialisation and
+// the repair pass all answer the question the same way.
+// ---------------------------------------------------------------------------
+
+/** Children are re-prefixed with the job prefix, so never compare prefixes. */
+const TEMPLATE_NUMBER_PREFIX = /^(T-|TEMP-|TEM-)/;
+
+/**
+ * Splits a job number into numeric base + optional child suffix.
+ * "T-00012" -> { base: 12, suffix: null }, "J-00012.3" -> { base: 12, suffix: 3 }
+ * @param {string} number
+ * @returns {{base: number, suffix: number|null}|null}
+ */
+export function parseJobNumber(number) {
+  const match = String(number ?? '').trim().match(/^[A-Za-z]*-?(\d+)(?:\.(\d+))?$/);
+  if (!match) return null;
+  return {
+    base: parseInt(match[1], 10),
+    suffix: match[2] === undefined ? null : parseInt(match[2], 10)
+  };
+}
+
+/**
+ * True when `childNumber` is a spawned child ("<base>.<n>") of `templateNumber`.
+ * Prefix-insensitive on purpose — a T- template's children are J- numbers, so a
+ * naive `startsWith` check never matches.
+ */
+export function isChildNumberOfTemplate(childNumber, templateNumber) {
+  const child = parseJobNumber(childNumber);
+  const template = parseJobNumber(templateNumber);
+  if (!child || !template) return false;
+  return child.suffix !== null && child.base === template.base;
+}
+
+/** The number a template's children should carry: "T-00012" -> "J-00012". */
+export function childNumberBaseFor(templateNumber, prefix = 'J-') {
+  return String(templateNumber || '').replace(TEMPLATE_NUMBER_PREFIX, prefix);
+}
+
+/**
+ * The children that belong to a template.
+ * The explicit `parentJobId` link always wins; the number form is only trusted
+ * when that link is absent or dangling (i.e. points at a job that no longer
+ * exists), so a child can never be counted twice or stolen by another template.
+ * This is what makes legacy/orphaned children visible to dedup again.
+ * @param {object} template
+ * @param {object[]} jobs
+ * @param {Set<string>} [jobIds] ids present in `jobs`, for dangling-link checks
+ * @returns {object[]}
+ */
+export function collectTemplateChildren(template, jobs, jobIds = null) {
+  if (!template || !Array.isArray(jobs)) return [];
+  const ids = jobIds || new Set(jobs.map(j => j && j.id));
+  return jobs.filter(j => {
+    if (!j || j.id === template.id) return false;
+    if (j.parentJobId === template.id) return true;
+    if (j.parentJobId && ids.has(j.parentJobId)) return false;
+    return isChildNumberOfTemplate(j.number, template.number);
+  });
+}
+
+/** The occurrence date a child fulfils: its anchor, else its scheduled date. */
+export function occurrenceDateKey(child) {
+  if (!child) return null;
+  return toDateKey(child.templateDate) || toDateKey(child.scheduledDate);
+}
+
+function daysBetweenKeys(fromKey, toKey) {
+  const [fy, fm, fd] = String(fromKey).split('-').map(Number);
+  const [ty, tm, td] = String(toKey).split('-').map(Number);
+  return (new Date(ty, tm - 1, td) - new Date(fy, fm - 1, fd)) / 86400000;
+}
+
+/** Half the gap between occurrences — how far a child may have moved and still fill its slot. */
+function occurrenceToleranceDays(template) {
+  const freq = template?.recurringConfig?.freq;
+  if (freq === 'Weekly') return 3.5;
+  if (freq === 'Monthly') return 15;
+  return 0.5;
+}
+
+/**
+ * Does `child` fill the occurrence on `dateStr`?
+ * Anchored children must match exactly. A child with no anchor is matched to the
+ * nearest occurrence using the series spacing, so a child the user dragged to
+ * another day still claims its slot instead of leaving it looking empty and
+ * triggering a duplicate spawn.
+ */
+export function childFillsOccurrence(child, dateStr, template) {
+  const key = toDateKey(dateStr);
+  if (!key || !child) return false;
+  const anchor = toDateKey(child.templateDate);
+  if (anchor) return anchor === key;
+  const scheduled = toDateKey(child.scheduledDate);
+  if (!scheduled) return false;
+  if (scheduled === key) return true;
+  return Math.abs(daysBetweenKeys(scheduled, key)) < occurrenceToleranceDays(template);
+}
+
+/** Has this template already got a child for this occurrence? */
+export function hasOccurrenceForDate(template, dateStr, jobs, jobIds = null) {
+  if (!template) return false;
+  return collectTemplateChildren(template, jobs, jobIds)
+    .some(child => childFillsOccurrence(child, dateStr, template));
+}
+
+/** Skips may be stored in any date format; compare them as canonical date keys. */
+export function isOccurrenceSkipped(config, dateStr) {
+  const key = toDateKey(dateStr);
+  if (!key || !config) return false;
+  const skipped = Array.isArray(config.skippedDates) ? config.skippedDates : [];
+  return skipped.some(s => toDateKey(s) === key);
+}
+
+/** Canonical, de-duplicated skip list, safe to persist. */
+export function canonicalSkippedDates(config) {
+  const skipped = Array.isArray(config?.skippedDates) ? config.skippedDates : [];
+  return [...new Set(skipped.map(toDateKey).filter(Boolean))];
+}
+
+/** Start of a date key as a local Date, or null when unparseable. */
+function startOfDayKey(value) {
+  const key = toDateKey(value);
+  if (!key) return null;
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/**
+ * The Weekly/Monthly match days a config resolves to. Defaults are taken from
+ * the series start date so an empty daysOfWeek/daysOfMonth still recurs.
+ */
+function recurrenceMatchDays(config) {
+  const matchDaysOfWeek = [...(config.daysOfWeek || [])];
+  const matchDaysOfMonth = [...(config.daysOfMonth || [])];
+  const startDate = startOfDayKey(config.start) || new Date();
+  if (config.freq === 'Weekly' && matchDaysOfWeek.length === 0) {
+    matchDaysOfWeek.push(startDate.getDay());
+  }
+  if (config.freq === 'Monthly' && matchDaysOfMonth.length === 0) {
+    matchDaysOfMonth.push(startDate.getDate());
+  }
+  return { matchDaysOfWeek, matchDaysOfMonth };
+}
+
+function matchesRecurrence(candidate, config, matchDaysOfWeek, matchDaysOfMonth) {
+  if (config.freq === 'Daily') return true;
+  if (config.freq === 'Weekly') return matchDaysOfWeek.includes(candidate.getDay());
+  if (config.freq === 'Monthly') return matchDaysOfMonth.includes(candidate.getDate());
+  return false;
+}
+
+/**
+ * Occurrence dates inside [fromKey, toKey], clamped to the series bounds and
+ * deliberately *not* clamped to today: working out which occurrence a legacy
+ * child belongs to usually needs dates in the past.
+ */
+export function getOccurrenceDatesBetween(config, fromKey, toKey) {
+  if (!config || !config.start || !config.end) return [];
+  const from = startOfDayKey(fromKey);
+  const to = startOfDayKey(toKey);
+  const seriesStart = startOfDayKey(config.start);
+  const seriesEnd = startOfDayKey(config.end);
+  if (!from || !to || !seriesStart || !seriesEnd) return [];
+
+  const { matchDaysOfWeek, matchDaysOfMonth } = recurrenceMatchDays(config);
+  let current = from > seriesStart ? from : seriesStart;
+  const limit = to < seriesEnd ? to : seriesEnd;
+  const dates = [];
+  let iterations = 0;
+  while (current <= limit && dates.length < 400 && iterations < 1200) {
+    iterations++;
+    if (matchesRecurrence(current, config, matchDaysOfWeek, matchDaysOfMonth)) {
+      dates.push(toDateKey(current));
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
+/**
+ * The occurrence date a child scheduled on `dateKey` most likely fulfils: the
+ * nearest occurrence, ties resolved to the earlier date.
+ */
+export function nearestOccurrenceDate(config, dateKey) {
+  const target = startOfDayKey(dateKey);
+  if (!target) return null;
+  const windowStart = toDateKey(new Date(target.getFullYear(), target.getMonth(), target.getDate() - 40));
+  const windowEnd = toDateKey(new Date(target.getFullYear(), target.getMonth(), target.getDate() + 40));
+  const dates = getOccurrenceDatesBetween(config, windowStart, windowEnd);
+
+  let best = null;
+  let bestDiff = Infinity;
+  dates.forEach(date => {
+    const diff = Math.abs(daysBetweenKeys(date, dateKey));
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = date;
+    }
+  });
+  return best;
+}
+
 function getRecurringDates(config) {
   if (!config) return [];
-  const freq = config.freq;
-  const daysOfWeek = config.daysOfWeek || [];
-  const daysOfMonth = config.daysOfMonth || [];
-
   if (!config.start || !config.end) return [];
 
-  const [sYear, sMonth, sDay] = config.start.split('-').map(Number);
-  let current = new Date(sYear, sMonth - 1, sDay);
+  const freq = config.freq;
+  const startDate = startOfDayKey(config.start);
+  const endDate = startOfDayKey(config.end);
+  if (!startDate || !endDate) return [];
 
-  const [eYear, eMonth, eDay] = config.end.split('-').map(Number);
-  const end = new Date(eYear, eMonth - 1, eDay, 23, 59, 59);
+  let current = new Date(startDate);
+  const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59);
 
   let count = 0;
   let iterations = 0;
   const dates = [];
 
-  let matchDaysOfWeek = [...daysOfWeek];
-  let matchDaysOfMonth = [...daysOfMonth];
-
-  if (freq === 'Weekly' && matchDaysOfWeek.length === 0) {
-    matchDaysOfWeek.push(current.getDay());
-  }
-  if (freq === 'Monthly' && matchDaysOfMonth.length === 0) {
-    matchDaysOfMonth.push(current.getDate());
-  }
+  const { matchDaysOfWeek, matchDaysOfMonth } = recurrenceMatchDays(config);
 
   // If the template started in the past, fast-forward to today so future
   // occurrences are always produced regardless of how old `start` is. The
@@ -564,24 +766,10 @@ function getRecurringDates(config) {
 
   while (current <= end && count < 50 && iterations < 1000) {
     iterations++;
-    let isMatch = false;
-
-    if (freq === 'Daily') {
-      isMatch = true;
-    } else if (freq === 'Weekly') {
-      isMatch = matchDaysOfWeek.includes(current.getDay());
-    } else if (freq === 'Monthly') {
-      isMatch = matchDaysOfMonth.includes(current.getDate());
-    }
-
-    if (isMatch) {
-      const yyyy = current.getFullYear();
-      const mm = String(current.getMonth() + 1).padStart(2, '0');
-      const dd = String(current.getDate()).padStart(2, '0');
-      dates.push(`${yyyy}-${mm}-${dd}`);
+    if (matchesRecurrence(current, config, matchDaysOfWeek, matchDaysOfMonth)) {
+      dates.push(toDateKey(current));
       count++;
     }
-
     current.setDate(current.getDate() + 1);
   }
   return dates;
@@ -664,7 +852,13 @@ export function repairAnomalousJobNumbers() {
   if (anomalousMasterJobs.length === 0 && childJobs.every(c => {
     if (!c.number) return true;
     const parentJob = c.parentJobId ? store.getById('jobs', c.parentJobId) : null;
-    return !parentJob || (c.number.startsWith(parentJob.number) && !c.number.startsWith('JOB-'));
+    if (!parentJob) return true;
+    // Healthy children are "<childBase>.<n>" where childBase is the parent's
+    // number under the job prefix (T-00012 -> J-00012). The old
+    // startsWith(parentJob.number) test could never match a T- template against
+    // its J- children, so this short circuit never fired and every engine run
+    // renumbered the entire child set.
+    return isChildNumberOfTemplate(c.number, parentJob.number) && !c.number.startsWith('JOB-');
   })) {
     return 0;
   }
@@ -706,10 +900,14 @@ export function repairAnomalousJobNumbers() {
     const parentId = child.parentJobId;
     const parentJob = parentId ? store.getById('jobs', parentId) : null;
     const parentNumber = parentJob ? parentJob.number : (child.number ? child.number.split('.')[0] : null);
+    // Children carry the job prefix, not the template's T- prefix. Writing the
+    // parent number verbatim produced "T-00012.1", which hydration rewrites back
+    // to "J-00012.1" — an endless renumber/rewrite loop across every run.
+    const childBase = parentNumber ? childNumberBaseFor(parentNumber, prefix) : null;
 
-    if (parentNumber) {
-      const existingCount = (childMapByParent.get(parentNumber) || 0) + 1;
-      childMapByParent.set(parentNumber, existingCount);
+    if (childBase) {
+      const existingCount = (childMapByParent.get(childBase) || 0) + 1;
+      childMapByParent.set(childBase, existingCount);
 
       let suffixIndex = existingCount;
       if (child.number && child.number.includes('.')) {
@@ -717,7 +915,7 @@ export function repairAnomalousJobNumbers() {
         if (!isNaN(parsedSuffix)) suffixIndex = parsedSuffix;
       }
 
-      const newChildNumber = `${parentNumber}.${suffixIndex}`;
+      const newChildNumber = `${childBase}.${suffixIndex}`;
       if (child.number !== newChildNumber) {
         numberMap.set(child.number, newChildNumber);
         store.update('jobs', child.id, { 
@@ -795,27 +993,141 @@ export function repairAnomalousJobNumbers() {
   return renumberedCount;
 }
 
-// Heal recurring child jobs that were materialized before templateDate was
-// stamped on that path. A child with a parent link but no templateDate anchors
-// its idempotency only to scheduledDate, so rescheduling it frees its original
-// occurrence slot and the engine re-spawns a duplicate. Anchor each such child
-// to its current scheduledDate (its intended occurrence date) so the dedup holds
-// permanently. One-time, idempotent: once anchored, a child is skipped forever.
-function backfillChildTemplateDates() {
+/**
+ * Heals recurring occurrence history. Idempotent, so it is safe to run on every
+ * engine pass and every template save:
+ *
+ *  1. Re-links children whose `parentJobId` was lost — the link only survives
+ *     inside the serialised notes blob, so rows written before it was persisted
+ *     (or by a device that dropped it) look like orphans. Dedup could not see
+ *     them at all, so their occurrence was re-spawned on every single run.
+ *  2. Anchors un-anchored children to the occurrence they actually fulfil. The
+ *     previous backfill used the child's *current* scheduledDate, so a child the
+ *     user had already dragged to another day anchored to the wrong date and
+ *     freed its real slot for a duplicate.
+ *  3. Deletes duplicate children sharing an occurrence, keeping the best copy
+ *     (completed > started > oldest) and only ever removing untouched ones.
+ *     Finished or already-started work is left for the user to resolve.
+ *  4. Normalises the template's skip list so skips written by older builds (raw
+ *     scheduledDate, day-first strings) keep suppressing their occurrence.
+ *
+ * @returns {{relinked:number, anchored:number, duplicatesRemoved:number, skipsNormalised:number}}
+ */
+export function repairRecurringOccurrences() {
+  const summary = { relinked: 0, anchored: 0, duplicatesRemoved: 0, skipsNormalised: 0 };
   const jobs = store.getAll('jobs') || [];
-  jobs.forEach(j => {
-    if (!j.parentJobId) return;
-    if (j.templateDate) return;
-    const anchor = String(j.scheduledDate || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return;
-    store.update('jobs', j.id, { templateDate: anchor });
+  const templates = jobs.filter(j => j && j.isRecurring === true && j.recurringConfig);
+  if (!templates.length) return summary;
+
+  const jobIds = new Set(jobs.map(j => j.id));
+
+  templates.forEach(template => {
+    const storedSkips = Array.isArray(template.recurringConfig.skippedDates) ? template.recurringConfig.skippedDates : [];
+    const canonicalSkips = canonicalSkippedDates(template.recurringConfig);
+    if (canonicalSkips.length !== storedSkips.length || canonicalSkips.some((d, i) => d !== storedSkips[i])) {
+      const recurringConfig = { ...template.recurringConfig, skippedDates: canonicalSkips };
+      store.update('jobs', template.id, { recurringConfig });
+      template.recurringConfig = recurringConfig;
+      summary.skipsNormalised++;
+    }
+
+    const children = collectTemplateChildren(template, jobs, jobIds);
+    if (!children.length) return;
+
+    children.forEach(child => {
+      if (child.parentJobId === template.id) return;
+      store.update('jobs', child.id, { parentJobId: template.id });
+      child.parentJobId = template.id;
+      summary.relinked++;
+    });
+
+    // Oldest first, so when two un-anchored children are equidistant from an
+    // occurrence the older row wins the slot deterministically.
+    [...children]
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)))
+      .forEach(child => {
+        if (toDateKey(child.templateDate)) return;
+        const scheduled = toDateKey(child.scheduledDate);
+        if (!scheduled) return;
+        const anchor = nearestOccurrenceDate(template.recurringConfig, scheduled);
+        if (!anchor) return;
+        store.update('jobs', child.id, { templateDate: anchor });
+        child.templateDate = anchor;
+        summary.anchored++;
+      });
+
+    const byOccurrence = new Map();
+    children.forEach(child => {
+      const key = occurrenceDateKey(child);
+      if (!key) return;
+      if (!byOccurrence.has(key)) byOccurrence.set(key, []);
+      byOccurrence.get(key).push(child);
+    });
+
+    byOccurrence.forEach(group => {
+      if (group.length < 2) return;
+      const ranked = [...group].sort(compareOccurrenceCopies);
+      ranked.slice(1).forEach(duplicate => {
+        // Only ever remove untouched copies — the extra rows the spawner minted.
+        // Finished or already-started work is the user's to resolve, not the
+        // engine's to delete.
+        if (duplicate.status === 'Completed' || duplicate.status === 'Invoiced' || hasStartedWork(duplicate)) return;
+        store.delete('jobs', duplicate.id);
+        summary.duplicatesRemoved++;
+      });
+    });
+  });
+
+  if (summary.relinked || summary.anchored || summary.duplicatesRemoved) {
+    console.log('Recurring occurrence repair:', summary);
+  }
+  if (summary.duplicatesRemoved > 0) {
+    notifyRecurringRepair(summary.duplicatesRemoved);
+  }
+  return summary;
+}
+
+/** Keeps the copy with real work on it: completed first, then started, then oldest. */
+function compareOccurrenceCopies(a, b) {
+  const rank = job => {
+    if (job.status === 'Completed' || job.status === 'Invoiced') return 0;
+    if (hasStartedWork(job)) return 1;
+    return 2;
+  };
+  const diff = rank(a) - rank(b);
+  if (diff !== 0) return diff;
+  return String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+    || String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+function hasStartedWork(job) {
+  const tasks = Array.isArray(job?.tasks) ? job.tasks : [];
+  return tasks.some(t => (typeof t.progress === 'number' && t.progress > 0) || (t.status && t.status !== 'Not Started'));
+}
+
+function notifyRecurringRepair(count) {
+  // Stable per-day id so a second device (or a second pass) does not stack
+  // duplicate notifications for the same cleanup.
+  const id = `notif_recurring_repair_${todayLocalISO()}`;
+  if (store.getById('notifications', id)) return;
+
+  const message = `${count} duplicate recurring occurrence${count === 1 ? '' : 's'} removed. Each recurring template now has one job per occurrence date.`;
+  store.create('notifications', {
+    id,
+    type: 'Recurring Job Cleanup',
+    title: 'Duplicate recurring occurrences removed',
+    description: message,
+    message,
+    status: 'Info',
+    createdAt: new Date().toISOString(),
+    createdBy: 'System Engine'
   });
 }
 
 export function checkRecurringJobs() {
   cleanOldJobTitles();
   repairAnomalousJobNumbers();
-  backfillChildTemplateDates();
+  repairRecurringOccurrences();
   const jobs = store.getAll('jobs') || [];
 
   const today = new Date();
@@ -830,21 +1142,19 @@ export function checkRecurringJobs() {
 
   recurringJobs.forEach(job => {
     const occurrenceDates = getRecurringDates(job.recurringConfig);
-    
+
     let currentJobs = store.getAll('jobs') || [];
+    let currentJobIds = new Set(currentJobs.map(j => j.id));
     occurrenceDates.forEach(dateStr => {
       const [yr, mo, dy] = dateStr.split('-').map(Number);
       const occurrenceDate = new Date(yr, mo - 1, dy);
       
       if (occurrenceDate >= today && occurrenceDate <= next7Days) {
-        // Use a single read of jobs per template; refresh only after spawning a
-        // child so newly created siblings are still detected within this loop.
-        const hasJob = currentJobs.some(j =>
-          (j.parentJobId === job.id || (j.number && j.number.startsWith(job.number + '.'))) &&
-          (String(j.templateDate || '').slice(0, 10) === dateStr || String(j.scheduledDate || '').slice(0, 10) === dateStr)
-        );
+        // Single read of jobs per template; refreshed after spawning a child so
+        // newly created siblings are detected by the rest of this loop.
+        const hasJob = hasOccurrenceForDate(job, dateStr, currentJobs, currentJobIds);
 
-        const isSkipped = job.recurringConfig?.skippedDates?.includes(dateStr);
+        const isSkipped = isOccurrenceSkipped(job.recurringConfig, dateStr);
 
         if (!hasJob && !isSkipped) {
           // 1. Auto-spawn the child job
@@ -871,9 +1181,12 @@ export function checkRecurringJobs() {
           // Determine next sub-number J-XXX.Y (using job prefix e.g. J- instead of T-)
           const settings = store.getSettings();
           const jobPrefix = (settings.documentTheme && settings.documentTheme.jobPrefix !== undefined) ? settings.documentTheme.jobPrefix : 'J-';
-          const baseNumber = job.number ? job.number.replace(/^(T-|TEMP-|TEM-)/, jobPrefix) : 'J-00001';
+          const baseNumber = job.number ? childNumberBaseFor(job.number, jobPrefix) : 'J-00001';
 
-          const siblingJobs = currentJobs.filter(j => j.parentJobId === job.id);
+          // All children, not just the ones with an intact parentJobId: an
+          // orphan is still using its number, and reusing it would mint two
+          // indistinguishable jobs in the same occurrence.
+          const siblingJobs = collectTemplateChildren(job, currentJobs, currentJobIds);
           let maxSuffix = 0;
           siblingJobs.forEach(sj => {
             if (sj.number) {
@@ -952,6 +1265,7 @@ export function checkRecurringJobs() {
           // Refresh the job snapshot so subsequent occurrence dates in this loop
           // detect the newly spawned sibling.
           currentJobs = store.getAll('jobs') || [];
+          currentJobIds = new Set(currentJobs.map(j => j.id));
 
           if (defaultTechId) {
             let desiredStart = 8;
@@ -1101,6 +1415,8 @@ export function getVirtualRecurringOccurrences(startDateStr, endDateStr) {
   const startD = new Date(startDateStr + 'T00:00:00');
   const endD = new Date(endDateStr + 'T23:59:59');
 
+  const jobIds = new Set(jobs.map(j => j.id));
+
   recurringJobs.forEach(parentJob => {
     const dates = getRecurringDates(parentJob.recurringConfig);
     dates.forEach(dateStr => {
@@ -1108,12 +1424,9 @@ export function getVirtualRecurringOccurrences(startDateStr, endDateStr) {
       const occD = new Date(y, m - 1, d);
       if (occD >= startD && occD <= endD) {
         // Check if an actual spawned child job already exists for this date
-        const hasJob = jobs.some(j =>
-          (j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))) &&
-          (String(j.templateDate || '').slice(0, 10) === dateStr || String(j.scheduledDate || '').slice(0, 10) === dateStr)
-        );
+        const hasJob = hasOccurrenceForDate(parentJob, dateStr, jobs, jobIds);
 
-        const isSkipped = parentJob.recurringConfig?.skippedDates?.includes(dateStr);
+        const isSkipped = isOccurrenceSkipped(parentJob.recurringConfig, dateStr);
 
         if (!hasJob && !isSkipped) {
           const tasklistHrs = getJobTasklistHours(parentJob.tasks || []);
@@ -1146,9 +1459,7 @@ export function getVirtualRecurringOccurrences(startDateStr, endDateStr) {
 export function propagateParentJobUpdates(parentJob) {
   if (!parentJob || !parentJob.isRecurring) return;
   const jobs = store.getAll('jobs') || [];
-  const childJobs = jobs.filter(j =>
-    j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))
-  );
+  const childJobs = collectTemplateChildren(parentJob, jobs, new Set(jobs.map(j => j.id)));
 
   // Resolve the template's default technician so it can be propagated to
   // existing child jobs when the user reassigns it on the template.
@@ -1233,12 +1544,12 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
   const parentJob = store.getById('jobs', parentJobId);
   if (!parentJob) return null;
 
-  // Idempotency: check if a child job for this occurrence date already exists before materializing a new one
+  // Idempotency: an occurrence that is already filled must never be created
+  // twice, even when the existing child was moved or lost its parent link.
   const latestJobs = store.getAll('jobs') || [];
-  const existingChild = latestJobs.find(j =>
-    (j.parentJobId === parentJob.id || (j.number && j.number.startsWith(parentJob.number + '.'))) &&
-    (String(j.templateDate || '').slice(0, 10) === dateStr || String(j.scheduledDate || '').slice(0, 10) === dateStr)
-  );
+  const latestJobIds = new Set(latestJobs.map(j => j.id));
+  const existingChild = collectTemplateChildren(parentJob, latestJobs, latestJobIds)
+    .find(j => childFillsOccurrence(j, dateStr, parentJob));
   if (existingChild) {
     return existingChild;
   }
@@ -1249,9 +1560,10 @@ export function materializeVirtualOccurrence(parentJobId, dateStr, customTechId 
 
   const settings = store.getSettings();
   const jobPrefix = (settings.documentTheme && settings.documentTheme.jobPrefix !== undefined) ? settings.documentTheme.jobPrefix : 'J-';
-  const baseNumber = parentJob.number ? parentJob.number.replace(/^(T-|TEMP-|TEM-)/, jobPrefix) : 'J-00001';
+  const baseNumber = parentJob.number ? childNumberBaseFor(parentJob.number, jobPrefix) : 'J-00001';
 
-  const siblingJobs = latestJobs.filter(j => j.parentJobId === parentJob.id);
+  // Include orphaned children so a respawn cannot mint a number that is already in use.
+  const siblingJobs = collectTemplateChildren(parentJob, latestJobs, latestJobIds);
   let maxSuffix = 0;
   siblingJobs.forEach(sj => {
     if (sj.number) {
