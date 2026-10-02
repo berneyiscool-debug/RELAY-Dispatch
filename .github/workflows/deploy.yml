@@ -3,6 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,9 +17,12 @@ permissions:
 # "deployment_in_progress", which makes the next run hang until it times out
 # ("Timeout reached, aborting!"). Letting each deploy finish before the next
 # starts is GitHub's recommended setting for Pages.
+#
+# PR validation gets its own group so it can neither queue behind a deploy nor
+# delay one. It never touches Pages, so cancelling a superseded run is safe.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && 'pr-validation' || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -33,6 +38,9 @@ jobs:
 
   build:
     needs: test
+    # A PR only needs the tests. Without this guard the PR would build and try
+    # to publish Pages from an unreviewed branch.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +60,7 @@ jobs:
 
   deploy:
     needs: [build, test]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
