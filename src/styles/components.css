@@ -897,29 +897,44 @@ select.badge {
   gap: var(--space-md);
   width: 340px;
   max-width: calc(100vw - (var(--space-lg) * 2));
-  padding: var(--space-md) var(--space-lg);
+  padding: var(--space-base);
   background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-left: 3px solid var(--color-primary);
-  border-radius: var(--border-radius-md);
-  box-shadow: var(--shadow-lg);
-  animation: slideUp 0.25s ease;
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-xl);
+  /* Own keyframes: the app-wide `slideUp` is redefined for the centred bulk
+     action bar and would shift this bottom-right card sideways on entry. */
+  animation: cloudPromptIn 0.22s ease;
 }
+@keyframes cloudPromptIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* Uses the .stat-icon chip pattern so the icon reads as part of the app's card
+   language rather than an alert banner. */
 .cloud-prompt-icon {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  font-size: 20px;
+  border-radius: var(--border-radius-md);
+  background: var(--color-primary-light);
   color: var(--color-primary);
+  font-size: 18px;
 }
 .cloud-prompt-body { flex: 1; min-width: 0; }
 .cloud-prompt-title {
-  font-size: var(--font-size-base);
-  font-weight: 600;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+  padding-right: 22px; /* clears the corner close button */
 }
 .cloud-prompt-text {
   margin-top: var(--space-xs);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   line-height: 1.5;
   color: var(--text-secondary);
 }
@@ -930,7 +945,9 @@ select.badge {
   margin-top: var(--space-md);
 }
 .cloud-prompt-close {
-  flex: none;
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -940,10 +957,11 @@ select.badge {
   background: transparent;
   border: none;
   border-radius: var(--border-radius);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   cursor: pointer;
+  transition: all var(--transition-fast);
 }
-.cloud-prompt-close:hover { background: var(--border-color); color: var(--text-primary); }
+.cloud-prompt-close:hover { background: var(--content-bg); color: var(--text-primary); }
 .cloud-prompt-close .material-icons-outlined { font-size: 15px; }
 
 /* ---- Print Preview ---- */
