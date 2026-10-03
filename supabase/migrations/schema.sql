@@ -62,6 +62,7 @@ CREATE TABLE customers (
   status text DEFAULT 'Active',
   type text DEFAULT 'Commercial',
   portal_token text,
+  portal_passcode text,
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -223,6 +224,8 @@ CREATE TABLE contractors (
   email text,
   phone text,
   status text DEFAULT 'Active',
+  portal_token text,
+  portal_passcode text,
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL
 );

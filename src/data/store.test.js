@@ -236,6 +236,27 @@ describe('DataStore', () => {
       assert.strictEqual(result.name, 'Electric Solutions');
     });
 
+    test('portal passcode is whitelisted and round-trips for customers and contractors', () => {
+      for (const collection of ['customers', 'contractors']) {
+        const denorm = store.denormalizeRecord({ id: 'p1', portalToken: 'tok1', portalPasscode: '4821' }, collection);
+
+        assert.strictEqual(denorm.portal_passcode, '4821', `${collection}: portalPasscode -> portal_passcode`);
+        assert.strictEqual(denorm.portalPasscode, undefined, `${collection}: camelCase key is removed`);
+        assert.strictEqual(denorm.portal_token, 'tok1', `${collection}: portal_token is retained`);
+
+        const norm = store.normalizeRecord({ id: 'p1', portal_token: 'tok1', portal_passcode: '4821' }, collection);
+
+        assert.strictEqual(norm.portalPasscode, '4821', `${collection}: portal_passcode -> portalPasscode`);
+        assert.strictEqual(norm.portal_passcode, undefined, `${collection}: snake_case key is removed`);
+      }
+    });
+
+    test('an explicit null portal passcode is preserved so an admin reset clears the PIN', () => {
+      const denorm = store.denormalizeRecord({ id: 'p1', portalPasscode: null }, 'customers');
+
+      assert.strictEqual(denorm.portal_passcode, null);
+    });
+
     test('schedules tasks metadata serialization and deserialization via color column works', () => {
       const schedulePayload = {
         id: 's1',

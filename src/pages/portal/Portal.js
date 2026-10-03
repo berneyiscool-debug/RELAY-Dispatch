@@ -93,7 +93,7 @@ export function renderCustomerPortal(container, params) {
       </div>
     `;
 
-    container.querySelector('#portal-setup-form').addEventListener('submit', (e) => {
+    container.querySelector('#portal-setup-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const p1 = container.querySelector('#portal-pin-1').value.trim();
       const p2 = container.querySelector('#portal-pin-2').value.trim();
@@ -108,13 +108,12 @@ export function renderCustomerPortal(container, params) {
       }
 
       // Save PIN
-      const custs = store.getAll('customers');
-      const idx = custs.findIndex(c => c.id === customer.id);
-      if (idx !== -1) {
-        custs[idx].portalPasscode = p1;
-        store.save('customers', custs);
-        customer.portalPasscode = p1; // update in-memory
+      const result = await store.update('customers', customer.id, { portalPasscode: p1 });
+      if (result && result.ok === false) {
+        showToast('Could not save your PIN. Please try again.', 'error');
+        return;
       }
+      customer.portalPasscode = p1; // update in-memory
 
       // Set authenticated
       sessionStorage.setItem('portal_customer_auth_' + customer.id, 'true');
@@ -531,6 +530,9 @@ export function renderCustomerPortal(container, params) {
               <div style="font-weight: 600; color: var(--text-primary);">${escapeHTML(customer.firstName)} ${escapeHTML(customer.lastName)}</div>
               <div style="color: var(--text-secondary); font-size:11px;">${escapeHTML(customer.company)}</div>
             </div>
+            <button class="btn btn-outline btn-sm" id="btn-portal-change-pin" style="display:flex; align-items:center; gap:6px;">
+              <span class="material-icons-outlined" style="font-size: 16px;">lock_reset</span> Change PIN
+            </button>
             <button class="btn btn-outline btn-sm" id="btn-portal-contact" style="display:flex; align-items:center; gap:6px;">
               <span class="material-icons-outlined" style="font-size: 16px;">support_agent</span> Contact Us
             </button>
@@ -1662,6 +1664,66 @@ export function renderCustomerPortal(container, params) {
           title: 'Contact Operations Office',
           content,
           actions: [{ label: 'Close', className: 'btn-primary', onClick: c => c() }]
+        });
+      });
+    });
+
+    // Change PIN Modal trigger
+    portalShell.querySelector('#btn-portal-change-pin')?.addEventListener('click', () => {
+      import('../../components/Modal.js').then(({ showModal }) => {
+        const pinField = (id, label) => `
+          <div class="form-group" style="display:flex; flex-direction:column; gap:6px;">
+            <label class="form-label" style="font-size:12px; font-weight:600; color:var(--text-secondary);">${label}</label>
+            <input type="password" maxlength="6" inputmode="numeric" id="${id}" class="form-input" placeholder="••••"
+                   style="text-align:center; font-size:18px; letter-spacing:8px; padding:10px; width:100%; box-sizing:border-box; background:var(--body-bg); border:1px solid var(--border-color); color:var(--text-primary);" />
+          </div>
+        `;
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <p style="margin:0; font-size:13px; color:var(--text-secondary); line-height:1.5;">Choose a new 4-to-6 digit PIN for this portal link. You will stay signed in on this device.</p>
+            ${pinField('portal-pin-current', 'Current PIN')}
+            ${pinField('portal-pin-new', 'New PIN')}
+            ${pinField('portal-pin-new-confirm', 'Confirm New PIN')}
+          </div>
+        `;
+
+        showModal({
+          title: 'Change Portal PIN',
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            { label: 'Save PIN', className: 'btn-primary', onClick: async (close) => {
+              const currentPin = content.querySelector('#portal-pin-current').value.trim();
+              const newPin = content.querySelector('#portal-pin-new').value.trim();
+              const confirmPin = content.querySelector('#portal-pin-new-confirm').value.trim();
+
+              if (currentPin !== customer.portalPasscode) {
+                showToast('Current PIN is incorrect', 'error');
+                return;
+              }
+              if (!/^\d{4,6}$/.test(newPin)) {
+                showToast('New PIN must be between 4 and 6 digits (numbers only)', 'error');
+                return;
+              }
+              if (newPin !== confirmPin) {
+                showToast('New PIN entries do not match', 'error');
+                return;
+              }
+
+              const result = await store.update('customers', customer.id, { portalPasscode: newPin });
+              if (result && result.ok === false) {
+                showToast('Could not update your PIN. Please try again.', 'error');
+                return;
+              }
+
+              customer.portalPasscode = newPin;
+              sessionStorage.setItem('portal_customer_auth_' + customer.id, 'true');
+              showToast('Portal PIN updated successfully', 'success');
+              close();
+            }}
+          ]
         });
       });
     });
