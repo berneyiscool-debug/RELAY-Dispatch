@@ -9,7 +9,6 @@ import { showModal } from './Modal.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 import { escapeHTML } from '../utils/security.js';
-import { setSessionUser } from '../pages/auth/session.js';
 
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
@@ -61,11 +60,6 @@ export function createTopBar() {
           <span class="material-icons-outlined">close</span>
         </button>
       </div>
-      <!-- Simple/Complete mode toggle (local-admin only; profile block moved to the sidebar footer) -->
-      <label class="toggle-pill" title="Toggle Simple/Complete Mode" style="display:none;">
-        <input type="checkbox" id="ui-mode-toggle" />
-        <span class="slider"></span>
-      </label>
     </div>
   `;
 
@@ -116,41 +110,6 @@ export function createTopBar() {
   searchInput.addEventListener('blur', () => {
     setTimeout(hideSearchResults, 200);
   });
-
-// UI Mode toggle — just wire up the change listener here.
-  // Visibility is handled in updateTopbarAccess() which runs after login.
-  const uiToggle = topbar.querySelector('#ui-mode-toggle');
-  if (uiToggle) {
-    const toggleLabel = uiToggle.closest('label');
-    // Hidden by default until updateTopbarAccess shows it for local admin
-    if (toggleLabel) toggleLabel.style.display = 'none';
-
-    uiToggle.addEventListener('change', () => {
-      const mode = uiToggle.checked ? 'admin' : 'technician';
-      localStorage.setItem('uiMode', mode);
-      // Update currentUser role and userTypeId accordingly
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      currentUser.role = mode;
-      if (currentUser.companyId) {
-        if (mode === 'admin') {
-          currentUser.userTypeId = `${currentUser.companyId}_ut_admin`;
-        } else {
-          currentUser.userTypeId = `${currentUser.companyId}_ut_tech`;
-        }
-      }
-      setSessionUser(currentUser);
-      // Refresh top-bar display to reflect role change
-      updateTopbarAccess(topbar);
-      // Refresh sidebar to show/hide items based on new role
-      import('./Sidebar.js').then(({ updateSidebarAccess }) => {
-        if (updateSidebarAccess) updateSidebarAccess();
-      });
-      // Trigger a page refresh/rerender to re-evaluate auth guards/permissions
-      if (window.__relay && window.__relay.router) {
-        window.__relay.router.resolve();
-      }
-    });
-  }
 
   // Notices logic
   const notifBtn = topbar.querySelector('#btn-notifications');
@@ -235,24 +194,6 @@ export function updateTopbarAccess(topbarEl) {
   if (!topbar) return;
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
-
-  // --- Toggle visibility (re-evaluated every time, including after login) ---
-  const uiToggle = topbar.querySelector('#ui-mode-toggle');
-  if (uiToggle) {
-    // Toggle is ONLY for local admin (single user) mode.
-    //   'local'  → Local Admin (single user) — toggle VISIBLE
-    //   'cloud'  → Cloud — toggle HIDDEN
-    const loginMode = localStorage.getItem('relay_login_mode');
-    const isLocalAdminMode = loginMode === 'local';
-    const toggleLabel = uiToggle.closest('label');
-    if (isLocalAdminMode) {
-      if (toggleLabel) toggleLabel.style.display = '';
-      const savedMode = localStorage.getItem('uiMode') || 'admin';
-      uiToggle.checked = savedMode === 'admin';
-    } else {
-      if (toggleLabel) toggleLabel.style.display = 'none';
-    }
-  }
 
   // Name / role / avatar now render in the sidebar footer
   // (Sidebar.updateSidebarProfile), refreshed via updateSidebarAccess on login

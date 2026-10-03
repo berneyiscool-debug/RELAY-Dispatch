@@ -6,11 +6,18 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { isCloudUser } from '../../utils/aiTier.js';
 
 export function renderLeadForm(container, { id, origin }) {
   const isEdit = id && id !== 'new';
   const lead = isEdit ? store.getById('leads', id) : {};
-  const defaultOrigin = lead.origin || origin || 'Internal';
+  // The Marketplace is a cloud-only lead source (see LeadsList.js), so a local
+  // workspace files Internal leads only. A lead that already carries the
+  // Marketplace origin keeps it, so editing can't silently reclassify the record.
+  const origins = !isCloudUser() && lead.origin !== 'Marketplace' ? ['Internal'] : ['Internal', 'Marketplace'];
+  // ?origin=Marketplace deep links come from the marketplace leads list, which a
+  // local workspace can't reach, so ignore it there.
+  const defaultOrigin = lead.origin || (isCloudUser() ? origin : null) || 'Internal';
   const customers = store.getAll('customers');
 
   container.innerHTML = `
@@ -33,7 +40,7 @@ export function renderLeadForm(container, { id, origin }) {
             <div class="form-group">
               <label class="form-label">Origin</label>
               <select class="form-select" name="origin">
-                ${['Internal','Marketplace'].map(o => `<option ${defaultOrigin === o ? 'selected' : ''}>${o}</option>`).join('')}
+                ${origins.map(o => `<option ${defaultOrigin === o ? 'selected' : ''}>${o}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
