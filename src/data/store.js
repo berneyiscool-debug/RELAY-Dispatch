@@ -2510,7 +2510,8 @@ class DataStore {
               color: currentUser.color || '#FF5C00',
               userTypeId: currentUser.userTypeId,
               email: currentUser.email || '',
-              username: currentUser.username || ''
+              username: currentUser.username || '',
+              startLocation: this._localStartLocation()
             }];
           }
         }
@@ -3215,6 +3216,28 @@ class DataStore {
   // Writes profiles.start_location directly (the technicians update() path goes
   // through the invite-user edge function, which doesn't carry this field).
   // Pass null to clear the override (falls back to the company office).
+  //
+  // Local (single-user) installs keep no technicians table — getAll() synthesises the
+  // owner's row from localStorage — so the override is kept on the local account record
+  // and surfaced through that synthesised row instead.
+  _localAccountRecord() {
+    try {
+      const accounts = JSON.parse(localStorage.getItem('relay_accounts') || '[]');
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      const list = Array.isArray(accounts) ? accounts : [];
+      const index = list.findIndex(a => a && a.id === currentUser?.companyId);
+      return index === -1 ? null : { list, index, account: list[index] };
+    } catch (e) {
+      console.error('Error reading local accounts:', e);
+      return null;
+    }
+  }
+
+  _localStartLocation() {
+    const record = this._localAccountRecord();
+    return (record && record.account.startLocation) || null;
+  }
+
   async setStartLocation(startLocation) {
     const currentUser = typeof localStorage !== 'undefined'
       ? JSON.parse(localStorage.getItem('currentUser') || 'null') : null;
@@ -3230,8 +3253,16 @@ class DataStore {
     }
 
     if (!this.companyId || this.companyId.startsWith('acct_')) {
-      // Local mode: persist with the rest of the technician record
-      await this.writeRecordToIndexedDB?.('technicians', techs[i]).catch?.(() => {});
+      // Local mode: persist on the local account record, because the synthesised
+      // technicians row that reads it back is rebuilt from localStorage every time.
+      const record = this._localAccountRecord();
+      if (record) {
+        record.list[record.index] = { ...record.account, startLocation };
+        localStorage.setItem('relay_accounts', JSON.stringify(record.list));
+        return;
+      }
+      // Local account record missing: fall back to the technician record itself.
+      if (i !== -1) await this.writeRecordToIndexedDB?.('technicians', techs[i]).catch?.(() => {});
       return;
     }
     const { error } = await supabase

@@ -722,6 +722,14 @@ router.onNavigate = (path, params) => {
   }
 
   if (currentUser) {
+    // Local (single-user) accounts have no My Profile page — Settings → Local Storage
+    // owns the PIN, the recovery question and the dispatch start location for them.
+    const isLocalLogin = localStorage.getItem('relay_login_mode') === 'local'
+      || String(currentUser.companyId || store.companyId || '').startsWith('acct_');
+    if (isLocalLogin && basePath === '/profile') {
+      return '/settings?tab=local_storage';
+    }
+
     if (currentUser.role === 'customer' && protectedRoutes.includes(basePath)) {
        // Customer trying to access staff pages -> force to portal
        if (currentUser.portalToken) {

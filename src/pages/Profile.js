@@ -7,9 +7,7 @@ import { router } from '../router.js';
 import { showToast } from '../components/Notifications.js';
 import { escapeHTML } from '../utils/security.js';
 import { supabase } from '../utils/supabase.js';
-import { storageGet, storageSet } from '../utils/persist.js';
 import { FLAGS } from '../utils/flags.js';
-import { hashPassword } from './auth/password.js';
 import { setSessionUser } from './auth/session.js';
 
 const PRESET_AVATAR_COLORS = [
@@ -61,33 +59,10 @@ const compressImage = (file) => {
 
 export function renderProfile(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-  const loginMode = localStorage.getItem('relay_login_mode') || 'cloud'; // 'local' | 'cloud'
-  
+
   let activeAvatarColor = currentUser.color || '#FF5C00';
-  let activeRecoveryQuestion = '';
-  let activeAccountObj = null;
-  let accounts = [];
   let uploadedAvatarUrl = currentUser.avatarUrl || null;
   const myStartLocation = FLAGS.maps ? (store.getById('technicians', currentUser.id)?.startLocation || null) : null;
-
-  const loadProfileAvatar = async () => {
-    if (loginMode === 'local') {
-      accounts = await storageGet('relay_accounts') || [];
-      activeAccountObj = accounts.find(a => a.id === currentUser.companyId);
-      if (activeAccountObj) {
-        activeRecoveryQuestion = activeAccountObj.recoveryQuestion || '';
-        activeAvatarColor = activeAccountObj.avatarColor || activeAvatarColor;
-        uploadedAvatarUrl = activeAccountObj.avatarUrl || null;
-      }
-    } else {
-      uploadedAvatarUrl = currentUser.avatarUrl || null;
-    }
-  };
-
-  const init = async () => {
-    await loadProfileAvatar();
-    render();
-  };
 
   const render = () => {
     const initials = currentUser.name ? currentUser.name.trim().charAt(0).toUpperCase() : 'U';
@@ -99,15 +74,7 @@ export function renderProfile(container) {
     else if (displayRole === 'technician') displayRole = 'Technician';
     else if (displayRole === 'office') displayRole = 'Office Staff';
 
-    const isLocalAdmin = loginMode === 'local';
-    const isCloud = loginMode === 'cloud';
-
-    let usernameOrEmail = '';
-    if (isCloud) {
-      usernameOrEmail = currentUser.email || 'Cloud Account';
-    } else {
-      usernameOrEmail = 'Local Administrator';
-    }
+    const usernameOrEmail = currentUser.email || 'Cloud Account';
 
     const factsheetKey = `relay_factsheet_${currentUser.id || 'default'}`;
     const enabledKey = `relay_factsheet_enabled_${currentUser.id || 'default'}`;
@@ -277,24 +244,24 @@ export function renderProfile(container) {
         <div class="profile-section">
           <div class="profile-section-header">
             <h2 class="profile-section-title">Security</h2>
-            <p class="profile-section-desc">${isLocalAdmin ? 'Change the PIN code used to lock and unlock your local business profile on this machine.' : 'Update your credentials used to sign in to your company.'}</p>
+            <p class="profile-section-desc">Update your credentials used to sign in to your company.</p>
           </div>
 
           <div class="profile-form-grid">
             <div class="form-group">
-              <label class="form-label">${isLocalAdmin ? 'New PIN / Password' : 'New Password'}</label>
-              <input type="password" id="profile-new-pwd" class="form-input" placeholder="${isLocalAdmin ? 'Leave blank to remove PIN protection' : 'Minimum 6 characters'}" minlength="${isLocalAdmin ? 0 : 6}" />
+              <label class="form-label">New Password</label>
+              <input type="password" id="profile-new-pwd" class="form-input" placeholder="Minimum 6 characters" minlength="6" />
             </div>
 
             <div class="form-group">
-              <label class="form-label">Confirm ${isLocalAdmin ? 'PIN / Password' : 'Password'}</label>
+              <label class="form-label">Confirm Password</label>
               <input type="password" id="profile-confirm-pwd" class="form-input" placeholder="Confirm new password" />
             </div>
           </div>
 
           <div style="max-width:800px; display:flex; justify-content:flex-end;">
             <button class="btn btn-primary btn-sm" id="btn-update-profile-password">
-              Update ${isLocalAdmin ? 'PIN' : 'Password'}
+              Update Password
             </button>
           </div>
         </div>
@@ -323,46 +290,7 @@ export function renderProfile(container) {
             </div>
           </div>` : ''}
 
-        <!-- Section 4: Local Recovery (Local Admin Only) -->
-        ${isLocalAdmin ? `
-          <div class="profile-section">
-            <div class="profile-section-header">
-              <h2 class="profile-section-title">Secret Recovery Question</h2>
-              <p class="profile-section-desc">Configure a secret question to reset your PIN if you ever forget it.</p>
-            </div>
-
-            <div class="profile-form-grid">
-              <div class="form-group">
-                <label class="form-label">Recovery Question</label>
-                <select id="profile-recovery-select" class="form-select" style="width: 100%;">
-                  <option value="What was the name of your first pet?" ${activeRecoveryQuestion === 'What was the name of your first pet?' ? 'selected' : ''}>What was the name of your first pet?</option>
-                  <option value="In what city or town did your parents meet?" ${activeRecoveryQuestion === 'In what city or town did your parents meet?' ? 'selected' : ''}>In what city or town did your parents meet?</option>
-                  <option value="What was the name of your first school?" ${activeRecoveryQuestion === 'What was the name of your first school?' ? 'selected' : ''}>What was the name of your first school?</option>
-                  <option value="What was your favorite childhood food?" ${activeRecoveryQuestion === 'What was your favorite childhood food?' ? 'selected' : ''}>What was your favorite childhood food?</option>
-                  <option value="custom" ${activeRecoveryQuestion && !['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? 'selected' : ''}>Write a custom question...</option>
-                </select>
-              </div>
-
-              <div class="form-group" id="profile-recovery-custom-group" style="display: ${activeRecoveryQuestion && !['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? 'block' : 'none'};">
-                <label class="form-label">Custom Question</label>
-                <input type="text" id="profile-recovery-custom-question" class="form-input" placeholder="Type your custom question" value="${escapeHTML(!['What was the name of your first pet?', 'In what city or town did your parents meet?', 'What was the name of your first school?', 'What was your favorite childhood food?'].includes(activeRecoveryQuestion) ? activeRecoveryQuestion : '')}" />
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Recovery Answer</label>
-                <input type="password" id="profile-recovery-answer" class="form-input" placeholder="Type answer (leave blank to keep current)" />
-              </div>
-            </div>
-
-            <div style="max-width:800px; display:flex; justify-content:flex-end;">
-              <button class="btn btn-primary btn-sm" id="btn-update-recovery-question">
-                Save Recovery Settings
-              </button>
-            </div>
-          </div>
-        ` : ''}
-
-        <!-- Section 5: AI Co-Pilot Memory -->
+        <!-- Section 4: AI Co-Pilot Memory -->
         <div class="profile-section">
           <div class="profile-section-header">
             <h2 class="profile-section-title">AI Co-Pilot Memory (Learned Profile)</h2>
@@ -476,15 +404,6 @@ export function renderProfile(container) {
       });
     });
 
-    // 2. Custom Recovery Question Trigger
-    const selectEl = container.querySelector('#profile-recovery-select');
-    const customGroup = container.querySelector('#profile-recovery-custom-group');
-    if (selectEl && customGroup) {
-      selectEl.addEventListener('change', () => {
-        customGroup.style.display = selectEl.value === 'custom' ? 'block' : 'none';
-      });
-    }
-
     // 3. Save Profile Details
     container.querySelector('#btn-save-profile-details').addEventListener('click', async () => {
       const name = container.querySelector('#profile-name').value.trim();
@@ -500,30 +419,19 @@ export function renderProfile(container) {
       setSessionUser(currentUser);
 
       try {
-        if (loginMode === 'cloud') {
-          // Cloud Supabase User Profile Update
-          const { error } = await supabase.auth.updateUser({
-            data: { name: name, avatarUrl: uploadedAvatarUrl }
-          });
-          if (error) throw error;
-          
-          // Write back to profiles table
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .update({ name: name, color: activeAvatarColor, avatar_url: uploadedAvatarUrl })
-            .eq('id', currentUser.id);
-            
-          if (profileError) throw profileError;
+        // Cloud Supabase User Profile Update
+        const { error } = await supabase.auth.updateUser({
+          data: { name: name, avatarUrl: uploadedAvatarUrl }
+        });
+        if (error) throw error;
 
-        } else {
-          // Local Admin Profile details
-          if (activeAccountObj) {
-            activeAccountObj.businessName = name; // sync businessName with updated name
-            activeAccountObj.avatarColor = activeAvatarColor;
-            activeAccountObj.avatarUrl = uploadedAvatarUrl;
-            await storageSet('relay_accounts', accounts);
-          }
-        }
+        // Write back to profiles table
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ name: name, color: activeAvatarColor, avatar_url: uploadedAvatarUrl })
+          .eq('id', currentUser.id);
+
+        if (profileError) throw profileError;
 
         // Notify TopBar to reload avatar/name
         window.dispatchEvent(new CustomEvent('relay-profile-updated'));
@@ -536,7 +444,7 @@ export function renderProfile(container) {
       }
     });
 
-    // 4. Update Password / PIN
+    // 4. Save Dispatch Start Location
     // v1.3 maps: save per-user dispatch start location (element only exists when flag is on)
     container.querySelector('#btn-save-start-location')?.addEventListener('click', async () => {
       const btn = container.querySelector('#btn-save-start-location');
@@ -567,11 +475,12 @@ export function renderProfile(container) {
       }
     });
 
+    // 5. Update Password
     container.querySelector('#btn-update-profile-password').addEventListener('click', async () => {
       const newPwd = container.querySelector('#profile-new-pwd').value;
       const confirmPwd = container.querySelector('#profile-confirm-pwd').value;
 
-      if (loginMode !== 'local' && (!newPwd || newPwd.length < 6)) {
+      if (!newPwd || newPwd.length < 6) {
         showToast('Password must be at least 6 characters.', 'error');
         return;
       }
@@ -582,64 +491,21 @@ export function renderProfile(container) {
       }
 
       try {
-        if (loginMode === 'cloud') {
-          // Supabase Password Update
-          const { error } = await supabase.auth.updateUser({
-            password: newPwd
-          });
-          if (error) throw error;
-
-        } else {
-          // Profile password update
-          if (activeAccountObj) {
-            if (newPwd) {
-              activeAccountObj.hasPassword = true;
-              activeAccountObj.passwordHash = await hashPassword(newPwd);
-            } else {
-              activeAccountObj.hasPassword = false;
-              activeAccountObj.passwordHash = null;
-            }
-            await storageSet('relay_accounts', accounts);
-          }
-        }
+        // Supabase Password Update
+        const { error } = await supabase.auth.updateUser({
+          password: newPwd
+        });
+        if (error) throw error;
 
         container.querySelector('#profile-new-pwd').value = '';
         container.querySelector('#profile-confirm-pwd').value = '';
         
-        showToast(loginMode === 'local' ? 'PIN code updated successfully.' : 'Password updated successfully.', 'success');
+        showToast('Password updated successfully.', 'success');
       } catch (err) {
         console.error(err);
         showToast(err.message || 'Failed to update security credentials.', 'error');
       }
     });
-
-    // 5. Update Recovery Settings (Local Admin Only)
-    const btnUpdateRecovery = container.querySelector('#btn-update-recovery-question');
-    if (btnUpdateRecovery) {
-      btnUpdateRecovery.addEventListener('click', async () => {
-        const selectQ = container.querySelector('#profile-recovery-select').value;
-        const customQ = container.querySelector('#profile-recovery-custom-question').value.trim();
-        const answer = container.querySelector('#profile-recovery-answer').value.trim().toLowerCase();
-
-        const recoveryQ = selectQ === 'custom' ? customQ : selectQ;
-        if (!recoveryQ) {
-          showToast('Please set a recovery question.', 'error');
-          return;
-        }
-
-        if (activeAccountObj) {
-          activeAccountObj.recoveryQuestion = recoveryQ;
-          if (answer) {
-            activeAccountObj.recoveryAnswerHash = await hashPassword(answer);
-          }
-          await storageSet('relay_accounts', accounts);
-          
-          container.querySelector('#profile-recovery-answer').value = '';
-          showToast('Security recovery settings saved successfully.', 'success');
-          render();
-        }
-      });
-    }
 
     // 6. Save AI Profile Factsheet & Enabled settings
     const enabledCheckbox = container.querySelector('#profile-ai-enabled');
@@ -678,5 +544,7 @@ export function renderProfile(container) {
     }
   };
 
-  init();
+  // Local accounts never reach this page; Settings → Local Storage owns the PIN,
+  // the secret recovery question and the dispatch start location for them.
+  render();
 }

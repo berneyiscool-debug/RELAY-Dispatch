@@ -23,7 +23,7 @@ import { renderLeadProfileSetup } from './leads/leadProfile.js';
 import { hashPassword, verifyPassword } from './auth/password.js';
 import { setSessionUser, clearSessionUser } from './auth/session.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
-import { openMigrationModal, showCloudUpgradePrompt } from '../components/CloudUpgrade.js';
+import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS } from '../components/CloudUpgrade.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -230,25 +230,16 @@ export function renderSettings(container) {
   const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
   const settings = store.getSettings();
 
-  const isPortalDisabled = isLocalMode;
-  const isCloudGated = isLocalMode; // online payments + email are cloud-only
-
-  // Cloud-only tabs open the upgrade nudge instead of silently landing on Company
-  if (isPortalDisabled && activeTab === 'portal') {
-    activeTab = 'company';
-    showCloudUpgradePrompt('The Customer Portal');
-  }
-  if (isPortalDisabled && activeTab === 'portal_contractor') {
-    activeTab = 'company';
-    showCloudUpgradePrompt('The Contractor Portal');
-  }
-  if (isCloudGated && activeTab === 'payments') {
-    activeTab = 'company';
-    showCloudUpgradePrompt('Online payments');
-  }
-  if (isCloudGated && activeTab === 'email') {
-    activeTab = 'company';
-    showCloudUpgradePrompt('Email & domain');
+  // Cloud-only tabs open the upgrade nudge instead of silently landing on Company.
+  // The tab list lives in CloudUpgrade.js, which the sidebar grey-out also reads.
+  // Users, User Types & Permissions and Password Recovery all render under the
+  // 'users' tab id, so the sub-tab is the more specific lookup for those.
+  if (isLocalMode) {
+    const gatedTab = CLOUD_ONLY_SETTINGS_TABS[activeTab === 'users' ? usersSubTab : activeTab];
+    if (gatedTab) {
+      activeTab = 'company';
+      showCloudUpgradePrompt(gatedTab);
+    }
   }
   
   // The model provider and credentials are RELAY's own (see utils/aiTier.js), and
@@ -3795,8 +3786,17 @@ export function renderSettings(container) {
   // a folder here, cloud accounts mirror their records here as JSON.
   // currentUser is a renderSettings local, so it is passed in (same as renderBillingTab).
   function renderLocalStorageTab(tc, currentUser) {
-    if (isLocalAccount()) renderLocalFolderSync(tc);
-    else renderLocalBackup(tc, currentUser);
+    if (!isLocalAccount()) {
+      renderLocalBackup(tc, currentUser);
+      return;
+    }
+    // renderLocalFolderSync writes its host element, so each card owns a host.
+    tc.replaceChildren();
+    const folderHost = document.createElement('div');
+    const securityHost = document.createElement('div');
+    tc.append(folderHost, securityHost);
+    renderLocalFolderSync(folderHost);
+    renderLocalSecurity(securityHost, currentUser);
   }
 
   function renderLocalFolderSync(tc) {
@@ -4035,6 +4035,224 @@ export function renderSettings(container) {
     }
 
     render();
+  }
+
+  // Local accounts have no My Profile page, so the things that page used to own —
+  // the unlock PIN, the secret recovery question and the dispatch start location —
+  // live here instead. Ported from Profile.js so the behaviour is unchanged.
+  function renderLocalSecurity(host, currentUser) {
+    const RECOVERY_PRESETS = [
+      'What was the name of your first pet?',
+      'In what city or town did your parents meet?',
+      'What was the name of your first school?',
+      'What was your favorite childhood food?'
+    ];
+
+    let accounts = [];
+    let account = null;
+    let recoveryQuestion = '';
+    let hasPin = false;
+    let startLocation = null;
+
+    const load = async () => {
+      accounts = (await storageGet('relay_accounts')) || [];
+      account = accounts.find(a => a.id === currentUser.companyId) || null;
+      recoveryQuestion = account?.recoveryQuestion || '';
+      hasPin = !!account?.hasPassword;
+      startLocation = FLAGS.maps ? (store.getById('technicians', currentUser.id)?.startLocation || null) : null;
+    };
+
+    const render = () => {
+      const isCustom = !!recoveryQuestion && !RECOVERY_PRESETS.includes(recoveryQuestion);
+      const presetOptions = RECOVERY_PRESETS.map(q =>
+        `<option value="${escapeHTML(q)}" ${recoveryQuestion === q ? 'selected' : ''}>${escapeHTML(q)}</option>`
+      ).join('');
+
+      host.innerHTML = `
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:var(--space-lg); max-width:100%; align-items:start; margin-top:var(--space-lg);">
+          <div style="display:flex; flex-direction:column; gap:var(--space-lg);">
+
+            <div class="card">
+              <div class="card-header"><h4>Unlock PIN</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
+                  The PIN that locks and unlocks this local business profile on this machine.
+                </p>
+                <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+                  <div class="form-group">
+                    <label class="form-label">New PIN / Password</label>
+                    <input type="password" id="local-security-new-pin" class="form-input" autocomplete="new-password"
+                      placeholder="Leave blank to remove PIN protection" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Confirm PIN / Password</label>
+                    <input type="password" id="local-security-confirm-pin" class="form-input" autocomplete="new-password"
+                      placeholder="Re-type the new PIN" />
+                  </div>
+                </div>
+                <p class="text-tertiary" style="margin:0 0 var(--space-base);">
+                  ${hasPin ? 'PIN protection is currently on.' : 'No PIN set — RELAY opens without a prompt on this machine.'}
+                </p>
+                <div style="display:flex; justify-content:flex-end;">
+                  <button class="btn btn-primary btn-sm" id="local-security-save-pin">Update PIN</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h4>Secret Recovery Question</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
+                  Answer this to reset your PIN if you ever forget it.
+                </p>
+                <div class="form-group">
+                  <label class="form-label">Recovery Question</label>
+                  <select id="local-security-recovery-select" class="form-select" style="width:100%">
+                    ${presetOptions}
+                    <option value="custom" ${isCustom ? 'selected' : ''}>Write a custom question...</option>
+                  </select>
+                </div>
+                <div class="form-group" id="local-security-recovery-custom-group" style="display:${isCustom ? 'block' : 'none'}">
+                  <label class="form-label">Custom Question</label>
+                  <input type="text" id="local-security-recovery-custom-question" class="form-input"
+                    placeholder="Type your custom question" value="${escapeHTML(isCustom ? recoveryQuestion : '')}" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Recovery Answer</label>
+                  <input type="password" id="local-security-recovery-answer" class="form-input"
+                    placeholder="Type answer (leave blank to keep current)" />
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                  <button class="btn btn-primary btn-sm" id="local-security-save-recovery">Save Recovery Settings</button>
+                </div>
+              </div>
+            </div>
+
+            ${FLAGS.maps ? `
+            <div class="card">
+              <div class="card-header"><h4>Dispatch Start Location</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
+                  Where your day's driving starts and ends for route planning. Leave blank to use the company office.
+                </p>
+                <div class="form-group">
+                  <label class="form-label">Start Address</label>
+                  <input type="text" id="local-security-start-location" class="form-input"
+                    placeholder="Company office (default)" value="${escapeHTML(startLocation?.address || '')}" />
+                  <div id="local-security-start-hint" class="text-tertiary" style="margin-top:4px;">
+                    ${startLocation?.address ? 'Custom start location set.' : 'Currently using the company office address.'}
+                  </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                  <button class="btn btn-primary btn-sm" id="local-security-save-start">Save Start Location</button>
+                </div>
+              </div>
+            </div>` : ''}
+
+          </div>
+
+          <div class="card" style="background:var(--content-bg);">
+            <div class="card-header"><h4>Where this is stored</h4></div>
+            <div class="card-body">
+              <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
+                These settings belong to this machine only. Nothing here is sent anywhere.
+              </p>
+              <p class="text-tertiary" style="margin:0 0 var(--space-base); line-height:1.55;">
+                Your PIN and recovery answer are salted and hashed before they are written to this browser's
+                local database — RELAY never stores them in plain text.
+              </p>
+              <p class="text-tertiary" style="margin:0; line-height:1.55;">
+                Keep the recovery answer somewhere safe. It is the only way back in if the PIN is forgotten.
+              </p>
+            </div>
+          </div>
+        </div>
+      `;
+
+      attach();
+    };
+
+    const missingAccount = () => {
+      if (account) return false;
+      showToast('Could not find this local account record.', 'error');
+      return true;
+    };
+
+    const attach = () => {
+      host.querySelector('#local-security-save-pin')?.addEventListener('click', async () => {
+        const newPin = host.querySelector('#local-security-new-pin').value;
+        const confirmPin = host.querySelector('#local-security-confirm-pin').value;
+        if (newPin !== confirmPin) {
+          showToast('Passwords do not match.', 'error');
+          return;
+        }
+        if (missingAccount()) return;
+        account.hasPassword = !!newPin;
+        account.passwordHash = newPin ? await hashPassword(newPin) : null;
+        await storageSet('relay_accounts', accounts);
+        showToast(newPin ? 'PIN code updated successfully.' : 'PIN protection removed.', 'success');
+        await load();
+        render();
+      });
+
+      const selectEl = host.querySelector('#local-security-recovery-select');
+      const customGroup = host.querySelector('#local-security-recovery-custom-group');
+      if (selectEl && customGroup) {
+        selectEl.addEventListener('change', () => {
+          customGroup.style.display = selectEl.value === 'custom' ? 'block' : 'none';
+        });
+      }
+
+      host.querySelector('#local-security-save-recovery')?.addEventListener('click', async () => {
+        const selectQ = host.querySelector('#local-security-recovery-select').value;
+        const customQ = host.querySelector('#local-security-recovery-custom-question').value.trim();
+        const answer = host.querySelector('#local-security-recovery-answer').value.trim().toLowerCase();
+        const recoveryQ = selectQ === 'custom' ? customQ : selectQ;
+        if (!recoveryQ) {
+          showToast('Please set a recovery question.', 'error');
+          return;
+        }
+        if (missingAccount()) return;
+        account.recoveryQuestion = recoveryQ;
+        if (answer) account.recoveryAnswerHash = await hashPassword(answer);
+        await storageSet('relay_accounts', accounts);
+        showToast('Security recovery settings saved successfully.', 'success');
+        await load();
+        render();
+      });
+
+      // v1.3 maps: per-user dispatch start location (card only exists when flag is on)
+      host.querySelector('#local-security-save-start')?.addEventListener('click', async () => {
+        const btn = host.querySelector('#local-security-save-start');
+        const hint = host.querySelector('#local-security-start-hint');
+        const address = host.querySelector('#local-security-start-location').value.trim();
+        btn.disabled = true;
+        try {
+          if (!address) {
+            await store.setStartLocation(null);
+            if (hint) hint.textContent = 'Currently using the company office address.';
+            showToast('Start location cleared — using company office', 'success');
+            return;
+          }
+          const { geocodeAddress } = await import('../utils/geocode.js');
+          const geo = await geocodeAddress(address);
+          if (!geo) {
+            showToast('Could not find that address — check it and try again', 'error');
+            return;
+          }
+          await store.setStartLocation({ address: geo.formattedAddress || address, geo: { lat: geo.lat, lng: geo.lng, formattedAddress: geo.formattedAddress, placeId: geo.placeId } });
+          host.querySelector('#local-security-start-location').value = geo.formattedAddress || address;
+          if (hint) hint.textContent = 'Custom start location set.';
+          showToast('Start location saved', 'success');
+        } catch (e) {
+          // setStartLocation already toasts DB errors
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    };
+
+    load().then(render);
   }
 
   // Cloud accounts: mirror the cloud records into a local folder as JSON so there

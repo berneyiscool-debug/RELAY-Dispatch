@@ -12,6 +12,23 @@ import { escapeHTML } from '../utils/security.js';
 import { setSessionUser } from '../pages/auth/session.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
 
+// Shown on greyed-out, cloud-only nav entries.
+export const CLOUD_REQUIRED_TOOLTIP = 'Click to create a Cloud account';
+
+// Canonical list of Settings tabs that need a RELAY Cloud account. The sidebar
+// grey-out (Sidebar.js) and the deep-link guard (Settings.js) both read this map,
+// so the nav and the router can never disagree about what is cloud-only.
+// Keyed by Settings tab id; the value is the label used in the upgrade prompt.
+export const CLOUD_ONLY_SETTINGS_TABS = {
+  portal: 'The Customer Portal',
+  portal_contractor: 'The Contractor Portal',
+  payments: 'Online payments',
+  email: 'Email & domain',
+  users: 'Users',
+  user_types: 'User Types & Permissions',
+  password_recovery: 'Password Recovery'
+};
+
 export function openMigrationModal() {
   const modalContent = document.createElement('div');
   const expectedName = (store.getSettings().name || '').trim();

@@ -2809,6 +2809,11 @@ body.relay-assistant-open .relay-topbar-actions {
 .sidebar-nav-item:not(.sub-item):hover,
 .sidebar-toggle:hover,
 .sidebar-profile:hover { background: #f2f3f5 !important; }
+
+/* Local accounts have no profile page, so their footer block is not a click target.
+   Declared after the neutral hover block above so it wins on equal specificity. */
+.sidebar-profile-static { cursor: default; }
+.sidebar-profile-static:hover { background: none !important; }
 .sidebar-nav-item.active,
 .sidebar-nav-item:not(.sub-item).active {
   background: var(--sidebar-active-bg) !important;

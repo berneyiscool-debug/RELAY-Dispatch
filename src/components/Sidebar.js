@@ -8,10 +8,7 @@
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
-import { showCloudUpgradePrompt } from './CloudUpgrade.js';
-
-// Shown on greyed-out, cloud-only nav entries. Clicking one opens the upgrade prompt.
-const CLOUD_REQUIRED_TOOLTIP = 'Click to create a Cloud account';
+import { showCloudUpgradePrompt, CLOUD_REQUIRED_TOOLTIP, CLOUD_ONLY_SETTINGS_TABS } from './CloudUpgrade.js';
 
 // Primary sections. Items without `items[]` are direct pages (no submenu);
 // items with `items[]` open a secondary panel.
@@ -131,17 +128,18 @@ export function createSidebar() {
       </div>`;
   });
 
+  const localFooter = isLocalMode();
   sidebar.innerHTML = `
     <div class="sidebar-rail">
       <nav class="rail-nav" id="rail-nav">${railHtml}</nav>
       <div class="sidebar-footer">
-        <button class="sidebar-profile" id="sidebar-profile" title="View profile">
+        <${localFooter ? 'div' : 'button'} class="sidebar-profile${localFooter ? ' sidebar-profile-static' : ''}" id="sidebar-profile" title="${localFooter ? 'Local account' : 'View profile'}">
           <span class="sidebar-profile-avatar" id="sidebar-profile-avatar" aria-hidden="true"><span class="material-icons-outlined">account_circle</span></span>
           <span class="sidebar-profile-info">
             <span class="sidebar-profile-name" id="sidebar-profile-name">Loading…</span>
             <span class="sidebar-profile-role" id="sidebar-profile-role">Role</span>
           </span>
-        </button>
+        </${localFooter ? 'div' : 'button'}>
         <button id="btn-logout" class="rail-item rail-page">
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
           <span class="nav-label">Logout</span>
@@ -189,9 +187,10 @@ export function createSidebar() {
     }
   });
 
-  // Profile (footer, above Logout).
+  // Profile (footer, above Logout). Local accounts have no profile page, so their
+  // footer block stays a plain identity label with no click target.
   const profileBtn = sidebar.querySelector('#sidebar-profile');
-  if (profileBtn) profileBtn.addEventListener('click', () => router.navigate('/profile'));
+  if (profileBtn && !localFooter) profileBtn.addEventListener('click', () => router.navigate('/profile'));
   window.addEventListener('relay-profile-updated', () => updateSidebarProfile(sidebar));
   updateSidebarProfile(sidebar);
 
@@ -303,10 +302,11 @@ function getContextualMenu(hash) {
   if (resource === 'settings') {
     // Company-type gating mirrors Settings.js: every tab stays visible, but the
     // ones that don't apply to the current account type are greyed out (disabled)
-    // instead of hidden — so users can see what other plans unlock. Keep this in
-    // sync with the flags computed in renderSettings() (src/pages/Settings.js).
+    // instead of hidden — so users can see what other plans unlock. The cloud-only
+    // tab list itself lives in CloudUpgrade.js and renderSettings() guards the same
+    // ids, so a deep link can't open a greyed-out page.
     const local = isLocalMode();
-    const portalDisabled = local;                                     // portals are cloud-only
+    const gate = (id) => (local && CLOUD_ONLY_SETTINGS_TABS[id] ? { disabled: true, tooltip: CLOUD_REQUIRED_TOOLTIP } : {});
 
     const groups = [
       {
@@ -314,8 +314,8 @@ function getContextualMenu(hash) {
         items: [
           { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
           { id: 'billing', icon: 'credit_card', label: 'Plan & Billing', path: '/settings?tab=billing' },
-          { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: CLOUD_REQUIRED_TOOLTIP },
-          { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: CLOUD_REQUIRED_TOOLTIP },
+          { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', ...gate('portal') },
+          { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', ...gate('portal_contractor') },
           { id: 'local_storage', icon: 'folder', label: 'Local Storage', path: '/settings?tab=local_storage' },
           { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' }
         ]
@@ -325,16 +325,16 @@ function getContextualMenu(hash) {
         items: [
           { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
           { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
-          { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', disabled: local, tooltip: CLOUD_REQUIRED_TOOLTIP },
-          { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', disabled: local, tooltip: CLOUD_REQUIRED_TOOLTIP }
+          { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', ...gate('payments') },
+          { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', ...gate('email') }
         ]
       },
       {
         id: 'people', label: 'People', icon: 'groups',
         items: [
-          { id: 'users', icon: 'group', label: 'Users', path: '/settings?tab=users' },
-          { id: 'user_types', icon: 'admin_panel_settings', label: 'User Types & Permissions', path: '/settings?tab=user_types' },
-          { id: 'password_recovery', icon: 'lock_reset', label: 'Password Recovery', path: '/settings?tab=password_recovery' },
+          { id: 'users', icon: 'group', label: 'Users', path: '/settings?tab=users', ...gate('users') },
+          { id: 'user_types', icon: 'admin_panel_settings', label: 'User Types & Permissions', path: '/settings?tab=user_types', ...gate('user_types') },
+          { id: 'password_recovery', icon: 'lock_reset', label: 'Password Recovery', path: '/settings?tab=password_recovery', ...gate('password_recovery') },
           { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' }
         ]
       },

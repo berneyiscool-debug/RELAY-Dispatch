@@ -125,4 +125,33 @@ describe('Router', () => {
     assert.strictEqual(handlerCalled, true, 'Handler should be called when guard returns true');
     assert.strictEqual(router.currentRoute, '/people', 'currentRoute should be updated when navigation is allowed');
   });
+
+  test('onNavigate guard redirecting with a replacement path', () => {
+    const router = new Router();
+    let handlerCalled = false;
+    const navigated = [];
+    router.register('/profile', () => { handlerCalled = true; });
+    router.register('/settings', () => { handlerCalled = true; });
+
+    router.onNavigate = (path) => (path === '/profile' ? '/settings?tab=local_storage' : true);
+    router.navigate = (target) => { navigated.push(target); };
+
+    router.resolve('/profile');
+
+    assert.strictEqual(handlerCalled, false, 'Blocked route handler should not run');
+    assert.deepStrictEqual(navigated, ['/settings?tab=local_storage'], 'Guard should redirect to the replacement path');
+    assert.strictEqual(router.currentRoute, null, 'currentRoute should remain unchanged on redirect');
+  });
+
+  test('onNavigate guard returning its own path still renders', () => {
+    const router = new Router();
+    let handlerCalled = false;
+    router.register('/settings', () => { handlerCalled = true; });
+
+    router.onNavigate = (path) => path;
+
+    router.resolve('/settings');
+    assert.strictEqual(handlerCalled, true, 'A guard echoing the current path should not block it');
+    assert.strictEqual(router.currentRoute, '/settings');
+  });
 });
