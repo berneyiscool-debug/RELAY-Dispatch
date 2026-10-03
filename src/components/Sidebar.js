@@ -8,6 +8,7 @@
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
+import { resolveSettingsTab } from '../utils/settingsTabs.js';
 
 // Primary sections. Items without `items[]` are direct pages (no submenu);
 // items with `items[]` open a secondary panel.
@@ -344,8 +345,15 @@ function getContextualMenu(hash) {
       }
     ];
 
-    // No tab param → group list. A tab param → drill into its group.
-    const openGroup = activeTab ? groups.find(g => g.items.some(item => item.id === activeTab)) : null;
+    // No tab param → group list. A tab param → drill into its group. Legacy tab
+    // ids are canonicalised exactly as Settings.js does it, otherwise the rail
+    // shows the group list while the page renders a submenu — and the submenu's
+    // "Back to Settings" control is never rendered.
+    const resolvedTab = activeTab ? resolveSettingsTab(activeTab).tab : '';
+    const openGroup = resolvedTab ? groups.find(g => g.items.some(item => item.id === resolvedTab)) : null;
+    // User Types / Password Recovery are rail items that open the Users tab, so
+    // keep the requested id when the rail knows it — it drives the highlight.
+    const activeItemId = activeTab && groups.some(g => g.items.some(item => item.id === activeTab)) ? activeTab : resolvedTab;
 
     return {
       railId: 'cat-admin',
@@ -355,7 +363,7 @@ function getContextualMenu(hash) {
       backLabel: openGroup ? 'Back to Settings' : undefined,
       groups,
       openGroupId: openGroup ? openGroup.id : null,
-      activeTab: activeTab
+      activeTab: activeItemId
     };
   }
 
