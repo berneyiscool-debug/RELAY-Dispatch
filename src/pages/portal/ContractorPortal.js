@@ -86,7 +86,7 @@ export function renderContractorPortal(container, params) {
       </div>
     `;
 
-    container.querySelector('#portal-setup-form').addEventListener('submit', (e) => {
+    container.querySelector('#portal-setup-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const p1 = container.querySelector('#portal-pin-1').value.trim();
       const p2 = container.querySelector('#portal-pin-2').value.trim();
@@ -101,13 +101,12 @@ export function renderContractorPortal(container, params) {
       }
 
       // Save PIN
-      const contrs = store.getAll('contractors');
-      const idx = contrs.findIndex(c => c.id === contractor.id);
-      if (idx !== -1) {
-        contrs[idx].portalPasscode = p1;
-        store.save('contractors', contrs);
-        contractor.portalPasscode = p1; // update in-memory
+      const result = await store.update('contractors', contractor.id, { portalPasscode: p1 });
+      if (result && result.ok === false) {
+        showToast('Could not save your PIN. Please try again.', 'error');
+        return;
       }
+      contractor.portalPasscode = p1; // update in-memory
 
       // Set authenticated
       sessionStorage.setItem('portal_contractor_auth_' + contractor.id, 'true');
@@ -703,6 +702,9 @@ export function renderContractorPortal(container, params) {
             <p>Relay — Dispatch dispatch & subcontractor portal | Contact: ${escapeHTML(contractor.contactName)}</p>
           </div>
           <div style="display: flex; align-items: center; gap: 16px;">
+            <button class="btn btn-sm" id="btn-portal-change-pin" style="display:flex; align-items:center; gap:6px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #ffffff;">
+              <span class="material-icons-outlined" style="font-size:16px;">lock_reset</span> Change PIN
+            </button>
             <div style="font-size: 11px; padding: 6px 12px; background: rgba(255,255,255,0.08); border-radius: 6px; border: 1px solid rgba(255,255,255,0.12)">
               System Agency ID: <strong style="font-family:monospace; color:#ffffff">${contractor.id}</strong>
             </div>
@@ -1188,6 +1190,66 @@ export function renderContractorPortal(container, params) {
     `;
   }
 
+  // --- Change PIN Modal ---
+  function openChangePinModal() {
+    import('../../components/Modal.js').then(({ showModal }) => {
+      const pinField = (id, label) => `
+        <div class="form-group" style="display:flex; flex-direction:column; gap:6px;">
+          <label class="form-label" style="font-size:12px; font-weight:600; color:var(--text-secondary);">${label}</label>
+          <input type="password" maxlength="6" inputmode="numeric" id="${id}" class="form-input" placeholder="••••"
+                 style="text-align:center; font-size:18px; letter-spacing:8px; padding:10px; width:100%; box-sizing:border-box;" />
+        </div>
+      `;
+
+      const content = document.createElement('div');
+      content.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <p style="margin:0; font-size:13px; color:var(--text-secondary); line-height:1.5;">Choose a new 4-to-6 digit PIN for this portal link. You will stay signed in on this device.</p>
+          ${pinField('portal-pin-current', 'Current PIN')}
+          ${pinField('portal-pin-new', 'New PIN')}
+          ${pinField('portal-pin-new-confirm', 'Confirm New PIN')}
+        </div>
+      `;
+
+      showModal({
+        title: 'Change Portal PIN',
+        content,
+        actions: [
+          { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+          { label: 'Save PIN', className: 'btn-primary', onClick: async (close) => {
+            const currentPin = content.querySelector('#portal-pin-current').value.trim();
+            const newPin = content.querySelector('#portal-pin-new').value.trim();
+            const confirmPin = content.querySelector('#portal-pin-new-confirm').value.trim();
+
+            if (currentPin !== contractor.portalPasscode) {
+              showToast('Current PIN is incorrect', 'error');
+              return;
+            }
+            if (!/^\d{4,6}$/.test(newPin)) {
+              showToast('New PIN must be between 4 and 6 digits (numbers only)', 'error');
+              return;
+            }
+            if (newPin !== confirmPin) {
+              showToast('New PIN entries do not match', 'error');
+              return;
+            }
+
+            const result = await store.update('contractors', contractor.id, { portalPasscode: newPin });
+            if (result && result.ok === false) {
+              showToast('Could not update your PIN. Please try again.', 'error');
+              return;
+            }
+
+            contractor.portalPasscode = newPin;
+            sessionStorage.setItem('portal_contractor_auth_' + contractor.id, 'true');
+            showToast('Portal PIN updated successfully', 'success');
+            close();
+          }}
+        ]
+      });
+    });
+  }
+
   // --- Attach Event Listeners via Event Delegation ---
   function attachListeners() {
     const portalDiv = container.querySelector('.portal-container');
@@ -1199,6 +1261,12 @@ export function renderContractorPortal(container, params) {
   function attachPortalDelegatedListeners(portalDiv) {
     // 1. Click events
     portalDiv.addEventListener('click', (e) => {
+      // Change Portal PIN
+      if (e.target.closest('#btn-portal-change-pin')) {
+        openChangePinModal();
+        return;
+      }
+
       // Tab Switch
       const tabBtn = e.target.closest('.tab-btn');
       if (tabBtn) {

@@ -188,11 +188,9 @@ export function renderContractorDetail(container, { id, tab }) {
               <button class="btn btn-secondary btn-sm" id="btn-send-portal-link" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px">send</span> Send Link
               </button>
-              ${contractor.portalPasscode ? `
-                <button class="btn btn-secondary btn-sm text-danger" id="btn-reset-contractor-pin" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap; border-color:#fee2e2;">
-                  <span class="material-icons-outlined" style="font-size:16px">lock_reset</span> Reset PIN
-                </button>
-              ` : ''}
+              <button class="btn btn-secondary btn-sm text-danger" id="btn-reset-contractor-pin" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap; border-color:#fee2e2;">
+                <span class="material-icons-outlined" style="font-size:16px">lock_reset</span> Reset PIN
+              </button>
             </div>
           </div>
         </div>
@@ -336,17 +334,16 @@ export function renderContractorDetail(container, { id, tab }) {
               content,
               actions: [
                 { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-                { label: 'Reset PIN', className: 'btn-danger', onClick: (close) => {
-                  const contrs = store.getAll('contractors');
-                  const idx = contrs.findIndex(c => c.id === contractor.id);
-                  if (idx !== -1) {
-                    contrs[idx].portalPasscode = null;
-                    store.save('contractors', contrs);
-                    contractor.portalPasscode = null;
-                  }
-                  showToast('Security PIN has been reset successfully', 'success');
+                { label: 'Reset PIN', className: 'btn-danger', onClick: async (close) => {
                   close();
-                  renderContractorDetail(container, contractor.id);
+                  const result = await store.update('contractors', contractor.id, { portalPasscode: null });
+                  if (result && result.ok === false) {
+                    showToast('Could not reset the portal PIN. Please try again.', 'error');
+                    return;
+                  }
+                  contractor.portalPasscode = null;
+                  showToast('Security PIN has been reset successfully', 'success');
+                  renderTabContent();
                 }}
               ]
             });

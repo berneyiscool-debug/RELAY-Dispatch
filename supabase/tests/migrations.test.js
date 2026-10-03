@@ -26,6 +26,7 @@ const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'migr
 const CATCHUP_SQL = readFileSync(join(MIGRATIONS_DIR, '029_schema_catchup.sql'), 'utf8');
 const HARDENING_SQL = readFileSync(join(MIGRATIONS_DIR, '030_rls_hardening.sql'), 'utf8');
 const SPEND_SQL = readFileSync(join(MIGRATIONS_DIR, '031_spend_and_signup_hardening.sql'), 'utf8');
+const PASSCODE_SQL = readFileSync(join(MIGRATIONS_DIR, '032_portal_passcode.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -516,5 +517,79 @@ describe('031 spend ledger and signup hardening', () => {
       results[results.length - 1].rows.map((r) => r.verdict),
       grid.map((r) => r.verdict)
     );
+  });
+});
+
+describe('032 portal passcode persistence', () => {
+  let db;
+
+  const CUSTOMER_A = 'aaaaaaaa-0000-0000-0000-000000000001';
+  const CUSTOMER_B = 'bbbbbbbb-0000-0000-0000-000000000002';
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    await db.exec(SPEND_SQL);
+    // The shared fixture only carries the tables the earlier migrations touch,
+    // so create the live shape of the contractor portal table for this one.
+    await db.exec(`CREATE TABLE public.contractors (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id uuid REFERENCES public.companies(id),
+      label text
+    );`);
+    await db.exec(PASSCODE_SQL);
+    await db.query(`INSERT INTO public.customers (id, company_id, label) VALUES
+      ('${CUSTOMER_A}', '${TENANT_A}', 'A customer'),
+      ('${CUSTOMER_B}', '${TENANT_B}', 'B customer')`);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds a nullable text passcode column to both portal tables', async () => {
+    for (const table of ['customers', 'contractors']) {
+      const column = await one(
+        db,
+        `SELECT data_type, is_nullable FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = '${table}' AND column_name = 'portal_passcode'`
+      );
+      assert.ok(column, `${table}.portal_passcode should exist`);
+      assert.strictEqual(column.data_type, 'text');
+      assert.strictEqual(column.is_nullable, 'YES');
+    }
+  });
+
+  test('is re-runnable without disturbing stored pins', async () => {
+    await db.query(`UPDATE public.customers SET portal_passcode = '4821' WHERE id = '${CUSTOMER_A}'`);
+    await db.exec(PASSCODE_SQL);
+    assert.strictEqual(await value(db, `SELECT portal_passcode FROM public.customers WHERE id = '${CUSTOMER_A}'`), '4821');
+  });
+
+  test('a company can set and clear the pin on its own portal record', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      await db.query(`UPDATE public.customers SET portal_passcode = '1357' WHERE id = '${CUSTOMER_A}'`);
+      assert.strictEqual(await value(db, `SELECT portal_passcode FROM public.customers WHERE id = '${CUSTOMER_A}'`), '1357');
+
+      // The admin Reset PIN button writes an explicit NULL, which has to reach the row.
+      await db.query(`UPDATE public.customers SET portal_passcode = NULL WHERE id = '${CUSTOMER_A}'`);
+      assert.strictEqual(await value(db, `SELECT portal_passcode FROM public.customers WHERE id = '${CUSTOMER_A}'`), null);
+    });
+  });
+
+  test('the new column adds no cross-tenant write path', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      await db.query(`UPDATE public.customers SET portal_passcode = '9999' WHERE id = '${CUSTOMER_B}'`);
+    });
+    assert.strictEqual(await value(db, `SELECT portal_passcode FROM public.customers WHERE id = '${CUSTOMER_B}'`), null);
+  });
+
+  test('the anon key cannot read pins', async () => {
+    await db.query(`UPDATE public.customers SET portal_passcode = '2468' WHERE id = '${CUSTOMER_A}'`);
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 0);
+    });
   });
 });

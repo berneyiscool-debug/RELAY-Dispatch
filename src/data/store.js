@@ -105,6 +105,7 @@ const TABLE_COLUMNS = {
     "status",
     "type",
     "portal_token",
+    "portal_passcode",
     "geo",
     "created_at",
     "updated_at"
@@ -291,6 +292,7 @@ const TABLE_COLUMNS = {
     "specialties",
     "notes",
     "portal_token",
+    "portal_passcode",
     "compliance_docs",
     "created_at",
     "updated_at"
@@ -1570,6 +1572,10 @@ class DataStore {
       record.portalToken = record.portal_token;
       delete record.portal_token;
     }
+    if (record.portal_passcode !== undefined) {
+      record.portalPasscode = record.portal_passcode;
+      delete record.portal_passcode;
+    }
     if (record.owner_type !== undefined) {
       record.ownerType = record.owner_type;
       delete record.owner_type;
@@ -2104,6 +2110,10 @@ class DataStore {
     if (record.portalToken !== undefined) {
       record.portal_token = record.portalToken;
       delete record.portalToken;
+    }
+    if (record.portalPasscode !== undefined) {
+      record.portal_passcode = record.portalPasscode;
+      delete record.portalPasscode;
     }
     if (record.ownerType !== undefined) {
       record.owner_type = record.ownerType;

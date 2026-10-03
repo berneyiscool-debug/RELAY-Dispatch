@@ -184,11 +184,9 @@ export function renderPersonDetail(container, { id, tab }) {
                 <span class="material-icons-outlined" style="font-size:16px;">send</span> Send Magic Portal Link to Customer
               </button>
 
-              ${person.portalPasscode ? `
-                <button class="btn btn-secondary text-danger" id="btn-reset-portal-pin" style="display:flex; align-items:center; gap:6px; white-space:nowrap; border-color:#fee2e2;">
-                  <span class="material-icons-outlined" style="font-size:16px;">lock_reset</span> Reset PIN
-                </button>
-              ` : ''}
+              <button class="btn btn-secondary text-danger" id="btn-reset-portal-pin" style="display:flex; align-items:center; gap:6px; white-space:nowrap; border-color:#fee2e2;">
+                <span class="material-icons-outlined" style="font-size:16px;">lock_reset</span> Reset PIN
+              </button>
             </div>
           </div>
         </div>
@@ -336,17 +334,16 @@ export function renderPersonDetail(container, { id, tab }) {
               content,
               actions: [
                 { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
-                { label: 'Reset PIN', className: 'btn-danger', onClick: (close) => {
-                  const custs = store.getAll('customers');
-                  const idx = custs.findIndex(c => c.id === person.id);
-                  if (idx !== -1) {
-                    custs[idx].portalPasscode = null;
-                    store.save('customers', custs);
-                    person.portalPasscode = null;
-                  }
-                  showToast('Security PIN has been reset successfully', 'success');
+                { label: 'Reset PIN', className: 'btn-danger', onClick: async (close) => {
                   close();
-                  renderPersonDetail(container, person.id);
+                  const result = await store.update('customers', person.id, { portalPasscode: null });
+                  if (result && result.ok === false) {
+                    showToast('Could not reset the portal PIN. Please try again.', 'error');
+                    return;
+                  }
+                  person.portalPasscode = null;
+                  showToast('Security PIN has been reset successfully', 'success');
+                  renderTabContent();
                 }}
               ]
             });
