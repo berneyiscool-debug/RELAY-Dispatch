@@ -250,7 +250,7 @@ function escapeHTML(str) {
 }
 
 // Helper to resolve dynamic entity/settings contextual submenus
-function getContextualMenu(hash) {
+export function getContextualMenu(hash) {
   const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
   const [pathOnly, queryString] = cleanHash.split('?');
   const params = new URLSearchParams(queryString || '');
@@ -359,8 +359,11 @@ function getContextualMenu(hash) {
       railId: 'cat-admin',
       headerTitle: openGroup ? openGroup.label : 'Settings & Config',
       icon: openGroup ? openGroup.icon : 'settings',
+      // Drilled into a group → back to the group list. Sitting on the group list
+      // → back to the Admin panel it was opened from, matching Stock/Leads.
       backPath: openGroup ? '/settings' : undefined,
-      backLabel: openGroup ? 'Back to Settings' : undefined,
+      backSection: openGroup ? undefined : 'cat-admin',
+      backLabel: openGroup ? 'Back to Settings' : 'Back to Admin',
       groups,
       openGroupId: openGroup ? openGroup.id : null,
       activeTab: activeItemId
