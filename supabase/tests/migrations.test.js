@@ -28,6 +28,7 @@ const HARDENING_SQL = readFileSync(join(MIGRATIONS_DIR, '030_rls_hardening.sql')
 const SPEND_SQL = readFileSync(join(MIGRATIONS_DIR, '031_spend_and_signup_hardening.sql'), 'utf8');
 const PASSCODE_SQL = readFileSync(join(MIGRATIONS_DIR, '032_portal_passcode.sql'), 'utf8');
 const ORIGIN_SQL = readFileSync(join(MIGRATIONS_DIR, '033_notifications_origin.sql'), 'utf8');
+const POOLED_SQL = readFileSync(join(MIGRATIONS_DIR, '034_ai_pooled_caps.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -517,6 +518,157 @@ describe('031 spend ledger and signup hardening', () => {
     assert.deepStrictEqual(
       results[results.length - 1].rows.map((r) => r.verdict),
       grid.map((r) => r.verdict)
+    );
+  });
+});
+
+describe('034 pooled AI caps', () => {
+  let db;
+  let grid;
+
+  const HEAVY = '77777777-7777-7777-7777-777777777777';
+  const LIGHT = '88888888-8888-8888-8888-888888888888';
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    await db.exec(SPEND_SQL);
+    const results = await db.exec(POOLED_SQL);
+    grid = results[results.length - 1].rows;
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('the verification grid reports no failures', () => {
+    assert.strictEqual(grid.length, 7);
+    assert.deepStrictEqual(grid.filter((r) => r.verdict !== 'ok').map((r) => `${r.check_name}: ${r.verdict}`), []);
+  });
+
+  test('attaches the spending seat to the ledger row', async () => {
+    const column = await one(
+      db,
+      `SELECT data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'api_usage' AND column_name = 'user_id'`
+    );
+    assert.ok(column, 'api_usage.user_id should exist');
+    assert.strictEqual(column.data_type, 'uuid');
+    // Rows written before this migration, and any future non-user-scoped call,
+    // have no seat to attribute.
+    assert.strictEqual(column.is_nullable, 'YES');
+
+    const index = await one(
+      db,
+      `SELECT indexdef FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'api_usage' AND indexname = 'api_usage_user_daily_idx'`
+    );
+    assert.ok(index, 'the per-user daily index should exist');
+    assert.match(index.indexdef, /\(user_id, kind, created_at DESC\)/);
+    // The company pool is still served by 031's index.
+    assert.ok(await one(db, `SELECT 1 FROM pg_indexes WHERE indexname = 'api_usage_daily_cap_idx'`));
+  });
+
+  test('the pool counts the company and the ceiling counts one seat', async () => {
+    // The exact predicate relay-copilot runs: one read of the local day, split
+    // into a company total and the caller's own total.
+    await db.query(`INSERT INTO public.api_usage (company_id, kind, units, user_id) VALUES
+      ('${TENANT_A}', 'copilot', 10, '${HEAVY}'),
+      ('${TENANT_A}', 'copilot', 4, '${LIGHT}'),
+      ('${TENANT_A}', 'copilot', 7, NULL),
+      ('${TENANT_B}', 'copilot', 30, '${HEAVY}'),
+      ('${TENANT_A}', 'geocode', 50, '${HEAVY}')`);
+
+    const pool = `company_id = '${TENANT_A}' AND kind = 'copilot' AND created_at >= now() - interval '1 minute'`;
+    assert.strictEqual(await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage WHERE ${pool}`), 21);
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage WHERE ${pool} AND user_id = '${HEAVY}'`),
+      10
+    );
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage WHERE ${pool} AND user_id = '${LIGHT}'`),
+      4
+    );
+  });
+
+  test('an unattributed row only ever counts against the pool', async () => {
+    // Otherwise a row written before 034 would silently consume somebody's day.
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage
+                        WHERE company_id = '${TENANT_A}' AND user_id IS NULL`),
+      7
+    );
+  });
+
+  test('the column arrives without disturbing existing rows', async () => {
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage WHERE company_id = '${TENANT_B}'`),
+      30
+    );
+  });
+
+  test('a seat from another company is never counted against this one', async () => {
+    // HEAVY chats in both tenants; only its own company's copilot rows may
+    // count. The geocode row it also owns is a different ledger.
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage
+                        WHERE user_id = '${HEAVY}' AND kind = 'copilot'`),
+      40
+    );
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage
+                        WHERE user_id = '${HEAVY}' AND company_id = '${TENANT_A}' AND kind = 'copilot'`),
+      10
+    );
+  });
+
+  test('the ledger stays service-role only', async () => {
+    // Supabase grants new public tables to anon/authenticated by default, so
+    // reproduce that grant and prove RLS (no policies) is what protects a row
+    // that now names the user who spent the money.
+    await db.exec('GRANT ALL ON public.api_usage TO anon, authenticated;');
+
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.api_usage'), 0);
+      await assert.rejects(
+        () => db.query(`INSERT INTO public.api_usage (company_id, kind) VALUES ('${TENANT_A}', 'copilot')`),
+        /row-level security/
+      );
+    });
+
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.api_usage'), 0);
+      await assert.rejects(
+        () => db.query(`INSERT INTO public.api_usage (company_id, kind) VALUES ('${TENANT_A}', 'copilot')`),
+        /row-level security/
+      );
+    });
+
+    await asRole(db, 'service_role', null, async () => {
+      await db.query(`INSERT INTO public.api_usage (company_id, kind, units, user_id)
+                      VALUES ('${TENANT_A}', 'copilot', 1, '${HEAVY}')`);
+      assert.strictEqual(
+        await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage
+                          WHERE user_id = '${HEAVY}' AND company_id = '${TENANT_A}' AND kind = 'copilot'`),
+        11
+      );
+    });
+
+    await db.exec('REVOKE ALL ON public.api_usage FROM anon, authenticated;');
+  });
+
+  test('is idempotent - a second run keeps the rows and the same grid', async () => {
+    const results = await db.exec(POOLED_SQL);
+    assert.deepStrictEqual(
+      results[results.length - 1].rows.map((r) => r.verdict),
+      grid.map((r) => r.verdict)
+    );
+    assert.strictEqual(
+      await value(db, `SELECT COALESCE(sum(units), 0)::int FROM public.api_usage
+                        WHERE user_id = '${HEAVY}' AND company_id = '${TENANT_A}' AND kind = 'copilot'`),
+      11
     );
   });
 });

@@ -358,7 +358,9 @@ Recommend **A** to keep the polished demo dataset intact.
 
 **Did the portal PINs survive a reload?** They did not, and the fix is `supabase/migrations/032_portal_passcode.sql`. Customers and contractors unlock their portals with a 4–6 digit PIN set on first visit, but no `portal_passcode` column existed, so `store.denormalizeRecord()` — which drops every key not listed in `TABLE_COLUMNS` — silently stripped `portalPasscode` from each cloud payload. The write reported success while the PIN vanished, so every visit re-prompted for setup. `032` adds a nullable `portal_passcode text` column to `public.customers` and `public.contractors` (idempotent, purely additive); the matching whitelist and `portal_passcode` ↔ `portalPasscode` mappings now live in `src/data/store.js`. Clearing the column (the admin **Reset PIN** button) is what makes the *next* visit show the first-visit setup form again.
 
-**Run the migrations locally before pasting them.** These files are treated as one implicit transaction by the SQL editor, so a single failing statement silently rolls back the whole script. `npm run test:migrations` executes `029`, `030`, `031` and `032` against an in-memory Postgres (`@electric-sql/pglite`) with a two-tenant Supabase-shaped fixture and asserts the security outcome — signed-out clients read nothing, tenants cannot see or re-point another tenant's rows, a public signup cannot provision itself a company, and the audit grid reports no failures. The same command runs `supabase/tests/proxy-caps.test.js`, which statically asserts that each paid proxy counts a tenant's spend *before* calling the provider. Run it after any change to a migration or to an edge function that spends money.
+**Can one seat spend the whole team's AI allowance?** Not once `supabase/migrations/034_ai_pooled_caps.sql` is applied (after `031`). The AI budget was a flat 500 requests/day per company, so a single runaway chat could use up the team's entire day and the ledger could not say who spent it. `034` adds a nullable `api_usage.user_id` plus the `(user_id, kind, created_at DESC)` index that reads it, and `relay-copilot` now enforces a pooled per-company allowance **and** a ceiling for the seat that is calling. Nothing else moves: the ledger stays service-role only, still with RLS enabled and no client policy, and the Maps/email proxies keep their flat per-tenant caps.
+
+**Run the migrations locally before pasting them.** These files are treated as one implicit transaction by the SQL editor, so a single failing statement silently rolls back the whole script. `npm run test:migrations` executes `029`, `030`, `031`, `032`, `033` and `034` against an in-memory Postgres (`@electric-sql/pglite`) with a two-tenant Supabase-shaped fixture and asserts the security outcome — signed-out clients read nothing, tenants cannot see or re-point another tenant's rows, a public signup cannot provision itself a company, and the audit grid reports no failures. The same command runs `supabase/tests/proxy-caps.test.js`, which statically asserts that each paid proxy counts a tenant's spend *before* calling the provider, and `supabase/tests/ai-limits.test.js`, which exercises the pooled allowance maths (pool sizes, the per-user ceiling, and the Sydney reset across a daylight-saving change) against the real module the function imports. Run it after any change to a migration or to an edge function that spends money.
 
 ---
 
@@ -375,7 +377,7 @@ Recommend **A** to keep the polished demo dataset intact.
 - **Client-side deletes of `profiles` do nothing once `030` is applied** (there is deliberately no DELETE policy). RLS makes the statement a silent 0-row no-op rather than an error, so a client `delete()` would report success without removing anything. Removing a staff member is `profiles.deactivated` (what the Settings page already does); a genuine row delete stays a service-role/dashboard operation.
 - **`company_id` is not always `uuid`**: the live `job_materials.company_id` is `text` (the table predates migration `013`, which declares `uuid`). Any policy that compares it directly to `get_user_company_id()` fails with `operator does not exist: text = uuid` and rolls the entire script back, so `030`'s catalog loop reads each column's real type with `format_type()` and casts to `text` when it is not `uuid`. Keep that branch when editing the loop.
 - **`raw_user_meta_data` provisions nothing once `031` is applied.** Signup metadata is client-writable, so the signup trigger reads only `raw_app_meta_data` (server-written invitations). Self-signup must call the `create_company_and_admin` RPC — passing `company_name` in `signUp({ options: { data } })` creates the auth user but **no** company and **no** profile.
-- **`api_usage` is invisible to clients by design** (`031`): RLS on with zero policies, and `ALL` revoked from `anon`/`authenticated`. Only the edge functions, which hold the service-role key, may read or write it.
+- **`api_usage` is invisible to clients by design** (`031`): RLS on with zero policies, and `ALL` revoked from `anon`/`authenticated`. Only the edge functions, which hold the service-role key, may read or write it. `034` adds `user_id` to that same ledger without touching any of it — a new column on a locked table needs no new policy, so do not "helpfully" add one. `user_id` is deliberately not a foreign key (neither is `company_id`, same table, same reason): a ledger row records what was spent, and must not disappear or block when a profile is deleted.
 - Do the `store.js` swap **carefully / coordinated** — it's the spine of the app and the Antigravity agents also touch the codebase.
 
 ---
@@ -409,21 +411,35 @@ Two regressions the hardening would have caused were found and fixed before laun
 
 ---
 
-## 11. Abuse controls on the paid APIs (031)
+## 11. Abuse controls on the paid APIs (031, 034)
 
-Launch allows self-serve signup, so every caller of a paid API is capped **per tenant, per UTC day**. The caps are edge-function secrets: change the value in the Supabase dashboard and the next invocation picks it up, no client release needed. The defaults are deliberately generous for a small trade business — a busy technician will not reach them — while still bounding what one account can spend of a budget that every tenant shares.
+Launch allows self-serve signup, so every caller of a paid API is capped. Geocoding, routing and email are capped **per tenant**; the AI is capped **per tenant and per seat**, because one person burning the team's whole day was the failure mode that mattered. The caps are edge-function secrets: change the value in the Supabase dashboard and the next invocation picks it up, no client release needed. The defaults are deliberately generous for a small trade business — a busy technician will not reach them — while still bounding what one account can spend of a budget that every tenant shares.
+
+**The AI allowance is a pool, with a ceiling per seat** (`034`). A company's daily pool is `max(RELAY_AI_POOL_FLOOR, seats × per-seat)`, where seats are the Stripe-synced `companies.subscription_seats` when present and a live `company_active_seat_count()` otherwise (never less than 1). Every user in the company draws from that one pool, but no single user may spend more than the per-user ceiling, so one runaway chat cannot use up the team's day.
+
+| Secret | Cloud | Cloud+ | What it bounds |
+| --- | --- | --- | --- |
+| `RELAY_AI_POOL_PER_SEAT` / `RELAY_AI_POOL_PER_SEAT_PLUS` | 50 | 75 | calls per seat, added to the company pool |
+| `RELAY_AI_POOL_FLOOR` | 150 | 150 | calls per day, the minimum pool for a 1–2 seat company |
+| `RELAY_AI_USER_CAP` / `RELAY_AI_USER_CAP_PLUS` | 150 | 200 | calls one user may spend of the pool per day |
+
+The remaining proxies keep the flat per-tenant cap they were launched with:
 
 | Proxy | Provider | Secret | Default | Unit |
 | --- | --- | --- | --- | --- |
-| `relay-copilot` | DeepSeek | `RELAY_COPILOT_DAILY_CAP` | 500 | requests |
+| `relay-copilot` | DeepSeek | — (see the pooled table above) | | calls |
 | `relay-geocode` | Google Maps | `RELAY_GEOCODE_DAILY_CAP` | 1000 | addresses (a 50-address batch costs 50) |
 | `relay-route` | Google Routes | `RELAY_ROUTE_DAILY_CAP` | 300 | routes |
 | `relay-email` | Resend | `RELAY_EMAIL_DAILY_CAP` | 500 | emails |
 
 How it behaves:
 
-- **At the cap** the proxy answers `429` with `Daily … limit reached (N). Try again tomorrow or contact RELAY support.` brny shows that sentence in the chat; geocoding and routing degrade to "no result", exactly like any other provider failure, so background backfills stay quiet.
-- **Unit accounting is per address/stops-request**, so one batch cannot spend the whole day's allowance in a single round trip.
+- **The day is the Sydney day, not the UTC day.** brny's customers are Australian and no company records a timezone, so the window is hard-coded to `Australia/Sydney` and the allowance comes back at local midnight — 10am UTC in winter, 11am UTC in summer. A UTC-midnight reset would hand the allowance back mid-morning.
+- **At the cap** `relay-copilot` answers `429` with a structured body — `{ error, code: "ai_daily_limit", scope: "user" | "company", remainingMessages, resetsAt }`. brny renders the reset instant in the *reader's* local time, so an interstate or overseas user is told when their own allowance returns rather than a Sydney time they have to convert. `error` carries the same sentence with a Sydney timestamp, which is what a client that predates this change shows.
+- **The two refusals mean different things.** `scope: "user"` names the personal ceiling and, when the team still has room, says how many messages are left; `scope: "company"` means the pool is gone and nobody in that company can send until the reset.
+- **Allowance is quoted in messages; the ledger counts calls.** A chat turn is usually two calls (the reply, then the follow-up lookup/action turn), so `remainingMessages` is units ÷ 2.
+- **The tier is read from the company row** (`comp_tier`, `subscription_tier`, or the legacy `settings.ai.tier`), never from the request, so a Cloud tenant cannot ask for the Cloud+ pool. Only the `settings.ai.tier` key is selected out of the settings document — the rest of it can hold an uploaded logo.
+- **Unit accounting is per address/stops-request** for the Maps proxies, so one batch cannot spend the whole day's allowance in a single round trip. The Maps and email proxies keep their flat `429` copy (`Daily … limit reached (N). Try again tomorrow or contact RELAY support.`), and geocoding and routing degrade to "no result", exactly like any other provider failure, so background backfills stay quiet.
 - **Failed provider calls are not charged** — the ledger row is written only after the provider answers successfully.
 - **A missing secret never disables the cap**: an unset or unparsable value falls back to the default above.
 - **If `031` has not been applied yet**, the proxies log `api_usage read failed` and run uncapped rather than break for every user. The cap is protection, not a hard dependency — which is why the functions can be deployed before the migration.
@@ -438,28 +454,44 @@ Dashboard-only items this migration deliberately does **not** change, because th
 
 ## 12. Deploying an edge function
 
-Every function in `supabase/functions/` is a single self-contained file with URL imports (`esm.sh`), so deploying one is a copy-paste in the dashboard: no local bundler, no Docker, no CLI.
+Every function in `supabase/functions/` is self-contained and uses URL imports (`esm.sh`) rather than npm, so deploying one is usually a copy-paste in the dashboard: no local bundler, no Docker, no CLI. **`relay-copilot` is now the one exception** — it imports `./limits.js`, because the allowance maths (pool size, per-user ceiling, the Sydney day window) is worth testing directly rather than only through the proxy. The dashboard editor holds one file, so deploy that function with the CLI (Section 12a) and keep the two files together.
 
-1. Dashboard → the project → **Edge Functions** → pick the function, e.g. `relay-copilot`.
+1. Dashboard → the project → **Edge Functions** → pick the function, e.g. `relay-geocode`.
 2. Select everything in the editor, delete it, and paste the whole local `index.ts`.
 3. **Deploy**. The header shows the version timestamp once it is live.
 4. Leave **Enforce JWT verification** on for every function except two: `relay-create-payment` (public by design, authorises by invoice id) and `relay-stripe-webhook` (verifies Stripe's HMAC signature itself).
 
-Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_COPILOT_DAILY_CAP` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
+Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_AI_POOL_PER_SEAT` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
 
-To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. That exercises the read, the write and the refusal without waiting for a real daily budget to run out. Cheaper still, and what was actually used on 2026-10-02: insert the remaining units straight into `api_usage` for a throwaway tenant and call again. No secret is touched, and the real ceiling is the one being tested.
+To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. `relay-copilot` reads several allowance secrets at once, so the quickest way to see each refusal is: set `RELAY_AI_USER_CAP=1` to hit the personal ceiling (the second call from that seat gets `scope: "user"`, while a teammate still gets through), or set `RELAY_AI_POOL_PER_SEAT=0` and `RELAY_AI_POOL_FLOOR=1` to shrink the whole company's pool to one call and get `scope: "company"`. Cheaper still, and what was actually used on 2026-10-02: insert the remaining units straight into `api_usage` for a throwaway tenant and call again. No secret is touched, and the real ceiling is the one being tested.
 
-The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps.
+The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps. The same holds for `034` and `relay-copilot` — a missing `user_id` column only costs the ceiling, because a failed ledger read leaves the proxy uncapped. Apply the migration to get the cap; deploy the function to change the copy.
 
-### Deploying without the dashboard (Management API)
+### 12a. Deploying `relay-copilot` (two files)
+
+`supabase functions deploy relay-copilot` bundles `index.ts` and its relative imports, so it is the supported path. It needs the CLI linked to the project (`supabase link --project-ref zufsncswsoqlomtqhkks`), and it deploys with JWT verification on.
+
+Without the CLI, the Management API accepts a tarball of the function directory. Build it with the two files at the bundle root and the same metadata part as below:
+
+```
+tar -czf relay-copilot.tar.gz -C supabase/functions/relay-copilot index.ts limits.js
+curl.exe -s -X POST "https://api.supabase.com/v1/projects/{ref}/functions/deploy?slug=relay-copilot" \
+  -H "Authorization: ******" \
+  -F "file=@relay-copilot.tar.gz" \
+  -F "metadata=<metadata.json"
+```
+
+Either way, **verify by calling it**: an empty body must answer `400` and a request with a valid token and messages must answer `200`. A `503 BOOT_ERROR` means `limits.js` did not ship — the import is relative, so the file must sit beside `index.ts` in the deployed bundle.
+
+### 12b. Deploying without the dashboard (Management API)
 
 `POST /v1/projects/{ref}/functions/deploy?slug={slug}` takes the source plus a metadata part. PowerShell mangles the inner quotes of `-F metadata='{"…"}'`, so put the metadata in a file:
 
 ```
-curl.exe -s -X POST "https://api.supabase.com/v1/projects/{ref}/functions/deploy?slug=relay-copilot" \
+curl.exe -s -X POST "https://api.supabase.com/v1/projects/{ref}/functions/deploy?slug=relay-geocode" \
   -H "Authorization: Bearer {personal_access_token}" \
-  -F "file=@supabase/functions/relay-copilot/index.ts" \
-  -F "metadata=<metadata.json"   # {"entrypoint_path":"index.ts","verify_jwt":true,"name":"relay-copilot"}
+  -F "file=@supabase/functions/relay-geocode/index.ts" \
+  -F "metadata=<metadata.json"   # {"entrypoint_path":"index.ts","verify_jwt":true,"name":"relay-geocode"}
 ```
 
 A `201` response carries the new `version` and an `entrypoint_path` ending in `…/source/index.ts`. **Do not deploy with `PATCH /functions/{slug}`**: it accepts the source and bumps the version, but leaves `entrypoint_path` pointing at the previous revision's temp directory, so every invocation then answers `503 BOOT_ERROR` until the function is deployed again. Always confirm a deploy by calling the function — an empty body must answer `400` (a validation error), never `503`.

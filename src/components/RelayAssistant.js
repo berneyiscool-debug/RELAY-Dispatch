@@ -9,7 +9,7 @@
 import { store } from '../data/store.js';
 import { showToast } from './Notifications.js';
 import { showModal } from './Modal.js';
-import { dispatchChat } from '../utils/aiEngine.js';
+import { dispatchChat, AILimitError } from '../utils/aiEngine.js';
 import { isCloudUser, hasDeputyMax } from '../utils/aiTier.js';
 import { hasPermission } from '../utils/permissions.js';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
@@ -1894,7 +1894,9 @@ export async function openRelay() {
       } catch (err) {
         console.error('Relay vision extraction failed:', err);
         typing.remove();
-        const reply = `I couldn't read that attachment. (${err.message || err})`;
+        const reply = err instanceof AILimitError
+          ? err.message
+          : `I couldn't read that attachment. (${err.message || err})`;
         pushAssistant(reply);
         addMessage(thread, 'relay', reply);
       }
@@ -1939,8 +1941,15 @@ export async function openRelay() {
         }, 380);
       }
     } catch (err) {
-      console.error('AI assistant failed, falling back to local commands:', err);
       typing.remove();
+      // A used-up daily allowance is an answer, not a crash: say so, and don't
+      // pad it with the offline assistant's output.
+      if (err instanceof AILimitError) {
+        pushAssistant(err.message);
+        addMessage(thread, 'relay', err.message);
+        return;
+      }
+      console.error('AI assistant failed, falling back to local commands:', err);
       const reply = `[Error: ${err.message || err}]. Falling back to local assistant:\n\n` + runLocalCommand(text);
       pushAssistant(reply);
       addMessage(thread, 'relay', reply);
@@ -3189,6 +3198,9 @@ async function runRoutineBuilder(text) {
 }
 
 export function getSystemContext(slim = false) {
+  // Everything static is emitted before anything live, so DeepSeek's prefix
+  // cache can reuse the bulk of this prompt between calls. Keep the live block
+  // last when adding new sections.
   // Pull current DB state
   const jobs = store.getAll('jobs') || [];
   const invoices = store.getAll('invoices') || [];
@@ -3277,30 +3289,6 @@ Assistant Tone & Formatting Guidelines:
 - NO SELF-TALK OR PROCESS NARRATION: Never narrate your internal thinking or announce what you are about to do. Do NOT write phrases like "Wait", "Let me check", "Let me look that up", "I need to pull the details", "I will look into this", or any play-by-play of how you arrived at an answer. If you need record details, silently emit the LOOKUP_RECORD action tag (it is invisible to the user) and then present the finished answer only.
 - ROUTINE OUTPUT RULE: When an automated routine runs, deliver the routine's finished output directly (the rundown, toolbox, report, or summary it was asked to produce). Do NOT include setup commentary, caveats about missing data, or a description of how you searched. Lead with the result, not the process.
 
-Current Live CRM Data Context (updated real-time):
-- Current Local Date & Time: ${new Date().toLocaleString()}
-- CRITICAL DATE AWARENESS: The "Current Local Date & Time" above is the absolute ground truth. If it differs from any dates mentioned in past chat messages, ALWAYS use the date above.
-- Active Technicians & Workloads: ${techWorkloadMap || 'None'}
-- Total Registered Customers: ${customers.length}
-- Jobs Summary: Total: ${jobs.length}, Active/Scheduled: ${activeJobs.length}, Completed/Invoiced: ${completedJobs.length}, Pending: ${pendingJobs.length}, Unassigned: ${unassignedJobs.length}
-- Active/Scheduled Jobs (${activeJobs.length}):
-${jobsList || 'None'}
-- Unassigned Jobs Needing Technician Assignment (${unassignedJobs.length}):
-${unassignedJobsList || 'None (All active jobs assigned)'}
-- Overdue Invoices (${overdueInvoices.length}):
-${overdueInvoicesList || 'None'}
-- Pending Quotes: ${pendingQuotes.length}
-- Low Stock Items Needing Reorder: ${lowStockList || 'None (All stock levels adequate)'}
-
-Currently Logged-in User Profile:
-- Name: ${currentUser ? currentUser.name : 'Unknown User'}
-- Role: ${currentUser ? currentUser.role : 'Unknown Role'}
-- Permissions: ${userPermissions}
-- Deep User Memory Graph (Structured Preferences/Rules):
-${formattedMemory}
-- Manually Added Memory Keys (explicit user-supplied facts — treat these as authoritative and apply them whenever relevant):
-${learnedKeys}
-
 Action Execution Formats:
 Action parameters can be passed as structured JSON objects OR pipe-separated strings. JSON payloads are preferred for precision.
 - To assign a job to a technician: [ACTION: ASSIGN_TECH, {"jobId": "1002", "technicianName": "John Doe"}]
@@ -3325,14 +3313,40 @@ Action parameters can be passed as structured JSON objects OR pipe-separated str
 ${FLAGS.maps ? `
 Routing & Drive Times (live Google Maps data):
 - You have access to real driving distances, ETAs and route optimisation. When the user asks about the best order to visit jobs, a technician's route/run for a day, or the drive time between two places, emit ONE of these tags and STOP — the routing service will compute the real numbers and hand them back to you to phrase the final answer. Never invent drive times or distances yourself.
-- Best visit order + ETAs for a technician's day: [ACTION: ROUTE_PLAN, {"technicianName": "John Doe", "date": "2026-07-25"}] (technicianName optional = whole team; date accepts "today"/"tomorrow" or YYYY-MM-DD — resolve relative dates using the Current Local Date above).
+- Best visit order + ETAs for a technician's day: [ACTION: ROUTE_PLAN, {"technicianName": "John Doe", "date": "2026-07-25"}] (technicianName optional = whole team; date accepts "today"/"tomorrow" or YYYY-MM-DD — resolve relative dates using the Current Local Date below).
 - Drive time between two points: [ACTION: DRIVE_TIME, {"from": "office", "to": "#1005"}] — each of from/to may be "office", a job number like "#1005", a customer name, or a literal address.
 ` : ''}${FLAGS.weather ? `
 Weather (live forecast data):
 - You can answer weather questions for the office or any job site. When the user asks about weather/rain/conditions/temperature at a place or on a day, emit this tag and STOP — the forecast service returns real data for you to phrase the answer. Never invent forecasts.
-- [ACTION: WEATHER_LOOKUP, {"location": "#1005", "date": "tomorrow"}] — location may be "office", a job number, a customer name, or a literal address (omit for the office); date accepts "today"/"tomorrow" or YYYY-MM-DD within the next 7 days (resolve relative dates using the Current Local Date above).
+- [ACTION: WEATHER_LOOKUP, {"location": "#1005", "date": "tomorrow"}] — location may be "office", a job number, a customer name, or a literal address (omit for the office); date accepts "today"/"tomorrow" or YYYY-MM-DD within the next 7 days (resolve relative dates using the Current Local Date below).
 ` : ''}
-Always perform requested actions using action tags. Do not state you are unable to modify data.`;
+
+Always perform requested actions using action tags. Do not state you are unable to modify data.
+
+Current Live CRM Data Context (updated real-time):
+- Current Local Date & Time: ${new Date().toLocaleString()}
+- CRITICAL DATE AWARENESS: The "Current Local Date & Time" above is the absolute ground truth. If it differs from any dates mentioned in past chat messages, ALWAYS use the date above.
+- Active Technicians & Workloads: ${techWorkloadMap || 'None'}
+- Total Registered Customers: ${customers.length}
+- Jobs Summary: Total: ${jobs.length}, Active/Scheduled: ${activeJobs.length}, Completed/Invoiced: ${completedJobs.length}, Pending: ${pendingJobs.length}, Unassigned: ${unassignedJobs.length}
+- Active/Scheduled Jobs (${activeJobs.length}):
+${jobsList || 'None'}
+- Unassigned Jobs Needing Technician Assignment (${unassignedJobs.length}):
+${unassignedJobsList || 'None (All active jobs assigned)'}
+- Overdue Invoices (${overdueInvoices.length}):
+${overdueInvoicesList || 'None'}
+- Pending Quotes: ${pendingQuotes.length}
+- Low Stock Items Needing Reorder: ${lowStockList || 'None (All stock levels adequate)'}
+
+Currently Logged-in User Profile:
+- Name: ${currentUser ? currentUser.name : 'Unknown User'}
+- Role: ${currentUser ? currentUser.role : 'Unknown Role'}
+- Permissions: ${userPermissions}
+- Deep User Memory Graph (Structured Preferences/Rules):
+${formattedMemory}
+- Manually Added Memory Keys (explicit user-supplied facts — treat these as authoritative and apply them whenever relevant):
+${learnedKeys}
+`;
 }
 
 const ACTION_REGEX = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;
