@@ -240,9 +240,8 @@ export function updateTopbarAccess(topbarEl) {
   const uiToggle = topbar.querySelector('#ui-mode-toggle');
   if (uiToggle) {
     // Toggle is ONLY for local admin (single user) mode.
-    //   'local'            → Local Admin (single user) — toggle VISIBLE
-    //   'local_multiuser'  → Local System (multi user, PIN login) — toggle HIDDEN
-    //   'cloud'            → Cloud — toggle HIDDEN
+    //   'local'  → Local Admin (single user) — toggle VISIBLE
+    //   'cloud'  → Cloud — toggle HIDDEN
     const loginMode = localStorage.getItem('relay_login_mode');
     const isLocalAdminMode = loginMode === 'local';
     const toggleLabel = uiToggle.closest('label');

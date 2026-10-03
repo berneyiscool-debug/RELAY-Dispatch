@@ -299,9 +299,7 @@ function getContextualMenu(hash) {
     // instead of hidden — so users can see what other plans unlock. Keep this in
     // sync with the flags computed in renderSettings() (src/pages/Settings.js).
     const local = isLocalMode();
-    const deploymentType = (store.getSettings().localDeploymentType) || 'single_user';
     const portalDisabled = local;                                     // portals are cloud-only
-    const usersDisabled = local && deploymentType === 'single_user';  // needs cloud or multi-user local
 
     const groups = [
       {
@@ -327,9 +325,9 @@ function getContextualMenu(hash) {
       {
         id: 'people', label: 'People', icon: 'groups',
         items: [
-          { id: 'users', icon: 'group', label: 'Users', path: '/settings?tab=users', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
-          { id: 'user_types', icon: 'admin_panel_settings', label: 'User Types & Permissions', path: '/settings?tab=user_types', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
-          { id: 'password_recovery', icon: 'lock_reset', label: 'Password Recovery', path: '/settings?tab=password_recovery', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
+          { id: 'users', icon: 'group', label: 'Users', path: '/settings?tab=users' },
+          { id: 'user_types', icon: 'admin_panel_settings', label: 'User Types & Permissions', path: '/settings?tab=user_types' },
+          { id: 'password_recovery', icon: 'lock_reset', label: 'Password Recovery', path: '/settings?tab=password_recovery' },
           { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' }
         ]
       },

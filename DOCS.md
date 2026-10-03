@@ -54,7 +54,8 @@ regional. RELAY flips both:
 - Document centre with role-based folders and auto-indexed attachments
 - Reports & analytics (P&L by job, revenue by customer, tech productivity)
   with CSV export
-- Role-based permissions (Admin / Manager / Office / Technician)
+- Role-based permissions (Admin / Manager / Office / Technician) on cloud
+  accounts
 - Light appearance only at launch; dark mode follows in a later release
 
 **Cloud mode (optional, paid)**
@@ -103,26 +104,25 @@ The app boots straight into **local mode** — no account needed. To enable Clou
 mode, point it at a Supabase project using the schema in
 `supabase/migrations/schema.sql` (see `docs/SUPABASE_MIGRATION.md`).
 
-### Local demo accounts
+### Local mode: one profile, one machine
 
-A brand-new local company is seeded with four demo technicians so there is
-something to schedule and assign:
+A local profile is a **single user**. You create it on the launch screen — give
+it a business name, your name, a password and a recovery question — and that one
+sign-in owns everything on this device.
 
-| Username | Name          | Position             |
-| -------- | ------------- | -------------------- |
-| `jake`   | Jake Morrow   | Senior Electrician   |
-| `ryan`   | Ryan Holt     | Service Manager      |
-| `sandra` | Sandra Okafor | Electrician          |
-| `dean`   | Dean Caruso   | Office Administrator |
-
-The shared **demo password is `123456`**; each user can also sign in with their
-`@apexpowerservices.local` email address. Local passwords are stored as hashes,
-and the plaintext demo password is upgraded to a hash the first time a user
-signs in with it. A user with no password stored is prompted to set one on
-first sign-in instead of being told the password is wrong.
-
-Change these credentials before using RELAY for real work: an administrator can
-rename users or reset their passwords in **Settings → Users**.
+- A brand-new local profile starts with **no staff records**.
+- Your password is stored as a hash, and it is the only credential the profile
+  accepts. Forgetting it means using the recovery question on the launch screen.
+- Staff logins — separate accounts, user types and permissions, password
+  recovery — come with **RELAY Cloud**. Those tabs are still visible in
+  **Settings → Users** on a local profile; they explain what the cloud adds and
+  offer the one-way **Move to cloud** upgrade, which copies your records into a
+  cloud company and signs you in there.
+- Older multi-user local profiles are cleaned up automatically on first boot:
+  per-technician login credentials, the deployment-type marker and the legacy
+  `local_multiuser` session flag are removed (the flag is rewritten to `local`).
+  Staff records themselves are kept, so a later cloud upgrade still carries the
+  roster across.
 
 ## Project status
 

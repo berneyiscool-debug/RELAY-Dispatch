@@ -168,6 +168,13 @@ document.addEventListener('click', (e) => {
 }, true);
 
 // ---- Build App Shell ----
+// Local mode is single-user, and a legacy `local_multiuser` marker from the
+// removed multi-user local mode means this is a local install. Normalise it
+// before the shell is built, because the mode toggle only shows for local admin.
+if (localStorage.getItem('relay_login_mode') === 'local_multiuser') {
+  localStorage.setItem('relay_login_mode', 'local');
+}
+
 const app = document.getElementById('app');
 
 const sidebar = createSidebar();
@@ -497,7 +504,7 @@ router.register('/login', renderPage(async (container) => {
     import('./pages/login/Login.js'),
   ]);
   renderLaunchScreen(container, async (result) => {
-    if (result.mode === 'local' || result.mode === 'local_multiuser') {
+    if (result.mode === 'local') {
       const accountId = result.accountId;
       sessionStorage.setItem('relay_active_account', accountId);
       localStorage.setItem('relay_login_mode', result.mode);
@@ -812,17 +819,22 @@ window.addEventListener('storage', (e) => {
 });
 
 // Before resolving, check if we need to redirect to login
-const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+// Local mode is single-user: the owner account is the only identity that can
+// hold a local session. A staff session left behind by the removed multi-user
+// local mode is discarded here, so those installs land back on the launch
+// screen instead of a session the app no longer supports.
+if (currentUser && currentUser.companyId && String(currentUser.companyId).startsWith('acct_')
+  && currentUser.id !== `${currentUser.companyId}_admin`) {
+  clearSessionUser();
+  localStorage.removeItem('relay_login_mode');
+  currentUser = null;
+}
+// A legacy multi-user marker is already normalised to `local` above, before the
+// shell is built; here we only fill in a mode when nothing is recorded.
 if (currentUser && !localStorage.getItem('relay_login_mode')) {
-  let mode = 'cloud';
-  if (currentUser.companyId && currentUser.companyId.startsWith('acct_')) {
-    if (currentUser.id === `${currentUser.companyId}_admin`) {
-      mode = 'local';
-    } else {
-      mode = 'local_multiuser';
-    }
-  }
-  localStorage.setItem('relay_login_mode', mode);
+  const isLocal = currentUser.companyId && String(currentUser.companyId).startsWith('acct_');
+  localStorage.setItem('relay_login_mode', isLocal ? 'local' : 'cloud');
 }
 const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
 if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {

@@ -21,7 +21,6 @@ import { storageGet, storageSet } from '../utils/persist.js';
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 import { renderLeadProfileSetup } from './leads/leadProfile.js';
 import { hashPassword, verifyPassword } from './auth/password.js';
-import { buildLocalUser } from './auth/localUsers.js';
 import { setSessionUser, clearSessionUser } from './auth/session.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
@@ -268,15 +267,10 @@ export function renderSettings(container) {
 
   const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
   const settings = store.getSettings();
-  const localDeploymentType = settings.localDeploymentType || 'single_user';
 
-  const isUsersDisabled = isLocalMode && localDeploymentType === 'single_user';
   const isPortalDisabled = isLocalMode;
   const isCloudGated = isLocalMode; // online payments + email are cloud-only
 
-  if (isUsersDisabled && activeTab === 'users') {
-    activeTab = 'company';
-  }
   if (isPortalDisabled && activeTab === 'portal') {
     activeTab = 'company';
   }
@@ -781,7 +775,7 @@ export function renderSettings(container) {
 
       renderCompanyTabAll();
     } else if (activeTab === 'users') {
-      renderUsersSettings(tc);
+      renderUsersSettings(tc, openMigrationModal);
     } else if (activeTab === 'materials') {
       renderMaterialsSettings(tc);
     } else if (activeTab === 'storage_options') {
@@ -1266,17 +1260,8 @@ export function renderSettings(container) {
                 <div class="card-header"><h4>Deployment Profile</h4></div>
                 <div class="card-body">
                   <p style="color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
-                    This profile keeps all of its data on this device. The upgrades below change that permanently — RELAY downloads a copy of your data before it starts and shows you a summary when it is done.
+                    This profile keeps all of its data on this device, and only one person signs in to it. The upgrade below changes that permanently — RELAY downloads a copy of your data before it starts and shows you a summary when it is done.
                   </p>
-                  ${localDeploymentType === 'single_user' ? `
-                    <button class="btn btn-secondary" id="btn-convert-multiuser" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid var(--border-color)">
-                      <span class="material-icons-outlined">group_add</span>
-                      <span style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
-                        <span style="font-weight:600;">Add team members</span>
-                        <span style="color:var(--text-tertiary); font-weight:400;">Multi-user sync across your local network</span>
-                      </span>
-                    </button>
-                  ` : ''}
                   <button class="btn btn-secondary" id="btn-convert-cloud-action" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
                     <span class="material-icons-outlined">cloud_upload</span>
                     <span style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
@@ -1531,33 +1516,20 @@ export function renderSettings(container) {
                     let passwordVerified = false;
 
                     if (isLocalMode) {
-                      if (localDeploymentType === 'single_user') {
-                        const activeAccountId = sessionStorage.getItem('relay_active_account');
-                        const storedAccounts = await storageGet('relay_accounts') || [];
-                        const acct = storedAccounts.find(a => a.id === activeAccountId);
-                        if (acct && acct.hasPassword) {
-                          const hashedInput = await hashPassword(passwordInput);
-                          if (hashedInput === acct.passwordHash) {
-                            passwordVerified = true;
-                          } else {
-                            throw new Error('Incorrect administrator password.');
-                          }
-                        } else {
-                          // No password set
-                          passwordVerified = true;
-                        }
-                      } else {
-                        // local_multiuser
-                        const techs = store.getAll('technicians') || [];
-                        const currentTech = techs.find(t => t.id === currentUser.id);
-                        if (!currentTech?.password) {
-                          // No password set — nothing to check against
-                          passwordVerified = true;
-                        } else if ((await verifyPassword(currentTech.password, passwordInput)).ok) {
+                      // A local profile has one owner password, stored on the
+                      // launcher account rather than on a staff record.
+                      const activeAccountId = sessionStorage.getItem('relay_active_account');
+                      const storedAccounts = await storageGet('relay_accounts') || [];
+                      const acct = storedAccounts.find(a => a.id === activeAccountId);
+                      if (acct && acct.hasPassword) {
+                        if ((await verifyPassword(acct.passwordHash, passwordInput)).ok) {
                           passwordVerified = true;
                         } else {
                           throw new Error('Incorrect administrator password.');
                         }
+                      } else {
+                        // No password set
+                        passwordVerified = true;
                       }
                     } else {
                       // Cloud mode
@@ -1630,197 +1602,6 @@ export function renderSettings(container) {
               }
             }
           ]
-        });
-      });
-
-      tc.querySelector('#btn-convert-multiuser')?.addEventListener('click', () => {
-        const content = document.createElement('div');
-        content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-
-        const techs = store.getAll('technicians') || [];
-        const companyId = store.companyId || '';
-        const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
-        const existingAdmin = techs.find(t => t.userTypeId === adminTypeId || t.role?.toLowerCase() === 'admin');
-
-        const currentTechName = existingAdmin ? existingAdmin.name : (currentUser.name && currentUser.name !== 'Local Admin' ? currentUser.name : '');
-        const currentTechUsernameOrEmail = existingAdmin ? (existingAdmin.email || existingAdmin.username || '') : '';
-        const expectedName = (store.getSettings().name || '').trim();
-
-        content.innerHTML = `
-          <form id="convert-multiuser-form" style="display:flex; flex-direction:column; gap:16px;">
-            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); display:flex; gap:8px;">
-              <span class="material-icons-outlined" style="color:var(--color-danger);">warning</span>
-              <div>
-                <strong>CRITICAL WARNING:</strong> Converting to Multi-User Local Network Sync is a permanent, one-way transition. Once converted, you cannot revert this profile back to a single-user Local Admin profile.
-              </div>
-            </div>
-
-            <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; color:var(--color-info); display:flex; gap:8px;">
-              <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
-              <div>
-                Configure the administrator user credentials. This user will have admin access to add other users in the unlocked Users tab.
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">${expectedName ? `Type <strong>${escapeHTML(expectedName)}</strong> to confirm` : 'Business Name'}</label>
-              <input class="form-input" id="multiuser-company-name" required autocomplete="off" placeholder="${escapeHTML(expectedName || 'Your business name')}" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Administrator Full Name</label>
-              <input class="form-input" id="multiuser-admin-name" required value="${escapeHTML(currentTechName)}" placeholder="e.g. John Doe" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Administrator Email Address (Required)</label>
-              <input class="form-input" type="email" id="multiuser-admin-email" required value="${escapeHTML(currentTechUsernameOrEmail)}" placeholder="e.g. admin@yourcompany.com" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Admin Password</label>
-              <input class="form-input" type="password" id="multiuser-admin-password" required minlength="6" placeholder="At least 6 characters" />
-            </div>
-
-            ${backupCheckboxHtml('relay-backup-before-upgrade')}
-
-            <div id="multiuser-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
-              <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
-              <span id="multiuser-error-text"></span>
-            </div>
-
-            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
-              <button type="button" class="btn btn-secondary" id="btn-multiuser-cancel">Cancel</button>
-              <button type="submit" class="btn btn-primary" id="btn-multiuser-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
-                <span class="material-icons-outlined" style="font-size:18px;">lan</span>
-                <span>Convert Company</span>
-              </button>
-            </div>
-          </form>
-        `;
-
-        const { close } = showModal({
-          title: "Convert to Multi-User Local Sync",
-          content: content,
-          size: "modal-md"
-        });
-
-        content.querySelector('#btn-multiuser-cancel').addEventListener('click', close);
-
-        const form = content.querySelector('#convert-multiuser-form');
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const errorEl = content.querySelector('#multiuser-error');
-          const errorTextEl = content.querySelector('#multiuser-error-text');
-          const submitBtn = content.querySelector('#btn-multiuser-submit');
-          const cancelBtn = content.querySelector('#btn-multiuser-cancel');
-
-          errorEl.style.display = 'none';
-          submitBtn.disabled = true;
-          cancelBtn.disabled = true;
-
-          const confirmName = content.querySelector('#multiuser-company-name').value.trim();
-          const adminName = content.querySelector('#multiuser-admin-name').value.trim();
-          const adminEmail = content.querySelector('#multiuser-admin-email').value.trim();
-          const adminPassword = content.querySelector('#multiuser-admin-password').value;
-
-          try {
-            if (!confirmName) {
-              throw new Error('Enter your business name to continue.');
-            }
-            if (expectedName && confirmName !== expectedName) {
-              throw new Error('The business name does not match. Type it exactly as shown to confirm.');
-            }
-            if (!adminName || !adminEmail || !adminPassword) {
-              throw new Error('All fields are required.');
-            }
-            if (adminPassword.length < 6) {
-              throw new Error('Password must be at least 6 characters.');
-            }
-
-            // The confirmation field must match the existing profile name, so the
-            // business name is never changed by this upgrade.
-            const businessName = expectedName || confirmName;
-            const backupFile = runBackupIfRequested(content, 'relay-backup-before-upgrade');
-
-            // 1. Update settings
-            const settings = store.getSettings();
-            settings.name = businessName;
-            settings.localDeploymentType = 'multi_user';
-            await store.saveSettings(settings);
-
-            // 2. Update launcher accounts businessName
-            const activeAccountId = sessionStorage.getItem('relay_active_account');
-            if (activeAccountId) {
-              const storedAccounts = await storageGet('relay_accounts') || [];
-              const acctIndex = storedAccounts.findIndex(a => a.id === activeAccountId);
-              if (acctIndex !== -1) {
-                storedAccounts[acctIndex].businessName = businessName;
-                await storageSet('relay_accounts', storedAccounts);
-              }
-            }
-
-            // 3. Create or update admin user in technicians
-            const companyId = store.companyId;
-            const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
-            const techs = store.getAll('technicians') || [];
-            let adminTech = techs.find(t => t.userTypeId === adminTypeId || t.role?.toLowerCase() === 'admin');
-
-            if (!adminTech) {
-              adminTech = {
-                id: `${companyId}_tech_admin_created`,
-                role: 'Admin',
-                color: '#FF5C00',
-                userTypeId: adminTypeId,
-                payRate: 100.00,
-                phone: ''
-              };
-              techs.push(adminTech);
-            }
-
-            adminTech.name = adminName;
-            adminTech.username = adminEmail.split('@')[0];
-            adminTech.email = adminEmail;
-            adminTech.password = await hashPassword(adminPassword);
-
-            store.save('technicians', techs);
-
-            // 4. Update currentUser session in localStorage
-            setSessionUser(buildLocalUser(adminTech, { companyId, storeCompanyId: companyId }));
-
-            showToast('Converted to Multi-User Local Network Sync.', 'success');
-            close();
-            window.dispatchEvent(new CustomEvent('relay:settings-updated'));
-
-            const summary = document.createElement('div');
-            summary.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-            summary.innerHTML = `
-              <p style="margin-bottom:12px">This profile is now a multi-user local network profile.</p>
-              <ul style="margin:0 0 12px 18px; color:var(--text-secondary); line-height:1.7;">
-                <li>Administrator: <strong>${escapeHTML(adminName)}</strong> (${escapeHTML(adminEmail)})</li>
-                <li>Everyone signs in with their own account instead of the single Local Admin login.</li>
-                <li>Your existing data is unchanged and stays on this machine.</li>
-                ${backupFile ? `<li>A copy of your data was saved as <strong>${escapeHTML(backupFile)}</strong></li>` : ''}
-              </ul>
-              <p style="color:var(--text-secondary)">Next: add team members from Settings → Users.</p>
-            `;
-
-            showModal({
-              title: 'Upgrade Complete',
-              content: summary,
-              size: 'modal-md',
-              onClose: () => window.location.reload(),
-              actions: [
-                { label: 'Continue to RELAY', className: 'btn-primary', onClick: (closeSummary) => closeSummary() }
-              ]
-            });
-          } catch (err) {
-            console.error('Conversion failed:', err);
-            errorTextEl.textContent = err.message || 'An error occurred during conversion.';
-            errorEl.style.display = 'flex';
-            submitBtn.disabled = false;
-            cancelBtn.disabled = false;
-          }
         });
       });
 
@@ -3005,7 +2786,31 @@ export function renderSettings(container) {
     renderStorageOptions(tc.querySelector('#storage-options-section'));
   }
 
-  function renderUsersSettings(tc) {
+  // A local profile is one person on one machine, so there is no team to manage
+  // here — point at the cloud upgrade instead of an empty user list.
+  function renderLocalTeamNotice(tc, openMigrationModal) {
+    tc.innerHTML = `
+      <div class="card">
+        <div class="card-header"><h4>Team logins</h4></div>
+        <div class="card-body">
+          <p style="color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.5;">
+            This profile runs on this device, so it has a single owner sign-in and no staff logins to set up here. Team logins are available with RELAY Cloud, where everyone signs in with their own email address and permissions.
+          </p>
+          <button class="btn btn-primary" id="btn-local-team-upgrade" style="display:flex; align-items:center; justify-content:center; gap:8px;">
+            <span class="material-icons-outlined">cloud_upload</span> Move to cloud
+          </button>
+        </div>
+      </div>
+    `;
+    tc.querySelector('#btn-local-team-upgrade')?.addEventListener('click', () => openMigrationModal());
+  }
+
+  function renderUsersSettings(tc, openMigrationModal) {
+    if (isLocalAccount()) {
+      renderLocalTeamNotice(tc, openMigrationModal);
+      return;
+    }
+
     const techs = store.getAll('technicians');
     const pendingResets = store.getAll('passwordResetRequests') || [];
     const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');

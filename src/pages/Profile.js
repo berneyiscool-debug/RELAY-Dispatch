@@ -61,7 +61,7 @@ const compressImage = (file) => {
 
 export function renderProfile(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-  const loginMode = localStorage.getItem('relay_login_mode') || 'cloud'; // 'local' | 'local_multiuser' | 'cloud'
+  const loginMode = localStorage.getItem('relay_login_mode') || 'cloud'; // 'local' | 'cloud'
   
   let activeAvatarColor = currentUser.color || '#FF5C00';
   let activeRecoveryQuestion = '';
@@ -78,11 +78,6 @@ export function renderProfile(container) {
         activeRecoveryQuestion = activeAccountObj.recoveryQuestion || '';
         activeAvatarColor = activeAccountObj.avatarColor || activeAvatarColor;
         uploadedAvatarUrl = activeAccountObj.avatarUrl || null;
-      }
-    } else if (loginMode === 'local_multiuser') {
-      const tech = store.getById('technicians', currentUser.id);
-      if (tech) {
-        uploadedAvatarUrl = tech.avatarUrl || null;
       }
     } else {
       uploadedAvatarUrl = currentUser.avatarUrl || null;
@@ -110,12 +105,8 @@ export function renderProfile(container) {
     let usernameOrEmail = '';
     if (isCloud) {
       usernameOrEmail = currentUser.email || 'Cloud Account';
-    } else if (isLocalAdmin) {
-      usernameOrEmail = 'Local Administrator';
     } else {
-      // Local multiuser technician
-      const tech = store.getById('technicians', currentUser.id) || {};
-      usernameOrEmail = tech.username || tech.email || 'Local User';
+      usernameOrEmail = 'Local Administrator';
     }
 
     const factsheetKey = `relay_factsheet_${currentUser.id || 'default'}`;
@@ -524,7 +515,7 @@ export function renderProfile(container) {
             
           if (profileError) throw profileError;
 
-        } else if (loginMode === 'local') {
+        } else {
           // Local Admin Profile details
           if (activeAccountObj) {
             activeAccountObj.businessName = name; // sync businessName with updated name
@@ -532,13 +523,6 @@ export function renderProfile(container) {
             activeAccountObj.avatarUrl = uploadedAvatarUrl;
             await storageSet('relay_accounts', accounts);
           }
-        } else {
-          // Local Multi-user Technician update
-          store.update('technicians', currentUser.id, {
-            name: name,
-            color: activeAvatarColor,
-            avatarUrl: uploadedAvatarUrl
-          });
         }
 
         // Notify TopBar to reload avatar/name
@@ -605,8 +589,8 @@ export function renderProfile(container) {
           });
           if (error) throw error;
 
-        } else if (loginMode === 'local') {
-          // Profile PIN update
+        } else {
+          // Profile password update
           if (activeAccountObj) {
             if (newPwd) {
               activeAccountObj.hasPassword = true;
@@ -617,11 +601,6 @@ export function renderProfile(container) {
             }
             await storageSet('relay_accounts', accounts);
           }
-        } else {
-          // Multiuser Offline Password update
-          store.update('technicians', currentUser.id, {
-            password: newPwd
-          });
         }
 
         container.querySelector('#profile-new-pwd').value = '';

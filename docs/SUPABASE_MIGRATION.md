@@ -404,7 +404,7 @@ Recommend **A** to keep the polished demo dataset intact.
 
 Two regressions the hardening would have caused were found and fixed before launch:
 
-- `store.js` `seedDefaultTechnicians()` wrote demo `profiles` rows from the client. `030` now rejects that (`400 P0001`), so the function early-returns unless the tenant is a local `acct_` account — cloud tenants get real profiles from signup or `invite-user`.
+- `store.js` `seedDefaultTechnicians()` wrote demo `profiles` rows from the client. `030` now rejects that (`400 P0001`), so the function early-returned unless the tenant was a local `acct_` account — cloud tenants get real profiles from signup or `invite-user`. (Local mode is single-user now and no longer seeds demo staff, so the function has since been removed entirely.)
 - Migration `013` declares `job_materials.company_id uuid` while the live column is `text`; see the gotcha in Section 9.
 
 ---

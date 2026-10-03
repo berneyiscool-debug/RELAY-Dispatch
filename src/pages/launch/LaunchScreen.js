@@ -1,10 +1,8 @@
 import { supabase } from '../../utils/supabase.js';
 import { storageGet, storageSet } from '../../utils/persist.js';
 import { applyTheme } from '../../utils/theme.js';
-import { hashPassword, verifyAndUpgrade, hasLocalPassword } from '../auth/password.js';
-import { findLocalUser, buildLocalUser } from '../auth/localUsers.js';
+import { hashPassword, verifyPassword } from '../auth/password.js';
 import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '../auth/session.js';
-import { renderSetLocalPassword } from '../auth/setPassword.js';
 
 const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
@@ -73,7 +71,6 @@ export function renderLaunchScreen(container, onComplete) {
   let accounts = [];
   let isCreatingLocalAccount = false;
   let activePasswordPromptId = null;
-  let activeAuthMode = 'cloud'; // 'cloud' | 'local'
   let pendingLocalDirHandle = null;
   let majoritySide = localStorage.getItem('relay_last_login_side') || 'left'; // 'left' | 'right'
 
@@ -628,12 +625,12 @@ export function renderLaunchScreen(container, onComplete) {
         <div class="launch-bg-glow"></div>
         <div class="launch-bg-glow-2"></div>
 
-        <!-- Left Column: Auth (Cloud / Local) -->
+        <!-- Left Column: Cloud auth -->
         <div class="launch-panel launch-panel-left ${majoritySide === 'right' ? 'collapsed' : ''}">
           <!-- Collapsed indicator -->
           <div class="launch-panel-indicator">
             <span class="material-icons-outlined indicator-icon">cloud</span>
-            <span class="indicator-text">Cloud &amp; Local Services</span>
+            <span class="indicator-text">Cloud Services</span>
             <span class="material-icons-outlined indicator-arrow">keyboard_arrow_up</span>
           </div>
 
@@ -642,22 +639,7 @@ export function renderLaunchScreen(container, onComplete) {
               <img src="${logoLarge}" alt="Dispatch Logo" style="max-height: 36px; max-width: 200px; object-fit: contain; display: block;" />
             </div>
 
-            <!-- Toggle between Cloud and Local Services -->
-            <div class="auth-mode-toggle" style="display: flex; gap: 8px; margin-bottom: 16px; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.08);">
-              <button class="toggle-tab" id="btn-toggle-cloud" style="flex: 1; padding: 6px 10px; border: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${activeAuthMode === 'cloud' ? '#FF5C00' : 'transparent'}; color: ${activeAuthMode === 'cloud' ? '#ffffff' : '#5c5c5a'};">
-                <span class="material-icons-outlined" style="font-size: 14px;">cloud_queue</span>
-                <span>Cloud Services</span>
-              </button>
-              <button class="toggle-tab" id="btn-toggle-local" style="flex: 1; padding: 6px 10px; border: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; background: ${activeAuthMode === 'local' ? '#FF5C00' : 'transparent'}; color: ${activeAuthMode === 'local' ? '#ffffff' : '#5c5c5a'};">
-                <span class="material-icons-outlined" style="font-size: 14px;">computer</span>
-                <span>Local Services</span>
-              </button>
-            </div>
-
-            ${activeAuthMode === 'cloud' 
-              ? (cloudView === 'signin' ? renderCloudSignInHTML() : renderCloudSignUpHTML())
-              : `<div id="local-services-slot">${renderLocalServicesSignInHTML()}</div>`
-            }
+            ${cloudView === 'signin' ? renderCloudSignInHTML() : renderCloudSignUpHTML()}
           </div>
         </div>
 
@@ -698,64 +680,6 @@ export function renderLaunchScreen(container, onComplete) {
 
     // Attach event listeners
     attachEventListeners();
-  };
-
-  const renderLocalServicesSignInHTML = () => {
-    return `
-      <h2 class="launch-title" style="color: #FF5C00;">
-        <span class="material-icons-outlined" style="font-size: 22px; color: #FF5C00;">computer</span> Local Services
-      </h2>
-      <p class="launch-subtitle">Sign in to a local multi-user business database on this machine.</p>
-
-      <div id="local-auth-error" class="auth-error" style="display: none;">
-        <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
-        <span id="local-auth-error-text"></span>
-      </div>
-
-      <form id="local-signin-form" style="display: flex; flex-direction: column; gap: 10px;">
-        <div class="launch-form-group">
-          <label class="launch-form-label">Business Profile</label>
-          <div class="launch-input-wrapper">
-            <span class="material-icons-outlined launch-input-icon">business</span>
-            <select id="local-signin-profile" class="launch-input" style="appearance: none; background: #1a1a1a; border: none; color: #f8fafc; width: 100%; padding-left: 36px; height: 40px; border-radius: 6px; font-family: inherit; font-size: 14px;" required>
-              ${accounts.length === 0 
-                ? '<option value="" disabled selected>No profiles available. Create one on the right.</option>' 
-                : accounts.map((acc, index) => `<option value="${acc.id}" ${index === 0 ? 'selected' : ''}>${escapeHTML(acc.businessName)}</option>`).join('')
-              }
-            </select>
-            <span class="material-icons-outlined" style="position: absolute; right: 12px; top: 11px; color: #5c5c5a; pointer-events: none;">expand_more</span>
-          </div>
-        </div>
-
-        <div class="launch-form-group">
-          <label class="launch-form-label">Username or Email</label>
-          <div class="launch-input-wrapper">
-            <span class="material-icons-outlined launch-input-icon">person</span>
-            <input type="text" id="local-signin-username" class="launch-input" placeholder="e.g. jake or john@company.local" required>
-          </div>
-        </div>
-
-        <div class="launch-form-group">
-          <label class="launch-form-label">Password</label>
-          <div class="launch-input-wrapper">
-            <span class="material-icons-outlined launch-input-icon">lock</span>
-            <input type="password" id="local-signin-password" class="launch-input" placeholder="••••••••" required>
-          </div>
-        </div>
-
-        <div style="display: flex; align-items: center; gap: 8px; margin-top: -4px;">
-          <input type="checkbox" id="local-remember-me" style="width: 15px; height: 15px; accent-color: #FF5C00; cursor: pointer;" ${isRememberMeEnabled('local') ? 'checked' : ''}>
-          <label for="local-remember-me" style="font-size: 13px; color: #8a8a87; cursor: pointer; user-select: none;">Remember me</label>
-        </div>
-
-        <button type="submit" class="launch-btn launch-btn-primary" id="btn-local-signin-submit">
-          Sign In Offline
-        </button>
-        <div style="text-align: center; margin-top: 10px; font-size: 13px;">
-          <a href="#" id="link-local-forgot" style="color: #FF5C00; text-decoration: none; font-weight: 600;">Forgot password?</a>
-        </div>
-      </form>
-    `;
   };
 
   const renderCloudSignInHTML = () => {
@@ -1027,25 +951,6 @@ export function renderLaunchScreen(container, onComplete) {
       });
     }
 
-    // Toggle between Cloud and Local Services
-    const btnToggleCloud = container.querySelector('#btn-toggle-cloud');
-    if (btnToggleCloud) {
-      btnToggleCloud.addEventListener('click', (e) => {
-        e.stopPropagation();
-        activeAuthMode = 'cloud';
-        render();
-      });
-    }
-
-    const btnToggleLocal = container.querySelector('#btn-toggle-local');
-    if (btnToggleLocal) {
-      btnToggleLocal.addEventListener('click', (e) => {
-        e.stopPropagation();
-        activeAuthMode = 'local';
-        render();
-      });
-    }
-
     // Toggle Divider Slider
     const btnSlideDivider = container.querySelector('#btn-slide-divider');
     if (btnSlideDivider) {
@@ -1055,12 +960,6 @@ export function renderLaunchScreen(container, onComplete) {
         localStorage.setItem('relay_last_login_side', majoritySide);
         render();
       });
-    }
-
-    // Local multi-user sign in form
-    const localSigninForm = container.querySelector('#local-signin-form');
-    if (localSigninForm) {
-      localSigninForm.addEventListener('submit', handleLocalMultiuserSignIn);
     }
 
     // Local Directory Pickers (New Profile creation)
@@ -1219,16 +1118,6 @@ export function renderLaunchScreen(container, onComplete) {
       });
     }
 
-    // Local multiuser forgot link
-    const linkLocalForgot = container.querySelector('#link-local-forgot');
-    if (linkLocalForgot) {
-      linkLocalForgot.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleLocalMultiuserForgot();
-      });
-    }
-
     // Local profile forgot links
     const forgotLinks = container.querySelectorAll('.link-local-profile-forgot');
     forgotLinks.forEach(link => {
@@ -1249,14 +1138,6 @@ export function renderLaunchScreen(container, onComplete) {
       });
     }
     // Prefill remembered sign-in identities
-    const localUsername = getRememberedIdentity('local');
-    if (localUsername) {
-      const input = container.querySelector('#local-signin-username');
-      if (input) {
-        input.value = localUsername;
-        setTimeout(() => container.querySelector('#local-signin-password')?.focus(), 50);
-      }
-    }
     const cloudEmail = getRememberedIdentity('cloud');
     if (cloudEmail) {
       const input = container.querySelector('#cloud-email');
@@ -1395,8 +1276,8 @@ export function renderLaunchScreen(container, onComplete) {
     pwdError.style.display = 'none';
 
     try {
-      const hashedInput = await hashPassword(password);
-      if (hashedInput === acct.passwordHash) {
+      const { ok } = await verifyPassword(acct.passwordHash, password);
+      if (ok) {
         const accountId = activePasswordPromptId;
         activePasswordPromptId = null;
         onComplete({ mode: 'local', accountId });
@@ -1405,100 +1286,9 @@ export function renderLaunchScreen(container, onComplete) {
         pwdError.style.display = 'flex';
       }
     } catch (e) {
-      console.error('Bcrypt-lite hash comparison failed', e);
+      console.error('Password hash comparison failed', e);
       pwdError.innerText = 'System error unlocking account.';
       pwdError.style.display = 'flex';
-    }
-  };
-
-  // A local user with no stored password picks one now instead of being told
-  // their password is wrong.
-  const offerSetLocalPassword = (tech, accountId) => {
-    renderSetLocalPassword(container.querySelector('#local-services-slot'), {
-      displayName: tech.name,
-      onSubmit: async (hashedPassword) => {
-        await window.__relay.store.update('technicians', tech.id, { password: hashedPassword });
-        onComplete({
-          mode: 'local_multiuser',
-          user: buildLocalUser(tech, { companyId: accountId, storeCompanyId: accountId }),
-          accountId
-        });
-      },
-      onCancel: () => render()
-    });
-  };
-
-  const handleLocalMultiuserSignIn = async (e) => {
-    e.preventDefault();
-    const errorEl = container.querySelector('#local-auth-error');
-    const errorTextEl = container.querySelector('#local-auth-error-text');
-    const submitBtn = container.querySelector('#btn-local-signin-submit');
-
-    const profileSelect = container.querySelector('#local-signin-profile');
-    if (!profileSelect || !profileSelect.value) {
-      errorTextEl.innerText = 'Please select a Business Profile.';
-      errorEl.style.display = 'flex';
-      return;
-    }
-
-    errorEl.style.display = 'none';
-    submitBtn.disabled = true;
-    const originalText = submitBtn.innerText;
-    submitBtn.innerText = 'Checking local database...';
-
-    const accountId = profileSelect.value;
-    const usernameInput = container.querySelector('#local-signin-username').value.trim();
-    const passwordInput = container.querySelector('#local-signin-password').value;
-
-    rememberIdentity('local', usernameInput.toLowerCase(), !!container.querySelector('#local-remember-me')?.checked);
-
-    try {
-      if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.setItem('relay_active_account', accountId);
-      }
-      const { store } = window.__relay;
-
-      // A single-user marker left over from a previous session makes
-      // getAll('technicians') collapse to just that admin, so the multi-user
-      // lookup would never find anybody.
-      localStorage.removeItem('relay_login_mode');
-
-      // Temporary connect to namespaced store to load its cache & technicians
-      await store.initializeUser({ companyId: accountId });
-
-      const technicians = store.getAll('technicians') || [];
-      const tech = findLocalUser(technicians, usernameInput);
-
-      if (!tech) {
-        throw new Error('User not found in local database. Check username/email.');
-      }
-
-      if (!hasLocalPassword(tech)) {
-        offerSetLocalPassword(tech, accountId);
-        return;
-      }
-
-      const verified = await verifyAndUpgrade(
-        (hashedPassword) => store.update('technicians', tech.id, { password: hashedPassword }),
-        tech.password,
-        passwordInput
-      );
-      if (!verified) {
-        throw new Error('Incorrect offline password. Please try again.');
-      }
-
-      onComplete({
-        mode: 'local_multiuser',
-        user: buildLocalUser(tech, { companyId: accountId, storeCompanyId: accountId }),
-        accountId
-      });
-
-    } catch (err) {
-      console.error('Local Auth Error:', err);
-      errorTextEl.innerText = err.message || 'An error occurred during local sign in.';
-      errorEl.style.display = 'flex';
-      submitBtn.disabled = false;
-      submitBtn.innerText = originalText;
     }
   };
 
@@ -1769,91 +1559,6 @@ export function renderLaunchScreen(container, onComplete) {
           errorEl.style.display = 'flex';
           confirmBtn.disabled = false;
           confirmBtn.innerText = 'Send Reset Email';
-        }
-      }
-    });
-  };
-
-  const handleLocalMultiuserForgot = () => {
-    const profileSelect = container.querySelector('#local-signin-profile');
-    if (!profileSelect || !profileSelect.value) {
-      alert('Please select a Business Profile first.');
-      return;
-    }
-
-    const accountId = profileSelect.value;
-
-    showModal({
-      title: 'Reset Offline Password',
-      contentHtml: `
-        <p>Enter your Username or Email. We will check the local database and submit a password reset request to your administrator.</p>
-        <div class="launch-form-group" style="margin-top: 12px;">
-          <label class="launch-form-label">Username or Email</label>
-          <input type="text" id="modal-local-user" class="launch-input" placeholder="e.g. jake" style="padding-left: 12px;" required />
-        </div>
-        <div id="modal-local-error" class="auth-error" style="display: none; margin-top: 12px; padding: 8px 12px; font-size: 12px;"></div>
-        <div id="modal-local-success" style="display: none; color: #16a34a; font-size: 13px; margin-top: 12px; line-height: 1.4;"></div>
-      `,
-      confirmText: 'Request Admin Reset',
-      onConfirm: async (overlay, close) => {
-        const userInput = overlay.querySelector('#modal-local-user');
-        const errorEl = overlay.querySelector('#modal-local-error');
-        const successEl = overlay.querySelector('#modal-local-success');
-        const confirmBtn = overlay.querySelector('.launch-modal-confirm');
-        
-        if (!userInput) return;
-        const rawInput = userInput.value.trim().toLowerCase();
-        if (!rawInput) {
-          errorEl.innerText = 'Please enter your username or email.';
-          errorEl.style.display = 'flex';
-          return;
-        }
-
-        errorEl.style.display = 'none';
-        confirmBtn.disabled = true;
-        confirmBtn.innerText = 'Checking...';
-
-        try {
-          const { store } = window.__relay;
-          await store.initializeUser({ companyId: accountId });
-          
-          const technicians = store.getAll('technicians') || [];
-          const tech = technicians.find(t => 
-            (t.email && t.email.toLowerCase() === rawInput) || 
-            (t.username && t.username.toLowerCase() === rawInput) ||
-            (t.name && t.name.toLowerCase() === rawInput)
-          );
-
-          if (!tech) {
-            throw new Error('User not found in local database. Check username/email.');
-          }
-
-          // Create a reset request in local store
-          const requests = store.getAll('passwordResetRequests') || [];
-          const alreadyPending = requests.some(r => r.technician_id === tech.id && r.status === 'pending');
-          
-          if (!alreadyPending) {
-            await store.create('passwordResetRequests', {
-              id: 'req_' + Math.random().toString(36).substr(2, 9),
-              technician_id: tech.id,
-              employee_id: tech.username || tech.email || tech.name,
-              requested_at: new Date().toISOString(),
-              status: 'pending'
-            });
-          }
-
-          successEl.innerHTML = `
-            <span class="material-icons-outlined" style="vertical-align: middle; font-size: 16px; margin-right: 4px;">check_circle</span>
-            Request submitted. Ask your manager/admin to approve it in Settings > Team.
-          `;
-          successEl.style.display = 'block';
-          confirmBtn.style.display = 'none';
-        } catch (err) {
-          console.error(err);
-          errorEl.innerText = err.message || 'Failed to submit reset request.';
-          errorEl.style.display = 'flex';
-          confirmBtn.disabled = false;
-          confirmBtn.innerText = 'Request Admin Reset';
         }
       }
     });
