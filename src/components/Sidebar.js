@@ -707,13 +707,20 @@ function renderContextualItems(contextual) {
 }
 
 function renderSubmenuItem(contextual, item) {
-  return `
-    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" ${item.disabled ? `data-tooltip="${escapeHTML(item.tooltip || 'Not available for this account type')}" data-tooltip-pos="right"` : ''} style="display:flex; align-items:center; width:100%">
+  const button = `
+    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" style="display:flex; align-items:center; width:100%">
       <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
       <span class="nav-label">${escapeHTML(item.label)}</span>
       ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
       ${item.hasChildren ? `<span class="rail-caret material-icons-outlined" aria-hidden="true" style="font-size:16px;opacity:0.45;flex:none;margin-left:auto">chevron_right</span>` : ''}
     </button>`;
+
+  if (!item.disabled) return button;
+
+  // A gated item fades with `opacity`, which would fade its own ::after tooltip
+  // along with it, so the tooltip hangs off this (undimmed) wrapper instead.
+  const tooltip = escapeHTML(item.tooltip || 'Not available for this account type');
+  return `<div class="cloud-gated-item" data-tooltip="${tooltip}" data-tooltip-pos="right">${button}</div>`;
 }
 
 // Show a section's submenu panel and mark its rail item active.
