@@ -18,6 +18,7 @@ import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { storageGet, storageSet } from '../utils/persist.js';
+import { resolveSettingsTab, SETTINGS_DEFAULT_TAB } from '../utils/settingsTabs.js';
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 import { renderLeadProfileSetup } from './leads/leadProfile.js';
 import { hashPassword, verifyPassword } from './auth/password.js';
@@ -237,34 +238,13 @@ export function renderSettings(container) {
   const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
   const tabParam = urlParams.get('tab');
   
-  let activeTab = 'company';
-  let templatesSubTab = 'tasklists';
-  let usersSubTab = 'users';
+  // Old ?tab= links (and the sub-tab each one opens) are resolved in one place so
+  // the sidebar drills into the same settings group this page renders.
+  const resolvedTab = resolveSettingsTab(tabParam);
 
-  if (tabParam === 'forms') {
-    activeTab = 'templates_forms';
-    templatesSubTab = 'forms';
-  } else if (tabParam === 'tasks' || tabParam === 'tasklists') {
-    activeTab = 'templates_forms';
-    templatesSubTab = 'tasklists';
-  } else if (tabParam === 'quote_templates' || tabParam === 'quotes') {
-    activeTab = 'templates_forms';
-    templatesSubTab = 'quotes';
-  } else if (tabParam === 'users') {
-    activeTab = 'users';
-    usersSubTab = 'users';
-  } else if (tabParam === 'user_types') {
-    activeTab = 'users';
-    usersSubTab = 'user_types';
-  } else if (tabParam === 'password_recovery') {
-    activeTab = 'users';
-    usersSubTab = 'password_recovery';
-  } else if (tabParam) {
-    activeTab = tabParam;
-  }
-
-  // Email Templates was merged into the Email & Domain tab — keep old links working.
-  if (activeTab === 'email_templates') activeTab = 'email';
+  let activeTab = resolvedTab.tab || SETTINGS_DEFAULT_TAB;
+  let templatesSubTab = resolvedTab.templatesSubTab;
+  let usersSubTab = resolvedTab.usersSubTab;
 
   const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
   const settings = store.getSettings();
@@ -288,19 +268,6 @@ export function renderSettings(container) {
   }
   if (isCloudGated && activeTab === 'email') {
     activeTab = 'company';
-  }
-  
-  // The model provider and credentials are RELAY's own (see utils/aiTier.js), and
-  // the maps key is a build-time constant — neither has anything for a customer to
-  // configure, so the old AI/API sub-tabs are gone. Keep old links working.
-  if (activeTab === 'api_keys' || activeTab === 'ai_assistant') {
-    activeTab = 'company';
-  }
-
-  // Folder Sync and Local Data Backup described the same directory handle in two
-  // vocabularies; they are now one "Local Storage" tab. Keep old links working.
-  if (activeTab === 'folder_sync') {
-    activeTab = 'local_storage';
   }
 
   const openMigrationModal = () => {
