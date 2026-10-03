@@ -152,10 +152,16 @@ export function renderLaunchScreen(container, onComplete) {
       box-sizing: border-box;
     }
     .launch-panel-indicator .indicator-icon {
+      --indicator-padding: 10px;
       font-size: 24px;
       color: #FF5C00;
       background: rgba(255, 92, 0, 0.1);
-      padding: 10px;
+      padding: var(--indicator-padding);
+      /* The global .material-icons-outlined rule pins the width to 1em; combined
+         with border-box sizing that left the box icon-width wide but icon+padding
+         tall (24x44px). Size both sides from the same padding value. */
+      width: calc(1em + (var(--indicator-padding) * 2));
+      height: calc(1em + (var(--indicator-padding) * 2));
       border-radius: 50%;
       transition: transform 0.3s;
       display: inline-flex;
@@ -292,7 +298,7 @@ export function renderLaunchScreen(container, onComplete) {
         margin: 0 !important;
       }
       .launch-panel-indicator .indicator-icon {
-        padding: 6px !important;
+        --indicator-padding: 6px;
         font-size: 18px !important;
       }
       .indicator-arrow {
