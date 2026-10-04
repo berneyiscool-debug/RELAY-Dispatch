@@ -109,6 +109,8 @@ export function renderQuoteDetail(container, params) {
         icon: 'request_quote',
         iconBgColor: 'var(--color-warning-bg)',
         iconTextColor: 'var(--color-warning)',
+        backPath: isTemplate ? '/settings?tab=quotes' : '',
+        backLabel: 'Back to Settings',
         metaHtml: isTemplate ? '' : `
           ${quote.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(quote.customerName)}</span>` : ''}
           <span class="badge ${sb[quote.status] || 'badge-neutral'}">${escapeHTML(quote.status || 'Draft')}</span>
@@ -892,6 +894,12 @@ export function renderQuoteDetail(container, params) {
         quote.sections[sIdx].lineItems.splice(idx, 1);
         recalculate();
       });
+    });
+
+    // Quote templates are edited from Settings, so the editor gets the same
+    // back-to-the-settings-list control as every other settings submenu.
+    container.querySelector('.detail-header .btn-view-back')?.addEventListener('click', () => {
+      router.navigate('/settings?tab=quotes');
     });
 
     container.querySelector('#btn-cancel-quote')?.addEventListener('click', () => {

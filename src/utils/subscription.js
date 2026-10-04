@@ -35,15 +35,15 @@ export const PLAN_CATALOG = {
     id: 'cloud',
     name: 'Cloud',
     price: 18,
-    tagline: 'The whole app, online — with Deputy.',
-    features: ['Everything in Free', 'Cloud sync across your team', 'Online card payments & customer portal', 'RELAY email domain', 'Deputy AI assistant'],
+    tagline: 'The whole app, online — with brny.',
+    features: ['Everything in Free', 'Cloud sync across your team', 'Online card payments & customer portal', 'RELAY email domain', 'brny AI assistant'],
   },
   cloud_plus: {
     id: 'cloud_plus',
     name: 'Cloud+',
     price: 21,
-    tagline: 'Everything in Cloud, plus Deputy Max.',
-    features: ['Everything in Cloud', 'Deputy Max — expand Deputy to the full workspace'],
+    tagline: 'Everything in Cloud, plus brny Max.',
+    features: ['Everything in Cloud', 'brny Max — expand brny to the full workspace'],
   },
 };
 

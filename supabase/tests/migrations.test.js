@@ -27,6 +27,7 @@ const CATCHUP_SQL = readFileSync(join(MIGRATIONS_DIR, '029_schema_catchup.sql'),
 const HARDENING_SQL = readFileSync(join(MIGRATIONS_DIR, '030_rls_hardening.sql'), 'utf8');
 const SPEND_SQL = readFileSync(join(MIGRATIONS_DIR, '031_spend_and_signup_hardening.sql'), 'utf8');
 const PASSCODE_SQL = readFileSync(join(MIGRATIONS_DIR, '032_portal_passcode.sql'), 'utf8');
+const ORIGIN_SQL = readFileSync(join(MIGRATIONS_DIR, '033_notifications_origin.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -591,5 +592,88 @@ describe('032 portal passcode persistence', () => {
     await asRole(db, 'anon', null, async () => {
       assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 0);
     });
+  });
+});
+
+describe('033 notifications origin', () => {
+  let db;
+
+  // Notifications that already existed when the column was added, using the exact
+  // shapes the machine producers have emitted.
+  const SEEDED_ALERT = '44444444-0000-0000-0000-000000000001';
+  const STOCK_REORDER = '44444444-0000-0000-0000-000000000002';
+  const ENGINE_PLAN = '44444444-0000-0000-0000-000000000003';
+  const HUMAN_QUOTE = '44444444-0000-0000-0000-000000000004';
+  const OTHER_TENANT = '44444444-0000-0000-0000-000000000005';
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    // Legacy rows: no origin column yet, so the migration has to classify them.
+    await db.query(`INSERT INTO public.notifications (id, company_id, title, message, created_by) VALUES
+      ('${SEEDED_ALERT}', '${TENANT_A}', 'System Alert - Service Due 1', 'Asset service due', NULL),
+      ('${STOCK_REORDER}', '${TENANT_A}', 'Stock Auto-Reorder', 'Below reorder level', 'Unknown'),
+      ('${ENGINE_PLAN}', '${TENANT_A}', 'Maintenance Due: Generator - Annual Service', 'Plan due', 'System Engine'),
+      ('${HUMAN_QUOTE}', '${TENANT_A}', 'Quote Accepted', 'Client signed', 'Dana Tech'),
+      ('${OTHER_TENANT}', '${TENANT_B}', 'B only', 'B secret', NULL)`);
+    await db.exec(ORIGIN_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds a non-null origin column defaulting to user', async () => {
+    const column = await one(
+      db,
+      `SELECT data_type, is_nullable, column_default FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'notifications' AND column_name = 'origin'`
+    );
+    assert.ok(column, 'notifications.origin should exist');
+    assert.strictEqual(column.data_type, 'text');
+    assert.strictEqual(column.is_nullable, 'NO');
+    assert.match(column.column_default, /'user'/);
+  });
+
+  test('classifies the existing machine rows as system', async () => {
+    const rows = await db.query(
+      `SELECT id, origin FROM public.notifications WHERE company_id = '${TENANT_A}' ORDER BY id`
+    );
+    const byId = Object.fromEntries(rows.rows.map((r) => [r.id, r.origin]));
+    assert.strictEqual(byId[SEEDED_ALERT], 'system');
+    assert.strictEqual(byId[STOCK_REORDER], 'system');
+    assert.strictEqual(byId[ENGINE_PLAN], 'system');
+  });
+
+  test('never reclassifies a notification a person raised', async () => {
+    assert.strictEqual(
+      await value(db, `SELECT origin FROM public.notifications WHERE id = '${HUMAN_QUOTE}'`),
+      'user'
+    );
+    // A row whose title merely mentions a quote must not be swept up either.
+    assert.strictEqual(
+      await value(db, `SELECT origin FROM public.notifications WHERE id = '${OTHER_TENANT}'`),
+      'user'
+    );
+  });
+
+  test('new notifications default to user without the column being supplied', async () => {
+    await db.query(
+      `INSERT INTO public.notifications (company_id, title, message)
+       VALUES ('${TENANT_A}', 'Site visit requested', 'Customer called')`
+    );
+    assert.strictEqual(
+      await value(db, `SELECT origin FROM public.notifications WHERE title = 'Site visit requested'`),
+      'user'
+    );
+  });
+
+  test('is re-runnable without changing any stored origin', async () => {
+    const before = await db.query('SELECT id, origin FROM public.notifications ORDER BY id');
+    await db.exec(ORIGIN_SQL);
+    const after = await db.query('SELECT id, origin FROM public.notifications ORDER BY id');
+    assert.deepStrictEqual(after.rows, before.rows);
   });
 });

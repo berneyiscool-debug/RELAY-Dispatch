@@ -8,6 +8,7 @@
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
+import { resolveSettingsTab } from '../utils/settingsTabs.js';
 import { showCloudUpgradePrompt, CLOUD_REQUIRED_TOOLTIP, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_TOOLTIP, COMING_SOON_SETTINGS_TABS } from './CloudUpgrade.js';
 import { showToast } from './Notifications.js';
 
@@ -259,7 +260,7 @@ function escapeHTML(str) {
 }
 
 // Helper to resolve dynamic entity/settings contextual submenus
-function getContextualMenu(hash) {
+export function getContextualMenu(hash) {
   const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
   const [pathOnly, queryString] = cleanHash.split('?');
   const params = new URLSearchParams(queryString || '');
@@ -356,18 +357,28 @@ function getContextualMenu(hash) {
       }
     ];
 
-    // No tab param → group list. A tab param → drill into its group.
-    const openGroup = activeTab ? groups.find(g => g.items.some(item => item.id === activeTab)) : null;
+    // No tab param → group list. A tab param → drill into its group. Legacy tab
+    // ids are canonicalised exactly as Settings.js does it, otherwise the rail
+    // shows the group list while the page renders a submenu — and the submenu's
+    // "Back to Settings" control is never rendered.
+    const resolvedTab = activeTab ? resolveSettingsTab(activeTab).tab : '';
+    const openGroup = resolvedTab ? groups.find(g => g.items.some(item => item.id === resolvedTab)) : null;
+    // User Types / Password Recovery are rail items that open the Users tab, so
+    // keep the requested id when the rail knows it — it drives the highlight.
+    const activeItemId = activeTab && groups.some(g => g.items.some(item => item.id === activeTab)) ? activeTab : resolvedTab;
 
     return {
       railId: 'cat-admin',
       headerTitle: openGroup ? openGroup.label : 'Settings & Config',
       icon: openGroup ? openGroup.icon : 'settings',
+      // Drilled into a group → back to the group list. Sitting on the group list
+      // → back to the Admin panel it was opened from, matching Stock/Leads.
       backPath: openGroup ? '/settings' : undefined,
-      backLabel: openGroup ? 'Back to Settings' : undefined,
+      backSection: openGroup ? undefined : 'cat-admin',
+      backLabel: openGroup ? 'Back to Settings' : 'Back to Admin',
       groups,
       openGroupId: openGroup ? openGroup.id : null,
-      activeTab: activeTab
+      activeTab: activeItemId
     };
   }
 

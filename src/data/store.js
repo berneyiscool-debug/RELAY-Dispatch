@@ -452,6 +452,7 @@ const TABLE_COLUMNS = {
     "total_labor_cost",
     "total_material_cost",
     "created_by",
+    "origin",
     "created_at",
     "updated_at"
   ],
@@ -720,6 +721,7 @@ class DataStore {
 
     this.migrateChildJobNumbers();
     this.repairInvoiceIssueDates();
+    this.migrateNotificationOrigins();
   }
 
   initIndexedDB() {
@@ -1991,6 +1993,29 @@ class DataStore {
     }
   }
 
+  // Notifications raised before `origin` existed have no way of saying whether a
+  // person or a machine created them. Classify them from the shapes only the
+  // machine producers have ever emitted so the "hide system notifications"
+  // toggle works on existing data. Anything unrecognised stays `'user'` — a
+  // person's notification must never disappear from their list.
+  migrateNotificationOrigins() {
+    const notifications = this.cache.notifications || [];
+    let updatedCount = 0;
+    notifications.forEach(n => {
+      if (!n || n.origin === 'system' || n.origin === 'user') return;
+      const isSystem = n.createdBy === 'System Engine'
+        || n.title === 'Stock Auto-Reorder'
+        || (typeof n.title === 'string' && n.title.startsWith('System Alert - Service Due'));
+      const origin = isSystem ? 'system' : 'user';
+      n.origin = origin;
+      this.update('notifications', n.id, { origin });
+      updatedCount++;
+    });
+    if (updatedCount > 0) {
+      console.log(`Classified ${updatedCount} existing notifications by origin.`);
+    }
+  }
+
   // Legacy invoices (seeded demo data and pre-serialization cloud records) can be
   // missing `issueDate`, leaving the Date column blank ("—") and breaking sort.
   // Derive a sensible date from the record's own timestamps and persist it back so
@@ -3153,7 +3178,7 @@ class DataStore {
         // DeepSeek API through the relay-copilot edge function. `tier` is the only
         // field here that varies, and it is written server-side (see aiTier.js).
         tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local',
-        systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
+        systemPrompt: 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
       }
     };
 

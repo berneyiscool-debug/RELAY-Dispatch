@@ -506,7 +506,7 @@ function renderWatchdogView(container) {
           countFixed++;
         });
         logAction('Auto-Fix Dispatch', `Assigned ${countFixed} unassigned jobs to active technicians`);
-        showToast(`Deputy assigned ${countFixed} jobs successfully!`, 'success');
+        showToast(`brny assigned ${countFixed} jobs successfully!`, 'success');
         renderWatchdogView(container);
         return;
       }
@@ -625,7 +625,7 @@ async function renderMemoryInspectorView(container) {
       <div class="relay-page-title">
         <span class="material-icons-outlined">psychology</span>
         Memory & Audit Inspector
-        <span class="relay-page-sub">Inspect what Deputy has learned, approve outstanding proposals, and review every automated action.</span>
+        <span class="relay-page-sub">Inspect what brny has learned, approve outstanding proposals, and review every automated action.</span>
       </div>
     </div>
 
@@ -635,7 +635,7 @@ async function renderMemoryInspectorView(container) {
         <div class="inspector-card-head">
           <div class="inspector-card-title">
             <span class="material-icons-outlined" style="color:var(--color-primary)">memory</span>
-            Deputy Memory
+            brny Memory
           </div>
           <div class="inspector-card-meta">${interactionCount} interaction${interactionCount === 1 ? '' : 's'}${lastUpdated ? ` · updated ${lastUpdated}` : ''}</div>
         </div>
@@ -734,9 +734,9 @@ async function renderMemoryInspectorView(container) {
         </div>
         <div class="form-group">
           <label class="form-label">Value</label>
-          <textarea id="mk-value" class="form-input" rows="3" placeholder="What should Deputy remember?"></textarea>
+          <textarea id="mk-value" class="form-input" rows="3" placeholder="What should brny remember?"></textarea>
         </div>
-        <div class="memory-modal-hint">This key is saved to Deputy's learned memory and included in future context.</div>
+        <div class="memory-modal-hint">This key is saved to brny's learned memory and included in future context.</div>
       </div>
     `;
 
@@ -956,7 +956,7 @@ function renderRoutinesView(container) {
     container.innerHTML = `
       <div style="padding:40px 16px;text-align:center;color:var(--text-tertiary);">
         <span class="material-icons-outlined" style="font-size:40px;opacity:0.5;margin-bottom:12px;">autorenew</span>
-        <div>Automated Routines are a Deputy Max feature.</div>
+        <div>Automated Routines are a brny Max feature.</div>
       </div>`;
     return;
   }
@@ -992,7 +992,7 @@ function renderRoutinesView(container) {
         Routines
         <span class="relay-page-sub">${
           routines.length === 0
-            ? 'Create Deputy actions that run automatically on a schedule.'
+            ? 'Create brny actions that run automatically on a schedule.'
             : `${routines.length} routine${routines.length === 1 ? '' : 's'} defined, ${enabledCount} enabled.`
         }</span>
       </div>
@@ -1004,7 +1004,7 @@ function renderRoutinesView(container) {
     ${routines.length === 0
       ? `<div style="padding:24px 16px;text-align:center;color:var(--text-tertiary);">
            <span class="material-icons-outlined" style="font-size:32px;opacity:0.5;margin-bottom:8px;">event_repeat</span>
-           <div>No routines yet. Create one and Deputy will run it on its schedule.</div>
+           <div>No routines yet. Create one and brny will run it on its schedule.</div>
          </div>`
       : `<div class="routines-list">${cardHtml}</div>`}
     </div>
@@ -1025,7 +1025,7 @@ function renderRoutinesView(container) {
       const title = r ? r.title : 'this routine';
       showModal({
         title: 'Delete routine',
-        content: `Delete "${title}"? Deputy will stop running this routine. This cannot be undone.`,
+        content: `Delete "${title}"? brny will stop running this routine. This cannot be undone.`,
         actions: [
           { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
           { label: 'Delete', className: 'btn-danger', onClick: async c => { c(); await deleteRoutine(btn.dataset.id); renderRoutinesView(container); showToast('Routine deleted.', 'success'); } }
@@ -1050,7 +1050,7 @@ function renderRoutinesView(container) {
       if (!r) return;
       const s = store.getSettings();
       const ai = s.ai || {};
-      if (!hasDeputyMax()) { showToast('Routines are part of Deputy Max — upgrade to Cloud+ to run them.', 'error'); return; }
+      if (!hasDeputyMax()) { showToast('Routines are part of brny Max — upgrade to Cloud+ to run them.', 'error'); return; }
       showToast(`Running "${r.title}"…`, 'info');
       await runRoutine(r, ai);
     });
@@ -1088,14 +1088,14 @@ function openRoutineEditor(routine, container) {
       </div>
     </div>
     <div class="routine-field">
-      <label class="routine-label">What should Deputy do?</label>
+      <label class="routine-label">What should brny do?</label>
       <textarea class="form-input routine-fold-prompt" rows="4" placeholder="e.g. Summarise today's schedule, flag unassigned jobs and overdue invoices…">${escapeHtml(routine ? routine.prompt : '')}</textarea>
     </div>
-    <div class="routine-divider"><span>Or describe it to Deputy</span></div>
+    <div class="routine-divider"><span>Or describe it to <span class="brand-lc">brny</span></span></div>
     <div class="routine-field">
       <label class="routine-label">Describe the routine in plain language</label>
       <textarea class="form-input routine-fold-describe" rows="2" placeholder="e.g. Every morning before I start, give me a rundown of the day's jobs"></textarea>
-      <button type="button" class="btn btn-secondary btn-sm routine-fold-design"><span class="material-icons-outlined" style="font-size:16px;">auto_awesome</span> Design with Deputy</button>
+      <button type="button" class="btn btn-secondary btn-sm routine-fold-design"><span class="material-icons-outlined" style="font-size:16px;">auto_awesome</span> Design with brny</button>
       <div class="routine-design-status" style="display:none"></div>
     </div>
   `;
@@ -1118,7 +1118,7 @@ function openRoutineEditor(routine, container) {
           const title = form.querySelector('.routine-fold-title').value.trim();
           const type = form.querySelector('.routine-fold-type').value;
           const prompt = form.querySelector('.routine-fold-prompt').value.trim();
-          if (!prompt) { showToast('Tell Deputy what the routine should do.', 'error'); return; }
+          if (!prompt) { showToast('Tell brny what the routine should do.', 'error'); return; }
           const trigger = {
             type,
             interval: Math.max(1, Number(form.querySelector('.routine-fold-interval-num').value) || 1),
@@ -1140,7 +1140,7 @@ function openRoutineEditor(routine, container) {
     const s = store.getSettings();
     const ai = s.ai || {};
     if (!hasDeputyMax()) {
-      showToast('Design with Deputy is part of Deputy Max — upgrade to Cloud+.', 'error');
+      showToast('Design with brny is part of brny Max — upgrade to Cloud+.', 'error');
       return;
     }
     // Run the guided, multiple-choice routine designer inside this modal.
@@ -1167,7 +1167,7 @@ async function generateRoutineClarifications(intent) {
   const messages = [
     {
       role: 'system',
-      content: 'You are Deputy, designing an automated routine for a dispatcher. Ask 3-4 short, useful multiple-choice questions that clarify the routine\'s intent and expand what it should produce, so the final routine is precise and genuinely useful. Each question must be answerable by tapping ONE option (3-4 options). Do NOT ask anything requiring typed input. Vary the questions across scope, detail, urgency and output. Return ONLY a JSON object, no markdown, no prose, in this exact shape: {"questions":[{"text":"...","options":["...","...","..."]}]}'
+      content: 'You are brny, an automated routine designer for a dispatcher. Never call yourself Deputy or Relay. Ask 3-4 short, useful multiple-choice questions that clarify the routine\'s intent and expand what it should produce, so the final routine is precise and genuinely useful. Each question must be answerable by tapping ONE option (3-4 options). Do NOT ask anything requiring typed input. Vary the questions across scope, detail, urgency and output. Return ONLY a JSON object, no markdown, no prose, in this exact shape: {"questions":[{"text":"...","options":["...","...","..."]}]}'
     },
     { role: 'user', content: `ROUTINE PURPOSE: ${intent}` }
   ];
@@ -1311,7 +1311,7 @@ async function runRoutineDesignWizard(modal, describe, container, ai) {
         if (!ctx.loading) fetchClarifications();
         qBody.innerHTML = `
           <div class="routine-design-q">
-            <div class="relay-question-title">Deputy is thinking up a couple of quick questions…</div>
+            <div class="relay-question-title">brny is thinking up a couple of quick questions…</div>
             <div class="routine-design-loading">Loading</div>
           </div>
         `;
@@ -1472,7 +1472,7 @@ function handleExpandClick() {
   // Deputy Max (expanding to the full workspace) is Cloud+ only.
   // Cloud/local get an upsell, not the expand.
   if (!hasDeputyMax()) {
-    showToast('Deputy Max (expanding Deputy to the full workspace) is a Cloud+ feature. Upgrade in Settings → Plan & Billing.', 'info');
+    showToast('brny Max (expanding brny to the full workspace) is a Cloud+ feature. Upgrade in Settings → Plan & Billing.', 'info');
     return;
   }
   isExpanded = !isExpanded;
@@ -1583,8 +1583,8 @@ function renderIntroDashboard(thread, memory) {
 
   const count = memory.interactionCount || 0;
   const welcomeText = count > 0 
-    ? `Welcome back! You've checked in with Deputy ${count} ${count === 1 ? 'time' : 'times'} recently.` 
-    : `Welcome to Deputy! I'm here to help you coordinate your dispatch and jobs today.`;
+    ? `Welcome back! You've checked in with brny ${count} ${count === 1 ? 'time' : 'times'} recently.`
+    : `Welcome to brny! I'm here to help you coordinate your dispatch and jobs today.`;
 
   const card = document.createElement('div');
   card.className = 'relay-intro-card assistant-intro';
@@ -1763,7 +1763,7 @@ export async function openRelay() {
   panel.innerHTML = `
     <div class="relay-body">
       <div class="relay-tabs-rail" id="relay-nav-tabs" style="${isExpanded ? 'display:flex' : 'display:none'}">
-        <div class="relay-tabs-rail-head">Deputy</div>
+        <div class="relay-tabs-rail-head">brny</div>
         <nav class="relay-tabs-rail-nav">
           <button class="relay-nav-tab ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" title="Chat Stream"><span class="material-icons-outlined">chat</span> Chat</button>
           <button class="relay-nav-tab ${activeTab === 'routines' ? 'active' : ''}" data-tab="routines" title="Automated Routines" style="${hasDeputyMax() ? '' : 'display:none'}"><span class="material-icons-outlined">autorenew</span> Routines</button>
@@ -1781,9 +1781,9 @@ export async function openRelay() {
           <div class="relay-thread" id="relay-thread"></div>
           <div class="relay-attach-row" id="relay-attach-row"></div>
           <div class="relay-input-wrap">
-            <button class="relay-attach" id="relay-attach" title="${hasDeputyMax() ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a Deputy Max feature'}" ${hasDeputyMax() ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
+            <button class="relay-attach" id="relay-attach" title="${hasDeputyMax() ? 'Attach an image or PDF — catalogue, business card…' : 'Attachments are a brny Max feature'}" ${hasDeputyMax() ? '' : 'disabled'}><span class="material-icons-outlined">attach_file</span></button>
             <input type="file" id="relay-file-input" accept="image/*,application/pdf" multiple hidden>
-            <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask Deputy">${escapeHtml(draftVal)}</textarea>
+            <textarea id="relay-input" class="relay-input" rows="1" placeholder="Ask brny">${escapeHtml(draftVal)}</textarea>
             <button class="relay-send" id="relay-send" title="Send"><span class="material-icons-outlined">arrow_upward</span></button>
           </div>
           <div class="relay-foot">This is an early version. You may need to be patient</div>
@@ -1882,7 +1882,7 @@ export async function openRelay() {
 
       // Attachments run through Deputy's vision pipeline, which is Max-only.
       if (!hasDeputyMax()) {
-        const reply = "Attachments and document extraction are a Deputy Max feature — upgrade your plan to Cloud+ to use them.";
+        const reply = "Attachments and document extraction are a brny Max feature — upgrade your plan to Cloud+ to use them.";
         pushAssistant(reply);
         addMessage(thread, 'relay', reply);
         return;
@@ -2567,8 +2567,8 @@ async function runVisionExtraction(userText, files, thread, typing) {
 
 async function callVisionEngine(userText, images, batchIndex, batchCount) {
   const ai = (store.getSettings() || {}).ai || {};
-  const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant.';
-  const systemPrompt = `${basePrompt}\n\n${getVisionContext()}`;
+  const basePrompt = ai.systemPrompt || 'You are brny, an intelligent CRM co-pilot assistant.';
+  const systemPrompt = `${basePrompt}\n\n${getVisionContext()}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
 
   const instruction = batchCount > 1
     ? `${userText || 'Extract every record from this document.'}\n\n(Batch ${batchIndex + 1} of ${batchCount} — extract only what appears in the images below.)`
@@ -2735,7 +2735,7 @@ function runLocalCommand(raw) {
   if (/\b(hi|hello|hey|yo)\b/.test(t)) return "Hey! Ask me to open a page, jump to a view, or fit/lock the canvas.";
   if (/\b(thanks|thank you|cheers|ta)\b/.test(t)) return "Anytime. 👍";
 
-  return "To chat freely with Deputy, upgrade your workspace to a **paid Cloud account**.";
+  return "To chat freely with brny, upgrade your workspace to a **paid Cloud account**.";
 }
 
 function countMsg(label, n) {
@@ -2853,8 +2853,8 @@ async function callAIEngine() {
 }
 
 function buildSystemPrompt(ai) {
-  const basePrompt = ai.systemPrompt || 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
-  return `${basePrompt}\n\n${getSystemContext(!hasDeputyMax())}`;
+  const basePrompt = ai.systemPrompt || 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
+  return `${basePrompt}\n\n${getSystemContext(!hasDeputyMax())}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
 }
 
 // Some actions can't be answered in one turn: they need real external data

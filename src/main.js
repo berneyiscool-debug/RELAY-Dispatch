@@ -104,8 +104,9 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // 3. Toggle Deputy Assistant: Shift + D
-  if (e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+  // 3. Toggle brny Assistant: Shift + B (Shift + D is a silent legacy alias,
+  // kept working for one release and deliberately not advertised anywhere)
+  if (e.shiftKey && (e.key === 'B' || e.key === 'b' || e.key === 'D' || e.key === 'd')) {
     e.preventDefault();
     import('./components/RelayAssistant.js').then(({ toggleRelay }) => {
       toggleRelay();

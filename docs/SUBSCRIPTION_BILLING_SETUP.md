@@ -8,13 +8,13 @@ the customer-facing invoice payments in `007_invoice_payments.sql` /
 |-------------|---------------------|---------------------------------------------------|
 | Free        | $0                  | Offline/local account only. No cloud row.         |
 | Cloud       | $18                 | Cloud sync, online payments, portals, email domain|
-| Cloud+      | $21                 | Everything in Cloud **+ Deputy Max** (expandable Deputy)|
+| Cloud+      | $21                 | Everything in Cloud **+ brny Max** (expandable brny)|
 
 - **Free is offline-only** — it never creates a `companies` row, so it never
   touches Stripe. "Upgrading" from Free = the existing *Migrate to Cloud* flow.
 - **Seats are per active (non-deactivated) user.** Adding/deactivating a user
   reconciles the Stripe subscription quantity, prorated.
-- **Managed (keyless) AI comes with the paid plans.** Deputy runs against the
+- **Managed (keyless) AI comes with the paid plans.** brny runs against the
   server-side key for any Cloud workspace, so there is no longer a Settings
   screen for supplying your own API key. A Free (local) account gets the
   rule-based assistant only.
@@ -101,8 +101,8 @@ Settings → Plan & Billing
 
 Gating (src/utils/subscription.js):
   getTier() → 'free' | 'cloud' | 'cloud_plus'
-  hasCloudFeatures()  → any cloud account          (Cloud incl. full Deputy)
-  isCloudPlus()       → tier==cloud_plus & live sub (Deputy Max: expandable window)
+  hasCloudFeatures()  → any cloud account          (Cloud incl. full brny)
+  isCloudPlus()       → tier==cloud_plus & live sub (brny Max: expandable window)
 ```
 
 ## Security notes
