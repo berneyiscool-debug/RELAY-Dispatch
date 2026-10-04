@@ -862,29 +862,71 @@ select.badge {
 /* ---- Toast ---- */
 .toast-container {
   position: fixed;
-  top: var(--space-lg);
+  /* Clears the fixed top bar so the stack never covers the search/notices actions. */
+  top: calc(var(--topbar-height) + var(--space-md));
   right: var(--space-lg);
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
+/* Shares the .dropdown-menu / .cloud-prompt card surface so a toast reads as an
+   app panel rather than a separate alert banner. */
 .toast {
   display: flex;
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md) var(--space-lg);
-  background: white;
-  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-lg);
   animation: slideDown 0.2s ease;
   min-width: 300px;
 }
-.toast.success { border-left: 3px solid var(--color-success); }
-.toast.error { border-left: 3px solid var(--color-danger); }
-.toast.warning { border-left: 3px solid var(--color-warning); }
-.toast.info { border-left: 3px solid var(--color-info); }
+/* Type is carried by the .stat-icon chip idiom instead of a saturated left border,
+   which the app's flat hairline-border language uses nowhere else. */
+.toast-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--border-radius);
+  font-size: 15px;
+}
+.toast.success .toast-icon { background: var(--color-success-bg); color: var(--color-success); }
+.toast.error .toast-icon { background: var(--color-danger-bg); color: var(--color-danger); }
+.toast.warning .toast-icon { background: var(--color-warning-bg); color: var(--color-warning); }
+.toast.info .toast-icon { background: var(--color-info-bg); color: var(--color-info); }
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.toast-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.toast-close:hover {
+  background: var(--content-bg);
+  color: var(--text-primary);
+}
+.toast-close .material-icons-outlined { font-size: 15px; }
 
 /* ---- Cloud Upgrade Prompt (local-mode nudge for cloud-only pages) ---- */
 .cloud-prompt {
@@ -1187,7 +1229,7 @@ select.badge {
   background: rgba(255, 255, 255, 0.08);
 }
 [data-theme-mode="dark"] .toast {
-  background: rgba(13, 17, 30, 0.85);
+  /* Surface comes from --card-bg; the hairline matches .dropdown-menu above. */
   border-color: rgba(255, 255, 255, 0.1);
 }
 [data-theme-mode="dark"] .pagination-controls button {

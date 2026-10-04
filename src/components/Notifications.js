@@ -68,10 +68,10 @@ export function showToast(message, type = 'info', options = {}) {
 
   const icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
   toast.innerHTML = `
-    <span class="material-icons-outlined" style="color:var(--color-${type === 'error' ? 'danger' : type})">${icons[type] || icons.info}</span>
-    <span style="flex:1;font-size:var(--font-size-base)">${escapeHTML(message)}</span>
-    <button style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:2px" class="toast-close">
-      <span class="material-icons-outlined" style="font-size:16px">close</span>
+    <span class="material-icons-outlined toast-icon" aria-hidden="true">${icons[type] || icons.info}</span>
+    <span class="toast-message">${escapeHTML(message)}</span>
+    <button type="button" class="toast-close" aria-label="Dismiss">
+      <span class="material-icons-outlined" aria-hidden="true">close</span>
     </button>
   `;
 
