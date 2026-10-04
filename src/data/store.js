@@ -452,6 +452,7 @@ const TABLE_COLUMNS = {
     "total_labor_cost",
     "total_material_cost",
     "created_by",
+    "origin",
     "created_at",
     "updated_at"
   ],
@@ -721,6 +722,7 @@ class DataStore {
 
     this.migrateChildJobNumbers();
     this.repairInvoiceIssueDates();
+    this.migrateNotificationOrigins();
   }
 
   initIndexedDB() {
@@ -1989,6 +1991,29 @@ class DataStore {
     });
     if (updatedCount > 0) {
       console.log(`Migrated ${updatedCount} existing child jobs to J- prefix.`);
+    }
+  }
+
+  // Notifications raised before `origin` existed have no way of saying whether a
+  // person or a machine created them. Classify them from the shapes only the
+  // machine producers have ever emitted so the "hide system notifications"
+  // toggle works on existing data. Anything unrecognised stays `'user'` — a
+  // person's notification must never disappear from their list.
+  migrateNotificationOrigins() {
+    const notifications = this.cache.notifications || [];
+    let updatedCount = 0;
+    notifications.forEach(n => {
+      if (!n || n.origin === 'system' || n.origin === 'user') return;
+      const isSystem = n.createdBy === 'System Engine'
+        || n.title === 'Stock Auto-Reorder'
+        || (typeof n.title === 'string' && n.title.startsWith('System Alert - Service Due'));
+      const origin = isSystem ? 'system' : 'user';
+      n.origin = origin;
+      this.update('notifications', n.id, { origin });
+      updatedCount++;
+    });
+    if (updatedCount > 0) {
+      console.log(`Classified ${updatedCount} existing notifications by origin.`);
     }
   }
 

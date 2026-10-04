@@ -236,6 +236,7 @@ async function runEngineCore(userId, isCloud) {
         priority: mapNumericToTextPriority(plan.priority),
         createdAt: new Date().toISOString(),
         createdBy: 'System Engine',
+        origin: 'system',
         maintenancePlanId: plan.id,
         mergedPlanIds: [],
         taskTemplateId: plan.taskTemplateId || null,
@@ -333,6 +334,7 @@ async function runEngineCore(userId, isCloud) {
           priority: mapNumericToTextPriority(plan.priority),
           createdAt: new Date().toISOString(),
           createdBy: 'System Engine',
+          origin: 'system',
           maintenancePlanId: plan.id,
           mergedPlanIds: [],
           taskTemplateId: plan.taskTemplateId || null,
@@ -447,6 +449,7 @@ async function runEngineCore(userId, isCloud) {
           priority: mapNumericToTextPriority(triggeredPlan.priority),
           createdAt: new Date().toISOString(),
           createdBy: 'System Engine',
+          origin: 'system',
           maintenancePlanId: triggeredPlan.id,
           mergedPlanIds: suppressedPlans.map(p => p.id),
           taskTemplateId: triggeredPlan.taskTemplateId || null,
@@ -1127,7 +1130,8 @@ function notifyRecurringRepair(count) {
     message,
     status: 'Info',
     createdAt: new Date().toISOString(),
-    createdBy: 'System Engine'
+    createdBy: 'System Engine',
+    origin: 'system'
   });
 }
 
@@ -1360,7 +1364,8 @@ export function checkRecurringJobs() {
             status: 'Info',
             priority: job.priority || 'Normal',
             createdAt: new Date().toISOString(),
-            createdBy: 'System Engine'
+            createdBy: 'System Engine',
+            origin: 'system'
           };
           
           // Create individually so we don't re-send the entire notifications
