@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import { todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
 
 const AVAILABLE_TAGS = [
@@ -1090,9 +1091,10 @@ export function renderJobForm(container, params) {
     });
 
     tc.querySelectorAll('.btn-remove-task').forEach(el => {
-       el.addEventListener('click', () => {
+       el.addEventListener('click', async () => {
           const path = el.dataset.path.split('-').map(Number);
-          if (confirm('Are you sure you want to delete this task and all its sub-tasks?')) {
+          const confirmed = await showConfirm('Are you sure you want to delete this task and all its sub-tasks?', { title: 'Delete Task', confirmLabel: 'Delete', danger: true });
+          if (confirmed) {
              if (path.length === 1) {
                 jobTasks.splice(path[0], 1);
                 taskExpandedPath = jobTasks.length > 0 ? [0] : [];
@@ -1431,7 +1433,7 @@ export function renderJobForm(container, params) {
 
         // Direct binding to newly created items to prevent bubbles / type mismatch bugs
         listDiv.querySelectorAll('.import-item').forEach(item => {
-          item.addEventListener('click', () => {
+          item.addEventListener('click', async () => {
             const sourceId = item.dataset.id;
             const type = item.dataset.type;
             
@@ -1443,7 +1445,8 @@ export function renderJobForm(container, params) {
             
             if (source && (source.tasks || source.phases)) {
               const sourceTasks = source.tasks || source.phases;
-              if (confirm(`Replace current tasklist with "${source.name || source.number}"?`)) {
+              const confirmed = await showConfirm(`Replace current tasklist with "${source.name || source.number}"?`, { title: 'Import Tasklist', confirmLabel: 'Replace', danger: true });
+              if (confirmed) {
                 function deepClone(tasks) {
                   return tasks.map(p => ({
                     ...p,

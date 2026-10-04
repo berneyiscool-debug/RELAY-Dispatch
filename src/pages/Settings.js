@@ -10,6 +10,7 @@ import { renderStorageOptions } from '../components/StorageOptions.js';
 import { renderKitTypes } from '../components/KitTypes.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
+import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
@@ -1747,8 +1748,9 @@ export function renderSettings(container) {
     });
 
     tc.querySelectorAll('.btn-delete-template').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('Delete this template?')) {
+      btn.addEventListener('click', async () => {
+        const confirmed = await showConfirm('Delete this template?', { title: 'Delete Template', confirmLabel: 'Delete', danger: true });
+        if (confirmed) {
           store.delete('taskTemplates', btn.dataset.id);
           renderContent();
         }
@@ -2082,9 +2084,10 @@ export function renderSettings(container) {
 
         // 9. Remove item
         content.querySelectorAll('.btn-remove-task-tmpl-item').forEach(btn => {
-          btn.addEventListener('click', (e) => {
+          btn.addEventListener('click', async (e) => {
             const path = btn.dataset.path.split('-').map(Number);
-            if (confirm('Are you sure you want to delete this item and all its sub-tasks?')) {
+            const confirmed = await showConfirm('Are you sure you want to delete this item and all its sub-tasks?', { title: 'Delete Item', confirmLabel: 'Delete', danger: true });
+            if (confirmed) {
               if (path.length === 1) {
                 localTasks.splice(path[0], 1);
               } else {
@@ -2301,8 +2304,9 @@ export function renderSettings(container) {
     });
 
     tc.querySelectorAll('.btn-delete-quote-template').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('Delete this template?')) {
+      btn.addEventListener('click', async () => {
+        const confirmed = await showConfirm('Delete this template?', { title: 'Delete Template', confirmLabel: 'Delete', danger: true });
+        if (confirmed) {
           store.delete('quoteTemplates', btn.dataset.id);
           renderContent();
         }
@@ -3045,8 +3049,9 @@ export function renderSettings(container) {
     });
 
     tc.querySelectorAll('.delete-form-template').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete this form template? Existing job forms based on this template will remain but no new ones can be created.')) {
+      btn.addEventListener('click', async () => {
+        const confirmed = await showConfirm('Are you sure you want to delete this form template? Existing job forms based on this template will remain but no new ones can be created.', { title: 'Delete Form Template', confirmLabel: 'Delete', danger: true });
+        if (confirmed) {
           const id = btn.dataset.id;
           const filtered = store.getAll('formTemplates').filter(t => t.id !== id);
           store.save('formTemplates', filtered);

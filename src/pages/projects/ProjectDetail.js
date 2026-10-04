@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 
 export function renderProjectDetail(container, params) {
@@ -437,7 +438,8 @@ export function renderProjectDetail(container, params) {
         const jobId = e.currentTarget.dataset.id;
         const job = store.getById('jobs', jobId);
         if (job) {
-          if (confirm(`Are you sure you want to unlink Stage "${job.title}" from this project?`)) {
+          const confirmed = await showConfirm(`Are you sure you want to unlink Stage "${job.title}" from this project?`, { title: 'Unlink Stage', confirmLabel: 'Unlink', danger: true });
+          if (confirmed) {
             await store.update('jobs', jobId, { projectId: null });
             showToast('Stage unlinked successfully', 'success');
             router.navigate('/projects/' + project.id + '?tab=stages');
@@ -509,8 +511,9 @@ export function renderProjectDetail(container, params) {
     });
   };
 
-  const handleDeleteProject = () => {
-    if (confirm(`Are you sure you want to delete Project "${project.name}"?\nAssociated stages (jobs) will NOT be deleted, but they will be unlinked.`)) {
+  const handleDeleteProject = async () => {
+    const confirmed = await showConfirm(`Are you sure you want to delete Project "${project.name}"?\nAssociated stages (jobs) will NOT be deleted, but they will be unlinked.`, { title: 'Delete Project', confirmLabel: 'Delete', danger: true });
+    if (confirmed) {
       try {
         projectJobs.forEach(async (job) => {
           await store.update('jobs', job.id, { projectId: null });
@@ -654,7 +657,8 @@ export function renderProjectDetail(container, params) {
     }
 
     try {
-      if (confirm(`Generate a single consolidated invoice of $${invoiceSubtotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })} for ${selectedJobs.length} selected stages?`)) {
+      const confirmed = await showConfirm(`Generate a single consolidated invoice of $${invoiceSubtotal.toLocaleString('en-AU', { minimumFractionDigits: 2 })} for ${selectedJobs.length} selected stages?`, { title: 'Generate Invoice', confirmLabel: 'Generate' });
+      if (confirmed) {
         const inv = await store.create('invoices', {
           number: store.getNextNumber('INV-', 'invoices'),
           invoiceType: 'Consolidated',

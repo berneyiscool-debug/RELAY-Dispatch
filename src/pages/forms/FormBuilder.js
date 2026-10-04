@@ -11,6 +11,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import {
   enterEditorChrome, group, btn, valueBtn, seg, field, select,
   tabStrip, bindTabs, openPopover, closePopover, textPopoverHTML, bindTextPopover,
@@ -665,11 +666,14 @@ export function renderFormBuilder(container, { id }) {
     selectSection(sections.length - 1);
   }
 
-  function deleteSection() {
+  async function deleteSection() {
     if (sel.type === null) return;
     const sec = sections[sel.sIdx];
     const hasFields = sec && !sec.isSpacer && (sec.fields || []).some(f => f.type !== 'blank');
-    if (hasFields && !confirm('Delete this section and every field in it?')) return;
+    if (hasFields) {
+      const confirmed = await showConfirm('Delete this section and every field in it?', { title: 'Delete Section', confirmLabel: 'Delete', danger: true });
+      if (!confirmed) return;
+    }
     sections.splice(sel.sIdx, 1);
     clearSelection();
   }

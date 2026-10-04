@@ -3,6 +3,7 @@ import { storageGet, storageSet } from '../../utils/persist.js';
 import { applyTheme } from '../../utils/theme.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '../auth/session.js';
+import { showAlert } from '../../utils/confirmDialog.js';
 
 const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
@@ -1300,7 +1301,7 @@ export function renderLaunchScreen(container, onComplete) {
 
   const handleLinkExistingDir = async () => {
     if (typeof window === 'undefined' || !window.showDirectoryPicker) {
-      alert('Local folder access is not supported by your current browser.');
+      await showAlert('Local folder access is not supported by your current browser.', { title: 'Not Supported' });
       return;
     }
 
@@ -1350,7 +1351,7 @@ export function renderLaunchScreen(container, onComplete) {
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Failed to link directory:', err);
-        alert('Failed to link directory: ' + err.message);
+        await showAlert('Failed to link directory: ' + err.message, { title: 'Link Failed' });
       }
     }
   };
@@ -1653,7 +1654,7 @@ export function renderLaunchScreen(container, onComplete) {
             // Save accounts
             await storageSet('relay_accounts', accounts);
             
-            alert('PIN updated successfully.');
+            await showAlert('PIN updated successfully.', { title: 'PIN Updated' });
             close();
             render();
           });

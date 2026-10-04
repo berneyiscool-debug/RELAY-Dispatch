@@ -11,6 +11,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import { getPrintStyles, generateDocument } from '../../components/PrintPreview.js';
 import { fontFaceCss } from '../../utils/fonts.js';
 import {
@@ -601,8 +602,9 @@ export function renderDocumentStudio(container) {
       }
     });
 
-    container.querySelector('#ds-reset')?.addEventListener('click', () => {
-      if (!confirm('Reset the quote and invoice design back to the RELAY defaults?')) return;
+    container.querySelector('#ds-reset')?.addEventListener('click', async () => {
+      const confirmed = await showConfirm('Reset the quote and invoice design back to the RELAY defaults?', { title: 'Reset Design', confirmLabel: 'Reset', danger: true });
+      if (!confirmed) return;
       dt = { ...DEFAULTS };
       markDirty();
       renderRibbon();

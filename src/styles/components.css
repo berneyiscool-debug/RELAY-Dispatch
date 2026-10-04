@@ -452,6 +452,15 @@ select.badge option {
   border-top: 1px solid var(--border-color);
 }
 
+/* Body copy for confirm/alert dialogs; pre-line preserves the newlines that
+   separate a question from its consequence. */
+.confirm-dialog-message {
+  white-space: pre-line;
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
 /* ---- Dropdown ---- */
 .dropdown {
   position: relative;

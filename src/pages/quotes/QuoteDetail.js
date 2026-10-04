@@ -6,6 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
@@ -686,9 +687,11 @@ export function renderQuoteDetail(container, params) {
       });
 
       content.querySelectorAll('.import-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', async () => {
           const t = templates.find(x => x.id === item.dataset.id);
-          if (t && confirm(`Replace current quote sections with "${t.name}"?`)) {
+          if (!t) return;
+          const confirmed = await showConfirm(`Replace current quote sections with "${t.name}"?`, { title: 'Import Quote Template', confirmLabel: 'Replace', danger: true });
+          if (confirmed) {
             quote.sections = JSON.parse(JSON.stringify(t.sections));
             // Regenerate IDs to avoid conflicts
             quote.sections.forEach(s => {
@@ -827,9 +830,10 @@ export function renderQuoteDetail(container, params) {
     });
 
     container.querySelectorAll('.btn-remove-section').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const sIdx = parseInt(btn.dataset.sidx);
-        if (confirm('Remove this entire phase?')) {
+        const confirmed = await showConfirm('Remove this entire phase?', { title: 'Remove Phase', confirmLabel: 'Remove', danger: true });
+        if (confirmed) {
           quote.sections.splice(sIdx, 1);
           recalculate();
         }
@@ -1117,8 +1121,9 @@ export function renderQuoteDetail(container, params) {
       });
     });
 
-    container.querySelector('#btn-decline-quote')?.addEventListener('click', () => {
-      if (confirm('Are you sure you want to decline this quote?')) {
+    container.querySelector('#btn-decline-quote')?.addEventListener('click', async () => {
+      const confirmed = await showConfirm('Are you sure you want to decline this quote?', { title: 'Decline Quote', confirmLabel: 'Decline', danger: true });
+      if (confirmed) {
         quote.status = 'Declined';
         store.update('quotes', id, { status: 'Declined' });
         showToast('Quote marked as declined', 'info');
@@ -1138,8 +1143,9 @@ export function renderQuoteDetail(container, params) {
       });
     });
 
-    container.querySelector('#btn-delete-template')?.addEventListener('click', () => {
-      if (confirm(`Delete template "${escapeHTML(quote.name)}"?`)) {
+    container.querySelector('#btn-delete-template')?.addEventListener('click', async () => {
+      const confirmed = await showConfirm(`Delete template "${quote.name}"?`, { title: 'Delete Template', confirmLabel: 'Delete', danger: true });
+      if (confirmed) {
         store.delete('quoteTemplates', id);
         showToast('Template deleted', 'success');
         router.navigate('/settings?tab=quotes');
