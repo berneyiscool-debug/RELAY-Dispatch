@@ -423,6 +423,8 @@ Launch allows self-serve signup, so every caller of a paid API is capped. Geocod
 | `RELAY_AI_POOL_FLOOR` | 150 | 150 | calls per day, the minimum pool for a 1–2 seat company |
 | `RELAY_AI_USER_CAP` / `RELAY_AI_USER_CAP_PLUS` | 150 | 200 | calls one user may spend of the pool per day |
 
+The dual columns are two independent secrets, not one secret with two names: the tier decides which of the pair is read, so setting the un-suffixed key against a Cloud+ company is a no-op. Check `comp_tier` before arming a cap (Section 12).
+
 The remaining proxies keep the flat per-tenant cap they were launched with:
 
 | Proxy | Provider | Secret | Default | Unit |
@@ -463,7 +465,17 @@ Every function in `supabase/functions/` is self-contained and uses URL imports (
 
 Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_AI_POOL_PER_SEAT` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
 
-To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. `1` is the smallest usable value: a zero or unparsable secret falls back to the documented default rather than disabling the cap, which is deliberate, so `0` does nothing. `relay-copilot` reads several allowance secrets at once, so the quickest way to see each refusal is: set `RELAY_AI_USER_CAP=1` to hit the personal ceiling (the second call from that seat gets `scope: "user"`, while a teammate still gets through), or set `RELAY_AI_POOL_PER_SEAT=1` and `RELAY_AI_POOL_FLOOR=1` to shrink the whole company's pool to a single call and get `scope: "company"`. Either flip is a Management API call, not a code change, so the secret takes effect on the next invocation with no redeploy:
+To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. `1` is the smallest usable value: a zero or unparsable secret falls back to the documented default rather than disabling the cap, which is deliberate, so `0` does nothing.
+
+**Check the tenant's tier before arming anything.** Every allowance secret has a `_PLUS` twin, and the function picks between them from the company row (`comp_tier` / `subscription_tier` / `settings.ai.tier`), so **a Cloud+ tenant never reads the un-suffixed secret**. Setting `RELAY_AI_USER_CAP=1` against a Cloud+ company changes nothing at all, which looks exactly like a broken cap. Read the tier first:
+
+```
+npx --yes supabase@2.119.0 db query "select c.name, c.comp_tier, c.subscription_tier, c.settings->'ai'->>'tier' as settings_ai_tier, company_active_seat_count(c.id) as seats from companies c" --linked --agent no --output-format text
+```
+
+`settings->'ai'->>'tier'` is the same value the function reads: over PostgREST it appears as an alias (`ai_tier:settings->ai->tier`), which is why `select … c.ai_tier` fails against the database with `column c.ai_tier does not exist`.
+
+With the tier known, `relay-copilot` reads several allowance secrets at once, so the quickest way to see each refusal is: set `RELAY_AI_USER_CAP=1` (`_PLUS` for a Cloud+ tenant) to hit the personal ceiling — the second call from that seat gets `scope: "user"`, while a teammate still gets through — or set `RELAY_AI_POOL_PER_SEAT=1` and `RELAY_AI_POOL_FLOOR=1` (again `_PLUS` twins where relevant) to shrink the whole company's pool to a single call and get `scope: "company"`. Either flip is a Management API call, not a code change, so the secret takes effect on the next invocation with no redeploy:
 
 ```
 npx --yes supabase@2.119.0 secrets set RELAY_AI_USER_CAP=1 --project-ref zufsncswsoqlomtqhkks --agent no --output-format text
@@ -471,6 +483,17 @@ npx --yes supabase@2.119.0 secrets unset RELAY_AI_USER_CAP --project-ref zufsncs
 ```
 
 Cheaper still, and what was actually used on 2026-10-02: insert the remaining units straight into `api_usage` for a throwaway tenant and call again. No secret is touched, and the real ceiling is the one being tested.
+
+**Reading the ledger, and where the allowance is visible.** `supabase link` needs no database password and is enough to unlock read-only SQL against the project, which is how a smoke test is diagnosed without guessing:
+
+```
+npx --yes supabase@2.119.0 link --project-ref zufsncswsoqlomtqhkks --agent no --output-format text
+npx --yes supabase@2.119.0 db query "select kind, count(*) rows, sum(units) units, count(distinct user_id) users from api_usage where kind='copilot' and created_at >= date_trunc('day', now() at time zone 'Australia/Sydney') at time zone 'Australia/Sydney' group by kind" --linked --agent no --output-format text
+```
+
+`--linked` is required (`--project-ref` alone makes the query look for a local database and fail with `ECONNREFUSED 127.0.0.1:54322`), and the `Initialising login role…` notice it prints to stderr is not an error. Adding `user_id` to the `group by` gives the per-seat breakdown the ceiling is actually enforced against — the quickest way to tell "the cap is wrong" from "the client is wrong" is whether the blocked call appears in the ledger at all: **enforcement runs before `recordUsage`, so a blocked call must not be counted.**
+
+Tenants cannot read this table. `api_usage` has RLS enabled with **no policies**, so `anon` and `authenticated` get nothing from it and the published key answers `401 {"code":"42501","permission denied for table api_usage"}`. That is deliberate — usage rows are written by the service-role client inside the functions and are not readable or forgeable from a browser. The only allowance numbers the client ever sees arrive *inside a `429` response*, which is why there is no usage meter or percentage bar in the app: showing one before the refusal would need a new read path (an RLS policy, or a small read-only endpoint), and that is work `034` deliberately did not do.
 
 The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps. The same holds for `034` and `relay-copilot` — a missing `user_id` column only costs the ceiling, because a failed ledger read leaves the proxy uncapped. Apply the migration to get the cap; deploy the function to change the copy.
 
@@ -526,4 +549,6 @@ A `201` response carries the new `version` and an `entrypoint_path` ending in `�
 Live as of 2026-10-02 (`zufsncswsoqlomtqhkks`, all with JWT verification on): `relay-copilot` v20, `relay-geocode` v17, `relay-route` v15. Verified in that state: all three return real answers (DeepSeek completion, a Sydney geocode, an 18.8 km route), each writes exactly one `api_usage` row of the right `kind`, and each answers `429` with its message once the tenant is over its cap.
 
 `relay-copilot` was deployed again by the CLI on 2026-10-04 (version 21) to ship the pooled allowance and the disabled thinking mode. That deploy was checked by hash — the function downloaded back out of the project is byte-identical to `supabase/functions/relay-copilot/` in this repository — and by an anon-key call answering `401` from inside the function, which is what proves the two-file bundle boots. The allowances were then running on the `limits.js` defaults with no `RELAY_AI_*` secrets set, which is the intended state: one source of truth, and nothing to drift.
+
+The personal ceiling was then confirmed end-to-end on the same day: `RELAY_AI_USER_CAP_PLUS=1` against the Cloud+ test tenant, one message accepted and ledgered, the next refused with `429 scope: "user"` and the reset rendered in the reader's local clock ("resets at 12:00 AM tomorrow… your team can still send about 57 more messages today"). The first two attempts at this looked like a broken cap and were not — `RELAY_AI_USER_CAP` was set against a Cloud+ tenant, which reads the `_PLUS` twin and ignored it. The secret was unset afterwards and `secrets list` confirmed no `RELAY_AI_*` or `RELAY_COPILOT_*` keys remain, so the live system is back on the defaults.
 
