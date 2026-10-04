@@ -60,8 +60,8 @@ async function generateConflictProposal(conflictGroup, jobIds, ai) {
   const techName = conflictGroup[0].technicianName;
   const date = conflictGroup[0].scheduledDate;
   
-  const basePrompt = ai.systemPrompt || 'You are Deputy, an intelligent CRM co-pilot assistant.';
-  const systemPrompt = `${basePrompt}\n\n${getSystemContext()}`;
+  const basePrompt = ai.systemPrompt || 'You are brny, an intelligent CRM co-pilot assistant.';
+  const systemPrompt = `${basePrompt}\n\n${getSystemContext()}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
 
   const prompt = `A schedule collision has been detected for technician ${techName} on date ${date}.
 They are scheduled for the following jobs at the same time:

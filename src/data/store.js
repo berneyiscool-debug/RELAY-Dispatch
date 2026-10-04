@@ -3153,7 +3153,7 @@ class DataStore {
         // DeepSeek API through the relay-copilot edge function. `tier` is the only
         // field here that varies, and it is written server-side (see aiTier.js).
         tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local',
-        systemPrompt: 'You are Relay, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
+        systemPrompt: 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
       }
     };
 

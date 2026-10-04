@@ -29,13 +29,13 @@ Two mechanisms a neighboring CRM could not truthfully copy:
 
 - Desktop-first, used during the working day; also packaged as an Electron desktop app.
 - Hash-routed SPA with a persistent left sidebar (collapsible, categorized) and a top bar.
-- "Deputy" is an in-app AI assistant that can read app state and propose actions (e.g. drafting SMS, surfacing proposals on the dashboard).
+- "brny" is an in-app AI assistant that can read app state and propose actions (e.g. drafting SMS, surfacing proposals on the dashboard).
 - Public GitHub repository: no build-time secrets, no committed customer data.
 
 ## Capabilities and Constraints
 
 - **Stack:** vanilla JS (no framework), Vite build, hash router, custom `store` singleton that branches local IndexedDB vs Supabase by `store.companyId`. Electron wrapper for desktop.
-- **Dashboard widgets (must all be preserved):** KPI Cards, Job Status Chart, Technician Map, Recent Activity, Recent Leads, Today's Schedule, Pinned Job Progress, Unassigned Jobs Queue, Uninvoiced Completed Jobs, Low Stock Alerts, Projected Profitability, Staff Availability, Timesheet Exceptions, Asset Status, Overdue Maintenance, Upcoming Maintenance (7d), Top Customers, Daily To-Do, Pending Approvals, Customer Satisfaction (NPS), Cash Flow Summary, Revenue vs Last Month, Invoice Aging, Quote Win Rate, Today's Routes, Weather Forecast, Notifications, Deputy Proposals — plus live "page widgets" (Leads, Quotes, Jobs, Invoices, Customers, Contractors, Suppliers, Assets, Stock, Purchase Orders, Timesheets, Schedule embedded whole).
+- **Dashboard widgets (must all be preserved):** KPI Cards, Job Status Chart, Technician Map, Recent Activity, Recent Leads, Today's Schedule, Pinned Job Progress, Unassigned Jobs Queue, Uninvoiced Completed Jobs, Low Stock Alerts, Projected Profitability, Staff Availability, Timesheet Exceptions, Asset Status, Overdue Maintenance, Upcoming Maintenance (7d), Top Customers, Daily To-Do, Pending Approvals, Customer Satisfaction (NPS), Cash Flow Summary, Revenue vs Last Month, Invoice Aging, Quote Win Rate, Today's Routes, Weather Forecast, Notifications, brny Proposals — plus live "page widgets" (Leads, Quotes, Jobs, Invoices, Customers, Contractors, Suppliers, Assets, Stock, Purchase Orders, Timesheets, Schedule embedded whole).
 - **Canvas behaviors (must be preserved):** pan, zoom + zoom-reset (fit all), edit mode (drag/resize/snap-to-grid), add/remove/configure widget, saved views/pins with a default "Home" view, per-user persisted layout, role/permission-gated widget visibility.
 - **Sidebar IA (locked this round):** Dashboard, Schedule; Workflow (Leads, Notifications, Quotes, Projects, Jobs, Invoices); People (Customers, Contractors, Suppliers); Resources (Assets, Stock, Purchase Orders, Timesheets); Admin (Documents, Reports, Settings).
 - **Iconography:** Material Icons (Outlined) today.
