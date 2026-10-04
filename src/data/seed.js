@@ -921,7 +921,10 @@ export async function seedData(force = false) {
       title: `System Alert - Service Due ${i}`,
       message: `Asset SN-SYS-1-${i} has a service scheduled soon.`,
       read: i > 2,
-      createdAt: relativeDate(-1)
+      createdAt: relativeDate(-1),
+      // Seeded demo noise stands in for the machine alerts, so the demo data
+      // exercises the "hide system notifications" toggle.
+      origin: 'system'
     });
   }
 

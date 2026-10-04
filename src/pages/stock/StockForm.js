@@ -259,7 +259,8 @@ function checkReorderLevel(data) {
         title: 'Stock Auto-Reorder',
         message: `${data.name} (SKU: ${data.sku}) has reached its reorder level. Current quantity: ${data.quantity}. Please reorder from ${data.supplier || 'supplier'}.`,
         read: false,
-        link: '/stock'
+        link: '/stock',
+        origin: 'system'
       });
     }
   }

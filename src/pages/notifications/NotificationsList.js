@@ -8,6 +8,14 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
+import { filterSystemNotifications, countByStatus, emptyStateMessage } from '../../utils/notificationVisibility.js';
+import { getHideSystemNotifications, setHideSystemNotifications, loadHideSystemNotifications, onNotificationPrefChanged } from '../../utils/notificationPrefs.js';
+
+const STATUS_FILTERS = ['Pending', 'Converted', 'Dismissed'];
+
+// Only one notifications page is mounted at a time, so the previous subscription
+// (and the table it captured) is dropped on every render.
+let _detachNotifPrefListener = null;
 
 export function renderNotificationsList(container, params) {
   const allNotifications = store.getAll('notifications') || [];
@@ -15,9 +23,19 @@ export function renderNotificationsList(container, params) {
   let activeFilter = 'all';
   let filterStartDate = '';
   let filterEndDate = '';
+  let hideSystem = getHideSystemNotifications();
+
+  // Machine-generated notifications (maintenance engine, stock re-order, demo
+  // seed) vastly outnumber the ones people raise, so they can be hidden.
+  function visibleNotifications() {
+    return filterSystemNotifications(allNotifications, hideSystem);
+  }
   
-  function getFilteredData() {
-    return allNotifications.filter(n => {
+  // `ignoreSystemFilter` answers "what would this list show without the toggle?",
+  // which is how the empty state tells the two reasons a list is empty apart.
+  function getFilteredData(ignoreSystemFilter = false) {
+    const source = ignoreSystemFilter ? allNotifications : visibleNotifications();
+    return source.filter(n => {
       const search = searchTerm.toLowerCase();
       const matchesSearch = (
         n.title?.toLowerCase().includes(search) ||
@@ -38,15 +56,64 @@ export function renderNotificationsList(container, params) {
     });
   }
 
+  // Counts follow what is on screen, so the dropdown never promises rows the
+  // system-notification filter has hidden.
+  function statusOptionsMarkup() {
+    const counts = countByStatus(visibleNotifications(), STATUS_FILTERS);
+    return `<option value="all">All Statuses (${counts.all})</option>`
+      + STATUS_FILTERS.map(s => `<option value="${s}">${s} (${counts[s]})</option>`).join('');
+  }
+
+  function systemToggleLabel() {
+    return hideSystem ? 'Show system notifications' : 'Hide system notifications';
+  }
+
+  // Only claim the list is empty because of the toggle when un-hiding would
+  // actually reveal rows; a search that matches nothing keeps the plain message.
+  function currentEmptyMessage() {
+    return emptyStateMessage(hideSystem, hideSystem ? getFilteredData(true).length : 0);
+  }
+
+  // The toggle updates the table, its counts and this button in place. Re-rendering
+  // the page would reset the search box (owned by the top bar) and the date filter.
+  function syncSystemToggle() {
+    const btn = container.querySelector('#btn-toggle-system');
+    if (!btn) return;
+    const label = systemToggleLabel();
+    btn.setAttribute('aria-pressed', String(hideSystem));
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    btn.querySelector('.material-icons-outlined').textContent = hideSystem ? 'notifications_off' : 'notifications';
+    btn.querySelector('.btn-label').textContent = hideSystem ? 'Show system' : 'Hide system';
+  }
+
+  function syncStatusOptions() {
+    const select = container.querySelector('#filter-status-select');
+    if (!select) return;
+    const previous = select.value;
+    select.innerHTML = statusOptionsMarkup();
+    select.value = previous;
+  }
+
+  function applyVisibility() {
+    syncSystemToggle();
+    syncStatusOptions();
+    if (!table.isConnected) return;
+    table.setEmptyMessage(currentEmptyMessage());
+    table.updateData(getFilteredData());
+  }
+
   container.innerHTML = `
     <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <h1>Notifications</h1>
       <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
         <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
         <select id="filter-status-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
-          <option value="all">All Statuses (${allNotifications.length})</option>
-          ${['Pending','Converted','Dismissed'].map(s => `<option value="${s}">${s} (${allNotifications.filter(n => n.status === s).length})</option>`).join('')}
+          ${statusOptionsMarkup()}
         </select>
+        <button class="btn btn-secondary btn-sm" id="btn-toggle-system" aria-pressed="${hideSystem}" title="${systemToggleLabel()}" aria-label="${systemToggleLabel()}" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+          <span class="material-icons-outlined" style="font-size:13px;">${hideSystem ? 'notifications_off' : 'notifications'}</span> <span class="btn-label">${hideSystem ? 'Show system' : 'Hide system'}</span>
+        </button>
         <button class="btn btn-primary btn-sm" id="btn-raise-notification" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
           <span class="material-icons-outlined" style="font-size:13px;">campaign</span> <span class="btn-label">Raise Notification</span>
         </button>
@@ -167,7 +234,7 @@ export function renderNotificationsList(container, params) {
       const n = allNotifications.find(notif => notif.id === id);
       if (n) openNotificationDetails(n);
     },
-    emptyMessage: 'No notifications found',
+    emptyMessage: currentEmptyMessage(),
     emptyIcon: 'campaign',
     selectable: true,
     onSelectionChange: (selectedIds) => {
@@ -259,6 +326,28 @@ export function renderNotificationsList(container, params) {
     activeFilter = e.target.value;
     table.updateData(getFilteredData());
   });
+
+  container.querySelector('#btn-toggle-system')?.addEventListener('click', () => {
+    setHideSystemNotifications(!hideSystem);
+  });
+
+  // The preference can also change from the dashboard, so repaint on every change
+  // rather than only from the click above.
+  if (_detachNotifPrefListener) _detachNotifPrefListener();
+  _detachNotifPrefListener = onNotificationPrefChanged((value) => {
+    // Navigating away tears the table down; that listener has no page left to update.
+    if (!table.isConnected) {
+      if (_detachNotifPrefListener) _detachNotifPrefListener();
+      _detachNotifPrefListener = null;
+      return;
+    }
+    hideSystem = value;
+    applyVisibility();
+  });
+
+  // Cloud accounts keep this preference in their profile row (the mirror is only
+  // this device's copy); the subscription above repaints if it resolves differently.
+  loadHideSystemNotifications();
 
   container.querySelector('#btn-raise-notification')?.addEventListener('click', () => openNotificationFormDrawer());
 

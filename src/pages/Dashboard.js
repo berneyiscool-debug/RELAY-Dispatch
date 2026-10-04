@@ -19,6 +19,8 @@ import { FLAGS } from '../utils/flags.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
 import { showDrawer } from '../components/Drawer.js';
 import { renderDeputyAsksWidget } from '../components/DeputyAsksWidget.js';
+import { getHideSystemNotifications, onNotificationPrefChanged, adoptNotificationPref, withNotificationPrefs } from '../utils/notificationPrefs.js';
+import { filterSystemNotifications } from '../utils/notificationVisibility.js';
 import Sortable from 'sortablejs';
 
 function getHeaderActionsHtml() {
@@ -182,6 +184,7 @@ function dataKeyForCollection(coll) {
 let _dashRefreshSubs = [];
 let _dashRefreshPending = new Set();
 let _dashRefreshTimer = null;
+let _detachNotifPrefSub = null;
 
 // Re-render only the mounted data widgets that depend on any of `collections`.
 function refreshWidgetsForCollections(collections) {
@@ -209,26 +212,33 @@ function refreshWidgetsForCollections(collections) {
   });
 }
 
-// Subscribe once (per dashboard mount) to the collections any widget depends on.
 // Debounced + batched so a burst of writes triggers a single targeted refresh.
+function scheduleWidgetRefresh(coll) {
+  _dashRefreshPending.add(coll);
+  clearTimeout(_dashRefreshTimer);
+  _dashRefreshTimer = setTimeout(() => {
+    const pend = _dashRefreshPending; _dashRefreshPending = new Set();
+    const hash = window.location.hash || '#/';
+    const isDashboard = hash === '#/' || hash === '#';
+    if (isDashboard && document.querySelector('#dash-world')) refreshWidgetsForCollections(pend);
+  }, 400);
+}
+
+// Subscribe once (per dashboard mount) to the collections any widget depends on.
 function subscribeWidgetRefresh() {
   _dashRefreshSubs.forEach(({ event, cb }) => store.off(event, cb));
   _dashRefreshSubs = [];
   const collections = [...new Set(Object.values(WIDGET_DEPS).flat())];
   collections.forEach(coll => {
-    const cb = () => {
-      _dashRefreshPending.add(coll);
-      clearTimeout(_dashRefreshTimer);
-      _dashRefreshTimer = setTimeout(() => {
-        const pend = _dashRefreshPending; _dashRefreshPending = new Set();
-        const hash = window.location.hash || '#/';
-        const isDashboard = hash === '#/' || hash === '#';
-        if (isDashboard && document.querySelector('#dash-world')) refreshWidgetsForCollections(pend);
-      }, 400);
-    };
+    const cb = () => scheduleWidgetRefresh(coll);
     store.on(coll, cb);
     _dashRefreshSubs.push({ event: coll, cb });
   });
+
+  // The hide-system-notifications preference is not a collection, so it needs its
+  // own subscription to repaint the notifications widget when it changes.
+  if (_detachNotifPrefSub) _detachNotifPrefSub();
+  _detachNotifPrefSub = onNotificationPrefChanged(() => scheduleWidgetRefresh('notifications'));
 }
 
 // ── Role-based default layouts (world px coordinates) ────────────────────────────
@@ -299,6 +309,10 @@ async function loadLayout() {
         // Supabase reached and answered → its copy wins, even if the layout is unset.
         cloudAuthoritative = true;
         const parsed = data && data.dashboard_layout;
+        // The notification preference shares this column; read it before any
+        // layout save can rewrite the document it is stored in. This copy is the
+        // column the toggle itself writes, so it can outrank a stale local mirror.
+        adoptNotificationPref(parsed, { cloud: true });
         if (parsed && Array.isArray(parsed.widgets)) {
           stored = true;
           widgets = parsed.widgets;
@@ -319,6 +333,9 @@ async function loadLayout() {
       const s = localStorage.getItem(getLayoutKey());
       if (s) {
         const parsed = JSON.parse(s);
+        // The local layout copy lags the mirror (it is only rewritten on layout
+        // edits), so this just seeds a device that has no value of its own.
+        adoptNotificationPref(parsed);
         if (parsed && Array.isArray(parsed.widgets)) {
           stored = true;
           widgets = parsed.widgets;
@@ -365,7 +382,9 @@ async function loadLayout() {
 
 async function saveLayout() {
   if (!live) return;
-  const layout = { widgets: live.widgets, view: live.view, pins: live.pins };
+  // dashboard_layout also carries the notification-preference key, so the document
+  // is merged rather than replaced.
+  const layout = withNotificationPrefs({ widgets: live.widgets, view: live.view, pins: live.pins });
   // Save to localStorage for offline fallback
   localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -3238,7 +3257,8 @@ function escapeHtmlSafe(s) {
 }
 
 function renderNotificationsWidget(data, item) {
-  const notifs = (store.getAll('notifications') || []).sort((a, b) => {
+  const notifs = filterSystemNotifications(store.getAll('notifications') || [], getHideSystemNotifications())
+    .sort((a, b) => {
     const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
     const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
     return dateB - dateA;

@@ -21,6 +21,7 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
   
   let sortDir = defaultSortDir || 'desc';
   let currentPage = 1;
+  let emptyText = emptyMessage;
   const selectedIds = new Set();
 
   function triggerSelectionChange() {
@@ -55,7 +56,7 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
       wrapper.innerHTML = `
         <div class="empty-state">
           <span class="material-icons-outlined">${escapeHTML(emptyIcon)}</span>
-          <h3>${escapeHTML(emptyMessage)}</h3>
+          <h3>${escapeHTML(emptyText)}</h3>
           <p>No records match the current filters, or there is nothing here yet.</p>
         </div>
       `;
@@ -275,6 +276,15 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
   wrapper.updateData = (newData) => {
     data = newData;
+    render();
+  };
+
+  // The message can depend on state the caller changes after creation (e.g. the
+  // notifications page explains an emptied list differently).
+  wrapper.setEmptyMessage = (message) => {
+    const next = message || 'No records found';
+    if (next === emptyText) return;
+    emptyText = next;
     render();
   };
 
