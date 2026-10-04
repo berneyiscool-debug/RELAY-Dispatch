@@ -463,13 +463,40 @@ Every function in `supabase/functions/` is self-contained and uses URL imports (
 
 Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_AI_POOL_PER_SEAT` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
 
-To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. `relay-copilot` reads several allowance secrets at once, so the quickest way to see each refusal is: set `RELAY_AI_USER_CAP=1` to hit the personal ceiling (the second call from that seat gets `scope: "user"`, while a teammate still gets through), or set `RELAY_AI_POOL_PER_SEAT=0` and `RELAY_AI_POOL_FLOOR=1` to shrink the whole company's pool to one call and get `scope: "company"`. Cheaper still, and what was actually used on 2026-10-02: insert the remaining units straight into `api_usage` for a throwaway tenant and call again. No secret is touched, and the real ceiling is the one being tested.
+To prove a cap actually bites, set its secret to `1` temporarily — the first call passes and is ledgered, the second answers `429` — then set it back. `1` is the smallest usable value: a zero or unparsable secret falls back to the documented default rather than disabling the cap, which is deliberate, so `0` does nothing. `relay-copilot` reads several allowance secrets at once, so the quickest way to see each refusal is: set `RELAY_AI_USER_CAP=1` to hit the personal ceiling (the second call from that seat gets `scope: "user"`, while a teammate still gets through), or set `RELAY_AI_POOL_PER_SEAT=1` and `RELAY_AI_POOL_FLOOR=1` to shrink the whole company's pool to a single call and get `scope: "company"`. Either flip is a Management API call, not a code change, so the secret takes effect on the next invocation with no redeploy:
+
+```
+npx --yes supabase@2.119.0 secrets set RELAY_AI_USER_CAP=1 --project-ref zufsncswsoqlomtqhkks --agent no --output-format text
+npx --yes supabase@2.119.0 secrets unset RELAY_AI_USER_CAP --project-ref zufsncswsoqlomtqhkks --agent no --output-format text
+```
+
+Cheaper still, and what was actually used on 2026-10-02: insert the remaining units straight into `api_usage` for a throwaway tenant and call again. No secret is touched, and the real ceiling is the one being tested.
 
 The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps. The same holds for `034` and `relay-copilot` — a missing `user_id` column only costs the ceiling, because a failed ledger read leaves the proxy uncapped. Apply the migration to get the cap; deploy the function to change the copy.
 
 ### 12a. Deploying `relay-copilot` (two files)
 
-`supabase functions deploy relay-copilot` bundles `index.ts` and its relative imports, so it is the supported path. It needs the CLI linked to the project (`supabase link --project-ref zufsncswsoqlomtqhkks`), and it deploys with JWT verification on.
+`supabase functions deploy relay-copilot` bundles `index.ts` and its relative imports, so it is the supported path. Nothing else has to be set up first: no Docker, no `supabase init`, no `supabase link`, no `supabase/config.toml`. The project is named with `--project-ref` and `--use-api` uploads the bundle instead of building it locally, which is what makes Docker unnecessary:
+
+```
+npx --yes supabase@2.119.0 functions deploy relay-copilot \
+  --project-ref zufsncswsoqlomtqhkks --use-api \
+  --agent no --output-format text
+```
+
+Run it from the repository root so the CLI finds `supabase/functions/relay-copilot`. It prints one `Uploading asset` line per file — **both `index.ts` and `limits.js` must appear**, because the import is relative and the file has to sit beside `index.ts` inside the deployed bundle.
+
+Three flags to leave alone: **never `--prune`** (it deletes every remote function that has no local directory, and this repository holds only 14 of the project's functions), **never deploy without naming the function** (a bare `functions deploy` would push everything in `supabase/functions/`), and **never `--no-verify-jwt`** (every function in the project runs with verification on, and `relay-copilot` re-checks the caller's token itself, so the CLI default is correct).
+
+The CLI needs an account login, which on Windows lives in Credential Manager rather than a file. **Confirm it with `projects list`, never with the success message from `login`** — a failed login flow silently falls back to whatever token was stored earlier, and the CLI does not validate a token locally before sending it.
+
+If the shell exports agent markers (`AI_AGENT`, `COPILOT_CLI`, …), the CLI's `--agent auto` detection switches to JSON output, which then refuses to prompt (`NonInteractiveError: Cannot prompt for input in JSON output mode`). Pass `--agent no --output-format text` on any command that may prompt, including `login`.
+
+Verify a deploy with three checks, in increasing order of certainty:
+
+1. `functions list --project-ref <ref> --output json` — `version` must have incremented and `verify_jwt` must still be `true`. The table output does **not** show `verify_jwt`; only the JSON does.
+2. Call it with the anon key: the answer must be `401 {"error":"Unauthorized: invalid token"}`. That comes from inside the function, after its module graph is instantiated, so it proves `limits.js` shipped. A `503` with `BOOT_ERROR` is the signature of a missing or unresolvable file.
+3. `functions download relay-copilot --project-ref <ref> --use-api` into a scratch directory, then compare hashes against the local files. Byte-identical means production is running exactly the reviewed code.
 
 Without the CLI, the Management API accepts a tarball of the function directory. Build it with the two files at the bundle root and the same metadata part as below:
 
@@ -481,7 +508,7 @@ curl.exe -s -X POST "https://api.supabase.com/v1/projects/{ref}/functions/deploy
   -F "metadata=<metadata.json"
 ```
 
-Either way, **verify by calling it**: an empty body must answer `400` and a request with a valid token and messages must answer `200`. A `503 BOOT_ERROR` means `limits.js` did not ship — the import is relative, so the file must sit beside `index.ts` in the deployed bundle.
+Either way, **verify by calling it**: no `Authorization` header is refused at the platform gateway with `401`, the anon key gets `401 {"error":"Unauthorized: invalid token"}` from the function itself, and only a real user token reaches the `400` validation error. What must never appear is a `503` with `BOOT_ERROR` — the function cannot start, which for this function almost always means `limits.js` did not ship.
 
 ### 12b. Deploying without the dashboard (Management API)
 
@@ -494,7 +521,9 @@ curl.exe -s -X POST "https://api.supabase.com/v1/projects/{ref}/functions/deploy
   -F "metadata=<metadata.json"   # {"entrypoint_path":"index.ts","verify_jwt":true,"name":"relay-geocode"}
 ```
 
-A `201` response carries the new `version` and an `entrypoint_path` ending in `…/source/index.ts`. **Do not deploy with `PATCH /functions/{slug}`**: it accepts the source and bumps the version, but leaves `entrypoint_path` pointing at the previous revision's temp directory, so every invocation then answers `503 BOOT_ERROR` until the function is deployed again. Always confirm a deploy by calling the function — an empty body must answer `400` (a validation error), never `503`.
+A `201` response carries the new `version` and an `entrypoint_path` ending in `…/source/index.ts`. **Do not deploy with `PATCH /functions/{slug}`**: it accepts the source and bumps the version, but leaves `entrypoint_path` pointing at the previous revision's temp directory, so every invocation then answers `503 BOOT_ERROR` until the function is deployed again. Always confirm a deploy by calling the function — the answer must be a `401` or a `400`, never a `503`.
 
 Live as of 2026-10-02 (`zufsncswsoqlomtqhkks`, all with JWT verification on): `relay-copilot` v20, `relay-geocode` v17, `relay-route` v15. Verified in that state: all three return real answers (DeepSeek completion, a Sydney geocode, an 18.8 km route), each writes exactly one `api_usage` row of the right `kind`, and each answers `429` with its message once the tenant is over its cap.
+
+`relay-copilot` was deployed again by the CLI on 2026-10-04 (version 21) to ship the pooled allowance and the disabled thinking mode. That deploy was checked by hash — the function downloaded back out of the project is byte-identical to `supabase/functions/relay-copilot/` in this repository — and by an anon-key call answering `401` from inside the function, which is what proves the two-file bundle boots. The allowances were then running on the `limits.js` defaults with no `RELAY_AI_*` secrets set, which is the intended state: one source of truth, and nothing to drift.
 
