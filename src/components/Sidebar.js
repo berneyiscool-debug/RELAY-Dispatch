@@ -8,7 +8,8 @@
 import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
-import { showCloudUpgradePrompt, CLOUD_REQUIRED_TOOLTIP, CLOUD_ONLY_SETTINGS_TABS } from './CloudUpgrade.js';
+import { showCloudUpgradePrompt, CLOUD_REQUIRED_TOOLTIP, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_TOOLTIP, COMING_SOON_SETTINGS_TABS } from './CloudUpgrade.js';
+import { showToast } from './Notifications.js';
 
 // Primary sections. Items without `items[]` are direct pages (no submenu);
 // items with `items[]` open a secondary panel.
@@ -176,10 +177,13 @@ export function createSidebar() {
     if (navBtn) {
       e.preventDefault();
       if (navBtn.classList.contains('disabled-local')) {
-        // Cloud-only page: explain what it needs instead of navigating nowhere.
+        // Gated page: explain what stands in the way instead of navigating nowhere.
         e.stopPropagation();
         const labelEl = navBtn.querySelector('.nav-label');
-        showCloudUpgradePrompt(labelEl ? labelEl.textContent.trim() : '');
+        const label = labelEl ? labelEl.textContent.trim() : '';
+        // Unshipped features aren't a cloud upsell, so they just say so.
+        if (navBtn.dataset.comingSoon) showToast(`${label} is coming soon.`, 'info');
+        else showCloudUpgradePrompt(label);
         return;
       }
       const path = navBtn.dataset.path;
@@ -307,6 +311,9 @@ function getContextualMenu(hash) {
     // ids, so a deep link can't open a greyed-out page.
     const local = isLocalMode();
     const gate = (id) => (local && CLOUD_ONLY_SETTINGS_TABS[id] ? { disabled: true, tooltip: CLOUD_REQUIRED_TOOLTIP } : {});
+    // Unshipped features are greyed out for cloud accounts too, so they use their
+    // own hint — offering a cloud upgrade for them would promise the wrong thing.
+    const soon = (id) => (COMING_SOON_SETTINGS_TABS[id] ? { disabled: true, tooltip: COMING_SOON_TOOLTIP, comingSoon: true } : {});
 
     const groups = [
       {
@@ -343,7 +350,7 @@ function getContextualMenu(hash) {
         items: [
           { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
           { id: 'storage_options', icon: 'warehouse', label: 'Storage Locations', path: '/settings?tab=storage_options' },
-          { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+          { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers', ...soon('cost_centers') },
           { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' }
         ]
       }
@@ -708,7 +715,7 @@ function renderContextualItems(contextual) {
 
 function renderSubmenuItem(contextual, item) {
   const button = `
-    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" style="display:flex; align-items:center; width:100%">
+    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}"${item.comingSoon ? ' data-coming-soon="true"' : ''} style="display:flex; align-items:center; width:100%">
       <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
       <span class="nav-label">${escapeHTML(item.label)}</span>
       ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
@@ -719,8 +726,9 @@ function renderSubmenuItem(contextual, item) {
 
   // A gated item fades with `opacity`, which would fade its own ::after tooltip
   // along with it, so the tooltip hangs off this (undimmed) wrapper instead.
+  // `disabled-local` is the shared grey-out class for both gate reasons.
   const tooltip = escapeHTML(item.tooltip || 'Not available for this account type');
-  return `<div class="cloud-gated-item" data-tooltip="${tooltip}" data-tooltip-pos="right">${button}</div>`;
+  return `<div class="gated-nav-item" data-tooltip="${tooltip}" data-tooltip-pos="right">${button}</div>`;
 }
 
 // Show a section's submenu panel and mark its rail item active.

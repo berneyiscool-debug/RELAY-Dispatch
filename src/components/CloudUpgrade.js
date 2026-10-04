@@ -29,6 +29,16 @@ export const CLOUD_ONLY_SETTINGS_TABS = {
   password_recovery: 'Password Recovery'
 };
 
+// Settings tabs that are greyed out for EVERY account type because the feature
+// behind them hasn't shipped yet — not an account-type gate, so it must not offer
+// the cloud upgrade. Same sidebar grey-out and deep-link guard, but a plain
+// "coming soon" explanation. Keyed by Settings tab id; the value is the label.
+export const COMING_SOON_TOOLTIP = 'Coming soon';
+
+export const COMING_SOON_SETTINGS_TABS = {
+  cost_centers: 'Cost Centers & Xero'
+};
+
 export function openMigrationModal() {
   const modalContent = document.createElement('div');
   const expectedName = (store.getSettings().name || '').trim();

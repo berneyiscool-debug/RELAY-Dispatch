@@ -12,7 +12,6 @@ import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
-import { FLAGS } from '../utils/flags.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
@@ -23,7 +22,7 @@ import { renderLeadProfileSetup } from './leads/leadProfile.js';
 import { hashPassword, verifyPassword } from './auth/password.js';
 import { setSessionUser, clearSessionUser } from './auth/session.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
-import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS } from '../components/CloudUpgrade.js';
+import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_SETTINGS_TABS } from '../components/CloudUpgrade.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -249,6 +248,14 @@ export function renderSettings(container) {
     activeTab = 'company';
   }
 
+  // Unshipped tabs are greyed out in the sidebar for every account type, so a deep
+  // link explains itself on Company instead of opening the unfinished page. The
+  // renderers below stay in place for when the feature ships.
+  if (COMING_SOON_SETTINGS_TABS[activeTab]) {
+    showToast(`${COMING_SOON_SETTINGS_TABS[activeTab]} is coming soon.`, 'info');
+    activeTab = 'company';
+  }
+
   // Folder Sync and Local Data Backup described the same directory handle in two
   // vocabularies; they are now one "Local Storage" tab. Keep old links working.
   if (activeTab === 'folder_sync') {
@@ -324,6 +331,8 @@ export function renderSettings(container) {
 
 
     if (activeTab === 'cost_centers') {
+      // Unreachable while cost_centers is in COMING_SOON_SETTINGS_TABS (the guard
+      // above rewrites it to Company) — kept for when the Xero integration ships.
       renderCostCentersTab(tc);
       return;
     }
@@ -405,12 +414,13 @@ export function renderSettings(container) {
             </div>
           </div>
 
+          ${isLocalMode ? '' : `
           <div class="card" style="max-width:100%">
             <div class="card-header"><h4>Lead & Market Profile</h4></div>
             <div class="card-body">
               <div id="lead-profile-root"></div>
             </div>
-          </div>
+          </div>`}
         `;
 
         // Company address autocomplete — same behaviour as customer/supplier
@@ -506,8 +516,11 @@ export function renderSettings(container) {
 
       // The company tab is one details card plus the lead-profile card, so a full
       // redraw has to re-run both (the save handler refreshes through this too).
+      // Local accounts get no lead-profile card — it only feeds the Cloud-only
+      // leads marketplace — so there is nothing else to redraw for them.
       const renderCompanyTabAll = () => {
         renderCompanyTab();
+        if (isLocalMode) return;
         renderLeadProfileSetup(tc.querySelector('#lead-profile-root')).catch((err) => {
           console.error('Error rendering lead profile setup:', err);
         });
@@ -4038,8 +4051,9 @@ export function renderSettings(container) {
   }
 
   // Local accounts have no My Profile page, so the things that page used to own —
-  // the unlock PIN, the secret recovery question and the dispatch start location —
-  // live here instead. Ported from Profile.js so the behaviour is unchanged.
+  // the unlock PIN and the secret recovery question — live here instead. The
+  // dispatch start location is deliberately absent: resolving an address needs the
+  // Cloud geocoder, so the field could never be saved in local mode.
   function renderLocalSecurity(host, currentUser) {
     const RECOVERY_PRESETS = [
       'What was the name of your first pet?',
@@ -4052,14 +4066,12 @@ export function renderSettings(container) {
     let account = null;
     let recoveryQuestion = '';
     let hasPin = false;
-    let startLocation = null;
 
     const load = async () => {
       accounts = (await storageGet('relay_accounts')) || [];
       account = accounts.find(a => a.id === currentUser.companyId) || null;
       recoveryQuestion = account?.recoveryQuestion || '';
       hasPin = !!account?.hasPassword;
-      startLocation = FLAGS.maps ? (store.getById('technicians', currentUser.id)?.startLocation || null) : null;
     };
 
     const render = () => {
@@ -4127,28 +4139,6 @@ export function renderSettings(container) {
                 </div>
               </div>
             </div>
-
-            ${FLAGS.maps ? `
-            <div class="card">
-              <div class="card-header"><h4>Dispatch Start Location</h4></div>
-              <div class="card-body">
-                <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
-                  Where your day's driving starts and ends for route planning. Leave blank to use the company office.
-                </p>
-                <div class="form-group">
-                  <label class="form-label">Start Address</label>
-                  <input type="text" id="local-security-start-location" class="form-input"
-                    placeholder="Company office (default)" value="${escapeHTML(startLocation?.address || '')}" />
-                  <div id="local-security-start-hint" class="text-tertiary" style="margin-top:4px;">
-                    ${startLocation?.address ? 'Custom start location set.' : 'Currently using the company office address.'}
-                  </div>
-                </div>
-                <div style="display:flex; justify-content:flex-end;">
-                  <button class="btn btn-primary btn-sm" id="local-security-save-start">Save Start Location</button>
-                </div>
-              </div>
-            </div>` : ''}
-
           </div>
 
           <div class="card" style="background:var(--content-bg);">
@@ -4219,36 +4209,6 @@ export function renderSettings(container) {
         showToast('Security recovery settings saved successfully.', 'success');
         await load();
         render();
-      });
-
-      // v1.3 maps: per-user dispatch start location (card only exists when flag is on)
-      host.querySelector('#local-security-save-start')?.addEventListener('click', async () => {
-        const btn = host.querySelector('#local-security-save-start');
-        const hint = host.querySelector('#local-security-start-hint');
-        const address = host.querySelector('#local-security-start-location').value.trim();
-        btn.disabled = true;
-        try {
-          if (!address) {
-            await store.setStartLocation(null);
-            if (hint) hint.textContent = 'Currently using the company office address.';
-            showToast('Start location cleared — using company office', 'success');
-            return;
-          }
-          const { geocodeAddress } = await import('../utils/geocode.js');
-          const geo = await geocodeAddress(address);
-          if (!geo) {
-            showToast('Could not find that address — check it and try again', 'error');
-            return;
-          }
-          await store.setStartLocation({ address: geo.formattedAddress || address, geo: { lat: geo.lat, lng: geo.lng, formattedAddress: geo.formattedAddress, placeId: geo.placeId } });
-          host.querySelector('#local-security-start-location').value = geo.formattedAddress || address;
-          if (hint) hint.textContent = 'Custom start location set.';
-          showToast('Start location saved', 'success');
-        } catch (e) {
-          // setStartLocation already toasts DB errors
-        } finally {
-          btn.disabled = false;
-        }
       });
     };
 

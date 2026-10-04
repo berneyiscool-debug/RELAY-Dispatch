@@ -65,7 +65,8 @@ Adds only what genuinely needs the internet:
   request callouts
 - **Contractor portal** — subbies see assigned tasks, update progress, upload
   photos, manage compliance docs
-- Xero / Stripe, SMS & email automation
+- Xero / Stripe, SMS & email automation (not shipped yet — **Cost Centers & Xero**
+  sits greyed out with a *Coming soon* hint until it does)
 
 ## How it works
 
@@ -118,6 +119,19 @@ sign-in owns everything on this device.
   **Settings → Users** on a local profile; they explain what the cloud adds and
   offer the one-way **Move to cloud** upgrade, which copies your records into a
   cloud company and signs you in there.
+- Cloud-only features are greyed out rather than hidden, with a *Click to create
+  a Cloud account* hint that opens the upgrade flow: the leads marketplace, and
+  the cloud-only Settings pages (Customer Portal, Contractor Portal, Online
+  payments, Email & domain, Users, User Types & Permissions, Password Recovery).
+  Documents, reports and the Local Storage tools stay fully available.
+- Features that haven't shipped yet are greyed out for **every** account type with
+  a plain *Coming soon* hint — clicking one explains itself instead of offering the
+  upgrade, because a cloud account wouldn't unlock it yet. Cost Centers & Xero is
+  gated that way until the Xero integration lands (it then becomes cloud-only).
+  Deep links to a gated tab land on Company rather than the unfinished page.
+- Local mode has no geocoding — address lookups run through RELAY Cloud — so
+  nothing in Settings asks for a dispatch start location, and the Lead & Market
+  Profile that feeds the marketplace is omitted from Settings → Company.
 - Older multi-user local profiles are cleaned up automatically on first boot:
   per-technician login credentials, the deployment-type marker and the legacy
   `local_multiuser` session flag are removed (the flag is rewritten to `local`).
