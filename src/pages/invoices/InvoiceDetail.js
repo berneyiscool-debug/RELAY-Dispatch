@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import { showToast } from '../../components/Notifications.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { showPrintPreview } from '../../components/PrintPreview.js';
@@ -748,9 +749,10 @@ export function renderInvoiceDetail(container, params) {
     });
 
     container.querySelectorAll('.btn-remove-section').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const sIdx = parseInt(btn.dataset.sidx);
-        if (confirm('Remove this entire phase?')) {
+        const confirmed = await showConfirm('Remove this entire phase?', { title: 'Remove Phase', confirmLabel: 'Remove', danger: true });
+        if (confirmed) {
           invoice.sections.splice(sIdx, 1);
           recalculate();
         }

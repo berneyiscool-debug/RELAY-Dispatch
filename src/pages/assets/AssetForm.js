@@ -1,6 +1,7 @@
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showAlert } from '../../utils/confirmDialog.js';
 
 export function renderAssetForm(container, params) {
   const isNew = params.id === 'new';
@@ -186,7 +187,7 @@ export function renderAssetForm(container, params) {
     }
   });
 
-  container.querySelector('#btn-save').addEventListener('click', () => {
+  container.querySelector('#btn-save').addEventListener('click', async () => {
     const isCustomerAsset = container.querySelector('#ownerType').value === 'Customer';
     const assetCustId = isCustomerAsset ? container.querySelector('#customerId').value : null;
     const assetCust = assetCustId ? customers.find(c => c.id === assetCustId) : null;
@@ -211,7 +212,7 @@ export function renderAssetForm(container, params) {
     };
 
     if (!data.name) {
-      alert('Asset Name is required.');
+      await showAlert('Asset Name is required.', { title: 'Missing Information' });
       return;
     }
 

@@ -9,10 +9,19 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { escapeHTML } from '../../utils/security.js';
 import { setListSearch, clearListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { isCloudUser } from '../../utils/aiTier.js';
+import { showCloudUpgradePrompt } from '../../components/CloudUpgrade.js';
 
 export function renderLeadsList(container, params) {
   const hash = window.location.hash || '';
-  const startOnMarket = (params && params.tab === 'Marketplace') || /[?&]market=1/.test(hash) ? 'market' : 'leads';
+  const cloud = isCloudUser();
+  const wantsMarket = (params && params.tab === 'Marketplace') || /[?&]market=1/.test(hash);
+  // The Marketplace is a cloud-only lead source, so a local workspace always
+  // falls back to Internal. Keep in sync with the greyed-out tab in Sidebar.js.
+  const startOnMarket = wantsMarket && cloud ? 'market' : 'leads';
+  if (wantsMarket && !cloud) {
+    showCloudUpgradePrompt('The Leads Marketplace');
+  }
 
   if (startOnMarket === 'market') {
     clearListSearch();
@@ -29,6 +38,9 @@ export function renderLeadsList(container, params) {
 
   renderLeadsTable(container, {
     origin: 'Internal',
+    // A local workspace has no Marketplace tab, so its one list also shows any
+    // Marketplace-origin lead carried over from an older install.
+    includeAllOrigins: !cloud,
     containerId: 'leads-table-container',
     searchLabel: 'Search leads...',
     emptyMessage: 'No leads found',
@@ -40,6 +52,7 @@ export function renderLeadsList(container, params) {
 function renderLeadsTable(container, opts = {}) {
   const {
     origin = 'Internal',
+    includeAllOrigins = false,
     containerId = 'leads-table-container',
     searchLabel = 'Search leads...',
     emptyMessage = 'No leads found',
@@ -48,7 +61,7 @@ function renderLeadsTable(container, opts = {}) {
   } = opts;
 
   const isMarket = origin === 'Marketplace';
-  const leads = store.getAll('leads').filter(l => (isMarket ? l.origin === 'Marketplace' : l.origin !== 'Marketplace'));
+  const leads = store.getAll('leads').filter(l => includeAllOrigins || (isMarket ? l.origin === 'Marketplace' : l.origin !== 'Marketplace'));
   
   const likelihoods = {
     'New': 10,

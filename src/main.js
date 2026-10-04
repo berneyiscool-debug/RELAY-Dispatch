@@ -169,6 +169,31 @@ document.addEventListener('click', (e) => {
 }, true);
 
 // ---- Build App Shell ----
+// Local mode is single-user, and a legacy `local_multiuser` marker from the
+// removed multi-user local mode means this is a local install. Normalise it
+// before the shell is built, which is where login mode is first read.
+if (localStorage.getItem('relay_login_mode') === 'local_multiuser') {
+  localStorage.setItem('relay_login_mode', 'local');
+}
+
+// The Simple/Complete mode toggle was removed: the single local owner always
+// runs Complete Mode. Repair the technician role and mode the toggle left
+// behind before the shell renders, so the sidebar profile cannot report the
+// removed Simple Mode.
+if (localStorage.getItem('relay_login_mode') === 'local') {
+  const bootUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  if (bootUser && String(bootUser.companyId || '').startsWith('acct_')) {
+    if (localStorage.getItem('uiMode') === 'technician') {
+      localStorage.setItem('uiMode', 'admin');
+    }
+    if (bootUser.role === 'technician') {
+      bootUser.role = 'admin';
+      bootUser.userTypeId = `${bootUser.companyId}_ut_admin`;
+      localStorage.setItem('currentUser', JSON.stringify(bootUser));
+    }
+  }
+}
+
 const app = document.getElementById('app');
 
 const sidebar = createSidebar();
@@ -498,7 +523,7 @@ router.register('/login', renderPage(async (container) => {
     import('./pages/login/Login.js'),
   ]);
   renderLaunchScreen(container, async (result) => {
-    if (result.mode === 'local' || result.mode === 'local_multiuser') {
+    if (result.mode === 'local') {
       const accountId = result.accountId;
       sessionStorage.setItem('relay_active_account', accountId);
       localStorage.setItem('relay_login_mode', result.mode);
@@ -698,6 +723,14 @@ router.onNavigate = (path, params) => {
   }
 
   if (currentUser) {
+    // Local (single-user) accounts have no My Profile page — Settings → Local Storage
+    // owns the PIN, the recovery question and the dispatch start location for them.
+    const isLocalLogin = localStorage.getItem('relay_login_mode') === 'local'
+      || String(currentUser.companyId || store.companyId || '').startsWith('acct_');
+    if (isLocalLogin && basePath === '/profile') {
+      return '/settings?tab=local_storage';
+    }
+
     if (currentUser.role === 'customer' && protectedRoutes.includes(basePath)) {
        // Customer trying to access staff pages -> force to portal
        if (currentUser.portalToken) {
@@ -813,19 +846,26 @@ window.addEventListener('storage', (e) => {
 });
 
 // Before resolving, check if we need to redirect to login
-const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-if (currentUser && !localStorage.getItem('relay_login_mode')) {
-  let mode = 'cloud';
-  if (currentUser.companyId && currentUser.companyId.startsWith('acct_')) {
-    if (currentUser.id === `${currentUser.companyId}_admin`) {
-      mode = 'local';
-    } else {
-      mode = 'local_multiuser';
-    }
-  }
-  localStorage.setItem('relay_login_mode', mode);
+let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+// Local mode is single-user: the owner account is the only identity that can
+// hold a local session. A staff session left behind by the removed multi-user
+// local mode is discarded here, so those installs land back on the launch
+// screen instead of a session the app no longer supports.
+if (currentUser && currentUser.companyId && String(currentUser.companyId).startsWith('acct_')
+  && currentUser.id !== `${currentUser.companyId}_admin`) {
+  clearSessionUser();
+  localStorage.removeItem('relay_login_mode');
+  currentUser = null;
 }
-const isPortalHash = window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
+// A legacy multi-user marker is already normalised to `local` above, before the
+// shell is built; here we only fill in a mode when nothing is recorded.
+if (currentUser && !localStorage.getItem('relay_login_mode')) {
+  const isLocal = currentUser.companyId && String(currentUser.companyId).startsWith('acct_');
+  localStorage.setItem('relay_login_mode', isLocal ? 'local' : 'cloud');
+}
+// The technician role and mode a removed Simple Mode toggle left behind were
+// already repaired above, before the shell was built.
+const isPortalHash =  window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
 if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
   window.location.hash = '#/login';
 }

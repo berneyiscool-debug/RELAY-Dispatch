@@ -2809,6 +2809,11 @@ body.relay-assistant-open .relay-topbar-actions {
 .sidebar-nav-item:not(.sub-item):hover,
 .sidebar-toggle:hover,
 .sidebar-profile:hover { background: #f2f3f5 !important; }
+
+/* Local accounts have no profile page, so their footer block is not a click target.
+   Declared after the neutral hover block above so it wins on equal specificity. */
+.sidebar-profile-static { cursor: default; }
+.sidebar-profile-static:hover { background: none !important; }
 .sidebar-nav-item.active,
 .sidebar-nav-item:not(.sub-item).active {
   background: var(--sidebar-active-bg) !important;
@@ -2862,6 +2867,15 @@ body.relay-assistant-open .relay-topbar-actions {
   transition: width var(--sidebar-transition), min-width var(--sidebar-transition);
 }
 .sidebar.two-level.submenu-open .sidebar-submenu { width: 190px; min-width: 190px; }
+
+/* Greyed-out submenu items (cloud-only or not-yet-shipped) show their tooltip to the right
+   of the item box, which lands past the panel edge — and these two containers clip their
+   overflow, so the bubble was never visible. Let them overflow only while such an item is
+   hovered, and only while the submenu is open, so the collapse animation keeps its clipping. */
+.sidebar.two-level.submenu-open .sidebar-submenu:has(.gated-nav-item:hover),
+.sidebar.two-level.submenu-open .sidebar-submenu:has(.gated-nav-item:hover) .submenu-nav {
+  overflow: visible;
+}
 
 /* Logo in the rail */
 .sidebar.two-level .sidebar-logo { justify-content: flex-start; padding: 0 14px; gap: 10px; border-bottom: 1px solid var(--border-color); }
@@ -2955,6 +2969,10 @@ body.relay-assistant-open .relay-topbar-actions {
 .submenu-item .nav-icon { flex: none; width: 18px; display: flex; align-items: center; justify-content: center; }
 .submenu-item .material-icons-outlined { font-size: 18px; }
 .submenu-item:hover { background: #f2f3f5; color: var(--sidebar-text-hover); }
+/* Wrapper holding the tooltip for gated submenu items. Kept separate from the
+   item itself because a disabled item fades via `opacity`, which would fade the
+   tooltip bubble with it and leave it unreadable. */
+.gated-nav-item { display: block; width: 100%; }
 .submenu-item.active { background: var(--sidebar-active-bg); color: var(--text-primary); font-weight: var(--font-weight-medium); }
 
 /* Contextual Entity Submenu Header */

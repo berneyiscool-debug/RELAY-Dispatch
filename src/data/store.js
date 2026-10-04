@@ -716,9 +716,8 @@ class DataStore {
     if (this.cache.formTemplates.length === 0) {
       await this.seedFormTemplates();
     }
-    if (this.cache.technicians.length === 0) {
-      await this.seedDefaultTechnicians();
-    }
+
+    await this.migrateLocalSingleUser();
 
     this.migrateChildJobNumbers();
     this.repairInvoiceIssueDates();
@@ -2536,7 +2535,8 @@ class DataStore {
               color: currentUser.color || '#FF5C00',
               userTypeId: currentUser.userTypeId,
               email: currentUser.email || '',
-              username: currentUser.username || ''
+              username: currentUser.username || '',
+              startLocation: this._localStartLocation()
             }];
           }
         }
@@ -3241,6 +3241,28 @@ class DataStore {
   // Writes profiles.start_location directly (the technicians update() path goes
   // through the invite-user edge function, which doesn't carry this field).
   // Pass null to clear the override (falls back to the company office).
+  //
+  // Local (single-user) installs keep no technicians table — getAll() synthesises the
+  // owner's row from localStorage — so the override is kept on the local account record
+  // and surfaced through that synthesised row instead.
+  _localAccountRecord() {
+    try {
+      const accounts = JSON.parse(localStorage.getItem('relay_accounts') || '[]');
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      const list = Array.isArray(accounts) ? accounts : [];
+      const index = list.findIndex(a => a && a.id === currentUser?.companyId);
+      return index === -1 ? null : { list, index, account: list[index] };
+    } catch (e) {
+      console.error('Error reading local accounts:', e);
+      return null;
+    }
+  }
+
+  _localStartLocation() {
+    const record = this._localAccountRecord();
+    return (record && record.account.startLocation) || null;
+  }
+
   async setStartLocation(startLocation) {
     const currentUser = typeof localStorage !== 'undefined'
       ? JSON.parse(localStorage.getItem('currentUser') || 'null') : null;
@@ -3256,8 +3278,16 @@ class DataStore {
     }
 
     if (!this.companyId || this.companyId.startsWith('acct_')) {
-      // Local mode: persist with the rest of the technician record
-      await this.writeRecordToIndexedDB?.('technicians', techs[i]).catch?.(() => {});
+      // Local mode: persist on the local account record, because the synthesised
+      // technicians row that reads it back is rebuilt from localStorage every time.
+      const record = this._localAccountRecord();
+      if (record) {
+        record.list[record.index] = { ...record.account, startLocation };
+        localStorage.setItem('relay_accounts', JSON.stringify(record.list));
+        return;
+      }
+      // Local account record missing: fall back to the technician record itself.
+      if (i !== -1) await this.writeRecordToIndexedDB?.('technicians', techs[i]).catch?.(() => {});
       return;
     }
     const { error } = await supabase
@@ -3446,37 +3476,45 @@ class DataStore {
     if (error) console.error('Error seeding default user types:', error);
   }
 
-  async seedDefaultTechnicians() {
-    const companyId = this.companyId;
-    // Demo staff are a local-account fixture. Cloud tenants get real profiles
-    // from signup or the invite-user function; clients cannot insert into
-    // `profiles` once RLS is enforced (see 030_rls_hardening.sql).
-    if (!companyId || !companyId.startsWith('acct_')) return;
-    const adminTypeId = `${companyId}_ut_admin`;
-    const managerTypeId = `${companyId}_ut_manager`;
-    const techTypeId = `${companyId}_ut_tech`;
-    const officeTypeId = `${companyId}_ut_office`;
+  // Local mode is single-user: one person, one profile, one machine. This pass
+  // clears out what the old multi-user local mode left behind — per-technician
+  // login credentials, the deployment-type marker and the legacy
+  // `local_multiuser` session flag (rewritten to `local`). Staff records
+  // themselves stay put, so a later cloud upgrade still carries the roster
+  // across. Safe to re-run on every boot.
+  async migrateLocalSingleUser() {
+    if (this.companyId && !this.companyId.startsWith('acct_')) return;
 
-    // Demo logins are documented in DOCS.md. The shared password is stored as
-    // plaintext here and upgraded to a hash on the first successful sign-in.
-    const defaultTechs = [
-      { id: `${companyId}_tech_1`, name: 'Jake Morrow',  role: 'Senior Electrician',  color: '#3B82F6', userTypeId: adminTypeId,   payRate: 95.00,  email: 'jake@apexpowerservices.local',  phone: '0491 570 001', username: 'jake', password: '123456' },
-      { id: `${companyId}_tech_2`, name: 'Ryan Holt',    role: 'Service Manager',     color: '#10B981', userTypeId: managerTypeId, payRate: 85.00,  email: 'ryan@apexpowerservices.local',  phone: '0491 570 002', username: 'ryan', password: '123456' },
-      { id: `${companyId}_tech_3`, name: 'Sandra Okafor', role: 'Electrician',         color: '#8B5CF6', userTypeId: techTypeId,    payRate: 80.00,  email: 'sandra@apexpowerservices.local', phone: '0491 570 003', username: 'sandra', password: '123456' },
-      { id: `${companyId}_tech_4`, name: 'Dean Caruso',   role: 'Office Administrator',color: '#F59E0B', userTypeId: officeTypeId,  payRate: 50.00,  email: 'dean@apexpowerservices.local',  phone: '0491 570 004', username: 'dean', password: '123456' }
-    ];
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('relay_login_mode') === 'local_multiuser') {
+      localStorage.setItem('relay_login_mode', 'local');
+    }
 
-    this.cache.technicians = defaultTechs;
-    this.emit('technicians', defaultTechs);
-
-    await this.writeAllToIndexedDB('technicians', defaultTechs);
-    if (this.folderSyncEnabled) {
-      this.writeCollectionToFolder('technicians', defaultTechs).catch(err => {
-        console.error('Error writing seeded technicians to local folder:', err);
+    let removedCredentials = false;
+    const techs = this.cache.technicians || [];
+    techs.forEach(tech => {
+      ['password', 'username', 'hasPassword'].forEach(field => {
+        if (field in tech) {
+          delete tech[field];
+          removedCredentials = true;
+        }
       });
+    });
+
+    if (removedCredentials) {
+      this.emit('technicians', techs);
+      await this.writeAllToIndexedDB('technicians', techs);
+      if (this.folderSyncEnabled) {
+        this.writeCollectionToFolder('technicians', techs).catch(err => {
+          console.error('Error writing migrated technicians to local folder:', err);
+        });
+      }
+    }
+
+    if (this.companySettings && 'localDeploymentType' in this.companySettings) {
+      delete this.companySettings.localDeploymentType;
+      await this.saveSettings(this.companySettings);
     }
   }
-
   async migrateLocalToCloud(companyId, adminUserId) {
     this.companyId = companyId;
     this.userId = adminUserId;

@@ -9,6 +9,8 @@ import { router } from '../router.js';
 import { store } from '../data/store.js';
 import { hasPermission } from '../utils/permissions.js';
 import { resolveSettingsTab } from '../utils/settingsTabs.js';
+import { showCloudUpgradePrompt, CLOUD_REQUIRED_TOOLTIP, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_TOOLTIP, COMING_SOON_SETTINGS_TABS } from './CloudUpgrade.js';
+import { showToast } from './Notifications.js';
 
 // Primary sections. Items without `items[]` are direct pages (no submenu);
 // items with `items[]` open a secondary panel.
@@ -85,7 +87,6 @@ export function createSidebar() {
   if (railCollapsed) sidebar.classList.add('rail-collapsed');
 
   const settings = store.getSettings();
-  const local = isLocalMode();
 
   // --- Primary rail items ---
   let railHtml = '';
@@ -98,9 +99,8 @@ export function createSidebar() {
           <span class="rail-caret material-icons-outlined" aria-hidden="true">chevron_right</span>
         </button>`;
     } else {
-      const disabled = local && item.id === 'documents';
       railHtml += `
-        <button class="rail-item rail-page ${disabled ? 'disabled-local' : ''}" data-path="${item.path}" data-id="${item.id}" id="rail-${item.id}" title="${item.label}" ${disabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
+        <button class="rail-item rail-page" data-path="${item.path}" data-id="${item.id}" id="rail-${item.id}" title="${item.label}">
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
           <span class="nav-label">${item.label}</span>
         </button>`;
@@ -113,9 +113,8 @@ export function createSidebar() {
     if (!item.category) return;
     let itemsHtml = '';
     item.items.forEach(child => {
-      const disabled = local && child.id === 'documents';
       itemsHtml += `
-        <button class="submenu-item ${disabled ? 'disabled-local' : ''}" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}" ${disabled ? 'data-tooltip="Requires Cloud Account" data-tooltip-pos="right"' : ''}>
+        <button class="submenu-item" data-path="${child.path}" data-id="${child.id}" id="nav-${child.id}">
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${child.icon}</span></span>
           <span class="nav-label">${child.label}</span>
           ${child.hasChildren ? `<span class="rail-caret material-icons-outlined" aria-hidden="true" style="font-size:16px;opacity:0.45;flex:none;margin-left:auto">chevron_right</span>` : ''}
@@ -131,17 +130,18 @@ export function createSidebar() {
       </div>`;
   });
 
+  const localFooter = isLocalMode();
   sidebar.innerHTML = `
     <div class="sidebar-rail">
       <nav class="rail-nav" id="rail-nav">${railHtml}</nav>
       <div class="sidebar-footer">
-        <button class="sidebar-profile" id="sidebar-profile" title="View profile">
+        <${localFooter ? 'div' : 'button'} class="sidebar-profile${localFooter ? ' sidebar-profile-static' : ''}" id="sidebar-profile" title="${localFooter ? 'Local account' : 'View profile'}">
           <span class="sidebar-profile-avatar" id="sidebar-profile-avatar" aria-hidden="true"><span class="material-icons-outlined">account_circle</span></span>
           <span class="sidebar-profile-info">
             <span class="sidebar-profile-name" id="sidebar-profile-name">Loading…</span>
             <span class="sidebar-profile-role" id="sidebar-profile-role">Role</span>
           </span>
-        </button>
+        </${localFooter ? 'div' : 'button'}>
         <button id="btn-logout" class="rail-item rail-page">
           <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">logout</span></span>
           <span class="nav-label">Logout</span>
@@ -177,15 +177,25 @@ export function createSidebar() {
     const navBtn = e.target.closest('[data-path]');
     if (navBtn) {
       e.preventDefault();
-      if (navBtn.classList.contains('disabled-local')) { e.stopPropagation(); return; }
+      if (navBtn.classList.contains('disabled-local')) {
+        // Gated page: explain what stands in the way instead of navigating nowhere.
+        e.stopPropagation();
+        const labelEl = navBtn.querySelector('.nav-label');
+        const label = labelEl ? labelEl.textContent.trim() : '';
+        // Unshipped features aren't a cloud upsell, so they just say so.
+        if (navBtn.dataset.comingSoon) showToast(`${label} is coming soon.`, 'info');
+        else showCloudUpgradePrompt(label);
+        return;
+      }
       const path = navBtn.dataset.path;
       if (path) router.navigate(path);
     }
   });
 
-  // Profile (footer, above Logout).
+  // Profile (footer, above Logout). Local accounts have no profile page, so their
+  // footer block stays a plain identity label with no click target.
   const profileBtn = sidebar.querySelector('#sidebar-profile');
-  if (profileBtn) profileBtn.addEventListener('click', () => router.navigate('/profile'));
+  if (profileBtn && !localFooter) profileBtn.addEventListener('click', () => router.navigate('/profile'));
   window.addEventListener('relay-profile-updated', () => updateSidebarProfile(sidebar));
   updateSidebarProfile(sidebar);
 
@@ -297,12 +307,14 @@ export function getContextualMenu(hash) {
   if (resource === 'settings') {
     // Company-type gating mirrors Settings.js: every tab stays visible, but the
     // ones that don't apply to the current account type are greyed out (disabled)
-    // instead of hidden — so users can see what other plans unlock. Keep this in
-    // sync with the flags computed in renderSettings() (src/pages/Settings.js).
+    // instead of hidden — so users can see what other plans unlock. The cloud-only
+    // tab list itself lives in CloudUpgrade.js and renderSettings() guards the same
+    // ids, so a deep link can't open a greyed-out page.
     const local = isLocalMode();
-    const deploymentType = (store.getSettings().localDeploymentType) || 'single_user';
-    const portalDisabled = local;                                     // portals are cloud-only
-    const usersDisabled = local && deploymentType === 'single_user';  // needs cloud or multi-user local
+    const gate = (id) => (local && CLOUD_ONLY_SETTINGS_TABS[id] ? { disabled: true, tooltip: CLOUD_REQUIRED_TOOLTIP } : {});
+    // Unshipped features are greyed out for cloud accounts too, so they use their
+    // own hint — offering a cloud upgrade for them would promise the wrong thing.
+    const soon = (id) => (COMING_SOON_SETTINGS_TABS[id] ? { disabled: true, tooltip: COMING_SOON_TOOLTIP, comingSoon: true } : {});
 
     const groups = [
       {
@@ -310,8 +322,8 @@ export function getContextualMenu(hash) {
         items: [
           { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
           { id: 'billing', icon: 'credit_card', label: 'Plan & Billing', path: '/settings?tab=billing' },
-          { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
-          { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', disabled: portalDisabled, tooltip: 'Requires Cloud Account' },
+          { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', ...gate('portal') },
+          { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', ...gate('portal_contractor') },
           { id: 'local_storage', icon: 'folder', label: 'Local Storage', path: '/settings?tab=local_storage' },
           { id: 'system', icon: 'tune', label: 'System Options', path: '/settings?tab=system' }
         ]
@@ -321,16 +333,16 @@ export function getContextualMenu(hash) {
         items: [
           { id: 'templates_forms', icon: 'description', label: 'Templates & Forms', path: '/settings?tab=templates_forms' },
           { id: 'invoices_quotes', icon: 'receipt_long', label: 'Quotes & Invoices', path: '/settings?tab=invoices_quotes' },
-          { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', disabled: local, tooltip: 'Requires Cloud Account' },
-          { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', disabled: local, tooltip: 'Requires Cloud Account' }
+          { id: 'payments', icon: 'payments', label: 'Payments', path: '/settings?tab=payments', ...gate('payments') },
+          { id: 'email', icon: 'email', label: 'Email & Domain', path: '/settings?tab=email', ...gate('email') }
         ]
       },
       {
         id: 'people', label: 'People', icon: 'groups',
         items: [
-          { id: 'users', icon: 'group', label: 'Users', path: '/settings?tab=users', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
-          { id: 'user_types', icon: 'admin_panel_settings', label: 'User Types & Permissions', path: '/settings?tab=user_types', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
-          { id: 'password_recovery', icon: 'lock_reset', label: 'Password Recovery', path: '/settings?tab=password_recovery', disabled: usersDisabled, tooltip: 'Requires Cloud Account or Multi-User Local' },
+          { id: 'users', icon: 'group', label: 'Users', path: '/settings?tab=users', ...gate('users') },
+          { id: 'user_types', icon: 'admin_panel_settings', label: 'User Types & Permissions', path: '/settings?tab=user_types', ...gate('user_types') },
+          { id: 'password_recovery', icon: 'lock_reset', label: 'Password Recovery', path: '/settings?tab=password_recovery', ...gate('password_recovery') },
           { id: 'suppliers', icon: 'local_shipping', label: 'Suppliers', path: '/settings?tab=suppliers' }
         ]
       },
@@ -339,7 +351,7 @@ export function getContextualMenu(hash) {
         items: [
           { id: 'materials', icon: 'inventory_2', label: 'Materials & Catalog', path: '/settings?tab=materials' },
           { id: 'storage_options', icon: 'warehouse', label: 'Storage Locations', path: '/settings?tab=storage_options' },
-          { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers' },
+          { id: 'cost_centers', icon: 'account_balance', label: 'Cost Centers & Xero', path: '/settings?tab=cost_centers', ...soon('cost_centers') },
           { id: 'tax', icon: 'percent', label: 'Tax & Labor Rates', path: '/settings?tab=tax' }
         ]
       }
@@ -434,7 +446,10 @@ export function getContextualMenu(hash) {
 
   // Leads List (/leads)
   if (resource === 'leads' && !id) {
-    const currentTab = activeTab || 'Internal';
+    const local = isLocalMode();
+    // The Marketplace is a cloud-only lead source, so its tab is greyed out for
+    // local accounts. LeadsList.js falls back to Internal for the same reason.
+    const currentTab = activeTab === 'Marketplace' && local ? 'Internal' : (activeTab || 'Internal');
     return {
       railId: 'cat-workflow',
       headerTitle: 'Leads',
@@ -443,7 +458,7 @@ export function getContextualMenu(hash) {
       backLabel: 'Back to Workflow',
       items: [
         { id: 'Internal', icon: 'business', label: 'Internal', path: '/leads?tab=Internal' },
-        { id: 'Marketplace', icon: 'storefront', label: 'Marketplace', path: '/leads?tab=Marketplace' }
+        { id: 'Marketplace', icon: 'storefront', label: 'Marketplace', path: '/leads?tab=Marketplace', disabled: local, tooltip: CLOUD_REQUIRED_TOOLTIP }
       ],
       activeTab: currentTab
     };
@@ -710,13 +725,21 @@ function renderContextualItems(contextual) {
 }
 
 function renderSubmenuItem(contextual, item) {
-  return `
-    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}" ${item.disabled ? `data-tooltip="${escapeHTML(item.tooltip || 'Not available for this account type')}" data-tooltip-pos="right"` : ''} style="display:flex; align-items:center; width:100%">
+  const button = `
+    <button class="submenu-item ${contextual.activeTab === item.id ? 'active' : ''} ${item.disabled ? 'disabled-local' : ''}" data-path="${item.path}"${item.comingSoon ? ' data-coming-soon="true"' : ''} style="display:flex; align-items:center; width:100%">
       <span class="nav-icon"><span class="material-icons-outlined" aria-hidden="true">${item.icon}</span></span>
       <span class="nav-label">${escapeHTML(item.label)}</span>
       ${item.badge ? `<span class="badge badge-primary" style="font-size:10px;padding:2px 6px;border-radius:10px;margin-left:auto">${item.badge}</span>` : ''}
       ${item.hasChildren ? `<span class="rail-caret material-icons-outlined" aria-hidden="true" style="font-size:16px;opacity:0.45;flex:none;margin-left:auto">chevron_right</span>` : ''}
     </button>`;
+
+  if (!item.disabled) return button;
+
+  // A gated item fades with `opacity`, which would fade its own ::after tooltip
+  // along with it, so the tooltip hangs off this (undimmed) wrapper instead.
+  // `disabled-local` is the shared grey-out class for both gate reasons.
+  const tooltip = escapeHTML(item.tooltip || 'Not available for this account type');
+  return `<div class="gated-nav-item" data-tooltip="${tooltip}" data-tooltip-pos="right">${button}</div>`;
 }
 
 // Show a section's submenu panel and mark its rail item active.
@@ -882,19 +905,6 @@ export function updateSidebarAccess(sidebarElement) {
     if (!labelEl) return;
     const label = labelEl.textContent.trim();
     if (label === 'Dashboard' || label === 'Notifications') { item.style.display = ''; return; }
-    // Re-evaluate the local-mode gate (Documents requires a cloud account) so a
-    // sidebar built before a cloud login is un-disabled once the cloud session is active.
-    if (label === 'Documents') {
-      const disabled = isLocalMode();
-      item.classList.toggle('disabled-local', disabled);
-      if (disabled) {
-        item.setAttribute('data-tooltip', 'Requires Cloud Account');
-        item.setAttribute('data-tooltip-pos', 'right');
-      } else {
-        item.removeAttribute('data-tooltip');
-        item.removeAttribute('data-tooltip-pos');
-      }
-    }
     const canView = hasPermission(label, 'view') || hasPermission(label, 'view_own');
     item.style.display = canView ? '' : 'none';
   });

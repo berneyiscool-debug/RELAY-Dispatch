@@ -23,11 +23,6 @@ export function isPasswordHash(value) {
   return typeof value === 'string' && HASH_PATTERN.test(value);
 }
 
-/** True when a local record has a password stored (hashed, or legacy plaintext). */
-export function hasLocalPassword(record) {
-  return !!(record && typeof record.password === 'string' && record.password);
-}
-
 /**
  * Check a typed password against the value stored on a local record.
  *
@@ -35,8 +30,8 @@ export function hasLocalPassword(record) {
  * holds a legacy plaintext password, so the caller can replace it with its hash
  * on the way through and nobody is locked out by the switch to hashing.
  *
- * A record with no password at all is never a match: those users go through the
- * first-run "set your password" step instead of a shared default.
+ * A record with no password at all is never a match, so a profile that has not
+ * had a password set yet cannot be opened by typing anything.
  */
 export async function verifyPassword(stored, input) {
   if (typeof input !== 'string' || !input) return { ok: false, needsUpgrade: false };
@@ -47,14 +42,4 @@ export async function verifyPassword(stored, input) {
   // stored hash can never be replayed as the password.
   if (!isPasswordHash(stored) && stored === input) return { ok: true, needsUpgrade: true };
   return { ok: false, needsUpgrade: false };
-}
-
-/**
- * Verify and, when the record still holds legacy plaintext, rewrite it as a
- * hash before returning. `write(hashedPassword)` persists the upgrade.
- */
-export async function verifyAndUpgrade(write, stored, input) {
-  const { ok, needsUpgrade } = await verifyPassword(stored, input);
-  if (ok && needsUpgrade) await write(await hashPassword(input));
-  return ok;
 }

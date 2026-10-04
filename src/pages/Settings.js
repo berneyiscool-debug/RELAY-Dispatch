@@ -10,9 +10,9 @@ import { renderStorageOptions } from '../components/StorageOptions.js';
 import { renderKitTypes } from '../components/KitTypes.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
+import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
-import { FLAGS } from '../utils/flags.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
@@ -22,8 +22,9 @@ import { resolveSettingsTab, SETTINGS_DEFAULT_TAB } from '../utils/settingsTabs.
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 import { renderLeadProfileSetup } from './leads/leadProfile.js';
 import { hashPassword, verifyPassword } from './auth/password.js';
-import { buildLocalUser } from './auth/localUsers.js';
 import { setSessionUser, clearSessionUser } from './auth/session.js';
+import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
+import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_SETTINGS_TABS } from '../components/CloudUpgrade.js';
 
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
@@ -88,46 +89,6 @@ const BUSINESS_COLLECTIONS = ['customers', 'quotes', 'jobs', 'invoices', 'assets
 
 function hasAnyBusinessData() {
   return BUSINESS_COLLECTIONS.some(col => (store.getAll(col) || []).length > 0);
-}
-
-// Save a portable JSON copy of every collection, used before destructive actions
-function downloadDataSnapshot(prefix = 'relay-data') {
-  const snapshot = store.exportSnapshot();
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  const fileName = `${prefix}-${stamp}.json`;
-  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return fileName;
-}
-
-// Standard "download a copy first" opt-out used by every destructive action
-function backupCheckboxHtml(prefix) {
-  return `
-    <label style="display:flex; align-items:flex-start; gap:8px; color:var(--text-secondary); margin-bottom:16px; cursor:pointer;">
-      <input type="checkbox" id="danger-backup-first" checked data-backup-prefix="${escapeHTML(prefix)}" style="margin-top:2px;" />
-      <span>Download a copy of my data (JSON) before continuing</span>
-    </label>
-  `;
-}
-
-function runBackupIfRequested(root, fallbackPrefix) {
-  const box = root.querySelector('#danger-backup-first');
-  if (!box || !box.checked) return null;
-  const prefix = box.dataset.backupPrefix || fallbackPrefix;
-  try {
-    return downloadDataSnapshot(prefix);
-  } catch (err) {
-    console.error('Snapshot download failed:', err);
-    showToast('Could not download your data copy. Continuing.', 'error');
-    return null;
-  }
 }
 
 // Helper to render visual timeline
@@ -248,245 +209,25 @@ export function renderSettings(container) {
 
   const isLocalMode = !store.companyId || store.companyId.startsWith('acct_');
   const settings = store.getSettings();
-  const localDeploymentType = settings.localDeploymentType || 'single_user';
 
-  const isUsersDisabled = isLocalMode && localDeploymentType === 'single_user';
-  const isPortalDisabled = isLocalMode;
-  const isCloudGated = isLocalMode; // online payments + email are cloud-only
-
-  if (isUsersDisabled && activeTab === 'users') {
+  // Cloud-only tabs open the upgrade nudge instead of silently landing on Company.
+  // The tab list lives in CloudUpgrade.js, which the sidebar grey-out also reads.
+  // Users, User Types & Permissions and Password Recovery all render under the
+  // 'users' tab id, so the sub-tab is the more specific lookup for those.
+  if (isLocalMode) {
+    const gatedTab = CLOUD_ONLY_SETTINGS_TABS[activeTab === 'users' ? usersSubTab : activeTab];
+    if (gatedTab) {
+      activeTab = 'company';
+      showCloudUpgradePrompt(gatedTab);
+    }
+  }
+  // Unshipped tabs are greyed out in the sidebar for every account type, so a deep
+  // link explains itself on Company instead of opening the unfinished page. The
+  // renderers below stay in place for when the feature ships.
+  if (COMING_SOON_SETTINGS_TABS[activeTab]) {
+    showToast(`${COMING_SOON_SETTINGS_TABS[activeTab]} is coming soon.`, 'info');
     activeTab = 'company';
   }
-  if (isPortalDisabled && activeTab === 'portal') {
-    activeTab = 'company';
-  }
-  if (isPortalDisabled && activeTab === 'portal_contractor') {
-    activeTab = 'company';
-  }
-  if (isCloudGated && activeTab === 'payments') {
-    activeTab = 'company';
-  }
-  if (isCloudGated && activeTab === 'email') {
-    activeTab = 'company';
-  }
-
-  const openMigrationModal = () => {
-    const modalContent = document.createElement('div');
-    const expectedName = (store.getSettings().name || '').trim();
-    modalContent.innerHTML = `
-      <form id="convert-cloud-form" style="display:flex; flex-direction:column; gap:16px;">
-        <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); display:flex; gap:8px;">
-          <span class="material-icons-outlined" style="color:var(--color-danger);">warning</span>
-          <div>
-            <strong>CRITICAL WARNING:</strong> Converting to Cloud Sync is a permanent, one-way transition. Once converted, you cannot revert this profile back to a local/offline account. All data will be migrated to the secure cloud database.
-          </div>
-        </div>
-
-        <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; color:var(--color-info); display:flex; gap:8px;">
-          <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
-          <div>
-            Configure your cloud administrator credentials. This username and password will be your new secure login.
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" style="font-weight:600;">${expectedName ? `Type <strong>${escapeHTML(expectedName)}</strong> to confirm` : 'Business Name'}</label>
-          <input class="form-input" id="migrate-company-name" required autocomplete="off" placeholder="${escapeHTML(expectedName || 'Your business name')}" />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" style="font-weight:600;">Administrator Full Name</label>
-          <input class="form-input" id="migrate-admin-name" required placeholder="e.g. John Doe" />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" style="font-weight:600;">Administrator Phone Number</label>
-          <input class="form-input" id="migrate-admin-phone" required placeholder="e.g. 0412 345 678" />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" style="font-weight:600;">Email Address (Username)</label>
-          <input class="form-input" type="email" id="migrate-admin-email" required placeholder="e.g. admin@yourcompany.com" />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" style="font-weight:600;">Password</label>
-          <input class="form-input" type="password" id="migrate-admin-password" required minlength="6" placeholder="At least 6 characters" />
-        </div>
-
-        ${backupCheckboxHtml('relay-backup-before-cloud-upgrade')}
-
-        <div id="migration-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
-          <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
-          <span id="migration-error-text"></span>
-        </div>
-
-        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
-          <button type="button" class="btn btn-secondary" id="btn-migrate-cancel">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btn-migrate-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
-            <span class="material-icons-outlined" id="submit-icon" style="font-size:18px;">cloud_done</span>
-            <span id="submit-text">Register & Start Migration</span>
-          </button>
-        </div>
-      </form>
-    `;
-
-    const { close } = showModal({
-      title: 'Register & Migrate to Cloud',
-      content: modalContent,
-      size: 'modal-md'
-    });
-
-    modalContent.querySelector('#btn-migrate-cancel').addEventListener('click', close);
-
-    const form = modalContent.querySelector('#convert-cloud-form');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const errorEl = modalContent.querySelector('#migration-error');
-      const errorTextEl = modalContent.querySelector('#migration-error-text');
-      const submitBtn = modalContent.querySelector('#btn-migrate-submit');
-      const cancelBtn = modalContent.querySelector('#btn-migrate-cancel');
-      const submitText = modalContent.querySelector('#submit-text');
-      const submitIcon = modalContent.querySelector('#submit-icon');
-
-      errorEl.style.display = 'none';
-      submitBtn.disabled = true;
-      cancelBtn.disabled = true;
-      submitText.textContent = 'Migrating to Cloud...';
-      submitIcon.className = 'material-icons-outlined spinner';
-      submitIcon.textContent = 'sync';
-      submitIcon.style.animation = 'spin 1s linear infinite';
-
-      const confirmName = modalContent.querySelector('#migrate-company-name').value.trim();
-      const adminName = modalContent.querySelector('#migrate-admin-name').value.trim();
-      const adminPhone = modalContent.querySelector('#migrate-admin-phone').value.trim();
-      const email = modalContent.querySelector('#migrate-admin-email').value.trim();
-      const password = modalContent.querySelector('#migrate-admin-password').value;
-
-      try {
-        if (!confirmName) {
-          throw new Error('Enter your business name to continue.');
-        }
-        if (expectedName && confirmName !== expectedName) {
-          throw new Error('The business name does not match. Type it exactly as shown to confirm.');
-        }
-        const companyName = confirmName;
-        const backupFile = runBackupIfRequested(modalContent, 'relay-backup-before-cloud-upgrade');
-
-        const settings = store.getSettings();
-        settings.name = companyName;
-        await store.saveSettings(settings);
-
-        const { supabase } = await import('../utils/supabase.js');
-
-        const { data: authData, error: authErr } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              name: adminName,
-              phone: adminPhone
-            }
-          }
-        });
-        if (authErr) throw authErr;
-
-        if (!authData.user) {
-          throw new Error('Verification required or signup was blocked. Check your email inbox.');
-        }
-
-        const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
-          user_id: authData.user.id,
-          company_name: companyName,
-          admin_name: adminName,
-          admin_phone: adminPhone
-        });
-        if (rpcError) throw rpcError;
-
-        const activeAccountId = sessionStorage.getItem('relay_active_account');
-        await store.migrateLocalToCloud(companyId, authData.user.id);
-
-        if (activeAccountId) {
-          const localAccountsKey = 'relay_accounts';
-          let localAccounts = [];
-          try {
-            const stored = localStorage.getItem(localAccountsKey);
-            if (stored) {
-              localAccounts = JSON.parse(stored);
-            }
-          } catch (e) {
-            console.error('Error reading local accounts:', e);
-          }
-          localAccounts = localAccounts.filter(a => a.id !== activeAccountId);
-          localStorage.setItem(localAccountsKey, JSON.stringify(localAccounts));
-
-          store.deleteLocalAccountData(activeAccountId);
-        }
-
-        const { data: profile, error: profileErr } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', authData.user.id)
-          .single();
-        if (profileErr) throw profileErr;
-
-        const user = {
-          id: profile.id,
-          companyId: profile.company_id,
-          name: profile.name,
-          role: profile.role,
-          userTypeName: 'Admin',
-          userTypeId: `${profile.company_id}_ut_admin`,
-          color: profile.color || '#FF5C00'
-        };
-
-        setSessionUser(user);
-        sessionStorage.removeItem('relay_active_account');
-
-        showToast('Migration completed successfully.', 'success');
-        close();
-
-        const summary = document.createElement('div');
-        summary.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-        summary.innerHTML = `
-          <p style="margin-bottom:12px">Your profile now runs on RELAY Cloud, and every local record has been copied across.</p>
-          <ul style="margin:0 0 12px 18px; color:var(--text-secondary); line-height:1.7;">
-            <li>Signed in as <strong>${escapeHTML(email)}</strong></li>
-            <li>Company: <strong>${escapeHTML(companyName)}</strong></li>
-            ${backupFile ? `<li>A copy of your local data was saved as <strong>${escapeHTML(backupFile)}</strong></li>` : ''}
-          </ul>
-          <p style="color:var(--text-secondary)">Next: add team members from Settings → Users, or open RELAY on another device and sign in with the same email address.</p>
-        `;
-
-        showModal({
-          title: 'Migration Complete',
-          content: summary,
-          size: 'modal-md',
-          // The store is already reading from the cloud company, so reload on any dismissal
-          onClose: () => {
-            window.location.hash = '#/';
-            window.location.reload();
-          },
-          actions: [
-            { label: 'Open RELAY', className: 'btn-primary', onClick: (closeSummary) => closeSummary() }
-          ]
-        });
-
-      } catch (err) {
-        console.error('Migration failed:', err);
-        errorTextEl.textContent = err.message || 'An error occurred during migration.';
-        errorEl.style.display = 'flex';
-
-        submitBtn.disabled = false;
-        cancelBtn.disabled = false;
-        submitText.textContent = 'Register & Start Migration';
-        submitIcon.className = 'material-icons-outlined';
-        submitIcon.textContent = 'cloud_done';
-        submitIcon.style.animation = '';
-      }
-    });
-  };
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
@@ -557,6 +298,8 @@ export function renderSettings(container) {
 
 
     if (activeTab === 'cost_centers') {
+      // Unreachable while cost_centers is in COMING_SOON_SETTINGS_TABS (the guard
+      // above rewrites it to Company) — kept for when the Xero integration ships.
       renderCostCentersTab(tc);
       return;
     }
@@ -638,12 +381,13 @@ export function renderSettings(container) {
             </div>
           </div>
 
+          ${isLocalMode ? '' : `
           <div class="card" style="max-width:100%">
             <div class="card-header"><h4>Lead & Market Profile</h4></div>
             <div class="card-body">
               <div id="lead-profile-root"></div>
             </div>
-          </div>
+          </div>`}
         `;
 
         // Company address autocomplete — same behaviour as customer/supplier
@@ -739,8 +483,11 @@ export function renderSettings(container) {
 
       // The company tab is one details card plus the lead-profile card, so a full
       // redraw has to re-run both (the save handler refreshes through this too).
+      // Local accounts get no lead-profile card — it only feeds the Cloud-only
+      // leads marketplace — so there is nothing else to redraw for them.
       const renderCompanyTabAll = () => {
         renderCompanyTab();
+        if (isLocalMode) return;
         renderLeadProfileSetup(tc.querySelector('#lead-profile-root')).catch((err) => {
           console.error('Error rendering lead profile setup:', err);
         });
@@ -748,7 +495,7 @@ export function renderSettings(container) {
 
       renderCompanyTabAll();
     } else if (activeTab === 'users') {
-      renderUsersSettings(tc);
+      renderUsersSettings(tc, openMigrationModal);
     } else if (activeTab === 'materials') {
       renderMaterialsSettings(tc);
     } else if (activeTab === 'storage_options') {
@@ -1233,17 +980,8 @@ export function renderSettings(container) {
                 <div class="card-header"><h4>Deployment Profile</h4></div>
                 <div class="card-body">
                   <p style="color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.4;">
-                    This profile keeps all of its data on this device. The upgrades below change that permanently — RELAY downloads a copy of your data before it starts and shows you a summary when it is done.
+                    This profile keeps all of its data on this device, and only one person signs in to it. The upgrade below changes that permanently — RELAY downloads a copy of your data before it starts and shows you a summary when it is done.
                   </p>
-                  ${localDeploymentType === 'single_user' ? `
-                    <button class="btn btn-secondary" id="btn-convert-multiuser" style="width:100%; justify-content:center; margin-bottom:12px; border:1px solid var(--border-color)">
-                      <span class="material-icons-outlined">group_add</span>
-                      <span style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
-                        <span style="font-weight:600;">Add team members</span>
-                        <span style="color:var(--text-tertiary); font-weight:400;">Multi-user sync across your local network</span>
-                      </span>
-                    </button>
-                  ` : ''}
                   <button class="btn btn-secondary" id="btn-convert-cloud-action" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
                     <span class="material-icons-outlined">cloud_upload</span>
                     <span style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
@@ -1498,33 +1236,20 @@ export function renderSettings(container) {
                     let passwordVerified = false;
 
                     if (isLocalMode) {
-                      if (localDeploymentType === 'single_user') {
-                        const activeAccountId = sessionStorage.getItem('relay_active_account');
-                        const storedAccounts = await storageGet('relay_accounts') || [];
-                        const acct = storedAccounts.find(a => a.id === activeAccountId);
-                        if (acct && acct.hasPassword) {
-                          const hashedInput = await hashPassword(passwordInput);
-                          if (hashedInput === acct.passwordHash) {
-                            passwordVerified = true;
-                          } else {
-                            throw new Error('Incorrect administrator password.');
-                          }
-                        } else {
-                          // No password set
-                          passwordVerified = true;
-                        }
-                      } else {
-                        // local_multiuser
-                        const techs = store.getAll('technicians') || [];
-                        const currentTech = techs.find(t => t.id === currentUser.id);
-                        if (!currentTech?.password) {
-                          // No password set — nothing to check against
-                          passwordVerified = true;
-                        } else if ((await verifyPassword(currentTech.password, passwordInput)).ok) {
+                      // A local profile has one owner password, stored on the
+                      // launcher account rather than on a staff record.
+                      const activeAccountId = sessionStorage.getItem('relay_active_account');
+                      const storedAccounts = await storageGet('relay_accounts') || [];
+                      const acct = storedAccounts.find(a => a.id === activeAccountId);
+                      if (acct && acct.hasPassword) {
+                        if ((await verifyPassword(acct.passwordHash, passwordInput)).ok) {
                           passwordVerified = true;
                         } else {
                           throw new Error('Incorrect administrator password.');
                         }
+                      } else {
+                        // No password set
+                        passwordVerified = true;
                       }
                     } else {
                       // Cloud mode
@@ -1597,197 +1322,6 @@ export function renderSettings(container) {
               }
             }
           ]
-        });
-      });
-
-      tc.querySelector('#btn-convert-multiuser')?.addEventListener('click', () => {
-        const content = document.createElement('div');
-        content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-
-        const techs = store.getAll('technicians') || [];
-        const companyId = store.companyId || '';
-        const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
-        const existingAdmin = techs.find(t => t.userTypeId === adminTypeId || t.role?.toLowerCase() === 'admin');
-
-        const currentTechName = existingAdmin ? existingAdmin.name : (currentUser.name && currentUser.name !== 'Local Admin' ? currentUser.name : '');
-        const currentTechUsernameOrEmail = existingAdmin ? (existingAdmin.email || existingAdmin.username || '') : '';
-        const expectedName = (store.getSettings().name || '').trim();
-
-        content.innerHTML = `
-          <form id="convert-multiuser-form" style="display:flex; flex-direction:column; gap:16px;">
-            <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); display:flex; gap:8px;">
-              <span class="material-icons-outlined" style="color:var(--color-danger);">warning</span>
-              <div>
-                <strong>CRITICAL WARNING:</strong> Converting to Multi-User Local Network Sync is a permanent, one-way transition. Once converted, you cannot revert this profile back to a single-user Local Admin profile.
-              </div>
-            </div>
-
-            <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; color:var(--color-info); display:flex; gap:8px;">
-              <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
-              <div>
-                Configure the administrator user credentials. This user will have admin access to add other users in the unlocked Users tab.
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">${expectedName ? `Type <strong>${escapeHTML(expectedName)}</strong> to confirm` : 'Business Name'}</label>
-              <input class="form-input" id="multiuser-company-name" required autocomplete="off" placeholder="${escapeHTML(expectedName || 'Your business name')}" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Administrator Full Name</label>
-              <input class="form-input" id="multiuser-admin-name" required value="${escapeHTML(currentTechName)}" placeholder="e.g. John Doe" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Administrator Email Address (Required)</label>
-              <input class="form-input" type="email" id="multiuser-admin-email" required value="${escapeHTML(currentTechUsernameOrEmail)}" placeholder="e.g. admin@yourcompany.com" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="font-weight:600;">Admin Password</label>
-              <input class="form-input" type="password" id="multiuser-admin-password" required minlength="6" placeholder="At least 6 characters" />
-            </div>
-
-            ${backupCheckboxHtml('relay-backup-before-upgrade')}
-
-            <div id="multiuser-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
-              <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
-              <span id="multiuser-error-text"></span>
-            </div>
-
-            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
-              <button type="button" class="btn btn-secondary" id="btn-multiuser-cancel">Cancel</button>
-              <button type="submit" class="btn btn-primary" id="btn-multiuser-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
-                <span class="material-icons-outlined" style="font-size:18px;">lan</span>
-                <span>Convert Company</span>
-              </button>
-            </div>
-          </form>
-        `;
-
-        const { close } = showModal({
-          title: "Convert to Multi-User Local Sync",
-          content: content,
-          size: "modal-md"
-        });
-
-        content.querySelector('#btn-multiuser-cancel').addEventListener('click', close);
-
-        const form = content.querySelector('#convert-multiuser-form');
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const errorEl = content.querySelector('#multiuser-error');
-          const errorTextEl = content.querySelector('#multiuser-error-text');
-          const submitBtn = content.querySelector('#btn-multiuser-submit');
-          const cancelBtn = content.querySelector('#btn-multiuser-cancel');
-
-          errorEl.style.display = 'none';
-          submitBtn.disabled = true;
-          cancelBtn.disabled = true;
-
-          const confirmName = content.querySelector('#multiuser-company-name').value.trim();
-          const adminName = content.querySelector('#multiuser-admin-name').value.trim();
-          const adminEmail = content.querySelector('#multiuser-admin-email').value.trim();
-          const adminPassword = content.querySelector('#multiuser-admin-password').value;
-
-          try {
-            if (!confirmName) {
-              throw new Error('Enter your business name to continue.');
-            }
-            if (expectedName && confirmName !== expectedName) {
-              throw new Error('The business name does not match. Type it exactly as shown to confirm.');
-            }
-            if (!adminName || !adminEmail || !adminPassword) {
-              throw new Error('All fields are required.');
-            }
-            if (adminPassword.length < 6) {
-              throw new Error('Password must be at least 6 characters.');
-            }
-
-            // The confirmation field must match the existing profile name, so the
-            // business name is never changed by this upgrade.
-            const businessName = expectedName || confirmName;
-            const backupFile = runBackupIfRequested(content, 'relay-backup-before-upgrade');
-
-            // 1. Update settings
-            const settings = store.getSettings();
-            settings.name = businessName;
-            settings.localDeploymentType = 'multi_user';
-            await store.saveSettings(settings);
-
-            // 2. Update launcher accounts businessName
-            const activeAccountId = sessionStorage.getItem('relay_active_account');
-            if (activeAccountId) {
-              const storedAccounts = await storageGet('relay_accounts') || [];
-              const acctIndex = storedAccounts.findIndex(a => a.id === activeAccountId);
-              if (acctIndex !== -1) {
-                storedAccounts[acctIndex].businessName = businessName;
-                await storageSet('relay_accounts', storedAccounts);
-              }
-            }
-
-            // 3. Create or update admin user in technicians
-            const companyId = store.companyId;
-            const adminTypeId = companyId.startsWith('acct_') ? `${companyId}_ut_admin` : 'ut_admin';
-            const techs = store.getAll('technicians') || [];
-            let adminTech = techs.find(t => t.userTypeId === adminTypeId || t.role?.toLowerCase() === 'admin');
-
-            if (!adminTech) {
-              adminTech = {
-                id: `${companyId}_tech_admin_created`,
-                role: 'Admin',
-                color: '#FF5C00',
-                userTypeId: adminTypeId,
-                payRate: 100.00,
-                phone: ''
-              };
-              techs.push(adminTech);
-            }
-
-            adminTech.name = adminName;
-            adminTech.username = adminEmail.split('@')[0];
-            adminTech.email = adminEmail;
-            adminTech.password = await hashPassword(adminPassword);
-
-            store.save('technicians', techs);
-
-            // 4. Update currentUser session in localStorage
-            setSessionUser(buildLocalUser(adminTech, { companyId, storeCompanyId: companyId }));
-
-            showToast('Converted to Multi-User Local Network Sync.', 'success');
-            close();
-            window.dispatchEvent(new CustomEvent('relay:settings-updated'));
-
-            const summary = document.createElement('div');
-            summary.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-            summary.innerHTML = `
-              <p style="margin-bottom:12px">This profile is now a multi-user local network profile.</p>
-              <ul style="margin:0 0 12px 18px; color:var(--text-secondary); line-height:1.7;">
-                <li>Administrator: <strong>${escapeHTML(adminName)}</strong> (${escapeHTML(adminEmail)})</li>
-                <li>Everyone signs in with their own account instead of the single Local Admin login.</li>
-                <li>Your existing data is unchanged and stays on this machine.</li>
-                ${backupFile ? `<li>A copy of your data was saved as <strong>${escapeHTML(backupFile)}</strong></li>` : ''}
-              </ul>
-              <p style="color:var(--text-secondary)">Next: add team members from Settings → Users.</p>
-            `;
-
-            showModal({
-              title: 'Upgrade Complete',
-              content: summary,
-              size: 'modal-md',
-              onClose: () => window.location.reload(),
-              actions: [
-                { label: 'Continue to RELAY', className: 'btn-primary', onClick: (closeSummary) => closeSummary() }
-              ]
-            });
-          } catch (err) {
-            console.error('Conversion failed:', err);
-            errorTextEl.textContent = err.message || 'An error occurred during conversion.';
-            errorEl.style.display = 'flex';
-            submitBtn.disabled = false;
-            cancelBtn.disabled = false;
-          }
         });
       });
 
@@ -2180,8 +1714,9 @@ export function renderSettings(container) {
     });
 
     tc.querySelectorAll('.btn-delete-template').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('Delete this template?')) {
+      btn.addEventListener('click', async () => {
+        const confirmed = await showConfirm('Delete this template?', { title: 'Delete Template', confirmLabel: 'Delete', danger: true });
+        if (confirmed) {
           store.delete('taskTemplates', btn.dataset.id);
           renderContent();
         }
@@ -2515,9 +2050,10 @@ export function renderSettings(container) {
 
         // 9. Remove item
         content.querySelectorAll('.btn-remove-task-tmpl-item').forEach(btn => {
-          btn.addEventListener('click', (e) => {
+          btn.addEventListener('click', async (e) => {
             const path = btn.dataset.path.split('-').map(Number);
-            if (confirm('Are you sure you want to delete this item and all its sub-tasks?')) {
+            const confirmed = await showConfirm('Are you sure you want to delete this item and all its sub-tasks?', { title: 'Delete Item', confirmLabel: 'Delete', danger: true });
+            if (confirmed) {
               if (path.length === 1) {
                 localTasks.splice(path[0], 1);
               } else {
@@ -2734,8 +2270,9 @@ export function renderSettings(container) {
     });
 
     tc.querySelectorAll('.btn-delete-quote-template').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('Delete this template?')) {
+      btn.addEventListener('click', async () => {
+        const confirmed = await showConfirm('Delete this template?', { title: 'Delete Template', confirmLabel: 'Delete', danger: true });
+        if (confirmed) {
           store.delete('quoteTemplates', btn.dataset.id);
           renderContent();
         }
@@ -2972,7 +2509,31 @@ export function renderSettings(container) {
     renderStorageOptions(tc.querySelector('#storage-options-section'));
   }
 
-  function renderUsersSettings(tc) {
+  // A local profile is one person on one machine, so there is no team to manage
+  // here — point at the cloud upgrade instead of an empty user list.
+  function renderLocalTeamNotice(tc, openMigrationModal) {
+    tc.innerHTML = `
+      <div class="card">
+        <div class="card-header"><h4>Team logins</h4></div>
+        <div class="card-body">
+          <p style="color:var(--text-secondary); margin-bottom:var(--space-md); line-height:1.5;">
+            This profile runs on this device, so it has a single owner sign-in and no staff logins to set up here. Team logins are available with RELAY Cloud, where everyone signs in with their own email address and permissions.
+          </p>
+          <button class="btn btn-primary" id="btn-local-team-upgrade" style="display:flex; align-items:center; justify-content:center; gap:8px;">
+            <span class="material-icons-outlined">cloud_upload</span> Move to cloud
+          </button>
+        </div>
+      </div>
+    `;
+    tc.querySelector('#btn-local-team-upgrade')?.addEventListener('click', () => openMigrationModal());
+  }
+
+  function renderUsersSettings(tc, openMigrationModal) {
+    if (isLocalAccount()) {
+      renderLocalTeamNotice(tc, openMigrationModal);
+      return;
+    }
+
     const techs = store.getAll('technicians');
     const pendingResets = store.getAll('passwordResetRequests') || [];
     const companySlug = store.getSettings().name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -3454,8 +3015,9 @@ export function renderSettings(container) {
     });
 
     tc.querySelectorAll('.delete-form-template').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete this form template? Existing job forms based on this template will remain but no new ones can be created.')) {
+      btn.addEventListener('click', async () => {
+        const confirmed = await showConfirm('Are you sure you want to delete this form template? Existing job forms based on this template will remain but no new ones can be created.', { title: 'Delete Form Template', confirmLabel: 'Delete', danger: true });
+        if (confirmed) {
           const id = btn.dataset.id;
           const filtered = store.getAll('formTemplates').filter(t => t.id !== id);
           store.save('formTemplates', filtered);
@@ -4208,8 +3770,17 @@ export function renderSettings(container) {
   // a folder here, cloud accounts mirror their records here as JSON.
   // currentUser is a renderSettings local, so it is passed in (same as renderBillingTab).
   function renderLocalStorageTab(tc, currentUser) {
-    if (isLocalAccount()) renderLocalFolderSync(tc);
-    else renderLocalBackup(tc, currentUser);
+    if (!isLocalAccount()) {
+      renderLocalBackup(tc, currentUser);
+      return;
+    }
+    // renderLocalFolderSync writes its host element, so each card owns a host.
+    tc.replaceChildren();
+    const folderHost = document.createElement('div');
+    const securityHost = document.createElement('div');
+    tc.append(folderHost, securityHost);
+    renderLocalFolderSync(folderHost);
+    renderLocalSecurity(securityHost, currentUser);
   }
 
   function renderLocalFolderSync(tc) {
@@ -4448,6 +4019,171 @@ export function renderSettings(container) {
     }
 
     render();
+  }
+
+  // Local accounts have no My Profile page, so the things that page used to own —
+  // the unlock PIN and the secret recovery question — live here instead. The
+  // dispatch start location is deliberately absent: resolving an address needs the
+  // Cloud geocoder, so the field could never be saved in local mode.
+  function renderLocalSecurity(host, currentUser) {
+    const RECOVERY_PRESETS = [
+      'What was the name of your first pet?',
+      'In what city or town did your parents meet?',
+      'What was the name of your first school?',
+      'What was your favorite childhood food?'
+    ];
+
+    let accounts = [];
+    let account = null;
+    let recoveryQuestion = '';
+    let hasPin = false;
+
+    const load = async () => {
+      accounts = (await storageGet('relay_accounts')) || [];
+      account = accounts.find(a => a.id === currentUser.companyId) || null;
+      recoveryQuestion = account?.recoveryQuestion || '';
+      hasPin = !!account?.hasPassword;
+    };
+
+    const render = () => {
+      const isCustom = !!recoveryQuestion && !RECOVERY_PRESETS.includes(recoveryQuestion);
+      const presetOptions = RECOVERY_PRESETS.map(q =>
+        `<option value="${escapeHTML(q)}" ${recoveryQuestion === q ? 'selected' : ''}>${escapeHTML(q)}</option>`
+      ).join('');
+
+      host.innerHTML = `
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:var(--space-lg); max-width:100%; align-items:start; margin-top:var(--space-lg);">
+          <div style="display:flex; flex-direction:column; gap:var(--space-lg);">
+
+            <div class="card">
+              <div class="card-header"><h4>Unlock PIN</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
+                  The PIN that locks and unlocks this local business profile on this machine.
+                </p>
+                <div class="form-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+                  <div class="form-group">
+                    <label class="form-label">New PIN / Password</label>
+                    <input type="password" id="local-security-new-pin" class="form-input" autocomplete="new-password"
+                      placeholder="Leave blank to remove PIN protection" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Confirm PIN / Password</label>
+                    <input type="password" id="local-security-confirm-pin" class="form-input" autocomplete="new-password"
+                      placeholder="Re-type the new PIN" />
+                  </div>
+                </div>
+                <p class="text-tertiary" style="margin:0 0 var(--space-base);">
+                  ${hasPin ? 'PIN protection is currently on.' : 'No PIN set — RELAY opens without a prompt on this machine.'}
+                </p>
+                <div style="display:flex; justify-content:flex-end;">
+                  <button class="btn btn-primary btn-sm" id="local-security-save-pin">Update PIN</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h4>Secret Recovery Question</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
+                  Answer this to reset your PIN if you ever forget it.
+                </p>
+                <div class="form-group">
+                  <label class="form-label">Recovery Question</label>
+                  <select id="local-security-recovery-select" class="form-select" style="width:100%">
+                    ${presetOptions}
+                    <option value="custom" ${isCustom ? 'selected' : ''}>Write a custom question...</option>
+                  </select>
+                </div>
+                <div class="form-group" id="local-security-recovery-custom-group" style="display:${isCustom ? 'block' : 'none'}">
+                  <label class="form-label">Custom Question</label>
+                  <input type="text" id="local-security-recovery-custom-question" class="form-input"
+                    placeholder="Type your custom question" value="${escapeHTML(isCustom ? recoveryQuestion : '')}" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Recovery Answer</label>
+                  <input type="password" id="local-security-recovery-answer" class="form-input"
+                    placeholder="Type answer (leave blank to keep current)" />
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                  <button class="btn btn-primary btn-sm" id="local-security-save-recovery">Save Recovery Settings</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="background:var(--content-bg);">
+            <div class="card-header"><h4>Where this is stored</h4></div>
+            <div class="card-body">
+              <p class="text-secondary" style="margin:0 0 var(--space-base); line-height:1.5;">
+                These settings belong to this machine only. Nothing here is sent anywhere.
+              </p>
+              <p class="text-tertiary" style="margin:0 0 var(--space-base); line-height:1.55;">
+                Your PIN and recovery answer are salted and hashed before they are written to this browser's
+                local database — RELAY never stores them in plain text.
+              </p>
+              <p class="text-tertiary" style="margin:0; line-height:1.55;">
+                Keep the recovery answer somewhere safe. It is the only way back in if the PIN is forgotten.
+              </p>
+            </div>
+          </div>
+        </div>
+      `;
+
+      attach();
+    };
+
+    const missingAccount = () => {
+      if (account) return false;
+      showToast('Could not find this local account record.', 'error');
+      return true;
+    };
+
+    const attach = () => {
+      host.querySelector('#local-security-save-pin')?.addEventListener('click', async () => {
+        const newPin = host.querySelector('#local-security-new-pin').value;
+        const confirmPin = host.querySelector('#local-security-confirm-pin').value;
+        if (newPin !== confirmPin) {
+          showToast('Passwords do not match.', 'error');
+          return;
+        }
+        if (missingAccount()) return;
+        account.hasPassword = !!newPin;
+        account.passwordHash = newPin ? await hashPassword(newPin) : null;
+        await storageSet('relay_accounts', accounts);
+        showToast(newPin ? 'PIN code updated successfully.' : 'PIN protection removed.', 'success');
+        await load();
+        render();
+      });
+
+      const selectEl = host.querySelector('#local-security-recovery-select');
+      const customGroup = host.querySelector('#local-security-recovery-custom-group');
+      if (selectEl && customGroup) {
+        selectEl.addEventListener('change', () => {
+          customGroup.style.display = selectEl.value === 'custom' ? 'block' : 'none';
+        });
+      }
+
+      host.querySelector('#local-security-save-recovery')?.addEventListener('click', async () => {
+        const selectQ = host.querySelector('#local-security-recovery-select').value;
+        const customQ = host.querySelector('#local-security-recovery-custom-question').value.trim();
+        const answer = host.querySelector('#local-security-recovery-answer').value.trim().toLowerCase();
+        const recoveryQ = selectQ === 'custom' ? customQ : selectQ;
+        if (!recoveryQ) {
+          showToast('Please set a recovery question.', 'error');
+          return;
+        }
+        if (missingAccount()) return;
+        account.recoveryQuestion = recoveryQ;
+        if (answer) account.recoveryAnswerHash = await hashPassword(answer);
+        await storageSet('relay_accounts', accounts);
+        showToast('Security recovery settings saved successfully.', 'success');
+        await load();
+        render();
+      });
+    };
+
+    load().then(render);
   }
 
   // Cloud accounts: mirror the cloud records into a local folder as JSON so there

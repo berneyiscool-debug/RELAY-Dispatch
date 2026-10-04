@@ -13,6 +13,7 @@
 import { store } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
 import { escapeHTML } from '../utils/security.js';
+import { showConfirm } from '../utils/confirmDialog.js';
 import { calculateTotalBillableMaterials, roundCurrency } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 import { FLAGS } from '../utils/flags.js';
@@ -1914,8 +1915,9 @@ function showEditHeader(container, viewport, world, guides, data) {
     openPinEditor(viewport, world, guides, {});
   });
 
-  headerActions.querySelector('#btn-reset-default')?.addEventListener('click', () => {
-    if (confirm('Reset your dashboard to the default layout? This clears your widgets and saved views.')) {
+  headerActions.querySelector('#btn-reset-default')?.addEventListener('click', async () => {
+    const confirmed = await showConfirm('Reset your dashboard to the default layout? This clears your widgets and saved views.', { title: 'Reset Dashboard', confirmLabel: 'Reset', danger: true });
+    if (confirmed) {
       live.widgets = defaultLayoutForUser();
       live.pins = [makeHomeView(live.widgets)];
       renderWidgets(world, data);

@@ -248,48 +248,6 @@ select.badge option {
   letter-spacing: normal;
 }
 
-/* ---- UI Mode Toggle Pill ---- */
-.toggle-pill {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-  margin-left: 12px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-.toggle-pill input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-.toggle-pill .slider {
-  position: absolute;
-  inset: 0;
-  background: var(--text-muted, #b0b0b0);
-  border-radius: 12px;
-  transition: background 0.25s ease;
-}
-.toggle-pill .slider::before {
-  content: "";
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  left: 3px;
-  top: 3px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  transition: transform 0.25s ease;
-}
-.toggle-pill input:checked + .slider {
-  background: var(--color-primary, #2563eb);
-}
-.toggle-pill input:checked + .slider::before {
-  transform: translateX(20px);
-}
-
 .badge-draft {
   background: rgba(0, 0, 0, 0.06);
   color: #4b5563; /* dark grey text */
@@ -492,6 +450,15 @@ select.badge option {
   gap: var(--space-sm);
   padding: var(--space-base) var(--space-xl);
   border-top: 1px solid var(--border-color);
+}
+
+/* Body copy for confirm/alert dialogs; pre-line preserves the newlines that
+   separate a question from its consequence. */
+.confirm-dialog-message {
+  white-space: pre-line;
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--text-primary);
 }
 
 /* ---- Dropdown ---- */
@@ -904,29 +871,149 @@ select.badge {
 /* ---- Toast ---- */
 .toast-container {
   position: fixed;
-  top: var(--space-lg);
+  /* Clears the fixed top bar so the stack never covers the search/notices actions. */
+  top: calc(var(--topbar-height) + var(--space-md));
   right: var(--space-lg);
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
+/* Shares the .dropdown-menu / .cloud-prompt card surface so a toast reads as an
+   app panel rather than a separate alert banner. */
 .toast {
   display: flex;
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md) var(--space-lg);
-  background: white;
-  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-lg);
   animation: slideDown 0.2s ease;
   min-width: 300px;
 }
-.toast.success { border-left: 3px solid var(--color-success); }
-.toast.error { border-left: 3px solid var(--color-danger); }
-.toast.warning { border-left: 3px solid var(--color-warning); }
-.toast.info { border-left: 3px solid var(--color-info); }
+/* Type is carried by the .stat-icon chip idiom instead of a saturated left border,
+   which the app's flat hairline-border language uses nowhere else. */
+.toast-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--border-radius);
+  font-size: 15px;
+}
+.toast.success .toast-icon { background: var(--color-success-bg); color: var(--color-success); }
+.toast.error .toast-icon { background: var(--color-danger-bg); color: var(--color-danger); }
+.toast.warning .toast-icon { background: var(--color-warning-bg); color: var(--color-warning); }
+.toast.info .toast-icon { background: var(--color-info-bg); color: var(--color-info); }
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.toast-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.toast-close:hover {
+  background: var(--content-bg);
+  color: var(--text-primary);
+}
+.toast-close .material-icons-outlined { font-size: 15px; }
+
+/* ---- Cloud Upgrade Prompt (local-mode nudge for cloud-only pages) ---- */
+.cloud-prompt {
+  position: fixed;
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  width: 340px;
+  max-width: calc(100vw - (var(--space-lg) * 2));
+  padding: var(--space-base);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-xl);
+  /* Own keyframes: the app-wide `slideUp` is redefined for the centred bulk
+     action bar and would shift this bottom-right card sideways on entry. */
+  animation: cloudPromptIn 0.22s ease;
+}
+@keyframes cloudPromptIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* Uses the .stat-icon chip pattern so the icon reads as part of the app's card
+   language rather than an alert banner. */
+.cloud-prompt-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--border-radius-md);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 18px;
+}
+.cloud-prompt-body { flex: 1; min-width: 0; }
+.cloud-prompt-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  padding-right: 22px; /* clears the corner close button */
+}
+.cloud-prompt-text {
+  margin-top: var(--space-xs);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.cloud-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+.cloud-prompt-close {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.cloud-prompt-close:hover { background: var(--content-bg); color: var(--text-primary); }
+.cloud-prompt-close .material-icons-outlined { font-size: 15px; }
 
 /* ---- Print Preview ---- */
 .print-document {
@@ -1151,7 +1238,7 @@ select.badge {
   background: rgba(255, 255, 255, 0.08);
 }
 [data-theme-mode="dark"] .toast {
-  background: rgba(13, 17, 30, 0.85);
+  /* Surface comes from --card-bg; the hairline matches .dropdown-menu above. */
   border-color: rgba(255, 255, 255, 0.1);
 }
 [data-theme-mode="dark"] .pagination-controls button {

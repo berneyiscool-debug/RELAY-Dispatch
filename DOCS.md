@@ -54,7 +54,8 @@ regional. RELAY flips both:
 - Document centre with role-based folders and auto-indexed attachments
 - Reports & analytics (P&L by job, revenue by customer, tech productivity)
   with CSV export
-- Role-based permissions (Admin / Manager / Office / Technician)
+- Role-based permissions (Admin / Manager / Office / Technician) on cloud
+  accounts
 - Light appearance only at launch; dark mode follows in a later release
 
 **Cloud mode (optional, paid)**
@@ -64,7 +65,8 @@ Adds only what genuinely needs the internet:
   request callouts
 - **Contractor portal** — subbies see assigned tasks, update progress, upload
   photos, manage compliance docs
-- Xero / Stripe, SMS & email automation
+- Xero / Stripe, SMS & email automation (not shipped yet — **Cost Centers & Xero**
+  sits greyed out with a *Coming soon* hint until it does)
 
 ## How it works
 
@@ -103,26 +105,38 @@ The app boots straight into **local mode** — no account needed. To enable Clou
 mode, point it at a Supabase project using the schema in
 `supabase/migrations/schema.sql` (see `docs/SUPABASE_MIGRATION.md`).
 
-### Local demo accounts
+### Local mode: one profile, one machine
 
-A brand-new local company is seeded with four demo technicians so there is
-something to schedule and assign:
+A local profile is a **single user**. You create it on the launch screen — give
+it a business name, your name, a password and a recovery question — and that one
+sign-in owns everything on this device.
 
-| Username | Name          | Position             |
-| -------- | ------------- | -------------------- |
-| `jake`   | Jake Morrow   | Senior Electrician   |
-| `ryan`   | Ryan Holt     | Service Manager      |
-| `sandra` | Sandra Okafor | Electrician          |
-| `dean`   | Dean Caruso   | Office Administrator |
-
-The shared **demo password is `123456`**; each user can also sign in with their
-`@apexpowerservices.local` email address. Local passwords are stored as hashes,
-and the plaintext demo password is upgraded to a hash the first time a user
-signs in with it. A user with no password stored is prompted to set one on
-first sign-in instead of being told the password is wrong.
-
-Change these credentials before using RELAY for real work: an administrator can
-rename users or reset their passwords in **Settings → Users**.
+- A brand-new local profile starts with **no staff records**.
+- Your password is stored as a hash, and it is the only credential the profile
+  accepts. Forgetting it means using the recovery question on the launch screen.
+- Staff logins — separate accounts, user types and permissions, password
+  recovery — come with **RELAY Cloud**. Those tabs are still visible in
+  **Settings → Users** on a local profile; they explain what the cloud adds and
+  offer the one-way **Move to cloud** upgrade, which copies your records into a
+  cloud company and signs you in there.
+- Cloud-only features are greyed out rather than hidden, with a *Click to create
+  a Cloud account* hint that opens the upgrade flow: the leads marketplace, and
+  the cloud-only Settings pages (Customer Portal, Contractor Portal, Online
+  payments, Email & domain, Users, User Types & Permissions, Password Recovery).
+  Documents, reports and the Local Storage tools stay fully available.
+- Features that haven't shipped yet are greyed out for **every** account type with
+  a plain *Coming soon* hint — clicking one explains itself instead of offering the
+  upgrade, because a cloud account wouldn't unlock it yet. Cost Centers & Xero is
+  gated that way until the Xero integration lands (it then becomes cloud-only).
+  Deep links to a gated tab land on Company rather than the unfinished page.
+- Local mode has no geocoding — address lookups run through RELAY Cloud — so
+  nothing in Settings asks for a dispatch start location, and the Lead & Market
+  Profile that feeds the marketplace is omitted from Settings → Company.
+- Older multi-user local profiles are cleaned up automatically on first boot:
+  per-technician login credentials, the deployment-type marker and the legacy
+  `local_multiuser` session flag are removed (the flag is rewritten to `local`).
+  Staff records themselves are kept, so a later cloud upgrade still carries the
+  roster across.
 
 ## Project status
 

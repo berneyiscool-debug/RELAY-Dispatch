@@ -10,6 +10,7 @@ import { showToast } from '../../components/Notifications.js';
 import { showTimesheetEditModal } from '../../utils/timesheetModals.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { escapeHTML } from '../../utils/security.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import { navigateLinkHTML } from '../../utils/mapsLinks.js';
 import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from '../../utils/pricing.js';
 import { hasPermission } from '../../utils/permissions.js';
@@ -2308,7 +2309,7 @@ export function renderJobDetail(container, { id, tab }) {
 
           // Direct binding to newly created items to prevent bubbles / type mismatch bugs
           listDiv.querySelectorAll('.import-item').forEach(item => {
-            item.addEventListener('click', () => {
+            item.addEventListener('click', async () => {
               const sourceId = item.dataset.id;
               const type = item.dataset.type;
 
@@ -2319,7 +2320,8 @@ export function renderJobDetail(container, { id, tab }) {
                 : freshJobs.find(j => String(j.id) === String(sourceId));
 
               if (source && (source.tasks || source.phases)) {
-                if (confirm(`Replace current tasklist with "${source.name || source.number}"?`)) {
+                const confirmed = await showConfirm(`Replace current tasklist with "${source.name || source.number}"?`, { title: 'Import Tasklist', confirmLabel: 'Replace', danger: true });
+                if (confirmed) {
                   function deepClone(tasks) {
                     return tasks.map(p => ({
                       ...p,
@@ -4572,8 +4574,9 @@ export function renderJobDetail(container, { id, tab }) {
     });
 
     tc.querySelectorAll('.remove-form-instance').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to remove this form from the job?')) {
+      btn.addEventListener('click', async () => {
+        const confirmed = await showConfirm('Are you sure you want to remove this form from the job?', { title: 'Remove Form', confirmLabel: 'Remove', danger: true });
+        if (confirmed) {
           const fid = btn.dataset.id;
           const all = store.getAll('formInstances');
           store.save('formInstances', all.filter(i => i.id !== fid));

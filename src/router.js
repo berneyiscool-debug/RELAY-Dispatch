@@ -61,6 +61,14 @@ export class Router {
           }
           return; // Guard blocked the navigation
         }
+        // A guard may hand back a replacement path, for pages an account can no
+        // longer open. Redirect here instead of rendering: routing it through
+        // `false` would rewrite the hash back to the blocked route, dropping the
+        // replacement's query string.
+        if (typeof allowed === 'string' && allowed && allowed !== hash) {
+          this.navigate(allowed);
+          return;
+        }
       }
       this.currentRoute = hash;
       handler(allParams);

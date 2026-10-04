@@ -1,4 +1,4 @@
-import { test, describe, beforeEach } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { store } from './store.js';
 import { supabase } from '../utils/supabase.js';
@@ -440,3 +440,74 @@ describe('DataStore', () => {
   });
 });
 
+// Local mode is single-user: a fresh local profile starts with no staff records,
+// and anything the removed multi-user local mode left behind (per-technician
+// logins, deployment-type marker, legacy session flag) is cleaned up on first boot.
+describe('local single-user migration', () => {
+  const savedLocalStorage = globalThis.localStorage;
+  const storage = new Map();
+
+  beforeEach(() => {
+    storage.clear();
+    globalThis.localStorage = {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => { storage.set(key, String(value)); },
+      removeItem: (key) => { storage.delete(key); }
+    };
+    store.clearSync();
+    store.listeners = {};
+    store.companyId = 'acct_1';
+    store.companySettings = null;
+  });
+
+  afterEach(() => {
+    if (savedLocalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = savedLocalStorage;
+    store.clearSync();
+  });
+
+  test('a new local profile starts with no demo staff', async () => {
+    await store.initializeLocalStore();
+
+    assert.deepStrictEqual(store.getAll('technicians'), []);
+    assert.ok(store.getAll('userTypes').length > 0);
+  });
+
+  test('strips staff login credentials but keeps the roster', async () => {
+    store.cache.technicians = [
+      { id: 'acct_1_tech_1', name: 'Jake Morrow', password: '123456', username: 'jake' },
+      { id: 'acct_1_tech_2', name: 'Ryan Holt', email: 'ryan@example.com' }
+    ];
+
+    await store.migrateLocalSingleUser();
+
+    const [first, second] = store.cache.technicians;
+    assert.strictEqual(store.cache.technicians.length, 2);
+    assert.strictEqual('password' in first, false);
+    assert.strictEqual('username' in first, false);
+    assert.strictEqual(first.name, 'Jake Morrow');
+    assert.strictEqual(second.email, 'ryan@example.com');
+  });
+
+  test('drops the deployment-type marker and rewrites the legacy session flag', async () => {
+    storage.set('relay_login_mode', 'local_multiuser');
+    store.companySettings = { name: 'Apex Power Services', localDeploymentType: 'multi_user' };
+
+    await store.migrateLocalSingleUser();
+
+    assert.strictEqual(storage.get('relay_login_mode'), 'local');
+    assert.strictEqual('localDeploymentType' in store.companySettings, false);
+    assert.strictEqual(store.companySettings.name, 'Apex Power Services');
+  });
+
+  test('leaves cloud companies untouched', async () => {
+    store.companyId = '8f14e45f-ceea-467a-9e3d-4bd0e17f2bfe';
+    store.cache.technicians = [{ id: 'p1', name: 'Sam', password: '123456' }];
+    storage.set('relay_login_mode', 'local_multiuser');
+
+    await store.migrateLocalSingleUser();
+
+    assert.strictEqual(store.cache.technicians[0].password, '123456');
+    assert.strictEqual(storage.get('relay_login_mode'), 'local_multiuser');
+  });
+});

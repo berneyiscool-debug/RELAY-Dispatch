@@ -4,6 +4,7 @@
 
 import { store } from '../../data/store.js';
 import { dispatchChat } from '../../utils/aiEngine.js';
+import { isCloudUser } from '../../utils/aiTier.js';
 import { escapeHTML } from '../../utils/security.js';
 import { JOB_STATUS_COLORS, DOC_STATUS_COLORS } from '../../utils/statusColors.js';
 
@@ -432,6 +433,20 @@ export function renderReports(container, params) {
 // ── Cache & Insights Engine ────────────────────────────────────────────────
 const cachedAIInsights = {};
 
+// Insights have three possible sources: the Cloud AI ('live'), the on-device
+// rule engine in a local workspace ('local'), and that same rule engine standing
+// in for an AI call that failed ('offline'). Only 'live' is a real AI response,
+// so only 'live' may claim the AI branding.
+function insightsCopy(source) {
+  if (source === 'offline') {
+    return { title: 'RELAY AI Insights', badgeLabel: 'RELAY Offline', badgeClass: 'badge-danger', borderColor: 'var(--color-danger-bg)' };
+  }
+  if (source === 'live') {
+    return { title: 'RELAY AI Insights', badgeLabel: 'RELAY Live', badgeClass: 'badge-success', borderColor: 'var(--color-primary-light)' };
+  }
+  return { title: 'RELAY Insights', badgeLabel: 'RELAY Local', badgeClass: 'badge-neutral', borderColor: 'var(--color-primary-light)' };
+}
+
 function renderAIInsightsPanel(reportId, filteredData) {
   const containerId = `ai-insights-${reportId}`;
   const cacheKey = `${reportId}_${filteredData.timesheets.length}_${filteredData.jobs.length}_${filteredData.invoices.length}_${reportViewMode}`;
@@ -443,6 +458,11 @@ function renderAIInsightsPanel(reportId, filteredData) {
   setTimeout(() => {
     fetchAIInsights(reportId, filteredData, cacheKey);
   }, 100);
+
+  // Only a Cloud workspace makes a real AI call, so only Cloud gets the
+  // "Analyzing..." pending state; a local workspace resolves from rules.
+  const cloud = isCloudUser();
+  const copy = insightsCopy(cloud ? 'live' : 'local');
 
   return `
     <style>
@@ -456,8 +476,8 @@ function renderAIInsightsPanel(reportId, filteredData) {
       <div class="card-body" style="padding:16px 20px;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
           <span class="material-icons-outlined" style="color:var(--color-primary); animation: pulse 2s infinite;">psychology</span>
-          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">RELAY AI Insights</h5>
-          <span class="badge badge-neutral" style="font-size:10px; margin-left:auto;">Analyzing...</span>
+          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">${copy.title}</h5>
+          <span class="badge ${copy.badgeClass}" style="font-size:10px; margin-left:auto;">${cloud ? 'Analyzing...' : copy.badgeLabel}</span>
         </div>
         <div style="display:flex; flex-direction:column; gap:8px;">
           <div style="height:12px; background:var(--border-color); border-radius:4px; width:70%; animation: pulse 1.5s infinite;"></div>
@@ -477,9 +497,8 @@ async function fetchAIInsights(reportId, d, cacheKey) {
   const mode = isSimpleMode ? 'simple' : 'detailed';
 
   const s = store.getSettings();
-  const isCloudUser = !!(store.companyId && !store.companyId.startsWith('acct_'));
   // Deputy's hosted AI is part of a paid Cloud workspace — no per-account switch.
-  const canUseAI = isCloudUser;
+  const canUseAI = isCloudUser();
 
   let insightsHTML = '';
 
@@ -549,15 +568,15 @@ You MUST return a raw JSON array of objects (no markdown, no \`\`\`json blocks).
       }
 
       const insights = JSON.parse(reply);
-      insightsHTML = renderInsightsListHTML(reportId, insights, false, mode);
+      insightsHTML = renderInsightsListHTML(reportId, insights, 'live', mode);
     } catch (err) {
       console.error('AI Insights parsing or fetch error:', err);
       const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
-      insightsHTML = renderInsightsListHTML(reportId, localInsights, true, mode);
+      insightsHTML = renderInsightsListHTML(reportId, localInsights, 'offline', mode);
     }
   } else {
     const localInsights = isSimpleMode ? getLocalSimpleInsights(reportId, d) : getLocalInsightsJSON(reportId, d);
-    insightsHTML = renderInsightsListHTML(reportId, localInsights, false, mode);
+    insightsHTML = renderInsightsListHTML(reportId, localInsights, 'local', mode);
   }
 
   cachedAIInsights[cacheKey] = insightsHTML;
@@ -690,10 +709,9 @@ function cleanString(str) {
   return formatted;
 }
 
-function renderInsightsListHTML(reportId, insights, isOfflineWarning, mode) {
-  const badgeLabel = isOfflineWarning ? 'RELAY Offline' : 'RELAY Live';
-  const badgeClass = isOfflineWarning ? 'badge-danger' : 'badge-success';
-  const borderStyle = isOfflineWarning ? 'border: 1px solid var(--color-danger-bg)' : 'border: 1px solid var(--color-primary-light)';
+function renderInsightsListHTML(reportId, insights, source, mode) {
+  const { title, badgeLabel, badgeClass, borderColor } = insightsCopy(source);
+  const borderStyle = `border: 1px solid ${borderColor}`;
 
   const items = (Array.isArray(insights) ? insights : []).slice(0, 5);
 
@@ -711,7 +729,7 @@ function renderInsightsListHTML(reportId, insights, isOfflineWarning, mode) {
       <div class="card-body" style="padding:16px 20px; ${borderStyle}">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
           <span class="material-icons-outlined" style="color:var(--color-primary)">psychology</span>
-          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">RELAY AI Insights</h5>
+          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">${title}</h5>
           <span class="badge ${badgeClass}" style="font-size:10px; margin-left:auto;">${badgeLabel}</span>
         </div>
         <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; color:var(--text-secondary); line-height:1.6; font-family:var(--font-family);">
@@ -739,7 +757,7 @@ function renderInsightsListHTML(reportId, insights, isOfflineWarning, mode) {
     <div class="card-body" style="padding:16px 20px; ${borderStyle}">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
         <span class="material-icons-outlined" style="color:var(--color-primary)">psychology</span>
-        <h5 style="margin:0; font-weight:600; color:var(--text-primary);">RELAY AI Insights</h5>
+        <h5 style="margin:0; font-weight:600; color:var(--text-primary);">${title}</h5>
         <span class="badge ${badgeClass}" style="font-size:10px; margin-left:auto;">${badgeLabel}</span>
       </div>
       
