@@ -203,3 +203,78 @@ describe('relay-copilot pooled allowance and per-user ceiling', () => {
     assert.match(COPILOT, /temperature: 0\.3/, 'the established temperature was changed');
   });
 });
+
+describe('relay-copilot usage meters', () => {
+  // The branch is sliced out once so every assertion below reads the same
+  // region: from the `action` lookup to the refusal that follows it.
+  const BRANCH_START = COPILOT.indexOf("searchParams.get('action')");
+  const BRANCH_END = COPILOT.indexOf('if (usage) {');
+  const BRANCH = BRANCH_START === -1 ? '' : COPILOT.slice(BRANCH_START, BRANCH_END);
+
+  test('is marked by a query parameter, so the request body stays readable', () => {
+    assert.notStrictEqual(BRANCH_START, -1, 'the usage action is not recognised');
+    assert.match(
+      COPILOT,
+      /new URL\(req\.url\)\.searchParams\.get\('action'\)/,
+      'the action is not read from the query string'
+    );
+    // A body field would force the stream to be parsed here, and a stream can
+    // only be read once - the proxy below still needs it for the prompt.
+    assert.ok(
+      BRANCH_START < COPILOT.indexOf('await req.json()'),
+      'the meters are answered after the request body is consumed'
+    );
+  });
+
+  test('is answered only to an authenticated caller', () => {
+    assert.ok(COPILOT.indexOf('authHeader') < BRANCH_START, 'the meters can be read without a bearer token');
+  });
+
+  test('is answered after the allowance read but before the refusal', () => {
+    const allowance = COPILOT.indexOf('const usage = await usageToday(');
+    assert.notStrictEqual(allowance, -1, 'the allowance is no longer read');
+    assert.notStrictEqual(BRANCH_END, -1, 'the refusal was not found');
+    assert.ok(allowance < BRANCH_START, 'the meters pre-empt the allowance read');
+    // Behind the refusal a blocked seat could not see why it is blocked, or for
+    // how long; in front of it, it always can.
+    assert.ok(BRANCH_START < BRANCH_END, 'the meters are answered behind the refusal');
+  });
+
+  test('spends nothing and writes nothing', () => {
+    assert.notStrictEqual(BRANCH, '', 'the usage branch was not found');
+    assert.ok(!BRANCH.includes('recordUsage'), 'reading the meters bills the tenant');
+    assert.ok(!BRANCH.includes('fetch('), 'reading the meters calls the paid API');
+    assert.match(BRANCH, /status: 200/, 'the meters are not a successful read');
+  });
+
+  test('reports the same allowances the proxy enforces', () => {
+    assert.match(LIMITS_MODULE, /export function usageSnapshot\(/, 'the meter maths is not exported');
+    assert.match(COPILOT, /usageSnapshot,/, 'the meter maths is not imported');
+    assert.match(BRANCH, /usageSnapshot\(\{/, 'the meters are built some other way');
+    assert.match(BRANCH, /pool,\s*cap,\s*seats,/, 'the meters are not given the enforced allowances');
+    // Built on evaluateLimits() so a meter can never contradict the 429 that
+    // follows it.
+    assert.match(
+      LIMITS_MODULE,
+      /export function usageSnapshot\(\{[\s\S]{0,250}?evaluateLimits\(\{/,
+      'the meters no longer share the enforcement arithmetic'
+    );
+  });
+
+  test('distinguishes an unreadable ledger from an unused allowance', () => {
+    // usageToday() returns null when it cannot read the ledger, which also
+    // means nothing is being capped - reporting zeroes would claim a fresh
+    // allowance the proxy is not actually enforcing.
+    assert.match(BRANCH, /available: true/, 'the meters never report success');
+    assert.match(BRANCH, /available: false/, 'an unreadable ledger is reported as zero usage');
+    assert.match(BRANCH, /reason: 'ledger_unavailable'/, 'the unavailable reply gives no reason');
+    assert.match(BRANCH, /resetsAt/, 'the meters carry no reset instant');
+  });
+
+  test("returns the caller's own day and an aggregate, never another seat's", () => {
+    assert.match(BRANCH, /usage\.userUnits/, "the personal figure is not the caller's own");
+    assert.match(BRANCH, /usage\.companyUnits/, 'the company figure is not the day total');
+    assert.ok(!BRANCH.includes('user_id'), 'the meters disclose ledger identity');
+    assert.ok(!BRANCH.includes('userId'), 'the meters disclose the calling seat');
+  });
+});

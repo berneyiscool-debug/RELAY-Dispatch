@@ -425,6 +425,8 @@ Launch allows self-serve signup, so every caller of a paid API is capped. Geocod
 
 The dual columns are two independent secrets, not one secret with two names: the tier decides which of the pair is read, so setting the un-suffixed key against a Cloud+ company is a no-op. Check `comp_tier` before arming a cap (Section 12).
 
+All five were also **set explicitly in production on 2026-10-04** (`50 / 75 / 150 / 150 / 200`) even though every one of them already equalled the built-in default. Nothing changed and no redeploy followed — the point was to make the live allowance legible under **Edge Functions → Secrets**, because an unset secret and a secret that matches the default are indistinguishable there. `relay-copilot` reads a missing secret as the default, so the two are also indistinguishable in behaviour; the dashboard copy is what makes the answer to "what is this company allowed?" a URL rather than a code read.
+
 The remaining proxies keep the flat per-tenant cap they were launched with:
 
 | Proxy | Provider | Secret | Default | Unit |
@@ -450,7 +452,36 @@ How it behaves:
 Dashboard-only items this migration deliberately does **not** change, because they are launch decisions rather than code:
 
 - **CAPTCHA (Turnstile) on signup, `mailer_autoconfirm`, and per-IP signup rate limits.** A probe with the published anon key confirmed that signups are unthrottled and auto-confirmed (`disable_signup` is `false` by design — launch needs self-serve signup). Turning on Turnstile or per-IP limits is an Auth setting in the dashboard; the tenant-isolation work in `030` is what makes unthrottled signup survivable in the meantime: a spam tenant can only ever see its own empty workspace.
-- **Usage metering and paid tiers for the AI.** Out of scope until the launch feature set is settled; `api_usage` is the table a visible usage meter would read when that ships.
+- **Paid tiers for the AI.** Out of scope until the launch feature set is settled. Usage *metering* has since shipped (Section 11a), but it only reports the allowance — nothing bills against it yet.
+
+### 11a. The usage meters (`?action=usage`)
+
+The Deputy panel and **Settings → Plan & Billing** each draw two bars — the reader's own allowance and the company's — and both read them from `relay-copilot` itself:
+
+```
+POST /functions/v1/relay-copilot?action=usage
+Authorization: Bearer <user token>
+{}
+
+{ "available": true, "resetsAt": "2026-10-04T13:00:00.000Z",
+  "blocked": null, "seats": 2,
+  "user":    { "usedUnits": 51, "limitUnits": 200, "remainingUnits": 149,
+               "usedMessages": 25, "limitMessages": 100, "remainingMessages": 74, "percent": 26 },
+  "company": { "usedUnits": 51, "limitUnits": 150, "remainingUnits": 99,
+               "usedMessages": 25, "limitMessages": 75,  "remainingMessages": 49, "percent": 34 } }
+```
+
+Why it lives on `relay-copilot` instead of a `relay-usage` function: it reuses the same auth chain, the same `limits.js`, the same tier and seat resolution and the same `usageToday` read, so **the bars cannot disagree with enforcement.** A second function would be a copy of ~150 lines of security-critical code that would quietly drift, and a bar that is wrong is worse than no bar at all.
+
+- **The read path is a query parameter, not a body field.** `index.ts` parses the JSON body exactly once, *after* the allowance check; marking the request in the body would force the parse to move earlier and would change what happens to malformed JSON today. A query parameter costs nothing and needs no `Access-Control-Allow-Headers` change.
+- **The branch sits behind the same Bearer check as everything else.** The anon key gets the usual `401 {"error":"Unauthorized: invalid token"}` whether or not `?action=usage` is present, so nothing about the allowance is public.
+- **It is read-only and un-ledgered** — no provider call, no `recordUsage` — so asking about the allowance never spends any of it. That is what makes it safe for the client to call on every panel open and every Settings render.
+- **`percent` is computed in units, not messages.** Units ÷ 2 is a floor, so converting to messages first would round a one-unit cap to a permanent `0%`. `percent` uses `Math.round` (the first call of the day reads `1%`) and clamps to 100.
+- **`blocked`** is `null`, `"user"` or `"company"`, and the remainders come from the same `evaluateLimits` call that would allow or refuse the next message. The meters are not independent subtraction over the same rows.
+- **`available: false` with `reason: "ledger_unavailable"`** means the ledger could not be read — which also means nothing is being capped. The client renders nothing rather than a reassuring `0%`, and a client with no snapshot hides its host container entirely.
+- **`usedMessages` is a floor**, so an allowance worth less than one message reports `0` and the client falls back to quoting AI credits instead of messages.
+
+`resetsAt` is the Sydney reset instant; the client renders it in the *reader's* local time, the same as the `429` copy. The renderer is `src/components/UsageBars.js` (mounted into any element carrying `data-usage-bars`, so both hosts share one implementation) and the styles live in `src/styles/components.css`: green, amber from 80%, red at 100%. Non-cloud workspaces get no snapshot at all, so the bars simply do not appear there.
 
 ---
 
@@ -493,7 +524,7 @@ npx --yes supabase@2.119.0 db query "select kind, count(*) rows, sum(units) unit
 
 `--linked` is required (`--project-ref` alone makes the query look for a local database and fail with `ECONNREFUSED 127.0.0.1:54322`), and the `Initialising login role…` notice it prints to stderr is not an error. Adding `user_id` to the `group by` gives the per-seat breakdown the ceiling is actually enforced against — the quickest way to tell "the cap is wrong" from "the client is wrong" is whether the blocked call appears in the ledger at all: **enforcement runs before `recordUsage`, so a blocked call must not be counted.**
 
-Tenants cannot read this table. `api_usage` has RLS enabled with **no policies**, so `anon` and `authenticated` get nothing from it and the published key answers `401 {"code":"42501","permission denied for table api_usage"}`. That is deliberate — usage rows are written by the service-role client inside the functions and are not readable or forgeable from a browser. The only allowance numbers the client ever sees arrive *inside a `429` response*, which is why there is no usage meter or percentage bar in the app: showing one before the refusal would need a new read path (an RLS policy, or a small read-only endpoint), and that is work `034` deliberately did not do.
+Tenants cannot read this table. `api_usage` has RLS enabled with **no policies**, so `anon` and `authenticated` get nothing from it and the published key answers `401 {"code":"42501","permission denied for table api_usage"}`. That is deliberate — usage rows are written by the service-role client inside the functions and are not readable or forgeable from a browser. Allowance numbers reach the client two ways: the totals inside a `429` response, and the `?action=usage` endpoint in Section 11a, which sums these same rows and returns only aggregates plus the caller's own total — the team's total is visible, who spent it is not. No RLS policy was added for that: the browser still cannot read or forge a ledger row.
 
 The three spend-capped proxies (`relay-copilot`, `relay-geocode`, `relay-route`) can be deployed **before** `031` is applied: they log `api_usage read failed` and run uncapped, which is why deploying the code and applying the migration are independent steps. The same holds for `034` and `relay-copilot` — a missing `user_id` column only costs the ceiling, because a failed ledger read leaves the proxy uncapped. Apply the migration to get the cap; deploy the function to change the copy.
 
@@ -517,8 +548,8 @@ If the shell exports agent markers (`AI_AGENT`, `COPILOT_CLI`, …), the CLI's `
 
 Verify a deploy with three checks, in increasing order of certainty:
 
-1. `functions list --project-ref <ref> --output json` — `version` must have incremented and `verify_jwt` must still be `true`. The table output does **not** show `verify_jwt`; only the JSON does.
-2. Call it with the anon key: the answer must be `401 {"error":"Unauthorized: invalid token"}`. That comes from inside the function, after its module graph is instantiated, so it proves `limits.js` shipped. A `503` with `BOOT_ERROR` is the signature of a missing or unresolvable file.
+1. `functions list --project-ref <ref> --output json` — `verify_jwt` must still be `true`. The table output does **not** show it; only the JSON does, and that JSON is an **object** (`{ "functions": [ … ] }`), so select `.functions[]` rather than iterating it directly. Do **not** read `version` as proof that code shipped: it also advances when secrets or config change, so a bumped `version` with an unchanged `entrypoint_path` means nothing was deployed. The reliable marker is the `_N` suffix on `entrypoint_path`, which advances once per code deploy (`_21` → `_27` for the usage-meter release).
+2. Call it with the anon key: with or without `?action=usage`, the answer must be `401 {"error":"Unauthorized: invalid token"}`. That comes from inside the function, after its module graph is instantiated, so it proves `limits.js` shipped. A `503` with `BOOT_ERROR` is the signature of a missing or unresolvable file. Note this check deliberately stops at the function's own `401` — the usage branch is behind the same Bearer check, so an anon-key call never reaches it, and only a real user token can prove the branch itself.
 3. `functions download relay-copilot --project-ref <ref> --use-api` into a scratch directory, then compare hashes against the local files. Byte-identical means production is running exactly the reviewed code.
 
 Without the CLI, the Management API accepts a tarball of the function directory. Build it with the two files at the bundle root and the same metadata part as below:

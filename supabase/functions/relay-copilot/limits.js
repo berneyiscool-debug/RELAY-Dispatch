@@ -120,6 +120,58 @@ export function unitsToMessages(units) {
   return Math.floor(Math.max(0, Number(units) || 0) / CALLS_PER_MESSAGE)
 }
 
+/**
+ * Used ÷ limit as a whole percentage, clamped to 0–100. Rounded rather than
+ * floored so the first call of the day registers as 1% instead of looking like
+ * a meter that is not counting.
+ */
+function percentUsed(usedUnits, limitUnits) {
+  const used = Number(usedUnits)
+  const limit = Number(limitUnits)
+  if (!Number.isFinite(limit) || limit <= 0) return 0
+  if (!Number.isFinite(used) || used <= 0) return 0
+  return Math.min(100, Math.round((used / limit) * 100))
+}
+
+/**
+ * The two allowance meters — one seat's own day, one company's — as the app's
+ * usage bars need them.
+ *
+ * Built on evaluateLimits() on purpose: the remainders a bar displays come from
+ * the same arithmetic that allows or refuses the next call, so a meter can never
+ * disagree with the 429 that follows it.
+ *
+ * `percent` is computed in billable calls, not messages. Calls are what the cap
+ * actually counts, and converting first would round a 1-unit cap down to a
+ * permanent 0%.
+ */
+export function usageSnapshot({ companyUnits, userUnits, pool, cap, seats }) {
+  const { allowed, scope, userRemainingUnits, poolRemainingUnits } = evaluateLimits({
+    companyUnits,
+    userUnits,
+    pool,
+    cap,
+  })
+
+  const meter = (usedUnits, limitUnits, remainingUnits) => ({
+    usedUnits: Math.max(0, Math.floor(Number(usedUnits) || 0)),
+    limitUnits,
+    remainingUnits,
+    usedMessages: unitsToMessages(usedUnits),
+    limitMessages: unitsToMessages(limitUnits),
+    remainingMessages: unitsToMessages(remainingUnits),
+    percent: percentUsed(usedUnits, limitUnits),
+  })
+
+  return {
+    // null when the next call would be allowed; 'user' or 'company' when not.
+    blocked: allowed ? null : scope,
+    seats,
+    user: meter(userUnits, cap, userRemainingUnits),
+    company: meter(companyUnits, pool, poolRemainingUnits),
+  }
+}
+
 // ── The Sydney day window ────────────────────────────────────────────────
 
 const formatters = new Map()

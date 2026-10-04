@@ -150,3 +150,31 @@ export async function dispatchChat(messages) {
   const result = await completeChat(messages);
   return result.content;
 }
+
+// Today's allowance snapshot for the usage bars: this seat's spend plus the
+// company's pooled spend, with the limits already applied by the server.
+//
+// The denominators (pool size, per-seat cap, seat count, tier) live in the edge
+// function's environment and the usage ledger is not readable from the browser,
+// so this is the only way for a client to know how much of the day is left.
+//
+// Returns null - never throws - whenever the snapshot cannot be trusted: a
+// non-Cloud workspace, an offline or expired session, or an unreadable ledger.
+// Callers hide the bars on null rather than drawing a misleading zero, and a
+// decorative meter must never be able to break the panel it sits in.
+export async function fetchUsage() {
+  if (!isCloudUser()) return null;
+  try {
+    // The action travels as a query parameter because the proxy reads it before
+    // it touches the request body, which lets a blocked seat still read its
+    // meters without changing the shape of an ordinary chat request.
+    const { data, error } = await supabase.functions.invoke('relay-copilot?action=usage', {
+      body: {},
+    });
+    if (error) return null;
+    if (!data || data.available !== true) return null;
+    return { ...data, resetsAt: parseReset(data.resetsAt) };
+  } catch (_) {
+    return null;
+  }
+}

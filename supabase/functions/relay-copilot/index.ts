@@ -10,6 +10,7 @@ import {
   resolveSeats,
   startOfDayUtc,
   unitsToMessages,
+  usageSnapshot,
   userLimit,
 } from './limits.js'
 
@@ -96,6 +97,34 @@ serve(async (req) => {
     const cap = userLimit(cloudPlus, limits)
 
     const usage = await usageToday(admin, companyId, 'copilot', startOfDayUtc(new Date()), user.id)
+
+    // ── Usage meters ───────────────────────────────────────────────────
+    // `relay-copilot?action=usage` answers "how much of today is left?" for the
+    // two bars in the app. It is placed after authentication and before the
+    // limit check, so a seat that is already blocked can still read its meters,
+    // and it never reaches DeepSeek or the ledger.
+    //
+    // The company figure is an aggregate, and the personal figure is the
+    // caller's own row; no other seat's spend is ever returned. A query
+    // parameter (rather than a body field) is used deliberately: reading the
+    // body here would consume the stream that the proxy below still needs.
+    if (new URL(req.url).searchParams.get('action') === 'usage') {
+      const resetsAt = nextResetUtc(new Date()).toISOString()
+      // A null read means the ledger is unreadable, which also means nothing is
+      // being capped. Report the meters as unavailable rather than as zeroes.
+      const body = usage
+        ? { available: true, resetsAt, ...usageSnapshot({
+            companyUnits: usage.companyUnits,
+            userUnits: usage.userUnits,
+            pool,
+            cap,
+            seats,
+          }) }
+        : { available: false, reason: 'ledger_unavailable', resetsAt }
+      return new Response(JSON.stringify(body),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (usage) {
       const verdict = evaluateLimits({
         companyUnits: usage.companyUnits,

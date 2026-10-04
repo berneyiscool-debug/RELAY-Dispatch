@@ -10,6 +10,7 @@ import { store } from '../data/store.js';
 import { showToast } from './Notifications.js';
 import { showModal } from './Modal.js';
 import { dispatchChat, AILimitError } from '../utils/aiEngine.js';
+import { usageBarsHtml, refreshUsageBars } from './UsageBars.js';
 import { isCloudUser, hasDeputyMax } from '../utils/aiTier.js';
 import { hasPermission } from '../utils/permissions.js';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
@@ -1777,6 +1778,7 @@ export async function openRelay() {
       <div class="relay-chat-body">
         <div class="relay-thread-sidebar" id="relay-thread-sidebar" style="${hasDeputyMax() ? '' : 'display:none'}"></div>
         <div class="relay-chat-main">
+          <div class="relay-usage-bars" data-usage-bars>${usageBarsHtml()}</div>
           <div class="relay-weekly-overlay" id="relay-weekly-overlay"></div>
           <div class="relay-thread" id="relay-thread"></div>
           <div class="relay-attach-row" id="relay-attach-row"></div>
@@ -1799,6 +1801,7 @@ export async function openRelay() {
   observeSidebarRail();
   void panel.offsetWidth;
   panel.classList.add('open');
+  void refreshUsageBars(panel);
 
   const thread = panel.querySelector('#relay-thread');
   const input = panel.querySelector('#relay-input');
@@ -1891,6 +1894,7 @@ export async function openRelay() {
       const typing = addTyping(thread);
       try {
         await runVisionExtraction(text, files, thread, typing);
+        void refreshUsageBars(panel);
       } catch (err) {
         console.error('Relay vision extraction failed:', err);
         typing.remove();
@@ -1899,6 +1903,7 @@ export async function openRelay() {
           : `I couldn't read that attachment. (${err.message || err})`;
         pushAssistant(reply);
         addMessage(thread, 'relay', reply);
+        void refreshUsageBars(panel);
       }
       return;
     }
@@ -1931,6 +1936,7 @@ export async function openRelay() {
         const response = hasDeputyMax() ? await callAIEngineWithTriage() : await callAIEngine();
         typing.remove();
         addMessage(thread, 'relay', response);
+        void refreshUsageBars(panel);
       } else {
         // Fallback to rule-based local assistant
         setTimeout(() => {
@@ -1947,6 +1953,7 @@ export async function openRelay() {
       if (err instanceof AILimitError) {
         pushAssistant(err.message);
         addMessage(thread, 'relay', err.message);
+        void refreshUsageBars(panel);
         return;
       }
       console.error('AI assistant failed, falling back to local commands:', err);

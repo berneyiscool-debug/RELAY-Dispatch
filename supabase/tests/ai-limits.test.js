@@ -23,6 +23,7 @@ import {
   resolveSeats,
   startOfDayUtc,
   unitsToMessages,
+  usageSnapshot,
   userLimit,
 } from '../functions/relay-copilot/limits.js';
 
@@ -221,5 +222,78 @@ describe('the message a blocked caller sees', () => {
     const text = limitMessage({ scope: 'company', cap: 150, pool: 150, poolRemainingUnits: 0, resetsAt });
     assert.match(text, /team's brny allowance/);
     assert.ok(!/personal/.test(text), 'a company-wide cap blames the individual');
+  });
+});
+
+describe('the figures the usage bars read', () => {
+  const base = { companyUnits: 35, userUnits: 35, pool: 150, cap: 200, seats: 2 };
+
+  test('a partly used allowance reports both sides and neither is blocked', () => {
+    const s = usageSnapshot(base);
+    assert.strictEqual(s.blocked, null);
+    assert.strictEqual(s.seats, 2);
+    assert.deepStrictEqual(s.user, {
+      usedUnits: 35, limitUnits: 200, remainingUnits: 165,
+      usedMessages: 17, limitMessages: 100, remainingMessages: 82, percent: 18,
+    });
+    assert.deepStrictEqual(s.company, {
+      usedUnits: 35, limitUnits: 150, remainingUnits: 115,
+      usedMessages: 17, limitMessages: 75, remainingMessages: 57, percent: 23,
+    });
+  });
+
+  test('the percentages are of the units, so a one-unit cap still fills the bar', () => {
+    // Converting to messages first would round a 1-unit cap to a permanent 0%
+    // and the user would never see their allowance run out.
+    const s = usageSnapshot({ companyUnits: 1, userUnits: 1, pool: 150, cap: 1, seats: 1 });
+    assert.strictEqual(s.blocked, 'user');
+    assert.strictEqual(s.user.limitMessages, 0);
+    assert.strictEqual(s.user.percent, 100);
+    assert.strictEqual(s.user.remainingUnits, 0);
+  });
+
+  test('a personal ceiling does not claim the team is blocked', () => {
+    const s = usageSnapshot({ companyUnits: 35, userUnits: 200, pool: 150, cap: 200, seats: 2 });
+    assert.strictEqual(s.blocked, 'user');
+    assert.strictEqual(s.user.remainingUnits, 0);
+    assert.strictEqual(s.company.remainingUnits, 115);
+    assert.strictEqual(s.company.remainingMessages, 57);
+  });
+
+  test('an exhausted pool is reported as a team block', () => {
+    const s = usageSnapshot({ companyUnits: 150, userUnits: 10, pool: 150, cap: 200, seats: 2 });
+    assert.strictEqual(s.blocked, 'company');
+    assert.strictEqual(s.company.remainingUnits, 0);
+    assert.strictEqual(s.company.percent, 100);
+    assert.strictEqual(s.user.remainingUnits, 190);
+  });
+
+  test('the first call of the day is visible rather than rounding away', () => {
+    const s = usageSnapshot({ companyUnits: 1, userUnits: 1, pool: 150, cap: 200, seats: 2 });
+    assert.strictEqual(s.user.percent, 1);
+  });
+
+  test('an overspent allowance clamps instead of exceeding the bar', () => {
+    const s = usageSnapshot({ companyUnits: 900, userUnits: 400, pool: 150, cap: 200, seats: 2 });
+    assert.strictEqual(s.user.percent, 100);
+    assert.strictEqual(s.company.percent, 100);
+  });
+
+  test('missing or nonsensical limits cannot produce NaN', () => {
+    // A bar reading "NaN%" is worse than no bar, so an unusable denominator
+    // reports 0 used rather than a broken figure.
+    const s = usageSnapshot({ companyUnits: 0, userUnits: 0, pool: 0, cap: 0, seats: 0 });
+    assert.strictEqual(s.user.percent, 0);
+    assert.strictEqual(s.company.percent, 0);
+    for (const m of [s.user, s.company]) {
+      for (const v of Object.values(m)) assert.ok(Number.isFinite(v), `not a number: ${v}`);
+    }
+  });
+
+  test('the messages shown alongside the units are whole messages', () => {
+    const s = usageSnapshot({ companyUnits: 7, userUnits: 7, pool: 150, cap: 200, seats: 1 });
+    assert.strictEqual(s.user.usedUnits, 7);
+    assert.strictEqual(s.user.usedMessages, 3);
+    assert.strictEqual(s.user.usedMessages, unitsToMessages(7));
   });
 });
