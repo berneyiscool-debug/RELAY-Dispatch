@@ -3344,6 +3344,10 @@ body.relay-assistant-open .relay-topbar-actions {
   height: 1px;
   background: var(--border-color);
 }
+/* Keeps the brny wordmark lowercase inside upper-cased labels. */
+.brand-lc {
+  text-transform: none;
+}
 .routine-design-status {
   font-size: 12px;
   color: var(--text-secondary);

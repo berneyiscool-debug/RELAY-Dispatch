@@ -422,7 +422,7 @@ Launch allows self-serve signup, so every caller of a paid API is capped **per t
 
 How it behaves:
 
-- **At the cap** the proxy answers `429` with `Daily … limit reached (N). Try again tomorrow or contact RELAY support.` Deputy shows that sentence in the chat; geocoding and routing degrade to "no result", exactly like any other provider failure, so background backfills stay quiet.
+- **At the cap** the proxy answers `429` with `Daily … limit reached (N). Try again tomorrow or contact RELAY support.` brny shows that sentence in the chat; geocoding and routing degrade to "no result", exactly like any other provider failure, so background backfills stay quiet.
 - **Unit accounting is per address/stops-request**, so one batch cannot spend the whole day's allowance in a single round trip.
 - **Failed provider calls are not charged** — the ledger row is written only after the provider answers successfully.
 - **A missing secret never disables the cap**: an unset or unparsable value falls back to the default above.

@@ -116,7 +116,7 @@ const MODULES = {
   'route-summary':        { title: "Today's Routes",              defaultW: 'M',  defaultH: 'tall',     render: renderRouteSummary },
   'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', render: renderWeatherForecast },
   'notifications-widget': { title: 'Notifications',             defaultW: 'M',  defaultH: 'tall',     render: renderNotificationsWidget },
-  'deputy-asks-widget':   { title: 'Deputy Proposals',          defaultW: 'M',  defaultH: 'tall',     render: renderDeputyAsksWidget },
+  'deputy-asks-widget':   { title: 'brny Proposals',            defaultW: 'M',  defaultH: 'tall',     render: renderDeputyAsksWidget },
 };
 
 // Module → permission required to even offer/show it. Absent = always allowed.

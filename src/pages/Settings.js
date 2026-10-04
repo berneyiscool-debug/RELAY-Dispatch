@@ -3606,7 +3606,7 @@ export function renderSettings(container) {
 
       <p style="color:var(--text-tertiary);margin-top:16px;max-width:760px;">
         Prices are in AUD per active user, per month. Adding or deactivating a user adjusts your next
-        invoice automatically (prorated). Cloud and Cloud+ are the same app; Cloud+ adds Deputy Max — expanding the Deputy assistant to the full workspace.
+        invoice automatically (prorated). Cloud and Cloud+ are the same app; Cloud+ adds brny Max — expanding the brny assistant to the full workspace.
       </p>
     `;
 
@@ -3812,7 +3812,7 @@ export function renderSettings(container) {
         <div class="card-header"><h4>Email</h4></div>
         <div class="card-body">
           <p style="color:var(--text-secondary);margin-top:0;">
-            Send themed quotes, invoices, receipts and reminders straight from RELAY — no account or domain setup needed. Every send is logged so Deputy and Reports can see what went out.
+            Send themed quotes, invoices, receipts and reminders straight from RELAY — no account or domain setup needed. Every send is logged so brny and Reports can see what went out.
           </p>
 
           ${(() => {

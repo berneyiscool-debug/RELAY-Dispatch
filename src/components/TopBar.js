@@ -45,19 +45,19 @@ export function createTopBar() {
            inside edge; expand/clear/close stay pinned to the far right of the
            top bar while the Deputy drawer is open. -->
       <div class="relay-topbar-group relay-deputy-slot">
-        <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="Deputy — your co-pilot" aria-label="Open Deputy assistant" style="position: relative;">
+        <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="brny — your co-pilot" aria-label="Open brny assistant" style="position: relative;">
           ${relayIcon}
           <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--color-danger); color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
         </button>
       </div>
       <div class="relay-topbar-group relay-topbar-actions">
-        <button class="relay-topbar-action" id="relay-expand" title="Expand to Full Workspace" aria-label="Expand Deputy workspace">
+        <button class="relay-topbar-action" id="relay-expand" title="Expand to Full Workspace" aria-label="Expand brny workspace">
           <span class="material-icons-outlined">open_in_full</span>
         </button>
-        <button class="relay-topbar-action" id="relay-clear-chat" title="Clear Chat" aria-label="Clear Deputy chat">
+        <button class="relay-topbar-action" id="relay-clear-chat" title="Clear Chat" aria-label="Clear brny chat">
           <span class="material-icons-outlined">delete_sweep</span>
         </button>
-        <button class="relay-topbar-action" id="relay-close" title="Close Deputy" aria-label="Close Deputy">
+        <button class="relay-topbar-action" id="relay-close" title="Close brny" aria-label="Close brny">
           <span class="material-icons-outlined">close</span>
         </button>
       </div>
@@ -668,7 +668,7 @@ function openHelpModal() {
       <div class="help-sidebar">
         <button class="help-nav-item active" data-target="canvas">Infinite Canvas</button>
         <button class="help-nav-item" data-target="jobs">Jobs & Scheduling</button>
-        <button class="help-nav-item" data-target="deputy">Deputy AI Assistant</button>
+        <button class="help-nav-item" data-target="deputy">brny AI Assistant</button>
       </div>
 
       <div class="help-content">
@@ -691,10 +691,10 @@ function openHelpModal() {
           </ul>
         </div>
         <div class="help-guide-panel" id="guide-deputy">
-          <h4>Deputy Assistant co-pilot</h4>
-          <p>Deputy is your automated assistant that can perform commands, aggregate metrics, and manage canvas layouts.</p>
+          <h4>brny Assistant co-pilot</h4>
+          <p>brny is your automated assistant that can perform commands, aggregate metrics, and manage canvas layouts.</p>
           <ul>
-            <li><strong>Opening Deputy:</strong> Click the Star icon in the top right bar or press <kbd>Shift</kbd> + <kbd>D</kbd> to open the co-pilot.</li>
+            <li><strong>Opening brny:</strong> Click the Star icon in the top right bar or press <kbd>Shift</kbd> + <kbd>B</kbd> to open the co-pilot.</li>
             <li><strong>Direct Commands:</strong> Type in plain English to manage your screen. Try saying: <em>"add a schedule widget"</em> or <em>"zoom canvas to fit"</em>.</li>
             <li><strong>Overview Queries:</strong> Ask questions like: <em>"how many active jobs do we have?"</em> or <em>"show me overdue invoices"</em> to get immediate operational updates.</li>
           </ul>
@@ -709,8 +709,8 @@ function openHelpModal() {
             <kbd>/</kbd>
           </div>
           <div class="help-shortcut-row">
-            <span>Toggle Deputy assistant</span>
-            <kbd>Shift</kbd> + <kbd>D</kbd>
+            <span>Toggle brny assistant</span>
+            <kbd>Shift</kbd> + <kbd>B</kbd>
           </div>
           <div class="help-shortcut-row">
             <span>Close modal / panel</span>
@@ -719,7 +719,7 @@ function openHelpModal() {
         </div>
 
         <div>
-          <div class="help-section-title">Ask Deputy AI</div>
+          <div class="help-section-title">Ask <span class="brand-lc">brny</span> AI</div>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <button class="help-action-card" data-prompt="add a schedule widget">
               <span class="material-icons-outlined">calendar_today</span>
@@ -761,7 +761,7 @@ function openHelpModal() {
   });
 
   const { close } = showModal({
-    title: 'Help Center & Deputy Shortcuts',
+    title: 'Help Center & brny Shortcuts',
     content,
     size: 'modal-lg'
   });

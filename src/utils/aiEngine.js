@@ -59,7 +59,7 @@ async function requestCompletion(messages) {
 
   // Local (non-Cloud) workspaces never reach the edge function above and have no
   // key of their own; they run the rule-based local assistant instead.
-  throw new Error('Deputy needs a paid Cloud workspace - sign in to a Cloud account to use the managed AI service.');
+  throw new Error('brny needs a paid Cloud workspace - sign in to a Cloud account to use the managed AI service.');
 }
 
 // Redact -> call -> rehydrate. Returns { content, usage }.
