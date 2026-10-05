@@ -76,7 +76,7 @@ RELAY runs as a native desktop application (powered by Electron) or directly in 
 
 - **Frontend:** Vanilla JS (ES modules) + Vite — no framework tax, fast loads
 - **Desktop Wrapper:** Electron — runs natively on your machine
-- **Installer & Updates:** electron-builder — packages into a Windows NSIS Installer (.exe) with automatic background updates via GitHub Releases
+- **Installer & Updates:** electron-builder + electron-updater — packages into a Windows NSIS Installer (.exe); installed builds check GitHub Releases in the background and prompt to restart when an update is ready
 - **Local storage:** browser localStorage (offline-first)
 - **Fonts:** self-hosted via `@fontsource` (Inter, Material Icons Outlined, plus the
   document faces) — bundled with the build, so nothing is fetched from a CDN
@@ -100,6 +100,44 @@ npm run electron:dev    # start Vite and launch Electron window concurrently
 ```bash
 npm run electron:build  # build Vite production assets and compile the Windows NSIS Installer (.exe)
 ```
+
+Output lands in `dist-electron/` as `RELAY Dispatch Setup <version>.exe`, next to
+the `latest.yml` manifest the updater reads. The installer is **not
+code-signed**, so Windows SmartScreen shows an "unknown publisher" warning on
+first run. electron-builder uploads the release asset under a safe hyphenated
+name (`RELAY-Dispatch-Setup-<version>.exe`) rather than the spaced local
+filename, and that safe name is the one `latest.yml` points at — the release
+needs both the installer and `latest.yml` attached.
+
+Build with the same environment as the web deploy or the installer ships with
+Cloud mode and maps disabled: Vite inlines `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY` and `VITE_GOOGLE_MAPS_BROWSER_KEY` at build time (see
+`docs/SUPABASE_MIGRATION.md`).
+
+### Releasing a Desktop Update
+
+Releases are automated by `.github/workflows/desktop-release.yml`:
+
+1. Bump `version` in `package.json`, commit and merge to `main`.
+2. Tag that commit and push the tag — this is what starts the release:
+   ```bash
+   git tag v1.4.0
+   git push origin v1.4.0
+   ```
+3. The workflow runs the test suite, checks the tag matches the `package.json`
+   version, builds the installer on `windows-latest` and publishes it as a
+   GitHub Release with the installer and `latest.yml` attached.
+
+Installed builds resolve updates from `releases/latest`, so the release has to
+be **published** (not a draft) and has to carry those assets — a tag on its own
+reaches nobody. Users can also check on demand from **Help → Check for
+Updates…**; when an update is ready the app offers *Restart now* or installs it
+on the next quit. Updates reuse the same Electron user-data directory, so a
+user's local data carries across.
+
+The Electron binary is not downloaded by `npm install`: `electron .` fetches it
+the first time it runs and `electron-builder` fetches it while packaging, so the
+first build needs network access.
 
 The app boots straight into **local mode** — no account needed. To enable Cloud
 mode, point it at a Supabase project using the schema in
