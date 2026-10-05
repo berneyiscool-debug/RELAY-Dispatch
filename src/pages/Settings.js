@@ -27,6 +27,20 @@ import { setSessionUser, clearSessionUser } from './auth/session.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
 import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS, COMING_SOON_SETTINGS_TABS } from '../components/CloudUpgrade.js';
 
+// Stripe Checkout and the billing portal run in the system browser, so the
+// desktop app sits in the background while the user pays. The company row is
+// cached at sign-in with no realtime updates, so the billing tab re-checks the
+// moment the app gets focus back.
+let billingFocusRefresh = null;
+let billingFocusBound = false;
+
+function registerBillingFocusRefresh(refresh) {
+  billingFocusRefresh = refresh;
+  if (billingFocusBound) return;
+  billingFocusBound = true;
+  window.addEventListener('focus', () => billingFocusRefresh && billingFocusRefresh());
+}
+
 // Compress uploaded images using Canvas to avoid huge Base64 data payloads
 function compressImage(dataUrl, maxWidth, maxHeight) {
   return new Promise((resolve) => {
@@ -3036,12 +3050,18 @@ export function renderSettings(container) {
     // made in the Stripe portal (or a webhook that just landed) won't show until
     // we refetch. Pull the latest and re-render once if anything actually moved.
     if (isCloud) {
-      const before = JSON.stringify(getSubscription());
-      refreshSubscription().then(() => {
-        if (JSON.stringify(getSubscription()) !== before) {
-          renderBillingTab(tc, currentUser, openMigrationModal);
-        }
-      });
+      const refreshBillingTab = () => {
+        if (!tc.isConnected) return;
+        const before = JSON.stringify(getSubscription());
+        refreshSubscription().then(() => {
+          if (!tc.isConnected) return;
+          if (JSON.stringify(getSubscription()) !== before) {
+            renderBillingTab(tc, currentUser, openMigrationModal);
+          }
+        });
+      };
+      refreshBillingTab();
+      registerBillingFocusRefresh(refreshBillingTab);
     }
     const tier = getTier();                      // 'free' | 'cloud' | 'cloud_plus'
     const sub = getSubscription();               // { tier, status, seats, currentPeriodEnd, hasCustomer }

@@ -21,6 +21,7 @@
 
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
+import { webOrigin } from './webOrigin.js';
 
 // Marketing/pricing catalogue. Amounts are AUD, per active user, per month.
 export const PLAN_CATALOG = {
@@ -172,7 +173,7 @@ async function invoke(fn, body) {
 export async function startCheckout(tier) {
   if (!isCloudUser()) throw new Error('Create a cloud account first to subscribe.');
   if (tier !== 'cloud' && tier !== 'cloud_plus') throw new Error('Unknown plan.');
-  const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+  const origin = webOrigin();
   const data = await invoke('relay-billing-checkout', {
     tier,
     successUrl: `${origin}/#/settings?tab=billing&billing=success`,
@@ -198,7 +199,7 @@ export async function changePlan(tier) {
 /** Open Stripe's hosted portal to manage/cancel/update the subscription. */
 export async function openBillingPortal() {
   if (!isCloudUser()) throw new Error('No subscription to manage.');
-  const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+  const origin = webOrigin();
   const data = await invoke('relay-billing-portal', { returnUrl: `${origin}/#/settings?tab=billing` });
   if (!data?.url) throw new Error('No portal URL was returned.');
   if (typeof location !== 'undefined') location.href = data.url;

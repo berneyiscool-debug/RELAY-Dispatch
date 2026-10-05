@@ -10,6 +10,7 @@
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
+import { webOrigin } from './webOrigin.js';
 
 // Cloud accounts only. Mirrors the check used across the app.
 function isCloudUser() {
@@ -115,7 +116,7 @@ export async function createInvoicePaymentLink(invoice) {
  */
 export async function createPaymentLinkForInvoiceId(invoiceId, opts = {}) {
   if (!invoiceId) throw new Error('An invoice id is required.');
-  const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+  const origin = webOrigin();
   const data = await invoke('relay-create-payment', {
     invoiceId,
     successUrl: opts.successUrl || `${origin}/#/invoices?paid=${encodeURIComponent(invoiceId)}`,
