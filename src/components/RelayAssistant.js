@@ -16,6 +16,7 @@ import { hasPermission } from '../utils/permissions.js';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
 import { loadUserMemory, loadUserMemorySync, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
 import { FLAGS } from '../utils/flags.js';
+import { buildIntroCard, jobsScheduledToday, unassignedJobCount } from '../utils/introCard.js';
 import { hasMapsAction, runMapsActions } from '../utils/deputyMaps.js';
 import { hasWeatherAction, runWeatherActions } from '../utils/deputyWeather.js';
 import { getThreads, getThread, createThread, renameThread, deleteThread, setThreadMessages, ensureDefaultThread, deriveThreadTitle } from '../utils/deputyThreads.js';
@@ -1506,7 +1507,7 @@ function handleClearChatClick() {
             localStorage.removeItem(`relay_chat_history_${getUserId()}`);
             localStorage.removeItem(`relay_draft_message_${getUserId()}`);
             thread.innerHTML = '';
-            renderIntroDashboard(thread, {});
+            renderIntroDashboard(thread);
             showToast('Chat cleared.', 'success');
           }
         }
@@ -1527,65 +1528,35 @@ function bindTopbarRelayControls() {
   topbarRelayBound = true;
 }
 
-// Files the user has attached to the next message (not yet sent).
-function renderIntroDashboard(thread, memory) {
-  // Get user details
+// The card is rebuilt from local data on every open, so it is always current and
+// never spends any of the user's AI allowance. All the numbers and wording come
+// from `buildIntroCard`, which keeps the layout dumb and the data testable.
+function renderIntroDashboard(thread) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const userName = currentUser ? (currentUser.name || 'Admin') : 'Admin';
   const firstName = userName.split(' ')[0];
 
-  // Get current time greeting
   const hours = new Date().getHours();
   let timeGreeting = 'Good day';
   if (hours < 12) timeGreeting = 'Good morning';
   else if (hours < 18) timeGreeting = 'Good afternoon';
   else timeGreeting = 'Good evening';
 
-  // Retrieve metrics
-  const jobs = store.getAll('jobs') || [];
-  const quotes = store.getAll('quotes') || [];
-  const invoices = store.getAll('invoices') || [];
-  const stock = store.getAll('stock') || [];
-  
-  const activeJobsList = jobs.filter(j => j.status === 'Scheduled' || j.status === 'In Progress');
-  const activeJobsCount = activeJobsList.length;
-  const pendingQuotes = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending' || q.status === 'Draft').length;
-  const overdueInvoices = invoices.filter(i => i.status === 'Overdue').length;
-  const unassignedJobs = jobs.filter(j => {
-    if (j.status !== 'Scheduled' && j.status !== 'In Progress' && j.status !== 'Pending') return false;
-    const hasTechName = j.technicianName && j.technicianName !== 'Unassigned';
-    const hasTechArray = j.technicians && j.technicians.length > 0;
-    return !hasTechName && !hasTechArray;
-  });
-  const lowStock = stock.filter(s => (s.quantity || 0) <= (s.reorderPoint || 5));
-  
-  // Detect schedule conflicts (overlapping schedule blocks)
-  const schedules = store.getAll('schedule') || [];
-  const techDateBlocks = {};
-  schedules.forEach(s => {
-    if (!s.technicianId || !s.date) return;
-    const key = `${s.technicianId}_${s.date}`;
-    if (!techDateBlocks[key]) techDateBlocks[key] = [];
-    techDateBlocks[key].push(s);
-  });
-  
-  let conflictCount = 0;
-  Object.values(techDateBlocks).forEach(blocks => {
-    if (blocks.length > 1) {
-      blocks.sort((a, b) => (a.startHour || 0) - (b.startHour || 0));
-      for (let i = 1; i < blocks.length; i++) {
-        if ((blocks[i].startHour || 0) < (blocks[i-1].endHour || 0)) {
-          conflictCount++;
-          break; // Count at most 1 conflict per tech per day
-        }
-      }
-    }
+  const { tiles, attention, actions } = buildIntroCard({
+    jobs: store.getAll('jobs') || [],
+    quotes: store.getAll('quotes') || [],
+    invoices: store.getAll('invoices') || [],
+    stock: store.getAll('stock') || [],
+    schedule: store.getAll('schedule') || [],
+    maps: !!FLAGS.maps,
   });
 
-  const count = memory.interactionCount || 0;
-  const welcomeText = count > 0 
-    ? `Welcome back! You've checked in with brny ${count} ${count === 1 ? 'time' : 'times'} recently.`
-    : `Welcome to brny! I'm here to help you coordinate your dispatch and jobs today.`;
+  const dateLabel = new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
+  const attentionText = attention.length === 0
+    ? 'all clear'
+    : (attention.length === 1 ? '1 item needs attention' : `${attention.length} items need attention`);
+
+  const chipHtml = (c) => `<button class="relay-chip-btn${c.tone === 'neutral' ? '' : ` ${c.tone}-chip`}" data-cmd="${escapeHtml(c.cmd)}"><span class="material-icons-outlined chip-ico">${c.icon}</span> ${escapeHtml(c.label)}</button>`;
 
   const card = document.createElement('div');
   card.className = 'relay-intro-card assistant-intro';
@@ -1594,44 +1565,30 @@ function renderIntroDashboard(thread, memory) {
       <div class="relay-intro-emoji"><span class="material-icons-outlined">waving_hand</span></div>
       <div class="relay-intro-welcome">
         <h3>${timeGreeting}, ${escapeHtml(firstName)}!</h3>
-        <p>${welcomeText}</p>
-      </div>
-    </div>
-    
-    <div class="relay-intro-stats-grid">
-      <div class="relay-stat-item" data-cmd="how many overdue invoices">
-        <span class="relay-stat-num">${overdueInvoices}</span>
-        <span class="relay-stat-label">Overdue Invoices</span>
-      </div>
-      <div class="relay-stat-item" data-cmd="how many active jobs">
-        <span class="relay-stat-num">${activeJobsCount}</span>
-        <span class="relay-stat-label">Active Jobs</span>
-      </div>
-      <div class="relay-stat-item" data-cmd="how many pending quotes">
-        <span class="relay-stat-num">${pendingQuotes}</span>
-        <span class="relay-stat-label">Pending Quotes</span>
+        <p>${dateLabel} · ${attentionText}</p>
       </div>
     </div>
 
+    <div class="relay-intro-stats-grid">
+      ${tiles.map(t => `
+      <div class="relay-stat-item" data-cmd="${escapeHtml(t.cmd)}" title="${escapeHtml(t.title)}">
+        <span class="relay-stat-num${t.tone === 'warning' ? ' is-warning' : ''}">${escapeHtml(t.value)}</span>
+        <span class="relay-stat-label">${escapeHtml(t.label)}</span>
+      </div>`).join('')}
+    </div>
+
+    ${attention.length > 0 ? `
     <div class="relay-intro-suggestions">
-      <div class="relay-suggestions-title">Quick Commands & Proactive Alerts</div>
+      <div class="relay-suggestions-title">Needs Attention</div>
       <div class="relay-suggestion-chips">
-        ${unassignedJobs.length > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="assign technicians to unassigned jobs"><span class="material-icons-outlined chip-ico">warning</span> ${unassignedJobs.length} Unassigned Job(s) — Auto Assign</button>` : ''}
-        ${conflictCount > 0 ? `<button class="relay-chip-btn warning-chip" data-cmd="optimize today's schedule and resolve conflicts"><span class="material-icons-outlined chip-ico">warning</span> ${conflictCount} Schedule Collision(s) — Optimize</button>` : ''}
-        ${lowStock.length > 0 ? `<button class="relay-chip-btn info-chip" data-cmd="show low stock items and reorder"><span class="material-icons-outlined chip-ico">inventory_2</span> ${lowStock.length} Low Stock Item(s) — Reorder</button>` : ''}
-        ${FLAGS.maps ? `<button class="relay-chip-btn" data-cmd="What's the best order to run today's jobs, with drive times?"><span class="material-icons-outlined chip-ico">map</span> Plan Today's Route</button>` : ''}
-        <button class="relay-chip-btn" data-cmd="What's happening this week?"><span class="material-icons-outlined chip-ico">calendar_month</span> What's Happening This Week</button>
-        ${(() => {
-            let topChip = { cmd: '', label: '' };
-            if (activeJobsCount >= overdueInvoices && activeJobsCount >= pendingQuotes) {
-              topChip = { cmd: 'create a new job', label: '<span class="material-icons-outlined chip-ico">build</span> Create New Job' };
-            } else if (overdueInvoices >= activeJobsCount && overdueInvoices >= pendingQuotes) {
-              topChip = { cmd: `show ${overdueInvoices} overdue invoices`, label: `<span class="material-icons-outlined chip-ico">receipt_long</span> Overdue Invoices (${overdueInvoices})` };
-            } else {
-              topChip = { cmd: `show ${pendingQuotes} pending quotes`, label: `<span class="material-icons-outlined chip-ico">request_quote</span> Pending Quotes (${pendingQuotes})` };
-            }
-            return '<button class="relay-chip-btn" data-cmd="' + topChip.cmd + '">' + topChip.label + '</button>';
-          })()}
+        ${attention.map(chipHtml).join('')}
+      </div>
+    </div>` : ''}
+
+    <div class="relay-intro-suggestions">
+      <div class="relay-suggestions-title">Ask brny</div>
+      <div class="relay-suggestion-chips">
+        ${actions.map(chipHtml).join('')}
       </div>
     </div>
   `;
@@ -1656,6 +1613,8 @@ function renderIntroDashboard(thread, memory) {
   thread.appendChild(card);
   return card;
 }
+
+// Files the user has attached to the next message (not yet sent). Raw File
 // objects — converted to image data URLs at send time so previews stay cheap.
 let pendingAttachments = [];
 // When true, per-record success toasts are suppressed so a bulk import shows one
@@ -2275,8 +2234,7 @@ async function renderChatThread(thread) {
     return;
   }
 
-  const memory = clearStaleMemory(await loadUserMemory());
-  const card = renderIntroDashboard(thread, memory);
+  const card = renderIntroDashboard(thread);
 
   if (chatHistory.length > 0) {
     thread.classList.add('relay-thread-has-history');
@@ -2305,7 +2263,7 @@ async function clearDeputyThread(threadId) {
     const threadEl = panel ? panel.querySelector('#relay-thread') : null;
     if (threadEl) {
       threadEl.innerHTML = '';
-      renderIntroDashboard(threadEl, {});
+      renderIntroDashboard(threadEl);
     }
     localStorage.removeItem(`relay_draft_message_${getUserId()}`);
   }
@@ -2624,11 +2582,14 @@ function renderActionConfirmation(thread, actions) {
   const m = document.createElement('div');
   m.className = 'relay-msg relay-msg-relay';
   m.innerHTML = `<div class="relay-bubble relay-confirm">
-    <div class="relay-confirm-title">Add ${n} record${n === 1 ? '' : 's'} to your CRM?</div>
+    <div class="relay-confirm-head">
+      <span class="material-icons-outlined">playlist_add_check</span>
+      <div class="relay-confirm-title">Add ${n} record${n === 1 ? '' : 's'} to your CRM?</div>
+    </div>
     <div class="relay-confirm-list">${summariseActions(actions)}</div>
     <div class="relay-confirm-actions">
-      <button class="relay-confirm-yes">${n === 1 ? 'Add it' : `Add all ${n}`}</button>
-      <button class="relay-confirm-no">Cancel</button>
+      <button type="button" class="btn btn-secondary relay-confirm-no">Cancel</button>
+      <button type="button" class="btn btn-primary relay-confirm-yes">${n === 1 ? 'Add it' : `Add all ${n}`}</button>
     </div>
   </div>`;
   thread.appendChild(m);
@@ -2645,7 +2606,7 @@ function renderActionConfirmation(thread, actions) {
     } finally {
       suppressActionToasts = false;
     }
-    actionsBar.innerHTML = `<span class="relay-confirm-done">✓ Added ${ok} record${ok === 1 ? '' : 's'}.</span>`;
+    actionsBar.innerHTML = `<span class="relay-confirm-done is-success">✓ Added ${ok} record${ok === 1 ? '' : 's'}.</span>`;
     const doneMsg = `Added ${ok} record${ok === 1 ? '' : 's'} to your CRM.`;
     pushAssistant(doneMsg);
     showToast(doneMsg, 'success');
@@ -2738,6 +2699,8 @@ function runLocalCommand(raw) {
   // Quick counts
   if (/how many|count|number of/.test(t)) {
     if (/overdue/.test(t)) return countMsg('overdue invoices', store.getAll('invoices').filter(i => i.status === 'Overdue').length);
+    if (/unassign|no tech|without a tech/.test(t) && /job/.test(t)) return countMsg('unassigned jobs', unassignedJobCount(store.getAll('jobs') || []));
+    if (/today|todays|today's/.test(t) && /job/.test(t)) return countMsg('jobs scheduled today', jobsScheduledToday(store.getAll('jobs') || [], store.getAll('schedule') || []));
     if (/active|in progress/.test(t) && /job/.test(t)) return countMsg('active jobs', store.getAll('jobs').filter(j => j.status === 'In Progress' || j.status === 'Scheduled').length);
     if (/pending/.test(t) && /quote/.test(t)) return countMsg('pending quotes', store.getAll('quotes').filter(q => q.status === 'Sent' || q.status === 'Draft').length);
     if (/job/.test(t)) return countMsg('jobs', store.getAll('jobs').length);
