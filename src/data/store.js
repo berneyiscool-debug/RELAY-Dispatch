@@ -3515,7 +3515,54 @@ class DataStore {
       await this.saveSettings(this.companySettings);
     }
   }
+  // Local accounts (and cloud seeding before 2026-09-25) wrote records whose ids
+  // carry no company scope, e.g. `ft_jsa_swms`, `ut_admin` or the demo fixtures
+  // (`cust_1`, `tech_1`). Those ids are identical on every install, so pushing
+  // them into a brand new cloud company collides with whichever tenant already
+  // owns them, and Postgres reports `new row violates row-level security policy
+  // (USING expression)` because the conflicting row is invisible to this tenant.
+  // Re-scoping every migrated id into the new company's namespace keeps the
+  // migration collision-free, and because the mapping is derived from the ids it
+  // is stable: running the upgrade again produces exactly the same rows.
+  rescopeMigratedId(id, oldCompanyId, newCompanyId) {
+    if (typeof id !== 'string' || id === '' || !newCompanyId) return id;
+    if (id.startsWith(`${newCompanyId}_`)) return id;
+    const oldPrefix = oldCompanyId ? `${oldCompanyId}_` : '';
+    const suffix = oldPrefix && id.startsWith(oldPrefix) ? id.slice(oldPrefix.length) : id;
+    return `${newCompanyId}_${suffix}`;
+  }
+
+  remapMigratedString(value, idMap, oldCompanyId, newCompanyId) {
+    const exact = idMap.get(value);
+    if (exact !== undefined) return exact;
+    const oldPrefix = oldCompanyId ? `${oldCompanyId}_` : '';
+    if (!oldPrefix || oldPrefix === `${newCompanyId}_` || !value.includes(oldPrefix)) return value;
+    // Rewrites ids embedded in a longer string, such as a "View job" link.
+    return value.split(oldPrefix).join(`${newCompanyId}_`);
+  }
+
+  // Rewrites every id inside a record, including nested ones such as
+  // `mergedPlanIds`. Returns a deep copy so the local cache is never mutated.
+  remapMigratedValue(value, idMap, oldCompanyId, newCompanyId, seen = new WeakMap()) {
+    if (typeof value === 'string') return value === '' ? value : this.remapMigratedString(value, idMap, oldCompanyId, newCompanyId);
+    if (Array.isArray(value)) {
+      return value.map(item => this.remapMigratedValue(item, idMap, oldCompanyId, newCompanyId, seen));
+    }
+    if (value && Object.getPrototypeOf(value) === Object.prototype) {
+      if (seen.has(value)) return seen.get(value);
+      const copy = {};
+      seen.set(value, copy);
+      Object.keys(value).forEach(key => {
+        copy[key] = this.remapMigratedValue(value[key], idMap, oldCompanyId, newCompanyId, seen);
+      });
+      return copy;
+    }
+    return value;
+  }
+
   async migrateLocalToCloud(companyId, adminUserId) {
+    const localCompanyId = this.companyId;
+
     this.companyId = companyId;
     this.userId = adminUserId;
 
@@ -3532,28 +3579,45 @@ class DataStore {
     if (compErr) console.error('Error updating cloud company settings during migration:', compErr);
 
     // 2. Loop through all collections and push to Supabase
-    // Skip 'companies' and 'technicians'
-    const collectionsToMigrate = Object.keys(TABLE_MAP).filter(col => col !== 'companies' && col !== 'technicians');
+    // Skip 'companies' (already created above) and 'technicians' (their profiles are created with the company)
+    const collectionsToMigrate = Object.keys(TABLE_MAP)
+      .filter(col => col !== 'companies' && col !== 'technicians' && TABLE_MAP[col] && (this.cache[col] || []).length > 0);
 
+    // Map the old ids to their company-scoped equivalents before writing, so
+    // references between records (a form instance's template, a job's customer)
+    // point at the ids we are about to insert.
+    const idMap = new Map();
+    collectionsToMigrate.forEach(col => {
+      (this.cache[col] || []).forEach(item => {
+        const id = item && item.id;
+        if (typeof id === 'string' && id !== '' && !idMap.has(id)) {
+          idMap.set(id, this.rescopeMigratedId(id, localCompanyId, companyId));
+        }
+      });
+    });
+
+    const failures = [];
     for (const col of collectionsToMigrate) {
-      const items = this.cache[col] || [];
-      if (items.length === 0) continue;
-
       const table = TABLE_MAP[col];
-      if (!table) continue;
 
-      // Assign the new cloud company_id and denormalize
-      const payload = items.map(item => {
-        const itemCopy = { ...item, companyId };
+      // Assign the new cloud company_id, re-scope ids and denormalize
+      const payload = (this.cache[col] || []).map(item => {
+        const itemCopy = { ...this.remapMigratedValue(item, idMap, localCompanyId, companyId), companyId };
         return this.denormalizeRecord(itemCopy, col);
       });
 
       // Write to Supabase using upsert
-      const { error } = await supabase.from(table).upsert(payload);
+      const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
       if (error) {
+        // Keep going so the user sees every problem at once instead of fixing
+        // one collection per attempt.
         console.error(`Error migrating collection ${col}:`, error);
-        throw new Error(`Failed to migrate ${col} data: ${error.message}`);
+        failures.push(`${col} (${error.message})`);
       }
+    }
+
+    if (failures.length > 0) {
+      throw new Error(`Failed to migrate local data: ${failures.join('; ')}. Your local data is untouched — resolve the problem above and run the upgrade again.`);
     }
 
     // 3. Clear/close local DB connection and sync from Cloud
