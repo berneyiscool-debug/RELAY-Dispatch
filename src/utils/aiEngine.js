@@ -58,10 +58,12 @@ export function limitErrorMessage(body) {
   const reset = resetAt ? formatLocalReset(resetAt) : null;
   if (!reset) return body.message;
   if (body.scope === 'user') {
-    // A personal block says nothing about the team, so say it explicitly.
+    // A personal block says nothing about the team, so say it explicitly. The
+    // remaining figure is deliberately not quoted: a call is not a message, so
+    // any count here is a guess, and the meters were changed for the same reason.
     const teamLeft = Number.isFinite(body.poolRemainingMessages) ? body.poolRemainingMessages : null;
     const tail = teamLeft > 0
-      ? ` Your team can still send about ${teamLeft} more message${teamLeft === 1 ? '' : 's'} today.`
+      ? ' Your team still has allowance left today.'
       : ' Your team is out of AI allowance for today too.';
     return `You've reached your personal brny allowance for today. It resets at ${reset}.${tail}`;
   }

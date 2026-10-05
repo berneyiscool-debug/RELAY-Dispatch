@@ -34,7 +34,9 @@ test('the personal ceiling and the team pool are described differently', () => {
     resetsAt,
   });
   assert.match(personal, /^You've reached your personal brny allowance for today\./);
-  assert.match(personal, /Your team can still send about 3 more messages today\./);
+  assert.match(personal, /Your team still has allowance left today\./);
+  // No count: how many messages a call buys is a guess, so it is not quoted.
+  assert.doesNotMatch(personal, /message/i);
 
   const outToo = limitErrorMessage({
     message: 'server copy',
@@ -47,6 +49,7 @@ test('the personal ceiling and the team pool are described differently', () => {
   const company = limitErrorMessage({ message: 'server copy', scope: 'company', resetsAt });
   assert.match(company, /^Your team's brny allowance for today is used up\./);
   assert.doesNotMatch(company, /personal/);
+  assert.doesNotMatch(company, /message/i);
 });
 
 test('a refusal with no reset instant falls back to the server sentence', () => {

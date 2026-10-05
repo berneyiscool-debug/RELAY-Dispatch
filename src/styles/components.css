@@ -2983,11 +2983,12 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 
 
 
-/* Daily AI allowance meters (components/UsageBars.js). Rendered at the top of
-   the Deputy chat panel and in Settings -> Plan & Billing. */
-.usage-bars { display: flex; flex-direction: column; gap: 10px; }
+/* Daily AI allowance meters (components/UsageBars.js). They appear at the top of
+   the brny assistant panel and in Settings -> Plan & Billing. A meter is a track
+   under a label line; the chat panel renders the track alone. */
+.usage-bars { display: flex; flex-direction: column; gap: 8px; }
 
-.usage-meter { display: flex; flex-direction: column; gap: 4px; }
+.usage-meter { display: flex; flex-direction: column; gap: 3px; }
 
 .usage-meter-head {
   display: flex;
@@ -3025,7 +3026,6 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 .usage-meter-fill--warning { background: var(--color-warning); }
 .usage-meter-fill--danger { background: var(--color-danger); }
 
-.usage-meter-foot,
 .usage-bars-foot {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
@@ -3037,8 +3037,13 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 }
 /* Usage meter hosts. The chat panel supplies its own gutter because
    .relay-chat-main has none; both hosts collapse when there is no snapshot. */
-.relay-usage-bars { padding: 12px 14px 0; }
+.relay-usage-bars { padding: 10px 14px 0; }
 .relay-usage-bars:empty { display: none; }
+/* In the chat panel a meter is nothing but its track, so the pair can be read at
+   a glance above the transcript in a narrow column: a thinner track, and enough
+   of a gap that the two read as two. */
+.relay-usage-bars .usage-bars { gap: 5px; }
+.relay-usage-bars .usage-meter-track { height: 4px; }
 /* Settings hosts the bars inside a titled card, so the card has to go too -
    otherwise a failed read leaves an empty "AI usage today" panel behind. */
 .settings-usage-bars:has([data-usage-bars]:empty) { display: none; }
