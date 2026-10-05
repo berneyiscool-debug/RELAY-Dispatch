@@ -7,6 +7,7 @@ import { supabase } from '../utils/supabase.js';
 import { showToast } from '../components/Notifications.js';
 import { showModal } from '../components/Modal.js';
 import { renderStorageOptions } from '../components/StorageOptions.js';
+import { usageBarsHtml, refreshUsageBars } from '../components/UsageBars.js';
 import { renderKitTypes } from '../components/KitTypes.js';
 import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
@@ -3127,6 +3128,13 @@ export function renderSettings(container) {
 
     tc.innerHTML = `
       ${banner}
+      ${isCloud ? `
+      <div class="card settings-usage-bars" style="max-width:100%;margin-bottom:20px;">
+        <div class="card-header"><h4>AI usage today</h4></div>
+        <div class="card-body">
+          <div data-usage-bars>${usageBarsHtml()}</div>
+        </div>
+      </div>` : ''}
       <div class="card" style="max-width:100%;margin-bottom:20px;">
         <div class="card-header"><h4>Your plan</h4></div>
         <div class="card-body">
@@ -3173,6 +3181,7 @@ export function renderSettings(container) {
     `;
 
     tc.querySelector('[data-migrate]')?.addEventListener('click', () => openMigrationModal());
+    void refreshUsageBars(tc);
 
     tc.querySelector('#billing-portal')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;

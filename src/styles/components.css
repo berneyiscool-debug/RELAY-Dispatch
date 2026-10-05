@@ -2982,3 +2982,63 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 
 
 
+
+/* Daily AI allowance meters (components/UsageBars.js). Rendered at the top of
+   the Deputy chat panel and in Settings -> Plan & Billing. */
+.usage-bars { display: flex; flex-direction: column; gap: 10px; }
+
+.usage-meter { display: flex; flex-direction: column; gap: 4px; }
+
+.usage-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--font-size-xs);
+}
+
+.usage-meter-label {
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.usage-meter-count {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-meter-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-color, #e8e8e6);
+  overflow: hidden;
+}
+
+.usage-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-success);
+  transition: width var(--transition), background-color var(--transition);
+}
+
+.usage-meter-fill--warning { background: var(--color-warning); }
+.usage-meter-fill--danger { background: var(--color-danger); }
+
+.usage-meter-foot,
+.usage-bars-foot {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.usage-bars-foot--blocked {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+}
+/* Usage meter hosts. The chat panel supplies its own gutter because
+   .relay-chat-main has none; both hosts collapse when there is no snapshot. */
+.relay-usage-bars { padding: 12px 14px 0; }
+.relay-usage-bars:empty { display: none; }
+/* Settings hosts the bars inside a titled card, so the card has to go too -
+   otherwise a failed read leaves an empty "AI usage today" panel behind. */
+.settings-usage-bars:has([data-usage-bars]:empty) { display: none; }
