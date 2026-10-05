@@ -1778,7 +1778,7 @@ export async function openRelay() {
       <div class="relay-chat-body">
         <div class="relay-thread-sidebar" id="relay-thread-sidebar" style="${hasDeputyMax() ? '' : 'display:none'}"></div>
         <div class="relay-chat-main">
-          <div class="relay-usage-bars" data-usage-bars>${usageBarsHtml()}</div>
+          <div class="relay-usage-bars" data-usage-bars="bare">${usageBarsHtml({ bare: true })}</div>
           <div class="relay-weekly-overlay" id="relay-weekly-overlay"></div>
           <div class="relay-thread" id="relay-thread"></div>
           <div class="relay-attach-row" id="relay-attach-row"></div>

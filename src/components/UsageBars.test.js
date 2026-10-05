@@ -1,7 +1,8 @@
 // The bars are the only place a user sees the allowance before it runs out, so
-// the copy, the colour thresholds and the "percentages only" rule are all pinned
-// here. The snapshot is rendered through `usageBarsHtmlFor` rather than
-// `usageBarsHtml` so no network or DOM is needed.
+// the copy, the colour thresholds, the "percentages only" rule and the two host
+// shapes (labelled and bare) are all pinned here. The snapshot is rendered
+// through `usageBarsHtmlFor` rather than `usageBarsHtml` so no network or DOM is
+// needed.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { usageBarsHtmlFor } from './UsageBars.js';
@@ -108,6 +109,50 @@ test('the reset line is shown in local time when nothing is blocked', () => {
 test('no footer at all when there is neither a reset nor a block', () => {
   // formatLocalReset() throws on null, so an absent reset must not reach it.
   assert.doesNotMatch(usageBarsHtmlFor(snapshot()), /usage-bars-foot/);
+});
+
+test('a bare host renders the tracks alone', () => {
+  const bare = usageBarsHtmlFor(snapshot(), { bare: true });
+  assert.equal((bare.match(/usage-meter-track/g) || []).length, 2);
+  // The name and the percentage are gone from the markup, not just hidden: a
+  // "quick check" host has no text to read at all.
+  assert.doesNotMatch(bare, /usage-meter-head/);
+  assert.doesNotMatch(bare, /usage-meter-label/);
+  assert.doesNotMatch(bare, /usage-meter-count/);
+  assert.doesNotMatch(bare, />12%</);
+  assert.doesNotMatch(bare, />23%</);
+  // Each track still names itself for a screen reader and for a hover.
+  assert.match(bare, /aria-label="Your usage today"/);
+  assert.match(bare, /aria-valuenow="12"/);
+  assert.match(bare, /aria-valuetext="Today&#39;s team usage: 23% used"/);
+  assert.match(bare, /title="Your usage today: 12% used"/);
+});
+
+test('a bare host says nothing in words, even about a reset or a block', () => {
+  // The bar is the whole message: the refusal sentence carries the reset time
+  // and which allowance ran out at the moment either one matters.
+  const blocked = usageBarsHtmlFor(
+    snapshot({ blocked: 'user', resetsAt: new Date(Date.now() + 3600000) }),
+    { bare: true },
+  );
+  assert.doesNotMatch(blocked, /usage-bars-foot/);
+  assert.doesNotMatch(blocked, /used up/);
+  assert.doesNotMatch(blocked, /Resets /);
+  // A full allowance is still legible without the text.
+  const spent = usageBarsHtmlFor(snapshot({
+    blocked: 'user',
+    user: meter({ usedUnits: 300, limitUnits: 300, remainingUnits: 0 }),
+  }), { bare: true });
+  assert.match(spent, /width:100%/);
+  assert.match(spent, /usage-meter-fill--danger/);
+});
+
+test('the labelled shape is untouched by the bare option', () => {
+  const labelled = usageBarsHtmlFor(snapshot());
+  assert.match(labelled, /usage-meter-label">Your usage today</);
+  assert.match(labelled, /usage-meter-count">12%</);
+  // The heading already names the track, so a title would only repeat it.
+  assert.doesNotMatch(labelled, /title=/);
 });
 
 test('the bar width and the percentage cannot be driven by the payload', () => {
