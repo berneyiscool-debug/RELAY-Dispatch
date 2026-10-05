@@ -511,3 +511,184 @@ describe('local single-user migration', () => {
     assert.strictEqual(storage.get('relay_login_mode'), 'local_multiuser');
   });
 });
+
+// Local→cloud upgrade. Local accounts hold records whose ids carry no company
+// scope (`ft_jsa_swms`, `ut_admin`, the demo fixtures), and those ids are the
+// same on every install, so writing them into a new cloud company collided with
+// whichever tenant already owned them: Postgres rejected the row with "new row
+// violates row-level security policy (USING expression) for table ..." because
+// the conflicting row is invisible to the new tenant. Migration therefore has to
+// re-scope every id, and every reference to it, into the new company namespace.
+describe('migrateLocalToCloud', () => {
+  const CLOUD_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+  const savedLocalStorage = globalThis.localStorage;
+  let originalInit;
+  let initCalled;
+
+  const stubWrites = (failWhen) => {
+    const writes = [];
+    const originalFrom = supabase.from;
+    supabase.from = (table) => ({
+      ...originalFrom(table),
+      upsert: async (payload, options) => {
+        writes.push({ table, payload, options });
+        const error = failWhen ? failWhen(table, payload) : null;
+        return error ? { error, data: null } : { error: null, data: {} };
+      }
+    });
+    return { writes, restore: () => { supabase.from = originalFrom; } };
+  };
+
+  beforeEach(() => {
+    globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+    store.clearSync();
+    store.listeners = {};
+    store.db = null;
+    initCalled = false;
+    originalInit = store.initializeCloudSync;
+    store.initializeCloudSync = async () => { initCalled = true; };
+  });
+
+  afterEach(() => {
+    store.initializeCloudSync = originalInit;
+    if (savedLocalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = savedLocalStorage;
+    store.clearSync();
+  });
+
+  test('re-scopes legacy ids and the references pointing at them', async () => {
+    const { writes, restore } = stubWrites();
+    try {
+      store.companyId = 'acct_local1';
+      store.cache.formTemplates = [{ id: 'ft_jsa_swms', name: 'JSA / SWMS', sections: [{ id: 'sec_1' }] }];
+      store.cache.formInstances = [{ id: 'fi_1', templateId: 'ft_jsa_swms', jobId: 'acct_local1_job_1', values: { ref: 'ft_jsa_swms' } }];
+      store.cache.customers = [{ id: 'acct_local1_cust_1', name: 'Acme' }];
+      store.cache.jobs = [{ id: 'acct_local1_job_1', customerId: 'acct_local1_cust_1', title: 'Switchboard' }];
+
+      await store.migrateLocalToCloud(CLOUD_ID, 'user-1');
+
+      const byTable = (table) => writes.find(w => w.table === table);
+
+      // Unscoped prebuilt id gains the new company's namespace.
+      const templates = byTable('form_templates').payload;
+      assert.deepStrictEqual(templates.map(r => r.id), [`${CLOUD_ID}_ft_jsa_swms`]);
+      assert.strictEqual(templates[0].company_id, CLOUD_ID);
+      assert.deepStrictEqual(templates[0].fields, { description: '', sections: [{ id: 'sec_1' }] });
+
+      // Ids already scoped to the old account are re-scoped, not double-prefixed.
+      assert.deepStrictEqual(byTable('customers').payload.map(r => r.id), [`${CLOUD_ID}_cust_1`]);
+
+      // References between records follow the ids that were actually written.
+      const instance = byTable('form_instances').payload[0];
+      assert.strictEqual(instance.id, `${CLOUD_ID}_fi_1`);
+      assert.strictEqual(instance.template_id, `${CLOUD_ID}_ft_jsa_swms`);
+      assert.strictEqual(instance.job_id, `${CLOUD_ID}_job_1`);
+      assert.deepStrictEqual(instance.values, { ref: `${CLOUD_ID}_ft_jsa_swms` });
+
+      const job = byTable('jobs').payload[0];
+      assert.strictEqual(job.id, `${CLOUD_ID}_job_1`);
+      assert.strictEqual(job.customer_id, `${CLOUD_ID}_cust_1`);
+
+      // Every write targets the primary key so a retry updates instead of duplicating.
+      assert.ok(writes.length > 0);
+      assert.ok(writes.every(w => w.options && w.options.onConflict === 'id'));
+
+      // Local records must not be rewritten in place: the account is only
+      // discarded once the caller sees a successful migration.
+      assert.strictEqual(store.cache.formTemplates[0].id, 'ft_jsa_swms');
+      assert.strictEqual(store.cache.formInstances[0].templateId, 'ft_jsa_swms');
+      assert.strictEqual(store.cache.jobs[0].customerId, 'acct_local1_cust_1');
+
+      assert.strictEqual(initCalled, true);
+    } finally {
+      restore();
+    }
+  });
+
+  test('migrates records whose legacy ids are already owned by another tenant', async () => {
+    // Reproduces the reported failure: the unscoped ids belong to a tenant this
+    // session cannot see, so Postgres rejects them with a USING-expression error.
+    const legacyIds = new Set(['ft_jsa_swms', 'ut_admin']);
+    const { writes, restore } = stubWrites((table, payload) => (
+      payload.some(row => legacyIds.has(row.id))
+        ? { message: `new row violates row-level security policy (USING expression) for table "${table}"` }
+        : null
+    ));
+    try {
+      store.companyId = 'acct_local1';
+      store.cache.formTemplates = [{ id: 'ft_jsa_swms', name: 'JSA / SWMS', sections: [] }];
+      store.cache.userTypes = [{ id: 'ut_admin', name: 'Admin' }];
+
+      await store.migrateLocalToCloud(CLOUD_ID, 'user-1');
+
+      assert.deepStrictEqual(writes.map(w => w.table).sort(), ['form_templates', 'user_types']);
+      assert.ok(writes.every(w => w.payload.every(row => row.id.startsWith(`${CLOUD_ID}_`))));
+      assert.strictEqual(initCalled, true);
+    } finally {
+      restore();
+    }
+  });
+
+  test('reports every failing collection in one error and keeps the local data', async () => {
+    const { writes, restore } = stubWrites((table) => (
+      table === 'user_types' ? { message: 'permission denied for table user_types' } : null
+    ));
+    try {
+      store.companyId = 'acct_local1';
+      store.cache.formTemplates = [{ id: 'ft_jsa_swms', name: 'JSA / SWMS', sections: [] }];
+      store.cache.userTypes = [{ id: 'ut_admin', name: 'Admin' }];
+      store.cache.customers = [{ id: 'acct_local1_cust_1', name: 'Acme' }];
+
+      await assert.rejects(
+        () => store.migrateLocalToCloud(CLOUD_ID, 'user-1'),
+        (err) => {
+          assert.match(err.message, /Failed to migrate local data:/);
+          assert.match(err.message, /userTypes \(permission denied for table user_types\)/);
+          return true;
+        }
+      );
+
+      // A failure in one collection does not stop the others.
+      assert.deepStrictEqual(writes.map(w => w.table).sort(), ['customers', 'form_templates', 'user_types']);
+      assert.strictEqual(store.cache.formTemplates[0].id, 'ft_jsa_swms');
+      // The account is still local, so the sync must not be switched over yet.
+      assert.strictEqual(initCalled, false);
+    } finally {
+      restore();
+    }
+  });
+
+  describe('id re-scoping helpers', () => {
+    test('scopes bare and previously scoped ids without double-prefixing', () => {
+      assert.strictEqual(store.rescopeMigratedId('ft_jsa_swms', 'acct_1', 'company-a'), 'company-a_ft_jsa_swms');
+      assert.strictEqual(store.rescopeMigratedId('acct_1_tech_1', 'acct_1', 'company-a'), 'company-a_tech_1');
+      assert.strictEqual(store.rescopeMigratedId('company-a_job_1', 'acct_1', 'company-a'), 'company-a_job_1');
+      assert.strictEqual(store.rescopeMigratedId('', 'acct_1', 'company-a'), '');
+      assert.strictEqual(store.rescopeMigratedId(null, 'acct_1', 'company-a'), null);
+    });
+
+    test('rewrites ids embedded in longer strings', () => {
+      const idMap = new Map([['acct_1_job_1', 'company-a_job_1']]);
+      assert.strictEqual(store.remapMigratedString('acct_1_job_1', idMap, 'acct_1', 'company-a'), 'company-a_job_1');
+      assert.strictEqual(store.remapMigratedString('/jobs/acct_1_job_1/edit', idMap, 'acct_1', 'company-a'), '/jobs/company-a_job_1/edit');
+      assert.strictEqual(store.remapMigratedString('rate_1', idMap, 'acct_1', 'company-a'), 'rate_1');
+    });
+
+    test('copies nested values and leaves non-plain objects alone', () => {
+      const due = new Date('2026-10-05T00:00:00.000Z');
+      const source = { id: 'acct_1_job_1', customerId: 'acct_1_cust_1', dueDate: due, tags: ['acct_1_tag_1'] };
+      const idMap = new Map([['acct_1_job_1', 'company-a_job_1'], ['acct_1_cust_1', 'company-a_cust_1'], ['acct_1_tag_1', 'company-a_tag_1']]);
+
+      const remapped = store.remapMigratedValue(source, idMap, 'acct_1', 'company-a');
+
+      assert.deepStrictEqual(remapped, {
+        id: 'company-a_job_1',
+        customerId: 'company-a_cust_1',
+        dueDate: due,
+        tags: ['company-a_tag_1']
+      });
+      assert.strictEqual(remapped.dueDate, due);
+      assert.deepStrictEqual(source, { id: 'acct_1_job_1', customerId: 'acct_1_cust_1', dueDate: due, tags: ['acct_1_tag_1'] });
+    });
+  });
+});
