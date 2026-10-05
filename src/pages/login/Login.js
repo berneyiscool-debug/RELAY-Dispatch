@@ -2,6 +2,7 @@ import { router } from '../../router.js';
 import { supabase } from '../../utils/supabase.js';
 import { applyTheme } from '../../utils/theme.js';
 import { setSessionUser } from '../auth/session.js';
+import { readPendingSignup, sessionUserFromProfile } from '../../utils/cloudOnboarding.js';
 
 
 // Ordered list of routes to try — first permitted one wins
@@ -55,6 +56,14 @@ export async function handleCloudLoginSuccess(container, authUser) {
 
   if (profileError) {
     console.error('Failed to fetch user profile:', profileError);
+    // A cloud account with no profile row is a signup that never finished
+    // provisioning (abandoned at the paywall, or still awaiting email
+    // confirmation). Finish it on the onboarding page instead of dead-ending.
+    // PGRST116 = "no rows returned" from .single().
+    if (profileError.code === 'PGRST116' || readPendingSignup()) {
+      router.navigate('/subscribe');
+      return;
+    }
     throw new Error(`Your user profile could not be found: ${profileError.message} (${profileError.code})`);
   }
 
@@ -65,18 +74,7 @@ export async function handleCloudLoginSuccess(container, authUser) {
   }
 
   // Store the user context the rest of the app reads on boot
-  const user = {
-    id: profile.id,
-    companyId: profile.company_id,
-    name: profile.name,
-    role: profile.role,
-    userTypeName: profile.role === 'admin' ? 'Admin' : (profile.role === 'manager' ? 'Manager' : 'Technician'),
-    userTypeId: profile.user_type_id || (profile.role === 'admin' 
-      ? (profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_admin' : `${profile.company_id}_ut_admin`)
-      : (profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_tech' : `${profile.company_id}_ut_tech`)),
-    color: profile.color || '#3B82F6',
-    avatarUrl: profile.avatar_url || null
-  };
+  const user = sessionUserFromProfile(profile);
 
   setSessionUser(user);
   await completeLogin(user);
@@ -187,17 +185,7 @@ function renderForcePasswordChange(container, authUser, profile) {
         .eq('id', authUser.id);
       if (profileError) throw profileError;
 
-      const user = {
-        id: profile.id,
-        companyId: profile.company_id,
-        name: profile.name,
-        role: profile.role,
-        userTypeName: profile.role === 'admin' ? 'Admin' : (profile.role === 'manager' ? 'Manager' : 'Technician'),
-        userTypeId: profile.user_type_id || (profile.role === 'admin' 
-          ? (profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_admin' : `${profile.company_id}_ut_admin`)
-          : (profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_tech' : `${profile.company_id}_ut_tech`)),
-        color: profile.color || '#3B82F6'
-      };
+      const user = sessionUserFromProfile(profile);
 
       setSessionUser(user);
       await completeLogin(user);
@@ -211,7 +199,7 @@ function renderForcePasswordChange(container, authUser, profile) {
   });
 }
 
-async function completeLogin(user) {
+export async function completeLogin(user) {
   // Keep the login mode consistent with the active account so a reloaded tab
   // (or a second tab adopting the session) boots into the correct mode. Local
   // profiles are always single-user, so an `acct_` account is always 'local'.

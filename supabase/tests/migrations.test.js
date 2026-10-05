@@ -33,6 +33,7 @@ const BACKFILL_ORIGIN_SQL = readFileSync(
   'utf8'
 );
 const POOLED_SQL = readFileSync(join(MIGRATIONS_DIR, '034_ai_pooled_caps.sql'), 'utf8');
+const NAME_SQL = readFileSync(join(MIGRATIONS_DIR, '036_company_name_uniqueness.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -941,5 +942,141 @@ describe('035 notifications origin re-backfill', () => {
       await value(db, `SELECT origin FROM public.notifications WHERE title = 'Site visit requested'`),
       'user'
     );
+  });
+});
+
+describe('036 company name availability', () => {
+  let db;
+
+  const NEW_ADMIN = '55555555-5555-5555-5555-555555555555';
+  const OTHER_ADMIN = '66666666-6666-6666-6666-666666666666';
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    await db.query(`INSERT INTO auth.users (id, email) VALUES ('${NEW_ADMIN}', 'new@acme.test')`);
+    await db.exec(NAME_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('normalizes the name the way the signup form does', async () => {
+    assert.strictEqual(await value(db, "SELECT public.relay_company_name_key('  Acme   Electrical ')"), 'acme electrical');
+    assert.strictEqual(await value(db, "SELECT public.relay_company_name_key('ACME ELECTRICAL')"), 'acme electrical');
+    assert.strictEqual(await value(db, "SELECT public.relay_company_name_key('')"), '');
+    assert.strictEqual(await value(db, 'SELECT public.relay_company_name_key(NULL)'), '');
+  });
+
+  test('indexes the normalized name without making it unique', async () => {
+    // Uniqueness would break renames: Settings.saveSettings() rewrites
+    // companies.name and only console.errors on a 23505.
+    assert.strictEqual(
+      await value(db, "SELECT indisunique FROM pg_index WHERE indexrelid = 'public.companies_name_key_idx'::regclass"),
+      false
+    );
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'companies_name_key_idx'"),
+      1
+    );
+  });
+
+  test('an anonymous visitor can ask whether a name is free', async () => {
+    await asRole(db, 'anon', null, async () => {
+      // RLS hides every company from this role, which is exactly why the check
+      // has to run as the definer.
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.companies'), 0);
+      assert.strictEqual(await value(db, "SELECT public.company_name_available('Tenant A')"), false);
+      assert.strictEqual(await value(db, "SELECT public.company_name_available('  tenant   a ')"), false);
+      assert.strictEqual(await value(db, "SELECT public.company_name_available('Acme Electrical')"), true);
+      // Blank is not "available" - the form has its own required-field message.
+      assert.strictEqual(await value(db, "SELECT public.company_name_available('   ')"), false);
+    });
+  });
+
+  test('provisioning claims the name for the new company', async () => {
+    const companyId = await asRole(db, 'authenticated', NEW_ADMIN, async () => {
+      const { rows } = await db.query(`SELECT public.create_company_and_admin('${NEW_ADMIN}', 'Acme Electrical', 'New Admin', '0400000000') AS id`);
+      return rows[0].id;
+    });
+
+    assert.match(companyId, /^[0-9a-f-]{36}$/);
+    assert.strictEqual(await value(db, `SELECT name FROM public.companies WHERE id = '${companyId}'`), 'Acme Electrical');
+    assert.strictEqual(
+      await value(db, `SELECT name || '|' || role || '|' || email FROM public.profiles WHERE id = '${NEW_ADMIN}'`),
+      'New Admin|admin|new@acme.test'
+    );
+    assert.strictEqual(await value(db, "SELECT public.company_name_available('acme  electrical')"), false);
+  });
+
+  test('refuses a name another company already owns', async () => {
+    await asRole(db, 'authenticated', OTHER_ADMIN, async () => {
+      await assert.rejects(
+        () => db.query(`SELECT public.create_company_and_admin('${OTHER_ADMIN}', '  ACME   electrical ', 'Mallory', '0400000000')`),
+        /already taken/
+      );
+    });
+    // The failed attempt must not have left a company or a profile behind.
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM public.companies WHERE public.relay_company_name_key(name) = 'acme electrical'"),
+      1
+    );
+    assert.strictEqual(await value(db, `SELECT count(*)::int FROM public.profiles WHERE id = '${OTHER_ADMIN}'`), 0);
+  });
+
+  test('refuses a blank company name', async () => {
+    await asRole(db, 'authenticated', OTHER_ADMIN, async () => {
+      await assert.rejects(
+        () => db.query(`SELECT public.create_company_and_admin('${OTHER_ADMIN}', '   ', 'Mallory', '0400000000')`),
+        /Enter your company name/
+      );
+    });
+    assert.strictEqual(await value(db, `SELECT count(*)::int FROM public.profiles WHERE id = '${OTHER_ADMIN}'`), 0);
+  });
+
+  test('keeps the caller check and the anon lockout', async () => {
+    await asRole(db, 'authenticated', OTHER_ADMIN, async () => {
+      await assert.rejects(
+        () => db.query(`SELECT public.create_company_and_admin('${NEW_ADMIN}', 'Fresh Co', 'Mallory', '0400000000')`),
+        /only provision your own company/
+      );
+    });
+    await asRole(db, 'anon', null, async () => {
+      await assert.rejects(
+        () => db.query(`SELECT public.create_company_and_admin('${OTHER_ADMIN}', 'Fresh Co', 'Mallory', '0400000000')`),
+        /permission denied/
+      );
+    });
+  });
+
+  test('is re-runnable and still enforces the claim afterwards', async () => {
+    await db.exec(NAME_SQL);
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'companies_name_key_idx'"),
+      1
+    );
+    assert.strictEqual(
+      await value(db, "SELECT to_regprocedure('public.create_company_and_admin(uuid, text, text, text)') IS NOT NULL"),
+      true
+    );
+
+    await asRole(db, 'authenticated', OTHER_ADMIN, async () => {
+      await assert.rejects(
+        () => db.query(`SELECT public.create_company_and_admin('${OTHER_ADMIN}', 'Tenant B', 'Mallory', '0400000000')`),
+        /already taken/
+      );
+    });
+
+    // CREATE OR REPLACE must not have widened or dropped the grants.
+    await asRole(db, 'anon', null, async () => {
+      await assert.rejects(
+        () => db.query(`SELECT public.create_company_and_admin('${OTHER_ADMIN}', 'Fresh Co', 'Mallory', '0400000000')`),
+        /permission denied/
+      );
+      assert.strictEqual(await value(db, "SELECT public.company_name_available('Tenant B')"), false);
+    });
   });
 });
