@@ -4,6 +4,7 @@
 import { supabase } from '../utils/supabase.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
 import { prebuiltForms } from './prebuiltForms.js';
+import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
 
 const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
@@ -1445,6 +1446,9 @@ class DataStore {
 
       this.migrateChildJobNumbers();
       this.repairInvoiceIssueDates();
+      // Cloud rows are the ones migration 033 mis-stamped, so the classifier has
+      // to run on this path too — the local path is not the only entry point.
+      this.migrateNotificationOrigins({ requireOriginColumn: true });
 
       // Emit loaded event for all collections
       collections.forEach(col => {
@@ -1588,6 +1592,10 @@ class DataStore {
     if (record.customer_name !== undefined) {
       record.customerName = record.customer_name;
       delete record.customer_name;
+    }
+    if (record.created_by !== undefined) {
+      record.createdBy = record.created_by;
+      delete record.created_by;
     }
     if (record.project_id !== undefined) {
       record.projectId = record.project_id;
@@ -1994,19 +2002,32 @@ class DataStore {
   }
 
   // Notifications raised before `origin` existed have no way of saying whether a
-  // person or a machine created them. Classify them from the shapes only the
-  // machine producers have ever emitted so the "hide system notifications"
-  // toggle works on existing data. Anything unrecognised stays `'user'` — a
-  // person's notification must never disappear from their list.
-  migrateNotificationOrigins() {
+  // person or a machine created them, and the ones migration 033 touched were
+  // stamped `'user'` because its backfill keyed off a `created_by` column the app
+  // never wrote. Classify them from the shapes only the machine producers have
+  // ever emitted so the "hide system notifications" toggle works on existing data.
+  // Anything unrecognised stays `'user'` — a person's notification must never
+  // disappear from their list.
+  migrateNotificationOrigins({ requireOriginColumn = false } = {}) {
     const notifications = this.cache.notifications || [];
+    // A cloud database that still predates migration 033 has no `origin` column, so
+    // every row here would fail to write (with a toast each). The toggle already
+    // hides machine rows through the shape check, so leave such a schema alone and
+    // point at the migration instead of hammering it.
+    if (requireOriginColumn && !notifications.some(n => n && n.origin !== undefined)) {
+      if (notifications.length > 0) {
+        console.warn('[RELAY] notifications.origin is missing — apply supabase/migrations/035_notifications_origin_backfill.sql to persist origin.');
+      }
+      return 0;
+    }
     let updatedCount = 0;
     notifications.forEach(n => {
-      if (!n || n.origin === 'system' || n.origin === 'user') return;
-      const isSystem = n.createdBy === 'System Engine'
-        || n.title === 'Stock Auto-Reorder'
-        || (typeof n.title === 'string' && n.title.startsWith('System Alert - Service Due'));
-      const origin = isSystem ? 'system' : 'user';
+      if (!n || !n.id) return;
+      // Never demote an explicit system stamp: the stored value stays
+      // authoritative, this pass only corrects rows it can prove are machine-made.
+      if (n.origin === SYSTEM_ORIGIN) return;
+      const origin = isMachineNotification(n) ? SYSTEM_ORIGIN : 'user';
+      if (n.origin === origin) return;
       n.origin = origin;
       this.update('notifications', n.id, { origin });
       updatedCount++;
@@ -2014,6 +2035,7 @@ class DataStore {
     if (updatedCount > 0) {
       console.log(`Classified ${updatedCount} existing notifications by origin.`);
     }
+    return updatedCount;
   }
 
   // Legacy invoices (seeded demo data and pre-serialization cloud records) can be
@@ -2150,6 +2172,10 @@ class DataStore {
     if (record.customerName !== undefined) {
       record.customer_name = record.customerName;
       delete record.customerName;
+    }
+    if (record.createdBy !== undefined) {
+      record.created_by = record.createdBy;
+      delete record.createdBy;
     }
     if (record.projectId !== undefined) {
       record.project_id = record.projectId;

@@ -6,11 +6,21 @@
 // this migration modal, so every cloud path finishes in the same place.
 
 import { store } from '../data/store.js';
+import { router } from '../router.js';
 import { showModal } from './Modal.js';
-import { showToast } from './Notifications.js';
 import { escapeHTML } from '../utils/security.js';
-import { setSessionUser } from '../pages/auth/session.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
+import { bindCompanyNameCheck, validateCompanyName } from '../utils/companyName.js';
+import {
+  canonicalAuthEmail,
+  clearPendingMigration,
+  clearPendingSignup,
+  describeSignUpResult,
+  readPendingMigration,
+  savePendingMigration,
+  savePendingSignup,
+} from '../utils/cloudOnboarding.js';
+import { startSubscribeCheckout } from '../utils/subscription.js';
 
 // Shown on greyed-out, cloud-only nav entries.
 export const CLOUD_REQUIRED_TOOLTIP = 'Click to create a Cloud account';
@@ -39,9 +49,20 @@ export const COMING_SOON_SETTINGS_TABS = {
   cost_centers: 'Cost Centers & Xero'
 };
 
+const SUBMIT_LABEL = 'Continue to payment';
+
 export function openMigrationModal() {
+  // A conversion whose payment was never completed already has a Supabase user
+  // and company row. Starting again would collide on the email address, so
+  // resume it instead.
+  const pendingConversion = readPendingMigration();
+  if (pendingConversion) {
+    showPendingUpgradeModal(pendingConversion);
+    return;
+  }
+
   const modalContent = document.createElement('div');
-  const expectedName = (store.getSettings().name || '').trim();
+  const businessName = (store.getSettings().name || '').trim();
   modalContent.innerHTML = `
     <form id="convert-cloud-form" style="display:flex; flex-direction:column; gap:16px;">
       <div style="background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:12px; border-radius:4px; color:var(--color-danger); display:flex; gap:8px;">
@@ -54,13 +75,14 @@ export function openMigrationModal() {
       <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; color:var(--color-info); display:flex; gap:8px;">
         <span class="material-icons-outlined" style="color:var(--color-info);">info</span>
         <div>
-          Configure your cloud administrator credentials. This username and password will be your new secure login.
+          Choose your business name and administrator credentials, then add your payment details on Stripe. Your local data is copied across once the subscription is active.
         </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label" style="font-weight:600;">${expectedName ? `Type <strong>${escapeHTML(expectedName)}</strong> to confirm` : 'Business Name'}</label>
-        <input class="form-input" id="migrate-company-name" required autocomplete="off" placeholder="${escapeHTML(expectedName || 'Your business name')}" />
+        <label class="form-label" style="font-weight:600;">Business Name</label>
+        <input class="form-input" id="migrate-company-name" required autocomplete="organization" value="${escapeHTML(businessName)}" placeholder="Your business name" />
+        <div id="migrate-company-status" style="margin-top:6px; font-size:0.85rem; color:var(--text-tertiary);"></div>
       </div>
 
       <div class="form-group">
@@ -94,16 +116,23 @@ export function openMigrationModal() {
         <button type="button" class="btn btn-secondary" id="btn-migrate-cancel">Cancel</button>
         <button type="submit" class="btn btn-primary" id="btn-migrate-submit" style="background:var(--color-warning); border-color:var(--color-warning); color:#fff; display:flex; align-items:center; gap:6px;">
           <span class="material-icons-outlined" id="submit-icon" style="font-size:18px;">cloud_done</span>
-          <span id="submit-text">Register & Start Migration</span>
+          <span id="submit-text">${SUBMIT_LABEL}</span>
         </button>
       </div>
     </form>
   `;
 
+  const companyNameWatch = bindCompanyNameCheck(
+    modalContent.querySelector('#migrate-company-name'),
+    modalContent.querySelector('#migrate-company-status')
+  );
+  if (businessName) companyNameWatch.checkNow();
+
   const { close } = showModal({
     title: 'Register & Migrate to Cloud',
     content: modalContent,
-    size: 'modal-md'
+    size: 'modal-md',
+    onClose: () => companyNameWatch.dispose()
   });
 
   modalContent.querySelector('#btn-migrate-cancel').addEventListener('click', close);
@@ -119,29 +148,50 @@ export function openMigrationModal() {
     const submitText = modalContent.querySelector('#submit-text');
     const submitIcon = modalContent.querySelector('#submit-icon');
 
+    const showError = (message) => {
+      errorTextEl.textContent = message;
+      errorEl.style.display = 'flex';
+      submitBtn.disabled = false;
+      cancelBtn.disabled = false;
+      submitText.textContent = SUBMIT_LABEL;
+      submitIcon.className = 'material-icons-outlined';
+      submitIcon.textContent = 'cloud_done';
+      submitIcon.style.animation = '';
+    };
+
     errorEl.style.display = 'none';
     submitBtn.disabled = true;
     cancelBtn.disabled = true;
-    submitText.textContent = 'Migrating to Cloud...';
+    submitText.textContent = 'Preparing...';
     submitIcon.className = 'material-icons-outlined spinner';
     submitIcon.textContent = 'sync';
     submitIcon.style.animation = 'spin 1s linear infinite';
 
-    const confirmName = modalContent.querySelector('#migrate-company-name').value.trim();
+    const companyName = modalContent.querySelector('#migrate-company-name').value.trim();
     const adminName = modalContent.querySelector('#migrate-admin-name').value.trim();
     const adminPhone = modalContent.querySelector('#migrate-admin-phone').value.trim();
     const email = modalContent.querySelector('#migrate-admin-email').value.trim();
     const password = modalContent.querySelector('#migrate-admin-password').value;
 
+    const nameCheck = validateCompanyName(companyName);
+    if (!nameCheck.valid) {
+      showError(nameCheck.message);
+      return;
+    }
+
+    // Downloaded before the Stripe detour, so the user keeps a copy of their
+    // data even if they never return to finish paying.
+    let localAccountId = null;
+    try { localAccountId = sessionStorage.getItem('relay_active_account'); } catch (_) { /* blocked storage */ }
+    runBackupIfRequested(modalContent, 'relay-backup-before-cloud-upgrade');
+
     try {
-      if (!confirmName) {
-        throw new Error('Enter your business name to continue.');
+      // 'unknown' (server unreachable) passes through: the RPC re-checks the
+      // name under an advisory lock, so a race can never create a duplicate.
+      if (await companyNameWatch.checkNow() === 'taken') {
+        showError('That company name is already taken. Please choose another.');
+        return;
       }
-      if (expectedName && confirmName !== expectedName) {
-        throw new Error('The business name does not match. Type it exactly as shown to confirm.');
-      }
-      const companyName = confirmName;
-      const backupFile = runBackupIfRequested(modalContent, 'relay-backup-before-cloud-upgrade');
 
       const settings = store.getSettings();
       settings.name = companyName;
@@ -149,8 +199,9 @@ export function openMigrationModal() {
 
       const { supabase } = await import('../utils/supabase.js');
 
+      const authEmail = canonicalAuthEmail(email);
       const { data: authData, error: authErr } = await supabase.auth.signUp({
-        email,
+        email: authEmail,
         password,
         options: {
           data: {
@@ -161,99 +212,91 @@ export function openMigrationModal() {
       });
       if (authErr) throw authErr;
 
-      if (!authData.user) {
-        throw new Error('Verification required or signup was blocked. Check your email inbox.');
+      // Throws when the address is already registered or signup was blocked.
+      const { userId, needsConfirmation } = describeSignUpResult({ data: authData, error: authErr });
+
+      // Persisted before anything else can fail so the flow can be resumed after
+      // the Stripe round trip, or after an email-confirmation detour.
+      const marker = {
+        userId,
+        companyId: null,
+        localAccountId,
+        adminEmail: authEmail,
+        companyName,
+        adminName,
+        adminPhone
+      };
+      savePendingMigration(marker);
+      savePendingSignup({ companyName, adminName, adminPhone, email: authEmail, userId });
+
+      if (needsConfirmation) {
+        showError('Confirm your email address, then sign in again — we will take you straight to payment.');
+        return;
       }
 
       const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
-        user_id: authData.user.id,
+        user_id: userId,
         company_name: companyName,
         admin_name: adminName,
         admin_phone: adminPhone
       });
       if (rpcError) throw rpcError;
 
-      const activeAccountId = sessionStorage.getItem('relay_active_account');
-      await store.migrateLocalToCloud(companyId, authData.user.id);
+      savePendingMigration({ ...marker, companyId });
+      savePendingSignup({ companyName, adminName, adminPhone, email: authEmail, userId, companyId });
 
-      if (activeAccountId) {
-        const localAccountsKey = 'relay_accounts';
-        let localAccounts = [];
-        try {
-          const stored = localStorage.getItem(localAccountsKey);
-          if (stored) {
-            localAccounts = JSON.parse(stored);
-          }
-        } catch (e) {
-          console.error('Error reading local accounts:', e);
-        }
-        localAccounts = localAccounts.filter(a => a.id !== activeAccountId);
-        localStorage.setItem(localAccountsKey, JSON.stringify(localAccounts));
-
-        store.deleteLocalAccountData(activeAccountId);
-      }
-
-      const { data: profile, error: profileErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authData.user.id)
-        .single();
-      if (profileErr) throw profileErr;
-
-      const user = {
-        id: profile.id,
-        companyId: profile.company_id,
-        name: profile.name,
-        role: profile.role,
-        userTypeName: 'Admin',
-        userTypeId: `${profile.company_id}_ut_admin`,
-        color: profile.color || '#FF5C00'
-      };
-
-      setSessionUser(user);
-      sessionStorage.removeItem('relay_active_account');
-
-      showToast('Migration completed successfully.', 'success');
-      close();
-
-      const summary = document.createElement('div');
-      summary.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-      summary.innerHTML = `
-        <p style="margin-bottom:12px">Your profile now runs on RELAY Cloud, and every local record has been copied across.</p>
-        <ul style="margin:0 0 12px 18px; color:var(--text-secondary); line-height:1.7;">
-          <li>Signed in as <strong>${escapeHTML(email)}</strong></li>
-          <li>Company: <strong>${escapeHTML(companyName)}</strong></li>
-          ${backupFile ? `<li>A copy of your local data was saved as <strong>${escapeHTML(backupFile)}</strong></li>` : ''}
-        </ul>
-        <p style="color:var(--text-secondary)">Next: add team members from Settings → Users, or open RELAY on another device and sign in with the same email address.</p>
-      `;
-
-      showModal({
-        title: 'Migration Complete',
-        content: summary,
-        size: 'modal-md',
-        // The store is already reading from the cloud company, so reload on any dismissal
-        onClose: () => {
-          window.location.hash = '#/';
-          window.location.reload();
-        },
-        actions: [
-          { label: 'Open RELAY', className: 'btn-primary', onClick: (closeSummary) => closeSummary() }
-        ]
-      });
-
+      submitText.textContent = 'Opening checkout...';
+      await startSubscribeCheckout('cloud');
     } catch (err) {
-      console.error('Migration failed:', err);
-      errorTextEl.textContent = err.message || 'An error occurred during migration.';
-      errorEl.style.display = 'flex';
-
-      submitBtn.disabled = false;
-      cancelBtn.disabled = false;
-      submitText.textContent = 'Register & Start Migration';
-      submitIcon.className = 'material-icons-outlined';
-      submitIcon.textContent = 'cloud_done';
-      submitIcon.style.animation = '';
+      console.error('Cloud upgrade failed:', err);
+      showError(err.message || 'An error occurred during migration.');
     }
+  });
+}
+
+/**
+ * The conversion is registered but unpaid. Starting over would collide with the
+ * Supabase user that already exists, so offer to pick the payment back up.
+ */
+function showPendingUpgradeModal(pending) {
+  const modalContent = document.createElement('div');
+  modalContent.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; border-radius:4px; color:var(--color-info); display:flex; gap:8px;">
+        <span class="material-icons-outlined" style="color:var(--color-info);">credit_card</span>
+        <div>
+          <strong>${escapeHTML(pending.companyName || 'Your company')}</strong> is registered and waiting on a subscription. Add your payment details to finish moving your local data across.
+        </div>
+      </div>
+
+      <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">
+        You will sign in with <strong>${escapeHTML(pending.adminEmail || '')}</strong> once the subscription is active.
+      </p>
+
+      <div style="display:flex; justify-content:space-between; gap:12px; margin-top:4px;">
+        <button type="button" class="btn btn-secondary" id="btn-pending-discard">Not now</button>
+        <button type="button" class="btn btn-primary" id="btn-pending-finish">Finish your subscription</button>
+      </div>
+    </div>
+  `;
+
+  const { close } = showModal({
+    title: 'Finish your Cloud subscription',
+    content: modalContent,
+    size: 'modal-md'
+  });
+
+  modalContent.querySelector('#btn-pending-finish').addEventListener('click', () => {
+    close();
+    router.navigate('/subscribe');
+  });
+
+  modalContent.querySelector('#btn-pending-discard').addEventListener('click', () => {
+    // Only the local resume marker is dropped. The cloud account and company
+    // stay, so signing in (or Settings → Billing) can still pick payment up.
+    clearPendingMigration();
+    clearPendingSignup();
+    close();
   });
 }
 
