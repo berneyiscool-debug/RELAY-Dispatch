@@ -28,6 +28,10 @@ const HARDENING_SQL = readFileSync(join(MIGRATIONS_DIR, '030_rls_hardening.sql')
 const SPEND_SQL = readFileSync(join(MIGRATIONS_DIR, '031_spend_and_signup_hardening.sql'), 'utf8');
 const PASSCODE_SQL = readFileSync(join(MIGRATIONS_DIR, '032_portal_passcode.sql'), 'utf8');
 const ORIGIN_SQL = readFileSync(join(MIGRATIONS_DIR, '033_notifications_origin.sql'), 'utf8');
+const BACKFILL_ORIGIN_SQL = readFileSync(
+  join(MIGRATIONS_DIR, '035_notifications_origin_backfill.sql'),
+  'utf8'
+);
 const POOLED_SQL = readFileSync(join(MIGRATIONS_DIR, '034_ai_pooled_caps.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
@@ -747,6 +751,11 @@ describe('032 portal passcode persistence', () => {
   });
 });
 
+// 033 shipped the origin column but its backfill leaned on `created_by =
+// 'System Engine'`, and created_by is NULL in a real database (the app never
+// wrote it). These rows supply that value by hand, which is why the migration
+// passed review: the shapes a live database actually holds are covered by the
+// 035 block below.
 describe('033 notifications origin', () => {
   let db;
 
@@ -827,5 +836,110 @@ describe('033 notifications origin', () => {
     await db.exec(ORIGIN_SQL);
     const after = await db.query('SELECT id, origin FROM public.notifications ORDER BY id');
     assert.deepStrictEqual(after.rows, before.rows);
+  });
+});
+
+describe('035 notifications origin re-backfill', () => {
+  let db;
+  let originsBeforeBackfill;
+
+  // A live database's rows: created_by is NULL everywhere (the app never wrote it),
+  // so 033's backfill matched nothing and the NOT NULL DEFAULT left every machine
+  // row stamped 'user' - which is why the "hide system notifications" toggle had
+  // nothing to hide. Rows are inserted without an origin for the same reason.
+  const MAINTENANCE = '55555555-0000-0000-0000-000000000001';
+  const USAGE_MAINTENANCE = '55555555-0000-0000-0000-000000000002';
+  const MERGED_PLAN = '55555555-0000-0000-0000-000000000003';
+  const JOB_CREATED = '55555555-0000-0000-0000-000000000004';
+  const JOB_CLEANUP = '55555555-0000-0000-0000-000000000005';
+  const STOCK_REORDER = '55555555-0000-0000-0000-000000000006';
+  const SEEDED_ALERT = '55555555-0000-0000-0000-000000000007';
+  const HUMAN_MENTION = '55555555-0000-0000-0000-000000000008';
+  const HUMAN_TITLE = '55555555-0000-0000-0000-000000000009';
+  const HUMAN_QUOTE = '55555555-0000-0000-0000-00000000000a';
+  const ENGINE_TYPE = '55555555-0000-0000-0000-00000000000b';
+  const HUMAN_TYPE = '55555555-0000-0000-0000-00000000000c';
+
+  const MACHINE_IDS = [
+    MAINTENANCE, USAGE_MAINTENANCE, MERGED_PLAN, JOB_CREATED,
+    JOB_CLEANUP, STOCK_REORDER, SEEDED_ALERT, ENGINE_TYPE,
+  ];
+  const HUMAN_IDS = [HUMAN_MENTION, HUMAN_TITLE, HUMAN_QUOTE, HUMAN_TYPE];
+
+  const origins = async () => Object.fromEntries(
+    (await db.query('SELECT id, origin FROM public.notifications')).rows.map((r) => [r.id, r.origin])
+  );
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    // 029 catch-up is what a drifted project ran: it adds created_by but neither
+    // type nor description, so 035 has to bring what its predicates read.
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    await db.exec(ORIGIN_SQL);
+    await db.exec(BACKFILL_ORIGIN_SQL);
+
+    await db.query(`INSERT INTO public.notifications (id, company_id, title, message, type) VALUES
+      ('${MAINTENANCE}', '${TENANT_A}', 'Maintenance Due: Generator - Annual Service', 'Plan due', 'Recurring Job Due'),
+      ('${USAGE_MAINTENANCE}', '${TENANT_A}', 'Usage Maintenance Due: Generator - 500hr Service', NULL, 'Recurring Job Due'),
+      ('${MERGED_PLAN}', '${TENANT_A}', 'Annual Service (includes Oil Change tasks)', 'Service Plan: Annual Service (includes Oil Change tasks)', 'Recurring Job Due'),
+      ('${ENGINE_TYPE}', '${TENANT_A}', 'Annual Service (includes Oil Change tasks)', 'Service Plan: Annual Service', 'Recurring Job Due'),
+      ('${JOB_CREATED}', '${TENANT_A}', 'Recurring Job Created', NULL, 'Recurring Job Created'),
+      ('${JOB_CLEANUP}', '${TENANT_A}', 'Duplicate recurring occurrences removed', NULL, 'Recurring Job Cleanup'),
+      ('${STOCK_REORDER}', '${TENANT_A}', 'Stock Auto-Reorder', 'Below reorder level', NULL),
+      ('${SEEDED_ALERT}', '${TENANT_A}', 'System Alert - Service Due 1', 'Asset service due', NULL),
+      ('${HUMAN_MENTION}', '${TENANT_A}', 'Check the plan', 'Please check the Service Plan: it looks stale', 'Recurring Job Due'),
+      ('${HUMAN_TITLE}', '${TENANT_A}', 'Maintenance Due', 'Chat about the plan', NULL),
+      ('${HUMAN_QUOTE}', '${TENANT_A}', 'Quote Accepted', 'Client signed', NULL),
+      ('${HUMAN_TYPE}', '${TENANT_A}', 'Generator making a noise', 'Customer called it in', 'Recurring Job Due')`);
+
+    originsBeforeBackfill = await origins();
+
+    await db.exec(BACKFILL_ORIGIN_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('the machine rows all start out stamped user', () => {
+    MACHINE_IDS.forEach((id) =>
+      assert.strictEqual(originsBeforeBackfill[id], 'user', `${id} should start as user`)
+    );
+  });
+
+  test('brings the columns its predicates read when the project never had them', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'notifications' AND column_name IN ('type', 'description')"),
+      2
+    );
+  });
+
+  test('classifies every machine shape as system', async () => {
+    const current = await origins();
+    MACHINE_IDS.forEach((id) => assert.strictEqual(current[id], 'system', `${id} should be system`));
+  });
+
+  test('never reclassifies a notification a person raised', async () => {
+    const current = await origins();
+    HUMAN_IDS.forEach((id) => assert.strictEqual(current[id], 'user', `${id} should stay user`));
+  });
+
+  test('is re-runnable without changing any stored origin', async () => {
+    const before = await origins();
+    await db.exec(BACKFILL_ORIGIN_SQL);
+    assert.deepStrictEqual(await origins(), before);
+  });
+
+  test('leaves a notification raised after the migration to the column default', async () => {
+    await db.query(
+      `INSERT INTO public.notifications (company_id, title, message, type)
+       VALUES ('${TENANT_A}', 'Site visit requested', 'Customer called', 'Client Request')`
+    );
+    assert.strictEqual(
+      await value(db, `SELECT origin FROM public.notifications WHERE title = 'Site visit requested'`),
+      'user'
+    );
   });
 });
