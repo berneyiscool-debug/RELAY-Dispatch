@@ -2583,6 +2583,65 @@ body.relay-assistant-open .relay-topbar-actions {
 .relay-chip-btn.warning-chip .chip-ico { color: var(--color-warning); }
 .relay-chip-btn.info-chip .chip-ico { color: var(--color-info); }
 
+/* ── Relay in-chat confirmation card (asks before writing to the CRM) ── */
+.relay-msg-relay .relay-bubble.relay-confirm {
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--border-radius-md) var(--border-radius-md) var(--border-radius-md) 4px;
+}
+.relay-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-primary-light);
+  border-bottom: 1px solid var(--card-border);
+}
+.relay-confirm-head .material-icons-outlined {
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--color-primary);
+}
+.relay-confirm-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.relay-confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.relay-confirm-list strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.relay-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--card-border);
+}
+.relay-confirm-done {
+  flex: 1 1 100%;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.relay-confirm-done.is-success { color: var(--color-success); }
+
 /* Allow the latest greeting/onboarding card to scroll all the way to the top when history exists above it */
 .relay-thread-has-history .relay-intro-card.assistant-intro:last-child {
   margin-bottom: 85vh;

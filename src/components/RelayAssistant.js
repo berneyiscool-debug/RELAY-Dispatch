@@ -2582,11 +2582,14 @@ function renderActionConfirmation(thread, actions) {
   const m = document.createElement('div');
   m.className = 'relay-msg relay-msg-relay';
   m.innerHTML = `<div class="relay-bubble relay-confirm">
-    <div class="relay-confirm-title">Add ${n} record${n === 1 ? '' : 's'} to your CRM?</div>
+    <div class="relay-confirm-head">
+      <span class="material-icons-outlined">playlist_add_check</span>
+      <div class="relay-confirm-title">Add ${n} record${n === 1 ? '' : 's'} to your CRM?</div>
+    </div>
     <div class="relay-confirm-list">${summariseActions(actions)}</div>
     <div class="relay-confirm-actions">
-      <button class="relay-confirm-yes">${n === 1 ? 'Add it' : `Add all ${n}`}</button>
-      <button class="relay-confirm-no">Cancel</button>
+      <button type="button" class="btn btn-secondary relay-confirm-no">Cancel</button>
+      <button type="button" class="btn btn-primary relay-confirm-yes">${n === 1 ? 'Add it' : `Add all ${n}`}</button>
     </div>
   </div>`;
   thread.appendChild(m);
@@ -2603,7 +2606,7 @@ function renderActionConfirmation(thread, actions) {
     } finally {
       suppressActionToasts = false;
     }
-    actionsBar.innerHTML = `<span class="relay-confirm-done">✓ Added ${ok} record${ok === 1 ? '' : 's'}.</span>`;
+    actionsBar.innerHTML = `<span class="relay-confirm-done is-success">✓ Added ${ok} record${ok === 1 ? '' : 's'}.</span>`;
     const doneMsg = `Added ${ok} record${ok === 1 ? '' : 's'} to your CRM.`;
     pushAssistant(doneMsg);
     showToast(doneMsg, 'success');
