@@ -139,6 +139,14 @@ The Electron binary is not downloaded by `npm install`: `electron .` fetches it
 the first time it runs and `electron-builder` fetches it while packaging, so the
 first build needs network access.
 
+The desktop app tracks the newest Electron major (currently 44.x). The Electron
+43 and 44 breaking-change notes were reviewed against this app and none of the
+removals apply: copy-to-clipboard goes through the web `navigator.clipboard` API
+rather than the removed renderer `clipboard` module, and the main process uses no
+file dialogs and no `session`/`quotas` APIs. The one change worth remembering is
+that Electron 44 dropped 32-bit Windows (`ia32`), so keep the NSIS target x64 —
+adding an `ia32` target will no longer build.
+
 The app boots straight into **local mode** — no account needed. To enable Cloud
 mode, point it at a Supabase project using the schema in
 `supabase/migrations/schema.sql` (see `docs/SUPABASE_MIGRATION.md`).
