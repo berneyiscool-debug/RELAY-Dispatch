@@ -11,6 +11,12 @@
 // call `refreshUsageBars()`. The placeholder stays empty whenever a snapshot is
 // unavailable - an offline or non-Cloud workspace must show nothing rather than
 // a confident 0%.
+//
+// A meter is drawn as a percentage, never as a count. The ledger counts billable
+// calls and one chat message costs a variable number of them (four to nine in
+// production, not the two an older constant assumed), so any "N messages left"
+// figure would be a guess presented as a count. A percentage of the cap is the
+// one number that stays true whatever a message costs.
 import { fetchUsage, formatLocalReset } from '../utils/aiEngine.js';
 import { escapeHTML } from '../utils/security.js';
 
@@ -18,43 +24,25 @@ import { escapeHTML } from '../utils/security.js';
 // instead of flashing in a moment later.
 let snapshot = null;
 
-function meterLabel(meter) {
-  // A cap smaller than one message rounds to "0 of 0 messages", which reads as
-  // nonsense, so fall back to the raw call count for such a tiny allowance.
-  if (meter.limitMessages < 1) {
-    return `${meter.usedUnits} of ${meter.limitUnits} AI credits`;
-  }
-  return `${meter.usedMessages} of ${meter.limitMessages} messages`;
-}
-
-function meterRemaining(meter) {
-  if (meter.limitMessages < 1) {
-    const left = meter.remainingUnits;
-    return `${left} AI credit${left === 1 ? '' : 's'} left`;
-  }
-  const left = meter.remainingMessages;
-  if (left <= 0) return 'No messages left today';
-  return `${left} message${left === 1 ? '' : 's'} left`;
-}
-
 function meterHtml({ label, meter }) {
   // Coerced rather than trusted: the snapshot arrives over the network, and this
   // value lands in a style attribute and in aria-valuenow.
   const percent = Math.max(0, Math.min(100, Math.round(Number(meter.percent) || 0)));
   const fill = percent >= 100 ? 'danger' : percent >= 80 ? 'warning' : 'ok';
-  const text = meterLabel(meter);
+  // Escaped once, then reused: the name reaches two attributes and a text node.
+  const name = escapeHTML(label);
+  const said = `${name}: ${percent}% used`;
   return `
     <div class="usage-meter">
       <div class="usage-meter-head">
-        <span class="usage-meter-label">${escapeHTML(label)}</span>
-        <span class="usage-meter-count">${escapeHTML(text)}</span>
+        <span class="usage-meter-label">${name}</span>
+        <span class="usage-meter-count">${percent}%</span>
       </div>
-      <div class="usage-meter-track" role="progressbar" aria-label="${escapeHTML(label)}"
+      <div class="usage-meter-track" role="progressbar" aria-label="${name}"
            aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"
-           aria-valuetext="${escapeHTML(text)}">
+           aria-valuetext="${said}">
         <div class="usage-meter-fill usage-meter-fill--${fill}" style="width:${percent}%"></div>
       </div>
-      <div class="usage-meter-foot">${escapeHTML(meterRemaining(meter))}</div>
     </div>`;
 }
 
