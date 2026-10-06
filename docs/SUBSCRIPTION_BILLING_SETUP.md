@@ -12,6 +12,10 @@ the customer-facing invoice payments in `007_invoice_payments.sql` /
 
 - **Free is offline-only** — it never creates a `companies` row, so it never
   touches Stripe. "Upgrading" from Free = the existing *Migrate to Cloud* flow.
+- **Every cloud account starts on a 14-day free trial with no card on file.**
+  The trial only sets `companies.subscription_status = 'trialing'`; when it runs
+  out with no subscription the account goes read-only rather than locked, and the
+  app prompts for Checkout. See Section 6.
 - **Seats are per active (non-deactivated) user.** Adding/deactivating a user
   reconciles the Stripe subscription quantity, prorated.
 - **Managed (keyless) AI comes with the paid plans.** brny runs against the
@@ -71,8 +75,18 @@ self-serve signup: it makes a company name claimable only once
 (`company_name_available()` for the live form check, plus the ownership claim
 inside `create_company_and_admin()`). Apply it after `029`–`031`.
 
+`supabase/migrations/037_terms_and_trial.sql` is what makes the trial and the
+terms record real: `profiles.terms_accepted_at` for the acceptance timestamp, the
+`companies.trial_started_at` / `trial_ends_at` / `subscription_tier` /
+`subscription_status` columns, the partial index `companies_trial_ends_idx`, and
+two `SECURITY DEFINER` functions — `record_terms_acceptance()` and
+`start_cloud_trial(p_days integer default 14)`. It deliberately does **not** touch
+`create_company_and_admin()`; see Section 14 of
+[`SUPABASE_MIGRATION.md`](./SUPABASE_MIGRATION.md) for why. **It is written but
+not applied to live Supabase: it is waiting on review.**
+
 ```bash
-supabase db push       # or apply 025 / 036 via your migration process
+supabase db push       # or apply 025 / 036 / 037 via your migration process
 ```
 
 ## 4. Deploy the edge functions
@@ -94,29 +108,47 @@ The existing `relay-stripe-webhook` endpoint must now also receive:
 - `customer.subscription.deleted`
 - `invoice.payment_failed`
 
-## 6. Onboarding: payment before access
+## 6. Onboarding: a 14-day trial, then payment
 
-A cloud account is unusable until Stripe says it is paid. Both entry points — the launcher's **Create account** form and the Settings **Upgrade to Cloud** modal — now run the same sequence: create the Supabase user, provision the company with `create_company_and_admin()`, then immediately hand off to Stripe Checkout. Neither of them copies local data or starts a session first.
+A cloud account now opens on a **14-day free trial with no card on file**. The company is only ever created *after* the address is verified, so signup is a four-step sequence:
+
+1. **Create account** (`#/launch`) — business name, your name, mobile, email and a password of at least 8 characters, plus a required tick for the Terms and Privacy Policy. Name availability is checked live (036), but nothing is stored server-side yet.
+2. **Verify email** — `supabase.auth.signUp()` returns a user and no session, so the launcher switches to a **Check your inbox** screen showing the address, with a rate-limited resend and a *wrong email?* way back. What they typed is saved as prefill only (`relay_pending_cloud_signup`); none of it is trusted.
+3. **Finish setting up** — the first verified sign-in has a session but no profile row, so the app routes to `#/setup` (`src/components/FinishSetupCard.js`) for the same prefilled form. This is the step that provisions.
+4. **In the app** — provisioning returns, the trial is already running, and the user lands in the app with a dismissible first-run checklist.
 
 ```
-Signup / Upgrade form
+Create account (#/launch)
   ├─ company name availability (036 → company_name_available)   ← blocks only on 'taken'
-  ├─ supabase.auth.signUp()
-  ├─ create_company_and_admin()            → company + admin profile
-  └─ startSubscribeCheckout('cloud')
+  ├─ terms + privacy tick (required)       → prefill only
+  └─ supabase.auth.signUp()               → user, no session  → "Check your inbox"
+
+First sign-in after verifying (#/login → #/setup)
+  ├─ create_company_and_admin()           → company + admin profile
+  ├─ record_terms_acceptance()            → profiles.terms_accepted_at (best effort)
+  └─ start_cloud_trial()                  → subscription_status = 'trialing', 14 days
+        → the app, with the trial banner and the first-run checklist
+
+Trial ends with no subscription
+  └─ TrialBanner → startSubscribeCheckout('cloud')
         → relay-billing-checkout (JWT, admin role) → Stripe Checkout
               success_url = {origin}/#/subscribe?billing=success&tier=cloud
               cancel_url  = {origin}/#/subscribe?billing=cancelled&tier=cloud
+
+Still no subscription
+  └─ read-only: data kept, export or subscribe later
 ```
 
-`#/subscribe` (`src/pages/billing/Subscribe.js`) is the return target and the recovery page. It reads `billing` and `tier` from the hash query, then:
+**The one entry point that still goes straight to Checkout is the explicit purchase.** The Settings **Upgrade to Cloud** modal (`src/components/CloudUpgrade.js`) provisions through the same `provisionCloudAccount()` and then calls `startSubscribeCheckout('cloud')` immediately, because there the user has just asked to buy a subscription. Signup does not do that: nothing is charged until the trial ends and the banner asks.
+
+`#/subscribe` (`src/pages/billing/Subscribe.js`) is the return target from Checkout and the recovery page. It reads `billing` and `tier` from the hash query, then:
 
 - polls the company row for a live `subscription_status` (10 attempts, 1.5 s apart) because the Stripe webhook lands asynchronously, and
 - on `billing=success` without a live status yet, offers **Check again** and **Enter payment details again** rather than a dead end.
 
 Once the subscription is live it finishes setup — copying local data across for an upgrade (`store.migrateLocalToCloud()`), retiring the local account, setting the session user — and routes into the app.
 
-**The paywall is enforced by two mechanisms, not one.** For a fresh signup the app session is deliberately *not* started before payment, so `main.js` has nothing to boot and every route except `/login` and `/subscribe` resolves to `#/login`; the `/subscribe` hash is exempted from the boot rewrite, which is what makes the Stripe round trip survivable. For a returning unpaid user — one who closed the tab mid-signup, or whose payment later lapsed — the gate is `subscriptionRequired()` in `src/utils/subscription.js`, evaluated on every navigation:
+**The paywall is enforced on navigation, not by withholding a session.** A cloud signup ends with a real session and a running trial, so the gate has to be able to tell "trial" from "lapsed": `subscriptionRequired()` in `src/utils/subscription.js` is evaluated on every navigation, and `trialing` is one of its live statuses:
 
 ```js
 export function subscriptionRequired() {
@@ -130,18 +162,24 @@ export function subscriptionRequired() {
 
 Two deliberate holes in that gate. **`comp_tier`** (`027_comp_access.sql`) is grandfathered access — a comp-titled account is never asked to pay, which is also the escape hatch if a real customer is wrongly locked out. **An unloaded subscription fails open**: `status === undefined` means the company row never arrived, and refusing to render the app on a transient read failure is worse than letting someone in for one paint. A fetched-but-unpaid cloud row has `status: null`, which is *not* `undefined`, so it is correctly blocked.
 
-Abandoning onboarding is always possible: **Use a different account** on `#/subscribe` (and the equivalent controls in the upgrade modal) clears the pending markers and signs the Supabase user out. The Supabase user and the provisioned company row survive — only the local session ends — so a lapsed signup can be resumed by signing in again, which lands straight back on `#/subscribe`.
+**Running out of trial is read-only, not a paywall.** The no-card trial has no Stripe subscription and no customer record, so Stripe reports nothing and expiry cannot come from a webhook: `trialState()` in `src/utils/subscription.js` decides it from `trial_ends_at` and returns `'none' | 'running' | 'expired'`, and every trial question — `trialActive()`, `trialDaysLeft()`, `trialExpired()`, `isReadOnly()` — reads that one predicate so the banner, the helpers and the gate can never disagree. `isReadOnly()` is true only for an *expired* trial, and `src/data/store.js` calls `_readOnlyBlocked()` before each write, so `create`, `update`, `delete`, `saveSettings` and `save` return early with a `console.warn` and a throttled toast instead of mutating anything. Reads, exports (`downloadDataSnapshot`) and the subscribe flow all keep working, so no data is stranded and the user can subscribe whenever they like. Nothing is ever charged automatically, because Stripe has no card to charge until the user enters one.
 
-Two `sessionStorage` markers carry state across the Stripe detour, both same-tab by design: `relay_pending_cloud_signup` (a signup finished but onboarding did not) and `relay_pending_cloud_migration` (a local→cloud upgrade awaiting payment, carrying the local account id). They expire after 24 h, and their absence is tolerated everywhere — which is why the sign-in path also redirects to `#/subscribe` when a profile lookup comes back `PGRST116` (no profile row yet), the case where email confirmation sent the user out of the tab and the markers are gone.
+Abandoning onboarding is always possible: **Use a different account** on `#/subscribe` (and the equivalent controls in the upgrade modal) clears the pending markers and signs the Supabase user out. The Supabase user and the provisioned company row survive — only the local session ends — so a signup abandoned before payment can be resumed by signing in again, which lands back on `#/setup` if the company was never provisioned and on `#/subscribe` if it was.
+
+Two `sessionStorage` markers carry state across the Stripe detour, both same-tab by design: `relay_pending_cloud_signup` (a signup finished but onboarding did not) and `relay_pending_cloud_migration` (a local→cloud upgrade awaiting payment, carrying the local account id). They expire after 24 h, and their absence is tolerated everywhere — which is why the sign-in path also redirects to `#/setup` when a profile lookup comes back `PGRST116` (no profile row yet), the case where email confirmation sent the user out of the tab and the markers are gone.
 
 ## How it fits together
 
 ```
-Signup / Upgrade → create_company_and_admin → relay-billing-checkout → Stripe Checkout
-                                                       ↓ success
-                              #/subscribe  ← polls for the webhook, then finishes setup
-                                   ↓ live
-                            relay-stripe-webhook → companies.subscription_* set
+Signup (create account) → verify email → sign in → create_company_and_admin → start_cloud_trial
+                                                            ↓ 14 days, no card
+                          the app, trial banner running    ← #/setup
+                                                            ↓ trial ends
+                            read-only  ←  startSubscribeCheckout → Stripe Checkout
+                                                 ↓ success
+                        #/subscribe  ← polls for the webhook, then finishes setup
+                             ↓ live
+                      relay-stripe-webhook → companies.subscription_* set
 
 Settings → Plan & Billing
   ├─ Choose Cloud / Cloud+  → relay-billing-checkout → Stripe Checkout (subscription)
@@ -155,6 +193,8 @@ Gating (src/utils/subscription.js):
   hasCloudFeatures()  → any cloud account          (Cloud incl. full brny)
   isCloudPlus()       → tier==cloud_plus & live sub (brny Max: expandable window)
   subscriptionRequired() → cloud account with no live status → forced to #/subscribe
+  trialState()        → 'none' | 'running' | 'expired'  (from trial_ends_at, not a webhook)
+  isReadOnly()        → trialState()==='expired' → writes blocked in src/data/store.js
 ```
 
 ## Security notes
@@ -171,5 +211,25 @@ Gating (src/utils/subscription.js):
   a single boolean, so the only thing it discloses is whether a name is taken,
   and the authoritative decision is still made server-side inside
   `create_company_and_admin()`.
+- `record_terms_acceptance()` and `start_cloud_trial()` (migration 037) are both
+  `SECURITY DEFINER` with `SET search_path = public`, revoked from `PUBLIC` and
+  `anon`, and granted to `authenticated` / `service_role` only. Neither takes a
+  user or company id: each resolves the caller from `auth.uid()`, so a client can
+  only ever stamp its own profile and start its own trial.
+  `record_terms_acceptance()` writes only when `terms_accepted_at IS NULL` and
+  otherwise returns the timestamp already stored, so a retry cannot move the
+  acceptance date. `start_cloud_trial()` clamps the length server-side
+  (`LEAST(GREATEST(p_days, 1), 90)`), locks the company row `FOR UPDATE`, never
+  extends a trial that has already started, and refuses a free trial outright to
+  any company that already has a `stripe_customer_id`. It also sets
+  `relay.admin_provision` around its single `UPDATE`, because
+  `companies_billing_guard_biu` would otherwise freeze `subscription_status` and
+  `subscription_tier` back to their stored values and leave a half-written trial
+  behind.
+- Terms acceptance and the trial are written *after* the company exists and are
+  best-effort (`console.error` only). A failure there must not cost a user the
+  account they just created, and neither failure can hand out access on its own —
+  the trial only sets `subscription_status = 'trialing'`, which is a status the
+  webhook can overwrite once a real subscription exists.
 - No Stripe SDK — every call is a direct REST request, matching the existing
   functions, so nothing new is bundled.

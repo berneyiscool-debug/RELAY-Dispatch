@@ -56,6 +56,11 @@ export const CLOUD_PLUS_FEATURES = new Set(['deputy_max']);
 // Statuses in which a paid subscription is considered live.
 const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 
+// Length of the no-card cloud trial. Mirrors the default in
+// 037_terms_and_trial.sql (start_cloud_trial) and in migration 031's
+// provisioning path — change all three together.
+export const TRIAL_DAYS = 14;
+
 // A real cloud account: a company id that isn't the local `acct_` namespace.
 // Mirrors the inline check used across the app (and in payments.js).
 export function isCloudUser() {
@@ -84,7 +89,7 @@ export async function refreshSubscriptionFor(companyId) {
   try {
     const { data, error } = await supabase
       .from('companies')
-      .select('subscription_tier, subscription_status, subscription_seats, subscription_current_period_end, stripe_customer_id, comp_tier')
+      .select('subscription_tier, subscription_status, subscription_seats, subscription_current_period_end, stripe_customer_id, comp_tier, trial_ends_at')
       .eq('id', companyId)
       .single();
     if (error || !data) return null;
@@ -107,6 +112,7 @@ export function subscriptionFromRow(data) {
     status: data.subscription_status || null,
     seats: data.subscription_seats ?? null,
     currentPeriodEnd: data.subscription_current_period_end || null,
+    trialEndsAt: data.trial_ends_at || null,
     hasCustomer: !!data.stripe_customer_id,
     compTier: data.comp_tier || null,
   };
@@ -150,6 +156,85 @@ export function isComplimentary() {
 // Billing needs attention (card declined etc.) — surface a banner.
 export function subscriptionPastDue() {
   return String(getSubscription().status || '') === 'past_due';
+}
+
+// --- Trial & read-only -------------------------------------------------------
+//
+// The cloud trial is a no-card trial: there is no Stripe subscription and no
+// customer record, so Stripe reports nothing and `subscription_status` is set
+// to 'trialing' by start_cloud_trial() purely so that LIVE_STATUSES (and
+// therefore the paywall) treats the account as paid up. Expiry is therefore
+// decided here from `trial_ends_at`, not from a webhook.
+
+// Epoch ms of the trial end, or null when the account isn't on a dated trial.
+function trialEndMs(sub) {
+  if (!sub || !sub.trialEndsAt) return null;
+  const ms = Date.parse(sub.trialEndsAt);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+// 'none' | 'running' | 'expired'. One predicate behind every trial question so
+// the banner, the gate and the helper functions can't disagree.
+// A legacy `trialing` row with no trial_ends_at was provisioned before migration
+// 037 and has no clock to run out, so it counts as running rather than expired.
+function trialState() {
+  if (!isCloudUser()) return 'none';
+  const sub = getSubscription();
+  if (sub.compTier) return 'none'; // a comp grant outlives any trial clock
+  if (String(sub.status || '') !== 'trialing') return 'none';
+  const end = trialEndMs(sub);
+  if (end === null) return 'running';
+  return end > Date.now() ? 'running' : 'expired';
+}
+
+// True while a dated trial is running.
+export function trialActive() {
+  return trialState() === 'running';
+}
+
+// Whole days left in the trial, rounded up and never negative — 0 once it has
+// run out, null only when the account isn't on a trial at all. A dated trial
+// always has a number, so banner copy can rely on it without a separate expiry
+// check; see trialEndTime() when the hours matter.
+export function trialDaysLeft() {
+  const state = trialState();
+  if (state === 'none') return null;
+  if (state === 'expired') return 0;
+  const end = trialEndMs(getSubscription());
+  if (end === null) return TRIAL_DAYS;
+  return Math.max(0, Math.ceil((end - Date.now()) / 86400000));
+}
+
+// The trial's end instant in ms, or null when the account has no dated trial.
+// Exposed so callers can tell "a few hours left" from "a few days left": the
+// day count rounds up, so a trial with 20 seconds on the clock still reads as
+// "1 day left", which is too coarse for final-stretch copy.
+export function trialEndTime() {
+  if (trialState() === 'none') return null;
+  return trialEndMs(getSubscription());
+}
+
+// The trial ran and nobody subscribed. No card was ever on file, so nothing is
+// charged and nothing is owed — the account just stops accepting writes.
+export function trialExpired() {
+  return trialState() === 'expired';
+}
+
+// True when the account may read but not write anything.
+//
+// Read-only is a trial-expiry state, not a paywall: the paywall (a hard
+// redirect to /subscribe) only ever fires for a company row with a known and
+// unpaid subscription status, and 'trialing' is not that. Fails OPEN for the
+// same reason subscriptionRequired() does — an unloaded or unexpected
+// subscription block must never lock a working account down to read-only.
+export function isReadOnly() {
+  return trialState() === 'expired';
+}
+
+// Why writes are blocked, for the banner and the toast. Null when they aren't.
+export function readOnlyReason() {
+  if (!isReadOnly()) return null;
+  return `Your free trial ended, so changes are paused. Subscribe to start editing again — your data is safe and you can export it at any time.`;
 }
 
 // True when a signed-in cloud account must pay before using the app.

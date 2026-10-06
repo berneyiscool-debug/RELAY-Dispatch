@@ -12,11 +12,18 @@ import { escapeHTML } from '../utils/security.js';
 import { backupCheckboxHtml, runBackupIfRequested } from '../utils/dataBackup.js';
 import { bindCompanyNameCheck, validateCompanyName } from '../utils/companyName.js';
 import {
+  MIN_PASSWORD_LENGTH,
+  PRIVACY_ROUTE,
+  TERMS_ROUTE,
   canonicalAuthEmail,
   clearPendingMigration,
   clearPendingSignup,
   describeSignUpResult,
+  friendlyAuthError,
+  provisionCloudAccount,
   readPendingMigration,
+  resendCooldownRemaining,
+  resendVerificationEmail,
   savePendingMigration,
   savePendingSignup,
 } from '../utils/cloudOnboarding.js';
@@ -102,13 +109,25 @@ export function openMigrationModal() {
 
       <div class="form-group">
         <label class="form-label" style="font-weight:600;">Password</label>
-        <input class="form-input" type="password" id="migrate-admin-password" required minlength="6" placeholder="At least 6 characters" />
+        <input class="form-input" type="password" id="migrate-admin-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="At least ${MIN_PASSWORD_LENGTH} characters" autocomplete="new-password" />
+      </div>
+
+      <div class="form-group">
+        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12px; color:var(--text-secondary); line-height:1.5;">
+          <input type="checkbox" id="migrate-terms" style="width:15px; height:15px; margin-top:2px; flex-shrink:0;">
+          <span>
+            I agree to the
+            <a href="${TERMS_ROUTE}" target="_blank" rel="noopener" style="color:var(--color-primary); font-weight:600;">Terms of Service</a>
+            and
+            <a href="${PRIVACY_ROUTE}" target="_blank" rel="noopener" style="color:var(--color-primary); font-weight:600;">Privacy Policy</a>.
+          </span>
+        </label>
       </div>
 
       ${backupCheckboxHtml('relay-backup-before-cloud-upgrade')}
 
       <div id="migration-error" style="display:none; color:var(--color-danger); background:var(--color-danger-bg); border-left:4px solid var(--color-danger); padding:10px 14px; border-radius:4px; font-weight:500; align-items:center; gap:8px;">
-        <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
+        <span class="material-icons-outlined" id="migration-error-icon" style="font-size:18px;">error_outline</span>
         <span id="migration-error-text"></span>
       </div>
 
@@ -128,11 +147,17 @@ export function openMigrationModal() {
   );
   if (businessName) companyNameWatch.checkNow();
 
+  // Owned by the modal: the countdown writes to nodes that vanish on close.
+  let resendTimer = null;
+
   const { close } = showModal({
     title: 'Register & Migrate to Cloud',
     content: modalContent,
     size: 'modal-md',
-    onClose: () => companyNameWatch.dispose()
+    onClose: () => {
+      if (resendTimer) clearInterval(resendTimer);
+      companyNameWatch.dispose();
+    }
   });
 
   modalContent.querySelector('#btn-migrate-cancel').addEventListener('click', close);
@@ -147,9 +172,14 @@ export function openMigrationModal() {
     const cancelBtn = modalContent.querySelector('#btn-migrate-cancel');
     const submitText = modalContent.querySelector('#submit-text');
     const submitIcon = modalContent.querySelector('#submit-icon');
+    const errorIcon = modalContent.querySelector('#migration-error-icon');
 
     const showError = (message) => {
-      errorTextEl.textContent = message;
+      errorTextEl.innerHTML = message;
+      errorEl.style.background = 'var(--color-danger-bg)';
+      errorEl.style.borderLeftColor = 'var(--color-danger)';
+      errorEl.style.color = 'var(--color-danger)';
+      errorIcon.textContent = 'error_outline';
       errorEl.style.display = 'flex';
       submitBtn.disabled = false;
       cancelBtn.disabled = false;
@@ -158,6 +188,35 @@ export function openMigrationModal() {
       submitIcon.textContent = 'cloud_done';
       submitIcon.style.animation = '';
     };
+
+    // Shares the banner with showError but must not clear the busy state — the
+    // caller is mid-flow and controls the button itself.
+    const showInfo = (message) => {
+      errorTextEl.innerHTML = message;
+      errorEl.style.background = 'var(--color-info-bg)';
+      errorEl.style.borderLeftColor = 'var(--color-info)';
+      errorEl.style.color = 'var(--color-info)';
+      errorIcon.textContent = 'mark_email_unread';
+      errorEl.style.display = 'flex';
+    };
+
+    // The first submit registered the account and is now waiting on the emailed
+    // link, so a second submit resends rather than signing up again.
+    const emailInput = modalContent.querySelector('#migrate-admin-email');
+    if (submitBtn.dataset.mode === 'resend') {
+      errorEl.style.display = 'none';
+      submitBtn.disabled = true;
+      submitText.textContent = 'Sending...';
+      try {
+        await resendVerificationEmail(canonicalAuthEmail(emailInput.value.trim()));
+        showInfo('Confirmation email sent again. It can take a minute to arrive.');
+      } catch (err) {
+        showError(friendlyAuthError(err));
+        return;
+      }
+      resendTimer = startResendCooldown(submitBtn, submitText, canonicalAuthEmail(emailInput.value.trim()));
+      return;
+    }
 
     errorEl.style.display = 'none';
     submitBtn.disabled = true;
@@ -172,10 +231,23 @@ export function openMigrationModal() {
     const adminPhone = modalContent.querySelector('#migrate-admin-phone').value.trim();
     const email = modalContent.querySelector('#migrate-admin-email').value.trim();
     const password = modalContent.querySelector('#migrate-admin-password').value;
+    const termsAccepted = !!modalContent.querySelector('#migrate-terms')?.checked;
 
     const nameCheck = validateCompanyName(companyName);
     if (!nameCheck.valid) {
       showError(nameCheck.message);
+      return;
+    }
+
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      showError(`Choose a password with at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+
+    // Already an account holder upgrading from local: they still have to accept
+    // the terms, and record_terms_acceptance() stamps the timestamp server-side.
+    if (!termsAccepted) {
+      showError('Please accept the Terms of Service and Privacy Policy to continue.');
       return;
     }
 
@@ -227,31 +299,63 @@ export function openMigrationModal() {
         adminPhone
       };
       savePendingMigration(marker);
-      savePendingSignup({ companyName, adminName, adminPhone, email: authEmail, userId });
+      savePendingSignup({ companyName, adminName, adminPhone, email: authEmail, userId, termsAccepted });
 
+      // Email confirmation is on: there is no session yet, so provisioning has to
+      // wait for the first verified sign-in (Login.js routes here via /setup).
+      // Resending stays available so a lost link does not strand the account.
       if (needsConfirmation) {
-        showError('Confirm your email address, then sign in again — we will take you straight to payment.');
+        showInfo(`We sent a confirmation link to <strong>${escapeHTML(authEmail)}</strong>. Open it, then sign in — we will take you straight to payment.`);
+        submitText.textContent = 'Resend confirmation email';
+        submitIcon.className = 'material-icons-outlined';
+        submitIcon.textContent = 'forward_to_inbox';
+        submitIcon.style.animation = '';
+        cancelBtn.disabled = false;
+        submitBtn.disabled = true;
+        submitBtn.dataset.mode = 'resend';
+        resendTimer = startResendCooldown(submitBtn, submitText, authEmail);
         return;
       }
 
-      const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
-        user_id: userId,
-        company_name: companyName,
-        admin_name: adminName,
-        admin_phone: adminPhone
+      // Same RPC path as launch-screen signup, so a company is only ever created
+      // by an authenticated user calling create_company_and_admin().
+      const { companyId } = await provisionCloudAccount({
+        userId,
+        companyName,
+        adminName,
+        adminPhone,
+        termsAccepted,
       });
-      if (rpcError) throw rpcError;
 
       savePendingMigration({ ...marker, companyId });
-      savePendingSignup({ companyName, adminName, adminPhone, email: authEmail, userId, companyId });
+      savePendingSignup({ companyName, adminName, adminPhone, email: authEmail, userId, companyId, termsAccepted });
 
       submitText.textContent = 'Opening checkout...';
       await startSubscribeCheckout('cloud');
     } catch (err) {
       console.error('Cloud upgrade failed:', err);
-      showError(err.message || 'An error occurred during migration.');
+      showError(friendlyAuthError(err));
     }
   });
+}
+
+/** Turns the primary button into a rate-limited "resend confirmation" action. */
+function startResendCooldown(submitBtn, submitText, authEmail) {
+  const render = () => {
+    const remaining = resendCooldownRemaining(authEmail);
+    if (remaining <= 0) {
+      submitBtn.disabled = false;
+      submitText.textContent = 'Resend confirmation email';
+      return;
+    }
+    submitBtn.disabled = true;
+    submitText.textContent = `Resend in ${Math.ceil(remaining / 1000)}s`;
+  };
+  render();
+  const timer = setInterval(() => {
+    if (resendCooldownRemaining(authEmail) <= 0) clearInterval(timer);
+    render();
+  }, 1000);
 }
 
 /**

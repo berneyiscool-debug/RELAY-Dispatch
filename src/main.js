@@ -30,6 +30,7 @@ import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
 import { subscriptionRequired } from './utils/subscription.js';
+import { mountTrialBanner, unmountTrialBanner } from './components/TrialBanner.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import './utils/DeputyAutopilot.js';
 import { storageGet, storageSet } from './utils/persist.js';
@@ -238,6 +239,10 @@ app.appendChild(appBody);
 
 // Swap Material Icon glyphs for Lucide SVGs (initial pass + live for dynamic content).
 initLucideIcons();
+
+// The trial clock is refreshed on sign-in and on every page load, so a trial
+// that lapsed while the tab sat open flips to read-only without a reload.
+store.on('settings', () => mountTrialBanner(mainContent));
 
 // ---- Page Header to Breadcrumb Actions Relocation ----
 // Override mainContent querySelector/querySelectorAll to find moved buttons inside breadcrumb-actions
@@ -556,7 +561,7 @@ router.register('/login', renderPage(async (container) => {
         localUser = {
           id: `${accountId}_admin`,
           companyId: accountId,
-          name: acct?.businessName || 'Local Admin',
+          name: acct?.ownerName || acct?.businessName || 'Local Admin',
           role: 'admin',
           userTypeName: 'Admin',
           userTypeId: `${accountId}_ut_admin`,
@@ -704,8 +709,22 @@ router.register('/profile', renderPage(lazy(() => import('./pages/Profile.js'), 
 // Subscribe (cloud paywall — where an unpaid cloud account is held)
 router.register('/subscribe', renderPage(lazy(() => import('./pages/billing/Subscribe.js'), 'renderSubscribe')));
 
+// Finish setting up (verified cloud user whose company was never provisioned)
+router.register('/setup', renderPage(lazy(() => import('./pages/auth/FinishSetup.js'), 'renderFinishSetup')));
+
+// Terms and privacy placeholders, linked from the cloud signup form. They are
+// public because a visitor reads them before they have an account.
+router.register('/terms', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderTerms')));
+router.register('/privacy', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderPrivacy')));
+
 // ---- Auth Guard Hook ----
 const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile'];
+
+// Routes reachable without a signed-in session. They own their own layout, so
+// the app shell stays hidden and the paywall leaves them alone — `/setup` and
+// `/subscribe` are where an account with no company or no subscription is sent,
+// so requiring either would be circular.
+const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy']);
 
 router.onNavigate = (path, params) => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -720,10 +739,11 @@ router.onNavigate = (path, params) => {
   const topbarEl = document.querySelector('.topbar');
   const breadcrumbEl = document.getElementById('breadcrumb');
 
-  if (isPortal || path === '/login' || path === '/subscribe' || !currentUser) {
+  if (isPortal || !currentUser || PUBLIC_PATHS.has(path)) {
     if (sidebarEl) sidebarEl.style.display = 'none';
     if (topbarEl) topbarEl.style.display = 'none';
     if (breadcrumbEl) breadcrumbEl.style.display = 'none';
+    unmountTrialBanner();
   } else {
     if (sidebarEl) sidebarEl.style.display = '';
     if (topbarEl) topbarEl.style.display = '';
@@ -731,9 +751,12 @@ router.onNavigate = (path, params) => {
     // The auth screens clear the theme attributes for a clean canvas, so the
     // app shell re-applies the light appearance on entry.
     applyTheme();
+    // Re-evaluated on every navigation: `days left` changes overnight, and the
+    // trial can lapse while the tab is open.
+    mountTrialBanner(mainContent);
   }
 
-  if (!currentUser && path !== '/login' && path !== '/subscribe' && !isPortal) {
+  if (!currentUser && !PUBLIC_PATHS.has(path) && !isPortal) {
     // Redirect to login if not authenticated
     router.navigate('/login');
     return false; // Prevent further navigation handling
@@ -744,7 +767,7 @@ router.onNavigate = (path, params) => {
     // further than the billing page until Stripe has collected payment details.
     // subscriptionRequired() fails open when the subscription block was never
     // loaded and when the account holds a complimentary grant (comp_tier).
-    if (!isPortal && basePath !== '/subscribe' && subscriptionRequired()) {
+    if (!isPortal && !PUBLIC_PATHS.has(basePath) && subscriptionRequired()) {
       router.navigate('/subscribe');
       return false;
     }
@@ -893,7 +916,9 @@ if (currentUser && !localStorage.getItem('relay_login_mode')) {
 // already repaired above, before the shell was built.
 const isPortalHash =  window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
 const isSubscribeHash = window.location.hash.startsWith('#/subscribe');
-if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash) {
+const isSetupHash = window.location.hash.startsWith('#/setup');
+const isLegalHash = window.location.hash.startsWith('#/terms') || window.location.hash.startsWith('#/privacy');
+if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash) {
   window.location.hash = '#/login';
 }
 // No signed-in session at boot → clear any stale per-tab local account namespace.

@@ -9,6 +9,7 @@
 //   • how an email is turned into the address Supabase actually stores
 //   • what a signUp() result really means (duplicate emails fake-succeed)
 //   • the tab-scoped markers that let a flow resume after the Stripe redirect
+//   • the signup form's rules (password strength, friendly auth errors)
 //   • the profile → session-user mapping the app reads on boot
 //
 // Payment is deliberately NOT here: see utils/subscription.js.
@@ -16,6 +17,7 @@
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { setSessionUser } from '../pages/auth/session.js';
+import { TRIAL_DAYS } from './subscription.js';
 
 export const PENDING_SIGNUP_KEY = 'relay_pending_cloud_signup';
 export const PENDING_MIGRATION_KEY = 'relay_pending_cloud_migration';
@@ -30,6 +32,27 @@ const MARKER_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 // The legacy namespace some early accounts were created under; sign-in still has
 // to accept it, so it stays pinned here rather than being derived.
 const LEGACY_RELAY_DOMAIN = '.RELAY.internal';
+
+// The shortest password a new cloud account may be created with. The form and
+// the submit handler both read this, so they can never disagree.
+export const MIN_PASSWORD_LENGTH = 8;
+
+// How long "Resend verification email" stays disabled after a successful send.
+// Supabase rate-limits the send itself; this only has to stop the obvious
+// double-click, so a minute is plenty and is short enough not to be a nuisance.
+export const RESEND_COOLDOWN_MS = 60 * 1000;
+const RESEND_COOLDOWN_KEY = 'relay_resend_cooldown';
+
+// Where the in-app Terms and Privacy documents live until the published pages
+// are ready to link to. Kept here so every entry point points at the same place.
+export const TERMS_ROUTE = '#/terms';
+export const PRIVACY_ROUTE = '#/privacy';
+
+// The free trial every new cloud company starts with. No card is taken, so this
+// is the only length that matters to the client — the server clamps it again in
+// start_cloud_trial() and owns the dates. Owned by the billing module and
+// re-exported here so the trial banner and the signup flow can never disagree.
+export { TRIAL_DAYS };
 
 // sessionStorage keeps onboarding markers scoped to the tab that started the
 // flow — Stripe returns to that same tab, but a second tab must not inherit a
@@ -215,6 +238,212 @@ export function describeSignUpResult({ data, error } = {}) {
     throw new Error('An account already exists for that email address. Sign in instead, or reset your password.');
   }
   return { userId: user.id, needsConfirmation: !data.session };
+}
+
+/**
+ * Score a password for the signup form's strength hint.
+ *
+ * Deliberately cheap and local: this nudges someone away from "password1", it is
+ * not an entropy model. Length is weighted highest because it is the one change
+ * that reliably helps.
+ *
+ * @param {string} password
+ * @returns {{ score: number, label: string, hint: string, ok: boolean }}
+ */
+export function passwordStrength(password) {
+  const value = String(password == null ? '' : password);
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/]
+    .filter(re => re.test(value)).length;
+
+  // Repetitive or sequential input passes a character-class count but is weak in
+  // practice, so it is capped below the score its length would otherwise earn.
+  const lower = value.toLowerCase();
+  const isRepetitive = value.length > 0 && /^(.)\1+$/.test(value);
+  const isSequential = /(?:012|123|234|345|456|567|678|789|abc|bcd|cde|def|qwerty)/.test(lower);
+
+  let score = 0;
+  if (value.length >= MIN_PASSWORD_LENGTH) score = 1;
+  if (value.length >= 12) score = 2;
+  if (value.length >= MIN_PASSWORD_LENGTH && classes >= 3) score = Math.max(score, 3);
+  if (value.length >= 12 && classes >= 3) score = 4;
+
+  // The cap replaces the score, so it has to replace the hint too — otherwise a
+  // long alphabet run is told to "add a number" when it already has one.
+  let capped = false;
+  if (score > 0 && (isRepetitive || isSequential)) {
+    score = 1;
+    capped = true;
+  }
+
+  const labels = ['Too short', 'Weak', 'Fair', 'Good', 'Strong'];
+  const hints = [
+    `Use at least ${MIN_PASSWORD_LENGTH} characters.`,
+    `Add a number or symbol, or use more characters.`,
+    `Add a capital and a number to make this stronger.`,
+    `Good — a few more characters would be stronger still.`,
+    `Strong password.`,
+  ];
+  if (capped) {
+    hints[1] = isRepetitive
+      ? 'That is the same character repeated. Mix in other characters.'
+      : 'Avoid runs like "abcdef" or "123456" — mix the order up.';
+  }
+
+  return {
+    score,
+    label: labels[score],
+    hint: hints[score],
+    ok: value.length >= MIN_PASSWORD_LENGTH,
+  };
+}
+
+/**
+ * Turn an auth failure into something a customer can act on.
+ *
+ * Supabase hands back developer-facing copy ("Email not confirmed", raw Postgres
+ * codes, "Failed to fetch") that means nothing on a signup form. Anything not
+ * recognised is passed through unchanged rather than swallowed, so an
+ * unanticipated failure is still reportable from a screenshot.
+ *
+ * @param {any} error
+ * @returns {string}
+ */
+export function friendlyAuthError(error) {
+  if (!error) return 'Something went wrong. Please try again.';
+
+  const code = String(error.code || error.name || '');
+  const message = String(error.message || error || '');
+  const lower = message.toLowerCase();
+  const status = Number(error.status || 0);
+
+  if (error instanceof TypeError || lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('load failed')) {
+    return "We couldn't reach RELAY. Check your internet connection and try again.";
+  }
+  if (status === 429 || code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit' || lower.includes('rate limit') || lower.includes('too many requests')) {
+    return 'Too many attempts. Wait about a minute, then try again.';
+  }
+  if (lower.includes('already registered') || lower.includes('already exists') || code === 'user_already_exists') {
+    return 'An account already exists for that email address. Sign in instead, or use "Forgot password".';
+  }
+  if (code === 'weak_password' || lower.includes('password should be at least') || lower.includes('weak password')) {
+    return `Choose a stronger password. Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  if (lower.includes('email not confirmed') || lower.includes('email_not_confirmed')) {
+    return 'Your email address is not confirmed yet. Open the link we emailed you, then sign in.';
+  }
+  if (code === 'email_address_invalid' || lower.includes('invalid email') || lower.includes('unable to validate email')) {
+    return 'That email address does not look valid. Check it and try again.';
+  }
+  if (lower.includes('signups not allowed') || lower.includes('signup is disabled')) {
+    return 'New signups are paused right now. Please contact support.';
+  }
+  if (code === 'invalid_credentials' || lower.includes('invalid login credentials')) {
+    return 'That email and password do not match. Check them, or use "Forgot password".';
+  }
+  return message || 'Something went wrong. Please try again.';
+}
+
+function readResendCooldowns() {
+  try {
+    const raw = localStorage.getItem(RESEND_COOLDOWN_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+/**
+ * Milliseconds left before this address may be resent to. Cooldowns are kept per
+ * email so two people sharing a device do not block each other.
+ * @param {string} rawEmail
+ * @returns {number} 0 when a send is allowed
+ */
+export function resendCooldownRemaining(rawEmail) {
+  const key = canonicalAuthEmail(rawEmail);
+  if (!key) return 0;
+  const sentAt = Number(readResendCooldowns()[key] || 0);
+  if (!sentAt) return 0;
+  const remaining = RESEND_COOLDOWN_MS - (Date.now() - sentAt);
+  return remaining > 0 ? remaining : 0;
+}
+
+/** Start the cooldown for an address. Call only after a send actually succeeded. */
+export function markResendSent(rawEmail) {
+  const key = canonicalAuthEmail(rawEmail);
+  if (!key) return;
+  try {
+    const all = readResendCooldowns();
+    all[key] = Date.now();
+    localStorage.setItem(RESEND_COOLDOWN_KEY, JSON.stringify(all));
+  } catch (_) { /* private mode — the button stays enabled, Supabase still rate-limits */ }
+}
+
+/**
+ * Re-send the confirmation link for an unverified account.
+ * @param {string} rawEmail
+ * @throws when Supabase refuses, with a customer-facing message
+ */
+export async function resendVerificationEmail(rawEmail) {
+  const email = canonicalAuthEmail(rawEmail);
+  if (!email) throw new Error('Enter the email address you signed up with.');
+  const { data, error } = await supabase.auth.resend({ type: 'signup', email });
+  if (error) throw new Error(friendlyAuthError(error));
+  markResendSent(email);
+  return data;
+}
+
+/**
+ * Turn a signed-in-but-unprovisioned account into a working cloud account.
+ *
+ * This is the one place the app provisions a company, so the launch screen, the
+ * first sign-in after verification and the local→cloud upgrade all take the
+ * same path: the RPC runs with the caller's real session (create_company_and_admin
+ * refuses to provision for anyone but auth.uid()), the terms acceptance is
+ * stamped server-side against that same session, and the free trial starts on
+ * the company that RPC just created.
+ *
+ * Nothing here trusts anything typed before verification. The arguments are the
+ * prefill the user just reviewed; the server still decides what a company is
+ * and who may claim the name (036_company_name_uniqueness.sql).
+ *
+ * @param {{ userId: string, companyName: string, adminName?: string, adminPhone?: string, termsAccepted?: boolean }} params
+ * @returns {Promise<{ companyId: string, trialEndsAt: string|null }>}
+ */
+export async function provisionCloudAccount({ userId, companyName, adminName, adminPhone, termsAccepted } = {}) {
+  if (!userId) throw new Error('Sign in again to finish setting up your account.');
+
+  const { data, error } = await supabase.rpc('create_company_and_admin', {
+    user_id: userId,
+    company_name: String(companyName == null ? '' : companyName).trim(),
+    admin_name: adminName || null,
+    admin_phone: adminPhone || null,
+  });
+  if (error) throw new Error(friendlyAuthError(error));
+
+  // Terms and the trial are recorded AFTER the company exists, and both are
+  // best-effort: the account is usable either way, and bouncing the user back to
+  // a form that would try to create the company a second time is far worse than
+  // a missing timestamp they can re-accept from Settings.
+  if (termsAccepted) {
+    try {
+      const { error: termsError } = await supabase.rpc('record_terms_acceptance');
+      if (termsError) console.error('Failed to record terms acceptance:', termsError);
+    } catch (err) {
+      console.error('Failed to record terms acceptance:', err);
+    }
+  }
+
+  let trialEndsAt = null;
+  try {
+    const { data: endsAt, error: trialError } = await supabase.rpc('start_cloud_trial', { p_days: TRIAL_DAYS });
+    if (trialError) console.error('Failed to start cloud trial:', trialError);
+    else trialEndsAt = endsAt || null;
+  } catch (err) {
+    console.error('Failed to start cloud trial:', err);
+  }
+
+  return { companyId: data, trialEndsAt };
 }
 
 /** Load the profile row the app's session user is built from. */

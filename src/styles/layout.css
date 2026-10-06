@@ -2311,6 +2311,89 @@ body.relay-assistant-open .relay-topbar-actions {
     rgba(9, 9, 11, 0) 100%);
 }
 
+/* First-run setup checklist, rendered into the empty .dash-topbar-left slot.
+   .dash-topbar is pointer-events: none so the canvas stays draggable, and only
+   its buttons re-enable events — the card opts back in so clicking anywhere on
+   it doesn't pan the canvas underneath. */
+.setup-checklist {
+  pointer-events: auto;
+  width: 300px;
+  max-width: min(300px, 42vw);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.setup-checklist-head { display: flex; align-items: center; gap: 8px; }
+.setup-checklist-icon { font-size: 20px; color: var(--color-primary); }
+.setup-checklist-title { font-weight: 600; flex: 1; }
+.setup-checklist-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.setup-checklist-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.setup-checklist-dismiss:hover { background: rgba(120, 120, 120, 0.16); color: var(--text-primary); }
+.setup-checklist-dismiss .material-icons-outlined { font-size: 16px; }
+
+.setup-checklist-track {
+  height: 4px;
+  margin: 10px 0;
+  border-radius: 999px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+.setup-checklist-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+
+.setup-checklist-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-checklist-item { display: flex; align-items: flex-start; gap: 8px; }
+.setup-checklist-tick { font-size: 18px; color: var(--text-secondary); }
+.setup-checklist-item.is-done .setup-checklist-tick { color: var(--color-success); }
+.setup-checklist-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.setup-checklist-label { font-weight: 500; }
+.setup-checklist-item.is-done .setup-checklist-label { color: var(--text-secondary); text-decoration: line-through; }
+.setup-checklist-hint { color: var(--text-secondary); font-size: 0.85em; line-height: 1.35; }
+.setup-checklist-go { align-self: center; white-space: nowrap; }
+
+.setup-checklist-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+.setup-checklist-note > .material-icons-outlined { font-size: 18px; color: var(--color-info); }
+.setup-checklist-note-text { display: flex; flex-direction: column; gap: 4px; }
+.setup-checklist-note-text p { margin: 0; color: var(--text-secondary); font-size: 0.85em; line-height: 1.4; }
+.setup-checklist-note-text .btn { align-self: flex-start; }
+
 /* Home pin gets a subtle ring to distinguish it from user pins */
 .dash-pin.home-pin .dash-pin-marker {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 3px 8px rgba(0, 0, 0, 0.3);

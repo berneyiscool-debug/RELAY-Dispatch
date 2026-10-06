@@ -691,4 +691,262 @@ describe('migrateLocalToCloud', () => {
       assert.deepStrictEqual(source, { id: 'acct_1_job_1', customerId: 'acct_1_cust_1', dueDate: due, tags: ['acct_1_tag_1'] });
     });
   });
+
+  // Local profile creation. A profile is created either straight into browser storage,
+  // or into a folder the device hands back when it can.
+  describe('local profile creation', () => {
+    const savedLocalStorage = globalThis.localStorage;
+    const savedSessionStorage = globalThis.sessionStorage;
+    const localMem = new Map();
+    const sessionMem = new Map();
+    const ACCOUNT = 'acct_local_1';
+    const CLOUD_ID = '8f14e45f-ceea-467a-9e3d-4bd0e17f2bfe';
+
+    const memoryStore = (map) => ({
+      getItem: (key) => (map.has(key) ? map.get(key) : null),
+      setItem: (key, value) => { map.set(key, String(value)); },
+      removeItem: (key) => { map.delete(key); }
+    });
+
+    // Stand-in for a FileSystemDirectoryHandle covering the calls the store makes.
+    function fakeDirHandle(name = 'RELAY') {
+      const dirs = new Map();
+      const files = new Map();
+      const handle = {
+        name,
+        dirs,
+        files,
+        permission: 'granted',
+        queryPermission: async () => handle.permission,
+        requestPermission: async () => handle.permission,
+        getDirectoryHandle: async (childName, options = {}) => {
+          if (!dirs.has(childName)) {
+            if (!options.create) throw new Error(`NotFoundError: ${childName}`);
+            dirs.set(childName, fakeDirHandle(childName));
+          }
+          return dirs.get(childName);
+        },
+        getFileHandle: async (fileName) => {
+          if (!files.has(fileName)) files.set(fileName, '');
+          return {
+            name: fileName,
+            createWritable: async () => ({
+              write: async (data) => { files.set(fileName, String(data)); },
+              close: async () => {}
+            })
+          };
+        }
+      };
+      return handle;
+    }
+
+    // Every collection the store mirrors. `notices` and `deputyAsks` have no Supabase
+    // table but are still backed up, so they are named explicitly.
+    const BACKED_UP_COLLECTIONS = [
+      'companies', 'technicians', 'userTypes', 'passwordResetRequests', 'customers',
+      'assets', 'maintenancePlans', 'taskTemplates', 'quotes', 'jobs', 'invoices',
+      'stock', 'timesheets', 'contractors', 'suppliers', 'purchaseOrders',
+      'notifications', 'notices', 'formTemplates', 'formInstances', 'kits',
+      'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog',
+      'deputyAsks', 'jobMaterials', 'storageLocations', 'kitTypes', 'locationTypes',
+      'deputyThreads', 'deputyRoutines'
+    ];
+
+    const owner = { id: `${ACCOUNT}_admin`, companyId: ACCOUNT, name: 'Dana Whitfield' };
+
+    const dataDirOf = (root) => root.dirs.get('Apex Power Services').dirs.get('data');
+
+    const missingBackups = (dataDir) =>
+      BACKED_UP_COLLECTIONS.filter((col) => !dataDir.files.has(`${col}.json`));
+
+    beforeEach(() => {
+      localMem.clear();
+      sessionMem.clear();
+      globalThis.localStorage = memoryStore(localMem);
+      globalThis.sessionStorage = memoryStore(sessionMem);
+      store.clearSync();
+      store.listeners = {};
+      // clearSync() deliberately leaves the storage handles alone, so reset them here.
+      store.db = null;
+      store.dirHandle = null;
+      store.backupDirHandle = null;
+      store.folderSyncPermissionGranted = false;
+      store.backupDirPermissionGranted = false;
+    });
+
+    afterEach(() => {
+      if (savedLocalStorage === undefined) delete globalThis.localStorage;
+      else globalThis.localStorage = savedLocalStorage;
+      if (savedSessionStorage === undefined) delete globalThis.sessionStorage;
+      else globalThis.sessionStorage = savedSessionStorage;
+      store.clearSync();
+      store.db = null;
+      store.dirHandle = null;
+      store.backupDirHandle = null;
+    });
+
+    test('creates a profile in browser storage when no folder is chosen', async () => {
+      await store.initializeUser(owner);
+
+      assert.strictEqual(store.companyId, ACCOUNT);
+      assert.strictEqual(store.userId, `${ACCOUNT}_admin`);
+      assert.strictEqual(sessionMem.get('relay_active_account'), ACCOUNT);
+      assert.strictEqual(store.dirHandle, null);
+      assert.strictEqual(store.folderSyncEnabled, false);
+      // A fresh profile gets the seeded picklists but no demo roster.
+      assert.deepStrictEqual(store.getAll('technicians'), []);
+      assert.ok(store.getAll('userTypes').length > 0);
+    });
+
+    test('namespaces storage per profile so two profiles cannot collide', async () => {
+      await store.initializeUser(owner);
+
+      assert.strictEqual(store.getStorageKey('jobs'), `relay_${ACCOUNT}_jobs`);
+      assert.strictEqual(store.getDBName(), `RelayDispatchDB_${ACCOUNT}`);
+    });
+
+    test('keeps the legacy key prefix when no profile is active', () => {
+      assert.strictEqual(store.getStorageKey('jobs'), 'simpro_jobs');
+      assert.strictEqual(store.getDBName(), 'RelayDispatchDB');
+    });
+
+    test('reuses the folder-sync flag recorded for this profile', async () => {
+      localMem.set(`relay_${ACCOUNT}_folder_sync_enabled`, 'true');
+
+      await store.initializeUser(owner);
+
+      assert.strictEqual(store.folderSyncEnabled, true);
+    });
+
+    test('sends a cloud company down the sync path instead', async () => {
+      sessionMem.set('relay_active_account', 'acct_stale');
+      const originalCloudSync = store.initializeCloudSync;
+      store.initializeCloudSync = async () => {};
+      try {
+        await store.initializeUser({ id: 'user-1', companyId: CLOUD_ID });
+
+        assert.strictEqual(store.companyId, CLOUD_ID);
+        assert.strictEqual(sessionMem.has('relay_active_account'), false);
+        assert.strictEqual(store.getStorageKey('jobs'), 'simpro_jobs');
+      } finally {
+        store.initializeCloudSync = originalCloudSync;
+      }
+    });
+
+    describe('folder storage', () => {
+      test('turns folder sync on and mirrors every collection into the folder', async () => {
+        await store.initializeUser(owner);
+        store.companySettings = { name: 'Apex Power Services' };
+        store.cache.jobs = [{ id: `${ACCOUNT}_job_1`, status: 'scheduled' }];
+        const root = fakeDirHandle();
+
+        await store.setLocalDirectory(root);
+
+        assert.strictEqual(store.dirHandle, root);
+        assert.strictEqual(store.folderSyncEnabled, true);
+        assert.strictEqual(store.folderSyncPermissionGranted, true);
+        assert.strictEqual(localMem.get(`relay_${ACCOUNT}_folder_sync_enabled`), 'true');
+
+        const dataDir = dataDirOf(root);
+        assert.deepStrictEqual(missingBackups(dataDir), []);
+        assert.deepStrictEqual(
+          JSON.parse(dataDir.files.get('jobs.json')),
+          [{ id: `${ACCOUNT}_job_1`, status: 'scheduled' }]
+        );
+      });
+
+      test('sanitises the company folder name', async () => {
+        await store.initializeUser(owner);
+        store.companySettings = { name: 'Apex / Power: QLD?' };
+
+        const root = fakeDirHandle();
+        await store.setLocalDirectory(root);
+
+        assert.deepStrictEqual([...root.dirs.keys()], ['Apex _ Power_ QLD_']);
+      });
+
+      test('falls back to a generic company folder name', async () => {
+        await store.initializeUser(owner);
+        store.companySettings = null;
+
+        const root = fakeDirHandle();
+        await store.setLocalDirectory(root);
+
+        assert.deepStrictEqual([...root.dirs.keys()], ['Company']);
+      });
+
+      test('turns folder sync off again when the handle is cleared', async () => {
+        await store.initializeUser(owner);
+        store.companySettings = { name: 'Apex Power Services' };
+        await store.setLocalDirectory(fakeDirHandle());
+
+        await store.setLocalDirectory(null);
+
+        assert.strictEqual(store.folderSyncEnabled, false);
+        assert.strictEqual(store.folderSyncPermissionGranted, false);
+        assert.strictEqual(localMem.has(`relay_${ACCOUNT}_folder_sync_enabled`), false);
+      });
+    });
+
+    describe('backup to a folder', () => {
+      test('writes one JSON file per collection and stamps the time', async () => {
+        await store.initializeUser(owner);
+        store.companySettings = { name: 'Apex Power Services' };
+        store.cache.jobs = [{ id: `${ACCOUNT}_job_1` }];
+        const root = fakeDirHandle();
+
+        await store.backupToFolder(root);
+
+        const dataDir = dataDirOf(root);
+        assert.deepStrictEqual(missingBackups(dataDir), []);
+        assert.deepStrictEqual(JSON.parse(dataDir.files.get('jobs.json')), [{ id: `${ACCOUNT}_job_1` }]);
+        assert.deepStrictEqual(JSON.parse(dataDir.files.get('technicians.json')), []);
+        assert.strictEqual(Number.isNaN(Date.parse(localMem.get('relay_last_backup_time'))), false);
+        assert.strictEqual(store.backupDirPermissionGranted, true);
+      });
+
+      test('refuses to back up with no directory configured', async () => {
+        await assert.rejects(() => store.backupToFolder(), /No backup directory configured/);
+      });
+
+      test('refuses to back up when write permission is denied', async () => {
+        const denied = fakeDirHandle();
+        denied.permission = 'denied';
+
+        await assert.rejects(() => store.backupToFolder(denied), /Write permission denied/);
+      });
+    });
+
+    describe('the owner row', () => {
+      test('synthesises the profile owner as the only technician', async () => {
+        await store.initializeUser(owner);
+        localMem.set('relay_login_mode', 'local');
+        localMem.set('currentUser', JSON.stringify({ id: `${ACCOUNT}_admin`, name: 'Dana Whitfield' }));
+
+        const technicians = store.getAll('technicians');
+
+        assert.strictEqual(technicians.length, 1);
+        assert.strictEqual(technicians[0].id, `${ACCOUNT}_admin`);
+        assert.strictEqual(technicians[0].name, 'Dana Whitfield');
+        assert.strictEqual(technicians[0].role, 'Administrator');
+        assert.strictEqual(technicians[0].color, '#FF5C00');
+        assert.strictEqual(technicians[0].startLocation, null);
+      });
+
+      test('falls back to a generic name when the profile has none', async () => {
+        await store.initializeUser(owner);
+        localMem.set('relay_login_mode', 'local');
+        localMem.set('currentUser', JSON.stringify({ id: `${ACCOUNT}_admin` }));
+
+        assert.strictEqual(store.getAll('technicians')[0].name, 'Local Admin');
+      });
+
+      test('returns the stored roster when the device is not in local mode', async () => {
+        await store.initializeUser(owner);
+        store.cache.technicians = [{ id: `${ACCOUNT}_tech_1`, name: 'Jake Morrow' }];
+
+        assert.deepStrictEqual(store.getAll('technicians'), [{ id: `${ACCOUNT}_tech_1`, name: 'Jake Morrow' }]);
+      });
+    });
+  });
 });

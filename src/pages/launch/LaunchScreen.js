@@ -8,12 +8,20 @@ import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '..
 import { showAlert } from '../../utils/confirmDialog.js';
 import { bindCompanyNameCheck, validateCompanyName } from '../../utils/companyName.js';
 import {
+  MIN_PASSWORD_LENGTH,
+  PRIVACY_ROUTE,
+  TERMS_ROUTE,
   canonicalAuthEmail,
   describeSignUpResult,
+  friendlyAuthError,
+  passwordStrength,
+  provisionCloudAccount,
+  resendCooldownRemaining,
+  resendVerificationEmail,
   savePendingSignup,
   signInWithEmailCandidates,
 } from '../../utils/cloudOnboarding.js';
-import { startSubscribeCheckout } from '../../utils/subscription.js';
+import { downloadDataSnapshot } from '../../utils/dataBackup.js';
 
 const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
@@ -78,11 +86,18 @@ export function renderLaunchScreen(container, onComplete) {
   }
 
   // State variables
-  let cloudView = 'signin'; // 'signin' | 'signup'
+  let cloudView = 'signin'; // 'signin' | 'signup' | 'verify'
+  // Address awaiting email confirmation, and the field-level detail kept so the
+  // check-inbox screen can offer a resend and a "wrong email?" way back.
+  let verifyState = null; // { email, companyName, adminName, adminPhone } | null
+  let resendTimer = null;
   let accounts = [];
   let isCreatingLocalAccount = false;
   let activePasswordPromptId = null;
   let pendingLocalDirHandle = null;
+  // Storage choice for local profile creation. null = automatic (a folder is requested when
+  // the browser supports it); 'browser' = the user explicitly opted into browser-only storage.
+  let localStorageMode = null;
   // Live company-name availability binding for the signup form; rebuilt on every
   // render, so the previous one is disposed before the DOM it watched is dropped.
   let companyNameCheck = null;
@@ -669,6 +684,13 @@ export function renderLaunchScreen(container, onComplete) {
   };
 
   const render = () => {
+    // The countdown interval belongs to the "check your inbox" markup, which is
+    // about to be thrown away — leaving it running would write into detached nodes.
+    if (resendTimer) {
+      clearInterval(resendTimer);
+      resendTimer = null;
+    }
+
     container.innerHTML = `
       <div class="launch-screen majority-${majoritySide}">
         <div class="launch-bg-glow"></div>
@@ -679,7 +701,7 @@ export function renderLaunchScreen(container, onComplete) {
           <!-- Collapsed indicator -->
           <div class="launch-panel-indicator">
             <span class="material-icons-outlined indicator-icon">cloud</span>
-            <span class="indicator-text">Cloud Services</span>
+            <span class="indicator-text">RELAY Cloud</span>
             <span class="material-icons-outlined indicator-arrow">keyboard_arrow_up</span>
           </div>
 
@@ -688,7 +710,7 @@ export function renderLaunchScreen(container, onComplete) {
               <img src="${logoLarge}" alt="Dispatch Logo" style="max-height: 36px; max-width: 200px; object-fit: contain; display: block;" />
             </div>
 
-            ${cloudView === 'signin' ? renderCloudSignInHTML() : renderCloudSignUpHTML()}
+            ${cloudView === 'signin' ? renderCloudSignInHTML() : cloudView === 'signup' ? renderCloudSignUpHTML() : renderCheckInboxHTML()}
             ${renderDesktopDownloadHTML()}
           </div>
         </div>
@@ -705,15 +727,15 @@ export function renderLaunchScreen(container, onComplete) {
           <!-- Collapsed indicator -->
           <div class="launch-panel-indicator">
             <span class="material-icons-outlined indicator-icon">shield</span>
-            <span class="indicator-text">Local Admin Mode</span>
+            <span class="indicator-text">Use offline on this device</span>
             <span class="material-icons-outlined indicator-arrow">keyboard_arrow_down</span>
           </div>
 
           <div class="launch-panel-content">
             <h2 class="launch-title">
-              <span class="material-icons-outlined" style="font-size: 22px; color: #5c5c5a;">shield</span> Local Admin
+              <span class="material-icons-outlined" style="font-size: 22px; color: #5c5c5a;">shield</span> Use offline on this device
             </h2>
-            <p class="launch-subtitle">Single-user offline admin mode. Your data is stored locally on this machine.</p>
+            <p class="launch-subtitle">Free, one user, this device only &#8212; team logins and sync need RELAY Cloud.</p>
 
             ${renderLocalAccountsHTML()}
           </div>
@@ -721,7 +743,7 @@ export function renderLaunchScreen(container, onComplete) {
           <!-- Description when empty -->
           ${accounts.length === 0 && !isCreatingLocalAccount ? `
             <div class="launch-panel-content" style="text-align: center; color: #5c5c5a; font-size: 13px; margin-top: 16px;">
-              No setup required. Click "New local account" to get started.
+              Nothing is set up on this device yet. Create a local profile to get started.
             </div>
           ` : ''}
         </div>
@@ -755,7 +777,7 @@ export function renderLaunchScreen(container, onComplete) {
       <h2 class="launch-title" style="color: #FF5C00;">
         <span class="material-icons-outlined" style="font-size: 22px; color: #FF5C00;">cloud_queue</span> RELAY Cloud Services
       </h2>
-      <p class="launch-subtitle">Sign in to sync your data across devices and access your team.</p>
+      <p class="launch-subtitle">Team, sync and the mobile app &#8212; paid per user. Sign in to continue.</p>
 
       <div id="cloud-error" class="auth-error" style="display: none;">
         <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
@@ -809,12 +831,19 @@ export function renderLaunchScreen(container, onComplete) {
         <span id="cloud-error-text"></span>
       </div>
 
+      ${verifyState ? `
+        <div style="display: flex; align-items: center; gap: 10px; background: rgba(255, 92, 0, 0.08); border: 1px solid rgba(255, 92, 0, 0.22); padding: 12px; border-radius: 8px; color: #5c5c5a; font-size: 12px; text-align: left; margin-bottom: 20px; line-height: 1.5;">
+          <span class="material-icons-outlined" style="font-size:18px; color: #FF5C00;">info_outline</span>
+          <span>You already started creating <strong style="color: #1a1a1a;">${escapeHTML(verifyState.companyName)}</strong>. Change the email address below to have the confirmation link sent somewhere else.</span>
+        </div>
+      ` : ''}
+
       <form id="cloud-signup-form" style="display: flex; flex-direction: column; gap: 10px;">
         <div class="launch-form-group">
           <label class="launch-form-label">Company Name</label>
           <div class="launch-input-wrapper">
             <span class="material-icons-outlined launch-input-icon">business</span>
-            <input type="text" id="signup-company" class="launch-input" placeholder="Acme Electrical Services" autocomplete="organization" required>
+            <input type="text" id="signup-company" class="launch-input" placeholder="Acme Electrical Services" autocomplete="organization" value="${escapeHTML(verifyState?.companyName || '')}" required>
           </div>
           <div id="signup-company-status" style="font-size: 12px; margin-top: 4px; min-height: 15px; color: #6B7280;"></div>
         </div>
@@ -823,7 +852,7 @@ export function renderLaunchScreen(container, onComplete) {
           <label class="launch-form-label">Admin Full Name</label>
           <div class="launch-input-wrapper">
             <span class="material-icons-outlined launch-input-icon">badge</span>
-            <input type="text" id="signup-name" class="launch-input" placeholder="John Doe" required>
+            <input type="text" id="signup-name" class="launch-input" placeholder="John Doe" value="${escapeHTML(verifyState?.adminName || '')}" required>
           </div>
         </div>
 
@@ -831,7 +860,7 @@ export function renderLaunchScreen(container, onComplete) {
           <label class="launch-form-label">Admin Phone</label>
           <div class="launch-input-wrapper">
             <span class="material-icons-outlined launch-input-icon">phone</span>
-            <input type="text" id="signup-phone" class="launch-input" placeholder="0412 345 678" required>
+            <input type="text" id="signup-phone" class="launch-input" placeholder="0412 345 678" value="${escapeHTML(verifyState?.adminPhone || '')}" required>
           </div>
         </div>
 
@@ -839,7 +868,7 @@ export function renderLaunchScreen(container, onComplete) {
           <label class="launch-form-label">Admin Email Address</label>
           <div class="launch-input-wrapper">
             <span class="material-icons-outlined launch-input-icon">email</span>
-            <input type="email" id="signup-email" class="launch-input" placeholder="admin@acme.com" required>
+            <input type="email" id="signup-email" class="launch-input" placeholder="admin@acme.com" value="${escapeHTML(verifyState?.email || '')}" required>
           </div>
         </div>
 
@@ -847,12 +876,30 @@ export function renderLaunchScreen(container, onComplete) {
           <label class="launch-form-label">Password</label>
           <div class="launch-input-wrapper">
             <span class="material-icons-outlined launch-input-icon">lock</span>
-            <input type="password" id="signup-password" class="launch-input" placeholder="Min. 6 characters" required>
+            <input type="password" id="signup-password" class="launch-input" placeholder="Min. ${MIN_PASSWORD_LENGTH} characters" minlength="${MIN_PASSWORD_LENGTH}" autocomplete="new-password" required>
+          </div>
+          <div id="signup-password-strength" style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+            <div style="flex: 1; height: 4px; border-radius: 2px; background: rgba(0,0,0,0.12); overflow: hidden;">
+              <div id="signup-password-bar" style="height: 100%; width: 0%; background: #ef4444; transition: width .18s ease, background-color .18s ease;"></div>
+            </div>
+            <span id="signup-password-hint" style="font-size: 11px; color: #5c5c5a; white-space: nowrap;">At least ${MIN_PASSWORD_LENGTH} characters</span>
           </div>
         </div>
 
+        <div class="launch-form-group">
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="signup-terms" style="width: 15px; height: 15px; margin-top: 2px; accent-color: #FF5C00; cursor: pointer; flex-shrink: 0;">
+            <span style="font-size: 12px; color: #5c5c5a; line-height: 1.5;">
+              I agree to the
+              <a href="${TERMS_ROUTE}" target="_blank" rel="noopener" style="color: #FF5C00; text-decoration: none; font-weight: 600;">Terms of Service</a>
+              and
+              <a href="${PRIVACY_ROUTE}" target="_blank" rel="noopener" style="color: #FF5C00; text-decoration: none; font-weight: 600;">Privacy Policy</a>.
+            </span>
+          </label>
+        </div>
+
         <button type="submit" class="launch-btn launch-btn-primary" id="btn-cloud-submit">
-          Create Company &amp; Admin
+          Create account
         </button>
 
         <div style="text-align: center; margin-top: 10px; font-size: 13px;">
@@ -862,15 +909,44 @@ export function renderLaunchScreen(container, onComplete) {
     `;
   };
 
-  const renderLocalAccountsHTML = () => {
-    let html = '<div class="account-list">';
+  const renderCheckInboxHTML = () => {
+    const email = verifyState?.email || '';
+    return `
+      <h2 class="launch-title" style="color: #FF5C00;">
+        <span class="material-icons-outlined" style="font-size: 22px; color: #FF5C00;">mark_email_unread</span> Check your inbox
+      </h2>
+      <p class="launch-subtitle">We sent a confirmation link to <strong style="color: #1a1a1a;">${escapeHTML(email)}</strong>. Open it, then sign in — your company is created on that first sign-in, so nothing you entered is lost by waiting.</p>
 
-    accounts.forEach(acct => {
-      const isPromptOpen = activePasswordPromptId === acct.id;
-      const initials = acct.businessName ? acct.businessName.trim().charAt(0).toUpperCase() : 'L';
-      const lastUsed = formatRelativeTime(acct.lastAccessedAt || acct.createdAt);
+      <div id="verify-error" class="auth-error" style="display: none;">
+        <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
+        <span id="verify-error-text"></span>
+      </div>
 
-      html += `
+      <div id="verify-info" style="display: none; align-items: center; gap: 10px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.25); padding: 12px; border-radius: 8px; color: #15803d; font-size: 13px; text-align: left; margin-bottom: 20px; line-height: 1.4;">
+        <span class="material-icons-outlined" style="font-size:18px;">check_circle_outline</span>
+        <span id="verify-info-text"></span>
+      </div>
+
+      <button type="button" class="launch-btn launch-btn-secondary" id="btn-verify-resend">
+        Resend confirmation email
+      </button>
+
+      <div style="text-align: center; margin-top: 10px; font-size: 13px;">
+        Wrong email? <a href="#" id="link-verify-back" style="color: #FF5C00; text-decoration: none; font-weight: 600;">Go back and change it</a>
+      </div>
+    `;
+  };
+
+  // Local mode is single-user. A folder is preferred where the browser allows it; browser
+  // storage is an explicit opt-in for tablets/phones that cannot pick a directory.
+  const useBrowserStorage = () => localStorageMode === 'browser';
+
+  const renderLocalAccountItem = (acct) => {
+    const isPromptOpen = activePasswordPromptId === acct.id;
+    const initials = acct.businessName ? acct.businessName.trim().charAt(0).toUpperCase() : 'L';
+    const lastUsed = formatRelativeTime(acct.lastAccessedAt || acct.createdAt);
+
+    return `
         <div class="account-item-wrapper" style="${isPromptOpen ? 'border-color: #8a8a87; background-color: rgba(255,255,255,0.01);' : ''}">
           <div class="account-item" data-id="${acct.id}">
             <div class="account-details">
@@ -880,8 +956,7 @@ export function renderLaunchScreen(container, onComplete) {
               <div>
                 <h4 class="account-name">${escapeHTML(acct.businessName)}</h4>
                 <div class="account-meta">
-                  Last used ${lastUsed} 
-                  ${acct.hasPassword ? '• <span class="material-icons-outlined" style="font-size:11px; vertical-align: middle; margin-left: 2px;">lock</span> PIN protected' : ''}
+                  Last used ${lastUsed}${acct.hasPassword ? ' \u2022 <span class="material-icons-outlined" style="font-size:11px; vertical-align: middle; margin-left: 2px;">lock</span> PIN protected' : ''}
                 </div>
               </div>
             </div>
@@ -896,22 +971,47 @@ export function renderLaunchScreen(container, onComplete) {
               <button class="password-prompt-btn password-prompt-submit" data-id="${acct.id}">Unlock</button>
               <button class="password-prompt-btn password-prompt-cancel">Cancel</button>
             </div>
-            <div style="margin: -6px 14px 10px 14px; text-align: right; font-size: 11px;">
-              <a href="#" class="link-local-profile-forgot" data-id="${acct.id}" style="color: #FF5C00; text-decoration: none; font-weight: 600;">Forgot PIN?</a>
-            </div>
             <div class="auth-error pwd-error" id="pwd-error-${acct.id}" style="display: none; margin: 0 14px 12px 14px; padding: 8px 12px; font-size: 12px;"></div>
           ` : ''}
         </div>
       `;
-    });
- 
+  };
+
+  const renderLocalAccountsHTML = () => {
+    const primaryAccount = accounts.length > 0 ? accounts[0] : null;
+    const otherAccounts = accounts.slice(1);
+
+    let html = '<div class="account-list">';
+    if (primaryAccount) html += renderLocalAccountItem(primaryAccount);
     html += '</div>';
- 
+
+    if (otherAccounts.length > 0) {
+      html += `
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8a87; margin: 0 0 6px 2px;">Other profiles on this device</div>
+        <div class="account-list">${otherAccounts.map(renderLocalAccountItem).join('')}</div>
+      `;
+    }
+
     if (isCreatingLocalAccount) {
       const isDirSupported = typeof window !== 'undefined' && !!window.showDirectoryPicker;
-      let dirSyncHtml = '';
-      if (isDirSupported) {
-        dirSyncHtml = `
+      const browserStorage = useBrowserStorage() || !isDirSupported;
+      let storageHtml = '';
+
+      if (browserStorage) {
+        storageHtml = `
+          <div class="launch-form-group" style="margin-bottom: 8px;">
+            <div style="font-size: 12px; color: #8a4b1f; background: rgba(180, 83, 9, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(180, 83, 9, 0.35); border-left: 3px solid #B45309; display: flex; gap: 8px; line-height: 1.45;">
+              <span class="material-icons-outlined" style="font-size: 18px; color: #B45309;">warning_amber</span>
+              <span><strong>Stored in this browser only.</strong> Clearing this browser's data &#8212; or browsing in private/incognito mode &#8212; permanently deletes this profile and everything in it. Keep a backup file from Settings &#8594; Local Storage if this data matters.</span>
+            </div>
+            ${isDirSupported ? `
+              <button type="button" class="launch-btn launch-btn-secondary" id="btn-use-folder-storage" style="margin: 8px 0 0 0; padding: 6px 10px; font-size: 12px;">
+                <span class="material-icons-outlined" style="font-size: 15px; margin-right: 4px; vertical-align: middle;">folder</span>Use a folder on this computer instead
+              </button>` : ''}
+          </div>
+        `;
+      } else {
+        storageHtml = `
           <div class="launch-form-group" style="margin-bottom: 8px;">
             <label class="launch-form-label" style="color: #8a8a87;">Local Directory for Storage (Required)</label>
             <div style="display: flex; gap: 8px; align-items: center;">
@@ -923,20 +1023,13 @@ export function renderLaunchScreen(container, onComplete) {
             <div class="text-tertiary" style="font-size: 11px; margin-top: 4px; color: #5c5c5a; line-height: 1.4;">
               Saves database records and attachments directly to this computer folder (ideal for OneDrive/Dropbox/Network share).
             </div>
-          </div>
-        `;
-      } else {
-        dirSyncHtml = `
-          <div class="launch-form-group" style="margin-bottom: 8px;">
-            <label class="launch-form-label" style="color: #8a8a87;">Storage</label>
-            <div style="font-size: 12px; color: #8a8a87; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 8px;">
-              <span class="material-icons-outlined" style="font-size: 18px; color: #2563EB;">tablet_mac</span>
-              <span>Data will be stored locally in device browser storage (IndexedDB).</span>
-            </div>
+            <button type="button" class="launch-btn launch-btn-secondary" id="btn-use-browser-storage" style="margin: 8px 0 0 0; padding: 6px 10px; font-size: 12px;">
+              <span class="material-icons-outlined" style="font-size: 15px; margin-right: 4px; vertical-align: middle;">tablet_mac</span>Continue without a folder instead
+            </button>
           </div>
         `;
       }
- 
+
       html += `
         <div class="new-account-form">
           <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600;">Create Local Business Profile</h4>
@@ -945,49 +1038,40 @@ export function renderLaunchScreen(container, onComplete) {
             <input type="text" id="local-business-name" class="launch-input" placeholder="e.g. Side Electrical" style="padding-left: 12px;" required />
           </div>
           <div class="launch-form-group" style="margin-bottom: 8px;">
+            <label class="launch-form-label" style="color: #8a8a87;">Your Name</label>
+            <input type="text" id="local-owner-name" class="launch-input" placeholder="e.g. Joshua Smith" style="padding-left: 12px;" />
+          </div>
+          <div class="launch-form-group" style="margin-bottom: 8px;">
             <label class="launch-form-label" style="color: #8a8a87;">Protect with PIN/Password (Optional)</label>
             <input type="password" id="local-business-password" class="launch-input" placeholder="Leave blank for no password" style="padding-left: 12px;" />
-          </div>
-          
-          <div id="local-recovery-fields" style="display: none; margin-top: 8px;">
-            <div class="launch-form-group" style="margin-bottom: 8px;">
-              <label class="launch-form-label" style="color: #8a8a87;">Recovery Question</label>
-              <div class="launch-input-wrapper">
-                <select id="local-recovery-question-select" class="launch-input" style="appearance: none; background: #1a1a1a; border: none; color: #f8fafc; width: 100%; padding-left: 12px; height: 36px; border-radius: 6px; font-family: inherit; font-size: 13px;">
-                  <option value="What was the name of your first pet?">What was the name of your first pet?</option>
-                  <option value="In what city or town did your parents meet?">In what city or town did your parents meet?</option>
-                  <option value="What was the name of your first school?">What was the name of your first school?</option>
-                  <option value="What was your favorite childhood food?">What was your favorite childhood food?</option>
-                  <option value="custom">Write a custom question...</option>
-                </select>
-                <span class="material-icons-outlined" style="position: absolute; right: 12px; top: 9px; color: #5c5c5a; pointer-events: none;">expand_more</span>
-              </div>
-            </div>
-            <div class="launch-form-group" id="local-recovery-custom-group" style="display: none; margin-bottom: 8px;">
-              <label class="launch-form-label" style="color: #8a8a87;">Custom Question</label>
-              <input type="text" id="local-recovery-question-custom" class="launch-input" placeholder="Type your custom question" style="padding-left: 12px;" />
-            </div>
-            <div class="launch-form-group" style="margin-bottom: 8px;">
-              <label class="launch-form-label" style="color: #8a8a87;">Recovery Answer</label>
-              <input type="text" id="local-recovery-answer" class="launch-input" placeholder="Enter answer (case-insensitive)" style="padding-left: 12px;" />
+            <div class="text-tertiary" style="font-size: 11px; margin-top: 4px; color: #5c5c5a; line-height: 1.4;">
+              Used to unlock this profile on this device. There is no recovery question &#8212; if you forget it, the only way back in is restoring the profile from a backup folder.
             </div>
           </div>
 
-          ${dirSyncHtml}
+          ${storageHtml}
           <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="launch-btn launch-btn-primary" id="btn-save-local-account" style="flex: 1;">Create Profile</button>
             <button class="launch-btn launch-btn-secondary" id="btn-cancel-local-account" style="flex: 1;">Cancel</button>
           </div>
         </div>
       `;
-    } else {
+    } else if (accounts.length === 0) {
       html += `
         <div style="margin-top: 16px; display: flex; gap: 8px;">
-          <button class="launch-btn launch-btn-secondary" id="btn-show-create-local" style="flex: 1; padding: 10px 16px;">
-            <span class="material-icons-outlined" style="font-size: 16px; margin-right: 6px; vertical-align: middle;">add</span>New Profile
+          <button class="launch-btn launch-btn-primary" id="btn-show-create-local" style="flex: 1; padding: 10px 16px;">
+            <span class="material-icons-outlined" style="font-size: 16px; margin-right: 6px; vertical-align: middle;">add</span>Create local profile
           </button>
           <button class="launch-btn launch-btn-secondary" id="btn-link-existing-dir" style="flex: 1; padding: 10px 16px;" title="Link an existing folder containing dispatch db files">
             <span class="material-icons-outlined" style="font-size: 16px; margin-right: 6px; vertical-align: middle;">link</span>Link Folder
+          </button>
+        </div>
+      `;
+    } else {
+      html += `
+        <div style="margin-top: 16px;">
+          <button class="launch-btn launch-btn-secondary" id="btn-link-existing-dir" style="width: 100%; padding: 10px 16px;" title="Restore a local profile from a backup folder on this computer">
+            <span class="material-icons-outlined" style="font-size: 16px; margin-right: 6px; vertical-align: middle;">link</span>Restore from a folder
           </button>
         </div>
       `;
@@ -1060,6 +1144,24 @@ export function renderLaunchScreen(container, onComplete) {
       });
     }
 
+    // Storage mode toggles for local profile creation
+    const btnUseBrowserStorage = container.querySelector('#btn-use-browser-storage');
+    if (btnUseBrowserStorage) {
+      btnUseBrowserStorage.addEventListener('click', () => {
+        localStorageMode = 'browser';
+        pendingLocalDirHandle = null;
+        render();
+      });
+    }
+
+    const btnUseFolderStorage = container.querySelector('#btn-use-folder-storage');
+    if (btnUseFolderStorage) {
+      btnUseFolderStorage.addEventListener('click', () => {
+        localStorageMode = null;
+        render();
+      });
+    }
+
     // Link Existing local synced folder
     const btnLinkExistingDir = container.querySelector('#btn-link-existing-dir');
     if (btnLinkExistingDir) {
@@ -1109,6 +1211,88 @@ export function renderLaunchScreen(container, onComplete) {
       );
     }
 
+    // Password strength hint — advisory only. The real floor is the minlength
+    // attribute plus the length check in handleCloudSignUp.
+    const strengthBar = container.querySelector('#signup-password-bar');
+    const strengthHint = container.querySelector('#signup-password-hint');
+    if (strengthBar && strengthHint) {
+      const paintStrength = (value) => {
+        const { score, label, hint, ok } = passwordStrength(value);
+        const widths = ['0%', '25%', '50%', '75%', '100%'];
+        const colors = ['#ef4444', '#ef4444', '#f59e0b', '#eab308', '#22c55e'];
+        strengthBar.style.width = widths[score] || '0%';
+        strengthBar.style.background = colors[score] || colors[0];
+        strengthHint.textContent = value ? `${label} — ${hint}` : hint;
+        strengthHint.style.color = value && ok ? '#15803d' : '#5c5c5a';
+      };
+
+      const passwordInput = container.querySelector('#signup-password');
+      paintStrength(passwordInput ? passwordInput.value : '');
+      if (passwordInput) {
+        passwordInput.addEventListener('input', () => paintStrength(passwordInput.value));
+      }
+    }
+
+    // "Check your inbox" — resend with a visible cooldown, and the way back to
+    // the form if the address was mistyped.
+    const verifyResendBtn = container.querySelector('#btn-verify-resend');
+    if (verifyResendBtn) {
+      const verifyInfoEl = container.querySelector('#verify-info');
+      const verifyInfoTextEl = container.querySelector('#verify-info-text');
+      const verifyErrorEl = container.querySelector('#verify-error');
+      const verifyErrorTextEl = container.querySelector('#verify-error-text');
+
+      const startCooldown = () => {
+        if (resendTimer) clearInterval(resendTimer);
+        const tick = () => {
+          const remaining = resendCooldownRemaining(verifyState?.email);
+          if (remaining <= 0) {
+            clearInterval(resendTimer);
+            resendTimer = null;
+            verifyResendBtn.disabled = false;
+            verifyResendBtn.textContent = 'Resend confirmation email';
+            return;
+          }
+          verifyResendBtn.disabled = true;
+          verifyResendBtn.textContent = `Resend in ${Math.ceil(remaining / 1000)}s`;
+        };
+        tick();
+        if (resendTimer) resendTimer = setInterval(tick, 1000);
+      };
+
+      verifyResendBtn.addEventListener('click', async () => {
+        if (verifyErrorEl) verifyErrorEl.style.display = 'none';
+        verifyResendBtn.disabled = true;
+        verifyResendBtn.textContent = 'Sending...';
+        try {
+          await resendVerificationEmail(verifyState?.email);
+          if (verifyInfoEl && verifyInfoTextEl) {
+            verifyInfoTextEl.innerText = `Sent again to ${verifyState?.email}. It can take a minute to arrive.`;
+            verifyInfoEl.style.display = 'flex';
+          }
+          startCooldown();
+        } catch (err) {
+          verifyResendBtn.disabled = false;
+          verifyResendBtn.textContent = 'Resend confirmation email';
+          if (verifyErrorEl && verifyErrorTextEl) {
+            verifyErrorTextEl.innerText = friendlyAuthError(err);
+            verifyErrorEl.style.display = 'flex';
+          }
+        }
+      });
+
+      startCooldown();
+    }
+
+    const linkVerifyBack = container.querySelector('#link-verify-back');
+    if (linkVerifyBack) {
+      linkVerifyBack.addEventListener('click', (e) => {
+        e.preventDefault();
+        cloudView = 'signup';
+        render();
+      });
+    }
+
     // Local Accounts click handlers
     const accountItems = container.querySelectorAll('.account-item');
     accountItems.forEach(item => {
@@ -1155,6 +1339,7 @@ export function renderLaunchScreen(container, onComplete) {
     const btnShowCreateLocal = container.querySelector('#btn-show-create-local');
     if (btnShowCreateLocal) {
       btnShowCreateLocal.addEventListener('click', () => {
+        localStorageMode = null;
         isCreatingLocalAccount = true;
         render();
       });
@@ -1167,33 +1352,21 @@ export function renderLaunchScreen(container, onComplete) {
     }
 
     const localNameInput = container.querySelector('#local-business-name');
+    const localOwnerNameInput = container.querySelector('#local-owner-name');
     const localPwdInput = container.querySelector('#local-business-password');
     if (localNameInput) {
       localNameInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') handleCreateLocalAccount(e);
       });
     }
-    if (localPwdInput) {
-      localPwdInput.addEventListener('keydown', (e) => {
+    if (localOwnerNameInput) {
+      localOwnerNameInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') handleCreateLocalAccount(e);
       });
     }
-
-    // Toggle recovery fields display in local profile creation
-    const recFields = container.querySelector('#local-recovery-fields');
-    if (localPwdInput && recFields) {
-      localPwdInput.addEventListener('input', () => {
-        recFields.style.display = localPwdInput.value ? 'block' : 'none';
-      });
-      // Initial state check in case input value is preserved by browser
-      recFields.style.display = localPwdInput.value ? 'block' : 'none';
-    }
-
-    const questSelect = container.querySelector('#local-recovery-question-select');
-    const customGroup = container.querySelector('#local-recovery-custom-group');
-    if (questSelect && customGroup) {
-      questSelect.addEventListener('change', () => {
-        customGroup.style.display = questSelect.value === 'custom' ? 'block' : 'none';
+    if (localPwdInput) {
+      localPwdInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleCreateLocalAccount(e);
       });
     }
 
@@ -1207,21 +1380,11 @@ export function renderLaunchScreen(container, onComplete) {
       });
     }
 
-    // Local profile forgot links
-    const forgotLinks = container.querySelectorAll('.link-local-profile-forgot');
-    forgotLinks.forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const accountId = link.dataset.id;
-        handleLocalProfileForgot(accountId);
-      });
-    });
-
     // Cancel Create Local
     const btnCancelLocalAccount = container.querySelector('#btn-cancel-local-account');
     if (btnCancelLocalAccount) {
       btnCancelLocalAccount.addEventListener('click', () => {
+        localStorageMode = null;
         isCreatingLocalAccount = false;
         render();
       });
@@ -1282,7 +1445,7 @@ export function renderLaunchScreen(container, onComplete) {
       errorTextEl.innerText = message;
       errorEl.style.display = 'flex';
       submitBtn.disabled = false;
-      submitBtn.innerText = 'Create Company & Admin';
+      submitBtn.innerText = 'Create account';
     };
 
     errorEl.style.display = 'none';
@@ -1294,14 +1457,21 @@ export function renderLaunchScreen(container, onComplete) {
     const adminPhone = container.querySelector('#signup-phone').value.trim();
     const email = container.querySelector('#signup-email').value.trim();
     const password = container.querySelector('#signup-password').value;
+    const termsAccepted = !!container.querySelector('#signup-terms')?.checked;
 
     // The company name is what the paid account is attached to, so it has to be
     // valid — and free — before we create an auth user for it.
     const nameCheck = validateCompanyName(companyName);
     if (!nameCheck.valid) return fail(nameCheck.message);
 
-    if (password.length < 6) {
-      return fail('Password must be at least 6 characters.');
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return fail(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    }
+
+    // Terms acceptance is recorded server-side by record_terms_acceptance(), which
+    // stamps its own timestamp — the client only asserts that the box was ticked.
+    if (!termsAccepted) {
+      return fail('Please accept the Terms of Service and Privacy Policy to continue.');
     }
 
     try {
@@ -1337,24 +1507,31 @@ export function renderLaunchScreen(container, onComplete) {
         adminPhone,
         email: canonicalAuthEmail(email),
         userId,
+        termsAccepted,
       });
 
       // With email confirmation on there is no session yet, and
       // create_company_and_admin() is gated on auth.uid() — the company can only
-      // be provisioned after they confirm and sign in.
+      // be provisioned after they confirm and sign in. Hand them to the
+      // check-inbox screen, which owns the resend/cooldown and the way back.
       if (needsConfirmation) {
-        return fail('Check your email inbox to confirm your address, then sign in to choose a plan.');
+        verifyState = { email: canonicalAuthEmail(email), companyName, adminName, adminPhone };
+        cloudView = 'verify';
+        render();
+        return;
       }
 
-      // 2. Claim the name and provision the company + admin profile
-      const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
-        user_id: userId,
-        company_name: companyName,
-        admin_name: adminName,
-        admin_phone: adminPhone
+      // 2. Claim the name, provision the company + admin profile, stamp the
+      // terms acceptance, and open the 14-day trial — all through the one shared
+      // path, so the launch screen, /setup and the local→cloud upgrade cannot
+      // drift apart (see cloudOnboarding.js).
+      const { companyId } = await provisionCloudAccount({
+        userId,
+        companyName,
+        adminName,
+        adminPhone,
+        termsAccepted,
       });
-
-      if (rpcError) throw rpcError;
 
       savePendingSignup({
         companyId,
@@ -1363,26 +1540,23 @@ export function renderLaunchScreen(container, onComplete) {
         adminPhone,
         email: canonicalAuthEmail(email),
         userId,
+        termsAccepted,
       });
 
-      // 3. Payment comes before access: send them to Stripe to collect the card
-      // details and let /subscribe finish setting up on the way back. The app
-      // session is deliberately NOT started here.
-      submitBtn.innerText = 'Opening checkout...';
-      try {
-        await startSubscribeCheckout('cloud');
-        return; // the browser is navigating to Stripe
-      } catch (checkoutErr) {
-        // Stripe unreachable — continue into the shell, where the paywall gate
-        // in main.js holds them on /subscribe until they pay.
-        console.error('Cloud Sign Up checkout error:', checkoutErr);
-        onComplete({ mode: 'cloud', userId });
-        return;
-      }
+      // 3. This branch only runs when the Supabase project has email confirmation
+      // switched off, so a live session already exists and the account is fully
+      // provisioned. The 14-day trial started inside provisionCloudAccount(), so
+      // there is nothing to buy yet: go straight into the app. TrialBanner asks
+      // for Stripe Checkout when the trial runs out, and if they never subscribe
+      // the account drops to read-only with the data intact rather than locking
+      // them out.
+      submitBtn.innerText = 'Opening RELAY...';
+      onComplete({ mode: 'cloud', userId });
+      return;
 
     } catch (err) {
       console.error('Cloud Sign Up Error:', err);
-      fail(err.message || 'An error occurred during registration.');
+      fail(friendlyAuthError(err));
     }
   };
 
@@ -1474,16 +1648,18 @@ export function renderLaunchScreen(container, onComplete) {
   const handleCreateLocalAccount = async (e) => {
     if (e) e.preventDefault();
     const nameInput = container.querySelector('#local-business-name');
+    const ownerNameInput = container.querySelector('#local-owner-name');
     const pwdInput = container.querySelector('#local-business-password');
     if (!nameInput) return;
 
     const businessName = nameInput.value.trim();
+    const ownerName = ownerNameInput ? ownerNameInput.value.trim() : '';
     const password = pwdInput ? pwdInput.value : '';
 
     if (!businessName) return; // HTML5 required triggers this too, but safety check
 
-    const isDirSupported = typeof window !== 'undefined' && !!window.showDirectoryPicker;
-    if (isDirSupported && !pendingLocalDirHandle) {
+    const wantsBrowserStorage = useBrowserStorage();
+    if (!wantsBrowserStorage && typeof window !== 'undefined' && !!window.showDirectoryPicker && !pendingLocalDirHandle) {
       const formEl = container.querySelector('.new-account-form');
       let errEl = formEl.querySelector('.auth-error');
       if (!errEl) {
@@ -1492,7 +1668,7 @@ export function renderLaunchScreen(container, onComplete) {
         errEl.style.cssText = 'display: flex; align-items: center; gap: 8px; background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 8px 12px; color: #ef4444; font-size: 12px; margin-bottom: 12px; line-height: 1.4;';
         formEl.insertBefore(errEl, formEl.firstChild);
       }
-      errEl.innerHTML = '<span class="material-icons-outlined" style="font-size:18px;">error_outline</span><span>Please select a local directory for storage.</span>';
+      errEl.innerHTML = '<span class="material-icons-outlined" style="font-size:18px;">error_outline</span><span>Please select a local directory for storage, or continue with browser storage.</span>';
       return;
     }
 
@@ -1501,57 +1677,21 @@ export function renderLaunchScreen(container, onComplete) {
     
     let hasPassword = false;
     let passwordHash = null;
-    let recoveryQuestion = null;
-    let recoveryAnswerHash = null;
 
     if (password) {
       hasPassword = true;
       passwordHash = await hashPassword(password);
-
-      const selectQuestion = container.querySelector('#local-recovery-question-select').value;
-      const customQuestion = container.querySelector('#local-recovery-question-custom').value.trim();
-      const answerVal = container.querySelector('#local-recovery-answer').value.trim().toLowerCase();
-
-      recoveryQuestion = selectQuestion === 'custom' ? customQuestion : selectQuestion;
-      if (!recoveryQuestion) {
-        const formEl = container.querySelector('.new-account-form');
-        let errEl = formEl.querySelector('.auth-error');
-        if (!errEl) {
-          errEl = document.createElement('div');
-          errEl.className = 'auth-error';
-          errEl.style.cssText = 'display: flex; align-items: center; gap: 8px; background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 8px 12px; color: #ef4444; font-size: 12px; margin-bottom: 12px; line-height: 1.4;';
-          formEl.insertBefore(errEl, formEl.firstChild);
-        }
-        errEl.innerHTML = '<span class="material-icons-outlined" style="font-size:18px;">error_outline</span><span>Please set a recovery question.</span>';
-        errEl.style.display = 'flex';
-        return;
-      }
-      if (!answerVal) {
-        const formEl = container.querySelector('.new-account-form');
-        let errEl = formEl.querySelector('.auth-error');
-        if (!errEl) {
-          errEl = document.createElement('div');
-          errEl.className = 'auth-error';
-          errEl.style.cssText = 'display: flex; align-items: center; gap: 8px; background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 8px 12px; color: #ef4444; font-size: 12px; margin-bottom: 12px; line-height: 1.4;';
-          formEl.insertBefore(errEl, formEl.firstChild);
-        }
-        errEl.innerHTML = '<span class="material-icons-outlined" style="font-size:18px;">error_outline</span><span>Please enter a recovery answer.</span>';
-        errEl.style.display = 'flex';
-        return;
-      }
-      recoveryAnswerHash = await hashPassword(answerVal);
     }
 
     const newAccount = {
       id: newAccountId,
       businessName,
+      ownerName,
       avatarColor,
       createdAt: new Date().toISOString(),
       lastAccessedAt: new Date().toISOString(),
       hasPassword,
-      passwordHash,
-      recoveryQuestion,
-      recoveryAnswerHash
+      passwordHash
     };
 
     accounts.push(newAccount);
@@ -1562,7 +1702,8 @@ export function renderLaunchScreen(container, onComplete) {
     }
 
     // Save directory handle if selected
-    if (pendingLocalDirHandle) {
+    const usedLocalFolder = !!pendingLocalDirHandle;
+    if (usedLocalFolder) {
       try {
         const { store } = window.__relay;
         await store.initializeUser({ companyId: newAccountId });
@@ -1581,8 +1722,11 @@ export function renderLaunchScreen(container, onComplete) {
     }
 
     pendingLocalDirHandle = null;
+    localStorageMode = null;
     isCreatingLocalAccount = false;
     onComplete({ mode: 'local', accountId: newAccountId });
+
+    if (!usedLocalFolder) promptBrowserStorageBackup();
   };
 
   const showModal = ({ title, contentHtml, onConfirm, confirmText = 'Submit', cancelText = 'Cancel' }) => {
@@ -1629,6 +1773,28 @@ export function renderLaunchScreen(container, onComplete) {
     overlay.querySelector('.launch-modal-cancel').addEventListener('click', close);
     overlay.querySelector('.launch-modal-confirm').addEventListener('click', () => {
       onConfirm(overlay, close);
+    });
+  };
+
+  // A browser-storage profile has no on-disk copy, so nudge a backup right after creation.
+  const promptBrowserStorageBackup = () => {
+    showModal({
+      title: 'Keep a backup file',
+      contentHtml: `
+        <p>This profile lives inside this browser only. Clearing browser data &#8212; or using private/incognito mode &#8212; permanently deletes it.</p>
+        <p style="margin-top: 8px;">Downloading a backup file now means you can restore this profile later, and restoring from a backup folder is the only way back in if you forget your PIN.</p>
+      `,
+      confirmText: 'Download backup',
+      cancelText: 'Not now',
+      onConfirm: async (overlay, close) => {
+        try {
+          await downloadDataSnapshot('relay-backup');
+        } catch (err) {
+          console.error('Backup download failed:', err);
+          await showAlert('Could not create the backup file: ' + (err && err.message ? err.message : err), { title: 'Backup Failed' });
+        }
+        close();
+      }
     });
   };
 
@@ -1681,101 +1847,6 @@ export function renderLaunchScreen(container, onComplete) {
           errorEl.style.display = 'flex';
           confirmBtn.disabled = false;
           confirmBtn.innerText = 'Send Reset Email';
-        }
-      }
-    });
-  };
-
-  const handleLocalProfileForgot = (accountId) => {
-    const acct = accounts.find(a => a.id === accountId);
-    if (!acct) return;
-
-    if (!acct.recoveryQuestion || !acct.recoveryAnswerHash) {
-      showModal({
-        title: 'Recovery Not Configured',
-        contentHtml: `
-          <p>No recovery question was configured for this local business profile.</p>
-          <p style="margin-top: 8px; color: #ef4444; font-weight: 600;">If you have lost access, you will need to delete this profile and use "Link Folder" to reconnect the database with a new profile.</p>
-        `,
-        confirmText: 'OK',
-        cancelText: 'Cancel',
-        onConfirm: (overlay, close) => close()
-      });
-      return;
-    }
-
-    showModal({
-      title: 'Reset Profile PIN',
-      contentHtml: `
-        <p>Answer your security recovery question to reset your PIN.</p>
-        <div style="margin: 12px 0; padding: 10px 14px; background: rgba(0, 0, 0, 0.04); border-radius: 6px; font-size: 13px; font-weight: 600; color: #1a1a1a;">
-          Question: ${escapeHTML(acct.recoveryQuestion)}
-        </div>
-        <div class="launch-form-group">
-          <label class="launch-form-label">Secret Answer</label>
-          <input type="text" id="modal-recovery-answer" class="launch-input" placeholder="Enter answer" style="padding-left: 12px;" autocomplete="off" required />
-        </div>
-        <div id="modal-recovery-error" class="auth-error" style="display: none; margin-top: 12px; padding: 8px 12px; font-size: 12px;"></div>
-      `,
-      confirmText: 'Verify Answer',
-      onConfirm: async (overlay, close) => {
-        const answerInput = overlay.querySelector('#modal-recovery-answer');
-        const errorEl = overlay.querySelector('#modal-recovery-error');
-        if (!answerInput) return;
-        
-        const answer = answerInput.value.trim().toLowerCase();
-        if (!answer) {
-          errorEl.innerText = 'Please enter your answer.';
-          errorEl.style.display = 'flex';
-          return;
-        }
-
-        errorEl.style.display = 'none';
-        const hashedAnswer = await hashPassword(answer);
-        if (hashedAnswer === acct.recoveryAnswerHash) {
-          // Success: prompt for new PIN
-          overlay.querySelector('.launch-modal-body').innerHTML = `
-            <p style="color: #16a34a; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-              <span class="material-icons-outlined">check_circle</span> Answer verified successfully.
-            </p>
-            <p>Enter a new password/PIN for this profile. Leave blank for no password protection.</p>
-            <div class="launch-form-group" style="margin-top: 12px;">
-              <label class="launch-form-label">New PIN / Password</label>
-              <input type="password" id="modal-new-pin" class="launch-input" placeholder="Leave blank to remove PIN" style="padding-left: 12px;" />
-            </div>
-            <div id="modal-new-pin-error" class="auth-error" style="display: none; margin-top: 12px; padding: 8px 12px; font-size: 12px;"></div>
-          `;
-          
-          const confirmBtn = overlay.querySelector('.launch-modal-confirm');
-          confirmBtn.innerText = 'Update PIN';
-          
-          // Re-bind confirm listener
-          const newConfirmBtn = confirmBtn.cloneNode(true);
-          confirmBtn.replaceWith(newConfirmBtn);
-          newConfirmBtn.addEventListener('click', async () => {
-            const newPinEl = overlay.querySelector('#modal-new-pin');
-            const newPin = newPinEl ? newPinEl.value : '';
-            
-            let newHasPassword = false;
-            let newPasswordHash = null;
-            if (newPin) {
-              newHasPassword = true;
-              newPasswordHash = await hashPassword(newPin);
-            }
-            
-            acct.hasPassword = newHasPassword;
-            acct.passwordHash = newPasswordHash;
-            
-            // Save accounts
-            await storageSet('relay_accounts', accounts);
-            
-            await showAlert('PIN updated successfully.', { title: 'PIN Updated' });
-            close();
-            render();
-          });
-        } else {
-          errorEl.innerText = 'Incorrect answer. Please try again.';
-          errorEl.style.display = 'flex';
         }
       }
     });
