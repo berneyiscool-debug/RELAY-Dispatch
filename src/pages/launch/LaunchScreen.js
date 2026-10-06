@@ -5,6 +5,14 @@ import { webOrigin } from '../../utils/webOrigin.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '../auth/session.js';
 import { showAlert } from '../../utils/confirmDialog.js';
+import { bindCompanyNameCheck, validateCompanyName } from '../../utils/companyName.js';
+import {
+  canonicalAuthEmail,
+  describeSignUpResult,
+  savePendingSignup,
+  signInWithEmailCandidates,
+} from '../../utils/cloudOnboarding.js';
+import { startSubscribeCheckout } from '../../utils/subscription.js';
 
 const logoLarge = new URL('../../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 
@@ -74,6 +82,9 @@ export function renderLaunchScreen(container, onComplete) {
   let isCreatingLocalAccount = false;
   let activePasswordPromptId = null;
   let pendingLocalDirHandle = null;
+  // Live company-name availability binding for the signup form; rebuilt on every
+  // render, so the previous one is disposed before the DOM it watched is dropped.
+  let companyNameCheck = null;
   let majoritySide = localStorage.getItem('relay_last_login_side') || 'left'; // 'left' | 'right'
 
   // Injected scoped styles
@@ -742,7 +753,7 @@ export function renderLaunchScreen(container, onComplete) {
       <h2 class="launch-title" style="color: #FF5C00;">
         <span class="material-icons-outlined" style="font-size: 22px; color: #FF5C00;">business</span> Register Company
       </h2>
-      <p class="launch-subtitle">Set up a new company profile and administrator account in the cloud.</p>
+      <p class="launch-subtitle">Set up a new company profile and administrator account in the cloud. You will choose a plan and add your payment details next.</p>
 
       <div id="cloud-error" class="auth-error" style="display: none;">
         <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
@@ -754,8 +765,9 @@ export function renderLaunchScreen(container, onComplete) {
           <label class="launch-form-label">Company Name</label>
           <div class="launch-input-wrapper">
             <span class="material-icons-outlined launch-input-icon">business</span>
-            <input type="text" id="signup-company" class="launch-input" placeholder="Acme Electrical Services" required>
+            <input type="text" id="signup-company" class="launch-input" placeholder="Acme Electrical Services" autocomplete="organization" required>
           </div>
+          <div id="signup-company-status" style="font-size: 12px; margin-top: 4px; min-height: 15px; color: #6B7280;"></div>
         </div>
 
         <div class="launch-form-group">
@@ -1028,6 +1040,19 @@ export function renderLaunchScreen(container, onComplete) {
       signupForm.addEventListener('submit', handleCloudSignUp);
     }
 
+    // Live availability feedback for the company name being claimed at signup
+    if (companyNameCheck) {
+      companyNameCheck.dispose();
+      companyNameCheck = null;
+    }
+    const signupCompanyInput = container.querySelector('#signup-company');
+    if (signupCompanyInput) {
+      companyNameCheck = bindCompanyNameCheck(
+        signupCompanyInput,
+        container.querySelector('#signup-company-status'),
+      );
+    }
+
     // Local Accounts click handlers
     const accountItems = container.querySelectorAll('.account-item');
     accountItems.forEach(item => {
@@ -1171,28 +1196,11 @@ export function renderLaunchScreen(container, onComplete) {
 
     rememberIdentity('cloud', rawInput, !!container.querySelector('#cloud-remember-me')?.checked);
 
-    let authEmail = rawInput;
-    if (authEmail.includes('@')) {
-      const parts = authEmail.split('@');
-      const domain = parts[1];
-      if (domain && !domain.includes('.')) {
-        authEmail = `${parts[0].toLowerCase()}@${domain.toLowerCase()}.relay.internal`;
-      }
-    }
-
     try {
-      // Sign in with password via Supabase
-      let signInResult = await supabase.auth.signInWithPassword({ email: authEmail, password });
-      
-      // Fallback for legacy .RELAY.internal users if new domain fails
-      if (signInResult.error && authEmail.endsWith('.relay.internal')) {
-        const legacyEmail = authEmail.replace('.relay.internal', '.RELAY.internal');
-        const fallbackResult = await supabase.auth.signInWithPassword({ email: legacyEmail, password });
-        if (!fallbackResult.error) {
-          signInResult = fallbackResult;
-        }
-      }
-      
+      // The account may have been registered under the raw address or either
+      // internal-domain spelling, so try each in turn.
+      const signInResult = await signInWithEmailCandidates(rawInput, password);
+
       if (signInResult.error) throw signInResult.error;
       const { data } = signInResult;
 
@@ -1213,7 +1221,14 @@ export function renderLaunchScreen(container, onComplete) {
     const errorEl = container.querySelector('#cloud-error');
     const errorTextEl = container.querySelector('#cloud-error-text');
     const submitBtn = container.querySelector('#btn-cloud-submit');
-    
+
+    const fail = (message) => {
+      errorTextEl.innerText = message;
+      errorEl.style.display = 'flex';
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Create Company & Admin';
+    };
+
     errorEl.style.display = 'none';
     submitBtn.disabled = true;
     submitBtn.innerText = 'Registering...';
@@ -1224,18 +1239,28 @@ export function renderLaunchScreen(container, onComplete) {
     const email = container.querySelector('#signup-email').value.trim();
     const password = container.querySelector('#signup-password').value;
 
+    // The company name is what the paid account is attached to, so it has to be
+    // valid — and free — before we create an auth user for it.
+    const nameCheck = validateCompanyName(companyName);
+    if (!nameCheck.valid) return fail(nameCheck.message);
+
     if (password.length < 6) {
-      errorTextEl.innerText = 'Password must be at least 6 characters.';
-      errorEl.style.display = 'flex';
-      submitBtn.disabled = false;
-      submitBtn.innerText = 'Create Company & Admin';
-      return;
+      return fail('Password must be at least 6 characters.');
     }
 
     try {
-      // 1. Sign up user in Auth
+      submitBtn.innerText = 'Checking name...';
+      const nameState = companyNameCheck ? await companyNameCheck.checkNow() : 'unknown';
+      if (nameState === 'taken') {
+        return fail('That company name is already taken. Please choose another.');
+      }
+
+      submitBtn.innerText = 'Registering...';
+
+      // 1. Sign up user in Auth. The address is stored in its canonical form so
+      // that it can be signed back in later (see cloudOnboarding.js).
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: canonicalAuthEmail(email),
         password,
         options: {
           data: {
@@ -1244,15 +1269,30 @@ export function renderLaunchScreen(container, onComplete) {
           }
         }
       });
-      if (error) throw error;
 
-      if (!data.user) {
-        throw new Error('Verification required or signup was blocked. Check your email inbox.');
+      const { userId, needsConfirmation } = describeSignUpResult({ data, error });
+
+      // The auth user exists from here on, so record what they were setting up
+      // before anything else can fail — that is what lets a half-finished
+      // signup be picked back up on /subscribe instead of dead-ending.
+      savePendingSignup({
+        companyName,
+        adminName,
+        adminPhone,
+        email: canonicalAuthEmail(email),
+        userId,
+      });
+
+      // With email confirmation on there is no session yet, and
+      // create_company_and_admin() is gated on auth.uid() — the company can only
+      // be provisioned after they confirm and sign in.
+      if (needsConfirmation) {
+        return fail('Check your email inbox to confirm your address, then sign in to choose a plan.');
       }
 
-      // 2. Call security definer RPC function to create company and profile records
+      // 2. Claim the name and provision the company + admin profile
       const { data: companyId, error: rpcError } = await supabase.rpc('create_company_and_admin', {
-        user_id: data.user.id,
+        user_id: userId,
         company_name: companyName,
         admin_name: adminName,
         admin_phone: adminPhone
@@ -1260,15 +1300,33 @@ export function renderLaunchScreen(container, onComplete) {
 
       if (rpcError) throw rpcError;
 
-      // Call parent onComplete with cloud parameters
-      onComplete({ mode: 'cloud', userId: data.user.id });
+      savePendingSignup({
+        companyId,
+        companyName,
+        adminName,
+        adminPhone,
+        email: canonicalAuthEmail(email),
+        userId,
+      });
+
+      // 3. Payment comes before access: send them to Stripe to collect the card
+      // details and let /subscribe finish setting up on the way back. The app
+      // session is deliberately NOT started here.
+      submitBtn.innerText = 'Opening checkout...';
+      try {
+        await startSubscribeCheckout('cloud');
+        return; // the browser is navigating to Stripe
+      } catch (checkoutErr) {
+        // Stripe unreachable — continue into the shell, where the paywall gate
+        // in main.js holds them on /subscribe until they pay.
+        console.error('Cloud Sign Up checkout error:', checkoutErr);
+        onComplete({ mode: 'cloud', userId });
+        return;
+      }
 
     } catch (err) {
       console.error('Cloud Sign Up Error:', err);
-      errorTextEl.innerText = err.message || 'An error occurred during registration.';
-      errorEl.style.display = 'flex';
-      submitBtn.disabled = false;
-      submitBtn.innerText = 'Create Company & Admin';
+      fail(err.message || 'An error occurred during registration.');
     }
   };
 

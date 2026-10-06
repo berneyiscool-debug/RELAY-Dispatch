@@ -29,6 +29,7 @@ import { clearListSearch } from './utils/listSearch.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
+import { subscriptionRequired } from './utils/subscription.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import './utils/DeputyAutopilot.js';
 import { storageGet, storageSet } from './utils/persist.js';
@@ -687,6 +688,9 @@ router.register('/settings/quote-templates/:id/edit', renderPage(lazy(() => impo
 // Profile
 router.register('/profile', renderPage(lazy(() => import('./pages/Profile.js'), 'renderProfile')));
 
+// Subscribe (cloud paywall — where an unpaid cloud account is held)
+router.register('/subscribe', renderPage(lazy(() => import('./pages/billing/Subscribe.js'), 'renderSubscribe')));
+
 // ---- Auth Guard Hook ----
 const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile'];
 
@@ -703,7 +707,7 @@ router.onNavigate = (path, params) => {
   const topbarEl = document.querySelector('.topbar');
   const breadcrumbEl = document.getElementById('breadcrumb');
 
-  if (isPortal || path === '/login' || !currentUser) {
+  if (isPortal || path === '/login' || path === '/subscribe' || !currentUser) {
     if (sidebarEl) sidebarEl.style.display = 'none';
     if (topbarEl) topbarEl.style.display = 'none';
     if (breadcrumbEl) breadcrumbEl.style.display = 'none';
@@ -716,13 +720,22 @@ router.onNavigate = (path, params) => {
     applyTheme();
   }
 
-  if (!currentUser && path !== '/login' && !isPortal) {
+  if (!currentUser && path !== '/login' && path !== '/subscribe' && !isPortal) {
     // Redirect to login if not authenticated
     router.navigate('/login');
     return false; // Prevent further navigation handling
   }
 
   if (currentUser) {
+    // Paywall: a cloud account with a known, non-live subscription gets no
+    // further than the billing page until Stripe has collected payment details.
+    // subscriptionRequired() fails open when the subscription block was never
+    // loaded and when the account holds a complimentary grant (comp_tier).
+    if (!isPortal && basePath !== '/subscribe' && subscriptionRequired()) {
+      router.navigate('/subscribe');
+      return false;
+    }
+
     // Local (single-user) accounts have no My Profile page — Settings → Local Storage
     // owns the PIN, the recovery question and the dispatch start location for them.
     const isLocalLogin = localStorage.getItem('relay_login_mode') === 'local'
@@ -866,7 +879,8 @@ if (currentUser && !localStorage.getItem('relay_login_mode')) {
 // The technician role and mode a removed Simple Mode toggle left behind were
 // already repaired above, before the shell was built.
 const isPortalHash =  window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
-if (!currentUser && window.location.hash !== '#/login' && !isPortalHash) {
+const isSubscribeHash = window.location.hash.startsWith('#/subscribe');
+if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash) {
   window.location.hash = '#/login';
 }
 // No signed-in session at boot → clear any stale per-tab local account namespace.

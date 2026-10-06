@@ -74,28 +74,51 @@ export function getSubscription() {
 // refetch. Call this when showing billing. Best-effort; returns the raw row.
 export async function refreshSubscription() {
   if (!isCloudUser()) return null;
+  return await refreshSubscriptionFor(store.companyId);
+}
+
+// Same refetch for a company id that isn't the active one yet — a user who has
+// a company row but is still parked on the paywall before the app boots.
+export async function refreshSubscriptionFor(companyId) {
+  if (!companyId) return null;
   try {
     const { data, error } = await supabase
       .from('companies')
       .select('subscription_tier, subscription_status, subscription_seats, subscription_current_period_end, stripe_customer_id, comp_tier')
-      .eq('id', store.companyId)
+      .eq('id', companyId)
       .single();
     if (error || !data) return null;
-    if (store.companySettings) {
-      store.companySettings._subscription = {
-        tier: data.subscription_tier || null,
-        status: data.subscription_status || null,
-        seats: data.subscription_seats ?? null,
-        currentPeriodEnd: data.subscription_current_period_end || null,
-        hasCustomer: !!data.stripe_customer_id,
-        compTier: data.comp_tier || null,
-      };
+    if (store.companySettings && companyId === store.companyId) {
+      store.companySettings._subscription = subscriptionFromRow(data);
       try { store.emit('settings', store.getSettings()); } catch (_) { /* non-fatal */ }
     }
     return data;
   } catch (_) {
     return null;
   }
+}
+
+// Map a `companies` row onto the read-only _subscription block. A row with no
+// subscription yet comes back with NULL columns, which still means "known and
+// unpaid" — distinct from a missing block, which means "not loaded".
+export function subscriptionFromRow(data) {
+  return {
+    tier: data.subscription_tier || null,
+    status: data.subscription_status || null,
+    seats: data.subscription_seats ?? null,
+    currentPeriodEnd: data.subscription_current_period_end || null,
+    hasCustomer: !!data.stripe_customer_id,
+    compTier: data.comp_tier || null,
+  };
+}
+
+// Same "is this paid up?" question asked of a raw `companies` row rather than
+// the cached settings block. The onboarding paywall polls a company row that
+// isn't the active one yet, so it can't use subscriptionActive().
+export function subscriptionActiveFromRow(data) {
+  if (!data) return false;
+  if (data.comp_tier) return true;
+  return LIVE_STATUSES.has(String(data.subscription_status || ''));
 }
 
 // The account's effective tier: 'free' | 'cloud' | 'cloud_plus'.
@@ -127,6 +150,23 @@ export function isComplimentary() {
 // Billing needs attention (card declined etc.) — surface a banner.
 export function subscriptionPastDue() {
   return String(getSubscription().status || '') === 'past_due';
+}
+
+// True when a signed-in cloud account must pay before using the app.
+//
+// This is the paywall. It fails OPEN on purpose: a cloud account whose
+// subscription block was never loaded (_subscription absent, i.e. `status ===
+// undefined`) is let through rather than locked out of a working account, and
+// 'past_due' stays unlocked because Stripe is still retrying the card. What it
+// catches is the known-and-unpaid state — a company row that exists with a null
+// subscription status, which is exactly what a self-signup that skipped
+// Checkout leaves behind.
+export function subscriptionRequired() {
+  if (!isCloudUser()) return false;
+  const sub = getSubscription();
+  if (sub.compTier) return false; // complimentary accounts never pay
+  if (sub.status === undefined) return false; // not loaded — don't guess
+  return !LIVE_STATUSES.has(String(sub.status || ''));
 }
 
 // Cloud-tier features: any cloud account (unchanged from today's gate).
@@ -166,22 +206,52 @@ async function invoke(fn, body) {
   return data;
 }
 
+async function createCheckoutSession(tier, successUrl, cancelUrl) {
+  if (tier !== 'cloud' && tier !== 'cloud_plus') throw new Error('Unknown plan.');
+  const data = await invoke('relay-billing-checkout', { tier, successUrl, cancelUrl });
+  if (!data?.url) throw new Error('No checkout URL was returned.');
+  if (typeof location !== 'undefined') location.href = data.url;
+  return data;
+}
+
+// Stripe returns the user to this origin, so it has to be the hosted web app
+// rather than whatever origin the bundle happens to be running from — in the
+// packaged desktop build that is file://, whose origin is unusable.
+function checkoutOrigin() {
+  return webOrigin();
+}
+
 /**
  * Begin (or change to) a paid plan. Redirects the browser to Stripe Checkout.
  * @param {'cloud'|'cloud_plus'} tier
  */
 export async function startCheckout(tier) {
   if (!isCloudUser()) throw new Error('Create a cloud account first to subscribe.');
-  if (tier !== 'cloud' && tier !== 'cloud_plus') throw new Error('Unknown plan.');
-  const origin = webOrigin();
-  const data = await invoke('relay-billing-checkout', {
+  const origin = checkoutOrigin();
+  return await createCheckoutSession(
     tier,
-    successUrl: `${origin}/#/settings?tab=billing&billing=success`,
-    cancelUrl: `${origin}/#/settings?tab=billing&billing=cancelled`,
-  });
-  if (!data?.url) throw new Error('No checkout URL was returned.');
-  if (typeof location !== 'undefined') location.href = data.url;
-  return data;
+    `${origin}/#/settings?tab=billing&billing=success`,
+    `${origin}/#/settings?tab=billing&billing=cancelled`,
+  );
+}
+
+/**
+ * Collect payment details during onboarding, before the account is usable.
+ * Unlike startCheckout() this only needs a *Supabase* session — the company row
+ * may exist with no subscription yet (that is the state that lands here) — and
+ * it returns the user to the paywall so onboarding can finish on the way back.
+ * @param {'cloud'|'cloud_plus'} tier
+ */
+export async function startSubscribeCheckout(tier = 'cloud') {
+  if (tier !== 'cloud' && tier !== 'cloud_plus') throw new Error('Unknown plan.');
+  const { data } = await supabase.auth.getSession();
+  if (!data?.session) throw new Error('Sign in to activate your subscription.');
+  const origin = checkoutOrigin();
+  return await createCheckoutSession(
+    tier,
+    `${origin}/#/subscribe?billing=success&tier=${tier}`,
+    `${origin}/#/subscribe?billing=cancelled&tier=${tier}`,
+  );
 }
 
 /**
