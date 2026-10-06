@@ -174,7 +174,7 @@ export function renderPersonDetail(container, { id, tab }) {
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
               <input type="text" readonly id="customer-portal-url" class="form-input" 
                      style="flex:1; min-width:260px; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" 
-                     value="${window.location.origin}${window.location.pathname}#/portal/customer?token=${person.portalToken}" />
+                     value="${customerPortalUrl(person)}" />
               
               <button class="btn btn-secondary" id="btn-copy-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px;">content_copy</span> Copy Link
