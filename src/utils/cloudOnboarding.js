@@ -486,6 +486,26 @@ export function sessionUserFromProfile(profile, fallbackColor = '#3B82F6') {
 }
 
 /**
+ * The company an invited team member was added to, read from the session token.
+ *
+ * `app_metadata` is written by the service role in `invite-user`, so it is the
+ * only company link the client can trust: `user_metadata` is editable by the
+ * signed-in user (and by self-signup), and `profiles` is exactly the row this is
+ * used to detect the absence of. Legacy accounts still carry a company id in
+ * `user_metadata` only, which is deliberately not consulted here — granting a
+ * tenant from a forgeable field would let anyone join a company.
+ *
+ * @param {object} authUser Supabase auth user (e.g. from getSession/getUser)
+ * @returns {string} Company id, or '' when this account was not invited
+ */
+export function invitedCompanyId(authUser) {
+  const appMetadata = authUser ? authUser.app_metadata : null;
+  if (!appMetadata) return '';
+  const companyId = appMetadata.company_id;
+  return companyId == null ? '' : String(companyId);
+}
+
+/**
  * Drop the local account that has just been copied into the cloud, so the
  * launch screen stops offering it. Only ever call this AFTER a successful
  * migrateLocalToCloud() — the local data is the backup until the copy lands.

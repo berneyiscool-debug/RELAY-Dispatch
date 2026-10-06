@@ -29,6 +29,7 @@ const {
   signInWithEmailCandidates,
   fetchProfile,
   sessionUserFromProfile,
+  invitedCompanyId,
   forgetLocalAccount,
   completeCloudMigration,
   savePendingSignup,
@@ -273,6 +274,38 @@ describe('session user from a profile', () => {
     );
     assert.strictEqual(user.userTypeId, 'c3_ut_manager');
     assert.strictEqual(user.color, '#FF5C00');
+  });
+});
+
+describe('the company an invite put you in', () => {
+  test('reads the service-role written company id', () => {
+    assert.strictEqual(
+      invitedCompanyId({ app_metadata: { company_id: 'a00f8dd3-1a1a-4887-ba24-a07925c358e7' } }),
+      'a00f8dd3-1a1a-4887-ba24-a07925c358e7'
+    );
+  });
+
+  test('treats a self-signup (metadata without a company) as not invited', () => {
+    for (const user of [
+      { app_metadata: { provider: 'email', providers: ['email'] } },
+      { app_metadata: { company_id: null } },
+      { app_metadata: {} },
+      { id: 'u1' },
+      null,
+      undefined,
+    ]) {
+      assert.strictEqual(invitedCompanyId(user), '');
+    }
+  });
+
+  test('ignores user_metadata, which the signed-in user can write', () => {
+    assert.strictEqual(
+      invitedCompanyId({
+        user_metadata: { company_id: 'somebody-elses-company' },
+        app_metadata: { provider: 'email' },
+      }),
+      ''
+    );
   });
 });
 

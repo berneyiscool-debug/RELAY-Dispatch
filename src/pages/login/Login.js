@@ -2,7 +2,8 @@ import { router } from '../../router.js';
 import { supabase } from '../../utils/supabase.js';
 import { applyTheme } from '../../utils/theme.js';
 import { setSessionUser } from '../auth/session.js';
-import { readPendingSignup, sessionUserFromProfile } from '../../utils/cloudOnboarding.js';
+import { readPendingSignup, invitedCompanyId, sessionUserFromProfile } from '../../utils/cloudOnboarding.js';
+import { renderInviteNotProvisionedCard } from '../../components/InviteNotProvisionedCard.js';
 
 
 // Ordered list of routes to try — first permitted one wins
@@ -46,6 +47,35 @@ function getLandingRoute(user, dataStore) {
 
 // ---- Expose force password change and completion helpers for Launch Screen ----
 
+/**
+ * Where an invited team member's company comes from.
+ *
+ * `main.js` hands us only `{ id }`, so the caller's object usually has no
+ * `app_metadata`; the session does (Supabase exposes it on the JWT). Only
+ * `app_metadata.company_id` counts — the service role writes it in
+ * `invite-user` and clients cannot forge it, unlike `user_metadata` (see
+ * migration 031 and cloudOnboarding.invitedCompanyId).
+ */
+async function readInviteContext(authUser) {
+  const context = {
+    companyId: invitedCompanyId(authUser),
+    email: authUser && authUser.email ? authUser.email : '',
+  };
+  if (context.companyId && context.email) return context;
+
+  try {
+    const { data } = await supabase.auth.getSession();
+    const sessionUser = data && data.session ? data.session.user : null;
+    return {
+      companyId: context.companyId || invitedCompanyId(sessionUser),
+      email: context.email || (sessionUser && sessionUser.email ? sessionUser.email : ''),
+    };
+  } catch (err) {
+    console.error('Could not read the signed-in session while checking invite state:', err);
+    return context;
+  }
+}
+
 export async function handleCloudLoginSuccess(container, authUser) {
   // Fetch the corresponding profile record from the database
   const { data: profile, error: profileError } = await supabase
@@ -56,11 +86,24 @@ export async function handleCloudLoginSuccess(container, authUser) {
 
   if (profileError) {
     console.error('Failed to fetch user profile:', profileError);
-    // A cloud account with no profile row is a signup that never finished
-    // provisioning (abandoned before the RPC ran, or interrupted by a failed
-    // request). Send it to the setup step instead of dead-ending.
-    // PGRST116 = "no rows returned" from .single().
-    if (profileError.code === 'PGRST116' || readPendingSignup()) {
+    // PGRST116 = "no rows returned" from .single(). It has two causes that need
+    // opposite answers, so they are separated before anything navigates:
+    //
+    //   - a cloud signup that never finished provisioning → finish setup;
+    //   - a team member who was invited into an existing company and whose
+    //     profile write never landed → they must NOT be offered a company.
+    if (profileError.code === 'PGRST116') {
+      const invite = await readInviteContext(authUser);
+      if (invite.companyId) {
+        renderInviteNotProvisionedCard(container, { email: invite.email });
+        return;
+      }
+      router.navigate('/setup');
+      return;
+    }
+
+    // Any other read failure is still a signup that has not finished.
+    if (readPendingSignup()) {
       router.navigate('/setup');
       return;
     }

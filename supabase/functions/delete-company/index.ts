@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { companyAuthUserIds, isMissingAuthUserError, listAllAuthUsers } from './cleanup.js'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,6 +40,16 @@ serve(async (req) => {
     if (profileError || !profile) return json({ error: 'Forbidden: no profile' }, 403)
     if (profile.role !== 'admin') return json({ error: 'Forbidden: only administrators can delete a company' }, 403)
 
+    const { data: company, error: companyReadError } = await admin
+      .from('companies')
+      .select('email_slug')
+      .eq('id', profile.company_id)
+      .single()
+
+    if (companyReadError || !company) {
+      throw new Error(`Failed to read the company record: ${companyReadError?.message || 'not found'}`)
+    }
+
     const { data: profiles, error: profilesError } = await admin
       .from('profiles')
       .select('id')
@@ -46,12 +57,35 @@ serve(async (req) => {
 
     if (profilesError) throw new Error(`Failed to collect company users: ${profilesError.message}`)
 
+    // Invited staff whose profile row was never written are absent from
+    // `profiles`, so enumerating the tenant from that table alone left their
+    // sign-in accounts alive after the company was gone. See cleanup.js.
+    const { users: authUsers, complete } = await listAllAuthUsers(admin)
+
+    if (!complete) {
+      throw new Error('Refusing to delete the company: the Auth user list was too long to read in full, so some accounts would have been left behind.')
+    }
+
+    const authUserIds = companyAuthUserIds(authUsers, {
+      companyId: profile.company_id,
+      profileIds: (profiles || []).map((companyProfile) => companyProfile.id),
+      emailSlug: company.email_slug,
+      callerId: user.id,
+    })
+
     let deletedAuthUsers = 0
-    for (const companyProfile of profiles || []) {
-      const { error: deleteUserError } = await admin.auth.admin.deleteUser(companyProfile.id)
+    let skippedAuthUsers = 0
+    for (const authUserId of authUserIds) {
+      const { error: deleteUserError } = await admin.auth.admin.deleteUser(authUserId)
+
       if (deleteUserError) {
-        throw new Error(`Auth user cleanup failed for ${companyProfile.id}; company data was not deleted: ${deleteUserError.message}`)
+        if (isMissingAuthUserError(deleteUserError)) {
+          skippedAuthUsers += 1
+          continue
+        }
+        throw new Error(`Auth user cleanup failed for ${authUserId}; company data was not deleted: ${deleteUserError.message}`)
       }
+
       deletedAuthUsers += 1
     }
 
@@ -65,7 +99,7 @@ serve(async (req) => {
 
     if (companyError) throw new Error(`Auth users were deleted, but company data cleanup failed: ${companyError.message}`)
 
-    return json({ success: true, deletedAuthUsers })
+    return json({ success: true, deletedAuthUsers, skippedAuthUsers })
   } catch (err) {
     console.error('delete-company error:', err)
     return json({ error: String(err?.message || err) }, 500)

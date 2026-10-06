@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  companyTechTypeId,
+  ensureProfileForUser,
+  findAuthUserByEmail,
+  isCompanyStaffEmail,
+  isDuplicateAuthUserError,
+  readProfileForUser,
+  staffProfileValues
+} from './provision.js'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,21 +87,24 @@ serve(async (req) => {
         )
       }
 
-      // Get target profile to prevent updating another admin
+      // Get target profile to prevent updating another admin.
+      // A missing profile row is NOT a reason to skip the tenant check: an
+      // auth-only account (an invite that never got its profile) is exactly the
+      // kind an administrator of any company must not be able to reset.
       const { data: targetProfile } = await supabaseAdmin
         .from('profiles')
         .select('role, company_id')
         .eq('id', userId)
         .single()
 
-      if (targetProfile && targetProfile.company_id !== profile.company_id) {
+      if (!targetProfile || targetProfile.company_id !== profile.company_id) {
         return new Response(
-          JSON.stringify({ error: 'Forbidden: That user belongs to a different company.' }),
+          JSON.stringify({ error: 'Forbidden: That user does not belong to your company.' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
-      if (targetProfile && targetProfile.role === 'admin' && user.id !== userId) {
+      if (targetProfile.role === 'admin' && user.id !== userId) {
         return new Response(
           JSON.stringify({ error: "Forbidden: You cannot modify another administrator's account." }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -121,7 +133,7 @@ serve(async (req) => {
       if (email) authUpdates.email = email
       if (password) authUpdates.password = password
       
-      const defaultTechType = profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_tech' : `${profile.company_id}_ut_tech`
+      const defaultTechType = companyTechTypeId(profile.company_id)
       authUpdates.user_metadata = {
         name,
         role: role || 'technician',
@@ -195,54 +207,160 @@ serve(async (req) => {
         )
       }
 
-      const defaultTechType = profile.company_id === '8dc14565-23c2-4f7d-aeb3-1da615df7644' ? 'ut_tech' : `${profile.company_id}_ut_tech`
+      // The company's own `email_slug` is the only trustworthy link back to it
+      // for an Auth account whose profile row was never written: see
+      // isCompanyStaffEmail() in provision.js.
+      const { data: company, error: companyError } = await supabaseAdmin
+        .from('companies')
+        .select('email_slug')
+        .eq('id', profile.company_id)
+        .single()
+
+      if (companyError || !company) {
+        return new Response(
+          JSON.stringify({ error: 'Internal Server Error: Could not read your company record.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const authMetadata = {
+        name,
+        username,
+        role: role || 'technician',
+        userTypeId: userTypeId || companyTechTypeId(profile.company_id)
+      }
+
       // Create user directly in Supabase Auth with password, auto-confirming email
       const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true, // auto-confirms email so user can log in instantly
-        user_metadata: {
-          name,
-          username,
-          role: role || 'technician',
-          userTypeId: userTypeId || defaultTechType
-        },
+        user_metadata: authMetadata,
         // The auth signup trigger reads company membership from app_metadata —
         // user_metadata is client-editable, app_metadata is server-only, so the
         // profile for this user can never be forged by a self-signup.
         app_metadata: {
-          name,
-          username,
-          role: role || 'technician',
+          ...authMetadata,
           company_id: profile.company_id // Inherit company ID
         }
       })
 
+      let authUser = authData?.user || null
+      let repaired = false
+
       if (createError) {
+        if (!isDuplicateAuthUserError(createError)) {
+          return new Response(
+            JSON.stringify({ error: 'Create User Error: ' + createError.message }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // A taken address is usually an earlier invite for this same person that
+        // stopped halfway: GoTrue created the account but no profile row was
+        // written, so the user cannot sign in and is invisible in the team list.
+        // Re-adding them finishes that invite. It is only safe for an address
+        // that really is this company's staff address and that has no profile —
+        // anything else belongs to somebody else's account.
+        const existing = await findAuthUserByEmail(supabaseAdmin, email)
+
+        if (!existing || !isCompanyStaffEmail(existing.email, company.email_slug)) {
+          return new Response(
+            JSON.stringify({ error: 'That email address already has an account. Choose a different username.' }),
+            { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const { profile: existingProfile, error: existingProfileError } = await readProfileForUser(supabaseAdmin, existing.id)
+
+        if (existingProfileError) {
+          return new Response(
+            JSON.stringify({ error: 'Internal Server Error: ' + existingProfileError }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        if (existingProfile) {
+          return new Response(
+            JSON.stringify({ error: 'That team member already has an account. Edit them in your team list instead of adding them again.' }),
+            { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Replace the stale metadata rather than merging it: older builds wrote
+        // the company into user_metadata, and that value must not survive.
+        const { data: repairedData, error: repairError } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+          password,
+          email_confirm: true,
+          user_metadata: authMetadata,
+          app_metadata: {
+            ...(existing.app_metadata || {}),
+            ...authMetadata,
+            company_id: profile.company_id
+          }
+        })
+
+        if (repairError) {
+          return new Response(
+            JSON.stringify({ error: 'Repair User Error: ' + repairError.message }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        authUser = repairedData?.user || existing
+        repaired = true
+      }
+
+      if (!authUser?.id) {
         return new Response(
-          JSON.stringify({ error: 'Create User Error: ' + createError.message }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Internal Server Error: Supabase did not return the new user, so no profile could be created. Try again.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
-      // Update the profile with color, payRate and userTypeId
-      const { error: updateError } = await supabaseAdmin
-        .from('profiles')
-        .update({
-          color: color || '#1B6DE0',
-          pay_rate: payRate || 0,
-          user_type_id: userTypeId,
-          username: username,
-          force_password_change: false
-        })
-        .eq('id', authData?.user?.id)
+      // Write the profile row here instead of trusting `on_auth_user_created` to
+      // have done it: a deployment of this function that predates the hardened
+      // trigger leaves the account without a company, and the user is then sent to
+      // "Create your company" on their first sign-in.
+      const profileValues = staffProfileValues({
+        userId: authUser.id,
+        companyId: profile.company_id,
+        email: authUser.email || email,
+        name,
+        username,
+        role,
+        userTypeId,
+        color,
+        payRate,
+        // Whoever just had a password set for them by someone else changes it on
+        // first sign-in, whether the account is new or was repaired.
+        forcePasswordChange: repaired
+      })
 
-      if (updateError) {
-        console.error('Failed to update created user profile details:', updateError)
+      let ensured
+      try {
+        ensured = await ensureProfileForUser({
+          admin: supabaseAdmin,
+          userId: authUser.id,
+          create: profileValues.create,
+          updates: profileValues.updates
+        })
+      } catch (profileWriteError) {
+        ensured = { error: String(profileWriteError?.message || profileWriteError) }
+      }
+
+      if (ensured.error) {
+        console.error('Failed to provision the invited user profile:', ensured.error)
+        return new Response(
+          JSON.stringify({
+            error: `Internal Server Error: ${ensured.error} The sign-in account was created (${authUser.id}) but has no company yet. Adding the same username again will finish it.`
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
       }
 
       return new Response(
-        JSON.stringify({ success: true, user: authData?.user }),
+        JSON.stringify({ success: true, user: authUser, repaired }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
