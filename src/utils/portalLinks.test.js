@@ -9,8 +9,8 @@ globalThis.localStorage = {
   clear: () => mem.clear(),
 };
 
-// appBaseUrl() reads the live location through webOrigin(), which reads the
-// bare `location` global — so mirror what a browser exposes in both places.
+// webAppBaseUrl() reads the live location, which it resolves through
+// webOrigin() — so mirror what a browser exposes in both places.
 const browserLocation = { origin: 'https://relay.example', pathname: '/app/' };
 
 function useLocation(next) {
@@ -21,7 +21,6 @@ function useLocation(next) {
 useLocation(browserLocation);
 
 const {
-  appBaseUrl,
   ensureCustomerToken,
   ensureContractorToken,
   customerPortalUrl,
@@ -30,6 +29,7 @@ const {
   portalUrlForDocument,
   generatePortalToken,
 } = await import('./portalLinks.js');
+const { webAppBaseUrl } = await import('./webOrigin.js');
 const { store } = await import('../data/store.js');
 
 const realUpdate = store.update;
@@ -48,7 +48,7 @@ describe('portal links', () => {
   after(() => { store.update = realUpdate; });
 
   test('builds from the live location, not a hardcoded origin', () => {
-    assert.strictEqual(appBaseUrl(), 'https://relay.example/app/');
+    assert.strictEqual(webAppBaseUrl(), 'https://relay.example/app/');
   });
 
   test('points at the hosted web app when the desktop build serves file://', () => {
@@ -57,14 +57,14 @@ describe('portal links', () => {
     // link we email to a customer.
     useLocation({ origin: 'null', protocol: 'file:', pathname: '/C:/Program%20Files/RELAY/index.html' });
 
-    assert.strictEqual(appBaseUrl(), 'https://relaydispatch.com.au/');
+    assert.strictEqual(webAppBaseUrl(), 'https://relaydispatch.com.au/app/');
     assert.strictEqual(
       customerPortalUrl({ id: 'cus_1', portalToken: 'c_pt_abc' }),
-      'https://relaydispatch.com.au/#/portal/customer?token=c_pt_abc'
+      'https://relaydispatch.com.au/app/#/portal/customer?token=c_pt_abc'
     );
     assert.strictEqual(
       contractorPortalUrl({ id: 'con_1', portalToken: 'c_pt_con' }),
-      'https://relaydispatch.com.au/#/contractor-portal/c_pt_con'
+      'https://relaydispatch.com.au/app/#/contractor-portal/c_pt_con'
     );
   });
 

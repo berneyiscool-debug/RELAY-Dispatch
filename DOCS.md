@@ -96,6 +96,60 @@ npm run dev      # start the Vite dev server
 npm run electron:dev    # start Vite and launch Electron window concurrently
 ```
 
+### Publishing the Web App
+
+The hosted app is published to GitHub Pages by `.github/workflows/deploy.yml` on
+every push to `main`, at **https://relaydispatch.com.au/app/**. The origin root is
+reserved for the marketing website, which is not built from this repo — the
+redirect shim below is what sits there until it ships.
+
+```bash
+npm run build:pages   # the exact artifact CI uploads; writes to dist/
+```
+
+`scripts/build-pages.mjs` builds the app with base `/app/` into `dist/app/`, lifts
+`public/CNAME` to `dist/CNAME` (GitHub Pages only honours a custom domain at the
+artifact root) and drops `scripts/pages-root-redirect.html` in as the root
+document. That shim carries old root-based URLs across, so a bookmark or an
+already-emailed link of `relaydispatch.com.au/#/portal/customer?token=…` lands on
+`/app/#/portal/customer?token=…`:
+
+```js
+location.replace('/app/' + location.hash);   // the hash is the route
+```
+
+There is deliberately **no `404.html`** — a catch-all pointing at `/app` would
+swallow every future marketing URL. The desktop build is untouched: `npm run
+build` still emits a relative-path bundle in `dist/` for Electron to load over
+`file://`, and `build:pages` deletes `dist/` first, so the two layouts can never
+mix.
+
+The app has to be served from a **path on the same origin**, not a subdomain:
+Local mode keeps its data in IndexedDB/localStorage, which is scoped to an origin,
+so a subdomain would hand every existing browser user an empty app.
+
+No code or Stripe dashboard changes are needed for the new base — every
+outbound URL (Stripe Checkout returns, the billing portal, portal invites,
+password reset) is built from the live location through `src/utils/webOrigin.js`,
+so it follows the path automatically.
+
+**After deploying, in Supabase → Authentication → URL Configuration:**
+
+- Set the **Site URL** to `https://relaydispatch.com.au/app/`. This is where a
+  sign-up confirmation lands when no redirect is given, so it must be the app
+  path — a `localhost` value there sends real users to a local dev server.
+- Add these to the **Redirect URLs** allow-list (wildcards are allowed here, but
+  **not** in the Site URL):
+  - `https://relaydispatch.com.au/app/**` — the app's own redirects (password
+    reset, Stripe returns).
+  - `https://relaydispatch.com.au/**` — keeps pre-move root links working until
+    the marketing site ships.
+  - `http://localhost:5173/**` — the Vite dev server, if you exercise auth
+    locally (that is the app's dev port, not `localhost:3000`).
+
+Staff invites are unaffected: `invite-user` creates confirmed users, so it sends
+no Supabase auth link.
+
 ### Building the Desktop Installer
 ```bash
 npm run electron:build  # build Vite production assets and compile the Windows NSIS Installer (.exe)

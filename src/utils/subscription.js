@@ -21,7 +21,7 @@
 
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
-import { webOrigin } from './webOrigin.js';
+import { appUrl } from './webOrigin.js';
 
 // Marketing/pricing catalogue. Amounts are AUD, per active user, per month.
 export const PLAN_CATALOG = {
@@ -312,24 +312,21 @@ async function createCheckoutSession(tier, successUrl, cancelUrl) {
   return data;
 }
 
-// Stripe returns the user to this origin, so it has to be the hosted web app
-// rather than whatever origin the bundle happens to be running from — in the
-// packaged desktop build that is file://, whose origin is unusable.
-function checkoutOrigin() {
-  return webOrigin();
-}
-
 /**
  * Begin (or change to) a paid plan. Redirects the browser to Stripe Checkout.
+ *
+ * The return URLs point at the hosted web app rather than whatever origin the
+ * bundle happens to be running from — in the packaged desktop build that is
+ * file://, whose origin is unusable. appUrl() carries the /app path the app is
+ * published under (see utils/webOrigin.js).
  * @param {'cloud'|'cloud_plus'} tier
  */
 export async function startCheckout(tier) {
   if (!isCloudUser()) throw new Error('Create a cloud account first to subscribe.');
-  const origin = checkoutOrigin();
   return await createCheckoutSession(
     tier,
-    `${origin}/#/settings?tab=billing&billing=success`,
-    `${origin}/#/settings?tab=billing&billing=cancelled`,
+    appUrl('/settings?tab=billing&billing=success'),
+    appUrl('/settings?tab=billing&billing=cancelled'),
   );
 }
 
@@ -344,11 +341,10 @@ export async function startSubscribeCheckout(tier = 'cloud') {
   if (tier !== 'cloud' && tier !== 'cloud_plus') throw new Error('Unknown plan.');
   const { data } = await supabase.auth.getSession();
   if (!data?.session) throw new Error('Sign in to activate your subscription.');
-  const origin = checkoutOrigin();
   return await createCheckoutSession(
     tier,
-    `${origin}/#/subscribe?billing=success&tier=${tier}`,
-    `${origin}/#/subscribe?billing=cancelled&tier=${tier}`,
+    appUrl(`/subscribe?billing=success&tier=${tier}`),
+    appUrl(`/subscribe?billing=cancelled&tier=${tier}`),
   );
 }
 
@@ -367,8 +363,7 @@ export async function changePlan(tier) {
 /** Open Stripe's hosted portal to manage/cancel/update the subscription. */
 export async function openBillingPortal() {
   if (!isCloudUser()) throw new Error('No subscription to manage.');
-  const origin = webOrigin();
-  const data = await invoke('relay-billing-portal', { returnUrl: `${origin}/#/settings?tab=billing` });
+  const data = await invoke('relay-billing-portal', { returnUrl: appUrl('/settings?tab=billing') });
   if (!data?.url) throw new Error('No portal URL was returned.');
   if (typeof location !== 'undefined') location.href = data.url;
   return data;

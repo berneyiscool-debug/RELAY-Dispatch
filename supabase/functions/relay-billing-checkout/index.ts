@@ -150,7 +150,13 @@ serve(async (req) => {
     const seats = Math.max(1, Number(seatCount) || 1)
 
     // 5. Create the subscription-mode Checkout Session.
-    const origin = req.headers.get('origin') || 'https://relay.app'
+    // The app is published under /app on the public domain, and the Origin header
+    // carries no path — so append it there. Every other origin serves the app from
+    // its root (the Vite dev server, preview deploys), and desktop (file://)
+    // callers send no Origin at all, so the hosted app is the default. The client
+    // normally passes its own URLs; these are only fallbacks.
+    const requestOrigin = (req.headers.get('origin') || 'https://relaydispatch.com.au').replace(/\/+$/, '')
+    const appBase = requestOrigin === 'https://relaydispatch.com.au' ? `${requestOrigin}/app` : requestOrigin
     const newSession = (customer: string) => stripe('checkout/sessions', stripeKey, {
       mode: 'subscription',
       customer,
@@ -165,8 +171,8 @@ serve(async (req) => {
       'metadata[tier]': String(tier),
       client_reference_id: String(company.id),
       allow_promotion_codes: 'true',
-      success_url: successUrl || `${origin}/#/settings?billing=success`,
-      cancel_url: cancelUrl || `${origin}/#/settings?billing=cancelled`,
+      success_url: successUrl || `${appBase}/#/settings?billing=success`,
+      cancel_url: cancelUrl || `${appBase}/#/settings?billing=cancelled`,
     })
 
     let session

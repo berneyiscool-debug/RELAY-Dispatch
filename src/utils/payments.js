@@ -10,7 +10,7 @@
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { FLAGS } from './flags.js';
-import { webOrigin } from './webOrigin.js';
+import { appUrl } from './webOrigin.js';
 
 // Cloud accounts only. Mirrors the check used across the app.
 function isCloudUser() {
@@ -116,11 +116,10 @@ export async function createInvoicePaymentLink(invoice) {
  */
 export async function createPaymentLinkForInvoiceId(invoiceId, opts = {}) {
   if (!invoiceId) throw new Error('An invoice id is required.');
-  const origin = webOrigin();
   const data = await invoke('relay-create-payment', {
     invoiceId,
-    successUrl: opts.successUrl || `${origin}/#/invoices?paid=${encodeURIComponent(invoiceId)}`,
-    cancelUrl: opts.cancelUrl || `${origin}/#/invoices`,
+    successUrl: opts.successUrl || appUrl(`/invoices?paid=${encodeURIComponent(invoiceId)}`),
+    cancelUrl: opts.cancelUrl || appUrl('/invoices'),
   });
   if (!data?.url) throw new Error('No checkout URL was returned.');
   // Best-effort: remember the session id on the invoice for reconciliation.

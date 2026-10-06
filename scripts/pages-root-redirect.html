@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RELAY Dispatch</title>
+  <link rel="canonical" href="https://relaydispatch.com.au/app/" />
+  <!--
+    The app used to be served from the origin root, so relaydispatch.com.au/#/jobs/123
+    is a URL people still have in bookmarks, emails and browser history. The app now
+    lives under /app (the marketing site owns the root), so carry the route across.
+
+    This shim is the whole of the root document until the marketing site ships; when
+    it does, its homepage replaces this file and the redirect lives on in 404/rewrite
+    rules or is dropped once the old links stop mattering.
+
+    No 404.html is generated on purpose: a catch-all pointing at /app would swallow
+    every future marketing URL.
+  -->
+  <meta http-equiv="refresh" content="0; url=/app/" />
+  <!-- Static shell: nothing here should ever load a subresource. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" />
+  <script>
+    // location.replace keeps the hop out of the back stack. The hash is the app's
+    // route (the app is a hash router), so pass it straight through.
+    location.replace('/app/' + location.hash);
+  </script>
+</head>
+<body>
+  <noscript>
+    <p>RELAY Dispatch has moved to <a href="/app/">relaydispatch.com.au/app</a>.</p>
+  </noscript>
+</body>
+</html>
