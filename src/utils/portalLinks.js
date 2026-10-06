@@ -11,13 +11,18 @@
 // and see their invoices — which is why quote and invoice emails point at it.
 
 import { store } from '../data/store.js';
+import { webOrigin } from './webOrigin.js';
 
 // The app is served from a hash router, sometimes under a sub-path (GitHub
 // Pages) and sometimes from file:// (Electron), so build from the live location
 // rather than assuming an origin.
 export function appBaseUrl() {
-  if (typeof window === 'undefined') return '';
-  return `${window.location.origin}${window.location.pathname}`;
+  if (typeof location === 'undefined') return '';
+  const pathname = typeof location.pathname === 'string' ? location.pathname : '';
+  const servedOverHttp = /^https?:\/\//i.test(String(location.origin || ''));
+  // Under file:// the pathname is the local index.html, which means nothing to
+  // whoever opens the link — the portal only exists on the hosted web app.
+  return servedOverHttp && pathname ? `${webOrigin()}${pathname}` : `${webOrigin()}/`;
 }
 
 function newToken() {

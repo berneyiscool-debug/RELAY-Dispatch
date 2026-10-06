@@ -9,8 +9,16 @@ globalThis.localStorage = {
   clear: () => mem.clear(),
 };
 
-// appBaseUrl() reads window.location, so give it a realistic origin.
-globalThis.window = { location: { origin: 'https://relay.example', pathname: '/app/' } };
+// appBaseUrl() reads the live location through webOrigin(), which reads the
+// bare `location` global — so mirror what a browser exposes in both places.
+const browserLocation = { origin: 'https://relay.example', pathname: '/app/' };
+
+function useLocation(next) {
+  globalThis.location = next;
+  globalThis.window = { location: next };
+}
+
+useLocation(browserLocation);
 
 const {
   appBaseUrl,
@@ -30,6 +38,7 @@ describe('portal links', () => {
   beforeEach(() => {
     mem.clear();
     writes = [];
+    useLocation(browserLocation);
     store.cache = {};
     store.companyId = null;
     store.update = (collection, id, data) => { writes.push({ collection, id, data }); };
@@ -39,6 +48,23 @@ describe('portal links', () => {
 
   test('builds from the live location, not a hardcoded origin', () => {
     assert.strictEqual(appBaseUrl(), 'https://relay.example/app/');
+  });
+
+  test('points at the hosted web app when the desktop build serves file://', () => {
+    // Electron loads the bundle from file://, where the origin is the string
+    // "null" and the pathname is the local index.html — neither belongs in a
+    // link we email to a customer.
+    useLocation({ origin: 'null', protocol: 'file:', pathname: '/C:/Program%20Files/RELAY/index.html' });
+
+    assert.strictEqual(appBaseUrl(), 'https://relaydispatch.com.au/');
+    assert.strictEqual(
+      customerPortalUrl({ id: 'cus_1', portalToken: 'c_pt_abc' }),
+      'https://relaydispatch.com.au/#/portal/customer?token=c_pt_abc'
+    );
+    assert.strictEqual(
+      contractorPortalUrl({ id: 'con_1', portalToken: 'c_pt_con' }),
+      'https://relaydispatch.com.au/#/contractor-portal/c_pt_con'
+    );
   });
 
   test('customer links carry the portal token', () => {
