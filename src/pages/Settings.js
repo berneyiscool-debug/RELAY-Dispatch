@@ -14,7 +14,7 @@ import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
 import { seedMinimalData, seedData } from '../data/seed.js';
-import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription } from '../utils/subscription.js';
+import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
@@ -33,6 +33,10 @@ import { openMigrationModal, showCloudUpgradePrompt, CLOUD_ONLY_SETTINGS_TABS, C
 // moment the app gets focus back.
 let billingFocusRefresh = null;
 let billingFocusBound = false;
+// Returning from a completed checkout repairs a missed Stripe webhook by asking
+// the server to re-read the subscription from Stripe. Once per page load is
+// enough — without this the focus listener would re-reconcile on every focus.
+let billingRecoveryAttempted = false;
 
 function registerBillingFocusRefresh(refresh) {
   billingFocusRefresh = refresh;
@@ -3069,6 +3073,11 @@ export function renderSettings(container) {
     const isCloud = !!(store.companyId && !String(store.companyId).startsWith('acct_'));
     const isAdmin = (currentUser?.role === 'admin');
 
+    // Post-checkout / portal return flag. Stripe returns to #/settings?billing=…;
+    // the billing portal comes back on the query string instead.
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
+    const billingResult = params.get('billing');
+
     // The company row is cached at sign-in with no realtime updates, so a change
     // made in the Stripe portal (or a webhook that just landed) won't show until
     // we refetch. Pull the latest and re-render once if anything actually moved.
@@ -3076,12 +3085,24 @@ export function renderSettings(container) {
       const refreshBillingTab = () => {
         if (!tc.isConnected) return;
         const before = JSON.stringify(getSubscription());
-        refreshSubscription().then(() => {
-          if (!tc.isConnected) return;
-          if (JSON.stringify(getSubscription()) !== before) {
-            renderBillingTab(tc, currentUser, openMigrationModal);
-          }
-        });
+        refreshSubscription()
+          .then(() => {
+            // Back from a completed checkout, but still not active? The row is
+            // normally written by the Stripe webhook, so a missed delivery would
+            // leave this tab saying "being activated" forever. Ask the server to
+            // re-read the subscription from Stripe itself, once per page load.
+            if (billingResult !== 'success' || subscriptionActive() || billingRecoveryAttempted) return null;
+            billingRecoveryAttempted = true;
+            return reconcileSubscription()
+              .catch((err) => console.warn('Could not reconcile the subscription from Stripe:', err))
+              .then(() => refreshSubscription());
+          })
+          .then(() => {
+            if (!tc.isConnected) return;
+            if (JSON.stringify(getSubscription()) !== before) {
+              renderBillingTab(tc, currentUser, openMigrationModal);
+            }
+          });
       };
       refreshBillingTab();
       registerBillingFocusRefresh(refreshBillingTab);
@@ -3108,8 +3129,6 @@ export function renderSettings(container) {
       : null;
 
     // Post-checkout / portal return banner.
-    const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
-    const billingResult = params.get('billing');
     let banner = '';
     if (billingResult === 'success') {
       banner = `<div style="background:var(--color-info-bg);border-left:4px solid var(--color-info);padding:12px 16px;border-radius:6px;margin-bottom:16px;color:var(--color-info);display:flex;gap:8px;align-items:center;">

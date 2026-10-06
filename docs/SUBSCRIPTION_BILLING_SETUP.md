@@ -95,8 +95,14 @@ supabase db push       # or apply 025 / 036 / 037 via your migration process
 supabase functions deploy relay-billing-checkout
 supabase functions deploy relay-billing-portal
 supabase functions deploy relay-billing-sync-seats
-supabase functions deploy relay-stripe-webhook     # redeploy — now handles subscriptions
+supabase functions deploy relay-billing-reconcile
+supabase functions deploy relay-stripe-webhook --no-verify-jwt   # redeploy — now handles subscriptions
 ```
+
+`--no-verify-jwt` is not optional. Stripe signs its deliveries with `Stripe-Signature`;
+it has no Supabase JWT, so the gateway must let the request through and the function
+authenticates it with `STRIPE_WEBHOOK_SECRET` instead. Redeploying the webhook without
+the flag turns every delivery into a `401` and silently stops all webhook writes.
 
 ### Stale `stripe_customer_id` self-heals
 
@@ -150,6 +156,41 @@ even if `customer.subscription.created` is delayed or missing. Keep
 (seats, period end, tier) and reports later status changes (`past_due`,
 `canceled`).
 
+### If a delivery is missed: reconcile from Stripe
+
+The webhook is the only thing that writes `companies.subscription_status`, so a missed
+or misconfigured delivery used to strand a paying customer on "Payment not confirmed
+yet" forever — the page could only re-read the company row, and the row was the thing
+that never changed. `relay-billing-reconcile` closes that hole by asking Stripe
+directly.
+
+```
+#/subscribe  (or Settings → Plan & Billing after a billing=success return)
+  └─ relay-billing-reconcile (JWT; admin or manager of the company)
+        ├─ GET /v1/subscriptions?customer=<companies.stripe_customer_id>&status=all
+        ├─ pick the subscription that owns the company
+        └─ write subscription_* only when status or subscription id actually changed
+```
+
+- **It cannot downgrade.** Nothing live at Stripe (`no_subscription` / `not_live`) leaves
+  the row untouched and reports why; only a live `active` / `trialing` / `past_due`
+  subscription is written. The column rules are duplicated from
+  `relay-stripe-webhook`'s `applySubscription()` in the sibling
+  `reconcile.js`, because edge functions are deployed independently and cannot share
+  a module — keep the two in step.
+- **The response doubles as a diagnostic.** `reason` is one of `no_customer`,
+  `no_subscription`, `not_live`, and the paywall prints a plain-English line for each
+  when the check still comes back inactive.
+- **A checkout that never reached Stripe is still `no_customer`** even after a successful
+  session, because the customer id is only written by the webhook. That is the signal
+  to look at the Stripe dashboard, not at the app.
+- **A stale customer id also reports `no_customer`.** If the stored `cus_...` belongs to a
+  different Stripe mode or account than the key in use, `GET /v1/subscriptions` answers
+  `No such customer`; reconcile maps that to `no_customer` (HTTP 200) rather than a 500,
+  the same way `relay-billing-checkout` self-heals. Both cases mean the same thing here —
+  this company has no readable Stripe record in the current mode. A genuine Stripe
+  failure (5xx, network) is still surfaced as an error.
+
 ## 6. Onboarding: a 14-day trial, then payment
 
 A cloud account now opens on a **14-day free trial with no card on file**. The company is only ever created *after* the address is verified, so signup is a four-step sequence:
@@ -185,8 +226,12 @@ Still no subscription
 
 `#/subscribe` (`src/pages/billing/Subscribe.js`) is the return target from Checkout and the recovery page. It reads `billing` and `tier` from the hash query, then:
 
-- polls the company row for a live `subscription_status` (10 attempts, 1.5 s apart) because the Stripe webhook lands asynchronously, and
-- on `billing=success` without a live status yet, offers **Check again** and **Enter payment details again** rather than a dead end.
+- reconciles against Stripe on load (`relay-billing-reconcile`) and then polls the
+  company row for a live `subscription_status` (10 attempts, 1.5 s apart) because the
+  Stripe webhook lands asynchronously, and
+- on `billing=success` without a live status yet, offers **Check again** — which
+  reconciles again — and **Enter payment details again** rather than a dead end, plus a
+  diagnostic line saying why Stripe has nothing live for the account.
 
 Once the subscription is live it finishes setup — copying local data across for an upgrade (`store.migrateLocalToCloud()`), retiring the local account, setting the session user — and routes into the app.
 
@@ -219,9 +264,10 @@ Signup (create account) → verify email → sign in → create_company_and_admi
                                                             ↓ trial ends
                             read-only  ←  startSubscribeCheckout → Stripe Checkout
                                                  ↓ success
-                        #/subscribe  ← polls for the webhook, then finishes setup
+                        #/subscribe  ← polls the row, reconciles from Stripe, then finishes setup
                              ↓ live
                       relay-stripe-webhook → companies.subscription_* set
+                      (missed delivery? → relay-billing-reconcile re-reads Stripe and patches the row)
 
 Settings → Plan & Billing
   ├─ Choose Cloud / Cloud+  → relay-billing-checkout → Stripe Checkout (subscription)
@@ -247,7 +293,7 @@ Gating (src/utils/subscription.js):
   them. Clients read them (to render this tab and gate features) but cannot forge
   a tier or an "active" status.
 - All billing edge functions verify the caller's JWT and require the `admin`
-  role (seat-sync also allows `manager`, who can add/deactivate users).
+  role (seat-sync and reconcile also allow `manager`, who can add/deactivate users).
 - `company_name_available()` is `SECURITY DEFINER` and granted to `anon` on
   purpose — the signup form checks the name before an account exists. It returns
   a single boolean, so the only thing it discloses is whether a name is taken,
