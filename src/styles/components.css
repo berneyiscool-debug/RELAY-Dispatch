@@ -1015,6 +1015,14 @@ select.badge {
 .cloud-prompt-close:hover { background: var(--content-bg); color: var(--text-primary); }
 .cloud-prompt-close .material-icons-outlined { font-size: 15px; }
 
+/* ---- Trial / read-only banner ---- */
+/* Shares the `.cloud-prompt` popup surface (fixed bottom-right card, size, shadow)
+   but keeps its own icon chip tone: danger for the expired read-only state,
+   warning/info for the trial countdown. */
+.trial-banner-icon--danger  { background: var(--color-danger-bg);  color: var(--color-danger); }
+.trial-banner-icon--warning { background: var(--color-warning-bg); color: var(--color-warning); }
+.trial-banner-icon--info    { background: var(--color-info-bg);    color: var(--color-info); }
+
 /* ---- Print Preview ---- */
 .print-document {
   padding: 40px 48px;

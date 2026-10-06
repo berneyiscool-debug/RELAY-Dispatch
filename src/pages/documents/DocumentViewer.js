@@ -22,7 +22,7 @@ export function renderDocumentViewer(container) {
         <span class="material-icons-outlined" style="font-size: 48px; color: var(--text-tertiary);">error_outline</span>
         <h3>Document Not Found</h3>
         <p class="text-secondary">The requested document could not be loaded or the session expired.</p>
-        <button class="btn btn-primary" onclick="window.close()" data-tooltip="Close this tab and return to app" data-tooltip-pos="top" style="margin-top: 20px;">Close Tab</button>
+        <button class="btn btn-primary" data-close-window data-tooltip="Close this tab and return to app" data-tooltip-pos="top" style="margin-top: 20px;">Close Tab</button>
       </div>
     `;
     return;
@@ -56,7 +56,7 @@ export function renderDocumentViewer(container) {
           <p class="text-secondary" style="max-width: 400px; margin-bottom: 20px;">
             ${escapeHTML(err.message || 'Could not access the local file directory. Please verify that folder sync is enabled and access is granted in settings.')}
           </p>
-          <button class="btn btn-primary" onclick="window.close()">Close Tab</button>
+          <button class="btn btn-primary" data-close-window>Close Tab</button>
         </div>
       `;
     });
@@ -83,7 +83,7 @@ export function renderDocumentViewer(container) {
               </div>
             </div>
             <div>
-              <button class="btn btn-secondary btn-sm" onclick="window.close()" data-tooltip="Close viewer tab" data-tooltip-pos="left">Close</button>
+              <button class="btn btn-secondary btn-sm" data-close-window data-tooltip="Close viewer tab" data-tooltip-pos="left">Close</button>
             </div>
           </div>
         </div>

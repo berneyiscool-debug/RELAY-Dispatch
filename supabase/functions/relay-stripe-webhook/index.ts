@@ -416,6 +416,14 @@ serve(async (req) => {
             if (subId) patch.stripe_subscription_id = subId
             if (customerId) patch.stripe_customer_id = customerId
             if (session.metadata?.tier) patch.subscription_tier = session.metadata.tier
+            // A subscription checkout that is already paid (no trial) is live the
+            // moment the session completes. Flip the status here so the client
+            // doesn't have to wait for a separate customer.subscription.created
+            // event to clear "payment not confirmed"; that event still arrives and
+            // re-applies the full detail (seats, period end, tier). 'unpaid' /
+            // 'no_payment_required' are left alone so customer.subscription.*
+            // reports the true status.
+            if (session.payment_status === 'paid') patch.subscription_status = 'active'
             await supaPatch(`companies?id=eq.${encodeURIComponent(companyId)}`, patch)
             console.log(`relay-stripe-webhook: company ${companyId} subscription checkout completed`)
           }

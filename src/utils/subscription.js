@@ -124,7 +124,20 @@ export function subscriptionFromRow(data) {
 export function subscriptionActiveFromRow(data) {
   if (!data) return false;
   if (data.comp_tier) return true;
-  return LIVE_STATUSES.has(String(data.subscription_status || ''));
+
+  const status = String(data.subscription_status || '');
+  if (!LIVE_STATUSES.has(status)) return false;
+
+  // A no-card trial only counts as live while its clock is still running. An
+  // expired `trialing` row (trial_ends_at in the past) is not paid, so the
+  // subscribe paywall must show the plan chooser instead of bouncing straight
+  // to the dashboard. Legacy trialing rows with no end date stay "running".
+  if (status === 'trialing' && data.trial_ends_at) {
+    const ends = Date.parse(data.trial_ends_at);
+    if (!Number.isNaN(ends) && ends <= Date.now()) return false;
+  }
+
+  return true;
 }
 
 // The account's effective tier: 'free' | 'cloud' | 'cloud_plus'.

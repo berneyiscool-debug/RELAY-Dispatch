@@ -108,6 +108,14 @@ The existing `relay-stripe-webhook` endpoint must now also receive:
 - `customer.subscription.deleted`
 - `invoice.payment_failed`
 
+`checkout.session.completed` flips `subscription_status` to `active` when
+`payment_status` is `paid` (no-trial checkout), so a completed subscription is
+recognised immediately and the `#/subscribe` poll clears "payment not confirmed"
+even if `customer.subscription.created` is delayed or missing. Keep
+`customer.subscription.*` subscribed regardless — it carries the full detail
+(seats, period end, tier) and reports later status changes (`past_due`,
+`canceled`).
+
 ## 6. Onboarding: a 14-day trial, then payment
 
 A cloud account now opens on a **14-day free trial with no card on file**. The company is only ever created *after* the address is verified, so signup is a four-step sequence:
