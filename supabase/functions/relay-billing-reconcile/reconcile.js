@@ -21,6 +21,16 @@ export function isLiveStatus(status) {
   return LIVE_STATUSES.includes(String(status || ''));
 }
 
+// A `cus_...` id is only valid inside the Stripe account *and* mode that minted
+// it, so a test-mode id read with a live key (or a customer deleted in the
+// dashboard) is gone rather than wrong. Stripe's words for that are Noise to a
+// customer, but they are a real answer to "what does Stripe have for this
+// company?": nothing. Same detection relay-billing-checkout uses to self-heal.
+export function isStaleCustomerError(err) {
+  const msg = String(err?.message ?? err);
+  return msg.includes('No such customer') || msg.includes('resource_missing');
+}
+
 // Stripe price → our tier slug, by id (STRIPE_PRICE_* secret) or lookup_key —
 // matching whichever setup relay-billing-checkout used. Unknown prices return
 // null, which means "don't change the tier", so an add-on price cannot silently

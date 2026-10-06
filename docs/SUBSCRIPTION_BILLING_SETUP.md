@@ -184,6 +184,12 @@ directly.
 - **A checkout that never reached Stripe is still `no_customer`** even after a successful
   session, because the customer id is only written by the webhook. That is the signal
   to look at the Stripe dashboard, not at the app.
+- **A stale customer id also reports `no_customer`.** If the stored `cus_...` belongs to a
+  different Stripe mode or account than the key in use, `GET /v1/subscriptions` answers
+  `No such customer`; reconcile maps that to `no_customer` (HTTP 200) rather than a 500,
+  the same way `relay-billing-checkout` self-heals. Both cases mean the same thing here —
+  this company has no readable Stripe record in the current mode. A genuine Stripe
+  failure (5xx, network) is still surfaced as an error.
 
 ## 6. Onboarding: a 14-day trial, then payment
 

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { pickSubscription, subscriptionPatch } from "./reconcile.js"
+import { pickSubscription, subscriptionPatch, isStaleCustomerError } from "./reconcile.js"
 
 // ============================================
 // RELAY — RECONCILE SUBSCRIPTION FROM STRIPE
@@ -108,10 +108,24 @@ serve(async (req) => {
 
     // status=all so a subscription Stripe has already ended is still returned —
     // pickSubscription ignores those, but the diagnostic needs to see them.
-    const listed = await stripe(
-      `subscriptions?customer=${encodeURIComponent(company.stripe_customer_id)}&status=all&limit=20`,
-      stripeKey,
-    )
+    let listed: { data?: unknown[] };
+    try {
+      listed = await stripe(
+        `subscriptions?customer=${encodeURIComponent(company.stripe_customer_id)}&status=all&limit=20`,
+        stripeKey,
+      );
+    } catch (err) {
+      // A stored id from another mode or account is not a server failure, it is
+      // the answer "this company has no Stripe record in the mode we are reading".
+      // Surfacing it as one keeps the paywall's line honest instead of a raw 500.
+      if (!isStaleCustomerError(err)) throw err;
+      return json({
+        active: false, status: company.subscription_status || null, tier: null,
+        subscriptionId: null, customerId: company.stripe_customer_id, found: false, updated: false,
+        reason: 'no_customer',
+      });
+    }
+
     // pickSubscription only ever hands back a live subscription (or nothing), so
     // anything we get past this point is safe to adopt.
     const sub = pickSubscription(listed?.data, company.stripe_subscription_id)

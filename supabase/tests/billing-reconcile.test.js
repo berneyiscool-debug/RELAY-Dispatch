@@ -14,6 +14,7 @@ import assert from 'node:assert';
 import {
   LIVE_STATUSES,
   isLiveStatus,
+  isStaleCustomerError,
   pickSubscription,
   subscriptionPatch,
   tierForPrice,
@@ -40,6 +41,19 @@ describe('live statuses', () => {
   test('cancelled, unpaid, incomplete and missing do not', () => {
     for (const s of ['canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused', '', null, undefined]) {
       assert.strictEqual(isLiveStatus(s), false);
+    }
+  });
+});
+
+describe('a customer id Stripe no longer recognises', () => {
+  test('is reported as having no record, not as a server error', () => {
+    assert.strictEqual(isStaleCustomerError(new Error("Stripe HTTP 404: No such customer: 'cus_x'")), true);
+    assert.strictEqual(isStaleCustomerError(new Error('Stripe HTTP 404: resource_missing')), true);
+  });
+
+  test('a real failure is still an error', () => {
+    for (const err of [new Error('Stripe HTTP 500: Internal error'), new Error('fetch failed'), undefined]) {
+      assert.strictEqual(isStaleCustomerError(err), false);
     }
   });
 });
