@@ -388,3 +388,24 @@ export async function syncSeats() {
     return null;
   }
 }
+
+/**
+ * Repair the company's subscription from Stripe itself.
+ *
+ * Our row is normally written by the relay-stripe-webhook, so when that delivery
+ * is misconfigured a customer who has paid is left on the paywall with nothing to
+ * retry — re-reading our own row can only repeat the same answer. This asks Stripe
+ * what the customer actually has and adopts a live subscription, so "Check again"
+ * can finish onboarding. It never downgrades: with nothing live in Stripe it
+ * reports that and leaves the row alone (see relay-billing-reconcile).
+ *
+ * Throws (unlike syncSeats) so the caller can show the reason — including
+ * 'Stripe is not configured' style failures, or a function that is not deployed
+ * yet, which the paywall degrades into its normal poll.
+ * @returns {Promise<{active:boolean, status:string|null, tier:string|null, reason?:string}>}
+ */
+export async function reconcileSubscription() {
+  const { data } = await supabase.auth.getSession();
+  if (!data?.session) throw new Error('Sign in to activate your subscription.');
+  return await invoke('relay-billing-reconcile', {});
+}

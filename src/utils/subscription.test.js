@@ -28,6 +28,7 @@ const {
   refreshSubscriptionFor,
   startSubscribeCheckout,
   startCheckout,
+  reconcileSubscription,
   TRIAL_DAYS,
   trialActive,
   trialDaysLeft,
@@ -324,6 +325,29 @@ describe('starting checkout during onboarding', () => {
       successUrl: 'https://app.relay.test/#/settings?tab=billing&billing=success',
       cancelUrl: 'https://app.relay.test/#/settings?tab=billing&billing=cancelled',
     });
+  });
+});
+
+describe('reconciling a missed Stripe webhook', () => {
+  test('requires a Supabase session', async () => {
+    await assert.rejects(() => reconcileSubscription(), /Sign in to activate your subscription/);
+    assert.deepStrictEqual(invokes, []);
+  });
+
+  test('asks the server to re-read the subscription from Stripe', async () => {
+    supabase.auth.getSession = async () => ({ data: { session: { access_token: 't' } }, error: null });
+    stubInvoke({ data: { active: true, status: 'active', tier: 'cloud', found: true }, error: null });
+
+    const result = await reconcileSubscription();
+    assert.strictEqual(result.active, true);
+    assert.deepStrictEqual(invokes, [{ fn: 'relay-billing-reconcile', body: {} }]);
+  });
+
+  test('throws so the paywall can report why Stripe could not be checked', async () => {
+    supabase.auth.getSession = async () => ({ data: { session: { access_token: 't' } }, error: null });
+    stubInvoke({ data: null, error: new Error('Stripe is not configured') });
+
+    await assert.rejects(() => reconcileSubscription(), /Stripe is not configured/);
   });
 });
 

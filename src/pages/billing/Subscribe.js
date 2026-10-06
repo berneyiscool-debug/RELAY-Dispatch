@@ -4,6 +4,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { setSessionUser } from '../auth/session.js';
 import {
   PLAN_CATALOG,
+  reconcileSubscription,
   refreshSubscriptionFor,
   subscriptionActiveFromRow,
   startSubscribeCheckout,
@@ -21,6 +22,11 @@ import {
 
 const POLL_ATTEMPTS = 10;
 const POLL_INTERVAL_MS = 1500;
+
+// What Stripe itself said during the last activation attempt. Only used to
+// explain the pending state, so it is deliberately module-scoped rather than
+// threaded through the render functions.
+let lastReconcile = null;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -249,8 +255,25 @@ function renderPlanChooser(bodyEl) {
   });
 }
 
-// Polls the company row because Stripe's webhook — not the browser redirect —
-// is what records the subscription.
+// Ask Stripe what the company actually has, then read the row back. The edge
+// function writes the row, so this is read-your-write.
+async function reconcileThenRead(companyId) {
+  try {
+    lastReconcile = await reconcileSubscription();
+  } catch (err) {
+    // A missing deployment, an expired session, or Stripe not being configured
+    // must not block activation — fall back to the plain DB poll below.
+    lastReconcile = { active: false, reason: 'error', error: err?.message || String(err) };
+    console.warn('Subscription reconcile failed:', lastReconcile.error);
+  }
+  return await refreshSubscriptionFor(companyId);
+}
+
+// Stripe's webhook — not the browser redirect — is what records the subscription,
+// so the company row is the source of truth. When that webhook never arrived the
+// row stays empty forever and re-reading it can only repeat the same answer, which
+// is why this reconciles against Stripe as well: the customer has paid, and the
+// server can go and look.
 async function pollForActivation(bodyEl, companyId) {
   if (bodyEl) {
     bodyEl.innerHTML = `
@@ -266,12 +289,40 @@ async function pollForActivation(bodyEl, companyId) {
       </div>`;
   }
 
+  // Stripe first, so a confirmed payment is let in immediately instead of after
+  // the full polling window.
+  if (subscriptionActiveFromRow(await reconcileThenRead(companyId))) return true;
+
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
     if (attempt > 0) await delay(POLL_INTERVAL_MS);
     const row = await refreshSubscriptionFor(companyId);
     if (subscriptionActiveFromRow(row)) return true;
   }
-  return false;
+
+  // Checkout may have completed while we were polling.
+  return subscriptionActiveFromRow(await reconcileThenRead(companyId));
+}
+
+// One line explaining what Stripe holds, shown under the pending state. Escaped:
+// this is the only copy on the page that does not come from a fixed string.
+function reconcileHint() {
+  const r = lastReconcile;
+  if (!r || r.active) return '';
+  let text = '';
+  if (r.reason === 'no_customer') {
+    text = 'Stripe has no payment record for this account yet.';
+  } else if (r.reason === 'no_subscription') {
+    text = 'Stripe has no subscription for this account yet.';
+  } else if (r.reason === 'not_live') {
+    text = `Stripe reports this account's subscription as “${r.status || 'ended'}”.`;
+  } else if (r.reason === 'error') {
+    text = `We could not check with Stripe: ${r.error || 'unknown error'}.`;
+  }
+  if (!text) return '';
+  return `
+    <div style="color:var(--text-secondary);font-size:13px;border-top:1px solid var(--border-color,#e5e7eb);padding-top:12px;">
+      ${escapeHTML(text)} If you have a payment receipt, send us this line and we will sort it out.
+    </div>`;
 }
 
 function renderPendingPayment(bodyEl, profile, tier = 'cloud') {
@@ -285,6 +336,7 @@ function renderPendingPayment(bodyEl, profile, tier = 'cloud') {
           finish the payment form, start again below.
         </p>
         <div id="pending-error" style="display:none;color:var(--color-danger);"></div>
+        ${lastReconcile ? `<div id="pending-diagnostic">${reconcileHint()}</div>` : ''}
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn btn-primary" id="pending-recheck">Check again</button>
           <button class="btn btn-secondary" id="pending-retry">Enter payment details again (${escapeHTML(planName)})</button>
