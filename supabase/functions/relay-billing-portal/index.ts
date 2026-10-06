@@ -68,11 +68,17 @@ serve(async (req) => {
     }
 
     const { returnUrl } = await req.json().catch(() => ({}))
-    const origin = req.headers.get('origin') || 'https://relay.app'
+    // The app is published under /app on the public domain, and the Origin header
+    // carries no path — so append it there. Every other origin serves the app from
+    // its root (the Vite dev server, preview deploys), and desktop (file://)
+    // callers send no Origin at all, so the hosted app is the default. The client
+    // normally passes its own URLs; these are only fallbacks.
+    const requestOrigin = (req.headers.get('origin') || 'https://relaydispatch.com.au').replace(/\/+$/, '')
+    const appBase = requestOrigin === 'https://relaydispatch.com.au' ? `${requestOrigin}/app` : requestOrigin
 
     const form = new URLSearchParams()
     form.set('customer', String(company.stripe_customer_id))
-    form.set('return_url', returnUrl || `${origin}/#/settings?tab=billing`)
+    form.set('return_url', returnUrl || `${appBase}/#/settings?tab=billing`)
 
     const res = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
       method: 'POST',

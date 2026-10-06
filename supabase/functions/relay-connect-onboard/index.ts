@@ -103,9 +103,14 @@ serve(async (req) => {
         .eq('id', company.id)
     }
 
-    const origin = req.headers.get('origin') || 'https://relay.app'
+    // The app is published under /app on the public domain, and the Origin header
+    // carries no path — so append it there. Every other origin serves the app from
+    // its root (the Vite dev server, preview deploys), and desktop (file://)
+    // callers send no Origin at all, so the hosted app is the default.
+    const requestOrigin = (req.headers.get('origin') || 'https://relaydispatch.com.au').replace(/\/+$/, '')
+    const appBase = requestOrigin === 'https://relaydispatch.com.au' ? `${requestOrigin}/app` : requestOrigin
     const { returnPath } = await req.json().catch(() => ({}))
-    const back = `${origin}/#${returnPath || '/settings?tab=payments'}`
+    const back = `${appBase}/#${returnPath || '/settings?tab=payments'}`
 
     // v2 account link — hosted onboarding.
     const link = await stripeV2('core/account_links', stripeKey, {

@@ -1,7 +1,7 @@
 import { supabase } from '../../utils/supabase.js';
 import { storageGet, storageSet } from '../../utils/persist.js';
 import { applyTheme } from '../../utils/theme.js';
-import { webOrigin } from '../../utils/webOrigin.js';
+import { webAppBaseUrl } from '../../utils/webOrigin.js';
 import { DESKTOP_RELEASES_URL, bindInstallerDownload, isDesktopBuild } from '../../utils/desktopApp.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '../auth/session.js';
@@ -1831,7 +1831,11 @@ export function renderLaunchScreen(container, onComplete) {
 
         try {
           const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: webOrigin() + '/#reset-password'
+            // The app base, deliberately without a `#/route`: the recovery token
+            // is delivered as the URL's *fragment* (`#access_token=…`), so a hash
+            // route here would leave Supabase reading `/reset-password#access_token=…`
+            // as the query string and finding no token at all.
+            redirectTo: webAppBaseUrl()
           });
           if (error) throw error;
 

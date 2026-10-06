@@ -78,11 +78,17 @@ serve(async (req) => {
     const feeBps = Number(Deno.env.get('RELAY_CONNECT_FEE_BPS') || '0')
     const applicationFee = feeBps > 0 ? Math.round(cents * feeBps / 10000) : 0
 
-    const origin = req.headers.get('origin') || 'https://relay.app'
+    // The app is published under /app on the public domain, and the Origin header
+    // carries no path — so append it there. Every other origin serves the app from
+    // its root (the Vite dev server, preview deploys), and desktop (file://)
+    // callers send no Origin at all, so the hosted app is the default. The client
+    // normally passes its own URLs; these are only fallbacks.
+    const requestOrigin = (req.headers.get('origin') || 'https://relaydispatch.com.au').replace(/\/+$/, '')
+    const appBase = requestOrigin === 'https://relaydispatch.com.au' ? `${requestOrigin}/app` : requestOrigin
     const form = new URLSearchParams()
     form.set('mode', 'payment')
-    form.set('success_url', successUrl || `${origin}/#/invoices?paid=${encodeURIComponent(invoice.number || invoice.id)}`)
-    form.set('cancel_url', cancelUrl || `${origin}/#/invoices`)
+    form.set('success_url', successUrl || `${appBase}/#/invoices?paid=${encodeURIComponent(invoice.number || invoice.id)}`)
+    form.set('cancel_url', cancelUrl || `${appBase}/#/invoices`)
     form.set('client_reference_id', String(invoice.id))
     form.set('metadata[invoice_id]', String(invoice.id))
     form.set('metadata[company_id]', String(company.id))

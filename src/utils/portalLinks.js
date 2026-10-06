@@ -11,19 +11,12 @@
 // and see their invoices — which is why quote and invoice emails point at it.
 
 import { store } from '../data/store.js';
-import { webOrigin } from './webOrigin.js';
+import { webAppBaseUrl } from './webOrigin.js';
 
-// The app is served from a hash router, sometimes under a sub-path (GitHub
-// Pages) and sometimes from file:// (Electron), so build from the live location
-// rather than assuming an origin.
-export function appBaseUrl() {
-  if (typeof location === 'undefined') return '';
-  const pathname = typeof location.pathname === 'string' ? location.pathname : '';
-  const servedOverHttp = /^https?:\/\//i.test(String(location.origin || ''));
-  // Under file:// the pathname is the local index.html, which means nothing to
-  // whoever opens the link — the portal only exists on the hosted web app.
-  return servedOverHttp && pathname ? `${webOrigin()}${pathname}` : `${webOrigin()}/`;
-}
+// The app is served from a hash router, sometimes under a sub-path
+// (relaydispatch.com.au/app on GitHub Pages) and sometimes from file://
+// (Electron), so build from the live location rather than assuming an origin —
+// webAppBaseUrl() owns that decision (see utils/webOrigin.js).
 
 // Portal tokens are the only thing standing between a URL and someone else's
 // quotes, invoices and job history, so they have to come from the CSPRNG.
@@ -82,14 +75,14 @@ export function ensureContractorToken(contractor) {
 export function customerPortalUrl(customer) {
   const token = ensureCustomerToken(customer);
   if (!token) return null;
-  return `${appBaseUrl()}#/portal/customer?token=${encodeURIComponent(token)}`;
+  return `${webAppBaseUrl()}#/portal/customer?token=${encodeURIComponent(token)}`;
 }
 
 // Magic link to the contractor portal — assigned jobs, documents, timesheets.
 export function contractorPortalUrl(contractor) {
   const token = ensureContractorToken(contractor);
   if (!token) return null;
-  return `${appBaseUrl()}#/contractor-portal/${encodeURIComponent(token)}`;
+  return `${webAppBaseUrl()}#/contractor-portal/${encodeURIComponent(token)}`;
 }
 
 // Resolve the customer record behind a quote/invoice so its email can carry a
