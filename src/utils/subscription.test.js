@@ -28,6 +28,14 @@ const {
   refreshSubscriptionFor,
   startSubscribeCheckout,
   startCheckout,
+  TRIAL_DAYS,
+  trialActive,
+  trialDaysLeft,
+  trialEndTime,
+  trialExpired,
+  isReadOnly,
+  readOnlyReason,
+  isComplimentary,
 } = await import('./subscription.js');
 
 const originalFrom = supabase.from;
@@ -42,11 +50,21 @@ const ROW = {
   subscription_current_period_end: '2026-01-31T00:00:00Z',
   stripe_customer_id: 'cus_123',
   comp_tier: null,
+  trial_ends_at: '2026-02-14T00:00:00Z',
 };
 
 function useCloudAccount(subscription, companyId = CLOUD_ID) {
   store.companyId = companyId;
   store.companySettings = subscription === undefined ? {} : { _subscription: subscription };
+}
+
+// Puts the account on a dated no-card trial ending `remainingMs` from now (negative
+// for a trial that has already lapsed). Returns the ISO end date so a test can
+// compare it against trialEndTime().
+function useTrial(remainingMs, overrides = {}) {
+  const end = new Date(Date.now() + remainingMs).toISOString();
+  useCloudAccount({ tier: null, status: 'trialing', trialEndsAt: end, ...overrides });
+  return end;
 }
 
 function stubCompaniesRow(result) {
@@ -147,6 +165,7 @@ describe('reading subscription state off a companies row', () => {
       status: 'active',
       seats: 4,
       currentPeriodEnd: '2026-01-31T00:00:00Z',
+      trialEndsAt: '2026-02-14T00:00:00Z',
       hasCustomer: true,
       compTier: null,
     });
@@ -158,9 +177,18 @@ describe('reading subscription state off a companies row', () => {
       status: null,
       seats: null,
       currentPeriodEnd: null,
+      trialEndsAt: null,
       hasCustomer: false,
       compTier: null,
     });
+  });
+
+  test('carries the free-trial end date off the row', () => {
+    assert.strictEqual(
+      subscriptionFromRow({ trial_ends_at: '2026-02-14T00:00:00Z' }).trialEndsAt,
+      '2026-02-14T00:00:00Z'
+    );
+    assert.strictEqual(subscriptionFromRow({ trial_ends_at: null }).trialEndsAt, null);
   });
 
   test('keeps a complimentary grant', () => {
@@ -276,5 +304,202 @@ describe('starting checkout during onboarding', () => {
       successUrl: 'https://app.relay.test/#/settings?tab=billing&billing=success',
       cancelUrl: 'https://app.relay.test/#/settings?tab=billing&billing=cancelled',
     });
+  });
+});
+
+describe('the 14-day cloud trial clock', () => {
+  test('pins the trial length the migration also defaults to', () => {
+    assert.strictEqual(TRIAL_DAYS, 14);
+  });
+
+  test('counts the days left on a running trial', () => {
+    const end = useTrial(14 * 86400000);
+    assert.strictEqual(trialActive(), true);
+    assert.strictEqual(trialDaysLeft(), 14);
+    assert.strictEqual(trialExpired(), false);
+    assert.strictEqual(isReadOnly(), false);
+    assert.strictEqual(trialEndTime(), Date.parse(end));
+  });
+
+  test('rounds a part-day up so the last stretch still reads as a day', () => {
+    useTrial(20000);
+    assert.strictEqual(trialDaysLeft(), 1);
+    assert.strictEqual(trialActive(), true);
+    assert.strictEqual(isReadOnly(), false);
+  });
+
+  test('reports zero days and a read-only account once the clock runs out', () => {
+    const end = useTrial(-3600000);
+    assert.strictEqual(trialActive(), false);
+    assert.strictEqual(trialDaysLeft(), 0);
+    assert.strictEqual(trialExpired(), true);
+    assert.strictEqual(isReadOnly(), true);
+    assert.strictEqual(trialEndTime(), Date.parse(end));
+    assert.match(readOnlyReason(), /trial ended/);
+    assert.match(readOnlyReason(), /export/);
+  });
+
+  test('is not a trial at all once the account is paying', () => {
+    useCloudAccount({
+      tier: 'cloud',
+      status: 'active',
+      trialEndsAt: new Date(Date.now() - 86400000).toISOString(),
+    });
+    assert.strictEqual(trialActive(), false);
+    assert.strictEqual(trialExpired(), false);
+    assert.strictEqual(trialDaysLeft(), null);
+    assert.strictEqual(trialEndTime(), null);
+    assert.strictEqual(isReadOnly(), false);
+  });
+
+  test('treats a legacy trialing row with no end date as running, never expired', () => {
+    useCloudAccount({ tier: null, status: 'trialing', trialEndsAt: null });
+    assert.strictEqual(trialActive(), true);
+    assert.strictEqual(trialDaysLeft(), TRIAL_DAYS);
+    assert.strictEqual(trialEndTime(), null);
+    assert.strictEqual(isReadOnly(), false);
+  });
+
+  test('treats an unparseable end date the same way rather than locking the account', () => {
+    useCloudAccount({ tier: null, status: 'trialing', trialEndsAt: 'not-a-date' });
+    assert.strictEqual(trialActive(), true);
+    assert.strictEqual(trialDaysLeft(), TRIAL_DAYS);
+    assert.strictEqual(trialEndTime(), null);
+    assert.strictEqual(isReadOnly(), false);
+  });
+
+  test('lets a complimentary grant outlive the trial clock', () => {
+    useTrial(-86400000, { compTier: 'cloud' });
+    assert.strictEqual(isComplimentary(), true);
+    assert.strictEqual(trialExpired(), false);
+    assert.strictEqual(isReadOnly(), false);
+    assert.strictEqual(trialDaysLeft(), null);
+    assert.strictEqual(subscriptionActive(), true);
+  });
+
+  test('never puts a local account in a trial', () => {
+    store.companyId = 'acct_local1';
+    store.companySettings = {
+      _subscription: {
+        tier: null,
+        status: 'trialing',
+        trialEndsAt: new Date(Date.now() - 86400000).toISOString(),
+      },
+    };
+    assert.strictEqual(trialActive(), false);
+    assert.strictEqual(trialExpired(), false);
+    assert.strictEqual(trialDaysLeft(), null);
+    assert.strictEqual(trialEndTime(), null);
+    assert.strictEqual(isReadOnly(), false);
+  });
+
+  test('never locks a cloud account whose subscription block was never loaded', () => {
+    useCloudAccount(undefined);
+    assert.strictEqual(trialExpired(), false);
+    assert.strictEqual(isReadOnly(), false);
+    assert.strictEqual(readOnlyReason(), null);
+  });
+});
+
+describe('read-only gating on an expired trial', () => {
+  let writeTables = [];
+  let warns = [];
+  let originalWarn;
+
+  // Every write path is supposed to bail before touching the network, so any
+  // recorded table name is proof that a guard let a write through.
+  function stubWrites() {
+    supabase.from = (table) => {
+      writeTables.push(table);
+      return {
+        select: () => ({ eq: () => ({ single: async () => ({ data: {}, error: null }) }) }),
+        insert: async () => ({ error: null, data: {} }),
+        upsert: async () => ({ error: null, data: {} }),
+        update: () => ({ eq: async () => ({ error: null, data: {} }) }),
+        delete: () => ({ eq: async () => ({ error: null, data: {} }) }),
+      };
+    };
+  }
+
+  beforeEach(() => {
+    writeTables = [];
+    warns = [];
+    originalWarn = console.warn;
+    console.warn = (...args) => warns.push(args.join(' '));
+    store.clearSync();
+    store.listeners = {};
+    store.companyId = null;
+    store.companySettings = null;
+    stubWrites();
+  });
+
+  afterEach(() => {
+    console.warn = originalWarn;
+  });
+
+  test('still reads while the trial has expired', () => {
+    useTrial(-3600000);
+    store.cache.jobs = [{ id: 'j1', title: 'Existing' }];
+    assert.deepStrictEqual(store.getAll('jobs'), [{ id: 'j1', title: 'Existing' }]);
+    assert.strictEqual(store.getById('jobs', 'j1').title, 'Existing');
+    assert.deepStrictEqual(writeTables, []);
+  });
+
+  test('refuses an update without mutating the cached row', () => {
+    useTrial(-3600000);
+    store.cache.jobs = [{ id: 'j1', title: 'Existing' }];
+    assert.strictEqual(store.update('jobs', 'j1', { title: 'Nope' }), null);
+    assert.strictEqual(store.cache.jobs[0].title, 'Existing');
+    assert.deepStrictEqual(writeTables, []);
+    assert.ok(warns.some((line) => line.includes('Blocked write to jobs')));
+  });
+
+  test('refuses a delete and leaves the row in place', () => {
+    useTrial(-3600000);
+    store.cache.jobs = [{ id: 'j1', title: 'Existing' }];
+    assert.strictEqual(store.delete('jobs', 'j1'), undefined);
+    assert.deepStrictEqual(store.cache.jobs, [{ id: 'j1', title: 'Existing' }]);
+    assert.deepStrictEqual(writeTables, []);
+  });
+
+  test('refuses a create but still hands back a stamped item', async () => {
+    useTrial(-3600000);
+    const created = await store.create('jobs', { title: 'Nope' });
+    assert.ok(created && created.id, 'callers still need an id to render against');
+    assert.strictEqual(created.companyId, CLOUD_ID);
+    assert.deepStrictEqual(store.cache.jobs, []);
+    assert.deepStrictEqual(writeTables, []);
+  });
+
+  test('refuses a settings save without overwriting the live settings', async () => {
+    useTrial(-3600000);
+    store.companySettings = { ...store.companySettings, name: 'Locked Co' };
+    assert.strictEqual(await store.saveSettings({ name: 'Changed' }), undefined);
+    assert.strictEqual(store.companySettings.name, 'Locked Co');
+    assert.deepStrictEqual(writeTables, []);
+  });
+
+  test('refuses a bulk save without replacing the collection', async () => {
+    useTrial(-3600000);
+    store.cache.jobs = [{ id: 'j1', title: 'Existing' }];
+    assert.strictEqual(await store.save('jobs', [{ id: 'j1', title: 'Nope' }]), undefined);
+    assert.deepStrictEqual(store.cache.jobs, [{ id: 'j1', title: 'Existing' }]);
+    assert.deepStrictEqual(writeTables, []);
+  });
+
+  test('lets a running trial write straight through', async () => {
+    useTrial(14 * 86400000);
+    await store.create('jobs', { title: 'Allowed' });
+    assert.deepStrictEqual(writeTables, ['jobs']);
+  });
+
+  test('lets a paying customer write even though the trial date has passed', async () => {
+    useCloudAccount({
+      tier: 'cloud',
+      status: 'active',
+      trialEndsAt: new Date(Date.now() - 86400000).toISOString(),
+    });
+    await store.create('jobs', { title: 'Allowed' });
+    assert.deepStrictEqual(writeTables, ['jobs']);
   });
 });

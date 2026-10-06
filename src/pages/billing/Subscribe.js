@@ -8,7 +8,7 @@ import {
   subscriptionActiveFromRow,
   startSubscribeCheckout,
 } from '../../utils/subscription.js';
-import { bindCompanyNameCheck, validateCompanyName } from '../../utils/companyName.js';
+import { renderFinishSetupCard } from '../../components/FinishSetupCard.js';
 import {
   clearPendingMigration,
   clearPendingSignup,
@@ -16,8 +16,6 @@ import {
   fetchProfile,
   readPendingMigration,
   readPendingSignup,
-  savePendingMigration,
-  savePendingSignup,
   sessionUserFromProfile,
 } from '../../utils/cloudOnboarding.js';
 
@@ -177,86 +175,16 @@ function renderMissingProfile(bodyEl, message, session) {
  * Recovery form for a signup whose company provisioning was interrupted: the
  * Supabase user exists but `create_company_and_admin` never completed, so there
  * is no profile row and there is nothing to bill. The marker written at signup
- * time carries what is needed to finish without registering again.
+ * time carries what is needed to finish without registering again. The form
+ * itself is shared with `/#/setup` so both paths provision identically.
  */
 function renderFinishSetup(container, session) {
-  const bodyEl = container.querySelector('#subscribe-body');
-  const pending = readPendingSignup();
-
-  bodyEl.innerHTML = `
-    <div class="card" style="max-width:100%;">
-      <div class="card-header"><h4>Finish setting up your company</h4></div>
-      <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
-        <p style="margin:0;color:var(--text-secondary);">
-          Signed in as <strong>${escapeHTML(session?.user?.email || '')}</strong>. Confirm your company name to
-          continue to payment.
-        </p>
-        <div>
-          <label class="form-label" for="finish-company">Company name</label>
-          <input class="form-input" id="finish-company" autocomplete="organization"
-                 value="${escapeHTML(pending?.companyName || '')}" placeholder="e.g. Acme Electrical" />
-          <div id="finish-company-status" style="margin-top:6px;color:var(--text-tertiary);"></div>
-        </div>
-        <div id="finish-error" style="display:none;color:var(--color-danger);"></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn btn-primary" id="finish-submit">Save &amp; continue to payment</button>
-          <button class="btn btn-secondary" id="finish-reload">Reload</button>
-        </div>
-      </div>
-    </div>`;
-
-  const input = bodyEl.querySelector('#finish-company');
-  const statusEl = bodyEl.querySelector('#finish-company-status');
-  const errorEl = bodyEl.querySelector('#finish-error');
-  const submitBtn = bodyEl.querySelector('#finish-submit');
-
-  bodyEl.querySelector('#finish-reload').addEventListener('click', () => window.location.reload());
-
-  const checker = bindCompanyNameCheck(input, statusEl);
-  if (pending?.companyName) checker.checkNow();
-
-  submitBtn.addEventListener('click', async () => {
-    errorEl.style.display = 'none';
-    const companyName = (input.value || '').trim();
-    const check = validateCompanyName(companyName);
-    if (!check.valid) {
-      errorEl.textContent = check.message;
-      errorEl.style.display = 'block';
-      return;
-    }
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Saving…';
-    try {
-      // The RPC re-checks under an advisory lock, so 'unknown' (server
-      // unreachable) is allowed through rather than blocking recovery.
-      if ((await checker.checkNow()) === 'taken') {
-        throw new Error('That company name is already taken. Please choose another.');
-      }
-
-      const { data: companyId, error } = await supabase.rpc('create_company_and_admin', {
-        user_id: session.user.id,
-        company_name: companyName,
-        admin_name: pending?.adminName || '',
-        admin_phone: pending?.adminPhone || '',
-      });
-      if (error) throw error;
-
-      // Re-stamp the resume markers now that the company exists, so a signup
-      // that reached payment from here still migrates the local workspace.
-      savePendingSignup({ ...(pending || {}), companyName, companyId });
-      const migration = readPendingMigration();
-      if (migration) savePendingMigration({ ...migration, companyId });
-
-      checker.dispose();
-      await renderSubscribe(container);
-    } catch (err) {
-      console.error('Failed to finish company setup:', err);
-      errorEl.textContent = err?.message || 'Could not finish setting up your company.';
-      errorEl.style.display = 'block';
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Save & continue to payment';
-    }
+  renderFinishSetupCard(container.querySelector('#subscribe-body'), {
+    session,
+    submitLabel: 'Save & continue to payment',
+    // Re-read the page: the company now exists, so this falls through to the
+    // subscription check (a fresh company has a live trial → straight in).
+    onProvisioned: () => renderSubscribe(container),
   });
 }
 

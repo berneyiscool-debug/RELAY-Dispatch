@@ -57,14 +57,23 @@ export async function handleCloudLoginSuccess(container, authUser) {
   if (profileError) {
     console.error('Failed to fetch user profile:', profileError);
     // A cloud account with no profile row is a signup that never finished
-    // provisioning (abandoned at the paywall, or still awaiting email
-    // confirmation). Finish it on the onboarding page instead of dead-ending.
+    // provisioning (abandoned before the RPC ran, or interrupted by a failed
+    // request). Send it to the setup step instead of dead-ending.
     // PGRST116 = "no rows returned" from .single().
     if (profileError.code === 'PGRST116' || readPendingSignup()) {
-      router.navigate('/subscribe');
+      router.navigate('/setup');
       return;
     }
     throw new Error(`Your user profile could not be found: ${profileError.message} (${profileError.code})`);
+  }
+
+  // A profile that exists but is not attached to a company cannot use the app:
+  // every collection is company-scoped. `/subscribe` owns that repair path,
+  // because the profile row already exists, so the company cannot be created
+  // through create_company_and_admin (which inserts the profile too).
+  if (!profile.company_id) {
+    router.navigate('/subscribe');
+    return;
   }
 
   // Intercept if password change is forced

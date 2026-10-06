@@ -36,6 +36,7 @@ const POOLED_SQL = readFileSync(join(MIGRATIONS_DIR, '034_ai_pooled_caps.sql'), 
 const NAME_SQL = readFileSync(join(MIGRATIONS_DIR, '036_company_name_uniqueness.sql'), 'utf8');
 const IDENTITY_SQL = readFileSync(join(MIGRATIONS_DIR, '038_profiles_identity_validation.sql'), 'utf8');
 const UPDATE_SCOPE_SQL = readFileSync(join(MIGRATIONS_DIR, '039_tighten_profiles_update.sql'), 'utf8');
+const TRIAL_SQL = readFileSync(join(MIGRATIONS_DIR, '037_terms_and_trial.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -68,7 +69,9 @@ CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $fn$
   SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
 $fn$;
 
-CREATE TABLE public.companies (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text, settings jsonb);
+-- 037's start_cloud_trial() reads stripe_customer_id, which normally arrives with
+-- 025_subscription_billing.sql - a migration this harness deliberately does not run.
+CREATE TABLE public.companies (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text, settings jsonb, stripe_customer_id text);
 CREATE TABLE public.profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid REFERENCES public.companies(id),
@@ -1443,3 +1446,294 @@ describe('039 profiles update scope', () => {
   });
 });
 
+describe('037 terms acceptance and free trial', () => {
+  let db;
+  let companyId;
+
+  const TERMS_ADMIN = '44444444-4444-4444-4444-444444444441';
+  const EXTEND_ADMIN = '44444444-4444-4444-4444-444444444442';
+  const CLAMP_HIGH_ADMIN = '44444444-4444-4444-4444-444444444443';
+  const CLAMP_LOW_ADMIN = '44444444-4444-4444-4444-444444444444';
+  const BILLING_ADMIN = '44444444-4444-4444-4444-444444444445';
+  const ORPHAN_ADMIN = '44444444-4444-4444-4444-444444444446';
+
+  // 036 enforces company-name uniqueness inside the RPC, so every company
+  // provisioned here needs its own distinct name.
+  const provision = (uid, companyName) =>
+    asRole(db, 'authenticated', uid, () =>
+      value(db, `SELECT public.create_company_and_admin('${uid}', '${companyName}', 'Trial Admin', '0400111222')`)
+    );
+
+  const trialDays = (id) =>
+    value(db, `SELECT round(extract(epoch FROM (trial_ends_at - trial_started_at)) / 86400)::int FROM public.companies WHERE id = '${id}'`);
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    await db.query(`INSERT INTO auth.users (id, email) VALUES
+      ('${TERMS_ADMIN}', 'trial-terms@example.com'),
+      ('${EXTEND_ADMIN}', 'trial-extend@example.com'),
+      ('${CLAMP_HIGH_ADMIN}', 'trial-high@example.com'),
+      ('${CLAMP_LOW_ADMIN}', 'trial-low@example.com'),
+      ('${BILLING_ADMIN}', 'trial-billing@example.com'),
+      ('${ORPHAN_ADMIN}', 'trial-orphan@example.com')`);
+    await db.exec(NAME_SQL);
+    await db.exec(TRIAL_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds the terms column and the four trial columns', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'terms_accepted_at'"),
+      1
+    );
+    for (const column of ['trial_started_at', 'trial_ends_at', 'subscription_status', 'subscription_tier']) {
+      assert.strictEqual(
+        await value(db, `SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'companies' AND column_name = '${column}'`),
+        1,
+        `companies.${column} is missing`
+      );
+    }
+  });
+
+  test('indexes the trial clock only for trialing rows', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'companies_trial_ends_idx'"),
+      1
+    );
+    assert.match(
+      await value(db, "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'companies_trial_ends_idx'"),
+      /trialing/i
+    );
+  });
+
+  test('both functions refuse a session with no user', async () => {
+    await assert.rejects(() => db.query('SELECT public.record_terms_acceptance()'), /must be signed in/i);
+    await assert.rejects(() => db.query('SELECT public.start_cloud_trial()'), /must be signed in/i);
+  });
+
+  test('anon cannot execute either function', async () => {
+    await asRole(db, 'anon', null, async () => {
+      await assert.rejects(() => db.query('SELECT public.record_terms_acceptance()'), /permission denied/);
+      await assert.rejects(() => db.query('SELECT public.start_cloud_trial()'), /permission denied/);
+    });
+  });
+
+  test('records acceptance against the caller profile only', async () => {
+    companyId = await provision(TERMS_ADMIN, 'Trial Terms Co');
+    assert.match(companyId, /^[0-9a-f-]{36}$/);
+    assert.strictEqual(
+      await value(db, `SELECT terms_accepted_at IS NULL FROM public.profiles WHERE id = '${TERMS_ADMIN}'`),
+      true
+    );
+
+    const stamp = await asRole(db, 'authenticated', TERMS_ADMIN, () => value(db, 'SELECT public.record_terms_acceptance()'));
+    assert.ok(stamp, 'record_terms_acceptance() should return the acceptance timestamp');
+
+    assert.strictEqual(
+      await value(db, `SELECT terms_accepted_at IS NOT NULL FROM public.profiles WHERE id = '${TERMS_ADMIN}'`),
+      true
+    );
+    assert.strictEqual(
+      await value(db, `SELECT terms_accepted_at IS NULL FROM public.profiles WHERE id = '${ADMIN_A}'`),
+      true
+    );
+  });
+
+  test('a retry returns the original date instead of overwriting it', async () => {
+    // Comparing the second call against the first would pass even if both
+    // rewrote now(), so the sentinel date is what actually proves the no-op.
+    await db.query(`UPDATE public.profiles SET terms_accepted_at = timestamptz '2020-01-02 03:04:05+00' WHERE id = '${TERMS_ADMIN}'`);
+
+    assert.strictEqual(
+      await asRole(db, 'authenticated', TERMS_ADMIN, () =>
+        value(db, `SELECT public.record_terms_acceptance() = timestamptz '2020-01-02 03:04:05+00'`)
+      ),
+      true
+    );
+    assert.strictEqual(
+      await value(db, `SELECT terms_accepted_at = timestamptz '2020-01-02 03:04:05+00' FROM public.profiles WHERE id = '${TERMS_ADMIN}'`),
+      true
+    );
+  });
+
+  test('a signed-in user with no profile row gets nothing back, not an error', async () => {
+    assert.strictEqual(
+      await asRole(db, 'authenticated', ORPHAN_ADMIN, () => value(db, 'SELECT public.record_terms_acceptance()')),
+      null
+    );
+  });
+
+  test('starts a 14 day trial on the caller company', async () => {
+    const ends = await asRole(db, 'authenticated', TERMS_ADMIN, () => value(db, 'SELECT public.start_cloud_trial()'));
+    assert.ok(ends, 'start_cloud_trial() should return the trial end');
+
+    assert.strictEqual(await value(db, `SELECT subscription_status FROM public.companies WHERE id = '${companyId}'`), 'trialing');
+    assert.strictEqual(await value(db, `SELECT subscription_tier FROM public.companies WHERE id = '${companyId}'`), 'cloud');
+    assert.strictEqual(await value(db, `SELECT trial_started_at IS NOT NULL FROM public.companies WHERE id = '${companyId}'`), true);
+    assert.strictEqual(await trialDays(companyId), 14);
+
+    // A second call is a no-op that hands back the same end date.
+    assert.strictEqual(
+      await asRole(db, 'authenticated', TERMS_ADMIN, () =>
+        value(db, `SELECT public.start_cloud_trial() = trial_ends_at FROM public.companies WHERE id = '${companyId}'`)
+      ),
+      true
+    );
+  });
+
+  test('never restarts or extends a trial that has already begun', async () => {
+    const startedCompany = await provision(EXTEND_ADMIN, 'Trial Extend Co');
+    await db.query(`UPDATE public.companies
+                       SET trial_started_at = timestamptz '2020-01-01 00:00:00+00',
+                           trial_ends_at = timestamptz '2020-01-15 00:00:00+00',
+                           subscription_status = 'trialing'
+                     WHERE id = '${startedCompany}'`);
+
+    assert.strictEqual(
+      await asRole(db, 'authenticated', EXTEND_ADMIN, () =>
+        value(db, `SELECT public.start_cloud_trial(90) = timestamptz '2020-01-15 00:00:00+00'`)
+      ),
+      true
+    );
+    assert.strictEqual(
+      await value(db, `SELECT (trial_ends_at = timestamptz '2020-01-15 00:00:00+00') AND (trial_started_at = timestamptz '2020-01-01 00:00:00+00') FROM public.companies WHERE id = '${startedCompany}'`),
+      true
+    );
+  });
+
+  test('clamps the requested length between 1 and 90 days', async () => {
+    const highCompany = await provision(CLAMP_HIGH_ADMIN, 'Trial Clamp High Co');
+    const lowCompany = await provision(CLAMP_LOW_ADMIN, 'Trial Clamp Low Co');
+
+    await asRole(db, 'authenticated', CLAMP_HIGH_ADMIN, () => db.query('SELECT public.start_cloud_trial(500)'));
+    await asRole(db, 'authenticated', CLAMP_LOW_ADMIN, () => db.query('SELECT public.start_cloud_trial(0)'));
+
+    assert.strictEqual(await trialDays(highCompany), 90);
+    assert.strictEqual(await trialDays(lowCompany), 1);
+  });
+
+  test('refuses a trial when the account has no company', async () => {
+    await asRole(db, 'authenticated', ORPHAN_ADMIN, async () => {
+      await assert.rejects(() => db.query('SELECT public.start_cloud_trial()'), /No company is linked/i);
+    });
+  });
+
+  test('refuses a free trial once billing history exists', async () => {
+    const payingCompany = await provision(BILLING_ADMIN, 'Trial Billing Co');
+    await db.query(`UPDATE public.companies SET stripe_customer_id = 'cus_test_123' WHERE id = '${payingCompany}'`);
+
+    await asRole(db, 'authenticated', BILLING_ADMIN, async () => {
+      await assert.rejects(() => db.query('SELECT public.start_cloud_trial()'), /billing history/i);
+    });
+    assert.strictEqual(
+      await value(db, `SELECT trial_ends_at IS NULL FROM public.companies WHERE id = '${payingCompany}'`),
+      true
+    );
+  });
+
+  test('is re-runnable and leaves a started trial untouched', async () => {
+    const before = await value(db, `SELECT trial_ends_at::text FROM public.companies WHERE id = '${companyId}'`);
+
+    await db.exec(TRIAL_SQL);
+
+    assert.strictEqual(await value(db, "SELECT to_regprocedure('public.record_terms_acceptance()') IS NOT NULL"), true);
+    assert.strictEqual(await value(db, "SELECT to_regprocedure('public.start_cloud_trial(integer)') IS NOT NULL"), true);
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'companies_trial_ends_idx'"),
+      1
+    );
+    assert.strictEqual(await value(db, `SELECT trial_ends_at::text FROM public.companies WHERE id = '${companyId}'`), before);
+  });
+
+  // This harness deliberately does not run 025_subscription_billing.sql, so on its
+  // own it proves nothing about the live trigger that freezes the billing columns
+  // for a caller holding a real JWT. Install that guard verbatim - plus the four
+  // columns its body reads - and check the trial still lands. Without the
+  // relay.admin_provision opt-in inside start_cloud_trial() the second test below
+  // fails with trial_ends_at written and subscription_status left NULL, which is a
+  // brand new account being sent to the paywall with its trial already burned.
+  describe('037 under the 025 billing guard', () => {
+    const GUARD_ADMIN = '44444444-4444-4444-4444-444444444447';
+    let guardedCompanyId;
+
+    const BILLING_GUARD_SQL = `
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS subscription_seats integer;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS subscription_current_period_end timestamptz;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS subscription_updated_at timestamptz;
+
+CREATE OR REPLACE FUNCTION public.companies_billing_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NULL
+     OR current_setting('relay.admin_provision', true) = 'true' THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    NEW.subscription_tier               := NULL;
+    NEW.subscription_status             := NULL;
+    NEW.stripe_customer_id              := NULL;
+    NEW.stripe_subscription_id          := NULL;
+    NEW.subscription_seats              := NULL;
+    NEW.subscription_current_period_end := NULL;
+    NEW.subscription_updated_at         := NULL;
+    RETURN NEW;
+  END IF;
+
+  NEW.subscription_tier               := OLD.subscription_tier;
+  NEW.subscription_status             := OLD.subscription_status;
+  NEW.stripe_customer_id              := OLD.stripe_customer_id;
+  NEW.stripe_subscription_id          := OLD.stripe_subscription_id;
+  NEW.subscription_seats              := OLD.subscription_seats;
+  NEW.subscription_current_period_end := OLD.subscription_current_period_end;
+  NEW.subscription_updated_at         := OLD.subscription_updated_at;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS companies_billing_guard_biu ON public.companies;
+CREATE TRIGGER companies_billing_guard_biu
+  BEFORE INSERT OR UPDATE ON public.companies
+  FOR EACH ROW EXECUTE FUNCTION public.companies_billing_guard();
+`;
+
+    before(async () => {
+      await db.exec(BILLING_GUARD_SQL);
+      await db.query(`INSERT INTO auth.users (id, email) VALUES ('${GUARD_ADMIN}', 'trial-guard@example.com')`);
+      guardedCompanyId = await provision(GUARD_ADMIN, 'Trial Guard Co');
+    });
+
+    test('the guard really is installed and freezes a signed-in billing write', async () => {
+      await db.exec(`SELECT set_config('request.jwt.claim.sub', '${GUARD_ADMIN}', false);`);
+      try {
+        assert.strictEqual(
+          await value(db, `UPDATE public.companies SET subscription_status = 'active' WHERE id = '${guardedCompanyId}' RETURNING subscription_status`),
+          null
+        );
+      } finally {
+        await db.exec("SELECT set_config('request.jwt.claim.sub', '', false);");
+      }
+    });
+
+    test('start_cloud_trial still writes trialing through the guard', async () => {
+      const ends = await asRole(db, 'authenticated', GUARD_ADMIN, () =>
+        value(db, 'SELECT public.start_cloud_trial()')
+      );
+      assert.ok(ends, 'start_cloud_trial() should return the trial end');
+      assert.strictEqual(await value(db, `SELECT subscription_status FROM public.companies WHERE id = '${guardedCompanyId}'`), 'trialing');
+      assert.strictEqual(await value(db, `SELECT subscription_tier FROM public.companies WHERE id = '${guardedCompanyId}'`), 'cloud');
+      assert.strictEqual(await value(db, `SELECT trial_started_at IS NOT NULL FROM public.companies WHERE id = '${guardedCompanyId}'`), true);
+      assert.strictEqual(await trialDays(guardedCompanyId), 14);
+    });
+  });
+});

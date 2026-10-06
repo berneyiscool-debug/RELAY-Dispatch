@@ -22,6 +22,7 @@ import { showDrawer } from '../components/Drawer.js';
 import { renderDeputyAsksWidget } from '../components/DeputyAsksWidget.js';
 import { getHideSystemNotifications, onNotificationPrefChanged, adoptNotificationPref, withNotificationPrefs } from '../utils/notificationPrefs.js';
 import { filterSystemNotifications } from '../utils/notificationVisibility.js';
+import { bindChecklistStoreListeners, mountSetupChecklist } from '../components/SetupChecklist.js';
 import Sortable from 'sortablejs';
 
 function getHeaderActionsHtml() {
@@ -533,6 +534,14 @@ export async function renderDashboard(container) {
   applyTransform(viewport, world, guides);
   updateGlueAffordance(viewport);
   subscribeWidgetRefresh();
+
+  // The first-run checklist lives in the topbar's left slot, which is otherwise
+  // empty. Mounted after the markup exists so the slot is queryable.
+  const topbarLeft = container.querySelector('.dash-topbar-left');
+  if (topbarLeft) {
+    bindChecklistStoreListeners();
+    mountSetupChecklist(topbarLeft);
+  }
 }
 
 function enterEditMode(container, viewport, world, guides, data) {

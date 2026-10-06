@@ -5,6 +5,7 @@ import { supabase } from '../utils/supabase.js';
 import { todayLocalISO } from '../utils/dateUtils.js';
 import { prebuiltForms } from './prebuiltForms.js';
 import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
+import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
 
 const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
@@ -1395,6 +1396,11 @@ class DataStore {
             status: comp.subscription_status || null,
             seats: comp.subscription_seats ?? null,
             currentPeriodEnd: comp.subscription_current_period_end || null,
+            // Must be mapped here as well as in subscriptionFromRow(): this block is
+            // the one that hydrates at sign-in, and nothing else refetches it until
+            // the user opens the billing tab, so an omission here means the free
+            // trial never ages out of `trialActive()`.
+            trialEndsAt: comp.trial_ends_at || null,
             hasCustomer: !!comp.stripe_customer_id,
             // Complimentary "power user" grant (set only via Supabase). Non-null
             // = an always-active grant at that tier, overriding Stripe state.
@@ -2576,6 +2582,32 @@ class DataStore {
     return items.find(item => item.id === id) || null;
   }
 
+  // ── Read-only (cloud trial ended) ──────────────────────────────────────────
+  // Reads and navigation keep working; every write funnels through here so an
+  // expired trial behaves the same no matter which screen tried to save. Local
+  // accounts are always writable, and the check fails open (see isReadOnly).
+  //
+  // The toast is throttled by design: a single drag or autosave can fire dozens
+  // of writes in a second, so the persistent banner — not the toast — is the
+  // real affordance. One nudge, then silence.
+  _readOnlyBlocked(collection) {
+    if (!isReadOnly()) return false;
+    const now = Date.now();
+    if (now - (this._readOnlyNoticeAt || 0) > 8000) {
+      this._readOnlyNoticeAt = now;
+      try {
+        import('../components/Notifications.js')
+          .then(({ showToast }) => showToast(
+            readOnlyReason() || 'This account is read-only until you subscribe.',
+            'error',
+            { skipBell: true }))
+          .catch(() => {});
+      } catch (e) {}
+    }
+    console.warn(`Blocked write to ${collection}: cloud trial ended (read-only).`);
+    return true;
+  }
+
   // Surface a failed background write to the user instead of failing silently.
   // (A silent insert/update failure leaves the optimistic cache entry in place, so the
   // record looks saved until the next reload — the classic "it didn't save" symptom.)
@@ -2683,6 +2715,13 @@ class DataStore {
     if (this.companyId) {
       item.companyId = this.companyId;
     }
+
+    // Blocked here rather than at the top of the method: the identity above is
+    // already stamped, and callers read .id/.number straight off the returned
+    // item, so refusing earlier would hand back a record with neither. Nothing
+    // has been cached or sent yet at this point, so a read-only install still
+    // never shows a row that isn't saved.
+    if (this._readOnlyBlocked(collection)) return item;
 
     // 1. Update memory cache immediately for responsiveness (Optimistic UI)
     const items = [...(this.cache[collection] || [])];
@@ -2794,6 +2833,8 @@ class DataStore {
   }
 
   update(collection, id, updates) {
+    // Returns null like the not-found path below, which callers already handle.
+    if (this._readOnlyBlocked(collection)) return null;
     const items = [...(this.cache[collection] || [])];
     const index = items.findIndex(item => item.id === id);
     if (index === -1) return null;
@@ -2974,6 +3015,9 @@ class DataStore {
   }
 
   delete(collection, id) {
+    // Ahead of the cascade so children are left alone too.
+    if (this._readOnlyBlocked(collection)) return;
+
     // 0. Cascade-remove dependent child records BEFORE the parent leaves the cache
     this._cascadeDelete(collection, id);
 
@@ -3231,6 +3275,10 @@ class DataStore {
   }
 
   async saveSettings(settings) {
+    // Settings are company data too, so they freeze with the rest of the account.
+    // Nothing in the read-only path needs this: refreshSubscriptionFor writes the
+    // in-memory _subscription block directly, so the banner can still clear.
+    if (this._readOnlyBlocked('settings')) return;
     this.companySettings = settings;
     this.emit('settings', settings);
 
@@ -3352,6 +3400,7 @@ class DataStore {
   }
 
   async save(collection, items) {
+    if (this._readOnlyBlocked(collection)) return;
     const prev = this.cache[collection] || [];
     this.cache[collection] = items;
     this.emit(collection, items);
