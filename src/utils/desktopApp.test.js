@@ -7,6 +7,7 @@ const {
   INSTALLER_CACHE_TTL_MS,
   isDesktopBuild,
   pickWindowsInstaller,
+  pickNewestInstallerUrl,
   resolveInstallerUrl,
   resetDesktopInstallerCache,
   downloadInstaller,
@@ -30,6 +31,9 @@ const RELEASE = {
     },
   ],
 };
+
+// Mirrors v1.3.4, which is published with no assets at all.
+const RELEASE_WITHOUT_INSTALLER = { draft: false, prerelease: false, assets: [] };
 
 function location(value) {
   if (value === undefined) delete globalThis.location;
@@ -85,7 +89,7 @@ describe('pickWindowsInstaller', () => {
     );
   });
 
-  test('ignores drafts and pre-releases, matching releases/latest', () => {
+  test('ignores drafts and pre-releases, which installed builds never update from', () => {
     assert.strictEqual(pickWindowsInstaller({ ...RELEASE, draft: true }), null);
     assert.strictEqual(pickWindowsInstaller({ ...RELEASE, prerelease: true }), null);
   });
@@ -107,6 +111,39 @@ describe('pickWindowsInstaller', () => {
   });
 });
 
+describe('pickNewestInstallerUrl', () => {
+  test('returns the newest installer from a newest-first list', () => {
+    assert.strictEqual(
+      pickNewestInstallerUrl([RELEASE, { ...RELEASE, assets: [] }]),
+      'https://example.test/RELAY-Dispatch-Setup-1.4.0.exe',
+    );
+  });
+
+  test('skips a newer release that carries no installer', () => {
+    const older = {
+      draft: false,
+      prerelease: false,
+      assets: [
+        {
+          name: 'RELAY-Dispatch-Setup-1.2.3.exe',
+          state: 'uploaded',
+          browser_download_url: 'https://example.test/RELAY-Dispatch-Setup-1.2.3.exe',
+        },
+      ],
+    };
+    assert.strictEqual(
+      pickNewestInstallerUrl([RELEASE_WITHOUT_INSTALLER, older]),
+      'https://example.test/RELAY-Dispatch-Setup-1.2.3.exe',
+    );
+  });
+
+  test('returns null when no release carries an installer', () => {
+    assert.strictEqual(pickNewestInstallerUrl([RELEASE_WITHOUT_INSTALLER]), null);
+    assert.strictEqual(pickNewestInstallerUrl([]), null);
+    assert.strictEqual(pickNewestInstallerUrl(undefined), null);
+  });
+});
+
 describe('resolveInstallerUrl', () => {
   beforeEach(() => {
     resetDesktopInstallerCache();
@@ -118,17 +155,25 @@ describe('resolveInstallerUrl', () => {
     delete globalThis.localStorage;
   });
 
-  test('resolves the newest installer from the GitHub release', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => RELEASE });
+  test('resolves the newest installer from the GitHub releases list', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => [RELEASE] });
     const url = await resolveInstallerUrl({ fetchImpl });
     assert.strictEqual(url, 'https://example.test/RELAY-Dispatch-Setup-1.4.0.exe');
+  });
+
+  test('falls past a newer release that has no installer, as v1.3.4 does today', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => [RELEASE_WITHOUT_INSTALLER, RELEASE] });
+    assert.strictEqual(
+      await resolveInstallerUrl({ fetchImpl }),
+      'https://example.test/RELAY-Dispatch-Setup-1.4.0.exe',
+    );
   });
 
   test('does not ask GitHub twice for the same installer', async () => {
     let calls = 0;
     const fetchImpl = async () => {
       calls += 1;
-      return { ok: true, json: async () => RELEASE };
+      return { ok: true, json: async () => [RELEASE] };
     };
     const now = 1_000;
     await resolveInstallerUrl({ fetchImpl, now });
@@ -138,7 +183,7 @@ describe('resolveInstallerUrl', () => {
 
   test('persists the resolved URL for the next visit', async () => {
     globalThis.localStorage = storageStub();
-    const fetchImpl = async () => ({ ok: true, json: async () => RELEASE });
+    const fetchImpl = async () => ({ ok: true, json: async () => [RELEASE] });
     await resolveInstallerUrl({ fetchImpl, now: 1_000 });
     assert.deepStrictEqual(
       JSON.parse(globalThis.localStorage.getItem(INSTALLER_CACHE_STORAGE_KEY)),
@@ -155,7 +200,7 @@ describe('resolveInstallerUrl', () => {
     let calls = 0;
     const fetchImpl = async () => {
       calls += 1;
-      return { ok: true, json: async () => RELEASE };
+      return { ok: true, json: async () => [RELEASE] };
     };
     assert.strictEqual(await resolveInstallerUrl({ fetchImpl }), 'https://example.test/cached.exe');
     assert.strictEqual(calls, 0);
@@ -165,7 +210,7 @@ describe('resolveInstallerUrl', () => {
     let calls = 0;
     const fetchImpl = async () => {
       calls += 1;
-      return { ok: true, json: async () => RELEASE };
+      return { ok: true, json: async () => [RELEASE] };
     };
     await resolveInstallerUrl({ fetchImpl, now: 1_000 });
     await resolveInstallerUrl({ fetchImpl, now: 1_000 + INSTALLER_CACHE_TTL_MS + 1 });
@@ -173,7 +218,7 @@ describe('resolveInstallerUrl', () => {
   });
 
   test('returns null so the caller can fall back to the releases page', async () => {
-    const noAssets = async () => ({ ok: true, json: async () => ({ ...RELEASE, assets: [] }) });
+    const noAssets = async () => ({ ok: true, json: async () => [RELEASE_WITHOUT_INSTALLER] });
     const notFound = async () => ({ ok: false, json: async () => ({}) });
     const offline = async () => {
       throw new Error('offline');
@@ -257,7 +302,7 @@ describe('bindInstallerDownload', () => {
   });
 
   test('resolves the newest installer and restores the label when done', async () => {
-    globalThis.fetch = async () => ({ ok: true, json: async () => RELEASE });
+    globalThis.fetch = async () => ({ ok: true, json: async () => [RELEASE] });
     const created = [];
     const originalDocument = globalThis.document;
     globalThis.document = {

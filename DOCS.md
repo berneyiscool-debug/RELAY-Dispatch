@@ -139,10 +139,14 @@ The website advertises the download too — a **Download for Windows** button on
 the launch screen and in **Profile → Desktop App**. Both resolve the newest
 installer at click time from the GitHub releases API
 (`src/utils/desktopApp.js`), because release assets carry the version in their
-filename and there is no stable `releases/latest/download/...` URL. If the API
-call fails, is rate-limited, or the newest release carries no `.exe`, the button
-falls back to the releases page. The button is hidden inside the packaged app
-(anything loading from `file://`), and resolved URLs are cached in
+filename and there is no stable `releases/latest/download/...` URL. The lookup
+reads the *releases list* rather than `releases/latest`, and takes the newest
+release that actually has an `.exe` attached: `latest` reports the newest
+published release even when it carries no assets (v1.3.4 is in exactly that
+state), which would leave nothing to download while an older installer sat
+right there. If the API call fails or no release has an installer at all, the
+button falls back to the releases page. The button is hidden inside the packaged
+app (anything loading from `file://`), and resolved URLs are cached in
 `localStorage` for an hour to stay well inside the 60-requests-per-hour
 anonymous API limit. Because the lookup is at click time, shipping a new release
 requires no website change.

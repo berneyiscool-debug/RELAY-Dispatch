@@ -4,9 +4,9 @@
 // The web app links to the Windows installer published by the release workflow
 // (see .github/workflows/desktop-release.yml). electron-builder names the asset
 // with the version baked in (`RELAY-Dispatch-Setup-1.4.0.exe`), so there is no
-// permanent "download the newest one" URL to hard-code — the newest release has
-// to be looked up. If that lookup fails the caller falls back to the releases
-// page, which always works.
+// permanent "download the newest one" URL to hard-code — the newest release that
+// actually carries an installer has to be looked up. If that lookup fails the
+// caller falls back to the releases page, which always works.
 
 /** Public GitHub repo the installer is published to (mirrors build.publish in package.json). */
 export const DESKTOP_REPO = 'berneyiscool-debug/RELAY-Dispatch';
@@ -14,7 +14,10 @@ export const DESKTOP_REPO = 'berneyiscool-debug/RELAY-Dispatch';
 /** Human-readable releases page — the always-valid fallback. */
 export const DESKTOP_RELEASES_URL = `https://github.com/${DESKTOP_REPO}/releases`;
 
-const LATEST_RELEASE_API = `https://api.github.com/repos/${DESKTOP_REPO}/releases/latest`;
+// The list endpoint, not /releases/latest: `latest` reports whatever the newest
+// published release is even when it carries no installer (v1.3.4 is live with
+// zero assets), whereas the list lets us walk down to one that does.
+const RELEASES_API = `https://api.github.com/repos/${DESKTOP_REPO}/releases?per_page=20`;
 
 export const INSTALLER_CACHE_STORAGE_KEY = 'relay_desktop_installer_url';
 
@@ -78,8 +81,8 @@ export function isDesktopBuild() {
 
 /**
  * The Windows installer attached to a GitHub release, or null if it carries
- * none. Drafts and pre-releases are ignored, mirroring `releases/latest`, which
- * is what installed builds update from.
+ * none. Drafts and pre-releases are ignored, matching what installed builds
+ * update from.
  */
 export function pickWindowsInstaller(release) {
   if (!release || release.draft || release.prerelease) return null;
@@ -90,6 +93,24 @@ export function pickWindowsInstaller(release) {
     return /\.exe$/i.test(name) && (!state || state === 'uploaded');
   });
   return installer?.browser_download_url || null;
+}
+
+/**
+ * The installer on the newest release that actually carries one, or null when
+ * none does.
+ *
+ * The releases list is ordered newest-first, so the first hit wins. Releases
+ * without an installer are skipped rather than treated as the answer — a release
+ * can be published before its assets finish uploading, or with no assets at all,
+ * and in that window the previous installer is still the right download.
+ */
+export function pickNewestInstallerUrl(releases) {
+  if (!Array.isArray(releases)) return null;
+  for (const release of releases) {
+    const url = pickWindowsInstaller(release);
+    if (url) return url;
+  }
+  return null;
 }
 
 /**
@@ -107,12 +128,12 @@ export async function resolveInstallerUrl(options = {}) {
   if (!request) return null;
 
   try {
-    const response = await request(LATEST_RELEASE_API, {
+    const response = await request(RELEASES_API, {
       headers: { Accept: 'application/vnd.github+json' },
     });
     if (!response?.ok) return null;
 
-    const url = pickWindowsInstaller(await response.json());
+    const url = pickNewestInstallerUrl(await response.json());
     if (!url) return null;
 
     writeCache(url, now);
