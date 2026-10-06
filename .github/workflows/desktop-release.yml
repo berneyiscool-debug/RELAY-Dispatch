@@ -10,6 +10,15 @@ name: Release Desktop App
 #
 # A manual run only builds the installer (it uploads the workflow artifact and
 # publishes nothing), which is the way to smoke-test the pipeline.
+#
+# The release is created up front as a draft, before electron-builder runs.
+# electron-builder uploads the installer and latest.yml as two concurrent tasks
+# and each one calls getOrCreateRelease, so when no release exists yet both of
+# them create one and the assets end up split across two releases that share the
+# tag (run 37404993530 did exactly that, and /releases/latest then resolved to
+# the release holding only the .blockmap, which silently breaks auto-update for
+# every installed build). A draft is invisible to /releases/latest, so creating
+# it first is what makes getOrCreateRelease idempotent.
 on:
   push:
     tags: ['v*']
@@ -63,6 +72,37 @@ jobs:
 
       - run: npm ci
 
+      # See the note at the top of the file: this exists to stop the concurrent
+      # upload tasks inside electron-builder from each creating their own
+      # release. electron-builder looks the release up by listing /releases (not
+      # /releases/tags, which would miss drafts) and reuses anything it finds
+      # with a matching tag, so a draft created here is picked up by every task.
+      # One important consequence: a release found this way keeps its draft
+      # flag, so the publish step below is what actually publishes it.
+      - name: Pre-create draft release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          existing="$(gh api "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            -q "[.[] | select(.tag_name == \"$tag\")] | length")"
+          if [ "$existing" -gt 1 ]; then
+            echo "::error::$existing releases already share the tag $tag. /releases/latest is ambiguous; delete the extra ones before re-running."
+            exit 1
+          fi
+          if [ "$existing" -eq 1 ]; then
+            echo "Release $tag already exists; reusing it."
+          else
+            gh release create "$tag" \
+              --draft \
+              --verify-tag \
+              --title "${tag#v}" \
+              --notes "RELAY Dispatch desktop build. Already-installed copies update themselves automatically."
+          fi
+
       # Vite inlines VITE_* at build time, so the installer has to be built with
       # the same Supabase + Maps keys as the web deploy or it ships with cloud
       # sign-in and maps dead.
@@ -82,3 +122,37 @@ jobs:
             dist-electron/*.exe
             dist-electron/latest.yml
           if-no-files-found: error
+
+      # Publish whatever the build produced, then refuse to go green on a
+      # release electron-updater cannot read. electron-builder reuses a release
+      # it finds exactly as it is, draft flag included, so this step — not the
+      # build — is what makes the release public. A release can therefore never
+      # end up stranded as a draft or missing its installer.
+      - name: Publish release and verify its assets
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+
+          duplicates="$(gh api "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            -q "[.[] | select(.tag_name == \"$tag\")] | length")"
+          if [ "$duplicates" != "1" ]; then
+            echo "::error::Expected exactly one release for $tag but found $duplicates. /releases/latest is ambiguous and auto-update will break; delete the extras."
+            exit 1
+          fi
+
+          gh release edit "$tag" --draft=false --latest
+
+          assets="$(gh release view "$tag" --json assets -q '.assets[].name')"
+          echo "$assets"
+          for want in "latest.yml" "RELAY-Dispatch-Setup-$version.exe"; do
+            if ! grep -Fxq "$want" <<<"$assets"; then
+              echo "::error::Release $tag is missing $want."
+              exit 1
+            fi
+          done
+          echo "Published $tag with the installer and latest.yml."
