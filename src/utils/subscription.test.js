@@ -247,6 +247,26 @@ describe('reading subscription state off a companies row', () => {
     assert.strictEqual(subscriptionActiveFromRow({}), false);
     assert.strictEqual(subscriptionActiveFromRow({ subscription_status: 'canceled', comp_tier: 'cloud' }), true);
   });
+
+  test('treats an expired no-card trial as not yet paid', () => {
+    const past = new Date(Date.now() - 60000).toISOString();
+    const future = new Date(Date.now() + 60000).toISOString();
+    assert.strictEqual(
+      subscriptionActiveFromRow({ subscription_status: 'trialing', trial_ends_at: past }),
+      false,
+    );
+    assert.strictEqual(
+      subscriptionActiveFromRow({ subscription_status: 'trialing', trial_ends_at: future }),
+      true,
+    );
+    // Legacy trialing rows with no end date still count as running.
+    assert.strictEqual(subscriptionActiveFromRow({ subscription_status: 'trialing' }), true);
+    // A complimentary grant outlives the trial clock regardless of the date.
+    assert.strictEqual(
+      subscriptionActiveFromRow({ subscription_status: 'trialing', trial_ends_at: past, comp_tier: 'cloud' }),
+      true,
+    );
+  });
 });
 
 describe('starting checkout during onboarding', () => {

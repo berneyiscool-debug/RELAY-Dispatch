@@ -93,34 +93,35 @@ export function renderTrialBanner() {
   const state = trialBannerState();
   if (!state) return '';
 
-  const palette = state.tone === 'danger'
-    ? { bg: 'var(--color-danger-bg)', fg: 'var(--color-danger)', border: 'var(--color-danger)' }
-    : state.tone === 'warning'
-      ? { bg: 'var(--color-warning-bg)', fg: 'var(--color-warning)', border: 'var(--color-warning)' }
-      : { bg: 'var(--color-info-bg)', fg: 'var(--color-info)', border: 'var(--color-info)' };
-
+  // The banner reuses the `.cloud-prompt` popup surface (fixed bottom-right card,
+  // hairline border, soft shadow) so it reads the same size and sits in the same
+  // spot as the "create a Cloud account" prompt. Only the icon chip tone differs:
+  // danger for the expired read-only state, warning/info for the countdown (see
+  // `.trial-banner-icon--*` in components.css).
   return `
-    <div id="${BANNER_ID}" role="status" style="
-      display:flex; align-items:flex-start; gap:12px;
-      margin:0 24px 12px; padding:12px 16px;
-      background:${palette.bg}; border:1px solid ${palette.border}; border-radius:10px;
-    ">
-      <span class="material-icons-outlined" style="font-size:20px; color:${palette.fg}; flex:0 0 auto;">${state.icon}</span>
-      <div style="flex:1 1 auto; min-width:0;">
-        <div style="font-weight:600; color:${palette.fg}; margin-bottom:2px;">${escapeHTML(state.title)}</div>
-        <div style="color:var(--text-secondary); font-size:13px; line-height:1.45;">${escapeHTML(state.body)}</div>
+    <div id="${BANNER_ID}" class="cloud-prompt trial-banner" role="status">
+      <span class="material-icons-outlined cloud-prompt-icon trial-banner-icon trial-banner-icon--${state.tone}" aria-hidden="true">${state.icon}</span>
+      <div class="cloud-prompt-body">
+        <div class="cloud-prompt-title">${escapeHTML(state.title)}</div>
+        <div class="cloud-prompt-text">${escapeHTML(state.body)}</div>
+        <div class="cloud-prompt-actions">
+          ${state.showExport ? '<button type="button" id="trial-banner-export" class="btn btn-secondary btn-sm">Export data</button>' : ''}
+          <button type="button" id="trial-banner-subscribe" class="btn btn-primary btn-sm">Subscribe</button>
+        </div>
       </div>
-      <div style="display:flex; gap:8px; align-items:center; flex:0 0 auto;">
-        ${state.showExport ? '<button type="button" id="trial-banner-export" class="btn btn-secondary btn-sm">Export data</button>' : ''}
-        <button type="button" id="trial-banner-subscribe" class="btn btn-primary btn-sm">Subscribe</button>
-        ${state.dismissible ? '<button type="button" id="trial-banner-dismiss" class="material-icons-outlined" title="Hide for today" aria-label="Hide for today" style="background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:20px; padding:0 2px;">close</button>' : ''}
-      </div>
+      ${state.dismissible ? '<button type="button" id="trial-banner-dismiss" class="cloud-prompt-close" title="Hide for today" aria-label="Hide for today"><span class="material-icons-outlined" aria-hidden="true">close</span></button>' : ''}
     </div>
   `;
 }
 
 // Mounted next to the page container rather than inside it: pages replace their
 // own innerHTML on every render, which would delete the banner.
+//
+// The banner is `position: fixed`, so navigation never needs to move it. The
+// rendered HTML is cached so a route change doesn't re-insert an identical
+// element — that would replay the `.cloud-prompt` entry animation on every page.
+let lastRenderedHtml = '';
+
 export function mountTrialBanner(pageContainer) {
   if (!pageContainer || !pageContainer.parentNode) return;
   const existing = document.getElementById(BANNER_ID);
@@ -128,7 +129,12 @@ export function mountTrialBanner(pageContainer) {
 
   if (!html) {
     if (existing) existing.remove();
+    lastRenderedHtml = '';
     return;
+  }
+
+  if (existing && html === lastRenderedHtml) {
+    return; // unchanged — keep the element and its listeners as they are
   }
 
   if (existing) {
@@ -136,6 +142,7 @@ export function mountTrialBanner(pageContainer) {
   } else {
     pageContainer.insertAdjacentHTML('beforebegin', html);
   }
+  lastRenderedHtml = html;
 
   document.getElementById('trial-banner-subscribe')?.addEventListener('click', () => {
     window.__relay?.router?.navigate('/subscribe');
