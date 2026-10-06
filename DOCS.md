@@ -135,6 +135,18 @@ Updates…**; when an update is ready the app offers *Restart now* or installs i
 on the next quit. Updates reuse the same Electron user-data directory, so a
 user's local data carries across.
 
+The website advertises the download too — a **Download for Windows** button on
+the launch screen and in **Profile → Desktop App**. Both resolve the newest
+installer at click time from the GitHub releases API
+(`src/utils/desktopApp.js`), because release assets carry the version in their
+filename and there is no stable `releases/latest/download/...` URL. If the API
+call fails, is rate-limited, or the newest release carries no `.exe`, the button
+falls back to the releases page. The button is hidden inside the packaged app
+(anything loading from `file://`), and resolved URLs are cached in
+`localStorage` for an hour to stay well inside the 60-requests-per-hour
+anonymous API limit. Because the lookup is at click time, shipping a new release
+requires no website change.
+
 The Electron binary is not downloaded by `npm install`: `electron .` fetches it
 the first time it runs and `electron-builder` fetches it while packaging, so the
 first build needs network access.

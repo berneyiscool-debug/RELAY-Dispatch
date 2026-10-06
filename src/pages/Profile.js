@@ -9,6 +9,7 @@ import { escapeHTML } from '../utils/security.js';
 import { supabase } from '../utils/supabase.js';
 import { FLAGS } from '../utils/flags.js';
 import { setSessionUser } from './auth/session.js';
+import { DESKTOP_RELEASES_URL, bindInstallerDownload, isDesktopBuild } from '../utils/desktopApp.js';
 
 const PRESET_AVATAR_COLORS = [
   '#FF5C00', // Orange
@@ -322,6 +323,25 @@ export function renderProfile(container) {
           </div>
         </div>
 
+        ${isDesktopBuild() ? '' : `
+        <!-- Section 5: Desktop App -->
+        <div class="profile-section">
+          <div class="profile-section-header">
+            <h2 class="profile-section-title">Desktop App</h2>
+            <p class="profile-section-desc">Install RELAY Dispatch as a Windows app instead of using it in a browser tab.</p>
+          </div>
+
+          <div style="max-width:800px;">
+            <a href="${DESKTOP_RELEASES_URL}" id="link-download-desktop" rel="noopener" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;">
+              <span class="material-icons-outlined" style="font-size:16px;">desktop_windows</span>
+              <span id="link-download-desktop-label">Download for Windows</span>
+            </a>
+            <p style="font-size:10.5px; margin-top:6px; color: var(--text-tertiary);">
+              Always the newest release. The installer is not code-signed, so Windows may warn about an unknown publisher — choose <strong>More info</strong>, then <strong>Run anyway</strong>.
+            </p>
+          </div>
+        </div>`}
+
       </div>
     `;
 
@@ -329,6 +349,12 @@ export function renderProfile(container) {
   };
 
   const attachListeners = () => {
+    // Installer URL carries the version, so it is resolved on click.
+    bindInstallerDownload(
+      container.querySelector('#link-download-desktop'),
+      container.querySelector('#link-download-desktop-label')
+    );
+
     // Image Upload Click Trigger and Change Handler
     const avatarDiv = container.querySelector('#profile-avatar');
     const fileInput = container.querySelector('#profile-avatar-input');
