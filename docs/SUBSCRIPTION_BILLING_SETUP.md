@@ -98,6 +98,40 @@ supabase functions deploy relay-billing-sync-seats
 supabase functions deploy relay-stripe-webhook     # redeploy — now handles subscriptions
 ```
 
+### Stale `stripe_customer_id` self-heals
+
+A `cus_...` id is only meaningful inside the Stripe account *and* mode that minted
+it: a customer created with `sk_test_...` does not exist for `sk_live_...`, and a
+customer deleted in the dashboard is gone in every mode. `companies.stripe_customer_id`
+is frozen against client writes, but Stripe can still stop recognising the id — and
+both functions used to trust it unconditionally, so `relay-billing-checkout` passed
+`customer=cus_...` to `checkout/sessions` and Stripe answered
+`400 No such customer: 'cus_...'`. That raw text surfaced on `#/subscribe`, and
+because the stored id was never re-checked, the dead end was permanent.
+
+Both functions now recognise that specific failure (`No such customer` /
+`resource_missing`):
+
+- **`relay-billing-checkout`** mints a new customer, overwrites the stale id on the
+  company row, and retries the Checkout Session **once**. A customer is created only
+  when the session call is rejected, so a healthy id is never churned. If the retry
+  fails too, the caller gets a `502` with `code: "stripe_customer_invalid"` instead of
+  the raw Stripe message.
+- **`relay-billing-portal`** cannot self-heal — a portal session needs billing history
+  that a brand-new customer does not have — so it clears the stale id
+  (`stripe_customer_id = null`, which lets the next checkout mint a fresh one) and
+  returns a `409` telling the admin to pick a plan.
+
+Clearing the id is what re-opens the normal path, because `relay-billing-checkout`
+creates a customer whenever the column is empty. Neither branch grants access: it only
+replaces a Stripe reference Stripe has already rejected.
+
+To unblock one company without redeploying, clear the column directly:
+
+```sql
+update companies set stripe_customer_id = null where stripe_customer_id = 'cus_...';
+```
+
 ## 5. Stripe webhook — subscribe the events
 
 The existing `relay-stripe-webhook` endpoint must now also receive:
@@ -239,5 +273,10 @@ Gating (src/utils/subscription.js):
   account they just created, and neither failure can hand out access on its own —
   the trial only sets `subscription_status = 'trialing'`, which is a status the
   webhook can overwrite once a real subscription exists.
+- The stale-customer self-heal grants nothing and deletes nothing: it replaces a
+  `stripe_customer_id` that Stripe has already rejected with one Stripe just minted.
+  It operates on the caller's own company row, resolved from the JWT and never from
+  the request body, and the retry is a single extra attempt rather than a loop, so a
+  persistently failing Stripe call cannot be turned into a request flood.
 - No Stripe SDK — every call is a direct REST request, matching the existing
   functions, so nothing new is bundled.

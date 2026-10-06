@@ -8,6 +8,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // where they manage their RELAY subscription: update card, change tier, see
 // invoices, cancel. Auth: caller must be an `admin`. No SDK (REST, form-encoded).
 //
+// A portal session needs a customer Stripe can still see, so if the stored
+// stripe_customer_id belongs to a different Stripe account/mode the id is
+// cleared (letting relay-billing-checkout mint a fresh one) and the caller is
+// told to pick a plan instead of getting a raw Stripe error.
+//
 // Request body: { "returnUrl"? }
 // Response:      { "url": "https://billing.stripe.com/..." }
 //
@@ -23,6 +28,14 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+// A stored `stripe_customer_id` is only meaningful inside the Stripe account AND
+// mode that minted it: a cus_... created with sk_test_... does not exist for
+// sk_live_..., and vice versa.
+function isStaleCustomerError(err: unknown) {
+  const msg = String((err as Error)?.message ?? err)
+  return msg.includes('No such customer') || msg.includes('resource_missing')
 }
 
 serve(async (req) => {
@@ -71,7 +84,13 @@ serve(async (req) => {
     })
     const data = await res.json()
     if (!res.ok) {
-      throw new Error(`Stripe HTTP ${res.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`)
+      const message = `Stripe HTTP ${res.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`
+      if (isStaleCustomerError(message)) {
+        console.warn(`relay-billing-portal: customer ${company.stripe_customer_id} not in this Stripe account; clearing`)
+        await admin.from('companies').update({ stripe_customer_id: null }).eq('id', profile.company_id)
+        return json({ error: 'Your billing details need to be set up again. Choose a plan to restart billing.', code: 'stripe_customer_invalid' }, 409)
+      }
+      throw new Error(message)
     }
 
     return json({ url: data.url })

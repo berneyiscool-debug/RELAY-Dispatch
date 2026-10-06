@@ -11,6 +11,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 //
 // Auth: caller must be an `admin` of the company (JWT verified server-side).
 //
+// Reuses companies.stripe_customer_id when one is stored, and self-heals if that
+// id is not visible to the current STRIPE_SECRET_KEY (see isStaleCustomerError).
+//
 // Request body: { "tier": "cloud" | "cloud_plus", "successUrl"?, "cancelUrl"? }
 // Response:      { "url": "https://checkout.stripe.com/..." }
 //
@@ -53,6 +56,32 @@ async function stripe(path: string, key: string, params?: Record<string, string>
     throw new Error(`Stripe HTTP ${res.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`)
   }
   return data
+}
+
+// A stored `stripe_customer_id` is only meaningful inside the Stripe account AND
+// mode that minted it: a cus_... created with sk_test_... does not exist for
+// sk_live_..., and vice versa. Switching STRIPE_SECRET_KEY between test and live
+// (or between accounts) therefore leaves every company row holding a customer
+// Stripe can no longer see, and checkout dead-ends on "No such customer".
+function isStaleCustomerError(err: unknown) {
+  const msg = String((err as Error)?.message ?? err)
+  return msg.includes('No such customer') || msg.includes('resource_missing')
+}
+
+// Creates a Stripe customer in the account the current key belongs to, and
+// persists the new id over any previous (now invalid) one.
+async function createCustomer(
+  admin: ReturnType<typeof createClient>,
+  stripeKey: string,
+  company: { id: string; name?: string | null; email?: string | null },
+) {
+  const customer = await stripe('customers', stripeKey, {
+    name: company.name || 'RELAY tenant',
+    ...(company.email ? { email: String(company.email) } : {}),
+    'metadata[company_id]': String(company.id),
+  })
+  await admin.from('companies').update({ stripe_customer_id: customer.id }).eq('id', company.id)
+  return customer.id as string
 }
 
 serve(async (req) => {
@@ -113,13 +142,7 @@ serve(async (req) => {
 
     let customerId = company.stripe_customer_id as string | null
     if (!customerId) {
-      const customer = await stripe('customers', stripeKey, {
-        name: company.name || 'RELAY tenant',
-        ...(company.email ? { email: String(company.email) } : {}),
-        'metadata[company_id]': String(company.id),
-      })
-      customerId = customer.id
-      await admin.from('companies').update({ stripe_customer_id: customerId }).eq('id', company.id)
+      customerId = await createCustomer(admin, stripeKey, company)
     }
 
     // 4. Seat quantity = current active (non-deactivated) profiles.
@@ -128,9 +151,9 @@ serve(async (req) => {
 
     // 5. Create the subscription-mode Checkout Session.
     const origin = req.headers.get('origin') || 'https://relay.app'
-    const session = await stripe('checkout/sessions', stripeKey, {
+    const newSession = (customer: string) => stripe('checkout/sessions', stripeKey, {
       mode: 'subscription',
-      customer: String(customerId),
+      customer,
       'line_items[0][price]': price,
       'line_items[0][quantity]': String(seats),
       // Let admins add/remove seats from the Checkout page too; webhook reconciles.
@@ -146,9 +169,22 @@ serve(async (req) => {
       cancel_url: cancelUrl || `${origin}/#/settings?billing=cancelled`,
     })
 
+    let session
+    try {
+      session = await newSession(customerId)
+    } catch (err) {
+      if (!isStaleCustomerError(err)) throw err
+      console.warn(`relay-billing-checkout: customer ${customerId} not in this Stripe account; recreating`)
+      customerId = await createCustomer(admin, stripeKey, company)
+      session = await newSession(customerId)
+    }
+
     return json({ url: session.url })
   } catch (err) {
     console.error('relay-billing-checkout error:', err)
+    if (isStaleCustomerError(err)) {
+      return json({ error: 'We could not reach Stripe for this account. Please try again in a moment.', code: 'stripe_customer_invalid' }, 502)
+    }
     return json({ error: String(err?.message || err) }, 500)
   }
 })
