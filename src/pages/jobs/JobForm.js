@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { showModal } from '../../components/Modal.js';
 import { escapeHTML } from '../../utils/security.js';
+import DOMPurify from 'dompurify';
 import { showConfirm } from '../../utils/confirmDialog.js';
 import { todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
 
@@ -391,7 +392,7 @@ export function renderJobForm(container, params) {
                 <div class="sep"></div>
                 <button type="button" id="editor-link-btn" title="Insert Link">&#128279; Link</button>
               </div>
-              <div id="job-description-editor" contenteditable="true" spellcheck="true">${job.description || job.notes || ''}</div>
+              <div id="job-description-editor" contenteditable="true" spellcheck="true">${DOMPurify.sanitize(job.description || job.notes || '')}</div>
             </div>
 
           </div>
@@ -525,7 +526,7 @@ export function renderJobForm(container, params) {
       const formData = Object.fromEntries(new FormData(form));
       Object.assign(jobFormDraft, formData);
       const editor = container.querySelector('#job-description-editor');
-      if (editor) jobFormDraft.description = editor.innerHTML;
+      if (editor) jobFormDraft.description = DOMPurify.sanitize(editor.innerHTML);
     }
   }
 
@@ -695,7 +696,7 @@ export function renderJobForm(container, params) {
         const t = techs[Math.floor(Math.random() * techs.length)];
         const mins = Math.floor(Math.random() * 15) + 5;
         const techName = t.name || `${t.firstName || ''} ${t.lastName || ''}`.trim();
-        dispatchReason.innerHTML = `Based on current GPS location, <strong>${techName}</strong> is the most suitable technician (approx. ${mins} mins away).`;
+        dispatchReason.innerHTML = `Based on current GPS location, <strong>${escapeHTML(techName)}</strong> is the most suitable technician (approx. ${mins} mins away).`;
       } else {
         dispatchReason.innerHTML = 'No internal technicians available for dispatch.';
       }
@@ -1609,7 +1610,7 @@ export function renderJobForm(container, params) {
     if (data.costCenterId === '') data.costCenterId = null;
 
     data.tags = selectedTags;
-    data.description = editor.innerHTML;
+    data.description = DOMPurify.sanitize(editor.innerHTML);
     data.tasks = jobTasks;
     data.phases = jobTasks;
     data.tasks.forEach(t => { 

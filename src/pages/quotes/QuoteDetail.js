@@ -105,7 +105,7 @@ export function renderQuoteDetail(container, params) {
   function render() {
     container.innerHTML = `
       ${renderDetailHeader({
-        title: isTemplate ? (isNew ? 'New Quote Template' : escapeHTML(quote.name)) : (`${isNew ? 'New Quote' : quote.number} ${quote.version > 1 ? `<span class="badge badge-neutral">v${quote.version}</span>` : ''}`),
+        title: isTemplate ? (isNew ? 'New Quote Template' : escapeHTML(quote.name)) : (`${isNew ? 'New Quote' : escapeHTML(quote.number)} ${quote.version > 1 ? `<span class="badge badge-neutral">v${quote.version}</span>` : ''}`),
         icon: 'request_quote',
         iconBgColor: 'var(--color-warning-bg)',
         iconTextColor: 'var(--color-warning)',
@@ -164,7 +164,7 @@ export function renderQuoteDetail(container, params) {
               <label class="form-label">Labour Rate</label>
               <select class="form-select" id="quote-labor-profile">
                 <option value="">-- Custom / Manual Rates --</option>
-                ${settings.laborRates.map(r => `<option value="${r.id}" ${quote.laborProfileId === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
+                ${settings.laborRates.map(r => `<option value="${r.id}" ${quote.laborProfileId === r.id ? 'selected' : ''}>${escapeHTML(r.name)} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
               </select>
             </div>
           </div>
@@ -185,7 +185,7 @@ export function renderQuoteDetail(container, params) {
             </div>
             <div class="form-group">
               <label class="form-label">Title</label>
-              <input class="form-input" id="quote-title" value="${quote.title || ''}" placeholder="Quote description..." ${quote.status === 'Archived' ? 'disabled' : ''} />
+              <input class="form-input" id="quote-title" value="${escapeHTML(quote.title || '')}" placeholder="Quote description..." ${quote.status === 'Archived' ? 'disabled' : ''} />
             </div>
           </div>
           <div class="form-row">
@@ -199,7 +199,7 @@ export function renderQuoteDetail(container, params) {
               <label class="form-label">Labour Rate</label>
               <select class="form-select" id="quote-labor-profile" ${quote.status === 'Archived' ? 'disabled' : ''}>
                 <option value="">-- Custom / Manual Rates --</option>
-                ${settings.laborRates.map(r => `<option value="${r.id}" ${quote.laborProfileId === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
+                ${settings.laborRates.map(r => `<option value="${r.id}" ${quote.laborProfileId === r.id ? 'selected' : ''}>${escapeHTML(r.name)} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -212,7 +212,7 @@ export function renderQuoteDetail(container, params) {
       `}
 
       <datalist id="stock-items-list">
-        ${stockItems.map(s => `<option value="${s.name}"></option>`).join('')}
+        ${stockItems.map(s => `<option value="${escapeHTML(s.name)}"></option>`).join('')}
       </datalist>
 
       <!-- Sections -->
@@ -336,7 +336,7 @@ export function renderQuoteDetail(container, params) {
     return `
       <div class="card" style="margin-bottom:var(--space-lg)" data-section-index="${sIdx}">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <input class="form-input section-name-input" value="${section.name || ''}" placeholder="Phase/Section Name" style="font-size:1.1rem; font-weight:600; background:transparent; border:none; border-bottom:1px solid var(--border-color); width:300px" ${isArchived ? 'disabled' : ''} />
+          <input class="form-input section-name-input" value="${escapeHTML(section.name || '')}" placeholder="Phase/Section Name" style="font-size:1.1rem; font-weight:600; background:transparent; border:none; border-bottom:1px solid var(--border-color); width:300px" ${isArchived ? 'disabled' : ''} />
           <div>
             <span class="badge badge-neutral" style="margin-right:12px">Phase Subtotal: $${(section.subtotal || 0).toFixed(2)}</span>
             ${!isArchived ? `
@@ -371,7 +371,7 @@ export function renderQuoteDetail(container, params) {
   function lineItemRow(item, sIdx, index, isArchived) {
     return `
       <tr data-sidx="${sIdx}" data-index="${index}">
-        <td><input class="form-input item-input" list="stock-items-list" style="padding:4px 8px" value="${item.description || ''}" data-field="description" placeholder="Type item name..." ${isArchived ? 'disabled' : ''}/></td>
+        <td><input class="form-input item-input" list="stock-items-list" style="padding:4px 8px" value="${escapeHTML(item.description || '')}" data-field="description" placeholder="Type item name..." ${isArchived ? 'disabled' : ''}/></td>
         <td><select class="form-select item-input" style="padding:4px 8px" data-field="type" ${isArchived ? 'disabled' : ''}>
           <option value="labor" ${item.type === 'labor' ? 'selected' : ''}>Labor</option>
           <option value="material" ${item.type === 'material' ? 'selected' : ''}>Material</option>
@@ -623,7 +623,7 @@ export function renderQuoteDetail(container, params) {
       content.innerHTML = `
         <div class="form-group">
           <label class="form-label">Template Name</label>
-          <input type="text" class="form-input" id="tmpl-name" value="${quote.title || 'Custom Quote Template'}" required />
+          <input type="text" class="form-input" id="tmpl-name" value="${escapeHTML(quote.title || 'Custom Quote Template')}" required />
         </div>
         <div class="form-group">
           <label class="form-label">Description</label>

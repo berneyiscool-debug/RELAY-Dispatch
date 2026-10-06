@@ -155,6 +155,13 @@ export function renderStockList(container, params) {
               onClick: (ids) => {
                 const items = ids.map(id => store.getById('stock', id)).filter(Boolean);
                 const printWindow = window.open('', '_blank');
+                if (!printWindow) return;
+                // The Content-Security-Policy no longer allows inline scripts, so the
+                // print dialog is triggered from here rather than from a <script> tag
+                // inside the document written below. The sheet has no external
+                // resources, so printing straight after close() is deterministic —
+                // waiting on the popup's `load` is not, because an about:blank popup
+                // fires its own load event before the written document renders.
                 let html = `
                   <html>
                   <head>
@@ -189,16 +196,13 @@ export function renderStockList(container, params) {
                 });
                 html += `
                     </div>
-                    <script>
-                      window.onload = function() {
-                        window.print();
-                      }
-                    </script>
                   </body>
                   </html>
                 `;
                 printWindow.document.write(html);
                 printWindow.document.close();
+                printWindow.focus();
+                printWindow.print();
               }
             },
             {

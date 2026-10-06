@@ -204,7 +204,7 @@ export function showStockQuickAdd({ onSave } = {}) {
       <div class="form-group">
         <label class="form-label">Category</label>
         <select id="qs-category" class="form-select">
-          ${categories.map(c => `<option>${c}</option>`).join('')}
+          ${categories.map(c => `<option>${escapeHTML(c)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -441,7 +441,7 @@ export function showPurchaseOrderDrawer({ id = null, jobId = null, supplierId = 
             <div class="stock-pick-item" data-id="${s.id}" style="padding:10px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; cursor:pointer">
               <div>
                 <div style="font-weight:600">${escapeHTML(s.name)}</div>
-                <div style="font-size:11px; color:var(--text-secondary)">SKU: ${s.sku || 'N/A'} — Cost: $${(s.costPrice || 0).toFixed(2)}</div>
+                <div style="font-size:11px; color:var(--text-secondary)">SKU: ${escapeHTML(s.sku || 'N/A')} — Cost: $${(s.costPrice || 0).toFixed(2)}</div>
               </div>
               <span class="material-icons-outlined" style="color:var(--color-primary)">add_circle_outline</span>
             </div>

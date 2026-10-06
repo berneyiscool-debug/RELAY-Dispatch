@@ -44,12 +44,12 @@ export function renderAssetForm(container, params) {
         <form id="asset-form" style="display: flex; flex-direction: column; gap: 15px;">
           <div class="form-group">
             <label class="form-label">Asset Name/ID *</label>
-            <input type="text" id="name" class="form-input" value="${asset.name || ''}" required />
+            <input type="text" id="name" class="form-input" value="${escapeHTML(asset.name || '')}" required />
           </div>
 
           <div class="form-group">
             <label class="form-label">Description</label>
-            <textarea id="description" class="form-input" rows="3">${asset.description || ''}</textarea>
+            <textarea id="description" class="form-input" rows="3">${escapeHTML(asset.description || '')}</textarea>
           </div>
           
           <div class="form-row">
@@ -78,7 +78,7 @@ export function renderAssetForm(container, params) {
             </div>
             <div class="form-group">
               <label class="form-label">Serial / ID / License</label>
-              <input type="text" id="serial" class="form-input" value="${asset.serial || asset.identifier || ''}" placeholder="e.g. S/N 12345 or REG-123" />
+              <input type="text" id="serial" class="form-input" value="${escapeHTML(asset.serial || asset.identifier || '')}" placeholder="e.g. S/N 12345 or REG-123" />
             </div>
           </div>
 
@@ -95,7 +95,7 @@ export function renderAssetForm(container, params) {
                <label class="form-label">Assign to Default Staff</label>
                <select id="assignedToId" class="form-select">
                  <option value="">Unassigned</option>
-                 ${staff.map(s => `<option value="${s.id}" ${asset.assignedToId === s.id ? 'selected' : ''}>${s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim()}</option>`).join('')}
+                 ${staff.map(s => `<option value="${s.id}" ${asset.assignedToId === s.id ? 'selected' : ''}>${escapeHTML(s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim())}</option>`).join('')}
                </select>
             </div>
           </div>
@@ -122,7 +122,7 @@ export function renderAssetForm(container, params) {
               <label class="form-label">Location / Site</label>
               <select id="site" class="form-select" ${asset.ownerType === 'Business' ? 'disabled' : ''}>
                 <option value="">-- No specific site --</option>
-                ${customerSites.map(s => `<option value="${s.name}" ${asset.site === s.name ? 'selected' : ''}>${s.name}</option>`).join('')}
+                ${customerSites.map(s => `<option value="${escapeHTML(s.name)}" ${asset.site === s.name ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -176,7 +176,7 @@ export function renderAssetForm(container, params) {
       return;
     }
     siteSelect.innerHTML = '<option value="">-- No specific site --</option>' + 
-      cust.sites.map(s => `<option value="${s.name}" ${asset.site === s.name ? 'selected' : ''}>${s.name}</option>`).join('');
+      cust.sites.map(s => `<option value="${escapeHTML(s.name)}" ${asset.site === s.name ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('');
   }
 
   container.querySelector('#btn-cancel').addEventListener('click', () => {

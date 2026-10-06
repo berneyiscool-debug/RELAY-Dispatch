@@ -66,11 +66,11 @@ export function renderStockDetail(container, { id }) {
           <div class="card-header"><h4>Item Details</h4></div>
           <div class="card-body">
             <div style="display:flex;flex-direction:column;gap:12px">
-              ${r('Name', item.name)}
-              ${r('SKU', item.sku)}
-              ${r('Category', item.category)}
-              ${r('Unit', item.unit)}
-              ${r('Supplier', item.supplier)}
+              ${r('Name', escapeHTML(item.name))}
+              ${r('SKU', escapeHTML(item.sku))}
+              ${r('Category', escapeHTML(item.category))}
+              ${r('Unit', escapeHTML(item.unit))}
+              ${r('Supplier', escapeHTML(item.supplier))}
             </div>
           </div>
         </div>

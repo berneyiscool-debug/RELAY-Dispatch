@@ -83,10 +83,13 @@ export function receiveStockIntoLocation(stockItem, targetLoc, qty) {
 }
 
 // Build `<option>` markup for a location-type `<select>` (Warehouse, Vehicle, …).
+// Location-type names are company-scoped and user-editable, so they are escaped
+// in both the attribute and the text position.
 export function getStorageLocationTypeOptionsHtml(selectedType = '') {
-  return getActiveLocationTypes().map(t =>
-    `<option value="${t.name}" ${selectedType === t.name ? 'selected' : ''}>${t.name}</option>`
-  ).join('');
+  return getActiveLocationTypes().map(t => {
+    const name = escapeHTML(t.name);
+    return `<option value="${name}" ${selectedType === t.name ? 'selected' : ''}>${name}</option>`;
+  }).join('');
 }
 
 // Type options for a receive/transfer destination (physical locations only,
@@ -94,7 +97,10 @@ export function getStorageLocationTypeOptionsHtml(selectedType = '') {
 export function getPhysicalLocationTypeOptionsHtml(selectedType = '') {
   return getActiveLocationTypes()
     .filter(t => t.name !== 'On Order')
-    .map(t => `<option value="${t.name}" ${selectedType === t.name ? 'selected' : ''}>${t.name}</option>`)
+    .map(t => {
+      const name = escapeHTML(t.name);
+      return `<option value="${name}" ${selectedType === t.name ? 'selected' : ''}>${name}</option>`;
+    })
     .join('');
 }
 

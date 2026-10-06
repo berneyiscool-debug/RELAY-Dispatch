@@ -9,7 +9,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
 import { portalInviteEmail } from '../../utils/emailTemplates.js';
-import { customerPortalUrl } from '../../utils/portalLinks.js';
+import { customerPortalUrl, generatePortalToken } from '../../utils/portalLinks.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
@@ -25,7 +25,7 @@ export function renderPersonDetail(container, { id, tab }) {
 
   // Self-healing customer portalToken generator
   if (!person.portalToken) {
-    const generatedToken = 'c_pt_' + Math.random().toString(36).substr(2, 9);
+    const generatedToken = generatePortalToken();
     store.update('customers', person.id, { portalToken: generatedToken });
     person.portalToken = generatedToken;
   }
@@ -847,7 +847,7 @@ function renderRelatedTable(items, cols, module, emptyMsg) {
           <thead><tr>${cols.map(c => `<th>${escapeHTML(c.label)}</th>`).join('')}</tr></thead>
           <tbody>
             ${items.map(item => `
-              <tr style="cursor:pointer" onclick="window.location.hash='#/${module}/${escapeHTML(item.id)}'">
+              <tr style="cursor:pointer" data-nav="#/${module}/${escapeHTML(item.id)}">
                 ${cols.map(c => {
                   let val = item[c.key];
                   if (c.badge) val = statusBadge(val);

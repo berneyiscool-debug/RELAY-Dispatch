@@ -206,7 +206,7 @@ export function renderProfile(container) {
             
             <div style="display:flex; flex-direction:column; gap:4px;">
               <div style="display:flex; gap:10px; align-items:center;">
-                <button class="btn btn-secondary btn-sm" id="btn-trigger-upload" onclick="document.getElementById('profile-avatar-input').click()">Upload Photo</button>
+                <button class="btn btn-secondary btn-sm" id="btn-trigger-upload" data-click-el="profile-avatar-input">Upload Photo</button>
                 <a href="#" id="link-remove-avatar" style="color: var(--color-danger); text-decoration: none; font-size: 11px; display: ${uploadedAvatarUrl ? 'inline-block' : 'none'};">Remove Photo</a>
               </div>
               <div class="color-picker-grid">
@@ -435,6 +435,18 @@ export function renderProfile(container) {
       const name = container.querySelector('#profile-name').value.trim();
       if (!name) {
         showToast('Please enter your name.', 'error');
+        return;
+      }
+      // profiles.name is rendered into other users' pages, so 038 rejects
+      // markup at the database. Failing here keeps the app's own message
+      // instead of an opaque 23514, and keeps the optimistic local write below
+      // from diverging from what the server will store. The quote is rejected
+      // with the brackets because the name is also interpolated into
+      // attribute positions, and this guard is what stands between the value
+      // and the auth metadata mirror further down - that write happens before
+      // the profiles write 038 constrains.
+      if (/[<>"]/.test(name)) {
+        showToast('Name cannot contain <, > or ".', 'error');
         return;
       }
 

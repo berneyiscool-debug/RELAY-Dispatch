@@ -90,7 +90,7 @@ export function showPrintPreview({ type, data }) {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${data.number} — ${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'}</title>
+        <title>${escapeHTML(data.number)} — ${type === 'quote' ? 'Quote' : type === 'invoice' ? 'Invoice' : 'Form'}</title>
         <style>${fontFaceCss()}</style>
         <style>${getPrintStyles(settings)}</style>
       </head>
@@ -183,8 +183,8 @@ export function generateDocument(type, data) {
   const logoHeight = dt.logoScale !== undefined ? dt.logoScale : 60;
   const logoUrl = dt.logoSource === 'small' ? (settings.logoSmall || settings.logo) : (settings.logo || settings.logoSmall);
   const logoImgHtml = logoUrl 
-    ? `<img class="pdf-logo-img" src="${logoUrl}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
-    : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#FF5C00'}, ${dt.accentColor || '#FF5C00'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${(settings.name || 'A').charAt(0)}</div>`;
+    ? `<img class="pdf-logo-img" src="${escapeHTML(logoUrl)}" style="max-height:${logoHeight}px; max-width:240px; object-fit:contain; display: ${dt.hideLogo ? 'none' : 'block'};" />`
+    : `<div class="pdf-logo" style="background: linear-gradient(135deg, ${dt.accentColor || '#FF5C00'}, ${dt.accentColor || '#FF5C00'}dd); display: ${dt.hideLogo ? 'none' : 'flex'};">${escapeHTML((settings.name || 'A').charAt(0))}</div>`;
 
   const textLogoHtml = `<div class="pdf-logo-text" style="font-size:24px; font-weight:800; color:${dt.accentColor || '#FF5C00'}; display: ${dt.hideLogo ? 'block' : 'none'};">${escapeHTML(settings.name || 'Company Name')}</div>`;
 
@@ -230,7 +230,7 @@ export function generateDocument(type, data) {
         tableContent += `
           <tr>
             <td>${item.description ? escapeHTML(item.description) : '—'}</td>
-            <td style="text-align:center"><span class="pdf-type-tag">${(item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1)}</span></td>
+            <td style="text-align:center"><span class="pdf-type-tag">${escapeHTML((item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1))}</span></td>
             <td style="text-align:center">${item.qty || 1}</td>
             <td style="text-align:right">$${(item.rate || 0).toFixed(2)}</td>
             <td style="text-align:right;font-weight:600">$${(item.total || 0).toFixed(2)}</td>
@@ -248,7 +248,7 @@ export function generateDocument(type, data) {
     tableContent = lineItems.map(item => `
       <tr>
         <td>${item.description ? escapeHTML(item.description) : '—'}</td>
-        <td style="text-align:center"><span class="pdf-type-tag">${(item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1)}</span></td>
+        <td style="text-align:center"><span class="pdf-type-tag">${escapeHTML((item.type || 'other').charAt(0).toUpperCase() + (item.type || 'other').slice(1))}</span></td>
         <td style="text-align:center">${item.qty || 1}</td>
         <td style="text-align:right">$${(item.rate || 0).toFixed(2)}</td>
         <td style="text-align:right;font-weight:600">$${(item.total || 0).toFixed(2)}</td>
@@ -265,7 +265,7 @@ export function generateDocument(type, data) {
           <strong>Credit Card / Online</strong><br/>
           Pay securely via Stripe Credit Card link.
           <div style="margin-top: 6px;">
-            <a href="#" onclick="alert('Payment link mock: Stripe payment would be loaded here.'); return false;" style="display:inline-block; padding: 4px 10px; background:${dt.accentColor || '#FF5C00'}; color:white; border-radius:4px; font-weight:600; text-decoration:none; font-size:10px;">Pay Invoice Online</a>
+            <a href="#" data-alert="Payment link mock: Stripe payment would be loaded here." style="display:inline-block; padding: 4px 10px; background:${dt.accentColor || '#FF5C00'}; color:white; border-radius:4px; font-weight:600; text-decoration:none; font-size:10px;">Pay Invoice Online</a>
           </div>
         </div>
         <div class="pdf-payment-option pdf-payment-option-direct" style="display: ${dt.paymentDirectTransfer ? 'block' : 'none'};">

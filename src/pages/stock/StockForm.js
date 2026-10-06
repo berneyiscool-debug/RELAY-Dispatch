@@ -61,12 +61,12 @@ export function renderStockForm(container, { id }) {
         <form id="stock-form">
           <div class="form-group">
             <label class="form-label">Item Name *</label>
-            <input class="form-input" name="name" value="${item.name || ''}" required />
+            <input class="form-input" name="name" value="${escapeHTML(item.name || '')}" required />
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">SKU</label>
-              <input class="form-input" name="sku" value="${item.sku || ''}" placeholder="e.g. SKU-1000" />
+              <input class="form-input" name="sku" value="${escapeHTML(item.sku || '')}" placeholder="e.g. SKU-1000" />
             </div>
             <div class="form-group">
               <label class="form-label">Category</label>
@@ -79,7 +79,7 @@ export function renderStockForm(container, { id }) {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Unit</label>
-              <input class="form-input" name="unit" value="${item.unit || 'each'}" />
+              <input class="form-input" name="unit" value="${escapeHTML(item.unit || 'each')}" />
             </div>
             <div class="form-group">
               <label class="form-label">Reorder Level</label>

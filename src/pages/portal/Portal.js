@@ -5,6 +5,7 @@ import { showToast } from '../../components/Notifications.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 import { roundCurrency } from '../../utils/pricing.js';
 import { applyTheme } from '../../utils/theme.js';
+import { hashPortalPin, verifyPortalPin, needsPortalPinUpgrade } from '../../utils/portalPin.js';
 
 export function renderCustomerPortal(container, params) {
   const token = params.token;
@@ -108,12 +109,13 @@ export function renderCustomerPortal(container, params) {
       }
 
       // Save PIN
-      const result = await store.update('customers', customer.id, { portalPasscode: p1 });
+      const hashedPin = await hashPortalPin(p1);
+      const result = await store.update('customers', customer.id, { portalPasscode: hashedPin });
       if (result && result.ok === false) {
         showToast('Could not save your PIN. Please try again.', 'error');
         return;
       }
-      customer.portalPasscode = p1; // update in-memory
+      customer.portalPasscode = hashedPin; // update in-memory
 
       // Set authenticated
       sessionStorage.setItem('portal_customer_auth_' + customer.id, 'true');
@@ -161,11 +163,19 @@ export function renderCustomerPortal(container, params) {
       </div>
     `;
 
-    container.querySelector('#portal-lock-form').addEventListener('submit', (e) => {
+    container.querySelector('#portal-lock-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const enteredPin = container.querySelector('#portal-pin').value.trim();
 
-      if (enteredPin === customer.portalPasscode) {
+      if (await verifyPortalPin(enteredPin, customer.portalPasscode)) {
+        // A PIN created before hashing landed is still cleartext; now that the
+        // plaintext is in hand, replace it so the stored copy stops being the
+        // secret itself.
+        if (needsPortalPinUpgrade(customer.portalPasscode)) {
+          const upgraded = await hashPortalPin(enteredPin);
+          const saved = await store.update('customers', customer.id, { portalPasscode: upgraded });
+          if (!(saved && saved.ok === false)) customer.portalPasscode = upgraded;
+        }
         sessionStorage.setItem(sessionKey, 'true');
         showToast('Dashboard unlocked successfully', 'success');
         renderCustomerPortal(container, params);
@@ -1699,7 +1709,7 @@ export function renderCustomerPortal(container, params) {
               const newPin = content.querySelector('#portal-pin-new').value.trim();
               const confirmPin = content.querySelector('#portal-pin-new-confirm').value.trim();
 
-              if (currentPin !== customer.portalPasscode) {
+              if (!await verifyPortalPin(currentPin, customer.portalPasscode)) {
                 showToast('Current PIN is incorrect', 'error');
                 return;
               }
@@ -1712,13 +1722,14 @@ export function renderCustomerPortal(container, params) {
                 return;
               }
 
-              const result = await store.update('customers', customer.id, { portalPasscode: newPin });
+              const hashedPin = await hashPortalPin(newPin);
+              const result = await store.update('customers', customer.id, { portalPasscode: hashedPin });
               if (result && result.ok === false) {
                 showToast('Could not update your PIN. Please try again.', 'error');
                 return;
               }
 
-              customer.portalPasscode = newPin;
+              customer.portalPasscode = hashedPin;
               sessionStorage.setItem('portal_customer_auth_' + customer.id, 'true');
               showToast('Portal PIN updated successfully', 'success');
               close();

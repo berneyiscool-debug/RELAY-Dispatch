@@ -1177,7 +1177,7 @@ export function renderJobDetail(container, { id, tab }) {
                      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0">
                        <div style="display:flex; align-items:center; gap:8px">
                           <div style="width:24px;height:24px;border-radius:12px;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">
-                            ${(t.name || '?').charAt(0).toUpperCase()}
+                            ${escapeHTML((t.name || '?').trim().charAt(0).toUpperCase() || '?')}
                           </div>
                           <span style="font-size:13px">${escapeHTML(t.name || '')}</span>
                        </div>
@@ -2459,11 +2459,11 @@ export function renderJobDetail(container, { id, tab }) {
                   const hasTechRecord = techs.some(t => t.id === currentUser.id);
                   let html = '';
                   if (!hasTechRecord) {
-                    html += `<option value="${currentUser.id}" selected>${currentUser.name} (You)</option>`;
+                    html += `<option value="${currentUser.id}" selected>${escapeHTML(currentUser.name)} (You)</option>`;
                   }
                   html += techs.map(t => {
                     const isSelected = hasTechRecord ? t.id === currentUser.id : t.name === currentUser.name;
-                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${t.name}</option>`;
+                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
                   }).join('');
                   return html;
                 })()}
@@ -2728,7 +2728,7 @@ export function renderJobDetail(container, { id, tab }) {
           const statusBadge = JOB_STATUS_BADGES;
 
           return `
-            <tr style="cursor:pointer" onclick="window.location.hash='#/jobs/${cj.id}'">
+            <tr style="cursor:pointer" data-nav="#/jobs/${cj.id}">
               <td><span class="cell-link font-medium">${escapeHTML(cjNumJ)}</span></td>
               <td>${cj.scheduledDate ? new Date(cj.scheduledDate.includes('T') ? cj.scheduledDate : cj.scheduledDate + 'T00:00:00').toLocaleDateString('en-AU') : '—'}</td>
               <td><span class="badge ${statusBadge[cj.status] || 'badge-neutral'}">${escapeHTML(cj.status || 'Pending')}</span></td>
@@ -3703,11 +3703,11 @@ export function renderJobDetail(container, { id, tab }) {
                   const hasTechRecord = techs.some(t => t.id === currentUser.id);
                   let html = '';
                   if (!hasTechRecord) {
-                    html += `<option value="${currentUser.id}" selected>${currentUser.name} (You)</option>`;
+                    html += `<option value="${currentUser.id}" selected>${escapeHTML(currentUser.name)} (You)</option>`;
                   }
                   html += techs.map(t => {
                     const isSelected = hasTechRecord ? t.id === currentUser.id : t.name === currentUser.name;
-                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${t.name}</option>`;
+                    return `<option value="${t.id}" ${isSelected ? 'selected' : ''}>${escapeHTML(t.name)}</option>`;
                   }).join('');
                   return html;
                 })()}
@@ -4057,7 +4057,7 @@ export function renderJobDetail(container, { id, tab }) {
         `;
 
         showDrawer({
-          title: `Import Materials from Quote ${escapeHTML(targetQuote.number)}`,
+          title: `Import Materials from Quote ${targetQuote.number}`,
           content: content.outerHTML,
           width: 640,
           onMount: (drawer) => renderRows(drawer.querySelector('#import-rows-container')),
@@ -4340,7 +4340,7 @@ export function renderJobDetail(container, { id, tab }) {
             <label class="form-label">Part Required *</label>
             <select class="form-select" id="po-part">
               <option value="">Select or type...</option>
-              ${stockItems.map(s => `<option value="${s.id}">${s.name} - $${s.costPrice || 0}</option>`).join('')}
+              ${stockItems.map(s => `<option value="${s.id}">${escapeHTML(s.name)} - $${s.costPrice || 0}</option>`).join('')}
             </select>
           </div>
           <div class="form-row">

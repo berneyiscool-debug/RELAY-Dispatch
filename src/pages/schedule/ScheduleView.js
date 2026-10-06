@@ -626,7 +626,7 @@ export function renderScheduleView(container) {
           ${toggleBtn}
           <div class="${rowClass}" draggable="true"
             data-job-id="${ctx.jobId}"
-            data-job-number="${ctx.jobNumber}"
+            data-job-number="${escapeHTML(ctx.jobNumber || '')}"
             data-customer="${escapeHTML(ctx.customerName)}"
             data-title="${escapeHTML(namePath)}"
             data-hours="${hours}"
@@ -684,7 +684,7 @@ export function renderScheduleView(container) {
       return `
         <div class="unscheduled-job" draggable="true" 
           data-job-id="${j.id}" 
-          data-job-number="${j.number}" 
+          data-job-number="${escapeHTML(j.number || '')}" 
           data-customer="${escapeHTML(j.customerName || '')}" 
           data-title="${escapeHTML(j.title || '')}" 
           data-hours="${jobDuration}" 
@@ -693,7 +693,7 @@ export function renderScheduleView(container) {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; gap:4px;">
             <div style="display:flex; flex-direction:column; text-align:left; pointer-events:none; min-width:0; flex:1;">
               <div style="font-weight:700; font-size:11.5px; color:var(--text-primary); display:flex; align-items:center; gap:5px; margin-bottom:1px;">
-                <span style="color:var(--color-primary); flex-shrink:0;">${j.number}</span>
+                <span style="color:var(--color-primary); flex-shrink:0;">${escapeHTML(j.number)}</span>
                 <span style="color:var(--text-tertiary); font-weight:normal;">•</span>
                 <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${escapeHTML(j.customerName || '')}</span>
               </div>
@@ -769,7 +769,7 @@ export function renderScheduleView(container) {
             </span>
           </div>
           <div class="flex gap-sm items-center" style="margin-left:auto">
-            ${!isTechnician ? '' : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${currentUser.name}</span>`}
+            ${!isTechnician ? '' : `<span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-weight:500"><span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person</span>${escapeHTML(currentUser.name)}</span>`}
           </div>
           <div class="flex gap-xs">
             <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
@@ -826,8 +826,8 @@ export function renderScheduleView(container) {
                   ${technicians.map(t => `
                     <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer; padding:4px 0;">
                       <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
-                      <div style="width:10px; height:10px; border-radius:50%; background:${t.color};"></div>
-                      <span style="color:var(--text-primary); font-weight:500;">${t.name}</span>
+                      <div style="width:10px; height:10px; border-radius:50%; background:${escapeHTML(t.color)};"></div>
+                      <span style="color:var(--text-primary); font-weight:500;">${escapeHTML(t.name)}</span>
                     </label>
                   `).join('')}
                 </div>
@@ -864,8 +864,8 @@ export function renderScheduleView(container) {
                 ${visibleTechs.map(tech => `
                   <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
                     <div style="font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px">
-                      <div style="width:6px;height:6px;border-radius:50%;background:${tech.color};flex-shrink:0"></div>
-                      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px">${tech.name}</span>
+                      <div style="width:6px;height:6px;border-radius:50%;background:${escapeHTML(tech.color)};flex-shrink:0"></div>
+                      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px">${escapeHTML(tech.name)}</span>
                     </div>
                   </div>
                 `).join('')}
@@ -1388,7 +1388,7 @@ export function renderScheduleView(container) {
           <div class="form-group">
             <label class="form-label">Select Job <span style="color:var(--color-danger)">*</span></label>
             <select class="form-select" name="jobId" required>
-              ${activeJobs.map(j => `<option value="${j.id}">${j.number} — ${escapeHTML(j.customerName)} (${escapeHTML(j.title)})</option>`).join('')}
+              ${activeJobs.map(j => `<option value="${j.id}">${escapeHTML(j.number)} — ${escapeHTML(j.customerName)} (${escapeHTML(j.title)})</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
@@ -1828,6 +1828,7 @@ export function renderScheduleView(container) {
 
 
   function renderBlocks(techBlocks, dayIdx, color) {
+    const safeColor = escapeHTML(color);
     const priorityBorders = { 'Urgent': '#EF4444', 'High': '#F59E0B' };
     const isDark = document.documentElement.getAttribute('data-theme-mode') === 'dark';
     return techBlocks
@@ -1873,9 +1874,9 @@ export function renderScheduleView(container) {
           }
         };
 
-        let borderColor = priorityBorders[b.priority] || color;
-        let background = `${color}12`;
-        let textColor = color;
+        let borderColor = priorityBorders[b.priority] || safeColor;
+        let background = `${safeColor}12`;
+        let textColor = safeColor;
 
         // Custom styling overrides for leave, blockout, meeting
         if (b.type === 'leave') {
@@ -1968,11 +1969,11 @@ export function renderScheduleView(container) {
               pointer-events:auto;
             ">
             <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:space-between">
-              <span>${b.jobNumber}</span>
+              <span>${escapeHTML(b.jobNumber)}</span>
               ${b.hasCollision ? `<span class="virtual-forecast-badge virtual-collision-badge">COLLISION</span>` : (isVirtual ? `<span class="virtual-forecast-badge">FORECAST</span>` : '')}
               ${b.type === 'leave' && (b.status === 'Approved' || b.status === 'Denied' || b.status === 'Rejected') ? `<span class="virtual-forecast-badge" style="background:${b.status === 'Approved' ? '#10B981' : '#EF4444'};color:white;border:none;">${b.status.toUpperCase()}</span>` : ''}
             </div>
-            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.9;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${b.customerName}</div>` : ''}
+            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.9;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.customerName || '')}</div>` : ''}
             ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.7;margin-top:2px">${timeLabel}</div>` : ''}
             ${!isVirtual ? `<div class="schedule-resize-handle" data-block-job-id="${b.jobId || ''}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>` : ''}
           </div>
@@ -2186,15 +2187,15 @@ export function renderScheduleView(container) {
               <div style="display:flex;flex-direction:column;gap:16px;">
                 <div>
                   <label class="form-label">Title</label>
-                  <div class="font-medium" style="font-size:16px">${job.title || 'Untitled'}</div>
+                  <div class="font-medium" style="font-size:16px">${escapeHTML(job.title || 'Untitled')}</div>
                 </div>
                 <div>
                   <label class="form-label">Customer</label>
-                  <div>${job.customerName || 'N/A'}</div>
+                  <div>${escapeHTML(job.customerName || 'N/A')}</div>
                 </div>
                 <div>
                   <label class="form-label">Site Address</label>
-                  <div>${job.siteAddress || 'No address provided'}</div>
+                  <div>${escapeHTML(job.siteAddress || 'No address provided')}</div>
                 </div>
                 <div>
                   <label class="form-label">Priority</label>
@@ -2202,7 +2203,7 @@ export function renderScheduleView(container) {
                 </div>
                 <div>
                   <label class="form-label">Notes</label>
-                  <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${job.notes || 'No notes available'}</div>
+                  <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${escapeHTML(job.notes || 'No notes available')}</div>
                 </div>
                 <div>
                   <label class="form-label" style="margin-bottom:8px; display:block; border-bottom:1px solid var(--border-color); padding-bottom:4px;">Recent Time Logs</label>
@@ -2255,11 +2256,11 @@ export function renderScheduleView(container) {
                 </div>
                 <div>
                   <label class="form-label">Date</label>
-                  <div>${s.date || 'N/A'}</div>
+                  <div>${escapeHTML(s.date || 'N/A')}</div>
                 </div>
                 <div>
                   <label class="form-label">Duration</label>
-                  <div>${s.hours || 0} Hours</div>
+                  <div>${escapeHTML(s.hours || 0)} Hours</div>
                 </div>
                 <div>
                   <label class="form-label">Notes / Description</label>
@@ -2405,7 +2406,7 @@ export function renderScheduleView(container) {
 
           function promptReassign(idsToReassign) {
             const techs = store.getAll('technicians').filter(t => !t.deactivated);
-            const options = techs.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+            const options = techs.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('');
             showModal({
               title: 'Reassign ' + (idsToReassign.length > 1 ? 'Jobs' : 'Job'),
               content: `<div class="form-group"><label class="form-label">Select Technician</label><select id="reassign-tech" class="form-select">${options}</select></div>`,

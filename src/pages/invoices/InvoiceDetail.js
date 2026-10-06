@@ -379,7 +379,7 @@ export function renderInvoiceDetail(container, params) {
               <label class="form-label">Labour Rate</label>
               <select class="form-select" id="inv-labor-profile">
                 <option value="">-- Custom / Manual Rates --</option>
-                ${settings.laborRates.map(r => `<option value="${r.id}" ${invoice.laborProfileId === r.id ? 'selected' : ''}>${r.name} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
+                ${settings.laborRates.map(r => `<option value="${r.id}" ${invoice.laborProfileId === r.id ? 'selected' : ''}>${escapeHTML(r.name)} ($${r.rate.toFixed(2)}/hr)</option>`).join('')}
               </select>
             </div>
           </div>
@@ -418,7 +418,7 @@ export function renderInvoiceDetail(container, params) {
       </div>
 
       <datalist id="stock-items-list">
-        ${stockItems.map(s => `<option value="${s.name}"></option>`).join('')}
+        ${stockItems.map(s => `<option value="${escapeHTML(s.name)}"></option>`).join('')}
       </datalist>
 
       <!-- Sections -->
@@ -519,7 +519,7 @@ export function renderInvoiceDetail(container, params) {
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; ${headerBg}">
           <div style="display:flex; align-items:center; gap:12px; flex:1">
             ${isVar ? '<span class="material-icons-outlined" style="color:var(--color-warning); font-size:20px">history_edu</span>' : ''}
-            <input class="form-input section-name-input" value="${section.name || ''}" placeholder="${isVar ? 'e.g. Variation - Additional Cabling' : 'Phase/Section Name'}" style="font-size:1.1rem; font-weight:600; background:transparent; border:none; border-bottom:1px solid var(--border-color); width:300px" />
+            <input class="form-input section-name-input" value="${escapeHTML(section.name || '')}" placeholder="${isVar ? 'e.g. Variation - Additional Cabling' : 'Phase/Section Name'}" style="font-size:1.1rem; font-weight:600; background:transparent; border:none; border-bottom:1px solid var(--border-color); width:300px" />
             ${badgeHtml}
           </div>
           <div style="display:flex; align-items:center; gap:8px">
@@ -554,7 +554,7 @@ export function renderInvoiceDetail(container, params) {
   function lineItemRow(item, sIdx, index) {
     return `
       <tr data-sidx="${sIdx}" data-index="${index}">
-        <td><input class="form-input item-input" list="stock-items-list" style="padding:4px 8px" value="${item.description || ''}" data-field="description" placeholder="Type item name..." /></td>
+        <td><input class="form-input item-input" list="stock-items-list" style="padding:4px 8px" value="${escapeHTML(item.description || '')}" data-field="description" placeholder="Type item name..." /></td>
         <td><select class="form-select item-input" style="padding:4px 8px" data-field="type">
           <option value="labor" ${item.type === 'labor' ? 'selected' : ''}>Labor</option>
           <option value="material" ${item.type === 'material' ? 'selected' : ''}>Material</option>
