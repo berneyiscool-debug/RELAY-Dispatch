@@ -21,6 +21,7 @@
 
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
+import { webOrigin } from './webOrigin.js';
 
 // Marketing/pricing catalogue. Amounts are AUD, per active user, per month.
 export const PLAN_CATALOG = {
@@ -213,8 +214,11 @@ async function createCheckoutSession(tier, successUrl, cancelUrl) {
   return data;
 }
 
+// Stripe returns the user to this origin, so it has to be the hosted web app
+// rather than whatever origin the bundle happens to be running from — in the
+// packaged desktop build that is file://, whose origin is unusable.
 function checkoutOrigin() {
-  return (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+  return webOrigin();
 }
 
 /**
@@ -265,7 +269,7 @@ export async function changePlan(tier) {
 /** Open Stripe's hosted portal to manage/cancel/update the subscription. */
 export async function openBillingPortal() {
   if (!isCloudUser()) throw new Error('No subscription to manage.');
-  const origin = (typeof location !== 'undefined' && location.origin) ? location.origin : 'https://relay.app';
+  const origin = webOrigin();
   const data = await invoke('relay-billing-portal', { returnUrl: `${origin}/#/settings?tab=billing` });
   if (!data?.url) throw new Error('No portal URL was returned.');
   if (typeof location !== 'undefined') location.href = data.url;

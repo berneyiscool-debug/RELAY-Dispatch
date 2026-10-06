@@ -1,6 +1,7 @@
 import { supabase } from '../../utils/supabase.js';
 import { storageGet, storageSet } from '../../utils/persist.js';
 import { applyTheme } from '../../utils/theme.js';
+import { webOrigin } from '../../utils/webOrigin.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '../auth/session.js';
 import { showAlert } from '../../utils/confirmDialog.js';
@@ -1608,7 +1609,7 @@ export function renderLaunchScreen(container, onComplete) {
 
         try {
           const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin + '/#reset-password'
+            redirectTo: webOrigin() + '/#reset-password'
           });
           if (error) throw error;
 

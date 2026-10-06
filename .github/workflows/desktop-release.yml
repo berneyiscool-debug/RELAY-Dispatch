@@ -1,0 +1,84 @@
+name: Release Desktop App
+
+# Pushing a v-prefixed tag builds the Windows installer and publishes it as a
+# GitHub Release. electron-updater resolves updates from /releases/latest, so
+# the release has to be *published* (not a draft) and has to carry the installer
+# plus latest.yml — a tag on its own updates nobody.
+#
+# Release flow: bump "version" in package.json, commit, then
+#   git tag v1.4.0 && git push origin v1.4.0
+#
+# A manual run only builds the installer (it uploads the workflow artifact and
+# publishes nothing), which is the way to smoke-test the pipeline.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release per tag. Never cancel: a half-finished upload would leave a
+# release whose assets electron-updater cannot read.
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # `npm test` hands a glob to `node --test`, which only expands globs
+          # from Node 21 on.
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  release:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The installer version must equal the tag or installed builds will never
+      # see the update. Fails before anything is published.
+      - name: Check tag matches package.json version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version v$version."
+            exit 1
+          fi
+          echo "Releasing v$version"
+
+      - run: npm ci
+
+      # Vite inlines VITE_* at build time, so the installer has to be built with
+      # the same Supabase + Maps keys as the web deploy or it ships with cloud
+      # sign-in and maps dead.
+      - name: Build installer
+        run: npm run electron:build -- --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_MAPS_BROWSER_KEY: ${{ secrets.VITE_GOOGLE_MAPS_BROWSER_KEY }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-dispatch-installer
+          path: |
+            dist-electron/*.exe
+            dist-electron/latest.yml
+          if-no-files-found: error
