@@ -34,15 +34,28 @@ import { initSearchableSelects } from './utils/searchableSelect.js';
 import './utils/DeputyAutopilot.js';
 import { storageGet, storageSet } from './utils/persist.js';
 import { setSessionUser, clearSessionUser } from './pages/auth/session.js';
+import { installDelegatedEvents } from './utils/delegatedEvents.js';
 
 // Screens are code-split per route (see `lazy` below): only the shell above is
 // loaded up front, each page module is fetched the first time it is opened.
 
 
 // ---- Initialize ----
+// Clickjacking guard. GitHub Pages cannot send response headers, so a
+// `frame-ancestors` directive cannot be delivered and would be ignored inside
+// the <meta> policy anyway. Refuse to render when framed by another origin;
+// same-origin framing (the offscreen render frame in utils/documentPdf.js) is
+// unaffected.
+if (window.self !== window.top) {
+  let crossOrigin = true;
+  try { crossOrigin = window.top.location.origin !== window.location.origin; } catch { crossOrigin = true; }
+  if (crossOrigin) document.documentElement.replaceChildren();
+}
+
 checkMaintenancePlans();
 scheduleEngineChecks();
 initSearchableSelects();
+installDelegatedEvents();
 
 // Expose app globals for cross-component access
 window.__relay = { router, store };

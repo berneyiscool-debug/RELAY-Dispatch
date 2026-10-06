@@ -3047,3 +3047,47 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 /* Settings hosts the bars inside a titled card, so the card has to go too -
    otherwise a failed read leaves an empty "AI usage today" panel behind. */
 .settings-usage-bars:has([data-usage-bars]:empty) { display: none; }
+
+/* Interaction states for markup that used inline onfocus/onmouseover attributes.
+   A Content-Security-Policy without 'unsafe-inline' blocks inline event handler
+   attributes, so the states move here and the markup carries only a class. */
+.job-search-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.job-search-input:focus { border-color: var(--color-primary); }
+
+.job-option {
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.job-option:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.widget-picker-card {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s;
+}
+
+.widget-picker-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}

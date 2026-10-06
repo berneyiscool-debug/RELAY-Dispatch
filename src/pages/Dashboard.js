@@ -30,13 +30,13 @@ function getHeaderActionsHtml() {
   let html = '';
   if (canCreateJob) {
     html += `
-      <button class="btn btn-secondary btn-sm" onclick="window.location.hash='/jobs/new'">
+      <button class="btn btn-secondary btn-sm" data-nav="/jobs/new">
         <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
       </button>`;
   }
   if (canCreateQuote) {
     html += `
-      <button class="btn btn-primary btn-sm" onclick="window.location.hash='/quotes/new'">
+      <button class="btn btn-primary btn-sm" data-nav="/quotes/new">
         <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
       </button>`;
   }
@@ -676,7 +676,7 @@ function renderPins(world) {
     el.style.borderColor = ref.color;
     el.style.background = ref.color + '12'; // ~7% tint
     const bonusHtml = bonusScreen > 0
-      ? `<div class="dash-view-bonus" style="left:${vw / z}px; width:${bonusScreen / z}px; border-color:${ref.color}; background:${ref.color}0a;" title="Visible when the sidebar is minimised"><span class="material-icons-outlined" style="color:${ref.color};">keyboard_double_arrow_right</span></div>`
+      ? `<div class="dash-view-bonus" style="left:${vw / z}px; width:${bonusScreen / z}px; border-color:${escapeHTML(ref.color)}; background:${escapeHTML(ref.color)}0a;" title="Visible when the sidebar is minimised"><span class="material-icons-outlined" style="color:${escapeHTML(ref.color)};">keyboard_double_arrow_right</span></div>`
       : '';
     el.innerHTML = `
       ${bonusHtml}
@@ -685,9 +685,9 @@ function renderPins(world) {
       <div class="dash-view-edge e-right"></div>
       <div class="dash-view-edge e-bottom"></div>
       <div class="dash-view-edge e-left"></div>
-      <div class="dash-view-tag" style="border-color:${ref.color};color:${ref.color};">
-        <span class="material-icons-outlined" style="font-size:14px;">${ref.icon}</span>
-        <span class="dash-view-tag-label">${ref.label || 'View'}</span>
+      <div class="dash-view-tag" style="border-color:${escapeHTML(ref.color)};color:${escapeHTML(ref.color)};">
+        <span class="material-icons-outlined" style="font-size:14px;">${escapeHTML(ref.icon)}</span>
+        <span class="dash-view-tag-label">${escapeHTML(ref.label || 'View')}</span>
         <button class="dash-view-remove" title="Remove view"><span class="material-icons-outlined" style="font-size:13px;">close</span></button>
       </div>`;
     world.appendChild(el);
@@ -978,7 +978,7 @@ function renderViewsSection() {
     chip.dataset.id = ref.id; // set data-id for SortableJS identification
     chip.title = ref.label || 'Saved view';
     chip.style.setProperty('--chip-color', ref.color);
-    chip.innerHTML = `<span class="material-icons-outlined" style="font-size:16px;">${ref.icon}</span>`;
+    chip.innerHTML = `<span class="material-icons-outlined" style="font-size:16px;">${escapeHTML(ref.icon)}</span>`;
     chip.addEventListener('click', () => flyTo(viewport, ref.x, ref.y, ref.zoom));
     cont.appendChild(chip);
   });
@@ -1299,7 +1299,7 @@ function openPinEditor(viewport, world, guides, opts) {
     <div style="display:flex;flex-direction:column;gap:16px;">
       <div>
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Label (optional)</label>
-        <input type="text" id="pin-label" class="form-input" placeholder="e.g. Finance view" style="width:100%;" maxlength="24" value="${initialLabel.replace(/"/g, '&quot;')}" />
+        <input type="text" id="pin-label" class="form-input" placeholder="e.g. Finance view" style="width:100%;" maxlength="24" value="${escapeHTML(initialLabel)}" />
       </div>
       <div>
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Colour</label>
@@ -1517,10 +1517,7 @@ function wireWidgetControls(grid, data) {
         const content = document.createElement('div');
         content.innerHTML = `
           <div style="margin-bottom: 12px;">
-            <input type="text" id="job-search" placeholder="Search by Job #, Title or Customer..."
-              style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; outline: none; transition: border-color 0.2s;"
-              onfocus="this.style.borderColor='var(--color-primary)'"
-              onblur="this.style.borderColor='var(--border-color)'">
+            <input type="text" id="job-search" class="job-search-input" placeholder="Search by Job #, Title or Customer...">
           </div>
           <div id="job-list-container" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
           </div>
@@ -1539,11 +1536,9 @@ function wireWidgetControls(grid, data) {
           });
 
           cont.innerHTML = filtered.length > 0 ? filtered.map(j => `
-            <div class="job-option" data-job-id="${j.id}" style="padding:10px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.15s;"
-              onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
-              onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
-              <div style="font-weight:600;font-size:13px;">#${j.number} - ${j.title}</div>
-              <div style="font-size:11px;color:var(--text-tertiary);">${j.customerName}</div>
+            <div class="job-option" data-job-id="${j.id}">
+              <div style="font-weight:600;font-size:13px;">#${escapeHTML(j.number)} - ${escapeHTML(j.title)}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);">${escapeHTML(j.customerName)}</div>
             </div>
           `).join('') : `<div style="text-align:center; padding:20px; color:var(--text-tertiary); font-size:13px;">No matching jobs found</div>`;
 
@@ -1965,9 +1960,7 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
   const available = Object.entries(MODULES).filter(([id]) => widgetAllowed(id));
 
   const card = ([id, mod]) => `
-    <div data-id="${id}" style="padding:12px;border:1px solid var(--border-color);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;"
-      onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-primary-light)';"
-      onmouseout="this.style.borderColor='var(--border-color)';this.style.background='';">
+    <div data-id="${id}" class="widget-picker-card">
       <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">widgets</span>
       <div>
         <div style="font-weight:600;font-size:13px;">${mod.title}</div>
@@ -2094,8 +2087,8 @@ function renderTechMap(data, item) {
     const firstName = t.name ? t.name.split(' ')[0] : 'Tech';
     const top = 15 + i * 22 + Math.sin(i) * 12, left = 15 + i * 18 + Math.cos(i) * 18;
     return `<div style="position:absolute;top:${top}%;left:${left}%;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;z-index:10;">
-      <div style="background:white;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;box-shadow:0 2px 4px rgba(0,0,0,.2);margin-bottom:2px;white-space:nowrap;">${firstName}</div>
-      <div style="width:22px;height:22px;background:var(--color-primary);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid white;">${firstName[0]}</div>
+      <div style="background:white;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;box-shadow:0 2px 4px rgba(0,0,0,.2);margin-bottom:2px;white-space:nowrap;">${escapeHTML(firstName)}</div>
+      <div style="width:22px;height:22px;background:var(--color-primary);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid white;">${escapeHTML(firstName[0])}</div>
       <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--color-primary);margin-top:-1px;"></div>
     </div>`;
   }).join('');
@@ -2148,9 +2141,9 @@ async function enhanceTechMaps() {
         address: addr,
         startTime: s.startTime || '',
         jobHtml: `<div style="padding:4px 0;border-bottom:1px solid #E8E8E6;">
-          <div style="font-weight:700;">${job.number || ''} — ${(job.title || '').replace(/\s*—\s*Recurring.*$/i, '')}</div>
-          <div>${job.customerName || ''}</div>
-          <div style="color:#5C5C5A;">${s.technicianName || 'Unassigned'}${timeStr ? ' · ' + timeStr : ''}</div>
+          <div style="font-weight:700;">${escapeHTML(job.number)} — ${escapeHTML((job.title || '').replace(/\s*—\s*Recurring.*$/i, ''))}</div>
+          <div>${escapeHTML(job.customerName)}</div>
+          <div style="color:#5C5C5A;">${escapeHTML(s.technicianName || 'Unassigned')}${timeStr ? ' · ' + timeStr : ''}</div>
         </div>`,
       });
     }
@@ -2173,7 +2166,7 @@ async function enhanceTechMaps() {
         info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;max-width:240px;">
           ${site.jobs.length > 1 ? `<div style="font-weight:700;color:#FF5C00;margin-bottom:2px;">${site.jobs.length} jobs at this address</div>` : ''}
           ${site.jobs.map(j => j.jobHtml).join('')}
-          <div style="color:#5C5C5A;padding-top:4px;">${site.address}</div>
+          <div style="color:#5C5C5A;padding-top:4px;">${escapeHTML(site.address)}</div>
         </div>`,
       };
     });
@@ -2189,9 +2182,9 @@ async function enhanceTechMaps() {
       return {
         lat: geo.lat, lng: geo.lng,
         info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;max-width:220px;">
-          <div style="font-weight:700;margin-bottom:2px;">${name}</div>
-          ${cu.phone ? `<div>${cu.phone}</div>` : ''}
-          <div style="color:#5C5C5A;">${addr}</div>
+          <div style="font-weight:700;margin-bottom:2px;">${escapeHTML(name)}</div>
+          ${cu.phone ? `<div>${escapeHTML(cu.phone)}</div>` : ''}
+          <div style="color:#5C5C5A;">${escapeHTML(addr)}</div>
           <div style="color:#5C5C5A;font-size:11px;">Customer</div>
         </div>`,
       };
@@ -2235,8 +2228,8 @@ async function enhanceTechMaps() {
 
       const baseMarker = new Marker({ map, position: { lat: base.lat, lng: base.lng }, icon: pinSvg('#2C2C2E', 'home'), zIndex: 30 });
       hover(baseMarker, `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;">
-        <div style="font-weight:700;">${base.source === 'user' ? 'My start location' : (store.getSettings().name || 'Office')}</div>
-        <div style="color:#5C5C5A;">${base.label}</div>
+        <div style="font-weight:700;">${base.source === 'user' ? 'My start location' : escapeHTML(store.getSettings().name || 'Office')}</div>
+        <div style="color:#5C5C5A;">${escapeHTML(base.label)}</div>
         <div style="color:#5C5C5A;font-size:11px;">${base.source === 'user' ? 'Dispatch start' : 'Office · dispatch start'}</div></div>`);
       bounds.extend({ lat: base.lat, lng: base.lng });
 
@@ -2276,7 +2269,7 @@ async function enhanceTechMaps() {
       const legend = document.createElement('div');
       legend.style.cssText = 'position:absolute;top:8px;right:8px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:6px;padding:6px 8px;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.15);max-height:45%;overflow:auto;z-index:5;';
       legend.innerHTML = swatch('#2C2C2E', 'Office') + swatch('#8A8A87', 'Customers')
-        + techLegend.map((t) => swatch(t.color, esc(t.name))).join('');
+        + techLegend.map((t) => swatch(esc(t.color), esc(t.name))).join('');
       c.style.position = 'relative';
       c.appendChild(legend);
     });
@@ -2288,9 +2281,9 @@ async function enhanceTechMaps() {
 
 function renderRecentActivity(data, item) {
   const acts = [];
-  data.jobs.slice(0,4).forEach(j => acts.push({ icon:'build', color:'var(--color-primary)', text:`Job <strong>${j.number}</strong> — ${j.title}`, sub: j.customerName, time: j.updatedAt }));
-  data.quotes.slice(0,3).forEach(q => acts.push({ icon:'request_quote', color:'var(--color-warning)', text:`Quote <strong>${q.number}</strong> ${q.status.toLowerCase()}`, sub: q.customerName, time: q.updatedAt }));
-  data.invoices.slice(0,2).forEach(inv => acts.push({ icon:'receipt_long', color: inv.status==='Paid'?'var(--color-success)':'var(--color-danger)', text:`Invoice <strong>${inv.number}</strong> — ${inv.status}`, sub: inv.customerName, time: inv.updatedAt }));
+  data.jobs.slice(0,4).forEach(j => acts.push({ icon:'build', color:'var(--color-primary)', text:`Job <strong>${escapeHTML(j.number)}</strong> — ${escapeHTML(j.title)}`, sub: escapeHTML(j.customerName), time: j.updatedAt }));
+  data.quotes.slice(0,3).forEach(q => acts.push({ icon:'request_quote', color:'var(--color-warning)', text:`Quote <strong>${escapeHTML(q.number)}</strong> ${escapeHTML(q.status.toLowerCase())}`, sub: escapeHTML(q.customerName), time: q.updatedAt }));
+  data.invoices.slice(0,2).forEach(inv => acts.push({ icon:'receipt_long', color: inv.status==='Paid'?'var(--color-success)':'var(--color-danger)', text:`Invoice <strong>${escapeHTML(inv.number)}</strong> — ${escapeHTML(inv.status)}`, sub: escapeHTML(inv.customerName), time: inv.updatedAt }));
   acts.sort((a,b) => new Date(b.time) - new Date(a.time));
   return acts.map(a => `
     <div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);">
@@ -2309,10 +2302,10 @@ function renderRecentLeads(data, item) {
   return `<table class="data-table" style="width:100%;">
     <thead><tr><th>Lead</th><th>Customer</th><th>Status</th></tr></thead>
     <tbody>${data.leads.slice(0,8).map(l => `
-      <tr style="cursor:pointer;" onclick="window.location.hash='/leads/${l.id}'">
-        <td class="cell-link font-medium">${l.title}</td>
-        <td style="color:var(--text-secondary);">${l.customerName}</td>
-        <td><span class="badge ${bc[l.status]||'badge-neutral'}">${l.status}</span></td>
+      <tr style="cursor:pointer;" data-nav="/leads/${l.id}">
+        <td class="cell-link font-medium">${escapeHTML(l.title)}</td>
+        <td style="color:var(--text-secondary);">${escapeHTML(l.customerName)}</td>
+        <td><span class="badge ${bc[l.status]||'badge-neutral'}">${escapeHTML(l.status)}</span></td>
       </tr>`).join('')}
     </tbody>
   </table>`;
@@ -2373,24 +2366,24 @@ function renderTodaySchedule(data, item) {
     const hourInt = Math.floor(s.startHour ?? 8);
     const minInt = s.startMinute !== undefined ? s.startMinute : Math.round(((s.startHour ?? 8) - hourInt) * 60);
     const timeStr = `${String(hourInt).padStart(2, '0')}:${String(minInt).padStart(2, '0')}`;
-    const techNameHtml = canViewAllSchedule ? `<span style="opacity: 0.8;"> · ${s.technicianName || 'Unassigned'}</span>` : '';
+    const techNameHtml = canViewAllSchedule ? `<span style="opacity: 0.8;"> · ${escapeHTML(s.technicianName || 'Unassigned')}</span>` : '';
     const badgeText = isJob ? status : (s.type ? s.type.toUpperCase() : 'EVENT');
     const badgeClass = isJob ? (status === 'In Progress' ? 'badge-primary' : 'badge-warning') : 'badge-neutral';
     const barColor = isJob ? (status === 'In Progress' ? 'var(--color-primary)' : 'var(--color-warning)') : 'var(--text-tertiary)';
 
     return `
-      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);cursor:pointer;" ${isJob ? `onclick="window.location.hash='/jobs/${s.jobId}'"` : ''}>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color);cursor:pointer;" ${isJob ? `data-nav="/jobs/${s.jobId}"` : ''}>
         <div style="width:3px;height:35px;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;">
             <span style="font-size:11px;color:var(--text-tertiary);background:var(--border-color);padding:1px 4px;border-radius:3px;font-weight:600;">${timeStr}</span>
-            ${title}
+            ${escapeHTML(title)}
           </div>
           <div style="font-size:11px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${customerName}${techNameHtml}
+            ${escapeHTML(customerName)}${techNameHtml}
           </div>
         </div>
-        <span class="badge ${badgeClass}">${badgeText}</span>
+        <span class="badge ${badgeClass}">${escapeHTML(badgeText)}</span>
       </div>
       ${FLAGS.maps && singleTech && isJob ? `<div class="ts-drive-slot" data-to-job="${s.jobId}" style="display:none;font-size:11px;color:var(--text-tertiary);padding:2px 0 2px 13px;"></div>` : ''}
     `;
@@ -2472,10 +2465,13 @@ async function enhanceTodayScheduleRoutes() {
         const nav = navigateUrl([...stops.map(x => x.address), start.label]);
         return `<div style="display:flex;align-items:center;gap:6px;">
           <span class="material-icons-outlined" style="font-size:13px;color:var(--color-primary);">route</span>
-          <span style="flex:1;"><strong>${name}</strong>: ${fmtDuration(route.totalDurationSec)} driving · ${(route.totalDistanceMeters / 1000).toFixed(0)} km (incl. return)</span>
-          ${nav ? `<a href="${nav}" target="_blank" rel="noopener" title="Open in Google Maps" style="color:var(--color-primary);display:flex;" onclick="event.stopPropagation()"><span class="material-icons-outlined" style="font-size:14px;">open_in_new</span></a>` : ''}
+          <span style="flex:1;"><strong>${escapeHTML(name)}</strong>: ${fmtDuration(route.totalDurationSec)} driving · ${(route.totalDistanceMeters / 1000).toFixed(0)} km (incl. return)</span>
+          ${nav ? `<a href="${nav}" target="_blank" rel="noopener" title="Open in Google Maps" style="color:var(--color-primary);display:flex;" data-stop-propagation><span class="material-icons-outlined" style="font-size:14px;">open_in_new</span></a>` : ''}
         </div>`;
       }).join('');
+      sum.querySelectorAll('[data-stop-propagation]').forEach(a => {
+        a.addEventListener('click', e => e.stopPropagation());
+      });
       sum.style.display = 'block';
     }
   });
@@ -2522,7 +2518,7 @@ function renderPinnedJob(data, item) {
   return `
     <div style="padding:2px 0;">
       <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center;">
-        <span style="font-size:12px;font-weight:700;color:var(--text-primary);letter-spacing:0.5px;">JOB #${job.number}</span>
+        <span style="font-size:12px;font-weight:700;color:var(--text-primary);letter-spacing:0.5px;">JOB #${escapeHTML(job.number)}</span>
         <span style="font-size:14px;font-weight:700;color:var(--color-primary);">${progress}%</span>
       </div>
 
@@ -2543,7 +2539,7 @@ function renderPinnedJob(data, item) {
               </span>`
             }
             <span style="font-size:12px;font-weight:${t.isParent ? '700' : '400'};text-decoration:${!t.isParent && completed ? 'line-through' : 'none'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;color:${t.isParent ? 'var(--text-primary)' : 'var(--text-secondary)'};">
-              ${t.name}
+              ${escapeHTML(t.name)}
             </span>
             ${t.isParent ? `<span style="font-size:10px;font-weight:600;color:var(--text-tertiary);">${t.progress}%</span>` : ''}
           </div>`;
@@ -2552,10 +2548,10 @@ function renderPinnedJob(data, item) {
 
       <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-primary);padding:8px;border-radius:6px;border:1px dashed var(--border-color);">
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:12px;color:var(--text-primary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${job.title}</div>
-          <div style="font-size:11px;color:var(--text-tertiary);">${job.customerName}</div>
+          <div style="font-weight:700;font-size:12px;color:var(--text-primary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(job.title)}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);">${escapeHTML(job.customerName)}</div>
         </div>
-        <button class="btn btn-ghost btn-icon btn-sm" onclick="window.location.hash='/jobs/${job.id}'" title="View Job Details" style="margin-left:8px;">
+        <button class="btn btn-ghost btn-icon btn-sm" data-nav="/jobs/${job.id}" title="View Job Details" style="margin-left:8px;">
           <span class="material-icons-outlined" style="font-size:18px;color:var(--color-primary);">open_in_new</span>
         </button>
       </div>
@@ -2646,16 +2642,16 @@ function renderUnassignedJobs(data, item) {
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
           <div style="flex:1; min-width:0;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
-              <span class="badge ${j.priority === 'Urgent' ? 'badge-danger' : j.priority === 'High' ? 'badge-warning' : 'badge-neutral'}">${j.priority}</span>
-              <a href="#/jobs/${j.id}" style="font-weight:600; font-size:12px; color:var(--color-primary); text-decoration:none;">#${j.number}</a>
+              <span class="badge ${j.priority === 'Urgent' ? 'badge-danger' : j.priority === 'High' ? 'badge-warning' : 'badge-neutral'}">${escapeHTML(j.priority)}</span>
+              <a href="#/jobs/${j.id}" style="font-weight:600; font-size:12px; color:var(--color-primary); text-decoration:none;">#${escapeHTML(j.number)}</a>
             </div>
-            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${j.title}</div>
-            <div style="font-size:11px; color:var(--text-tertiary);">${j.customerName}</div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${escapeHTML(j.title)}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">${escapeHTML(j.customerName)}</div>
           </div>
           <div style="flex-shrink:0;">
             <select class="form-select select-assign-tech" data-job-id="${j.id}" style="font-size:11px; padding:4px 8px; width:120px; height:28px; margin:0;">
               <option value="">Assign Tech...</option>
-              ${techs.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+              ${techs.map(t => `<option value="${t.id}">${escapeHTML(t.name)}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -2681,11 +2677,11 @@ function renderUninvoicedCompleted(data, item) {
           <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
             <div style="flex:1; min-width:0;">
               <div style="font-weight:600; font-size:12px; margin-bottom:2px;">
-                <a href="#/jobs/${j.id}" style="color:var(--color-primary); text-decoration:none;">#${j.number}</a>
+                <a href="#/jobs/${j.id}" style="color:var(--color-primary); text-decoration:none;">#${escapeHTML(j.number)}</a>
                 <span style="color:var(--color-success); font-weight:700; margin-left:6px;">$${totalCost.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
-              <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${j.title}</div>
-              <div style="font-size:11px; color:var(--text-tertiary);">${j.customerName}</div>
+              <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${escapeHTML(j.title)}</div>
+              <div style="font-size:11px; color:var(--text-tertiary);">${escapeHTML(j.customerName)}</div>
             </div>
             <div style="flex-shrink:0;">
               <button class="btn btn-primary btn-sm btn-quick-invoice" data-job-id="${j.id}" style="padding:4px 10px; font-size:12px; height:28px;">Invoice</button>
@@ -2708,10 +2704,10 @@ function renderLowStock(data, item) {
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:12px; margin-bottom:2px; display:flex; align-items:center; gap:6px;">
-              <span class="text-secondary">${s.sku}</span>
+              <span class="text-secondary">${escapeHTML(s.sku)}</span>
               <span class="badge badge-danger" style="font-size:10px; padding:1px 6px;">${s.quantity} left</span>
             </div>
-            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${s.name}</div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${escapeHTML(s.name)}</div>
             <div style="font-size:11px; color:var(--text-tertiary);">Reorder trigger: ${s.reorderLevel}</div>
           </div>
           <div style="flex-shrink:0;">
@@ -2738,17 +2734,17 @@ function renderStaffAvailability(data, item) {
         return `
           <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
             <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-              <div style="width:24px; height:24px; border-radius:50%; background:${t.color || 'var(--color-primary)'}; color:white; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:bold; flex-shrink:0;">
-                ${t.name[0]}
+              <div style="width:24px; height:24px; border-radius:50%; background:${escapeHTML(t.color || 'var(--color-primary)')}; color:white; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:bold; flex-shrink:0;">
+                ${escapeHTML((t.name || '').trim().charAt(0) || '?')}
               </div>
               <div style="min-width:0;">
-                <div style="font-weight:600; font-size:13px; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${t.name}</div>
-                <div style="font-size:11px; color:var(--text-tertiary);">${t.role || 'Field Staff'}</div>
+                <div style="font-weight:600; font-size:13px; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${escapeHTML(t.name)}</div>
+                <div style="font-size:11px; color:var(--text-tertiary);">${escapeHTML(t.role || 'Field Staff')}</div>
               </div>
             </div>
             <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
               <span style="width:8px; height:8px; border-radius:50%; background:${dotBg}; display:inline-block;"></span>
-              <span style="font-size:12px; font-weight:600; color:${statusColor};">${statusText}</span>
+              <span style="font-size:12px; font-weight:600; color:${statusColor};">${escapeHTML(statusText)}</span>
             </div>
           </div>
         `;
@@ -2768,10 +2764,10 @@ function renderTimesheetExceptions(data, item) {
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:12px; margin-bottom:2px; color:var(--text-primary);">
-              ${t.technicianName}
+              ${escapeHTML(t.technicianName)}
               <span style="color:var(--color-primary); font-weight:700; margin-left:6px;">${t.hours} hrs</span>
             </div>
-            <div style="font-size:12px; color:var(--text-secondary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">Job ${t.jobNumber || ''} : ${t.description || '—'}</div>
+            <div style="font-size:12px; color:var(--text-secondary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">Job ${escapeHTML(t.jobNumber || '')} : ${escapeHTML(t.description || '—')}</div>
             <div style="font-size:11px; color:var(--text-tertiary);">${new Date(t.date).toLocaleDateString()}</div>
           </div>
           <div style="display:flex; gap:4px; flex-shrink:0;">
@@ -2797,10 +2793,10 @@ function renderAssetStatus(data, item) {
       ${assets.map(a => `
         <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
           <div style="min-width:0; flex:1;">
-            <div style="font-weight:600; font-size:13px; color:var(--text-primary);">${a.name}</div>
-            <div style="font-size:11px; color:var(--text-tertiary);">${a.type} · ${a.serial || '—'}</div>
+            <div style="font-weight:600; font-size:13px; color:var(--text-primary);">${escapeHTML(a.name)}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">${escapeHTML(a.type)} · ${escapeHTML(a.serial || '—')}</div>
           </div>
-          <span class="badge ${a.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${a.status}</span>
+          <span class="badge ${a.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${escapeHTML(a.status)}</span>
         </div>
       `).join('')}
     </div>
@@ -2821,9 +2817,9 @@ function renderOverdueMaintenance(data, item) {
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:12px; margin-bottom:2px; color:var(--color-danger);">
-              Overdue Date: ${p.nextServiceDate}
+              Overdue Date: ${escapeHTML(p.nextServiceDate)}
             </div>
-            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${p.name}</div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${escapeHTML(p.name)}</div>
           </div>
           <button class="btn btn-primary btn-sm btn-maint-dispatch" data-plan-id="${p.id}" style="padding:4px 10px; font-size:12px; height:28px;">Dispatch</button>
         </div>
@@ -2857,7 +2853,7 @@ function renderUpcomingMaintenance(data, item) {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px;background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:11px;margin-bottom:2px;color:var(--color-primary);">${dayLabel(d)}</div>
-            <div style="font-weight:500;font-size:13px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;color:var(--text-primary);">${p.name}</div>
+            <div style="font-weight:500;font-size:13px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;color:var(--text-primary);">${escapeHTML(p.name)}</div>
           </div>
           <button class="btn btn-secondary btn-sm btn-maint-dispatch" data-plan-id="${p.id}" style="padding:4px 10px;font-size:12px;height:28px;">Dispatch</button>
         </div>`).join('')}
@@ -2884,7 +2880,7 @@ function renderTopCustomers(data, item) {
         return `
           <div>
             <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
-              <span style="font-weight:600; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:200px;">${name}</span>
+              <span style="font-weight:600; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:200px;">${escapeHTML(name)}</span>
               <span style="font-weight:700; color:var(--color-primary);">$${spend.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div style="height:8px; background:var(--bg-color); border-radius:4px; overflow:hidden;">
@@ -2914,7 +2910,7 @@ function renderDailyTodo(data, item) {
           <div style="display:flex; align-items:center; justify-content:space-between; padding:8px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px;">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:${t.completed ? 'var(--text-tertiary)' : 'var(--text-primary)'}; text-decoration:${t.completed ? 'line-through' : 'none'}; flex:1; min-width:0; margin:0;">
               <input type="checkbox" class="todo-item-check" data-idx="${idx}" ${t.completed ? 'checked' : ''} style="cursor:pointer; width:14px; height:14px; margin:0;" />
-              <span class="truncate">${t.text}</span>
+              <span class="truncate">${escapeHTML(t.text)}</span>
             </label>
             <button class="btn btn-ghost btn-sm btn-icon btn-remove-todo" data-idx="${idx}" style="color:var(--color-danger); padding:0; width:22px; height:22px;" title="Delete">
               <span class="material-icons-outlined" style="font-size:16px;">delete</span>
@@ -2937,11 +2933,11 @@ function renderPendingApprovals(data, item) {
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:8px;">
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:12px; margin-bottom:2px;">
-              <a href="#/quotes/${q.id}" style="color:var(--color-primary); text-decoration:none;">#${q.number}</a>
+              <a href="#/quotes/${q.id}" style="color:var(--color-primary); text-decoration:none;">#${escapeHTML(q.number)}</a>
               <span style="color:var(--color-primary); font-weight:700; margin-left:6px;">$${(q.total || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
-            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${q.title}</div>
-            <div style="font-size:11px; color:var(--text-tertiary);">${q.customerName}</div>
+            <div style="font-weight:500; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; color:var(--text-primary);">${escapeHTML(q.title)}</div>
+            <div style="font-size:11px; color:var(--text-tertiary);">${escapeHTML(q.customerName)}</div>
           </div>
           <div style="display:flex; gap:4px; flex-shrink:0;">
             <button class="btn btn-ghost btn-icon btn-sm btn-quote-approve" data-quote-id="${q.id}" title="Approve" style="color:var(--color-success); border:1px solid var(--border-color); background:white;">
@@ -3179,14 +3175,19 @@ async function enhanceRouteSummaryWidget() {
         <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;background:var(--content-bg);border-radius:7px;">
           <span class="material-icons-outlined" style="font-size:16px;color:var(--color-primary);">directions_car</span>
           <div style="flex:1;min-width:0;">
-            <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}</div>
+            <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHTML(r.name)}</div>
             <div style="font-size:10px;color:var(--text-tertiary);">${r.stops} stop${r.stops === 1 ? '' : 's'} · incl. return</div>
           </div>
           <span style="font-size:12px;font-weight:700;">${fmtDuration(r.route.totalDurationSec)}</span>
-          ${r.nav ? `<a href="${r.nav}" target="_blank" rel="noopener" title="Open in Google Maps" style="color:var(--color-primary);display:flex;" onclick="event.stopPropagation()"><span class="material-icons-outlined" style="font-size:15px;">open_in_new</span></a>` : ''}
+          ${r.nav ? `<a href="${r.nav}" target="_blank" rel="noopener" title="Open in Google Maps" style="color:var(--color-primary);display:flex;" data-stop-propagation><span class="material-icons-outlined" style="font-size:15px;">open_in_new</span></a>` : ''}
         </div>`).join('')}
     </div>`;
-  hosts.forEach(h => { h.innerHTML = html; });
+  hosts.forEach(h => {
+    h.innerHTML = html;
+    h.querySelectorAll('[data-stop-propagation]').forEach(a => {
+      a.addEventListener('click', e => e.stopPropagation());
+    });
+  });
 }
 
 function renderWeatherForecast(data, item) {

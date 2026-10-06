@@ -1,3 +1,5 @@
+import { escapeHTML } from '../utils/security.js';
+
 export function showDrawer({ title, content, actions = [], width = 400, onMount }) {
   const existing = document.querySelector('.drawer-overlay');
   if (existing) existing.remove();
@@ -12,7 +14,7 @@ export function showDrawer({ title, content, actions = [], width = 400, onMount 
   const header = document.createElement('div');
   header.className = 'drawer-header';
   header.innerHTML = `
-    <h3>${title}</h3>
+    <h3>${escapeHTML(title)}</h3>
     <button class="drawer-close drawer-close-btn"><span class="material-icons-outlined">close</span></button>
   `;
 
@@ -33,7 +35,7 @@ export function showDrawer({ title, content, actions = [], width = 400, onMount 
     actions.forEach(act => {
       const btn = document.createElement('button');
       btn.className = `btn ${act.className || 'btn-secondary'}`;
-      btn.innerHTML = act.label;
+      btn.innerHTML = escapeHTML(act.label);
       btn.onclick = () => act.onClick(closeDrawer);
       footer.appendChild(btn);
     });

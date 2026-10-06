@@ -34,6 +34,8 @@ const BACKFILL_ORIGIN_SQL = readFileSync(
 );
 const POOLED_SQL = readFileSync(join(MIGRATIONS_DIR, '034_ai_pooled_caps.sql'), 'utf8');
 const NAME_SQL = readFileSync(join(MIGRATIONS_DIR, '036_company_name_uniqueness.sql'), 'utf8');
+const IDENTITY_SQL = readFileSync(join(MIGRATIONS_DIR, '038_profiles_identity_validation.sql'), 'utf8');
+const UPDATE_SCOPE_SQL = readFileSync(join(MIGRATIONS_DIR, '039_tighten_profiles_update.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -71,7 +73,8 @@ CREATE TABLE public.profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid REFERENCES public.companies(id),
   name text, email text, username text, phone text, role text,
-  user_type_id text, pay_rate numeric, deactivated boolean DEFAULT false, deactivated_at timestamptz
+  user_type_id text, pay_rate numeric, deactivated boolean DEFAULT false, deactivated_at timestamptz,
+  color text, avatar_url text
 );
 CREATE TABLE public.system_locks (lock_name text PRIMARY KEY, locked_at timestamptz, locked_by text, expires_at timestamptz);
 CREATE TABLE public.relay_reserved_email_slugs (slug text PRIMARY KEY);
@@ -1080,3 +1083,363 @@ describe('036 company name availability', () => {
     });
   });
 });
+
+describe('038 profile identity validation', () => {
+  let db;
+
+  // What a technician can store today: Profile.js writes name, color and
+  // avatar_url on the caller's own row, and 030's guard leaves all three open.
+  // profiles is read tenant-wide, so the payload is rendered for every
+  // colleague before it ever reaches the owner's own screen.
+  const POISONED_NAME = '<img src=x onerror=alert(1)>Tech "A"';
+  const POISONED_AVATAR = 'data:image/png;base64,<script>alert(1)</script>';
+  const DATA_URL_AVATAR = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+  const NEW_ADMIN = '77777777-7777-7777-7777-777777777777';
+
+  before(async () => {
+    db = await createFixtureDb();
+    // Poison the row the way the app would, then migrate - this is the order a
+    // live database is in, and the constraint cannot be added on top of it.
+    await db.query(
+      `UPDATE public.profiles SET name = '${POISONED_NAME}', avatar_url = '${POISONED_AVATAR}', color = 'red' WHERE id = '${TECH_A}'`
+    );
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    await db.exec(`INSERT INTO auth.users (id, email) VALUES ('${NEW_ADMIN}', 'constraint@acme.test')`);
+    await db.exec(IDENTITY_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('ensures the columns it constrains exist', async () => {
+    // schema.sql declares profiles.color but no incremental migration creates
+    // it, so a database built from this series alone would fail the ALTERs
+    // below without the catch-up columns.
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name IN ('color', 'avatar_url')"),
+      2
+    );
+  });
+
+  test('repairs the rows that already hold markup', async () => {
+    const row = await one(db, `SELECT name, avatar_url, color FROM public.profiles WHERE id = '${TECH_A}'`);
+    assert.strictEqual(row.name, 'img src=x onerror=alert(1)Tech A');
+    assert.strictEqual(row.avatar_url, 'data:image/png;base64,scriptalert(1)/script');
+    assert.strictEqual(row.color, '#FF5C00');
+  });
+
+  test('holds the repaired rows open for editing', async () => {
+    // Stripping rather than deleting is the difference between a repaired
+    // account and a locked one: the constraint would reject the very UPDATE
+    // that clears the offending value.
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      await db.query(`UPDATE public.profiles SET name = 'Tech A' WHERE id = '${TECH_A}'`);
+    });
+    assert.strictEqual(await value(db, `SELECT name FROM public.profiles WHERE id = '${TECH_A}'`), 'Tech A');
+  });
+
+  test('rejects a name carrying markup, on any role', async () => {
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      await assert.rejects(
+        () => db.query(`UPDATE public.profiles SET name = '<b>Tech A</b>' WHERE id = '${TECH_A}'`),
+        /profiles_name_no_markup/
+      );
+      // A quote is not markup on its own, but the name is interpolated into
+      // attribute positions as well as text, and one quote closes the
+      // attribute early - so it is rejected alongside the brackets.
+      await assert.rejects(
+        () => db.query(`UPDATE public.profiles SET name = 'Tech "Ace" A' WHERE id = '${TECH_A}'`),
+        /profiles_name_no_markup/
+      );
+    });
+    // A CHECK constraint applies to the service role too. That is the whole
+    // reason it is not an extension of profiles_security_guard(), which stands
+    // down for the signup path that writes the admin's name.
+    await asRole(db, 'service_role', null, async () => {
+      await assert.rejects(
+        () => db.query(`UPDATE public.profiles SET name = '<b>Tech A</b>' WHERE id = '${TECH_A}'`),
+        /profiles_name_no_markup/
+      );
+    });
+    assert.strictEqual(await value(db, `SELECT name FROM public.profiles WHERE id = '${TECH_A}'`), 'Tech A');
+  });
+
+  test('rejects a markup avatar and a non-hex colour', async () => {
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      await assert.rejects(
+        () => db.query(`UPDATE public.profiles SET avatar_url = '<svg onload=alert(1)>' WHERE id = '${TECH_A}'`),
+        /profiles_avatar_url_no_markup/
+      );
+      await assert.rejects(
+        () => db.query(`UPDATE public.profiles SET color = 'red' WHERE id = '${TECH_A}'`),
+        /profiles_color_hex/
+      );
+    });
+  });
+
+  test('accepts everything the profile form actually sends', async () => {
+    const PRESETS = ['#FF5C00', '#2563EB', '#059669', '#7C3AED', '#DB2777', '#DC2626', '#0891B2', '#65A30D'];
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      for (const hex of PRESETS) {
+        await db.query(`UPDATE public.profiles SET color = '${hex}', avatar_url = '${DATA_URL_AVATAR}' WHERE id = '${TECH_A}'`);
+      }
+      // An apostrophe is markup to nobody; rejecting it would lock out a
+      // sizeable share of real names.
+      await db.query(`UPDATE public.profiles SET name = 'O''Brien Tech' WHERE id = '${TECH_A}'`);
+    });
+    assert.strictEqual(
+      await value(db, `SELECT name || '|' || color || '|' || avatar_url FROM public.profiles WHERE id = '${TECH_A}'`),
+      `O'Brien Tech|#65A30D|${DATA_URL_AVATAR}`
+    );
+  });
+
+  test('covers the admin the signup RPC creates', async () => {
+    // 038 on its own: the signup RPC writes profiles.name, so provisioning
+    // fails closed on a markup name. 039 then normalises the name inside the
+    // RPC so no shipped flow can reach this failure - see the 039 suite.
+    await asRole(db, 'authenticated', NEW_ADMIN, async () => {
+      await assert.rejects(
+        () => db.query(`SELECT public.create_company_and_admin('${NEW_ADMIN}', 'Constraint Co', 'Mallory <b>', '0400000000')`),
+        /profiles_name_no_markup/
+      );
+      // The rejected company must not be left behind half-provisioned.
+      assert.strictEqual(await value(db, "SELECT count(*)::int FROM public.companies WHERE name = 'Constraint Co'"), 0);
+      assert.strictEqual(await value(db, `SELECT count(*)::int FROM public.profiles WHERE id = '${NEW_ADMIN}'`), 0);
+    });
+  });
+
+  test('is re-runnable', async () => {
+    await db.exec(IDENTITY_SQL);
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_constraint WHERE conname IN ('profiles_name_no_markup', 'profiles_avatar_url_no_markup', 'profiles_color_hex')"),
+      3
+    );
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      await assert.rejects(
+        () => db.query(`UPDATE public.profiles SET name = '<b>x</b>' WHERE id = '${TECH_A}'`),
+        /profiles_name_no_markup/
+      );
+    });
+  });
+});
+
+describe('039 profiles update scope', () => {
+  let db;
+
+  // Two signups that do not exist yet: one with a name the CHECK rejects as
+  // typed, one with a name it accepts untouched.
+  const MARKUP_ADMIN = '88888888-8888-8888-8888-888888888888';
+  const CLEAN_ADMIN = '99999999-9999-9999-9999-999999999999';
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    // The live series, in order: 036 owns the provisioning RPC this suite
+    // redefines, 038 owns the CHECK it has to satisfy.
+    await db.exec(NAME_SQL);
+    await db.exec(IDENTITY_SQL);
+    await db.exec(UPDATE_SCOPE_SQL);
+    await db.exec(
+      `INSERT INTO auth.users (id, email) VALUES ('${MARKUP_ADMIN}', 'markup@acme.test'), ('${CLEAN_ADMIN}', 'clean@acme.test')`
+    );
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('an admin keeps the tenant-wide edit the Settings user table needs', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      const updated = await db.query(
+        `UPDATE public.profiles SET name = 'Tech A Edited', phone = '0400111222' WHERE id = '${TECH_A}'`
+      );
+      assert.strictEqual(updated.affectedRows, 1);
+    });
+    const row = await one(db, `SELECT name, phone FROM public.profiles WHERE id = '${TECH_A}'`);
+    assert.strictEqual(row.name, 'Tech A Edited');
+    assert.strictEqual(row.phone, '0400111222');
+  });
+
+  test('a technician cannot rewrite a colleague - or the admin - at all', async () => {
+    // The reported attack: read the admin's address out of the tenant-wide
+    // read policy, change it, then use the password-reset flow.
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      const hijack = await db.query(
+        `UPDATE public.profiles SET email = 'attacker@evil.test' WHERE id = '${ADMIN_A}'`
+      );
+      assert.strictEqual(hijack.affectedRows, 0);
+
+      const rename = await db.query(
+        `UPDATE public.profiles SET name = 'Mallory' WHERE id = '${ADMIN_A}'`
+      );
+      assert.strictEqual(rename.affectedRows, 0);
+    });
+
+    const admin = await one(db, `SELECT name, email FROM public.profiles WHERE id = '${ADMIN_A}'`);
+    assert.strictEqual(admin.name, 'Admin A');
+    assert.strictEqual(admin.email, 'a@a.test');
+  });
+
+  test('a technician still edits their own profile', async () => {
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      const updated = await db.query(
+        `UPDATE public.profiles SET name = 'Tech A Self', color = '#2563EB' WHERE id = '${TECH_A}'`
+      );
+      assert.strictEqual(updated.affectedRows, 1);
+    });
+    assert.strictEqual(await value(db, `SELECT name FROM public.profiles WHERE id = '${TECH_A}'`), 'Tech A Self');
+  });
+
+  test('a self-declared admin gets no tenant-wide write', async () => {
+    // profiles_security_guard() reverts role, so the promotion is a no-op -
+    // and the helper reads the stored row, not the statement, so even a guard
+    // regression would not hand out the tenant here.
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      await db.query(`UPDATE public.profiles SET role = 'admin' WHERE id = '${TECH_A}'`);
+      assert.strictEqual(
+        await value(db, `SELECT role FROM public.profiles WHERE id = '${TECH_A}'`),
+        'technician'
+      );
+
+      const attempt = await db.query(
+        `UPDATE public.profiles SET email = 'still-evil@evil.test' WHERE id = '${ADMIN_A}'`
+      );
+      assert.strictEqual(attempt.affectedRows, 0);
+    });
+    assert.strictEqual(await value(db, `SELECT email FROM public.profiles WHERE id = '${ADMIN_A}'`), 'a@a.test');
+  });
+
+  test('a deactivated admin loses the tenant-wide write', async () => {
+    const RETIRED = '55555555-5555-5555-5555-555555555555';
+    await db.exec(
+      `INSERT INTO public.profiles (id, company_id, name, email, role, deactivated) VALUES ('${RETIRED}', '${TENANT_A}', 'Retired Admin', 'r@a.test', 'admin', true)`
+    );
+    await asRole(db, 'authenticated', RETIRED, async () => {
+      const attempt = await db.query(
+        `UPDATE public.profiles SET email = 'retired@evil.test' WHERE id = '${ADMIN_A}'`
+      );
+      assert.strictEqual(attempt.affectedRows, 0);
+    });
+    assert.strictEqual(await value(db, `SELECT email FROM public.profiles WHERE id = '${ADMIN_A}'`), 'a@a.test');
+    // The retired account can still maintain its own row.
+    await asRole(db, 'authenticated', RETIRED, async () => {
+      const own = await db.query(`UPDATE public.profiles SET name = 'Retired Admin' WHERE id = '${RETIRED}'`);
+      assert.strictEqual(own.affectedRows, 1);
+    });
+  });
+
+  test('cross-tenant writes stay out, even for an admin', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      const attempt = await db.query(
+        `UPDATE public.profiles SET name = 'Cross Tenant' WHERE id = '${ADMIN_B}'`
+      );
+      assert.strictEqual(attempt.affectedRows, 0);
+    });
+    assert.strictEqual(await value(db, `SELECT name FROM public.profiles WHERE id = '${ADMIN_B}'`), 'Admin B');
+  });
+
+  test('the helper answers for the caller only, and anon cannot call it', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      assert.strictEqual(await value(db, 'SELECT public.is_company_admin()'), true);
+    });
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      // Same call, same arguments - the answer is about the caller, so a
+      // technician cannot borrow an admin's verdict.
+      assert.strictEqual(await value(db, 'SELECT public.is_company_admin()'), false);
+    });
+    await asRole(db, 'anon', null, async () => {
+      await assert.rejects(() => db.query('SELECT public.is_company_admin()'), /permission denied/);
+    });
+  });
+
+  test('leaves the own-row policy untouched', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'profiles' AND policyname = 'profile_update_own'"),
+      1
+    );
+  });
+
+  test('provisions a signup whose name carries markup, instead of dead-ending it', async () => {
+    // The launch screen, the finish card and the local -> cloud upgrade all
+    // hand a typed name straight to this RPC. 038 alone fails the whole call,
+    // which is safe but leaves the user stuck on the field that used to be
+    // accepted; 039 normalises inside the RPC so the signup completes.
+    await asRole(db, 'authenticated', MARKUP_ADMIN, async () => {
+      await db.query(
+        `SELECT public.create_company_and_admin('${MARKUP_ADMIN}', 'Markup Co', '  Mallory <b> "Bo"  ', '0400000000')`
+      );
+    });
+    const row = await one(db, `SELECT name, role, email FROM public.profiles WHERE id = '${MARKUP_ADMIN}'`);
+    assert.strictEqual(row.name, 'Mallory b Bo');
+    assert.strictEqual(row.role, 'admin');
+    assert.strictEqual(row.email, 'markup@acme.test');
+    assert.strictEqual(await value(db, "SELECT count(*)::int FROM public.companies WHERE name = 'Markup Co'"), 1);
+  });
+
+  test('leaves an ordinary signup name exactly as typed', async () => {
+    await asRole(db, 'authenticated', CLEAN_ADMIN, async () => {
+      await db.query(
+        `SELECT public.create_company_and_admin('${CLEAN_ADMIN}', 'Clean Co', 'O''Brien Mallory', '0400000000')`
+      );
+    });
+    assert.strictEqual(
+      await value(db, `SELECT name FROM public.profiles WHERE id = '${CLEAN_ADMIN}'`),
+      "O'Brien Mallory"
+    );
+  });
+
+  test('a name that is nothing but markup lands as NULL, not as a blank shell', async () => {
+    const BLANK_ADMIN = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    await db.exec(`INSERT INTO auth.users (id, email) VALUES ('${BLANK_ADMIN}', 'blank@acme.test')`);
+    await asRole(db, 'authenticated', BLANK_ADMIN, async () => {
+      await db.query(`SELECT public.create_company_and_admin('${BLANK_ADMIN}', 'Blank Co', '<>', '0400000000')`);
+    });
+    assert.strictEqual(await value(db, `SELECT name IS NULL FROM public.profiles WHERE id = '${BLANK_ADMIN}'`), true);
+  });
+
+  test('the CHECK still refuses markup written past the RPC', async () => {
+    // Normalising at the one entry point that needs it must not read as a
+    // weakening of 038: a direct write is still rejected, for every role.
+    await asRole(db, 'service_role', null, async () => {
+      await assert.rejects(
+        () => db.query(`UPDATE public.profiles SET name = '<b>Mallory</b>' WHERE id = '${MARKUP_ADMIN}'`),
+        /profiles_name_no_markup/
+      );
+    });
+    assert.strictEqual(await value(db, `SELECT name FROM public.profiles WHERE id = '${MARKUP_ADMIN}'`), 'Mallory b Bo');
+  });
+
+  test('is re-runnable', async () => {
+    await db.exec(UPDATE_SCOPE_SQL);
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'profiles' AND policyname = 'profile_update_tenant'"),
+      1
+    );
+    assert.strictEqual(
+      await value(db, "SELECT to_regprocedure('public.is_company_admin()') IS NOT NULL"),
+      true
+    );
+    assert.strictEqual(
+      await value(db, "SELECT to_regprocedure('public.create_company_and_admin(uuid, text, text, text)') IS NOT NULL"),
+      true
+    );
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      assert.strictEqual(
+        (await db.query(`UPDATE public.profiles SET name = 'Tech A Edited' WHERE id = '${TECH_A}'`)).affectedRows,
+        1
+      );
+    });
+    await asRole(db, 'authenticated', TECH_A, async () => {
+      assert.strictEqual(
+        (await db.query(`UPDATE public.profiles SET name = 'Re-run' WHERE id = '${ADMIN_A}'`)).affectedRows,
+        0
+      );
+    });
+  });
+});
+

@@ -9,7 +9,7 @@ import { showDrawer } from '../../components/Drawer.js';
 import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
 import { contractorInviteEmail } from '../../utils/emailTemplates.js';
-import { contractorPortalUrl } from '../../utils/portalLinks.js';
+import { contractorPortalUrl, generatePortalToken } from '../../utils/portalLinks.js';
 
 export function renderContractorDetail(container, { id, tab }) {
   const contractor = store.getById('contractors', id);
@@ -20,7 +20,7 @@ export function renderContractorDetail(container, { id, tab }) {
 
   // Self-healing check for contractor portal magic link token
   if (!contractor.portalToken) {
-    const generatedToken = 'c_pt_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36).substr(-4);
+    const generatedToken = generatePortalToken();
     store.update('contractors', contractor.id, { portalToken: generatedToken });
     contractor.portalToken = generatedToken;
   }
@@ -733,7 +733,7 @@ export function renderContractorDetail(container, { id, tab }) {
               </td>
               <td>
                 <div style="display:flex; flex-direction:column; gap:2px">
-                  <span class="text-primary font-semibold" style="cursor:pointer; text-decoration:underline" onclick="window.location.hash='#/jobs/${jobId}'">${escapeHTML(jobNumber)}</span>
+                  <span class="text-primary font-semibold" style="cursor:pointer; text-decoration:underline" data-nav="#/jobs/${jobId}">${escapeHTML(jobNumber)}</span>
                   <span style="font-size:11px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px" title="${escapeHTML(jobTitle)}">${escapeHTML(jobTitle)}</span>
                 </div>
               </td>

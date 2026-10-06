@@ -206,7 +206,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
             </h4>
             <select class="form-select" id="act-tech-filter" style="width:100%">
               <option value="all" ${filterTechId === 'all' ? 'selected' : ''}>All Team Members</option>
-              ${technicians.map(t => `<option value="${t.id}" ${filterTechId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+              ${technicians.map(t => `<option value="${t.id}" ${filterTechId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
             </select>
           </div>` : ''}
           <!-- Quick Create -->
@@ -276,7 +276,7 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
       <div class="form-group" style="margin-bottom:12px">
         <label class="form-label">Assign To</label>
         <select class="form-select" id="act-assignee" style="width:100%">
-          ${store.getAll('technicians').filter(t => !t.deactivated || a.assignedToId === t.id).map(t => `<option value="${t.id}" ${a.assignedToId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+          ${store.getAll('technicians').filter(t => !t.deactivated || a.assignedToId === t.id).map(t => `<option value="${t.id}" ${a.assignedToId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
         </select>
       </div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">
@@ -342,9 +342,9 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
     function populateRecords(type, selectedId) {
       const sel = content.querySelector('#act-link-record');
       let opts = '<option value="">Select...</option>';
-      if (type === 'job') opts += jobs.map(j => `<option value="${j.id}" data-label="Job ${j.number}" ${selectedId === j.id ? 'selected' : ''}>${j.number} — ${escapeHTML(j.title)}</option>`).join('');
+      if (type === 'job') opts += jobs.map(j => `<option value="${j.id}" data-label="Job ${escapeHTML(j.number)}" ${selectedId === j.id ? 'selected' : ''}>${escapeHTML(j.number)} — ${escapeHTML(j.title)}</option>`).join('');
       else if (type === 'customer') opts += customers.map(c => `<option value="${c.id}" data-label="${escapeHTML(c.company || c.firstName + ' ' + c.lastName)}" ${selectedId === c.id ? 'selected' : ''}>${escapeHTML(c.company || c.firstName + ' ' + c.lastName)}</option>`).join('');
-      else if (type === 'quote') opts += quotes.map(q => `<option value="${q.id}" data-label="Quote ${q.number}" ${selectedId === q.id ? 'selected' : ''}>${q.number} — ${escapeHTML(q.customerName || '')}</option>`).join('');
+      else if (type === 'quote') opts += quotes.map(q => `<option value="${q.id}" data-label="Quote ${escapeHTML(q.number)}" ${selectedId === q.id ? 'selected' : ''}>${escapeHTML(q.number)} — ${escapeHTML(q.customerName || '')}</option>`).join('');
       sel.innerHTML = opts;
     }
 

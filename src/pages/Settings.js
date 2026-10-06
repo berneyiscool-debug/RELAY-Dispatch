@@ -246,6 +246,15 @@ export function renderSettings(container) {
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
 
+  // Team management writes to other people's profiles; 039 only lets a company
+  // admin through that policy, so a non-admin deep link lands on Company with an
+  // explanation instead of a form that fails on save. Self-service name, colour
+  // and photo editing lives on the Profile page.
+  if (activeTab === 'users' && currentUser.role !== 'admin') {
+    showToast('Team management is restricted to company administrators.', 'info');
+    activeTab = 'company';
+  }
+
   container.innerHTML = `
     <style>
       #settings-content {
@@ -334,31 +343,31 @@ export function renderSettings(container) {
                 <div class="settings-stack">
                   <div class="form-group">
                     <label class="form-label">Company Name</label>
-                    <input class="form-input" value="${s.name || 'Company Name'}" id="company-name" placeholder="Company Name" />
+                    <input class="form-input" value="${escapeHTML(s.name || 'Company Name')}" id="company-name" placeholder="Company Name" />
                   </div>
                   <div class="form-row">
                     <div class="form-group">
                       <label class="form-label">ABN</label>
-                      <input class="form-input" id="company-abn" value="${s.abn || ''}" placeholder="e.g. 51 234 567 890" />
+                      <input class="form-input" id="company-abn" value="${escapeHTML(s.abn || '')}" placeholder="e.g. 51 234 567 890" />
                     </div>
                     <div class="form-group">
                       <label class="form-label">Phone</label>
-                      <input class="form-input" id="company-phone" value="${s.phone || ''}" placeholder="e.g. (02) 6882 4400" />
+                      <input class="form-input" id="company-phone" value="${escapeHTML(s.phone || '')}" placeholder="e.g. (02) 6882 4400" />
                     </div>
                   </div>
                   <div class="form-row">
                     <div class="form-group">
                       <label class="form-label">Company Domain</label>
-                      <input class="form-input" value="${s.domain || ''}" id="company-domain" placeholder="e.g. yourcompany.com.au" />
+                      <input class="form-input" value="${escapeHTML(s.domain || '')}" id="company-domain" placeholder="e.g. yourcompany.com.au" />
                     </div>
                     <div class="form-group">
                       <label class="form-label">Company Email</label>
-                      <input class="form-input" value="${s.email || ''}" id="company-email" placeholder="e.g. admin@yourcompany.com.au" />
+                      <input class="form-input" value="${escapeHTML(s.email || '')}" id="company-email" placeholder="e.g. admin@yourcompany.com.au" />
                     </div>
                   </div>
                   <div class="form-group">
                     <label class="form-label">Address</label>
-                    <textarea class="form-textarea" id="company-address" rows="2" placeholder="e.g. 14 Yarrandale Rd, Dubbo NSW 2830">${s.address || ''}</textarea>
+                    <textarea class="form-textarea" id="company-address" rows="2" placeholder="e.g. 14 Yarrandale Rd, Dubbo NSW 2830">${escapeHTML(s.address || '')}</textarea>
                   </div>
                 </div>
 
@@ -510,6 +519,16 @@ export function renderSettings(container) {
 
       renderCompanyTabAll();
     } else if (activeTab === 'users') {
+      // Everyone under this tab acts on other people's logins: the team list,
+      // the user types those logins are built from, and the reset-request
+      // queue. 039 restricts the profiles write behind all of them to the
+      // caller's own row unless they are an admin, so a technician gets the
+      // same explanation renderLocalBackup gives instead of a form that fails
+      // on save. Editing your own name, colour and photo lives on Profile.
+      if (currentUser.role !== 'admin') {
+        tc.innerHTML = '<p class="text-tertiary">Team management is restricted to company administrators.</p>';
+        return;
+      }
       renderUsersSettings(tc, openMigrationModal);
     } else if (activeTab === 'materials') {
       renderMaterialsSettings(tc);
@@ -835,7 +854,7 @@ export function renderSettings(container) {
           <div class="card-body" style="display:flex; flex-direction:column; gap:20px;">
             <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
               <input type="checkbox" id="portal-enable" class="form-checkbox" style="width:20px; height:20px; cursor:pointer;" ${portalEnabled ? 'checked' : ''} />
-              <div style="cursor:pointer;" onclick="document.getElementById('portal-enable').click()">
+              <div style="cursor:pointer;" data-click-el="portal-enable">
                 <strong style="display:block; color:var(--text-primary);">Enable Customer Portal Link Access</strong>
                 <span style="color:var(--text-secondary);">When disabled, any attempt to visit a customer portal link will show an access restricted notice.</span>
               </div>
@@ -896,7 +915,7 @@ export function renderSettings(container) {
           <div class="card-body" style="display:flex; flex-direction:column; gap:20px;">
             <div class="form-group" style="display:flex; align-items:center; gap:12px; background:var(--content-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color)">
               <input type="checkbox" id="contractor-portal-enable" class="form-checkbox" style="width:20px; height:20px; cursor:pointer;" ${portalEnabled ? 'checked' : ''} />
-              <div style="cursor:pointer;" onclick="document.getElementById('contractor-portal-enable').click()">
+              <div style="cursor:pointer;" data-click-el="contractor-portal-enable">
                 <strong style="display:block; color:var(--text-primary);">Enable Contractor Portal Link Access</strong>
                 <span style="color:var(--text-secondary);">When disabled, any subcontractor attempting to load their portal token will see an access deactivated notice.</span>
               </div>
@@ -1368,11 +1387,11 @@ export function renderSettings(container) {
         ` : ''}
         <div class="form-group">
           <label class="form-label">User Type Name</label>
-          <input class="form-input" id="ut-name" value="${ut.name}" />
+          <input class="form-input" id="ut-name" value="${escapeHTML(ut.name)}" />
         </div>
         <div class="form-group">
           <label class="form-label">Description</label>
-          <input class="form-input" id="ut-desc" value="${ut.description}" />
+          <input class="form-input" id="ut-desc" value="${escapeHTML(ut.description)}" />
         </div>
     `;
 
@@ -1555,11 +1574,11 @@ export function renderSettings(container) {
     contentDiv.innerHTML = `
       <div class="form-group">
         <label class="form-label">Name</label>
-        <input class="form-input" id="u-name" value="${t.name}" />
+        <input class="form-input" id="u-name" value="${escapeHTML(t.name)}" />
       </div>
       <div class="form-group">
         <label class="form-label">Username</label>
-        <input class="form-input" id="u-username" value="${t.username || (t.email ? t.email.split('@')[0] : '')}" ${editId ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''} placeholder="e.g. joshua" />
+        <input class="form-input" id="u-username" value="${escapeHTML(t.username || (t.email ? t.email.split('@')[0] : ''))}" ${editId ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''} placeholder="e.g. joshua" />
         ${!editId ? `
         <div style="color: var(--text-tertiary); margin-top: 4px; font-weight: 500;">
           Company login code is: <strong style="color: var(--color-primary)">${companySlug}</strong>. User will log in with <strong style="color: var(--color-primary)">username@${companySlug}</strong>
@@ -1573,7 +1592,7 @@ export function renderSettings(container) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Role / Job Title</label>
-          <input class="form-input" id="u-role" value="${t.role}" />
+          <input class="form-input" id="u-role" value="${escapeHTML(t.role)}" />
         </div>
         <div class="form-group">
           <label class="form-label">User Type</label>
@@ -1582,7 +1601,7 @@ export function renderSettings(container) {
             ${userTypes
               .filter(ut => (!ut.id.endsWith('_ut_admin') && ut.id !== 'ut_admin') || t.userTypeId === ut.id)
               .map(ut => `
-                <option value="${ut.id}" ${t.userTypeId === ut.id ? 'selected' : ''}>${ut.name}</option>
+                <option value="${ut.id}" ${t.userTypeId === ut.id ? 'selected' : ''}>${escapeHTML(ut.name)}</option>
               `).join('')}
           </select>
         </div>
@@ -1603,7 +1622,7 @@ export function renderSettings(container) {
           `).join('')}
           <div style="position:relative; width:28px; height:28px; cursor:pointer; border-radius:50%; background:#f3f5f9; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); margin-left:8px;" title="Custom Color">
             <span class="material-icons-outlined" style="font-size:16px; color:var(--text-secondary)">colorize</span>
-            <input type="color" id="u-color" value="${t.color}" style="position:absolute; opacity:0; width:100%; height:100%; cursor:pointer; left:0; top:0;" />
+            <input type="color" id="u-color" value="${escapeHTML(t.color)}" style="position:absolute; opacity:0; width:100%; height:100%; cursor:pointer; left:0; top:0;" />
           </div>
         </div>
       </div>
@@ -1639,6 +1658,10 @@ export function renderSettings(container) {
           const password = document.getElementById('u-password')?.value || '';
           
           if (!name) { showToast('Name required', 'error'); return; }
+          // profiles.name is rendered across the tenant, so 038 rejects
+          // markup and quotes at the database. Catching it here reports the
+          // field instead of surfacing a raw 23514 from the write below.
+          if (/[<>"]/.test(name)) { showToast('Name cannot contain <, > or ".', 'error'); return; }
           if (!username) { showToast('Username required', 'error'); return; }
           if (username.includes('@')) { showToast('Username cannot contain @ symbol', 'error'); return; }
           
@@ -2391,8 +2414,8 @@ export function renderSettings(container) {
             <div style="display:flex;flex-wrap:wrap;gap:8px" id="categories-container">
               ${categories.map(c => `
                 <div class="badge badge-neutral" style="padding:8px 12px;display:flex;align-items:center;gap:8px">
-                  ${c}
-                  <span class="material-icons-outlined btn-remove-cat" data-name="${c}" style="font-size:14px;cursor:pointer">close</span>
+                  ${escapeHTML(c)}
+                  <span class="material-icons-outlined btn-remove-cat" data-name="${escapeHTML(c)}" style="font-size:14px;cursor:pointer">close</span>
                 </div>
               `).join('')}
               <button class="btn btn-outline btn-sm" id="btn-add-category" style="border-style:dashed">
@@ -2493,8 +2516,8 @@ export function renderSettings(container) {
         btn.className = 'badge badge-neutral';
         btn.style.cssText = 'padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px';
         btn.innerHTML = `
-          ${name}
-          <span class="material-icons-outlined btn-remove-cat" data-name="${name}" style="font-size:14px;cursor:pointer">close</span>
+          ${escapeHTML(name)}
+          <span class="material-icons-outlined btn-remove-cat" data-name="${escapeHTML(name)}" style="font-size:14px;cursor:pointer">close</span>
         `;
         tc.querySelector('#categories-container').insertBefore(btn, tc.querySelector('#btn-add-category'));
         btn.querySelector('.btn-remove-cat').addEventListener('click', () => btn.remove());
@@ -2613,15 +2636,15 @@ export function renderSettings(container) {
               ${techs.filter(t => !t.deactivated).map(t => {
                 const ut = userTypes.find(ut => ut.id === t.userTypeId);
                 const avatarCell = t.avatarUrl
-                  ? `<img src="${t.avatarUrl}" style="width:32px; height:32px; border-radius:50%; object-fit:cover; display:block;" />`
-                  : `<div style="width:32px; height:32px; border-radius:50%; background:${t.color}; align-items:center; justify-content:center; display:flex; color:#fff; font-weight:600;">${(t.name || 'U').trim().charAt(0).toUpperCase()}</div>`;
+                  ? `<img src="${escapeHTML(t.avatarUrl)}" style="width:32px; height:32px; border-radius:50%; object-fit:cover; display:block;" />`
+                  : `<div style="width:32px; height:32px; border-radius:50%; background:${escapeHTML(t.color)}; align-items:center; justify-content:center; display:flex; color:#fff; font-weight:600;">${escapeHTML((t.name || 'U').trim().charAt(0).toUpperCase())}</div>`;
                 return `
                   <tr>
                     <td>${avatarCell}</td>
-                    <td class="font-medium">${t.name}</td>
-                    <td class="text-secondary">${t.role}</td>
-                    <td><span class="badge ${ut?.id === 'ut_admin' ? 'badge-primary' : 'badge-neutral'}">${ut?.name || 'Unassigned'}</span></td>
-                    <td class="text-tertiary">${t.username || (t.email ? t.email.split('@')[0] : '') || '-'}</td>
+                    <td class="font-medium">${escapeHTML(t.name)}</td>
+                    <td class="text-secondary">${escapeHTML(t.role)}</td>
+                    <td><span class="badge ${ut?.id === 'ut_admin' ? 'badge-primary' : 'badge-neutral'}">${escapeHTML(ut?.name || 'Unassigned')}</span></td>
+                    <td class="text-tertiary">${escapeHTML(t.username || (t.email ? t.email.split('@')[0] : '') || '-')}</td>
                     <td class="text-secondary">${t.payRate ? `$${t.payRate.toFixed(2)}/hr` : '-'}</td>
                     <td>
                       <div style="display:flex; gap:8px;">
@@ -2664,8 +2687,8 @@ export function renderSettings(container) {
 
                 return `
                   <tr>
-                    <td style="opacity:0.6; font-weight:500">${t.name}</td>
-                    <td style="opacity:0.6">${t.role}</td>
+                    <td style="opacity:0.6; font-weight:500">${escapeHTML(t.name)}</td>
+                    <td style="opacity:0.6">${escapeHTML(t.role)}</td>
                     <td class="text-tertiary">${deactivatedAt.toLocaleDateString()}</td>
                     <td>
                       ${canReactivate 
@@ -2700,7 +2723,7 @@ export function renderSettings(container) {
         const t = store.getById('technicians', id);
         if (!t) return;
         const contentDiv = document.createElement('div');
-        contentDiv.innerHTML = `<p>Are you sure you want to deactivate <strong>${t.name}</strong>? They will no longer be able to log in.</p>`;
+        contentDiv.innerHTML = `<p>Are you sure you want to deactivate <strong>${escapeHTML(t.name)}</strong>? They will no longer be able to log in.</p>`;
         showModal({
           title: 'Deactivate User',
           content: contentDiv,
@@ -2731,7 +2754,7 @@ export function renderSettings(container) {
         }
 
         const contentDiv = document.createElement('div');
-        contentDiv.innerHTML = `<p>Reactivate <strong>${t.name}</strong>? They will regain access once a User Type is assigned.</p>`;
+        contentDiv.innerHTML = `<p>Reactivate <strong>${escapeHTML(t.name)}</strong>? They will regain access once a User Type is assigned.</p>`;
         showModal({
           title: 'Reactivate User',
           content: contentDiv,
@@ -2776,8 +2799,8 @@ export function renderSettings(container) {
             <tbody>
               ${userTypes.map(ut => `
                 <tr>
-                  <td class="font-medium">${ut.name}</td>
-                  <td class="text-secondary">${ut.description}</td>
+                  <td class="font-medium">${escapeHTML(ut.name)}</td>
+                  <td class="text-secondary">${escapeHTML(ut.description)}</td>
                   <td>
                     <div style="display:flex; gap:8px;">
                       <button class="btn btn-sm btn-ghost btn-edit-perms" data-id="${ut.id}">Permissions</button>
@@ -2861,8 +2884,8 @@ export function renderSettings(container) {
                 const requestedAt = r.requested_at ? new Date(r.requested_at).toLocaleString() : 'Unknown';
                 return `
                   <tr>
-                    <td class="font-medium">${tech.name || 'Unknown'}</td>
-                    <td class="text-secondary">${r.employee_id || tech.username || ''}</td>
+                    <td class="font-medium">${escapeHTML(tech.name || 'Unknown')}</td>
+                    <td class="text-secondary">${escapeHTML(r.employee_id || tech.username || '')}</td>
                     <td class="text-tertiary">${requestedAt}</td>
                     <td>
                       <div style="display:flex; gap:8px;">
@@ -2887,7 +2910,7 @@ export function renderSettings(container) {
         if (!t) return;
         const contentDiv = document.createElement('div');
         contentDiv.innerHTML = `
-          <p>Approve password reset request for <strong>${t.name}</strong>? Please enter their new password below:</p>
+          <p>Approve password reset request for <strong>${escapeHTML(t.name)}</strong>? Please enter their new password below:</p>
           <div class="form-group" style="margin-top:12px">
             <label class="form-label">New Password</label>
             <input type="password" id="admin-reset-pwd-input" class="form-input" placeholder="Min. 6 characters" minlength="6" autofocus />

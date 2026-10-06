@@ -25,7 +25,24 @@ export function appBaseUrl() {
   return servedOverHttp && pathname ? `${webOrigin()}${pathname}` : `${webOrigin()}/`;
 }
 
-function newToken() {
+// Portal tokens are the only thing standing between a URL and someone else's
+// quotes, invoices and job history, so they have to come from the CSPRNG.
+// Math.random() is seeded per realm, its output is predictable from a couple of
+// samples, and the old shape leaked the mint time as well — a few thousand
+// guesses could walk the space. 128 random bits keeps the token short enough to
+// paste into an email while making enumeration hopeless.
+//
+// getRandomValues (rather than randomUUID) because the app also runs from
+// file:// in Electron, where randomUUID's secure-context requirement is not met.
+export function generatePortalToken() {
+  const webCrypto = globalThis.crypto;
+  if (webCrypto?.getRandomValues) {
+    const bytes = webCrypto.getRandomValues(new Uint8Array(16));
+    return 'c_pt_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  // No supported runtime reaches this, but a link that cannot be minted is
+  // worse than a weak one, so keep the legacy shape as a labelled last resort.
+  console.error('Portal token generated without a CSPRNG.');
   return 'c_pt_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36).substr(-4);
 }
 
@@ -35,7 +52,7 @@ function newToken() {
 export function ensureCustomerToken(customer) {
   if (!customer || !customer.id) return null;
   if (customer.portalToken) return customer.portalToken;
-  const token = newToken();
+  const token = generatePortalToken();
   try {
     store.update('customers', customer.id, { portalToken: token });
     customer.portalToken = token;
@@ -49,7 +66,7 @@ export function ensureCustomerToken(customer) {
 export function ensureContractorToken(contractor) {
   if (!contractor || !contractor.id) return null;
   if (contractor.portalToken) return contractor.portalToken;
-  const token = newToken();
+  const token = generatePortalToken();
   try {
     store.update('contractors', contractor.id, { portalToken: token });
     contractor.portalToken = token;

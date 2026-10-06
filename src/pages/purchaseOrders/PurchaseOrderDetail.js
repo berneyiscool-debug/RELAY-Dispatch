@@ -90,13 +90,13 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
                   <label class="form-label">Linked Job</label>
                   <select class="form-select" name="jobId" ${po.status !== 'Draft' ? 'disabled' : ''}>
                     <option value="">None</option>
-                    ${jobs.map(j => `<option value="${j.id}" ${po.jobId === j.id ? 'selected' : ''}>${j.number} - ${j.title}</option>`).join('')}
+                    ${jobs.map(j => `<option value="${j.id}" ${po.jobId === j.id ? 'selected' : ''}>${escapeHTML(j.number)} - ${escapeHTML(j.title)}</option>`).join('')}
                   </select>
                 </div>
               </div>
               <div class="form-group">
                 <label class="form-label">Notes</label>
-                <textarea class="form-textarea" name="notes" ${po.status !== 'Draft' ? 'disabled' : ''}>${po.notes || ''}</textarea>
+                <textarea class="form-textarea" name="notes" ${po.status !== 'Draft' ? 'disabled' : ''}>${escapeHTML(po.notes || '')}</textarea>
               </div>
             </form>
           </div>
@@ -127,13 +127,13 @@ export function renderPurchaseOrderDetail(container, { id, jobId }) {
                       ${po.status === 'Draft' ? `
                       <select class="form-select item-select" style="width:100%">
                         <option value="">Custom Item...</option>
-                        ${stockItems.map(s => `<option value="${s.id}" ${item.stockId === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+                        ${stockItems.map(s => `<option value="${s.id}" ${item.stockId === s.id ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('')}
                       </select>
-                      <input type="text" class="form-input item-desc" style="width:100%;margin-top:4px;${item.stockId ? 'display:none' : ''}" value="${item.description || ''}" placeholder="Description" />
-                      ` : `<div>${item.description}</div>`}
+                      <input type="text" class="form-input item-desc" style="width:100%;margin-top:4px;${item.stockId ? 'display:none' : ''}" value="${escapeHTML(item.description || '')}" placeholder="Description" />
+                      ` : `<div>${escapeHTML(item.description)}</div>`}
                     </td>
                     <td>
-                      ${po.status === 'Draft' ? `<input type="text" class="form-input item-sku" style="width:100%" value="${item.sku || ''}" ${item.stockId ? 'disabled' : ''} />` : (item.sku || '—')}
+                      ${po.status === 'Draft' ? `<input type="text" class="form-input item-sku" style="width:100%" value="${escapeHTML(item.sku || '')}" ${item.stockId ? 'disabled' : ''} />` : escapeHTML(item.sku || '—')}
                     </td>
                     <td style="text-align:right">
                       ${po.status === 'Draft' ? `<input type="number" class="form-input item-cost" style="width:100px;text-align:right;margin-left:auto" value="${item.unitCost || 0}" step="0.01" />` : `$${(item.unitCost || 0).toFixed(2)}`}

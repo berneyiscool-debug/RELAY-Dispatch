@@ -142,9 +142,9 @@ export function showTimesheetEditModal(timesheetId, onSaveCallback) {
             const hasTechRecord = technicians.some(t => t.id === currentUser.id);
             let html = '';
             if (!hasTechRecord) {
-              html += `<option value="${currentUser.id}" ${ts.technicianId === currentUser.id ? 'selected' : ''}>${currentUser.name} (You)</option>`;
+              html += `<option value="${currentUser.id}" ${ts.technicianId === currentUser.id ? 'selected' : ''}>${escapeHTML(currentUser.name)} (You)</option>`;
             }
-            html += technicians.map(t => `<option value="${t.id}" ${ts.technicianId === t.id ? 'selected' : ''}>${t.name}</option>`).join('');
+            html += technicians.map(t => `<option value="${t.id}" ${ts.technicianId === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('');
             return html;
           })()}
         </select>

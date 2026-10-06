@@ -426,12 +426,12 @@ export function renderJobsList(container, params) {
                     <div style="max-height:200px; overflow-y:auto; margin-bottom:16px;">
                       ${jobs.map(j => `
                         <div style="padding:8px 12px; background:var(--bg-secondary); border-radius:6px; margin-bottom:6px; font-size:13px;">
-                          <strong>${j.number || 'No #'}</strong> — ${j.title || 'Untitled'}
-                          <span style="float:right; color:var(--text-secondary);">${j.customerName || ''}</span>
+                          <strong>${escapeHTML(j.number) || 'No #'}</strong> — ${escapeHTML(j.title) || 'Untitled'}
+                          <span style="float:right; color:var(--text-secondary);">${escapeHTML(j.customerName || '')}</span>
                         </div>
                       `).join('')}
                     </div>
-                    <p style="font-size:12px; color:var(--text-secondary);">Customer: <strong>${jobs[0].customerName || 'Unknown'}</strong></p>
+                    <p style="font-size:12px; color:var(--text-secondary);">Customer: <strong>${escapeHTML(jobs[0].customerName) || 'Unknown'}</strong></p>
                   `;
                   showModal({
                     title: 'Combine Jobs into One Invoice',

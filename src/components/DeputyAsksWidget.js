@@ -1,6 +1,7 @@
 import { store } from '../data/store.js';
 import { parseAndExecuteActions } from './RelayAssistant.js';
 import { router } from '../router.js';
+import { escapeHTML } from '../utils/security.js';
 
 export function renderDeputyAsksWidget(data, item) {
   // Listen for changes
@@ -58,10 +59,10 @@ export function renderDeputyAsksWidget(data, item) {
     <div style="padding: 12px; border-bottom: 1px solid var(--border-color); background: var(--bg-color);">
       <div style="display: flex; gap: 8px; margin-bottom: 4px;">
         <span class="material-icons-outlined" style="font-size: 16px; color: var(--color-primary); margin-top: 2px;">auto_awesome</span>
-        <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${ask.title}</div>
+        <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${escapeHTML(ask.title)}</div>
       </div>
       <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.4; padding-left: 24px; margin-bottom: 8px;">
-        ${ask.description}
+        ${escapeHTML(ask.description)}
       </div>
       <div style="display: flex; gap: 8px; padding-left: 24px;">
         <button class="btn btn-primary btn-sm btn-approve-ask" data-id="${ask.id}">Approve</button>

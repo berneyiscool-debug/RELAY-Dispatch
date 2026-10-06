@@ -4,6 +4,7 @@ import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { showToast } from '../../components/Notifications.js';
 import { applyTheme } from '../../utils/theme.js';
+import { hashPortalPin, verifyPortalPin, needsPortalPinUpgrade } from '../../utils/portalPin.js';
 
 export function renderContractorPortal(container, params) {
   const token = params.token;
@@ -101,12 +102,13 @@ export function renderContractorPortal(container, params) {
       }
 
       // Save PIN
-      const result = await store.update('contractors', contractor.id, { portalPasscode: p1 });
+      const hashedPin = await hashPortalPin(p1);
+      const result = await store.update('contractors', contractor.id, { portalPasscode: hashedPin });
       if (result && result.ok === false) {
         showToast('Could not save your PIN. Please try again.', 'error');
         return;
       }
-      contractor.portalPasscode = p1; // update in-memory
+      contractor.portalPasscode = hashedPin; // update in-memory
 
       // Set authenticated
       sessionStorage.setItem('portal_contractor_auth_' + contractor.id, 'true');
@@ -154,11 +156,17 @@ export function renderContractorPortal(container, params) {
       </div>
     `;
 
-    container.querySelector('#portal-lock-form').addEventListener('submit', (e) => {
+    container.querySelector('#portal-lock-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const enteredPin = container.querySelector('#portal-pin').value.trim();
 
-      if (enteredPin === contractor.portalPasscode) {
+      if (await verifyPortalPin(enteredPin, contractor.portalPasscode)) {
+        // Upgrade a pre-hashing cleartext PIN while we still have the plaintext.
+        if (needsPortalPinUpgrade(contractor.portalPasscode)) {
+          const upgraded = await hashPortalPin(enteredPin);
+          const saved = await store.update('contractors', contractor.id, { portalPasscode: upgraded });
+          if (!(saved && saved.ok === false)) contractor.portalPasscode = upgraded;
+        }
         sessionStorage.setItem(sessionKey, 'true');
         showToast('Portal unlocked successfully', 'success');
         renderContractorPortal(container, params);
@@ -685,7 +693,7 @@ export function renderContractorPortal(container, params) {
               <div>
                 <strong style="font-size:13px; color: var(--text-primary)">B2B Integration Detected</strong>
                 <p style="margin: 2px 0 0 0; font-size:11px; color: var(--text-secondary)">
-                  You are logged into ${crmCompanyName} as <strong>${currentUser.name}</strong>. You can copy this dispatch details directly into your local database!
+                  You are logged into ${crmCompanyName} as <strong>${escapeHTML(currentUser.name)}</strong>. You can copy this dispatch details directly into your local database!
                 </p>
               </div>
             </div>
@@ -1221,7 +1229,7 @@ export function renderContractorPortal(container, params) {
             const newPin = content.querySelector('#portal-pin-new').value.trim();
             const confirmPin = content.querySelector('#portal-pin-new-confirm').value.trim();
 
-            if (currentPin !== contractor.portalPasscode) {
+            if (!await verifyPortalPin(currentPin, contractor.portalPasscode)) {
               showToast('Current PIN is incorrect', 'error');
               return;
             }
@@ -1234,13 +1242,14 @@ export function renderContractorPortal(container, params) {
               return;
             }
 
-            const result = await store.update('contractors', contractor.id, { portalPasscode: newPin });
+            const hashedPin = await hashPortalPin(newPin);
+            const result = await store.update('contractors', contractor.id, { portalPasscode: hashedPin });
             if (result && result.ok === false) {
               showToast('Could not update your PIN. Please try again.', 'error');
               return;
             }
 
-            contractor.portalPasscode = newPin;
+            contractor.portalPasscode = hashedPin;
             sessionStorage.setItem('portal_contractor_auth_' + contractor.id, 'true');
             showToast('Portal PIN updated successfully', 'success');
             close();

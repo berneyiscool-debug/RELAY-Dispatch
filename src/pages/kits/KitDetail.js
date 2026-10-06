@@ -458,7 +458,7 @@ export function renderKitForm(container, { id }) {
             <div class="stock-pick-item" data-id="${s.id}" style="padding:10px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; cursor:pointer">
               <div>
                 <div style="font-weight:600">${escapeHTML(s.name)}</div>
-                <div style="font-size:11px; color:var(--text-secondary)">SKU: ${s.sku || 'N/A'} — Cost: $${(s.costPrice || 0).toFixed(2)} — Sell: $${(s.unitPrice || 0).toFixed(2)}</div>
+                <div style="font-size:11px; color:var(--text-secondary)">SKU: ${escapeHTML(s.sku || 'N/A')} — Cost: $${(s.costPrice || 0).toFixed(2)} — Sell: $${(s.unitPrice || 0).toFixed(2)}</div>
               </div>
               <span class="material-icons-outlined" style="color:var(--color-primary)">add_circle_outline</span>
             </div>
@@ -484,7 +484,7 @@ export function renderKitForm(container, { id }) {
           <div class="stock-pick-item" data-id="${s.id}" style="padding:10px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; cursor:pointer">
             <div>
               <div style="font-weight:600">${escapeHTML(s.name)}</div>
-              <div style="font-size:11px; color:var(--text-secondary)">SKU: ${s.sku || 'N/A'} — Cost: $${(s.costPrice || 0).toFixed(2)} — Sell: $${(s.unitPrice || 0).toFixed(2)}</div>
+              <div style="font-size:11px; color:var(--text-secondary)">SKU: ${escapeHTML(s.sku || 'N/A')} — Cost: $${(s.costPrice || 0).toFixed(2)} — Sell: $${(s.unitPrice || 0).toFixed(2)}</div>
             </div>
             <span class="material-icons-outlined" style="color:var(--color-primary)">add_circle_outline</span>
           </div>
@@ -683,7 +683,7 @@ export function renderKitDetail(container, { id }) {
 function r(label, value, opts = {}) {
   return `
     <div class="detail-row">
-      <span class="detail-row-label">${label}</span>
-      <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${value || '—'}</span>
+      <span class="detail-row-label">${escapeHTML(label)}</span>
+      <span class="detail-row-value${opts.amount ? ' detail-row-value--amount' : ''}">${escapeHTML(value) || '—'}</span>
     </div>`;
 }

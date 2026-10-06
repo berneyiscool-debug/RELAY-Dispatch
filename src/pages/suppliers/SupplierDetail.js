@@ -172,7 +172,7 @@ export function renderSupplierDetail(container, { id, tab }) {
                               <span class="material-icons-outlined" style="font-size:18px">visibility</span>
                             </button>
                           ` : ''}
-                          <a href="${doc.url}" download="${escapeHTML(doc.name)}" class="btn btn-ghost btn-sm" title="Download File" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; color:inherit;">
+                          <a href="${escapeHTML(doc.url)}" download="${escapeHTML(doc.name)}" class="btn btn-ghost btn-sm" title="Download File" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; color:inherit;">
                             <span class="material-icons-outlined" style="font-size:18px">download</span>
                           </a>
                           ${canEdit ? `
@@ -292,7 +292,7 @@ export function renderSupplierDetail(container, { id, tab }) {
               <tbody>
                 ${stockItems.map(item => {
                   return `
-                    <tr style="cursor:pointer" onclick="window.location.hash='#/stock/${item.id}'" title="Click to view Stock Details">
+                    <tr style="cursor:pointer" data-nav="#/stock/${item.id}" title="Click to view Stock Details">
                       <td class="font-medium cell-link">${escapeHTML(item.name)}</td>
                       <td style="font-family:monospace">${escapeHTML(item.sku || '—')}</td>
                       <td><span class="badge badge-neutral">${escapeHTML(item.category || 'General')}</span></td>
@@ -341,7 +341,7 @@ export function renderSupplierDetail(container, { id, tab }) {
                     'Cancelled': 'badge-danger'
                   };
                   return `
-                    <tr style="cursor:pointer" onclick="window.location.hash='#/purchase-orders/${po.id}'" title="Click to view Purchase Order">
+                    <tr style="cursor:pointer" data-nav="#/purchase-orders/${po.id}" title="Click to view Purchase Order">
                       <td class="font-medium cell-link">${escapeHTML(po.number)}</td>
                       <td>${po.orderDate ? new Date(po.orderDate).toLocaleDateString('en-AU') : '—'}</td>
                       <td>${escapeHTML(po.creatorName || '—')}</td>

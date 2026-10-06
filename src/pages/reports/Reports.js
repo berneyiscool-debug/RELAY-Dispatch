@@ -476,7 +476,7 @@ function renderAIInsightsPanel(reportId, filteredData) {
       <div class="card-body" style="padding:16px 20px;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
           <span class="material-icons-outlined" style="color:var(--color-primary); animation: pulse 2s infinite;">psychology</span>
-          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">${copy.title}</h5>
+          <h5 style="margin:0; font-weight:600; color:var(--text-primary);">${escapeHTML(copy.title)}</h5>
           <span class="badge ${copy.badgeClass}" style="font-size:10px; margin-left:auto;">${cloud ? 'Analyzing...' : copy.badgeLabel}</span>
         </div>
         <div style="display:flex; flex-direction:column; gap:8px;">
@@ -738,7 +738,7 @@ function renderInsightsListHTML(reportId, insights, source, mode) {
             return `
               <div style="display:flex; align-items:flex-start; gap:8px;">
                 <span style="color:var(--color-primary); font-size:16px; line-height:1.2;">•</span>
-                <span>${cleanString(text)}</span>
+                <span>${cleanString(escapeHTML(text))}</span>
               </div>
             `;
           }).join('')}
@@ -771,16 +771,16 @@ function renderInsightsListHTML(reportId, insights, source, mode) {
               
               <div style="flex:1;">
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
-                  <span style="font-weight:700; color:var(--text-primary); font-size:13px;">${cleanString(item.headline)}</span>
+                  <span style="font-weight:700; color:var(--text-primary); font-size:13px;">${cleanString(escapeHTML(item.headline))}</span>
                   <span style="font-size:9px; font-weight:600; text-transform:uppercase; padding:2px 6px; border-radius:4px; background:${colors.bg}; color:${colors.text}; border:1px solid ${colors.border};">
-                    ${conf} confidence
+                    ${escapeHTML(conf)} confidence
                   </span>
                 </div>
                 <div style="font-size:12px; color:var(--text-secondary); line-height:1.5; margin-bottom:4px;">
-                  ${cleanString(item.detail)}
+                  ${cleanString(escapeHTML(item.detail))}
                 </div>
                 <div style="font-size:11px; color:var(--text-tertiary);">
-                  <strong style="color:var(--color-primary)">Now what:</strong> ${cleanString(item.action)}
+                  <strong style="color:var(--color-primary)">Now what:</strong> ${cleanString(escapeHTML(item.action))}
                 </div>
               </div>
             </div>
@@ -1189,7 +1189,7 @@ function barChart(data, colorMap = {}, defaultColor = '#1B6DE0') {
     const pct = max > 0 ? (value / max * 100) : 0;
     return `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-        <div style="width:100px;font-size:var(--font-size-sm);color:var(--text-secondary);text-align:right;flex-shrink:0">${label}</div>
+        <div style="width:100px;font-size:var(--font-size-sm);color:var(--text-secondary);text-align:right;flex-shrink:0">${escapeHTML(label)}</div>
         <div style="flex:1;height:24px;background:var(--border-color);border-radius:4px;overflow:hidden">
           <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width 0.5s ease"></div>
         </div>
@@ -1316,9 +1316,9 @@ function renderJobsReport(d, mode) {
           <tbody>
             ${d.jobs.sort((a, b) => ((b.laborCost||0)+(b.materialCost||0)) - ((a.laborCost||0)+(a.materialCost||0))).slice(0, 8).map(j => `
               <tr>
-                <td class="font-medium">${j.number}</td>
-                <td class="text-secondary">${j.customerName}</td>
-                <td><span class="badge badge-neutral">${j.status}</span></td>
+                <td class="font-medium">${escapeHTML(j.number)}</td>
+                <td class="text-secondary">${escapeHTML(j.customerName)}</td>
+                <td><span class="badge badge-neutral">${escapeHTML(j.status)}</span></td>
                 <td style="text-align:right;font-weight:600">$${((j.laborCost||0)+(j.materialCost||0)).toFixed(0)}</td>
               </tr>
             `).join('')}
@@ -1383,8 +1383,8 @@ function renderJobCostingReport(d, mode) {
           <tbody>
             ${costingData.map(j => `
               <tr>
-                <td class="font-medium"><a href="#/jobs/${j.id}" class="cell-link">${j.number}</a></td>
-                <td>${j.technicianName || '—'}</td>
+                <td class="font-medium"><a href="#/jobs/${j.id}" class="cell-link">${escapeHTML(j.number)}</a></td>
+                <td>${escapeHTML(j.technicianName || '—')}</td>
                 <td style="text-align:right">${j.actualH.toFixed(2)}</td>
                 <td style="text-align:right">$${j.actualLabor.toFixed(2)}</td>
                 <td style="text-align:right">$${j.billableLabor.toFixed(2)}</td>
@@ -1419,9 +1419,9 @@ function renderTechniciansReport(d, mode) {
           <tbody>
             ${d.techStats.sort((a, b) => b.revenue - a.revenue).map(t => `
               <tr>
-                <td><div style="width:8px;height:8px;border-radius:50%;background:${t.color}"></div></td>
-                <td class="font-medium">${t.name}</td>
-                <td class="text-secondary">${t.role}</td>
+                <td><div style="width:8px;height:8px;border-radius:50%;background:${escapeHTML(t.color)}"></div></td>
+                <td class="font-medium">${escapeHTML(t.name)}</td>
+                <td class="text-secondary">${escapeHTML(t.role)}</td>
                 <td style="text-align:center">${t.totalJobs}</td>
                 <td style="text-align:center"><span class="badge badge-success">${t.completed}</span></td>
                 <td style="text-align:right;font-weight:600">$${t.revenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -1435,7 +1435,7 @@ function renderTechniciansReport(d, mode) {
     <div class="card">
       <div class="card-header"><h4>Revenue by Technician</h4></div>
       <div class="card-body">
-        ${d.techStats.map(t => progressBar(t.name, t.revenue, Math.max(...d.techStats.map(x => x.revenue)), t.color)).join('')}
+        ${d.techStats.map(t => progressBar(escapeHTML(t.name), t.revenue, Math.max(...d.techStats.map(x => x.revenue)), escapeHTML(t.color))).join('')}
       </div>
     </div>
     ` : ''}
@@ -1538,7 +1538,7 @@ function renderTimesheetsLaborReport(d, mode) {
               <span style="font-size:var(--font-size-sm);font-weight:600">${tr.util.toFixed(1)}%</span>
             </div>
             <div style="height:8px;background:var(--border-color);border-radius:4px;overflow:hidden">
-              <div style="height:100%;width:${tr.util}%;background:${tr.color};border-radius:4px;transition:width 0.5s ease"></div>
+              <div style="height:100%;width:${tr.util}%;background:${escapeHTML(tr.color)};border-radius:4px;transition:width 0.5s ease"></div>
             </div>
           </div>
         `).join('')}
@@ -1722,7 +1722,7 @@ function renderCustomersReport(d, mode) {
             ${d.topCustomers.map(([name, rev], i) => `
               <tr>
                 <td class="text-secondary">${i + 1}</td>
-                <td class="font-medium">${name}</td>
+                <td class="font-medium">${escapeHTML(name)}</td>
                 <td style="text-align:right;font-weight:600">$${rev.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td>
                   <div style="display:flex;align-items:center;gap:8px">
@@ -1763,11 +1763,11 @@ function renderInventoryReport(d, mode) {
             <tbody>
               ${d.lowStockItems.map(i => `
                 <tr>
-                  <td class="font-medium">${i.name}</td>
-                  <td class="text-secondary" style="font-family:monospace">${i.sku}</td>
+                  <td class="font-medium">${escapeHTML(i.name)}</td>
+                  <td class="text-secondary" style="font-family:monospace">${escapeHTML(i.sku)}</td>
                   <td style="text-align:center;color:var(--color-danger);font-weight:600">${i.quantity}</td>
                   <td style="text-align:center">${i.reorderLevel}</td>
-                  <td class="text-secondary">${i.supplier}</td>
+                  <td class="text-secondary">${escapeHTML(i.supplier)}</td>
                 </tr>
               `).join('')}
             </tbody>

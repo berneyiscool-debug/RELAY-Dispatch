@@ -6,6 +6,7 @@ import { store } from '../../data/store.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { attachAddressAutocomplete } from '../../utils/placesAutocomplete.js';
+import { escapeHTML } from '../../utils/security.js';
 
 export function renderSupplierForm(container, params) {
   const isNew = params.id === 'new';
@@ -38,28 +39,28 @@ export function renderSupplierForm(container, params) {
           
           <div class="form-group">
             <label class="form-label">Business Name *</label>
-            <input type="text" id="name" class="form-input" value="${supplier.name || ''}" placeholder="e.g. ElectraTrade" required />
+            <input type="text" id="name" class="form-input" value="${escapeHTML(supplier.name || '')}" placeholder="e.g. ElectraTrade" required />
           </div>
           
           <div class="form-group">
             <label class="form-label">Primary Contact Person</label>
-            <input type="text" id="contactName" class="form-input" value="${supplier.contactName || ''}" placeholder="e.g. Robert Vance" />
+            <input type="text" id="contactName" class="form-input" value="${escapeHTML(supplier.contactName || '')}" placeholder="e.g. Robert Vance" />
           </div>
 
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Email Address</label>
-              <input type="email" id="email" class="form-input" value="${supplier.email || ''}" placeholder="e.g. sales@electratrade.com.au" />
+              <input type="email" id="email" class="form-input" value="${escapeHTML(supplier.email || '')}" placeholder="e.g. sales@electratrade.com.au" />
             </div>
             <div class="form-group">
               <label class="form-label">Phone Number</label>
-              <input type="text" id="phone" class="form-input" value="${supplier.phone || ''}" placeholder="e.g. 03 9822 1045" />
+              <input type="text" id="phone" class="form-input" value="${escapeHTML(supplier.phone || '')}" placeholder="e.g. 03 9822 1045" />
             </div>
           </div>
 
           <div class="form-group">
             <label class="form-label">Physical Address</label>
-            <input type="text" id="address" class="form-input" value="${supplier.address || ''}" placeholder="e.g. 22 Industrial Parkway, South Melbourne, VIC 3205" />
+            <input type="text" id="address" class="form-input" value="${escapeHTML(supplier.address || '')}" placeholder="e.g. 22 Industrial Parkway, South Melbourne, VIC 3205" />
           </div>
 
           <h4 style="border-bottom: 1px solid var(--border-color); padding-bottom: 6px; margin-bottom: 4px; margin-top: 10px;">Classification & Terms</h4>
@@ -68,7 +69,7 @@ export function renderSupplierForm(container, params) {
             <div class="form-group">
               <label class="form-label">Supplier Category</label>
               <select id="category" class="form-input">
-                ${categories.map(cat => `<option value="${cat}" ${supplier.category === cat ? 'selected' : ''}>${cat}</option>`).join('')}
+                ${categories.map(cat => `<option value="${escapeHTML(cat)}" ${supplier.category === cat ? 'selected' : ''}>${escapeHTML(cat)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -79,14 +80,14 @@ export function renderSupplierForm(container, params) {
             </div>
             <div class="form-group">
               <label class="form-label">Account Number</label>
-              <input type="text" id="accountNumber" class="form-input" value="${supplier.accountNumber || ''}" placeholder="e.g. FF-ET-10291" />
+              <input type="text" id="accountNumber" class="form-input" value="${escapeHTML(supplier.accountNumber || '')}" placeholder="e.g. FF-ET-10291" />
             </div>
           </div>
 
           <h4 style="border-bottom: 1px solid var(--border-color); padding-bottom: 6px; margin-bottom: 4px; margin-top: 10px;">Internal Notes</h4>
 
           <div class="form-group">
-            <textarea id="notes" class="form-input" rows="3" placeholder="Enter comments or special notes about this supplier...">${supplier.notes || ''}</textarea>
+            <textarea id="notes" class="form-input" rows="3" placeholder="Enter comments or special notes about this supplier...">${escapeHTML(supplier.notes || '')}</textarea>
           </div>
 
           <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">

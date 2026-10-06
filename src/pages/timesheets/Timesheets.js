@@ -195,9 +195,9 @@ export function renderTimesheetsList(container) {
               const hasCurrentUser = technicians.some(t => t.id === currentUser.id);
               let html = '';
               if (!hasCurrentUser) {
-                html += '<option value="' + currentUser.id + '" ' + (filterTechId === currentUser.id ? 'selected' : '') + '>' + currentUser.name + ' (You)</option>';
+                html += '<option value="' + currentUser.id + '" ' + (filterTechId === currentUser.id ? 'selected' : '') + '>' + escapeHTML(currentUser.name) + ' (You)</option>';
               }
-              html += technicians.map(t => '<option value="' + t.id + '" ' + (filterTechId === t.id ? 'selected' : '') + '>' + t.name + '</option>').join('');
+              html += technicians.map(t => '<option value="' + t.id + '" ' + (filterTechId === t.id ? 'selected' : '') + '>' + escapeHTML(t.name) + '</option>').join('');
               return html;
             })()}
           </select>` : ''}
@@ -793,7 +793,7 @@ export function renderTimesheetsList(container) {
           <label class="form-label">Technician *</label>
           ${isLocalAdmin ? `
             <select class="form-select" id="lt-tech" style="width:100%">
-              <option value="${currentUser.id}" selected>${currentUser.name}</option>
+              <option value="${currentUser.id}" selected>${escapeHTML(currentUser.name)}</option>
             </select>
           ` : (() => {
             const hasTechRecord = technicians.some(t => t.id === currentUser.id);
@@ -801,8 +801,8 @@ export function renderTimesheetsList(container) {
             return `
               <select class="form-select" id="lt-tech" style="width:100%" ${forceOwnTech ? 'disabled' : ''}>
                 <option value="">Select technician...</option>
-                ${!hasTechRecord ? `<option value="${currentUser.id}" selected>${currentUser.name} (You)</option>` : ''}
-                ${technicians.map(t => `<option value="${t.id}" ${(forceOwnTech ? String(currentUser.id) === String(t.id) : false) ? 'selected' : ''}>${t.name}</option>`).join('')}
+                ${!hasTechRecord ? `<option value="${currentUser.id}" selected>${escapeHTML(currentUser.name)} (You)</option>` : ''}
+                ${technicians.map(t => `<option value="${t.id}" ${(forceOwnTech ? String(currentUser.id) === String(t.id) : false) ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
               </select>
             `;
           })()}

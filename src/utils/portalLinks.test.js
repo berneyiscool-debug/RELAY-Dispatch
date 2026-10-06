@@ -28,6 +28,7 @@ const {
   contractorPortalUrl,
   customerForDocument,
   portalUrlForDocument,
+  generatePortalToken,
 } = await import('./portalLinks.js');
 const { store } = await import('../data/store.js');
 
@@ -139,5 +140,21 @@ describe('portal links', () => {
       portalUrlForDocument({ customerId: 'cus_9' }),
       'https://relay.example/app/#/portal/customer?token=c_pt_acme'
     );
+  });
+
+  test('tokens come from the CSPRNG, not Math.random()', () => {
+    const realRandom = Math.random;
+    try {
+      // A predictable generator would hand the same value back every time.
+      Math.random = () => 0.42;
+      const tokens = new Set();
+      for (let i = 0; i < 200; i++) tokens.add(generatePortalToken());
+      assert.strictEqual(tokens.size, 200, 'every mint should be unique');
+      for (const token of tokens) {
+        assert.match(token, /^c_pt_[0-9a-f]{32}$/);
+      }
+    } finally {
+      Math.random = realRandom;
+    }
   });
 });
