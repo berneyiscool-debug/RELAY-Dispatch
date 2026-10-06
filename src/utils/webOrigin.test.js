@@ -76,6 +76,18 @@ describe('webAppBaseUrl', () => {
     setLocation(undefined);
     assert.strictEqual(webAppBaseUrl(), `https://relaydispatch.com.au${WEB_APP_PATH}`);
   });
+
+  test('is usable as the password-reset redirect target', () => {
+    // Supabase appends the recovery token as the fragment and strips only the
+    // first `#` when it parses it, so the target must carry no hash of its own.
+    setLocation({ origin: 'https://relaydispatch.com.au', pathname: '/app/' });
+    const target = webAppBaseUrl();
+    assert.ok(!target.includes('#'));
+    const sent = `${target}#access_token=abc&refresh_token=def&type=recovery`;
+    const params = new URLSearchParams(sent.slice(sent.indexOf('#') + 1));
+    assert.strictEqual(params.get('access_token'), 'abc');
+    assert.strictEqual(params.get('type'), 'recovery');
+  });
 });
 
 describe('appUrl', () => {

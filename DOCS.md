@@ -129,9 +129,12 @@ Local mode keeps its data in IndexedDB/localStorage, which is scoped to an origi
 so a subdomain would hand every existing browser user an empty app.
 
 No code or Stripe dashboard changes are needed for the new base — every
-outbound URL (Stripe Checkout returns, the billing portal, portal invites,
-password reset) is built from the live location through `src/utils/webOrigin.js`,
-so it follows the path automatically.
+outbound URL (Stripe Checkout returns, the billing portal, portal invites) is
+built from the live location through `src/utils/webOrigin.js`, so it follows the
+path automatically. The password-reset redirect is the one deliberate exception:
+it targets the bare app base (`webAppBaseUrl()`), because Supabase delivers the
+recovery token in the URL fragment and only strips the first `#`, so a `#/route`
+there would hide the token from its own parser — see *Password reset links* below.
 
 **After deploying, in Supabase → Authentication → URL Configuration:**
 
@@ -140,8 +143,10 @@ so it follows the path automatically.
   path — a `localhost` value there sends real users to a local dev server.
 - Add these to the **Redirect URLs** allow-list (wildcards are allowed here, but
   **not** in the Site URL):
-  - `https://relaydispatch.com.au/app/**` — the app's own redirects (password
-    reset, Stripe returns).
+  - `https://relaydispatch.com.au/app/` — the app's own redirects (password
+    reset, Stripe returns). Keep the trailing slash: it is the exact target the
+    app asks for.
+  - `https://relaydispatch.com.au/app/**` — any other path under the app.
   - `https://relaydispatch.com.au/**` — keeps pre-move root links working until
     the marketing site ships.
   - `http://localhost:5173/**` — the Vite dev server, if you exercise auth
@@ -149,6 +154,24 @@ so it follows the path automatically.
 
 Staff invites are unaffected: `invite-user` creates confirmed users, so it sends
 no Supabase auth link.
+
+#### Password reset links
+
+The reset email redirects to `https://relaydispatch.com.au/app/` with the
+recovery token in the fragment (`#access_token=…&type=recovery`). Supabase's
+client parses that fragment, **saves a recovery session and then clears the whole
+hash** (`_getSessionFromURL` ends with `window.location.hash = ''`), firing a
+`PASSWORD_RECOVERY` event. Two consequences worth knowing before you touch this
+area:
+
+- A hash **route** can never be the reset target — the token *is* the fragment,
+  and it is wiped once read. Hence the bare `webAppBaseUrl()` above.
+- Nothing in the app currently reacts to `PASSWORD_RECOVERY`, and `src/main.js`
+  rewrites an unknown hash to `#/login`, so a reset link today lands on the
+  launch screen with a recovery session in storage but no "choose a new
+  password" form. Wiring that up is tracked separately; the password-change UI
+  that would be reused is `renderForcePasswordChange` in
+  [Login.js](./src/pages/login/Login.js).
 
 ### Building the Desktop Installer
 ```bash
