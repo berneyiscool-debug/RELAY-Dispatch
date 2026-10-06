@@ -7,15 +7,21 @@
 // signup — the marker only prefills the form, and the company is always created
 // through `create_company_and_admin` (see migration 036), which re-checks the
 // name and stamps the caller as admin.
+//
+// Invited team members can land here too when their invite never wrote a profile
+// row. They are bounced to the "account is not set up" card instead — their
+// company already exists, so nobody may create one for them here.
 
 import { router } from '../../router.js';
 import { supabase } from '../../utils/supabase.js';
 import { applyTheme } from '../../utils/theme.js';
 import { setSessionUser } from './session.js';
 import { renderFinishSetupCard } from '../../components/FinishSetupCard.js';
+import { renderInviteNotProvisionedCard } from '../../components/InviteNotProvisionedCard.js';
 import {
   TRIAL_DAYS,
   fetchProfile,
+  invitedCompanyId,
   sessionUserFromProfile,
 } from '../../utils/cloudOnboarding.js';
 
@@ -83,6 +89,16 @@ export async function renderFinishSetup(container) {
 
   if (profile?.company_id) {
     await enterApp(profile);
+    return;
+  }
+
+  // Invited team members reach this page with a verified session and no profile,
+  // exactly like an interrupted signup — but they already belong to a company
+  // (app_metadata.company_id, written by the service role in `invite-user`).
+  // Creating a company for them here would give a team member a second, empty
+  // tenant, so point them back at their administrator instead.
+  if (invitedCompanyId(session.user)) {
+    renderInviteNotProvisionedCard(bodyEl, { email: session.user.email || '' });
     return;
   }
 
