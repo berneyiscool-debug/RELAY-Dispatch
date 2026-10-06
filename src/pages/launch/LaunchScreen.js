@@ -2,6 +2,7 @@ import { supabase } from '../../utils/supabase.js';
 import { storageGet, storageSet } from '../../utils/persist.js';
 import { applyTheme } from '../../utils/theme.js';
 import { webOrigin } from '../../utils/webOrigin.js';
+import { DESKTOP_RELEASES_URL, bindInstallerDownload, isDesktopBuild } from '../../utils/desktopApp.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { rememberIdentity, getRememberedIdentity, isRememberMeEnabled } from '../auth/session.js';
 import { showAlert } from '../../utils/confirmDialog.js';
@@ -590,6 +591,35 @@ export function renderLaunchScreen(container, onComplete) {
       margin-bottom: 16px;
       line-height: 1.4;
     }
+    .launch-download {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+      text-align: center;
+    }
+    .launch-download a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #FF5C00;
+      text-decoration: none;
+    }
+    .launch-download a:hover {
+      text-decoration: underline;
+    }
+    .launch-download a[aria-busy="true"] {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .launch-download-note {
+      margin: 6px 0 0 0;
+      font-size: 10.5px;
+      line-height: 1.45;
+      color: #8a8a87;
+    }
   `;
 
   // Inject style block
@@ -659,6 +689,7 @@ export function renderLaunchScreen(container, onComplete) {
             </div>
 
             ${cloudView === 'signin' ? renderCloudSignInHTML() : renderCloudSignUpHTML()}
+            ${renderDesktopDownloadHTML()}
           </div>
         </div>
 
@@ -699,6 +730,24 @@ export function renderLaunchScreen(container, onComplete) {
 
     // Attach event listeners
     attachEventListeners();
+  };
+
+  // Offered here because the website is where new users land. Hidden inside the
+  // packaged app, which is already running it.
+  const renderDesktopDownloadHTML = () => {
+    if (isDesktopBuild()) return '';
+    return `
+      <div class="launch-download">
+        <a href="${DESKTOP_RELEASES_URL}" id="link-download-desktop" rel="noopener">
+          <span class="material-icons-outlined" style="font-size: 16px;">desktop_windows</span>
+          <span id="link-download-desktop-label">Download RELAY Dispatch for Windows</span>
+        </a>
+        <p class="launch-download-note">
+          The installer is not code-signed, so Windows may warn about an unknown publisher —
+          choose <strong>More info</strong>, then <strong>Run anyway</strong>.
+        </p>
+      </div>
+    `;
   };
 
   const renderCloudSignInHTML = () => {
@@ -970,6 +1019,13 @@ export function renderLaunchScreen(container, onComplete) {
         }
       });
     }
+
+    // The installer URL carries the version, so it is looked up on click rather
+    // than baked into the bundle — a new release then needs no site change.
+    bindInstallerDownload(
+      container.querySelector('#link-download-desktop'),
+      container.querySelector('#link-download-desktop-label')
+    );
 
     // Toggle Divider Slider
     const btnSlideDivider = container.querySelector('#btn-slide-divider');
