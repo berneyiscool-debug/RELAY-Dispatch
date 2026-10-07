@@ -422,6 +422,9 @@ section[id] {
   outline-offset: -2px;
 }
 
+/* No transition here on purpose: changing screen moves the sprite with
+   `translateY`, and these are application screenshots, so they should cut
+   rather than slide. */
 .preview__shot {
   position: absolute;
   left: 0;
@@ -429,7 +432,6 @@ section[id] {
   display: block;
   width: 100%;
   height: auto;
-  transition: transform 0.22s ease-out;
 }
 
 .preview__hotspot {
@@ -1144,10 +1146,6 @@ section[id] {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
-  }
-
-  .preview__shot {
-    transition: none;
   }
 }
 
