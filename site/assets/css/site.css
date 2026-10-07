@@ -422,16 +422,23 @@ section[id] {
   outline-offset: -2px;
 }
 
-/* No transition here on purpose: changing screen moves the sprite with
-   `translateY`, and these are application screenshots, so they should cut
-   rather than slide. */
+/* The sprite box is pinned to the atlas geometry rather than left to the
+   intrinsic ratio of whichever bitmap is loaded. `--tiles` is the atlas's tile
+   count, so the box is always exactly that many screens tall and
+   `translateY(-tile / tiles * 100%)` lands on a tile boundary. Letting the box
+   follow the bitmap meant a swap painted the outgoing atlas into the incoming
+   box for a moment, which reads as the screen sliding into place.
+
+   No transition either, on purpose: changing screen moves the sprite with
+   `translateY` and application screenshots should cut rather than slide. */
 .preview__shot {
   position: absolute;
   left: 0;
   top: 0;
   display: block;
   width: 100%;
-  height: auto;
+  max-width: none;
+  height: calc(100% * var(--tiles, 1));
 }
 
 .preview__hotspot {
@@ -443,7 +450,7 @@ section[id] {
   background: transparent;
   cursor: pointer;
   touch-action: manipulation;
-  transition: background-color 0.12s ease-in-out;
+  /* No transition: the demo swaps screens instantly, tint included. */
 }
 
 .preview__hotspot:hover {

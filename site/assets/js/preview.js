@@ -18,8 +18,6 @@
   var INITIAL_SCREEN = 'dashboard';
   var SCREENS_INDEX_URL = 'assets/preview/screens-index.json';
   var SCREENS_URL = 'assets/preview/screens.json';
-  var TILE_WIDTH = 1440;
-  var TILE_HEIGHT = 900;
 
   var root = document.getElementById('app-preview');
   var frame = document.getElementById('preview-frame');
@@ -32,6 +30,9 @@
 
   var screens = null;
   var currentKey = null;
+  // The screen the latest interaction asked for. An atlas that finishes loading
+  // after a newer click must not paint over it.
+  var pendingKey = null;
   // -1 because the markup already paints the hero shot, which is tile 0 of
   // atlas 0. Nothing has been loaded through this module yet.
   var currentAtlas = -1;
@@ -91,7 +92,13 @@
     }
   }
 
-  /** Fetches an atlas into the HTTP cache so swapping `src` cannot flash. */
+  /**
+   * Fetches an atlas, resolving once its bitmap is available.
+   *
+   * This is the only gate on a swap. `shot.decode()` is not usable for that:
+   * it does not settle while the document is not being rendered, which would
+   * leave the demo stuck on the previous screen.
+   */
   function preloadAtlas(index) {
     if (loadedAtlases[index]) {
       return Promise.resolve();
@@ -145,14 +152,6 @@
   function applyScreen(key) {
     var screen = screens[key];
 
-    // The hero shot already is tile 0 of atlas 0, so a screen that shares the
-    // current atlas only needs the sprite nudged to a different offset.
-    if (screen[0] !== currentAtlas) {
-      shot.src = atlasUrl(screen[0]);
-      shot.width = TILE_WIDTH;
-      shot.height = screen[2] * TILE_HEIGHT;
-    }
-
     shot.alt = describe(screen[3]);
     shot.style.transform = 'translateY(-' + (screen[1] / screen[2]) * 100 + '%)';
 
@@ -163,10 +162,34 @@
     announce('Preview showing ' + screen[3]);
   }
 
+  /**
+   * Points the screenshot at a tile of another atlas.
+   *
+   * `src`, `--tiles` and the tile offset change in a single task, and only
+   * after `preloadAtlas` has the incoming bitmap in hand. Splitting them across
+   * a decode boundary let the browser paint the outgoing atlas at the incoming
+   * offset, which is what made the screens appear to move into place.
+   */
+  function swapAtlas(key) {
+    if (key !== pendingKey) {
+      return;
+    }
+
+    var screen = screens[key];
+
+    shot.src = atlasUrl(screen[0]);
+    shot.style.setProperty('--tiles', screen[2]);
+    applyScreen(key);
+  }
+
   /** Swaps the viewport to a screen whose atlas may still need fetching. */
   function show(key) {
     var screen = screens[key];
 
+    pendingKey = key;
+
+    // The hero shot already is tile 0 of atlas 0, so a screen that shares the
+    // current atlas only needs the sprite nudged to a different offset.
     if (screen[0] === currentAtlas) {
       applyScreen(key);
       setBusy(false);
@@ -177,12 +200,7 @@
 
     preloadAtlas(screen[0])
       .then(function () {
-        // The new atlas is in cache now, so the source swap and the tile
-        // offset land in the same frame.
-        applyScreen(key);
-        return shot.decode ? shot.decode().catch(function () {}) : Promise.resolve();
-      })
-      .then(function () {
+        swapAtlas(key);
         setBusy(false);
       })
       .catch(function () {
