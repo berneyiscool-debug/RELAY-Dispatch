@@ -276,6 +276,18 @@ the real atlas on first navigation is invisible. Without it the 1440 × 14400
 atlas is the largest contentful paint and Lantern models it at its natural size
 (20.7 megapixels), which alone dragged mobile performance from 98 to 78.
 
+Screens cut rather than slide. `preview.js` moves the sprite with `translateY`,
+so any `transition` on `.preview__shot` would interpolate every screen change;
+there is none, and no `@keyframes` or `animation` anywhere in `site/`. The sprite
+box is pinned to atlas geometry as well — `height: calc(100% * var(--tiles, 1))`,
+with `--tiles` set from the screen record — instead of following the loaded
+bitmap's intrinsic ratio. A box that tracked the bitmap resized mid-swap and
+painted the outgoing atlas at the incoming offset for a frame, which reads as the
+screen sliding into place. `swapAtlas()` sets `src`, `--tiles` and the offset in
+a single task once the incoming bitmap is fetched, guarded by the screen the
+latest interaction asked for. `shot.decode()` is not usable as that gate: it
+never settles while the document is not being rendered.
+
 #### Regenerating the share card
 
 `site/assets/img/og.png` (1200 × 630) is drawn on a canvas by
