@@ -337,6 +337,7 @@ const TABLE_COLUMNS = {
     "assigned_to",
     "sales_rep_name",
     "stage_history",
+    "activity_log",
     "next_action_date",
     "created_at",
     "updated_at"
@@ -1617,6 +1618,10 @@ class DataStore {
       record.stageHistory = record.stage_history;
       delete record.stage_history;
     }
+    if (record.activity_log !== undefined) {
+      record.activityLog = record.activity_log;
+      delete record.activity_log;
+    }
     if (record.next_action_date !== undefined) {
       record.nextActionDate = record.next_action_date;
       delete record.next_action_date;
@@ -2214,6 +2219,12 @@ class DataStore {
     if (record.stageHistory !== undefined) {
       record.stage_history = record.stageHistory;
       delete record.stageHistory;
+    }
+    // Jobs serialise their activity logs into the __meta__ notes blob below,
+    // so only non-jobs collections map straight to a real column here.
+    if (record.activityLog !== undefined && collection !== 'jobs') {
+      record.activity_log = record.activityLog;
+      delete record.activityLog;
     }
     if (record.nextActionDate !== undefined) {
       record.next_action_date = record.nextActionDate;

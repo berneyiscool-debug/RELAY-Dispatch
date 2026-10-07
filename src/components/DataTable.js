@@ -4,7 +4,191 @@
 
 import { escapeHTML } from '../utils/security.js';
 
-export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc' }) {
+// Header row emitted ahead of each group while `groupBy` is active. Exported so
+// callers can keep it out of drag handles and row-level click handling.
+export const GROUP_ROW_CLASS = 'dt-group-row';
+
+function compareRows(sortCol, sortDir) {
+  return (a, b) => {
+    const aVal = sortCol.getValue ? sortCol.getValue(a) : a[sortCol.key];
+    const bVal = sortCol.getValue ? sortCol.getValue(b) : b[sortCol.key];
+    if (aVal == null) return 1;
+    if (bVal == null) return -1;
+    if (typeof aVal === 'string') {
+      return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    }
+    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+  };
+}
+
+/**
+ * Decides which rows to display: sorted, optionally grouped, then sliced to the
+ * current page. Kept pure so the grouping and paging rules are testable without
+ * a DOM.
+ *
+ * `groupBy` is `{ getKey, order, labelFor, summarize?, headerHtml?, persistKey?, defaultCollapsed?, onMove? }`.
+ * Rows sort by group order first and by the active sort column within each group.
+ * Pages always count data rows, so a group straddling a page break comes back with
+ * `continuation` set and totals that describe the whole group, not the visible slice.
+ */
+export function planTableRows({ data = [], sortCol = null, sortDir = 'desc', groupBy = null, pageSize = 15, currentPage = 1, collapsed = null, getId = null }) {
+  const sorted = [...data];
+  if (sortCol) sorted.sort(compareRows(sortCol, sortDir));
+
+  if (!groupBy) {
+    const totalPages = Math.ceil(sorted.length / pageSize);
+    const page = currentPage > totalPages ? (totalPages || 1) : currentPage;
+    const start = (page - 1) * pageSize;
+    return {
+      grouped: false,
+      rows: sorted.slice(start, start + pageSize).map(row => ({ type: 'row', row, id: String(getId ? getId(row) : row.id) })),
+      groups: [],
+      total: sorted.length,
+      visibleTotal: sorted.length,
+      totalPages,
+      currentPage: page,
+      start,
+      end: Math.min(start + pageSize, sorted.length),
+    };
+  }
+
+  const keyOf = (row) => String(groupBy.getKey(row) ?? '');
+  const declared = Array.isArray(groupBy.order) ? groupBy.order.map(String) : [];
+  // Groups the caller declares keep their identity even at zero rows. Anything
+  // else follows, ordered by first appearance in the data.
+  const declaredSet = new Set(declared);
+  const extras = [];
+  const seenExtra = new Set();
+  data.forEach(row => {
+    const k = keyOf(row);
+    if (!declaredSet.has(k) && !seenExtra.has(k)) { seenExtra.add(k); extras.push(k); }
+  });
+
+  const buckets = new Map(declared.concat(extras).map(k => [k, []]));
+  sorted.forEach(row => buckets.get(keyOf(row)).push(row));
+
+  const collapsedKeys = collapsed || new Set();
+  const groups = declared.concat(extras).map(key => {
+    const groupRows = buckets.get(key) || [];
+    const totals = groupBy.summarize ? (groupBy.summarize(groupRows) || {}) : {};
+    return {
+      key,
+      label: groupBy.labelFor ? groupBy.labelFor(key) : key,
+      rows: groupRows,
+      count: groupRows.length,
+      ...totals,
+      collapsed: collapsedKeys.has(key),
+    };
+  });
+
+  // Collapsed groups take no page slots, so their header stays where it is while
+  // the expanded groups paginate around it.
+  const eligible = [];
+  groups.forEach(group => {
+    if (group.collapsed) return;
+    group.rows.forEach(row => eligible.push({ group, row }));
+  });
+  const groupStart = new Map();
+  eligible.forEach((entry, i) => {
+    if (!groupStart.has(entry.group.key)) groupStart.set(entry.group.key, i);
+  });
+
+  const totalPages = Math.ceil(eligible.length / pageSize);
+  const page = currentPage > totalPages ? (totalPages || 1) : currentPage;
+  const start = (page - 1) * pageSize;
+  const pageRows = eligible.slice(start, start + pageSize);
+  const lastOnPage = start + pageRows.length - 1;
+
+  const toSummary = (group) => {
+    const { rows: _groupRows, ...rest } = group;
+    return { ...rest, collapsed: group.collapsed };
+  };
+
+  const rows = [];
+  groups.forEach(group => {
+    if (group.collapsed) {
+      const summary = toSummary(group);
+      rows.push({ type: 'group', summary, ...summary, continuation: false, truncated: false, visibleFrom: 0, visibleCount: 0 });
+      return;
+    }
+    const onPage = pageRows.filter(entry => entry.group === group);
+    // A declared stage with no rows still gets a header: it is how an empty
+    // pipeline stage stays visible, and it is the drop target that lets a row be
+    // dragged into a stage nothing sits in yet.
+    const isEmpty = group.count === 0;
+    if (!onPage.length && !isEmpty) return;
+    const first = groupStart.get(group.key);
+    const summary = toSummary(group);
+    rows.push({
+      type: 'group',
+      summary,
+      ...summary,
+      continuation: !isEmpty && first < start,
+      truncated: !isEmpty && first + group.count - 1 > lastOnPage,
+      visibleFrom: isEmpty ? 0 : (first < start ? start - first + 1 : 1),
+      visibleCount: onPage.length,
+    });
+    onPage.forEach(entry => rows.push({ type: 'row', row: entry.row, id: String(getId ? getId(entry.row) : entry.row.id) }));
+  });
+
+  return {
+    grouped: true,
+    rows,
+    groups: groups.map(toSummary),
+    total: sorted.length,
+    visibleTotal: eligible.length,
+    totalPages,
+    currentPage: page,
+    start,
+    end: Math.min(start + pageSize, eligible.length),
+  };
+}
+
+/**
+ * Works out which group a dropped row belongs to, from the planner's own output.
+ *
+ * `rows` is the display rows in their current order — group headers
+ * (`type: 'group'`, carrying the group `key`) interleaved with data rows
+ * (`type: 'row'`) — which is exactly what the renderer puts in the tbody.
+ * `index` is the slot the dragged row occupies in that list once the browser has
+ * inserted it. `dropTarget` is optional: the index of the header the pointer was
+ * released over, for callers that can see the pointer; `null` means a plain
+ * insertion between rows.
+ *
+ * The rules, in order:
+ *  - a named header wins outright;
+ *  - a row landing directly below a header joins that header, which is what makes
+ *    an empty or collapsed stage (a header with no rows under it) droppable;
+ *  - a row landing directly above a header joins that header too, so a populated
+ *    header is as droppable as an empty one and a drop at the very top of the
+ *    table still resolves to the first group;
+ *  - otherwise the nearest header above wins (a drop between two rows, or below
+ *    the last row of the last group), with the nearest header below as the
+ *    fallback for a list with no header above the drop.
+ *
+ * `null` means "no group", which is all an ungrouped table can ever report.
+ */
+export function resolveDropGroup(rows, index, dropTarget = null) {
+  if (!Array.isArray(rows) || !Number.isInteger(index) || index < 0 || index >= rows.length) return null;
+
+  const named = dropTarget == null ? null : rows[dropTarget];
+  if (named && named.type === 'group') return named.key;
+
+  const above = rows[index - 1];
+  if (above && above.type === 'group') return above.key;
+  const below = rows[index + 1];
+  if (below && below.type === 'group') return below.key;
+
+  for (let i = index - 1; i >= 0; i--) {
+    if (rows[i] && rows[i].type === 'group') return rows[i].key;
+  }
+  for (let i = index + 1; i < rows.length; i++) {
+    if (rows[i] && rows[i].type === 'group') return rows[i].key;
+  }
+  return null;
+}
+
+export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc', groupBy = null }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'card data-table-card';
   wrapper.style.cssText = 'width:100%; max-width:100%; overflow:hidden;';
@@ -24,6 +208,107 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
   let emptyText = emptyMessage;
   const selectedIds = new Set();
 
+  let activeGroupBy = groupBy;
+  const collapsedGroups = new Set(activeGroupBy?.defaultCollapsed || []);
+  let sortableInstance = null;
+  let dragFromKey = null;
+
+  function loadCollapsed() {
+    const key = activeGroupBy?.persistKey;
+    if (!key) return;
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored == null) return;
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return;
+      collapsedGroups.clear();
+      parsed.forEach(k => collapsedGroups.add(String(k)));
+    } catch { /* ignore unreadable state */ }
+  }
+
+  function saveCollapsed() {
+    const key = activeGroupBy?.persistKey;
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(Array.from(collapsedGroups)));
+    } catch { /* ignore unwritable state */ }
+  }
+
+  loadCollapsed();
+
+  // Drop resolution reads the live tbody rather than the plan that built it. By the
+  // time onEnd fires SortableJS has already moved the row, so every header the row
+  // crossed now sits at a different index than it did in the plan; resolving the
+  // new slot against the old list reads a header a group too far down.
+
+  function domRowIndex(tr) {
+    const tbody = tr.parentElement;
+    if (!tbody) return -1;
+    let index = 0;
+    for (let node = tbody.firstElementChild; node; node = node.nextElementSibling) {
+      if (node === tr) return index;
+      index++;
+    }
+    return -1;
+  }
+
+  // SortableJS counts only the draggable `tr[data-id]` nodes, so the headers the
+  // planner interleaved with them never enter its index; the row's slot in the
+  // tbody is what has to be resolved. Landing on either side of a header means
+  // landing in that header's group — see `resolveDropGroup`, which the pointer
+  // position would refine (its optional third argument) if a caller ever needs it.
+  function dropGroupFor(tr) {
+    const tbody = tr.parentElement;
+    if (!tbody) return null;
+    const live = [];
+    for (let node = tbody.firstElementChild; node; node = node.nextElementSibling) {
+      live.push(node.classList.contains(GROUP_ROW_CLASS)
+        ? { type: 'group', key: node.dataset.group }
+        : { type: 'row' });
+    }
+    return resolveDropGroup(live, domRowIndex(tr));
+  }
+
+  async function attachGroupDrag() {
+    const tbody = wrapper.querySelector('tbody');
+    if (!tbody) return;
+    let Sortable;
+    try {
+      const mod = await import('sortablejs');
+      Sortable = mod.default || mod;
+    } catch {
+      return; // dragging is a convenience; the caller's own stage control still works
+    }
+    if (typeof Sortable !== 'function') return;
+    if (wrapper.querySelector('tbody') !== tbody) return; // re-rendered while awaiting
+
+    sortableInstance = Sortable.create(tbody, {
+      animation: 150,
+      draggable: 'tr[data-id]',
+      ghostClass: 'dt-drag-ghost',
+      onStart: (evt) => { dragFromKey = dropGroupFor(evt.item); },
+      onEnd: (evt) => {
+        const id = evt.item.dataset.id;
+        const toKey = dropGroupFor(evt.item);
+        const fromKey = dragFromKey;
+        dragFromKey = null;
+        const moved = Boolean(id) && toKey != null && toKey !== fromKey;
+        // Deferred because SortableJS is still unwinding; re-rendering inside its
+        // callback would pull the node out from under it.
+        setTimeout(() => {
+          if (moved) {
+            try {
+              activeGroupBy.onMove({ id, fromKey, toKey });
+            } catch (err) {
+              console.error('Group move handler failed', err);
+            }
+          }
+          render();
+        }, 0);
+      },
+    });
+  }
+
   function triggerSelectionChange() {
     if (onSelectionChange) {
       onSelectionChange(Array.from(selectedIds));
@@ -31,26 +316,27 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
   }
 
   function render() {
-    let sorted = [...data];
-
-    // Sort
-    if (sortCol) {
-      sorted.sort((a, b) => {
-        const aVal = sortCol.getValue ? sortCol.getValue(a) : a[sortCol.key];
-        const bVal = sortCol.getValue ? sortCol.getValue(b) : b[sortCol.key];
-        if (aVal == null) return 1;
-        if (bVal == null) return -1;
-        if (typeof aVal === 'string') {
-          return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-        }
-        return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
-      });
+    if (sortableInstance) {
+      try { sortableInstance.destroy(); } catch { /* already gone */ }
+      sortableInstance = null;
     }
 
-    const totalPages = Math.ceil(sorted.length / pageSize);
-    if (currentPage > totalPages) currentPage = totalPages || 1;
-    const start = (currentPage - 1) * pageSize;
-    const paged = sorted.slice(start, start + pageSize);
+    const plan = planTableRows({
+      data,
+      sortCol,
+      sortDir,
+      groupBy: activeGroupBy,
+      pageSize,
+      currentPage,
+      collapsed: collapsedGroups,
+      getId,
+    });
+    currentPage = plan.currentPage;
+    const rows = plan.rows;
+    // rows is planned fresh on every render; dropGroupFor re-reads the tbody.
+    const totalPages = plan.totalPages;
+    const start = plan.start;
+    const paged = rows.filter(item => item.type === 'row').map(item => item.row);
 
     if (data.length === 0) {
       wrapper.innerHTML = `
@@ -120,10 +406,9 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
     html += '</tr></thead><tbody>';
 
-    paged.forEach(row => {
-      const rowId = String(getId ? getId(row) : row.id);
+    function rowHtml(row, rowId) {
       const isSelected = selectedIds.has(rowId);
-      html += `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}">`;
+      let html = `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}">`;
       
       if (selectable) {
         html += `<td class="dt-select-cell">
@@ -135,7 +420,29 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
         const value = col.render ? col.render(row) : escapeHTML(row[col.key] ?? '');
         html += `<td class="${col.align === 'right' ? 'num' : ''}">${value}</td>`;
       });
-      html += '</tr>';
+      return html + '</tr>';
+    }
+
+    const cellSpan = columns.length + (selectable ? 1 : 0);
+
+    rows.forEach(item => {
+      if (item.type === 'group') {
+        const summary = item.summary;
+        const inner = activeGroupBy.headerHtml
+          ? activeGroupBy.headerHtml(summary)
+          : `<span class="dt-group-label">${escapeHTML(summary.label)}</span><span class="dt-group-count">${summary.count}</span>`;
+        const accent = typeof activeGroupBy.accentFor === 'function' ? activeGroupBy.accentFor(item.key) : null;
+        html += `<tr class="${GROUP_ROW_CLASS}${item.collapsed ? ' collapsed' : ''}" data-group="${escapeHTML(String(item.key))}"${accent ? ` data-accent="${escapeHTML(String(accent))}"` : ''}>
+        <td colspan="${cellSpan}">
+          <button type="button" class="dt-group-toggle" aria-expanded="${item.collapsed ? 'false' : 'true'}" aria-label="${item.collapsed ? 'Expand' : 'Collapse'} ${escapeHTML(summary.label)}">
+            <span class="material-icons-outlined" aria-hidden="true">${item.collapsed ? 'chevron_right' : 'expand_more'}</span>
+          </button>
+          ${inner}
+        </td>
+      </tr>`;
+        return;
+      }
+      html += rowHtml(item.row, item.id);
     });
 
     html += '</tbody></table></div>';
@@ -143,16 +450,16 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
     // Pagination
     html += `<div class="pagination">
       <div class="pagination-info" style="display:flex; align-items:center; gap:12px;">
-        <span>Showing ${start + 1}–${Math.min(start + pageSize, sorted.length)} of ${sorted.length}</span>
+        <span>Showing ${plan.visibleTotal === 0 ? 0 : start + 1}–${plan.end} of ${plan.visibleTotal}</span>
         <div class="pagination-page-size" style="position:relative; display:inline-flex; align-items:center; gap:4px; font-size:11px;">
           <span style="color:var(--text-secondary)">Per page:</span>
           <button type="button" class="btn btn-secondary btn-sm dt-page-size-trigger" style="height:22px; padding:0 6px; font-size:11px; display:inline-flex; align-items:center; gap:2px;">
             <span>${pageSize}</span>
             <span class="material-icons-outlined" style="font-size:13px">unfold_more</span>
           </button>
-          <div class="dt-page-size-pop" hidden style="position:absolute; bottom:calc(100% + 4px); left:46px; background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--border-radius); box-shadow:var(--shadow-lg); padding:4px 0; z-index:1000; min-width:64px;">
+          <div class="dropdown-menu dropdown-menu-up dt-page-size-pop" hidden>
             ${[15, 30, 45, 60].map(sz => `
-              <div class="dt-page-size-opt ${sz === pageSize ? 'active' : ''}" data-val="${sz}" style="padding:4px 10px; cursor:pointer; font-size:11px; background:${sz === pageSize ? 'var(--color-primary-light)' : 'transparent'}; color:${sz === pageSize ? 'var(--color-primary)' : 'var(--text-primary)'}; font-weight:${sz === pageSize ? '600' : '400'};">
+              <div class="dropdown-item dt-page-size-opt${sz === pageSize ? ' selected' : ''}" data-val="${sz}">
                 ${sz}
               </div>
             `).join('')}
@@ -270,6 +577,26 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
         render();
       });
     });
+
+    // Event: collapse / expand a group (the toggle button is a real button, so
+    // Enter and Space come through as clicks)
+    if (plan.grouped) {
+      wrapper.querySelectorAll(`tr.${GROUP_ROW_CLASS}`).forEach(tr => {
+        tr.addEventListener('click', (e) => {
+          if (e.target.closest('.dt-group-toggle') || !e.target.closest('button, a, select, input')) {
+            const key = tr.dataset.group;
+            if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+            else collapsedGroups.add(key);
+            saveCollapsed();
+            render();
+          }
+        });
+      });
+    }
+
+    if (plan.grouped && typeof activeGroupBy.onMove === 'function') {
+      attachGroupDrag();
+    }
   }
 
   render();
@@ -296,6 +623,25 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
       render();
     }
   };
+
+  wrapper.setGroupBy = (next) => {
+    activeGroupBy = next || null;
+    collapsedGroups.clear();
+    if (activeGroupBy) {
+      (activeGroupBy.defaultCollapsed || []).forEach(key => collapsedGroups.add(String(key)));
+      loadCollapsed();
+    }
+    render();
+  };
+
+  wrapper.setCollapsed = (key, isCollapsed = true) => {
+    if (isCollapsed) collapsedGroups.add(String(key));
+    else collapsedGroups.delete(String(key));
+    saveCollapsed();
+    render();
+  };
+
+  wrapper.getCollapsed = () => Array.from(collapsedGroups);
 
   wrapper.clearSelection = () => {
     selectedIds.clear();

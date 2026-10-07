@@ -116,11 +116,30 @@
   padding: 10px 20px;
   font-size: var(--font-size-md);
 }
+/* Icon-only button. Mirrors the reset in .toolbar-bulk-actions .btn-icon so a
+   bare <button class="btn-icon"> never falls back to native UA chrome. */
 .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 6px;
   min-width: 32px;
   min-height: 32px;
-  justify-content: center;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.btn-icon:hover {
+  background: var(--bg-color);
+  color: var(--text-primary);
+}
+.btn-icon:disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* ---- Cards ---- */
@@ -499,10 +518,28 @@ select.badge option {
 .dropdown-item:hover {
   background: #f2f3f5; /* neutral grey; --content-bg #fbfbfa was near-invisible */
 }
+/* components.css loads after global.css, so .dropdown-item's own colour would
+   otherwise win over the single-class .text-* helpers and destructive rows
+   (e.g. "Skip Occurrence", "Unschedule") would read as ordinary items. */
+.dropdown-item.text-danger { color: var(--color-danger); }
 .dropdown-divider {
   height: 1px;
   background: var(--border-color);
   margin: var(--space-xs) 0;
+}
+/* Pagination "Per page" menu: a short numeric list, so it keeps a compact width
+   while inheriting the .dropdown-menu surface and .dropdown-item row metrics. */
+.dt-page-size-pop {
+  left: 46px;
+  right: auto;
+  min-width: 64px;
+}
+/* Mirrors .searchable-select-option.selected so the current choice reads the same
+   in both dropdown families. Specificity beats .dropdown-item:hover. */
+.dropdown-item.dt-page-size-opt.selected {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
 }
 
 /* ---- Table ---- */
@@ -525,12 +562,6 @@ select.badge option {
   box-sizing: border-box;
 }
 
-/* ---- Pagination ---- */
-.dt-page-size-select {
-  position: relative;
-  z-index: 20;
-  cursor: pointer;
-}
 .data-table-wrapper {
   flex: 1;
   min-height: 0;
@@ -649,6 +680,125 @@ select.badge option {
   padding-left: 0;
   padding-right: 0;
   text-align: center;
+}
+
+/* ---- Grouped rows (opt-in via createDataTable({ groupBy })) ----
+   A grouping pass turns the table into a stack of labelled bands. Everything
+   here is scoped to .dt-group-row, which only exists when a caller passes
+   groupBy, so the ungrouped tables are untouched. */
+.data-table tr.dt-group-row td {
+  padding: 0 8px;
+  height: 34px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* Sit directly under the sticky column header rather than scrolling away. */
+.data-table tr.dt-group-row td {
+  position: sticky;
+  top: 36px;                               /* == .data-table th height */
+  z-index: 4;
+}
+/* A grouped band owns its hover, so the generic row-hover rule must not fire. */
+.data-table tr.dt-group-row:hover td {
+  background: var(--bg-color);
+}
+.data-table tr.dt-group-row td > * {
+  vertical-align: middle;
+}
+.dt-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-right: 4px;
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.dt-group-toggle:hover {
+  color: var(--text-primary);
+  background: var(--color-primary-light);
+}
+.dt-group-toggle .material-icons-outlined {
+  font-size: 16px;
+}
+.dt-group-label {
+  color: var(--text-primary);
+}
+/* The count is a pill: it reads as a tally, not part of the stage name. */
+.dt-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  margin-left: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  letter-spacing: 0;
+}
+.dt-group-value {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* Accents let a stage band signal its place in the pipeline (won / lost / open)
+   without a second colour system. */
+.data-table tr.dt-group-row[data-accent="success"] td { color: var(--color-success); }
+.data-table tr.dt-group-row[data-accent="danger"] td { color: var(--color-danger); }
+.data-table tr.dt-group-row[data-accent="warning"] td { color: var(--color-warning); }
+.data-table tr.dt-group-row[data-accent="info"] td { color: var(--color-info); }
+.data-table tr.dt-group-row[data-accent="success"] td { background: var(--color-success-bg); }
+.data-table tr.dt-group-row[data-accent="danger"] td { background: var(--color-danger-bg); }
+.data-table tr.dt-group-row[data-accent="warning"] td { background: var(--color-warning-bg); }
+.data-table tr.dt-group-row[data-accent="info"] td { background: var(--color-info-bg); }
+.data-table tr.dt-group-row[data-accent="success"] .dt-group-label,
+.data-table tr.dt-group-row[data-accent="danger"] .dt-group-label,
+.data-table tr.dt-group-row[data-accent="warning"] .dt-group-label,
+.data-table tr.dt-group-row[data-accent="info"] .dt-group-label {
+  color: inherit;
+}
+/* A collapsed band is the only thing standing between the user and its rows, so
+   it gets a lift to stay obviously clickable. */
+.data-table tr.dt-group-row.collapsed td {
+  border-bottom-color: var(--color-primary);
+}
+.data-table tr.dt-group-row.collapsed .dt-group-label {
+  font-style: italic;
+}
+/* SortableJS ghost while a row is dragged between bands. */
+.data-table tr.dt-drag-ghost td {
+  background: var(--color-primary-light);
+  opacity: 0.6;
+}
+.data-table tr.dt-drag-ghost {
+  cursor: grabbing;
+}
+table.data-table tbody tr[data-id] {
+  cursor: pointer;
 }
 
 /* ---- Detail-page key/value rows ----
@@ -3098,4 +3248,699 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 .widget-picker-card:hover {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
+}
+/* ============================================
+   LEADS — grouped pipeline table
+   The leads list keeps the table it always had; these are the pieces that
+   layer a pipeline view onto it (KPI strip, quick-filter chips, inline stage
+   control, stale markers). Nothing here applies to other tables.
+   ============================================ */
+
+/* ---- Pipeline KPI strip ---- */
+.leads-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  padding: 8px 16px;       /* equal breathing room above and below the cards */
+  flex-shrink: 0;
+}
+.leads-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius);
+  min-width: 0;
+}
+.leads-kpi-label {
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.leads-kpi-value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.leads-kpi-sub {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Only the money that is already won gets an accent; everything else stays in
+   the single neutral voice. */
+.leads-kpi-card.is-won .leads-kpi-value { color: var(--color-success); }
+.leads-kpi-card.is-stale .leads-kpi-value { color: var(--color-warning); }
+.leads-kpi-card.is-stale .leads-kpi-value.is-zero { color: var(--text-secondary); }
+
+/* ---- Inline stage control ----
+   A badge-styled select: it reuses the existing select.badge treatment so the
+   Status column looks the same as before, but is now the place a stage is
+   changed. A native control keeps keyboard support and cannot be clipped by the
+   table cell's overflow:hidden the way a popover would be. */
+.lead-stage-select {
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: var(--font-weight-medium);
+  border-width: 1px;
+  max-width: 100%;
+}
+.lead-stage-select:hover { border-color: var(--color-primary); }
+.lead-stage-select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+/* ---- Owner cell ---- */
+.lead-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lead-owner-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 9999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+.lead-owner-name {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lead-owner-unassigned { color: var(--text-tertiary); }
+
+/* ---- Next-action / stale markers ---- */
+.lead-next-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+.lead-next-action.is-overdue { color: var(--color-danger); }
+.lead-stale-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  margin-left: 6px;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-radius: 9999px;
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 768px) {
+  /* The strip is the first thing to become noise on a phone. */
+  .leads-kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .leads-kpi-strip .leads-kpi-card:nth-child(n+5) { display: none; }
+}
+
+#btn-group-toggle[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+/* ============================================
+   Lead detail
+   A lead reads the same whether it is a row in the leads table or open on its
+   own page: the same KPI strip, the same stage accent ramp as the table's group
+   headers, and the shared .detail-row family for every field. Nothing here
+   applies to other pages.
+   ============================================ */
+
+/* ---- Summary strip ----
+   The list bleeds its strip up against the table; on a detail page it sits in
+   the page flow, so only the bleed padding is reset. */
+.lead-detail-kpis {
+  padding: 0 0 12px;
+}
+.lead-detail-kpis .leads-kpi-card.is-good .leads-kpi-value { color: var(--color-success); }
+.lead-detail-kpis .leads-kpi-card.is-over .leads-kpi-value { color: var(--color-danger); }
+
+/* ---- Pipeline stepper ----
+   Buttons rather than divs so the steps are keyboard reachable. Each step
+   carries its own accent through --step-accent, so one rule drives every
+   stage colour and the ramp stays in sync with LEAD_STAGE_ACCENTS. */
+.pipeline-tracker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.pipeline-step {
+  flex: 1 1 0;
+  min-width: 84px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.pipeline-step:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.pipeline-step:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+.pipeline-step[data-state="past"] {
+  background: var(--bg-color);
+}
+.pipeline-step[data-state="current"] {
+  background: var(--step-accent);
+  border-color: var(--step-accent);
+  color: #fff;
+}
+.pipeline-step[data-state="current"]:hover { color: #fff; }
+
+/* ---- Page grid ---- */
+.lead-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.lead-detail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.lead-detail-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0 24px;
+}
+.lead-detail-section { min-width: 0; }
+.lead-detail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 6px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.lead-detail-cols > .lead-detail-section:first-child > .lead-detail-section-title:first-child { margin-top: 0; }
+.lead-detail-section-title .material-icons-outlined { font-size: 14px; }
+.lead-detail-grid .card-header h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lead-detail-grid .card-header h4 .material-icons-outlined {
+  font-size: 16px;
+  color: var(--text-tertiary);
+}
+.lead-detail-note {
+  margin: 0;
+  min-height: 56px;
+  padding: 10px 12px;
+  background: var(--content-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lead-detail-link {
+  color: var(--color-primary-ink);
+  text-decoration: none;
+}
+.lead-detail-link:hover { text-decoration: underline; }
+.lead-detail-muted { color: var(--text-tertiary); }
+.lead-detail-empty {
+  padding: 12px 0;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+/* ---- Conversion forecast ---- */
+.lead-forecast {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.lead-forecast-gauge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+.lead-forecast-gauge-value {
+  position: absolute;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.lead-forecast-figures { min-width: 0; }
+.lead-forecast-amount {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+.lead-forecast-caption {
+  margin-top: 2px;
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+
+/* ---- Stage likelihood ladder ---- */
+.lead-stage-ladder { display: flex; flex-direction: column; }
+.lead-stage-ladder-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+}
+.lead-stage-ladder-row:last-child { border-bottom: none; }
+.lead-stage-ladder-row.is-current {
+  background: var(--color-primary-light);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+.lead-stage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.lead-stage-ladder-name { overflow-wrap: anywhere; }
+.lead-stage-ladder-pct,
+.lead-stage-ladder-amount {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.lead-stage-ladder-amount { min-width: 72px; text-align: right; }
+.lead-stage-ladder-row.is-current .lead-stage-ladder-pct,
+.lead-stage-ladder-row.is-current .lead-stage-ladder-amount { color: var(--text-secondary); }
+
+/* ---- Stage history timeline ---- */
+.lead-timeline {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.lead-timeline-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-size-base);
+}
+.lead-timeline-item:last-child { border-bottom: none; }
+.lead-timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.lead-timeline-text { color: var(--text-primary); overflow-wrap: anywhere; }
+.lead-timeline-date {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Stack the two columns once the right-hand column can no longer hold a
+   usable forecast card beside the detail column. */
+@media (max-width: 1100px) {
+  .lead-detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 768px) {
+  .pipeline-step { flex: 1 1 40%; min-width: 0; }
+  .lead-detail-cols { gap: 0; }
+  .lead-timeline { max-height: none; }
+}
+/* ---- Lead create/edit form ----
+   The same sectioned reading order as the detail page: one hairline card per
+   topic, so field grouping is legible without a wall of inputs. */
+.lead-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lead-form .card-header h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lead-form .card-header h4 .material-icons-outlined {
+  font-size: 16px;
+  color: var(--text-tertiary);
+}
+
+/* ---- Lead detail panels ----
+   The KPI strip and the stepper stay pinned above both panels; the Details /
+   Activity split is a route change driven by the contextual submenu. */
+.lead-activity-count {
+  margin-left: 2px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--bg-color);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: 1px;
+}
+.lead-detail-panels { min-width: 0; }
+.lead-detail-panels > .tab-panel[hidden] { display: none; }
+
+/* ---- Activity tab ----
+   The same comment + attachment feed the jobs detail page uses, so a lead
+   and a job read identically once you are posting against them. */
+.lead-activity-card .card-header h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lead-activity-card .card-header h4 .material-icons-outlined {
+  font-size: 16px;
+  color: var(--text-tertiary);
+}
+.lead-activity-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+.lead-activity-textarea { min-height: 72px; }
+.lead-activity-textarea::placeholder { color: var(--text-tertiary); }
+.lead-activity-staged {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lead-activity-staged-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 8px;
+  background: var(--content-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-sm);
+}
+.lead-activity-staged-chip .material-icons-outlined {
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+.lead-activity-staged-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.lead-activity-staged-size {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.lead-activity-staged-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.lead-activity-staged-remove .material-icons-outlined { font-size: 14px; }
+.lead-activity-staged-remove:hover { color: var(--color-danger); }
+.lead-activity-composer-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lead-activity-attach { margin: 0; cursor: pointer; }
+/* The real <input type="file"> is driven by the Attach label above it. */
+.lead-activity-file-input { display: none; }
+.lead-activity-hint {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+.lead-activity-empty { padding: 20px 0; }
+
+/* ---- Activity feed ---- */
+.lead-activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lead-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.lead-activity-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  color: var(--color-primary-ink);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.lead-activity-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--content-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+}
+.lead-activity-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lead-activity-author {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.lead-activity-sep { color: var(--text-tertiary); }
+.lead-activity-date {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.lead-activity-delete {
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+.lead-activity-delete:hover {
+  color: var(--color-danger);
+  background: var(--bg-color);
+}
+.lead-activity-content {
+  margin-top: 6px;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Only long entries offer "Show more"; short ones never get the toggle. */
+.lead-activity-item.is-collapsed:not(.is-expanded) .lead-activity-content,
+.lead-activity-item.is-collapsed:not(.is-expanded) .lead-activity-files {
+  max-height: 72px;
+  overflow: hidden;
+}
+.lead-activity-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.lead-activity-thumb {
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-bg);
+  line-height: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+.lead-activity-thumb:hover { border-color: var(--color-primary); }
+.lead-activity-thumb img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+}
+.lead-activity-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.lead-activity-file .material-icons-outlined {
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+.lead-activity-file-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.lead-activity-file-size {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.lead-activity-expand { margin-top: 8px; }
+.lead-activity-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.lead-activity-expand-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.lead-activity-expand-btn .material-icons-outlined {
+  font-size: 16px;
+  transition: transform var(--transition-fast);
+}
+.lead-activity-item.is-expanded .lead-activity-expand-btn .material-icons-outlined {
+  transform: rotate(180deg);
+}
+
+/* ---- Inline note editing ----
+   Note tweaks happen while you are reading the lead, so the paragraph itself
+   becomes the editor and the field saves without leaving the page. */
+.lead-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 6px;
+}
+.lead-note-head .lead-detail-section-title { margin: 0; }
+.lead-detail-cols > .lead-detail-section:first-child > .lead-note-head { margin-top: 0; }
+.lead-note-edit {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.lead-note-edit:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+.lead-note-block.is-editing .lead-detail-note { display: none; }
+.lead-note-editor[hidden] { display: none; }
+.lead-note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lead-note-textarea {
+  min-height: 96px;
+  font-size: var(--font-size-base);
+}
+.lead-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .lead-activity-hint { display: none; }
+  .lead-activity-thumb img { width: 56px; height: 56px; }
+  .lead-activity-staged-name { max-width: 140px; }
 }
