@@ -214,7 +214,7 @@ function toggleNotificationsDropdown(btn) {
   dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'notifications-dropdown';
-  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;z-index:var(--z-dropdown);box-shadow:var(--shadow-lg);border-radius:var(--border-radius-md);background:var(--card-bg);border:1px solid var(--card-border);padding:0;';
+  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;padding:0;';
   // dark theme handled by [data-theme-mode="dark"] .dropdown-menu in components.css
 
   const header = document.createElement('div');
@@ -429,19 +429,18 @@ function showSearchResults(query) {
   const dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'search-results';
-  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050; background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:4px 0;';
+  // Surface, radius, shadow and padding come from .dropdown-menu; only the
+  // full-width anchoring, scroll cap and stacking order are set here.
+  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050;';
 
   results.slice(0, 10).forEach(r => {
     const item = document.createElement('button');
     item.className = 'dropdown-item';
-    item.style.cssText = 'display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:none; background:none; text-align:left; cursor:pointer; font-size:13px; color:var(--text-primary); transition:background 0.15s ease;';
     item.innerHTML = `
       <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary)">${r.icon}</span>
       <span style="flex:1" class="truncate">${escapeHTML(r.label)}</span>
       <span class="badge badge-neutral" style="font-size:10px; padding:2px 6px">${escapeHTML(r.type)}</span>
     `;
-    item.addEventListener('mouseenter', () => { item.style.background = 'var(--bg-color)'; });
-    item.addEventListener('mouseleave', () => { item.style.background = 'none'; });
     item.addEventListener('click', () => {
       router.navigate(r.path);
       hideSearchResults();

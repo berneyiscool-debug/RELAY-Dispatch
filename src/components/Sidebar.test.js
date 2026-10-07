@@ -96,3 +96,37 @@ describe('Sidebar: settings submenu back control', () => {
     }
   });
 });
+
+describe('Sidebar: lead detail submenu tabs', () => {
+  const routeFor = (tab) => `/leads/lead_prev_0${tab ? `?tab=${tab}` : ''}`;
+
+  test('exposes the Details and Activity tabs', () => {
+    const contextual = getContextualMenu(routeFor());
+
+    assert.deepStrictEqual(contextual.items.map(i => i.id), ['overview', 'activity']);
+    assert.deepStrictEqual(contextual.items.map(i => i.label), ['Details', 'Activity']);
+  });
+
+  test('defaults to the Details tab and targets the lead in every path', () => {
+    const contextual = getContextualMenu(routeFor());
+
+    assert.strictEqual(contextual.activeTab, 'overview');
+    for (const item of contextual.items) {
+      assert.ok(item.path.startsWith('/leads/lead_prev_0?tab='), `${item.id} should stay on the lead`);
+    }
+  });
+
+  test('activates the tab named in the query string', () => {
+    assert.strictEqual(getContextualMenu(routeFor('activity')).activeTab, 'activity');
+    assert.strictEqual(getContextualMenu(routeFor('overview')).activeTab, 'overview');
+  });
+
+  test('falls back to the Details tab for an unknown tab', () => {
+    assert.strictEqual(getContextualMenu(routeFor('nonsense')).activeTab, 'overview');
+  });
+
+  test('leaves the lead form and create routes without tabs', () => {
+    assert.strictEqual(getContextualMenu('/leads/new'), null);
+    assert.strictEqual(getContextualMenu('/leads/lead_prev_0/edit'), null);
+  });
+});

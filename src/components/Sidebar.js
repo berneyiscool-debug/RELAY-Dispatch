@@ -659,14 +659,21 @@ export function getContextualMenu(hash) {
   if (resource === 'leads') {
     const lead = store.getById('leads', id);
     const leadTitle = lead ? (lead.title || `Lead #${lead.number}`) : 'Lead Detail';
+    // Mirrors LeadDetail.js: only the Activity tab is opt-in, everything else
+    // lands on Details so a stray ?tab= never leaves the submenu blank.
+    const currentTab = activeTab === 'activity' ? 'activity' : 'overview';
+    const activityCount = lead && Array.isArray(lead.activityLog) ? lead.activityLog.length : 0;
     return {
       railId: 'cat-workflow',
       headerTitle: leadTitle,
       icon: 'contact_mail',
       backPath: '/leads',
       backLabel: 'Back to Leads',
-      items: [],
-      activeTab: ''
+      items: [
+        { id: 'overview', icon: 'dashboard', label: 'Details', path: `/leads/${id}?tab=overview` },
+        { id: 'activity', icon: 'forum', label: 'Activity', path: `/leads/${id}?tab=activity`, badge: activityCount > 0 ? activityCount : null }
+      ],
+      activeTab: currentTab
     };
   }
 

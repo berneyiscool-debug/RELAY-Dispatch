@@ -2298,13 +2298,15 @@ export function renderScheduleView(container) {
           const n = selectedScheduleIds.size;
           contextMenu = document.createElement('div');
           contextMenu.className = 'dropdown-menu';
-          contextMenu.style.cssText = `position:fixed;top:${e.clientY}px;left:${e.clientX}px;z-index:1000;background:var(--card-bg);box-shadow:var(--shadow-md);border:1px solid var(--border-color);border-radius:var(--border-radius);padding:4px 0;min-width:180px;`;
+          // .dropdown-menu supplies the surface, radius, padding and hover; only the
+          // body-anchored position and this menu's own width are set here.
+          contextMenu.style.cssText = `position:fixed;top:${e.clientY}px;left:${e.clientX}px;z-index:var(--z-dropdown);min-width:180px;`;
           contextMenu.innerHTML = `
             <div style="padding:4px 12px;font-size:11px;color:var(--text-tertiary);font-weight:600;">${n} allocations selected</div>
-            <button class="dropdown-item" id="ctx-bulk-status"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">flag</span> Change Status (${n})</button>
-            <button class="dropdown-item" id="ctx-bulk-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place (${n})</button>
-            <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign (${n})</button>
-            <button class="dropdown-item text-danger" id="ctx-bulk-unsched"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${n})</button>`;
+            <button class="dropdown-item" id="ctx-bulk-status"><span class="material-icons-outlined" style="font-size:16px">flag</span> Change Status (${n})</button>
+            <button class="dropdown-item" id="ctx-bulk-book"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time in Place (${n})</button>
+            <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px">person_add</span> Reassign (${n})</button>
+            <button class="dropdown-item text-danger" id="ctx-bulk-unsched"><span class="material-icons-outlined" style="font-size:16px">event_busy</span> Unschedule (${n})</button>`;
           document.body.appendChild(contextMenu);
           positionContextMenu(contextMenu, e.clientX, e.clientY);
           contextMenu.querySelector('#ctx-bulk-status').addEventListener('click', () => { closeContextMenu(); bulkChangeStatus(); });
@@ -2319,20 +2321,15 @@ export function renderScheduleView(container) {
         contextMenu.style.position = 'fixed';
         contextMenu.style.top = `${e.clientY}px`;
         contextMenu.style.left = `${e.clientX}px`;
-        contextMenu.style.zIndex = 1000;
-        contextMenu.style.background = 'var(--card-bg)';
-        contextMenu.style.boxShadow = 'var(--shadow-md)';
-        contextMenu.style.border = '1px solid var(--border-color)';
-        contextMenu.style.borderRadius = 'var(--border-radius)';
-        contextMenu.style.padding = '4px 0';
+        contextMenu.style.zIndex = 'var(--z-dropdown)';
         contextMenu.style.minWidth = '140px';
 
         if (blockType === 'virtual') {
           contextMenu.style.minWidth = '170px';
           contextMenu.innerHTML = `
-            <button class="dropdown-item text-primary" id="ctx-create-job"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">add_task</span> Create as Job</button>
-            <button class="dropdown-item" id="ctx-view-parent"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Template Job</button>
-            <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
+            <button class="dropdown-item text-primary" id="ctx-create-job"><span class="material-icons-outlined" style="font-size:16px">add_task</span> Create as Job</button>
+            <button class="dropdown-item" id="ctx-view-parent"><span class="material-icons-outlined" style="font-size:16px">visibility</span> View Template Job</button>
+            <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px">block</span> Skip Occurrence</button>
           `;
           document.body.appendChild(contextMenu);
           positionContextMenu(contextMenu, e.clientX, e.clientY);
@@ -2384,20 +2381,20 @@ export function renderScheduleView(container) {
 
           if (isBatch) {
             contextMenu.innerHTML = `
-              <button class="dropdown-item" id="ctx-batch-book"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place (${selectedScheduleIds.size})</button>
-              <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign (${selectedScheduleIds.size})</button>
-              <button class="dropdown-item text-danger" id="ctx-batch-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule (${selectedScheduleIds.size})</button>
+              <button class="dropdown-item" id="ctx-batch-book"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time in Place (${selectedScheduleIds.size})</button>
+              <button class="dropdown-item" id="ctx-batch-reassign"><span class="material-icons-outlined" style="font-size:16px">person_add</span> Reassign (${selectedScheduleIds.size})</button>
+              <button class="dropdown-item text-danger" id="ctx-batch-unschedule"><span class="material-icons-outlined" style="font-size:16px">event_busy</span> Unschedule (${selectedScheduleIds.size})</button>
             `;
           } else {
             contextMenu.innerHTML = `
-              <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">visibility</span> View Job</button>
-              <button class="dropdown-item" id="ctx-change-status"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">flag</span> Change Status</button>
-              ${isRealSchedule ? `<button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">assignment</span> Change Task</button>` : ''}
-              <button class="dropdown-item" id="ctx-reassign"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">person_add</span> Reassign</button>
-              <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">timer</span> Book Time in Place</button>
-              <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">event_busy</span> Unschedule</button>
+              <button class="dropdown-item" id="ctx-view"><span class="material-icons-outlined" style="font-size:16px">visibility</span> View Job</button>
+              <button class="dropdown-item" id="ctx-change-status"><span class="material-icons-outlined" style="font-size:16px">flag</span> Change Status</button>
+              ${isRealSchedule ? `<button class="dropdown-item" id="ctx-change-task"><span class="material-icons-outlined" style="font-size:16px">assignment</span> Change Task</button>` : ''}
+              <button class="dropdown-item" id="ctx-reassign"><span class="material-icons-outlined" style="font-size:16px">person_add</span> Reassign</button>
+              <button class="dropdown-item" id="ctx-book-time"><span class="material-icons-outlined" style="font-size:16px">timer</span> Book Time in Place</button>
+              <button class="dropdown-item text-danger" id="ctx-unschedule"><span class="material-icons-outlined" style="font-size:16px">event_busy</span> Unschedule</button>
               ${isRecurringChild ? `
-                <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">block</span> Skip Occurrence</button>
+                <button class="dropdown-item text-danger" id="ctx-skip-occurrence"><span class="material-icons-outlined" style="font-size:16px">block</span> Skip Occurrence</button>
               ` : ''}
             `;
           }
@@ -2663,7 +2660,7 @@ export function renderScheduleView(container) {
           });
         } else {
           contextMenu.innerHTML = `
-            <button class="dropdown-item text-danger" id="ctx-delete-allocation"><span class="material-icons-outlined" style="font-size:16px;margin-right:8px">delete</span> Delete Allocation</button>
+            <button class="dropdown-item text-danger" id="ctx-delete-allocation"><span class="material-icons-outlined" style="font-size:16px">delete</span> Delete Allocation</button>
           `;
           document.body.appendChild(contextMenu);
           positionContextMenu(contextMenu, e.clientX, e.clientY);

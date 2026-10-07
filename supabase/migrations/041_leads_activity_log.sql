@@ -1,0 +1,33 @@
+-- =====================================================================
+-- LEADS ACTIVITY LOG
+-- =====================================================================
+-- The lead detail page grew an Activity tab: a reverse-chronological feed of
+-- internal notes, phone calls and site visits, each with optional image or
+-- document attachments. Following the jobs page precedent the feed is stored
+-- as an array field on the lead record itself (lead.activityLog) rather than
+-- in the separate 'activity' collection, which is cache-only in the client -
+-- no object store, no table - and therefore never survives a reload.
+--
+-- An array field only reaches Postgres if the leads whitelist in
+-- src/data/store.js names the column: denormalizeRecord deletes every key that
+-- is not in TABLE_COLUMNS before a cloud write, so without this column the
+-- activity history would be written locally and silently dropped in cloud
+-- mode. This file ships alongside that whitelist entry for exactly that
+-- reason.
+--
+-- IMPORTANT: apply this migration in the same release as the client change.
+-- The client sends activity_log on every lead write once the whitelist lists
+-- it, and there is no column-presence preflight to fall back on, so a project
+-- running the new client against an un-migrated database would see lead writes
+-- rejected by PostgREST.
+--
+-- Additive only, no backfill: existing rows receive the empty-array default
+-- because that is the column default, and the client already treats a missing
+-- activityLog as [].
+--
+-- Idempotent (ADD COLUMN IF NOT EXISTS) so the file is re-runnable and safe to
+-- apply to a project where it has already landed.
+-- =====================================================================
+
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS activity_log jsonb DEFAULT '[]'::jsonb;

@@ -37,6 +37,8 @@ const NAME_SQL = readFileSync(join(MIGRATIONS_DIR, '036_company_name_uniqueness.
 const IDENTITY_SQL = readFileSync(join(MIGRATIONS_DIR, '038_profiles_identity_validation.sql'), 'utf8');
 const UPDATE_SCOPE_SQL = readFileSync(join(MIGRATIONS_DIR, '039_tighten_profiles_update.sql'), 'utf8');
 const TRIAL_SQL = readFileSync(join(MIGRATIONS_DIR, '037_terms_and_trial.sql'), 'utf8');
+const LEADS_PIPELINE_SQL = readFileSync(join(MIGRATIONS_DIR, '040_leads_pipeline_fields.sql'), 'utf8');
+const LEADS_ACTIVITY_SQL = readFileSync(join(MIGRATIONS_DIR, '041_leads_activity_log.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -1735,5 +1737,215 @@ CREATE TRIGGER companies_billing_guard_biu
       assert.strictEqual(await value(db, `SELECT trial_started_at IS NOT NULL FROM public.companies WHERE id = '${guardedCompanyId}'`), true);
       assert.strictEqual(await trialDays(guardedCompanyId), 14);
     });
+  });
+});
+
+describe('040 leads pipeline fields', () => {
+  const PIPELINE_COLUMNS = [
+    'phone',
+    'email',
+    'assigned_to',
+    'sales_rep_name',
+    'stage_history',
+    'next_action_date',
+  ];
+
+  let db;
+
+  before(async () => {
+    db = await createFixtureDb();
+    // Run twice: the migration ships as ADD COLUMN IF NOT EXISTS so a project
+    // that already picked up some of these columns by hand must not abort.
+    await db.exec(LEADS_PIPELINE_SQL);
+    await db.exec(LEADS_PIPELINE_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds exactly the six pipeline columns, idempotently', async () => {
+    assert.strictEqual(
+      await value(
+        db,
+        `SELECT count(*)::int FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'leads'
+            AND column_name IN (${PIPELINE_COLUMNS.map((c) => `'${c}'`).join(', ')})`
+      ),
+      PIPELINE_COLUMNS.length
+    );
+  });
+
+  test('every added column is nullable so existing rows survive', async () => {
+    assert.strictEqual(
+      await value(
+        db,
+        `SELECT count(*)::int FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'leads'
+            AND column_name IN (${PIPELINE_COLUMNS.map((c) => `'${c}'`).join(', ')})
+            AND is_nullable = 'YES'`
+      ),
+      PIPELINE_COLUMNS.length
+    );
+  });
+
+  test('column types match what the client sends', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'phone'"),
+      'text'
+    );
+    assert.strictEqual(
+      await value(db, "SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'assigned_to'"),
+      'text'
+    );
+    assert.strictEqual(
+      await value(db, "SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'sales_rep_name'"),
+      'text'
+    );
+    assert.strictEqual(
+      await value(db, "SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'stage_history'"),
+      'jsonb'
+    );
+    assert.strictEqual(
+      await value(db, "SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'next_action_date'"),
+      'date'
+    );
+  });
+
+  test('stage_history defaults to an empty json array', async () => {
+    const defaultValue = await value(
+      db,
+      "SELECT column_default FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'stage_history'"
+    );
+    assert.ok(
+      typeof defaultValue === 'string' && defaultValue.includes("'[]'"),
+      `stage_history default should be '[]'::jsonb, got ${defaultValue}`
+    );
+    assert.strictEqual(
+      await value(db, "SELECT (stage_history = '[]'::jsonb) FROM public.leads WHERE message = 'B lead'"),
+      true
+    );
+  });
+
+  test('no backfill is attempted and existing rows keep their data', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM public.leads WHERE message = 'B lead'"),
+      1
+    );
+    assert.strictEqual(
+      await value(db, "SELECT next_action_date IS NULL FROM public.leads WHERE message = 'B lead'"),
+      true
+    );
+    assert.strictEqual(
+      await value(db, "SELECT phone IS NULL AND email IS NULL AND assigned_to IS NULL AND sales_rep_name IS NULL FROM public.leads WHERE message = 'B lead'"),
+      true
+    );
+  });
+});
+
+describe('041 leads activity log', () => {
+  let db;
+
+  before(async () => {
+    db = await createFixtureDb();
+    // Run twice: the migration ships as ADD COLUMN IF NOT EXISTS so a project
+    // that already added the column by hand must not abort.
+    await db.exec(LEADS_ACTIVITY_SQL);
+    await db.exec(LEADS_ACTIVITY_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds the activity_log column, idempotently', async () => {
+    assert.strictEqual(
+      await value(
+        db,
+        `SELECT count(*)::int FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'leads'
+            AND column_name = 'activity_log'`
+      ),
+      1
+    );
+  });
+
+  test('the column is nullable so existing rows survive', async () => {
+    assert.strictEqual(
+      await value(
+        db,
+        `SELECT is_nullable FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'leads'
+            AND column_name = 'activity_log'`
+      ),
+      'YES'
+    );
+  });
+
+  test('the column type is jsonb because the client sends an array', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'activity_log'"),
+      'jsonb'
+    );
+  });
+
+  test('activity_log defaults to an empty json array', async () => {
+    const defaultValue = await value(
+      db,
+      "SELECT column_default FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'activity_log'"
+    );
+    assert.ok(
+      typeof defaultValue === 'string' && defaultValue.includes("'[]'"),
+      `activity_log default should be '[]'::jsonb, got ${defaultValue}`
+    );
+    assert.strictEqual(
+      await value(db, "SELECT (activity_log = '[]'::jsonb) FROM public.leads WHERE message = 'B lead'"),
+      true
+    );
+  });
+
+  test('no backfill is attempted and existing rows keep their data', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM public.leads WHERE message = 'B lead'"),
+      1
+    );
+    assert.strictEqual(
+      await value(db, "SELECT message FROM public.leads WHERE message = 'B lead'"),
+      'B lead'
+    );
+    assert.strictEqual(
+      await value(db, "SELECT jsonb_array_length(activity_log) FROM public.leads WHERE message = 'B lead'"),
+      0
+    );
+  });
+
+  test('the column round trips the entry array the lead detail page writes', async () => {
+    const entry = JSON.stringify([{
+      id: 'lead_activity_probe',
+      content: 'Site visit booked',
+      files: [{ name: 'photo.png', size: 2048, type: 'image/png', data: 'data:image/png;base64,AAAA' }],
+      date: '2026-10-02T00:00:00.000Z',
+      author: 'Josh Preview',
+    }]);
+    await db.exec(`UPDATE public.leads SET activity_log = '${entry}'::jsonb WHERE message = 'B lead'`);
+
+    assert.strictEqual(
+      await value(db, "SELECT jsonb_array_length(activity_log) FROM public.leads WHERE message = 'B lead'"),
+      1
+    );
+    assert.strictEqual(
+      await value(db, "SELECT activity_log -> 0 ->> 'author' FROM public.leads WHERE message = 'B lead'"),
+      'Josh Preview'
+    );
+    assert.strictEqual(
+      await value(db, "SELECT activity_log -> 0 ->> 'content' FROM public.leads WHERE message = 'B lead'"),
+      'Site visit booked'
+    );
+    assert.strictEqual(
+      await value(db, "SELECT activity_log -> 0 -> 'files' -> 0 ->> 'name' FROM public.leads WHERE message = 'B lead'"),
+      'photo.png'
+    );
+
+    await db.exec("UPDATE public.leads SET activity_log = '[]'::jsonb WHERE message = 'B lead'");
   });
 });
