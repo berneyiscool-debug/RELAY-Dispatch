@@ -177,19 +177,15 @@
 
     preloadAtlas(screen[0])
       .then(function () {
-        // The new atlas is in cache now, so swap the source and jump to the
-        // right tile in one go. Transitions stay off until it has decoded, or
-        // the old atlas would briefly animate towards the new offset.
-        shot.style.transition = 'none';
+        // The new atlas is in cache now, so the source swap and the tile
+        // offset land in the same frame.
         applyScreen(key);
         return shot.decode ? shot.decode().catch(function () {}) : Promise.resolve();
       })
       .then(function () {
-        shot.style.transition = '';
         setBusy(false);
       })
       .catch(function () {
-        shot.style.transition = '';
         setBusy(false);
       });
   }
