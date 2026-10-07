@@ -111,7 +111,7 @@ export function renderLaunchScreen(container, onComplete) {
       height: 100vh;
       background: #f3f5f7;
       color: #1a1a1a;
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-family: var(--font-family);
       overflow: hidden;
       box-sizing: border-box;
       position: relative;
@@ -1750,7 +1750,7 @@ export function renderLaunchScreen(container, onComplete) {
         padding: 24px;
         box-sizing: border-box;
         color: #1a1a1a;
-        font-family: 'Inter', sans-serif;
+        font-family: var(--font-family);
       ">
         <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #1a1a1a;">
           <span class="material-icons-outlined" style="color: #FF5C00; font-size: 22px;">help_outline</span>

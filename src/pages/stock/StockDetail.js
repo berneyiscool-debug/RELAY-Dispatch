@@ -43,7 +43,7 @@ export function renderStockDetail(container, { id }) {
       iconBgColor: isLow ? 'var(--color-danger-bg)' : 'var(--color-success-bg)',
       iconTextColor: isLow ? 'var(--color-danger)' : 'var(--color-success)',
       metaHtml: `
-        <span style="font-family:monospace">${escapeHTML(item.sku)}</span>
+        <span style="font-family:var(--font-mono)">${escapeHTML(item.sku)}</span>
         <span class="badge badge-neutral">${escapeHTML(item.category)}</span>
         ${isLow ? '<span class="badge badge-danger">LOW STOCK</span>' : '<span class="badge badge-success">IN STOCK</span>'}
       `,

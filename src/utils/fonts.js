@@ -21,6 +21,37 @@
 
 const FACES = [
   {
+    // App UI face (Oct 2026: replaced Inter for the UI; Inter stays for customer documents).
+    family: 'IBM Plex Sans',
+    weight: '100 700',
+    display: 'swap',
+    format: "format('woff2-variations')",
+    url: new URL('../../node_modules/@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2', import.meta.url).href,
+  },
+  {
+    family: 'IBM Plex Sans',
+    style: 'italic',
+    weight: '100 700',
+    display: 'swap',
+    format: "format('woff2-variations')",
+    url: new URL('../../node_modules/@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-italic.woff2', import.meta.url).href,
+  },
+  {
+    // UI monospace: job/invoice numbers, SKUs, serials, IDs.
+    family: 'IBM Plex Mono',
+    weight: '400',
+    display: 'swap',
+    format: "format('woff2')",
+    url: new URL('../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2', import.meta.url).href,
+  },
+  {
+    family: 'IBM Plex Mono',
+    weight: '500',
+    display: 'swap',
+    format: "format('woff2')",
+    url: new URL('../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2', import.meta.url).href,
+  },
+  {
     family: 'Inter',
     weight: '100 900',
     display: 'swap',
@@ -83,7 +114,7 @@ export function fontFaceCss() {
   if (cachedCss === null) {
     const faces = FACES.map((face) => `@font-face {
   font-family: '${face.family}';
-  font-style: normal;
+  font-style: ${face.style || 'normal'};
   font-weight: ${face.weight};
   font-display: ${face.display};
   src: url("${face.url}") ${face.format};

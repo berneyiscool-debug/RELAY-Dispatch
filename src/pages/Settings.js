@@ -3532,8 +3532,8 @@ export function renderSettings(container) {
                   <tbody>
                     ${records.map(r => `<tr>
                       <td>${escapeHTML(r.type || r.record || '')}</td>
-                      <td style="font-family:monospace;">${escapeHTML(r.name || '')}</td>
-                      <td style="font-family:monospace;word-break:break-all;max-width:340px;">${escapeHTML(r.value || '')}</td>
+                      <td style="font-family:var(--font-mono);">${escapeHTML(r.name || '')}</td>
+                      <td style="font-family:var(--font-mono);word-break:break-all;max-width:340px;">${escapeHTML(r.value || '')}</td>
                       <td style="text-transform:capitalize;">${escapeHTML(r.status || '—')}</td>
                     </tr>`).join('')}
                   </tbody>
@@ -3726,7 +3726,7 @@ export function renderSettings(container) {
               <td style="padding:3px 12px 3px 0;color:var(--text-secondary);white-space:nowrap;">${escapeHTML(
                 Object.keys(labels).filter(k => ((info.addresses || {})[k] || '').toLowerCase() === r.addr.toLowerCase()).map(k => labels[k]).join(', ')
               )}</td>
-              <td style="padding:3px 0;font-family:monospace;word-break:break-all;">${escapeHTML(r.addr.replace(/^.*</, '').replace(/>$/, ''))}</td>
+              <td style="padding:3px 0;font-family:var(--font-mono);word-break:break-all;">${escapeHTML(r.addr.replace(/^.*</, '').replace(/>$/, ''))}</td>
             </tr>`).join('')}
           </table>
           ${info.replyTo

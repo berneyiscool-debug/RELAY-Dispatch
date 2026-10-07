@@ -84,7 +84,7 @@ export function renderAssetDetail(container, { id, tab }) {
         metaHtml: `
           <span class="badge ${currentAsset.ownerType === 'Business' ? 'badge-primary' : 'badge-neutral'}">${escapeHTML(ownerTypeLabel)}</span>
           <span class="badge ${currentAsset.status === 'Active' ? 'badge-success' : 'badge-warning'}">${escapeHTML(currentAsset.status || 'Active')}</span>
-          <span style="font-family:monospace">• ${escapeHTML(currentAsset.identifier || currentAsset.serial || 'No ID')}</span>
+          <span style="font-family:var(--font-mono)">• ${escapeHTML(currentAsset.identifier || currentAsset.serial || 'No ID')}</span>
         `,
         actionsHtml: `
           <button class="btn btn-secondary" id="btn-edit" data-tooltip="Modify asset details, assignments, or properties" data-tooltip-pos="left"><span class="material-icons-outlined">edit</span> Edit Details</button>

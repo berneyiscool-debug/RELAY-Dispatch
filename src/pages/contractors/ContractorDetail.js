@@ -181,7 +181,7 @@ export function renderContractorDetail(container, { id, tab }) {
               Share this secure magic link with the subcontractor. They will be able to view their assigned tasks, slide progress updates, leave site comments, and upload compliance documents without needing a password.
             </p>
             <div style="display:flex; gap: var(--space-sm); align-items:center;">
-              <input type="text" readonly id="magic-link-url" class="form-input" style="flex:1; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" value="${contractorPortalUrl(contractor)}" />
+              <input type="text" readonly id="magic-link-url" class="form-input" style="flex:1; font-family:var(--font-mono); background: var(--content-bg); font-size:13px; color:var(--text-secondary);" value="${contractorPortalUrl(contractor)}" />
               <button class="btn btn-primary btn-sm" id="btn-copy-magic-link" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px">content_copy</span> Copy Magic Link
               </button>
@@ -387,7 +387,7 @@ export function renderContractorDetail(container, { id, tab }) {
                           </div>
                         ` : ''}
                       </td>
-                      <td style="font-family:monospace" class="text-secondary">${escapeHTML(doc.number || '—')}</td>
+                      <td style="font-family:var(--font-mono)" class="text-secondary">${escapeHTML(doc.number || '—')}</td>
                       <td>${doc.expiryDate ? new Date(doc.expiryDate).toLocaleDateString('en-AU') : '—'}</td>
                       <td><span class="badge ${stat.colorClass}">${escapeHTML(stat.label)}</span></td>
                       <td>

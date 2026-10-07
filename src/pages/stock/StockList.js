@@ -127,7 +127,7 @@ export function renderStockList(container, params) {
       { key: 'name', label: 'Item', render: (r) => `<span class="cell-link font-medium" style="font-weight:600; color:var(--color-primary)">${escapeHTML(r.name)}</span>`, width: '28%' },
       { key: 'category', label: 'Category', render: (r) => `<span class="badge badge-neutral">${escapeHTML(r.category || '—')}</span>`, width: '15%' },
       { key: 'supplier', label: 'Supplier', render: (r) => `<span class="text-secondary">${escapeHTML(r.supplier || '—')}</span>`, width: '21%' },
-      { key: 'sku', label: 'SKU', render: (r) => `<span class="text-secondary" style="font-family:monospace">${escapeHTML(r.sku || '—')}</span>`, width: '13%' },
+      { key: 'sku', label: 'SKU', render: (r) => `<span class="text-secondary" style="font-family:var(--font-mono)">${escapeHTML(r.sku || '—')}</span>`, width: '13%' },
       { key: 'quantity', label: 'Qty', render: (r) => {
         const totalQty = (r.locations || []).reduce((sum, l) => sum + l.quantity, 0);
         const low = totalQty <= (r.reorderLevel || 0);
