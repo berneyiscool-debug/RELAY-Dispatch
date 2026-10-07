@@ -1,71 +1,99 @@
 // ============================================
-// RELAY — TERMS OF SERVICE / PRIVACY POLICY (placeholders)
+// RELAY — LEGAL PAGES (in-app)
 // ============================================
-// The real documents are being drafted separately. These pages exist so the
-// signup form's Terms and Privacy links point somewhere real and reviewable —
-// swapping the copy in `DOCS` below is the only change needed once the final
-// wording is published. Both routes are public: someone still mid-signup must
-// be able to read them without an account.
+// Renders the documents in ./content.js — the same source the static pages on
+// relaydispatch.com.au are built from (scripts/build-legal-pages.mjs), so the
+// app and the website can never disagree. All four routes are public: someone
+// still mid-signup must be able to read them without an account.
 
 import { router } from '../../router.js';
 import { applyTheme } from '../../utils/theme.js';
+import { DOCS, DOC_ORDER, ENTITY, renderBlocks } from './content.js';
 
-const DOCS = {
-  terms: {
-    title: 'Terms of Service',
-    icon: 'gavel',
-    summary: 'The agreement between you and RELAY covering use of RELAY Dispatch, RELAY Cloud, and the mobile app.',
-    sections: [
-      ['Status', 'These terms are being finalised and will be published before RELAY Cloud leaves public beta. Continued use of the app is subject to the published version.'],
-      ['Your data', 'You own the records you enter. Local profiles are stored on your own device; cloud accounts are stored in your RELAY Cloud workspace.'],
-      ['Billing', 'RELAY Cloud is billed per user per month through Stripe. A 14-day free trial is offered without a card, and no charge is made automatically at the end of it.'],
-    ],
-  },
-  privacy: {
-    title: 'Privacy Policy',
-    icon: 'privacy_tip',
-    summary: 'What RELAY collects, why, and the control you have over it.',
-    sections: [
-      ['Status', 'This policy is being finalised and will be published before RELAY Cloud leaves public beta. Continued use of the app is subject to the published version.'],
-      ['What we store', 'Account details (name, email, mobile), your company profile, and the business records you create. Local profiles never leave the device they were created on.'],
-      ['Your control', 'You can export your data at any time from Settings. Deleting a local profile erases it from this device; deleting a cloud account removes the workspace and its records.'],
-    ],
-  },
-};
+const docHref = (key) => `#/${key}`;
+
+const STYLE = `
+  .legal-page { max-width: 820px; margin: 0 auto; padding: 32px 20px 72px; line-height: 1.65; }
+  .legal-page h1 { margin: 0; font-size: 28px; }
+  .legal-page h2 { font-size: 17px; margin: 32px 0 8px; scroll-margin-top: 16px; }
+  .legal-page p, .legal-page li { color: var(--text-secondary); font-size: 14.5px; }
+  .legal-page p { margin: 0 0 10px; }
+  .legal-page ul { margin: 0 0 12px; padding-left: 22px; list-style: disc; }
+  .legal-page ol.legal-toc { list-style: decimal; }
+  .legal-page li { margin-bottom: 6px; display: list-item; }
+  .legal-page a { color: var(--color-primary, #FF5C00); font-weight: 600; text-decoration: none; }
+  .legal-page a:hover { text-decoration: underline; }
+  .legal-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 24px; }
+  .legal-tabs a { font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-secondary); font-weight: 500; }
+  .legal-tabs a.active { background: var(--color-primary, #FF5C00); border-color: var(--color-primary, #FF5C00); color: #fff; }
+  .legal-meta { font-size: 13px; color: var(--text-tertiary); margin: 6px 0 20px; }
+  .legal-plain { border: 1px solid var(--border-color); border-left: 3px solid var(--color-primary, #FF5C00); border-radius: 8px; padding: 14px 18px; margin: 0 0 20px; background: var(--bg-secondary, transparent); }
+  .legal-plain strong { display: block; margin-bottom: 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+  .legal-plain ul { margin: 0; }
+  .legal-toc { columns: 2; column-gap: 24px; font-size: 13.5px; margin: 0 0 8px; padding-left: 18px; }
+  .legal-toc li { break-inside: avoid; margin-bottom: 4px; }
+  .legal-toc a { font-weight: 500; }
+  .legal-table-wrap { overflow-x: auto; margin: 4px 0 14px; }
+  .legal-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .legal-table th, .legal-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  .legal-table th { color: var(--text-primary); font-weight: 600; }
+  .legal-table td { color: var(--text-secondary); }
+  @media (max-width: 600px) { .legal-toc { columns: 1; } }
+`;
 
 function renderDoc(container, key) {
   const doc = DOCS[key];
   applyTheme(null);
 
   container.innerHTML = `
-    <div class="legal-page" style="max-width:760px;margin:0 auto;padding:32px 20px 64px;">
+    <style>${STYLE}</style>
+    <div class="legal-page">
       <button class="btn btn-secondary" id="legal-back" style="margin-bottom:20px;">
         <span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px;">arrow_back</span>Back
       </button>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-        <span class="material-icons-outlined" style="font-size:32px;color:var(--color-accent,#FF5C00);">${doc.icon}</span>
-        <h1 style="margin:0;font-size:26px;">${doc.title}</h1>
+      <nav class="legal-tabs" aria-label="Legal documents">
+        ${DOC_ORDER.map((k) => `<a href="${docHref(k)}" class="${k === key ? 'active' : ''}">${DOCS[k].title}</a>`).join('')}
+      </nav>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span class="material-icons-outlined" style="font-size:32px;color:var(--color-primary,#FF5C00);">${doc.icon}</span>
+        <h1>${doc.title}</h1>
       </div>
-      <p style="color:var(--text-secondary);margin:0 0 24px;">${doc.summary}</p>
-      ${doc.sections.map(([heading, body]) => `
-        <div class="card" style="margin-bottom:14px;">
-          <div class="card-body">
-            <h2 style="margin:0 0 8px;font-size:16px;">${heading}</h2>
-            <p style="margin:0;color:var(--text-secondary);line-height:1.6;">${body}</p>
-          </div>
-        </div>
-      `).join('')}
+      <div class="legal-meta">Effective ${ENTITY.effectiveDate} · ${ENTITY.legalName}</div>
+      <p>${doc.summary}</p>
+      <div class="legal-plain">
+        <strong>The short version</strong>
+        <ul>${doc.plain.map((p) => `<li>${p}</li>`).join('')}</ul>
+      </div>
+      <p style="font-size:13px;color:var(--text-tertiary);">The short version is a guide only. The full text below is what applies.</p>
+      <ol class="legal-toc">
+        ${doc.sections.map((s) => `<li><a href="#" data-jump="${s.id}">${s.heading.replace(/^\d+\.\s*/, '')}</a></li>`).join('')}
+      </ol>
+      ${doc.sections.map((s) => `
+        <section>
+          <h2 id="legal-${s.id}">${s.heading}</h2>
+          ${renderBlocks(s.blocks, docHref)}
+        </section>`).join('')}
     </div>`;
 
+  // The router owns the hash, so in-page jumps scroll instead of navigating.
+  container.querySelectorAll('[data-jump]').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      container.querySelector(`#legal-${a.dataset.jump}`)?.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+
   container.querySelector('#legal-back').addEventListener('click', () => {
-    // These links open in a new tab from the signup form, so closing the tab is
-    // the right exit. Falling back to login covers a direct visit.
+    // These links open in a new tab from the signup form, so going back is the
+    // right exit. Falling back to login covers a direct visit.
     if (window.history.length > 1) {
       window.history.back();
     } else {
       router.navigate('/login');
     }
   });
+
+  window.scrollTo?.(0, 0);
 }
 
 export function renderTerms(container) {
@@ -74,4 +102,12 @@ export function renderTerms(container) {
 
 export function renderPrivacy(container) {
   renderDoc(container, 'privacy');
+}
+
+export function renderRefunds(container) {
+  renderDoc(container, 'refunds');
+}
+
+export function renderAcceptableUse(container) {
+  renderDoc(container, 'acceptable-use');
 }

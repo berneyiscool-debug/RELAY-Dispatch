@@ -712,10 +712,12 @@ router.register('/subscribe', renderPage(lazy(() => import('./pages/billing/Subs
 // Finish setting up (verified cloud user whose company was never provisioned)
 router.register('/setup', renderPage(lazy(() => import('./pages/auth/FinishSetup.js'), 'renderFinishSetup')));
 
-// Terms and privacy placeholders, linked from the cloud signup form. They are
-// public because a visitor reads them before they have an account.
+// Legal documents (content in pages/legal/content.js), linked from the cloud
+// signup form. They are public because a visitor reads them before they have an account.
 router.register('/terms', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderTerms')));
 router.register('/privacy', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderPrivacy')));
+router.register('/refunds', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderRefunds')));
+router.register('/acceptable-use', renderPage(lazy(() => import('./pages/legal/Legal.js'), 'renderAcceptableUse')));
 
 // ---- Auth Guard Hook ----
 const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads', '/notifications', '/quotes', '/jobs', '/timesheets', '/assets', '/schedule', '/stock', '/invoices', '/purchase-orders', '/documents', '/reports', '/settings', '/settings/forms', '/kits', '/profile'];
@@ -724,7 +726,7 @@ const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads',
 // the app shell stays hidden and the paywall leaves them alone — `/setup` and
 // `/subscribe` are where an account with no company or no subscription is sent,
 // so requiring either would be circular.
-const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy']);
+const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
 router.onNavigate = (path, params) => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -917,7 +919,7 @@ if (currentUser && !localStorage.getItem('relay_login_mode')) {
 const isPortalHash =  window.location.hash.startsWith('#/contractor-portal') || window.location.hash.startsWith('#/portal/customer');
 const isSubscribeHash = window.location.hash.startsWith('#/subscribe');
 const isSetupHash = window.location.hash.startsWith('#/setup');
-const isLegalHash = window.location.hash.startsWith('#/terms') || window.location.hash.startsWith('#/privacy');
+const isLegalHash = ['#/terms', '#/privacy', '#/refunds', '#/acceptable-use'].some((h) => window.location.hash.startsWith(h));
 if (!currentUser && window.location.hash !== '#/login' && !isPortalHash && !isSubscribeHash && !isSetupHash && !isLegalHash) {
   window.location.hash = '#/login';
 }
