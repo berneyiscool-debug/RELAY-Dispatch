@@ -289,6 +289,14 @@ npx serve .
 
 #### Known deviations and limitations
 
+- **One deliberate copy deviation.** The hero headline reads *"Software that
+  competes, without the sting."*, not the design's *"The job software the big
+  players use. At a price that doesn't sting."* The design's line asserts an
+  installed base that does not exist yet — the site ships with no customers and
+  no testimonials by design — so that claim was removed rather than softened.
+  This is the only copy that differs: comparing the artboard against
+  `site/index.html` token by token, 857 of 868 design tokens match in order, and
+  all eleven that do not belong to that one sentence.
 - **One deliberate colour deviation.** The featured plan's call-to-action is
   `#C2410C`, not the design's `#FF5C00`. White on `#FF5C00` is 3.09:1, which
   fails WCAG AA for 16 px bold text; `#C2410C` is 5.18:1. The small header button
