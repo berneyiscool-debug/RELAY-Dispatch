@@ -76,11 +76,6 @@ export function renderReports(container, params) {
     // 3. Technician Filtering
     if (filterTechId !== 'All') {
       jobs = jobs.filter(j => j.technicianId === filterTechId || (j.technicians && j.technicians.some(t => t.id === filterTechId)));
-      invoices = invoices.filter(i => {
-        if (!i.jobId) return false;
-        const job = store.getById('jobs', i.jobId);
-        return job && (job.technicianId === filterTechId || (job.technicians && job.technicians.some(t => t.id === filterTechId)));
-      });
     }
 
     // 4. Asset Category / Type Filtering
@@ -91,14 +86,35 @@ export function renderReports(container, params) {
         if (j.assetIds && j.assetIds.some(id => targetAssetIds.includes(id))) return true;
         return false;
       });
-      invoices = invoices.filter(i => {
-        if (!i.jobId) return false;
-        const job = store.getById('jobs', i.jobId);
-        if (!job) return false;
-        if (job.assetId && targetAssetIds.includes(job.assetId)) return true;
-        if (job.assetIds && job.assetIds.some(id => targetAssetIds.includes(id))) return true;
-        return false;
-      });
+    }
+
+    // Technician/asset filters also gate invoices, but a combined or consolidated
+    // invoice can bill several jobs. Such an invoice is kept when at least one of the
+    // jobs it bills matches, and only the matching jobs' shares count as revenue so a
+    // shared invoice is never counted in full against every one of its jobs.
+    const jobLevelFilterActive = filterTechId !== 'All' || filterAssetType !== 'All';
+    const matchingJobIds = new Set(
+      (store.getAll('jobs') || [])
+        .filter(j => {
+          if (filterTechId !== 'All' && !(j.technicianId === filterTechId || (j.technicians && j.technicians.some(t => t.id === filterTechId)))) return false;
+          if (filterAssetType !== 'All') {
+            const targetAssetIds = assets.filter(a => a.type === filterAssetType).map(a => a.id);
+            if (j.assetId && targetAssetIds.includes(j.assetId)) return true;
+            if (j.assetIds && j.assetIds.some(id => targetAssetIds.includes(id))) return true;
+            return false;
+          }
+          return true;
+        })
+        .map(j => String(j.id))
+    );
+    const invoiceShare = (inv) => {
+      if (!jobLevelFilterActive) return inv.total || 0;
+      return store.invoiceJobIds(inv)
+        .filter(id => matchingJobIds.has(String(id)))
+        .reduce((s, id) => s + store.invoiceAmountForJob(inv, id), 0);
+    };
+    if (jobLevelFilterActive) {
+      invoices = invoices.filter(i => store.invoiceJobIds(i).some(id => matchingJobIds.has(String(id))));
     }
 
     // Timesheets Filtering
@@ -147,8 +163,8 @@ export function renderReports(container, params) {
     }
 
     // Revenue calcs
-    const totalRevenue = invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
-    const totalOutstanding = invoices.filter(i => i.status === 'Sent' || i.status === 'Overdue').reduce((s, i) => s + (i.total || 0), 0);
+    const totalRevenue = invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + invoiceShare(i), 0);
+    const totalOutstanding = invoices.filter(i => i.status === 'Sent' || i.status === 'Overdue').reduce((s, i) => s + invoiceShare(i), 0);
     const avgJobValue = jobs.length > 0 ? jobs.reduce((s, j) => s + (j.laborCost || 0) + (j.materialCost || 0), 0) / jobs.length : 0;
     const quoteWinRate = quotes.length > 0 ? (quotes.filter(q => q.status === 'Accepted').length / quotes.length * 100) : 0;
     const leadConvRate = leads.length > 0 ? (leads.filter(l => l.status === 'Won').length / leads.length * 100) : 0;
@@ -170,7 +186,7 @@ export function renderReports(container, params) {
     // Customer revenue
     const custRevenue = {};
     invoices.filter(i => i.status === 'Paid').forEach(i => {
-      custRevenue[i.customerName] = (custRevenue[i.customerName] || 0) + (i.total || 0);
+      custRevenue[i.customerName] = (custRevenue[i.customerName] || 0) + invoiceShare(i);
     });
     const topCustomers = Object.entries(custRevenue).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
@@ -196,7 +212,9 @@ export function renderReports(container, params) {
       totalRevenue, totalOutstanding, avgJobValue, quoteWinRate, leadConvRate, 
       jobsByStatus, invByStatus, techStats, topCustomers, totalStockValue, 
       lowStockItems, timesheets: filteredTimesheets, hoursByJob, internalLaborCostByJob,
-      assets: filteredAssets, maintenancePlans: filteredPlans
+      assets: filteredAssets, maintenancePlans: filteredPlans,
+      // Amount of a listed invoice that counts under the active filters.
+      invoiceShare
     };
   }
 
@@ -347,7 +365,7 @@ export function renderReports(container, params) {
     if (activeReport === 'overview' || activeReport === 'revenue') {
       csv = 'Invoice #,Customer,Status,Total,Issue Date,Due Date\n';
       d.invoices.forEach(i => {
-        csv += `"${i.number}","${i.customerName}","${i.status}",${i.total || 0},"${i.issueDate || ''}","${i.dueDate || ''}"\n`;
+        csv += `"${i.number}","${i.customerName}","${i.status}",${d.invoiceShare ? d.invoiceShare(i) : (i.total || 0)},"${i.issueDate || ''}","${i.dueDate || ''}"\n`;
       });
     } else if (activeReport === 'job_costing') {
       const settings = store.getSettings();
@@ -1256,7 +1274,7 @@ function renderRevenueReport(d, mode) {
   const monthlyRev = {};
   paidInvoices.forEach(i => {
     const m = new Date(i.issueDate || i.createdAt).toLocaleDateString('en-AU', { month: 'short', year: '2-digit' });
-    monthlyRev[m] = (monthlyRev[m] || 0) + (i.total || 0);
+    monthlyRev[m] = (monthlyRev[m] || 0) + (d.invoiceShare ? d.invoiceShare(i) : (i.total || 0));
   });
 
   const totalCost = d.jobs.reduce((s, j) => s + (j.materialCost || 0), 0);

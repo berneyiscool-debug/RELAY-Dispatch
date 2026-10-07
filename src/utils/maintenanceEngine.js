@@ -949,6 +949,18 @@ export function repairAnomalousJobNumbers() {
       } else if (inv.jobNumber && numberMap.has(inv.jobNumber)) {
         store.update('invoices', inv.id, { jobNumber: numberMap.get(inv.jobNumber) });
       }
+
+      // Combined invoices have no single jobNumber; keep the list of job numbers
+      // they bill in step with any renumbering.
+      if (inv.jobIds && inv.jobIds.length > 0) {
+        const jobNumbers = inv.jobIds
+          .map(id => store.getById('jobs', id)?.number)
+          .filter(Boolean);
+        if (jobNumbers.length !== (inv.jobNumbers || []).length ||
+            jobNumbers.some((n, i) => n !== inv.jobNumbers[i])) {
+          store.update('invoices', inv.id, { jobNumbers });
+        }
+      }
     });
 
     const pos = store.getAll('purchaseOrders') || [];

@@ -137,13 +137,16 @@ export function renderInvoiceDetail(container, params) {
     }
 
     // 3. Linked Job Entry
-    if (inv.jobNumber) {
+    const jobRefs = store.invoiceJobNumbers(inv);
+    if (jobRefs.length) {
       timeline.push({
         id: 'job-' + (inv.id || '1'),
         date: creationDate,
         type: 'Origin',
-        title: 'Linked to Job',
-        description: `Created for Job #${inv.jobNumber}`,
+        title: jobRefs.length > 1 ? 'Linked to Jobs' : 'Linked to Job',
+        description: jobRefs.length > 1
+          ? `Created for Jobs #${jobRefs.join(', #')} (combined invoice)`
+          : `Created for Job #${jobRefs[0]}`,
         icon: 'build',
         badgeClass: 'badge-neutral'
       });
@@ -242,6 +245,7 @@ export function renderInvoiceDetail(container, params) {
   function render() {
     const paidAmount = (invoice.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
     const balanceDue = Math.max(0, (invoice.total || 0) - paidAmount);
+    const headerJobRefs = store.invoiceJobNumbers(invoice);
 
     container.innerHTML = `
       ${renderDetailHeader({
@@ -254,7 +258,7 @@ export function renderInvoiceDetail(container, params) {
         iconTextColor: 'var(--color-success)',
         metaHtml: `
           ${invoice.customerName ? `<span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(invoice.customerName)}</span>` : ''}
-          ${invoice.jobNumber ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${escapeHTML(invoice.jobNumber)}</span>` : ''}
+          ${headerJobRefs.length ? `<span><span class="material-icons-outlined" style="font-size:14px">build</span> ${escapeHTML(headerJobRefs.join(', '))}</span>` : ''}
           <span class="badge ${sb[invoice.status] || 'badge-neutral'}">${escapeHTML(invoice.status || 'Draft')}</span>
         `,
         actionsHtml: `
@@ -267,9 +271,9 @@ export function renderInvoiceDetail(container, params) {
           ${!isNew && invoice.status === 'Paid' && emailEnabledFor('receipt') ? `<button class="btn btn-primary" id="btn-send-receipt" data-tooltip="Email a payment receipt for this invoice to the customer" data-tooltip-pos="left"><span class="material-icons-outlined">receipt</span> Send Receipt</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
-             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px;box-shadow:var(--shadow-md);z-index:var(--z-dropdown);min-width:160px">
-                <a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Import from Quote</a>
-                ${!isNew ? `<a href="#" class="dropdown-item" id="btn-delete-invoice" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Invoice</a>` : ''}
+             <div class="dropdown-menu" style="display:none; min-width:160px">
+                <a href="#" class="dropdown-item" id="btn-import-template">Import from Quote</a>
+                ${!isNew ? `<a href="#" class="dropdown-item" id="btn-delete-invoice" style="color:var(--color-danger)">Delete Invoice</a>` : ''}
              </div>
           </div>
         `

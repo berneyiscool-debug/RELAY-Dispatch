@@ -324,6 +324,8 @@ const TABLE_COLUMNS = {
     "customer_id",
     "customer_name",
     "contact_name",
+    "phone",
+    "email",
     "status",
     "source",
     "value",
@@ -332,6 +334,10 @@ const TABLE_COLUMNS = {
     "budget",
     "requirements",
     "origin",
+    "assigned_to",
+    "sales_rep_name",
+    "stage_history",
+    "next_action_date",
     "created_at",
     "updated_at"
   ],
@@ -1599,6 +1605,22 @@ class DataStore {
       record.customerName = record.customer_name;
       delete record.customer_name;
     }
+    if (record.assigned_to !== undefined) {
+      record.assignedTo = record.assigned_to;
+      delete record.assigned_to;
+    }
+    if (record.sales_rep_name !== undefined) {
+      record.salesRepName = record.sales_rep_name;
+      delete record.sales_rep_name;
+    }
+    if (record.stage_history !== undefined) {
+      record.stageHistory = record.stage_history;
+      delete record.stage_history;
+    }
+    if (record.next_action_date !== undefined) {
+      record.nextActionDate = record.next_action_date;
+      delete record.next_action_date;
+    }
     if (record.created_by !== undefined) {
       record.createdBy = record.created_by;
       delete record.created_by;
@@ -1934,6 +1956,8 @@ class DataStore {
         record.pendingVariationsSum = meta.pendingVariationsSum || 0;
         record.totalInternalCost = meta.totalInternalCost || 0;
         record.jobIds = meta.jobIds || []; // consolidated invoices link multiple jobs
+        record.jobAmounts = meta.jobAmounts || []; // per-job share of a multi-job invoice
+        record.jobNumbers = meta.jobNumbers || [];
       }
     }
     if (collection === 'quotes') {
@@ -2178,6 +2202,22 @@ class DataStore {
     if (record.customerName !== undefined) {
       record.customer_name = record.customerName;
       delete record.customerName;
+    }
+    if (record.assignedTo !== undefined) {
+      record.assigned_to = record.assignedTo;
+      delete record.assignedTo;
+    }
+    if (record.salesRepName !== undefined) {
+      record.sales_rep_name = record.salesRepName;
+      delete record.salesRepName;
+    }
+    if (record.stageHistory !== undefined) {
+      record.stage_history = record.stageHistory;
+      delete record.stageHistory;
+    }
+    if (record.nextActionDate !== undefined) {
+      record.next_action_date = record.nextActionDate;
+      delete record.nextActionDate;
     }
     if (record.createdBy !== undefined) {
       record.created_by = record.createdBy;
@@ -2448,7 +2488,9 @@ class DataStore {
         approvedVariationsSum: record.approvedVariationsSum || 0,
         pendingVariationsSum: record.pendingVariationsSum || 0,
         totalInternalCost: record.totalInternalCost || 0,
-        jobIds: record.jobIds || [] // consolidated invoices link multiple jobs
+        jobIds: record.jobIds || [], // consolidated invoices link multiple jobs
+        jobAmounts: record.jobAmounts || [], // per-job share of a multi-job invoice
+        jobNumbers: record.jobNumbers || []
       };
       record.line_items = meta;
       delete record.lineItems;
@@ -2626,6 +2668,52 @@ class DataStore {
   // All jobs an invoice bills: single jobId and/or consolidated jobIds
   _invoiceJobIds(inv) {
     return [inv?.jobId, ...(inv?.jobIds || [])].filter(Boolean);
+  }
+
+  // Public form of _invoiceJobIds for pages that render "Combined (N jobs)" labels.
+  invoiceJobIds(inv) {
+    return this._invoiceJobIds(inv);
+  }
+
+  // Every invoice that bills a job — including combined/consolidated invoices that
+  // only reference it through their jobIds array. Ids are compared as strings
+  // because the app mixes numeric and string job ids.
+  getInvoicesForJob(jobId, { excludeVoid = false } = {}) {
+    if (jobId === undefined || jobId === null || jobId === '') return [];
+    const key = String(jobId);
+    return (this.cache.invoices || []).filter(inv => {
+      if (excludeVoid && inv.status === 'Void') return false;
+      return this._invoiceJobIds(inv).some(id => String(id) === key);
+    });
+  }
+
+  // The jobs an invoice bills (inverse of getInvoicesForJob).
+  getJobsForInvoice(inv) {
+    return this._invoiceJobIds(inv).map(id => this.getById('jobs', id)).filter(Boolean);
+  }
+
+  // Job references to show for an invoice: its stored job numbers, or the numbers
+  // of every job it bills. Covers combined invoices created before jobNumbers existed.
+  invoiceJobNumbers(inv) {
+    const stored = (inv?.jobNumbers || []).filter(Boolean);
+    if (stored.length) return stored;
+    return this.getJobsForInvoice(inv).map(j => j.number).filter(Boolean);
+  }
+
+  // Portion of an invoice that belongs to one job. Combined invoices record each
+  // job's subtotal at creation, scaled here by the invoice's discounts/tax so the
+  // parts always add up to the invoice total. Anything predating that splits evenly
+  // so a shared invoice is never counted in full against every one of its jobs.
+  invoiceAmountForJob(inv, jobId) {
+    const total = inv?.total || 0;
+    const ids = this._invoiceJobIds(inv);
+    if (ids.length <= 1) return total;
+    const key = String(jobId);
+    const recorded = (inv?.jobAmounts || []).find(a => String(a.jobId) === key);
+    if (recorded && typeof recorded.subtotal === 'number') {
+      return inv.subtotal ? recorded.subtotal * (total / inv.subtotal) : recorded.subtotal;
+    }
+    return total / ids.length;
   }
 
   // Invoice lifecycle → job status sync. Jobs are only marked "Invoiced" when their
