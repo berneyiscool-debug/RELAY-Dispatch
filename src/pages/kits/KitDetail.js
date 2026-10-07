@@ -582,7 +582,7 @@ export function renderKitDetail(container, { id }) {
               <tr>
                 <td><span class="badge ${isLabor ? 'badge-success' : 'badge-primary'}">${isLabor ? 'Labour' : 'Material'}</span></td>
                 <td>${escapeHTML(item.name || '—')}</td>
-                <td style="font-family:monospace">${escapeHTML(item.sku || '—')}</td>
+                <td style="font-family:var(--font-mono)">${escapeHTML(item.sku || '—')}</td>
                 <td style="text-align:right">${item.qty || 0}</td>
                 <td style="text-align:right">$${(item.costPrice || 0).toFixed(2)}</td>
                 <td style="text-align:right">$${(item.unitPrice || 0).toFixed(2)}</td>

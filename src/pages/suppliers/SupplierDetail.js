@@ -294,7 +294,7 @@ export function renderSupplierDetail(container, { id, tab }) {
                   return `
                     <tr style="cursor:pointer" data-nav="#/stock/${item.id}" title="Click to view Stock Details">
                       <td class="font-medium cell-link">${escapeHTML(item.name)}</td>
-                      <td style="font-family:monospace">${escapeHTML(item.sku || '—')}</td>
+                      <td style="font-family:var(--font-mono)">${escapeHTML(item.sku || '—')}</td>
                       <td><span class="badge badge-neutral">${escapeHTML(item.category || 'General')}</span></td>
                       <td class="font-semibold" style="color:var(--color-primary)">$${(item.costPrice !== undefined ? item.costPrice : 0.00).toFixed(2)}</td>
                       <td>

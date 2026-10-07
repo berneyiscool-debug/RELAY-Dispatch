@@ -1656,7 +1656,7 @@ function renderAssetsMaintenanceReport(d, mode) {
               <tr>
                 <td class="text-secondary" style="font-size:12px">${new Date(l.date).toLocaleDateString()}</td>
                 <td class="font-medium">${escapeHTML(l.assetName)}</td>
-                <td class="text-secondary" style="font-family:monospace; font-size:12px">${escapeHTML(l.serial || '—')}</td>
+                <td class="text-secondary" style="font-family:var(--font-mono); font-size:12px">${escapeHTML(l.serial || '—')}</td>
                 <td>${escapeHTML(l.technicianName || 'Unassigned')}</td>
                 <td><span class="badge badge-neutral">${escapeHTML(l.jobNumber || '—')}</span></td>
                 <td style="text-align:right; font-weight:600; color:var(--color-danger)">$${(l.cost || 0).toFixed(2)}</td>
@@ -1764,7 +1764,7 @@ function renderInventoryReport(d, mode) {
               ${d.lowStockItems.map(i => `
                 <tr>
                   <td class="font-medium">${escapeHTML(i.name)}</td>
-                  <td class="text-secondary" style="font-family:monospace">${escapeHTML(i.sku)}</td>
+                  <td class="text-secondary" style="font-family:var(--font-mono)">${escapeHTML(i.sku)}</td>
                   <td style="text-align:center;color:var(--color-danger);font-weight:600">${i.quantity}</td>
                   <td style="text-align:center">${i.reorderLevel}</td>
                   <td class="text-secondary">${escapeHTML(i.supplier)}</td>

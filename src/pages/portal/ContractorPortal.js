@@ -714,7 +714,7 @@ export function renderContractorPortal(container, params) {
               <span class="material-icons-outlined" style="font-size:16px;">lock_reset</span> Change PIN
             </button>
             <div style="font-size: 11px; padding: 6px 12px; background: rgba(255,255,255,0.08); border-radius: 6px; border: 1px solid rgba(255,255,255,0.12)">
-              System Agency ID: <strong style="font-family:monospace; color:#ffffff">${contractor.id}</strong>
+              System Agency ID: <strong style="font-family:var(--font-mono); color:#ffffff">${contractor.id}</strong>
             </div>
           </div>
         </div>
@@ -1126,7 +1126,7 @@ export function renderContractorPortal(container, params) {
                           </div>
                         ` : ''}
                       </td>
-                      <td style="font-family:monospace;" class="text-secondary">${escapeHTML(doc.number || '—')}</td>
+                      <td style="font-family:var(--font-mono);" class="text-secondary">${escapeHTML(doc.number || '—')}</td>
                       <td>${doc.expiryDate ? new Date(doc.expiryDate).toLocaleDateString('en-AU') : '—'}</td>
                       <td><span class="badge ${stat.colorClass}">${escapeHTML(stat.label)}</span></td>
                     </tr>

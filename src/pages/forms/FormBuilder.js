@@ -934,7 +934,7 @@ export function renderFormBuilder(container, { id }) {
         e.dataTransfer.setData('text/plain', type);
 
         const ghost = document.createElement('div');
-        ghost.style.cssText = 'position:fixed;top:-999px;padding:9px 14px;background:#fff;border:2px solid #FF5C00;border-radius:8px;box-shadow:0 6px 18px rgba(16,24,40,.18);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#191c1e;font-family:Inter,sans-serif';
+        ghost.style.cssText = 'position:fixed;top:-999px;padding:9px 14px;background:#fff;border:2px solid #FF5C00;border-radius:8px;box-shadow:0 6px 18px rgba(16,24,40,.18);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#191c1e;font-family:var(--font-family)';
         ghost.innerHTML = `<span class="material-icons-outlined" style="font-size:18px">${meta.icon}</span> ${meta.label}`;
         document.body.appendChild(ghost);
         e.dataTransfer.setDragImage(ghost, 80, 20);

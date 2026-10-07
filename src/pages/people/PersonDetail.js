@@ -173,7 +173,7 @@ export function renderPersonDetail(container, { id, tab }) {
             </p>
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
               <input type="text" readonly id="customer-portal-url" class="form-input" 
-                     style="flex:1; min-width:260px; font-family:monospace; background: var(--content-bg); font-size:13px; color:var(--text-secondary);" 
+                     style="flex:1; min-width:260px; font-family:var(--font-mono); background: var(--content-bg); font-size:13px; color:var(--text-secondary);" 
                      value="${customerPortalUrl(person)}" />
               
               <button class="btn btn-secondary" id="btn-copy-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
@@ -639,7 +639,7 @@ export function renderPersonDetail(container, { id, tab }) {
                 ${assets.map((a, i) => `
                   <tr>
                     <td class="font-medium"><a href="#/assets/${escapeHTML(a.id)}" class="cell-link">${escapeHTML(a.name)}</a></td>
-                    <td style="font-family:monospace" class="text-secondary">${escapeHTML(a.serial || '—')}</td>
+                    <td style="font-family:var(--font-mono)" class="text-secondary">${escapeHTML(a.serial || '—')}</td>
                     <td>${escapeHTML(a.site || '—')}</td>
                     <td>${a.installDate ? new Date(a.installDate).toLocaleDateString() : '—'}</td>
                     <td>

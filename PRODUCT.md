@@ -47,7 +47,7 @@ Two mechanisms a neighboring CRM could not truthfully copy:
 - Name: **RELAY — Dispatch** (logo can be customized per company).
 - **Accent color: RELAY orange `#FF5C00` — locked.** It is the brand's single accent and must remain the accent in any redesign.
 - Direction of travel already chosen by the user: flat/opaque surfaces (no glassmorphism/blur), an accessibility floor for contrast. Prior glassmorphic look is an anti-reference.
-- Typography today: Inter. Not locked.
+- Typography: IBM Plex Sans for the app UI, with IBM Plex Mono for machine-readable values (SKUs, serials, document numbers). Inter is retained for customer documents and the marketing site. Not locked.
 
 ## Evidence on Hand
 

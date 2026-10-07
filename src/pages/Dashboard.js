@@ -2172,7 +2172,7 @@ async function enhanceTechMaps() {
         lat: site.lat, lng: site.lng,
         color: site.colors.size === 1 ? [...site.colors][0] : '#FF5C00',
         count: site.jobs.length,
-        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;max-width:240px;">
+        info: `<div style="font-family:var(--font-family);font-size:12px;color:#1A1A1A;max-width:240px;">
           ${site.jobs.length > 1 ? `<div style="font-weight:700;color:#FF5C00;margin-bottom:2px;">${site.jobs.length} jobs at this address</div>` : ''}
           ${site.jobs.map(j => j.jobHtml).join('')}
           <div style="color:#5C5C5A;padding-top:4px;">${escapeHTML(site.address)}</div>
@@ -2190,7 +2190,7 @@ async function enhanceTechMaps() {
       const name = cu.company || `${cu.firstName || ''} ${cu.lastName || ''}`.trim() || 'Customer';
       return {
         lat: geo.lat, lng: geo.lng,
-        info: `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;max-width:220px;">
+        info: `<div style="font-family:var(--font-family);font-size:12px;color:#1A1A1A;max-width:220px;">
           <div style="font-weight:700;margin-bottom:2px;">${escapeHTML(name)}</div>
           ${cu.phone ? `<div>${escapeHTML(cu.phone)}</div>` : ''}
           <div style="color:#5C5C5A;">${escapeHTML(addr)}</div>
@@ -2236,7 +2236,7 @@ async function enhanceTechMaps() {
       const bounds = new google.maps.LatLngBounds();
 
       const baseMarker = new Marker({ map, position: { lat: base.lat, lng: base.lng }, icon: pinSvg('#2C2C2E', 'home'), zIndex: 30 });
-      hover(baseMarker, `<div style="font-family:Inter,sans-serif;font-size:12px;color:#1A1A1A;">
+      hover(baseMarker, `<div style="font-family:var(--font-family);font-size:12px;color:#1A1A1A;">
         <div style="font-weight:700;">${base.source === 'user' ? 'My start location' : escapeHTML(store.getSettings().name || 'Office')}</div>
         <div style="color:#5C5C5A;">${escapeHTML(base.label)}</div>
         <div style="color:#5C5C5A;font-size:11px;">${base.source === 'user' ? 'Dispatch start' : 'Office · dispatch start'}</div></div>`);

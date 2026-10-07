@@ -138,7 +138,7 @@ export function renderProjectDetail(container, params) {
         iconBgColor: 'var(--color-primary-light)',
         iconTextColor: 'var(--color-primary)',
         metaHtml: `
-          <span style="font-family:monospace">${escapeHTML(project.number)}</span>
+          <span style="font-family:var(--font-mono)">${escapeHTML(project.number)}</span>
           <span><span class="material-icons-outlined" style="font-size:14px">business</span> ${escapeHTML(project.customerName || 'N/A')}</span>
           <span class="badge ${statusClass}">${escapeHTML(project.status || 'In Progress')}</span>
         `,
