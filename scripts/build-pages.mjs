@@ -26,6 +26,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import { WEB_APP_PATH } from '../src/utils/webOrigin.js';
+import { buildLegalPages } from './build-legal-pages.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = path.join(repoRoot, 'dist');
@@ -78,6 +79,10 @@ for (const entry of await readdir(siteDir)) {
   await cp(path.join(siteDir, entry), path.join(distDir, entry), { recursive: true });
 }
 
+// Legal pages are generated from src/pages/legal/content.js (the same source as
+// the in-app routes), so they are written after the site copy, not kept in site/.
+const legalPages = await buildLegalPages(distDir);
+
 // The download button imports this at runtime, so it has to be reachable as a
 // sibling of the site's own scripts (assets/js/home.js → ../desktopApp.js).
 await mkdir(path.dirname(desktopAppDest), { recursive: true });
@@ -87,3 +92,4 @@ console.log(`build-pages: site → ${path.relative(repoRoot, distDir)}${path.sep
 console.log(`build-pages: app → ${path.relative(repoRoot, appDir)}${path.sep} (served from ${WEB_APP_PATH})`);
 console.log(`build-pages: ${path.relative(repoRoot, desktopAppDest)} left as a standalone module for the download button.`);
 console.log('build-pages: CNAME lifted to the artifact root.');
+console.log(`build-pages: legal pages → ${legalPages.join(', ')}`);

@@ -110,7 +110,8 @@ npm run build:pages   # the exact artifact CI uploads; writes to dist/
 
 | Path in `dist/` | Source | What it is |
 | --- | --- | --- |
-| `index.html`, `assets/**`, `terms/`, `privacy/` | `site/**` | the marketing homepage and the legal pages |
+| `index.html`, `assets/**` | `site/**` | the marketing homepage |
+| `terms/`, `privacy/`, `refunds/`, `acceptable-use/` | `src/pages/legal/content.js` via `scripts/build-legal-pages.mjs` | the legal pages, in the site's shell (written after the site copy) |
 | `app/**` | Vite build with base `/app/` | the web app |
 | `assets/desktopApp.js` | `src/utils/desktopApp.js` | the release resolver `home.js` imports |
 | `CNAME` | `public/CNAME` | GitHub Pages only honours a custom domain at the artifact root |
@@ -191,12 +192,14 @@ area:
 
 `site/` is plain HTML, CSS and vanilla JS — no framework, no build step of its
 own. It is published verbatim; the only processing is the copy step in
-`build:pages`.
+`build:pages`. The legal pages are the exception: they are not in `site/` but
+generated from `src/pages/legal/content.js`, the same source as the app's
+`#/terms`, `#/privacy`, `#/refunds` and `#/acceptable-use` routes — edit the
+wording there, never in HTML.
 
 ```
 site/
   index.html                  homepage (10 sections, one page)
-  terms/, privacy/            legal pages
   assets/css/site.css         all site styles; design tokens at the top
   assets/js/home.js           sticky-header height + the download button
   assets/js/preview.js        the interactive app preview
@@ -234,7 +237,7 @@ Two rules keep the page honest:
   figures in small print.
 
 The published contact address is `support@relaydispatch.com.au`. It appears in
-the homepage footer, on both legal pages and in the homepage's `contactPoint`
+the homepage footer, on the legal pages and in the homepage's `contactPoint`
 structured data. It is an addition rather than a design token — the artboard's
 footer carries only the copyright and ABN line — because the brief asks for a
 contact email in the footer.
@@ -245,10 +248,10 @@ by accident:
 
 | Placeholder | Where | Needs |
 | --- | --- | --- |
-| `[Business name]`, `ABN [number]`, `[registered address]` | footers, `terms/`, `privacy/` | the operating entity's legal details |
-| `[month year]` | compare-table note, both legal pages | the month the competitor prices were checked, and the legal revision date |
+| `[Business name]`, `ABN [number]` | homepage footer | the operating entity's legal details |
+| `[COMPANY NAME]`, `[ACN]`, `[ABN]`, `[REGISTERED ADDRESS]`, `[POSTCODE]`, `[EFFECTIVE DATE]` | `ENTITY` in `src/pages/legal/content.js` | entity details and effective date for all four legal documents; while any remain, the generated pages carry a draft banner and `noindex` |
+| `[month year]` | compare-table note | the month the competitor prices were checked, and the legal revision date |
 | `[check]` (six cells) | compare table | Tradify and Simpro prices re-verified, with their GST treatment stated |
-| `[state or territory]`, `[region]`, `[To be confirmed…]` | `terms/`, `privacy/` | governing jurisdiction, hosting region, sub-processor list |
 
 #### The app preview and its assets
 
