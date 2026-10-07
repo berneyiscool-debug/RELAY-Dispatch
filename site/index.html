@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<script>
+// Legacy app links look like #/jobs/123 and must keep landing in the app.
+// This page owns plain fragments such as #pricing, so only forward app-style
+// hashes. See scripts/pages-root-redirect.html in git history for the version
+// that this replaced.
+if (location.hash.startsWith('#/')) {
+  location.replace('/app/' + location.hash);
+}
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RELAY Dispatch — job software for Australian trades</title>
+<meta name="description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $18 + GST per user a month.">
+<link rel="canonical" href="https://relaydispatch.com.au/">
+<meta name="theme-color" content="#ffffff">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RELAY Dispatch">
+<meta property="og:locale" content="en_AU">
+<meta property="og:title" content="RELAY Dispatch — job software for Australian trades">
+<meta property="og:description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $18 + GST per user a month.">
+<meta property="og:url" content="https://relaydispatch.com.au/">
+<meta property="og:image" content="https://relaydispatch.com.au/assets/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="RELAY Dispatch running on a desktop, showing a dashboard, schedule and job list with demo data.">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="assets/img/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/img/favicon.png">
+<link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "RELAY Dispatch",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Windows, Web",
+  "url": "https://relaydispatch.com.au/",
+  "description": "Scheduling, quotes, invoices, job costing and a customer portal for Australian trades. Free for one user on your own computer; cloud plans from $18 per user a month plus GST.",
+  "offers": [
+    {
+      "@type": "Offer",
+      "name": "Free",
+      "price": "0",
+      "priceCurrency": "AUD",
+      "description": "The full app for one user, on your own computer."
+    },
+    {
+      "@type": "Offer",
+      "name": "Cloud",
+      "price": "18",
+      "priceCurrency": "AUD",
+      "description": "Per user per month, plus GST. Includes a 14-day free trial."
+    },
+    {
+      "@type": "Offer",
+      "name": "Cloud+",
+      "price": "21",
+      "priceCurrency": "AUD",
+      "description": "Per user per month, plus GST. Includes a 14-day free trial."
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="site-header__brand" href="#top" aria-label="RELAY Dispatch home">
+      <img src="assets/img/logo-relay.svg" alt="RELAY" width="487" height="104">
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#compare">Compare</a>
+      <a href="#download">Download</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn--secondary" href="/app/#/login">Sign in</a>
+      <a class="btn btn--sm btn--primary" href="/app/#/login">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Start free
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <section id="top" class="hero">
+    <div class="hero__inner">
+      <span class="hero__pill">Built in Australia for Australian trades</span>
+      <h1>The job software the big players use. At a price that doesn't sting.</h1>
+      <p class="hero__sub">Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer. Add your crew and cloud sync from $18 + GST per user a month.</p>
+      <div class="hero__actions">
+        <a class="btn btn--lg btn--primary" href="#download">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+          Download free for Windows
+        </a>
+        <a class="btn btn--lg btn--title btn--secondary" href="/app/#/login">Try Cloud free for 14 days</a>
+      </div>
+      <p class="hero__note">No card for the free version. No contracts. No setup fees.</p>
+
+      <div class="hero__preview">
+        <div class="preview" id="app-preview" data-busy="false">
+          <div class="preview__frame" id="preview-frame" role="group" aria-label="Interactive preview of RELAY Dispatch with demo data">
+            <img class="preview__shot" id="preview-shot" src="assets/preview/hero.webp" alt="Mock version of RELAY Dispatch, Dashboard, showing demo data" width="1440" height="900" fetchpriority="high" decoding="async">
+          </div>
+        </div>
+        <p class="preview__caption">A mock version of RELAY Dispatch with demo data. Click the menus, open any record and flick through its tabs.</p>
+        <p class="visually-hidden" role="status" id="preview-status"></p>
+        <noscript><p class="preview__caption">Turn on JavaScript for the interactive preview, or <a href="/app/#/login">open the app</a>.</p></noscript>
+      </div>
+    </div>
+  </section>
+
+  <section class="apps" aria-label="RELAY apps">
+    <div class="apps__grid">
+      <div class="apps__row">
+        <img src="assets/img/logo-relay-dispatch.png" alt="RELAY Dispatch" width="1418" height="708">
+        <p>For the office. Runs on Windows or in your browser.</p>
+      </div>
+      <div class="apps__row">
+        <img src="assets/img/logo-relay-groundwork.png" alt="RELAY Groundwork" width="1418" height="708">
+        <p>A mobile app for the crew on site. <span class="chip">Coming soon</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="features">
+    <div class="features__inner">
+      <p class="eyebrow">Features</p>
+      <h2 class="h2">Everything from the first call to getting paid</h2>
+      <p class="features__sub">One place for the office and the crew, instead of a whiteboard, a spreadsheet and three apps.</p>
+
+      <div class="card-grid">
+        <article class="card">
+          <div class="card__head">
+            <h3>Scheduling and dispatch</h3>
+            <span class="card__icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg></span>
+          </div>
+          <p class="card__body">Drag jobs onto your crew's calendar, see who's free, and plan routes for the day.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h3>Quotes, invoices and payments</h3>
+            <span class="card__icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span>
+          </div>
+          <p class="card__body">Turn a quote into a job and the job into an invoice. Cloud customers can take card payments online.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h3>Job costing</h3>
+            <span class="card__icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>
+          </div>
+          <p class="card__body">Labour, materials and purchase orders against every job, so you know which work actually makes money.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h3>Customer and contractor portals</h3>
+            <span class="card__icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/></svg></span>
+          </div>
+          <p class="card__body">Customers approve quotes and pay invoices. Subcontractors see only the jobs you give them. No logins to manage.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h3>Your own forms and checklists</h3>
+            <span class="card__icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg></span>
+          </div>
+          <p class="card__body">Build safety checks, test sheets and sign-offs that match how your trade works, not someone else's template.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h3>brny, your AI offsite admin</h3>
+            <span class="card__icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg></span>
+          </div>
+          <p class="card__body">Ask brny to find a job, chase an overdue invoice or fill tomorrow's schedule. It does the admin so you can get on the tools.</p>
+        </article>
+      </div>
+
+      <p class="features__more">Plus roles and permissions for every staff member, stock and suppliers, timesheets, assets and reports.</p>
+    </div>
+  </section>
+
+  <section class="free">
+    <div class="free__inner">
+      <div class="free__copy">
+        <p class="eyebrow eyebrow--orange">Free means free</p>
+        <h2 class="h2">The whole app, free forever, on your computer</h2>
+        <p>If you work on your own, you might never need to pay. The free version is the full app for one user. Your data stays on your machine and it works without internet. No account, no card, no trial clock.</p>
+        <p>We don't hold features back to push you into paying. The only things that need Cloud are the ones that run on our servers.</p>
+      </div>
+
+      <div class="free__panel">
+        <div class="free__block">
+          <p class="free__block-head">Free, on your computer</p>
+          <ul class="free__list free__list--yes">
+            <li>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+              Jobs, quotes, invoices and scheduling
+            </li>
+            <li>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+              Job costing, stock, forms and reports
+            </li>
+            <li>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+              Works offline, data stays on your PC
+            </li>
+          </ul>
+        </div>
+
+        <div class="free__block">
+          <p class="free__block-head">Needs Cloud, because it runs on our servers</p>
+          <ul class="free__list free__list--cloud">
+            <li>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+              Syncing your team across devices
+            </li>
+            <li>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+              Online card payments and the customer and contractor portals
+            </li>
+            <li>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+              Sending email from RELAY
+            </li>
+            <li>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+              The brny AI assistant
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing" class="pricing">
+    <div class="pricing__inner">
+      <p class="eyebrow">Pricing</p>
+      <h2 class="h2">Per user, per month, plus GST</h2>
+      <p class="pricing__sub">No seat minimums, no lock-in contracts and no implementation fee. Cloud plans start with a 14-day free trial.</p>
+
+      <div class="plans">
+        <article class="plan">
+          <p class="plan__head">Free</p>
+          <div class="plan__body">
+            <p class="plan__price">
+              <span class="plan__amount">$0</span>
+              <span class="plan__unit">forever</span>
+            </p>
+            <p class="plan__for">For sole traders. One user, on your own computer.</p>
+            <ul class="plan__list">
+              <li>Full dispatch, jobs, quotes and invoices</li>
+              <li>Works offline, no account needed</li>
+              <li>Your data stays on your device</li>
+            </ul>
+            <a class="btn btn--md btn--secondary btn--block plan__cta" href="https://github.com/berneyiscool-debug/RELAY-Dispatch/releases" data-installer>
+              <span data-installer-label>Download free</span>
+            </a>
+          </div>
+        </article>
+
+        <article class="plan plan--featured">
+          <p class="plan__head">
+            <span>Cloud</span>
+            <span>Most popular</span>
+          </p>
+          <div class="plan__body">
+            <p class="plan__price">
+              <span class="plan__amount">$18</span>
+              <span class="plan__unit">+ GST per user / month</span>
+            </p>
+            <p class="plan__for">For crews. Everyone in sync, in the office and on site.</p>
+            <ul class="plan__list">
+              <li>Everything in Free</li>
+              <li>Cloud sync across your whole team</li>
+              <li>Online card payments and customer and contractor portals</li>
+              <li>Send quotes and invoices from RELAY email</li>
+              <li>brny AI assistant</li>
+              <li>New features included as they're released, like the Groundwork mobile app and the leads marketplace</li>
+            </ul>
+            <a class="btn btn--md btn--primary btn--block plan__cta" href="/app/#/login">Start 14-day free trial</a>
+          </div>
+        </article>
+
+        <article class="plan">
+          <p class="plan__head">Cloud+</p>
+          <div class="plan__body">
+            <p class="plan__price">
+              <span class="plan__amount">$21</span>
+              <span class="plan__unit">+ GST per user / month</span>
+            </p>
+            <p class="plan__for">For busy offices that want brny doing more of the admin.</p>
+            <ul class="plan__list">
+              <li>Everything in Cloud</li>
+              <li>brny Max: brny across your full workspace</li>
+              <li>brny routines: brny runs tasks on a schedule, like a morning rundown of today's jobs, unassigned work and overdue invoices</li>
+              <li>brny reads your paperwork: snap a business card or upload a supplier price list, and brny adds the contact or every product for you to check</li>
+            </ul>
+            <a class="btn btn--md btn--secondary btn--block plan__cta" href="/app/#/login">Start 14-day free trial</a>
+          </div>
+        </article>
+      </div>
+
+      <p class="pricing__note">Prices are in AUD and exclude GST. Including GST, Cloud is $19.80 and Cloud+ is $23.10 per user a month.</p>
+    </div>
+  </section>
+
+  <section id="compare" class="compare">
+    <div class="compare__inner">
+      <p class="eyebrow">Compare</p>
+      <h2 class="h2">How RELAY compares</h2>
+      <p class="compare__sub">The same kind of job management, without the enterprise price tag.</p>
+
+      <div class="table-scroll" role="region" aria-labelledby="compare-caption" tabindex="0">
+        <table>
+          <caption id="compare-caption" class="visually-hidden">RELAY Dispatch compared with Tradify and Simpro</caption>
+          <thead>
+            <tr>
+              <th scope="col"><span class="visually-hidden">Feature</span></th>
+              <th scope="col" class="is-relay">RELAY</th>
+              <th scope="col">Tradify</th>
+              <th scope="col">Simpro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Price per user / month</th>
+              <td class="is-relay">$18–$21 + GST</td>
+              <td>$48–$62 AUD</td>
+              <td>Quote only</td>
+            </tr>
+            <tr>
+              <th scope="row">Free plan</th>
+              <td class="is-relay">Yes, forever</td>
+              <td>[check]</td>
+              <td>[check]</td>
+            </tr>
+            <tr>
+              <th scope="row">Annual contract</th>
+              <td class="is-relay">No</td>
+              <td>[check]</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <th scope="row">Setup fee</th>
+              <td class="is-relay">No</td>
+              <td>[check]</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <th scope="row">Works offline</th>
+              <td class="is-relay">Yes</td>
+              <td>[check]</td>
+              <td>[check]</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="compare__note">Competitor details from their public pricing pages, [month year]. Prices change, so check theirs before you decide.</p>
+    </div>
+  </section>
+
+  <section class="roadmap">
+    <div class="roadmap__inner">
+      <p class="eyebrow">Roadmap</p>
+      <h2>Coming next</h2>
+
+      <div class="roadmap__grid">
+        <article class="roadmap__card">
+          <span class="chip">Coming soon</span>
+          <h3>Xero sync</h3>
+          <p>Customers, invoices and payments flowing straight into your books.</p>
+        </article>
+
+        <article class="roadmap__card">
+          <span class="chip">Coming soon</span>
+          <img src="assets/img/logo-relay-groundwork.png" alt="RELAY Groundwork" width="1418" height="708">
+          <h3>The mobile app for techs</h3>
+          <p>A simple app for techs on site: today's jobs, photos, forms and sign-offs.</p>
+        </article>
+
+        <article class="roadmap__card">
+          <span class="chip">Coming soon</span>
+          <h3>Leads marketplace</h3>
+          <p>New jobs from local customers, sent straight into RELAY. No membership fee: you only pay for the leads you claim.</p>
+        </article>
+
+        <article class="roadmap__card">
+          <span class="chip chip--live">Always on</span>
+          <h3>Constant improvements</h3>
+          <p>RELAY is updated all the time based on what tradies ask for. Updates install themselves, and they're included in your plan.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="download" class="cta">
+    <div class="cta__inner">
+      <div class="cta__card">
+        <img src="assets/img/logo-relay-dispatch.png" alt="RELAY Dispatch" width="1418" height="708">
+        <h2>Get your evenings back from the paperwork.</h2>
+        <p class="cta__sub">Download the free app and have your first job booked in tonight. Or start a Cloud trial and bring the crew along.</p>
+        <div class="cta__actions">
+          <a class="btn btn--lg btn--primary" id="download-exe" href="https://github.com/berneyiscool-debug/RELAY-Dispatch/releases" data-installer aria-label="Download free for Windows">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+            <span data-installer-label>Download free for Windows</span>
+          </a>
+          <a class="btn btn--lg btn--title btn--secondary" href="/app/#/login">Use it in your browser</a>
+        </div>
+        <p class="cta__note">The installer isn't code-signed yet, so Windows may warn about an unknown publisher. Choose More info, then Run anyway.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <img src="assets/img/logo-relay-mark.svg" alt="RELAY" width="150" height="104">
+    <nav aria-label="Footer">
+      <a href="terms/">Terms of Service</a>
+      <a href="privacy/">Privacy Policy</a>
+      <a href="/app/#/login">Sign in</a>
+      <a href="mailto:[contact email]">Contact</a>
+    </nav>
+    <span class="site-footer__legal">© 2026 [Business name] · ABN [number] · [contact email]</span>
+  </div>
+</footer>
+
+<script src="assets/js/preview.js" defer></script>
+<script src="assets/js/home.js" defer></script>
+</body>
+</html>

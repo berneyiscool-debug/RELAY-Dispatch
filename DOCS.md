@@ -98,31 +98,45 @@ npm run electron:dev    # start Vite and launch Electron window concurrently
 
 ### Publishing the Web App
 
-The hosted app is published to GitHub Pages by `.github/workflows/deploy.yml` on
-every push to `main`, at **https://relaydispatch.com.au/app/**. The origin root is
-reserved for the marketing website, which is not built from this repo — the
-redirect shim below is what sits there until it ships.
+GitHub Pages is published from this repo by `.github/workflows/deploy.yml` on
+every push to `main`. One artifact carries both the marketing site and the app:
+the site owns the origin root, the app owns **/app/**.
 
 ```bash
 npm run build:pages   # the exact artifact CI uploads; writes to dist/
 ```
 
-`scripts/build-pages.mjs` builds the app with base `/app/` into `dist/app/`, lifts
-`public/CNAME` to `dist/CNAME` (GitHub Pages only honours a custom domain at the
-artifact root) and drops `scripts/pages-root-redirect.html` in as the root
-document. That shim carries old root-based URLs across, so a bookmark or an
-already-emailed link of `relaydispatch.com.au/#/portal/customer?token=…` lands on
-`/app/#/portal/customer?token=…`:
+`scripts/build-pages.mjs` assembles `dist/` like this:
+
+| Path in `dist/` | Source | What it is |
+| --- | --- | --- |
+| `index.html`, `assets/**`, `terms/`, `privacy/` | `site/**` | the marketing homepage and the legal pages |
+| `app/**` | Vite build with base `/app/` | the web app |
+| `assets/desktopApp.js` | `src/utils/desktopApp.js` | the release resolver `home.js` imports |
+| `CNAME` | `public/CNAME` | GitHub Pages only honours a custom domain at the artifact root |
+
+It clears `dist/` first, so a file you delete under `site/` really does disappear
+from the artifact, and it copies rather than moves, so `site/` stays the
+reviewable source of truth.
+
+Old app links were root-based (`relaydispatch.com.au/#/portal/customer?token=…`).
+The few lines at the top of `site/index.html` forward those, so a bookmark or an
+already-emailed link still lands on `/app/#/portal/customer?token=…`:
 
 ```js
-location.replace('/app/' + location.hash);   // the hash is the route
+if (location.hash.startsWith('#/')) location.replace('/app/' + location.hash);
 ```
 
+Only app-shaped hashes (`#/…`) are forwarded — the homepage uses plain fragments
+itself (`#pricing`, `#compare`, `#download`) and those must not be redirected.
+This lives in the page rather than in a separate root document so that there is
+only ever one `/index.html` to reason about.
+
 There is deliberately **no `404.html`** — a catch-all pointing at `/app` would
-swallow every future marketing URL. The desktop build is untouched: `npm run
-build` still emits a relative-path bundle in `dist/` for Electron to load over
-`file://`, and `build:pages` deletes `dist/` first, so the two layouts can never
-mix.
+swallow every marketing URL, including `/terms` and `/privacy`. The desktop build
+is untouched: `npm run build` still emits a relative-path bundle in `dist/` for
+Electron to load over `file://`, and `build:pages` deletes `dist/` first, so the
+two layouts can never mix.
 
 The app has to be served from a **path on the same origin**, not a subdomain:
 Local mode keeps its data in IndexedDB/localStorage, which is scoped to an origin,
@@ -147,8 +161,8 @@ there would hide the token from its own parser — see *Password reset links* be
     reset, Stripe returns). Keep the trailing slash: it is the exact target the
     app asks for.
   - `https://relaydispatch.com.au/app/**` — any other path under the app.
-  - `https://relaydispatch.com.au/**` — keeps pre-move root links working until
-    the marketing site ships.
+  - `https://relaydispatch.com.au/**` — keeps pre-move root links working: the
+    homepage forwards `#/…` fragments into the app.
   - `http://localhost:5173/**` — the Vite dev server, if you exercise auth
     locally (that is the app's dev port, not `localhost:3000`).
 
@@ -172,6 +186,129 @@ area:
   password" form. Wiring that up is tracked separately; the password-change UI
   that would be reused is `renderForcePasswordChange` in
   [Login.js](./src/pages/login/Login.js).
+
+### The Marketing Site
+
+`site/` is plain HTML, CSS and vanilla JS — no framework, no build step of its
+own. It is published verbatim; the only processing is the copy step in
+`build:pages`.
+
+```
+site/
+  index.html                  homepage (10 sections, one page)
+  terms/, privacy/            legal pages
+  assets/css/site.css         all site styles; design tokens at the top
+  assets/js/home.js           sticky-header height + the download button
+  assets/js/preview.js        the interactive app preview
+  assets/fonts/               Inter, self-hosted variable font
+  assets/img/                 logos, favicon, og.png
+  assets/preview/             screenshot atlases, screens.json, screens-index.json, hero.webp
+```
+
+`assets/js/desktopApp.js` is not in that list on purpose — it lives in
+`src/utils/desktopApp.js` and is copied to `dist/assets/desktopApp.js` at build
+time, so the marketing download button and the desktop app share one resolver.
+In the source tree `home.js` simply falls back to the release-page href.
+
+Preview it locally with any static server rooted at the repo (the desktop-app
+resolver and the `/app/` links are absolute paths, so opening the file directly
+will not exercise them):
+
+```bash
+npx serve .        # then open http://localhost:3000/site/
+```
+
+Two rules keep the page honest:
+
+- **Everything visible is transcribed from the approved design.** The homepage
+  was built by transcribing the design artifact's text nodes and diffing the
+  result against the page token by token until every design token appeared, in
+  order. If you edit copy, keep that property: the page should introduce no
+  wording of its own. A handful of extra tokens are expected and deliberate —
+  the page title, the skip link, the `<caption>` on the comparison table, the
+  `<noscript>` warning and the footer's contact placeholder.
+- **Nothing is promised that does not exist.** Xero, Groundwork and the leads
+  marketplace sit under "Coming next". The app preview runs on the fictional
+  demo company Ridgeline Electrical — no real customer names or testimonials
+  anywhere. Prices are $18 / $21 per user per month + GST, with the inc-GST
+  figures in small print.
+
+#### The app preview and its assets
+
+The preview is a sprite. Each atlas is a 1440 px-wide vertical strip of screen
+tiles, and a fixed-height window shows one tile at a time by translating the
+image. Hotspots are real `<button>`s positioned in percentages over the tile, so
+the preview is operable by mouse, touch and keyboard (Tab to a hotspot, Enter to
+activate).
+
+Three groups of files under `site/assets/preview/` are **produced by the capture
+pipeline**, not hand-written, and must be regenerated when the app's screens
+change:
+
+| File | Size | Role |
+| --- | --- | --- |
+| `atlas-00.webp` … `atlas-15.webp` | ~7 MB total | the screen tiles |
+| `screens.json` | ~200 KB | every screen and hotspot (272 screens, 3 421 hotspots) |
+| `screens-index.json` | ~15 KB | the first-paint subset (16 screens, 233 hotspots) |
+
+`screens.json` is deliberately **not** fetched on page load. It costs 4–5
+Lighthouse performance points and nothing above the fold needs it. On load the
+page fetches `screens-index.json` — dashboard, schedule and the 14 list screens,
+all of which live in atlas 0 — and pulls the full dataset only when a visitor
+clicks into a screen that needs it. Atlas 0 is warmed during idle so the first
+click is instant; the other 15 atlases load on demand, which is what keeps the
+initial payload at roughly half a megabyte instead of 7 MB.
+
+`screens-index.json` is derived, never edited by hand:
+
+```bash
+npm run build:preview-index   # scripts/build-preview-index.mjs
+```
+
+The script keeps every screen whose key has at most one colon (dashboard,
+schedule and the `L:<name>` lists) and **fails loudly if any of them lives outside
+atlas 0**, because the first-paint guarantee depends on that invariant. Re-run it
+after regenerating `screens.json`.
+
+`hero.webp` (1440 × 900, ~55 KB) is tile 0 of atlas 0, and exists purely for
+first paint — the same pixels as the first atlas tile, so swapping the `src` to
+the real atlas on first navigation is invisible. Without it the 1440 × 14400
+atlas is the largest contentful paint and Lantern models it at its natural size
+(20.7 megapixels), which alone dragged mobile performance from 98 to 78.
+
+#### Regenerating the share card
+
+`site/assets/img/og.png` (1200 × 630) is drawn on a canvas by
+`scripts/og-card.html` rather than exported from a design tool. Serve the repo
+root — the page loads the Inter variable font and the cut-out logo from
+`site/assets/`, so it needs the repo mounted, not `site/`:
+
+```bash
+npx serve .
+```
+
+#### Known deviations and limitations
+
+- **One deliberate colour deviation.** The featured plan's call-to-action is
+  `#C2410C`, not the design's `#FF5C00`. White on `#FF5C00` is 3.09:1, which
+  fails WCAG AA for 16 px bold text; `#C2410C` is 5.18:1. The small header button
+  takes the same ink for the same reason. The 19 px hero and closing CTAs keep
+  `#FF5C00`, which passes as large text (3.10:1 against a 3:1 threshold).
+- **`target-size` cannot be satisfied on phones.** Lighthouse's mobile
+  accessibility audit flags the five always-visible preview hotspots (~45 × 9 px
+  at 412 px wide). They are sized from the atlas geometry: a hotspot is 4.1 % of
+  the frame height, so a 24 px tall target would need a phone about 934 px wide,
+  and their ~9.7 px pitch means enlarging the hit areas would make them overlap —
+  trading a size failure for a tap-accuracy one. Every hotspot is still fully
+  reachable and operable by keyboard. This is the only failing audit on mobile;
+  the page scores **98 performance / 96 accessibility / 100 best practices / 100
+  SEO**.
+- **Placeholders are visible on purpose.** The footer's business name, ABN and
+  contact email, the Tradify/Simpro comparison cells and the pricing
+  verification month render as bracketed placeholders until the real values are
+  supplied. The Tradify and Simpro figures in particular must be re-checked
+  against those vendors' own pricing pages — including which month they were
+  checked in, and whether their prices include GST — before launch.
 
 ### Building the Desktop Installer
 ```bash
