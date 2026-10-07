@@ -226,12 +226,29 @@ Two rules keep the page honest:
   order. If you edit copy, keep that property: the page should introduce no
   wording of its own. A handful of extra tokens are expected and deliberate —
   the page title, the skip link, the `<caption>` on the comparison table, the
-  `<noscript>` warning and the footer's contact placeholder.
+  `<noscript>` warning and the footer's contact address.
 - **Nothing is promised that does not exist.** Xero, Groundwork and the leads
   marketplace sit under "Coming next". The app preview runs on the fictional
   demo company Ridgeline Electrical — no real customer names or testimonials
   anywhere. Prices are $18 / $21 per user per month + GST, with the inc-GST
   figures in small print.
+
+The published contact address is `support@relaydispatch.com.au`. It appears in
+the homepage footer, on both legal pages and in the homepage's `contactPoint`
+structured data. It is an addition rather than a design token — the artboard's
+footer carries only the copyright and ABN line — because the brief asks for a
+contact email in the footer.
+
+Several bracketed placeholders remain. They are content still owed by the
+client, not code defects, and they are deliberately visible so they cannot ship
+by accident:
+
+| Placeholder | Where | Needs |
+| --- | --- | --- |
+| `[Business name]`, `ABN [number]`, `[registered address]` | footers, `terms/`, `privacy/` | the operating entity's legal details |
+| `[month year]` | compare-table note, both legal pages | the month the competitor prices were checked, and the legal revision date |
+| `[check]` (six cells) | compare table | Tradify and Simpro prices re-verified, with their GST treatment stated |
+| `[state or territory]`, `[region]`, `[To be confirmed…]` | `terms/`, `privacy/` | governing jurisdiction, hosting region, sub-processor list |
 
 #### The app preview and its assets
 
