@@ -341,6 +341,36 @@ describe('DataStore', () => {
       assert.strictEqual(norm.sections[0].lineItems[0].description, 'Test Labor');
     });
 
+    test('multi-job invoice job linkage and per-job amounts survive a cloud round-trip', () => {
+      const invoicePayload = {
+        id: 'inv_combined_1',
+        number: 'INV-88888',
+        customerId: 'cust_abc',
+        status: 'Sent',
+        total: 400,
+        subtotal: 400,
+        sections: [],
+        jobIds: [1, 2],
+        jobAmounts: [{ jobId: 1, subtotal: 160 }, { jobId: 2, subtotal: 240 }],
+        jobNumbers: ['1001', '1002']
+      };
+
+      const denorm = store.denormalizeRecord(invoicePayload, 'invoices');
+
+      assert.strictEqual(denorm.jobIds, undefined);
+      assert.strictEqual(denorm.jobAmounts, undefined);
+      assert.strictEqual(denorm.jobNumbers, undefined);
+      assert.deepStrictEqual(denorm.line_items.jobIds, [1, 2]);
+      assert.deepStrictEqual(denorm.line_items.jobAmounts, [{ jobId: 1, subtotal: 160 }, { jobId: 2, subtotal: 240 }]);
+      assert.deepStrictEqual(denorm.line_items.jobNumbers, ['1001', '1002']);
+
+      const norm = store.normalizeRecord(denorm, 'invoices');
+
+      assert.deepStrictEqual(norm.jobIds, [1, 2]);
+      assert.deepStrictEqual(norm.jobAmounts, [{ jobId: 1, subtotal: 160 }, { jobId: 2, subtotal: 240 }]);
+      assert.deepStrictEqual(norm.jobNumbers, ['1001', '1002']);
+    });
+
     test('quotes serialization and deserialization via line_items works correctly', () => {
       const quotePayload = {
         id: 'q_test_1',
@@ -436,6 +466,111 @@ describe('DataStore', () => {
       } finally {
         supabase.from = originalFrom;
       }
+    });
+  });
+
+  // Combined ("combine into one invoice") invoices reference their jobs through a
+  // jobIds array instead of a single jobId, so every job they bill must still see the
+  // invoice in its Financials tab.
+  describe('combined invoice ⇄ job linkage', () => {
+    const seedJobs = async (jobs) => {
+      for (const job of jobs) {
+        await store.create('jobs', job);
+      }
+    };
+
+    test('a combined invoice is returned for every job it bills', async () => {
+      await seedJobs([
+        { id: '1', number: 'J-1001' },
+        { id: '2', number: 'J-1002' }
+      ]);
+      const inv = await store.create('invoices', {
+        number: 'INV-0001',
+        invoiceType: 'Standard',
+        status: 'Sent',
+        subtotal: 320,
+        total: 400,
+        jobIds: [1, 2],
+        jobAmounts: [{ jobId: 1, subtotal: 128 }, { jobId: 2, subtotal: 192 }],
+        jobNumbers: ['J-1001', 'J-1002']
+      });
+
+      assert.deepStrictEqual(store.getInvoicesForJob('1').map(i => i.id), [inv.id]);
+      assert.deepStrictEqual(store.getInvoicesForJob(2).map(i => i.id), [inv.id]);
+      assert.deepStrictEqual(store.getInvoicesForJob('3'), []);
+    });
+
+    test('a single-job invoice is still returned for its job', async () => {
+      await seedJobs([{ id: '9', number: 'J-1009' }]);
+      const inv = await store.create('invoices', {
+        number: 'INV-0002', status: 'Sent', subtotal: 50, total: 50, jobId: '9', jobNumber: 'J-1009'
+      });
+
+      assert.deepStrictEqual(store.getInvoicesForJob('9').map(i => i.id), [inv.id]);
+    });
+
+    test('void invoices are excluded on request', async () => {
+      await seedJobs([{ id: '1', number: 'J-1001' }]);
+      await store.create('invoices', { number: 'INV-0003', status: 'Void', total: 10, jobIds: ['1'] });
+
+      assert.strictEqual(store.getInvoicesForJob('1').length, 1);
+      assert.strictEqual(store.getInvoicesForJob('1', { excludeVoid: true }).length, 0);
+    });
+
+    test('each job is credited its own share, and the shares add up to the invoice total', async () => {
+      const inv = await store.create('invoices', {
+        number: 'INV-0004',
+        subtotal: 320,
+        total: 400,
+        jobIds: ['1', '2'],
+        jobAmounts: [{ jobId: '1', subtotal: 128 }, { jobId: '2', subtotal: 192 }]
+      });
+
+      const first = store.invoiceAmountForJob(inv, '1');
+      const second = store.invoiceAmountForJob(inv, 2);
+
+      assert.strictEqual(first, 160);
+      assert.strictEqual(second, 240);
+      assert.strictEqual(first + second, inv.total);
+    });
+
+    test('a combined invoice without recorded amounts splits evenly', async () => {
+      const inv = await store.create('invoices', {
+        number: 'INV-0005', subtotal: 300, total: 300, jobIds: ['1', '2']
+      });
+
+      assert.strictEqual(store.invoiceAmountForJob(inv, '1'), 150);
+      assert.strictEqual(store.invoiceAmountForJob(inv, 2), 150);
+    });
+
+    test('a single-job invoice is credited its full total', async () => {
+      const inv = await store.create('invoices', { number: 'INV-0006', total: 275, jobId: '1' });
+
+      assert.strictEqual(store.invoiceAmountForJob(inv, '1'), 275);
+    });
+
+    test('job references list every job a combined invoice bills, stored or derived', async () => {
+      await seedJobs([
+        { id: '1', number: 'J-1001' },
+        { id: '2', number: 'J-1002' }
+      ]);
+      const stored = await store.create('invoices', {
+        number: 'INV-0007', total: 100, jobIds: ['1', '2'], jobNumbers: ['J-1001', 'J-1002']
+      });
+      const legacy = await store.create('invoices', { number: 'INV-0008', total: 100, jobIds: ['1', '2'] });
+
+      assert.deepStrictEqual(store.invoiceJobNumbers(stored), ['J-1001', 'J-1002']);
+      assert.deepStrictEqual(store.invoiceJobNumbers(legacy), ['J-1001', 'J-1002']);
+    });
+
+    test('getJobsForInvoice resolves the jobs behind a combined invoice', async () => {
+      await seedJobs([
+        { id: '1', number: 'J-1001' },
+        { id: '2', number: 'J-1002' }
+      ]);
+      const inv = await store.create('invoices', { number: 'INV-0009', total: 100, jobIds: ['1', '2'] });
+
+      assert.deepStrictEqual(store.getJobsForInvoice(inv).map(j => j.number), ['J-1001', 'J-1002']);
     });
   });
 });

@@ -26,7 +26,6 @@ export function renderProjectDetail(container, params) {
   }
 
   const jobs = store.getAll('jobs') || [];
-  const invoices = store.getAll('invoices') || [];
   const customers = store.getAll('customers') || [];
   const costCenters = store.getAll('costCenters') || [];
 
@@ -71,11 +70,12 @@ export function renderProjectDetail(container, params) {
       costCenterSplit[ccId].value += jobValue;
       costCenterSplit[ccId].cost += jobCost;
 
-      const jobInvs = invoices.filter(inv => inv.jobId === job.id && inv.status !== 'Void');
+      const jobInvs = store.getInvoicesForJob(job.id).filter(inv => inv.status !== 'Void');
       jobInvs.forEach(inv => {
-        totalBilled += (inv.total || 0);
+        const amount = store.invoiceAmountForJob(inv, job.id);
+        totalBilled += amount;
         if (inv.status === 'Paid') {
-          totalPaid += (inv.total || 0);
+          totalPaid += amount;
         }
       });
     });
@@ -256,8 +256,8 @@ export function renderProjectDetail(container, params) {
                     const lSum = (job.labor || []).reduce((s, l) => s + (l.total || 0), 0);
                     const stageVal = mSum + lSum;
 
-                    const stageInvs = invoices.filter(inv => inv.jobId === job.id && inv.status !== 'Void');
-                    const stageBilled = stageInvs.reduce((s, inv) => s + (inv.total || 0), 0);
+                    const stageInvs = store.getInvoicesForJob(job.id).filter(inv => inv.status !== 'Void');
+                    const stageBilled = stageInvs.reduce((s, inv) => s + store.invoiceAmountForJob(inv, job.id), 0);
 
                     let statusClass = 'badge-neutral';
                     if (job.status === 'In Progress') statusClass = 'badge-primary';
@@ -578,6 +578,7 @@ export function renderProjectDetail(container, params) {
 
     const settings = store.getSettings();
     const sections = [];
+    const jobAmounts = [];
     let invoiceSubtotal = 0;
 
     const selectedJobs = jobs.filter(j => selectedJobIds.includes(j.id));
@@ -640,7 +641,8 @@ export function renderProjectDetail(container, params) {
         hasBillableItems = true;
         const sectionSubtotal = lineItems.reduce((s, item) => s + (item.total || 0), 0);
         invoiceSubtotal += sectionSubtotal;
-        
+        jobAmounts.push({ jobId: job.id, subtotal: sectionSubtotal });
+
         sections.push({
           id: store.generateId(),
           name: `${job.title || job.number}`,
@@ -673,7 +675,11 @@ export function renderProjectDetail(container, params) {
           issueDate: new Date().toISOString(),
           dueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
           notes: `Consolidated milestone billing for Project ${project.number} stages: ${selectedJobs.map(j => j.title || j.number).join(', ')}.`,
-          jobIds: selectedJobs.map(j => j.id) 
+          // Each selected stage keeps a share of this shared invoice so its own
+          // financials can show what it contributed.
+          jobAmounts,
+          jobIds: selectedJobs.map(j => j.id),
+          jobNumbers: selectedJobs.map(j => j.number).filter(Boolean)
         });
 
         showToast('Consolidated Invoice generated successfully', 'success');

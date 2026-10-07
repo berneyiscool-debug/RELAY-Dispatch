@@ -36,7 +36,7 @@ export function renderInvoicesList(container) {
   const columns = [
     { key: 'number', label: 'Invoice #', render: (r) => `<span class="cell-link font-medium">${escapeHTML(r.number)}</span>`, width: '14%' },
     { key: 'customerName', label: 'Customer', width: '30%' },
-    { key: 'jobNumber', label: 'Job Ref', render: (r) => r.jobNumber ? `<span class="text-secondary">${escapeHTML(r.jobNumber)}</span>` : '—', width: '14%' },
+    { key: 'jobNumber', label: 'Job Ref', render: (r) => { const refs = store.invoiceJobNumbers(r); return refs.length ? `<span class="text-secondary">${escapeHTML(refs.join(', '))}</span>` : '—'; }, width: '14%' },
     { key: 'status', label: 'Status', render: (r) => `<span class="badge ${sb[r.status] || 'badge-neutral'}">${escapeHTML(r.status)}</span>`, width: '12%' },
     { key: 'total', label: 'Total', render: (r) => `<span class="font-semibold">$${(r.total || 0).toLocaleString('en-AU',{minimumFractionDigits:2})}</span>`, getValue: (r) => r.total, width: '14%' },
     { key: 'issueDate', label: 'Date', render: (r) => r.issueDate ? new Date(r.issueDate.includes('T') ? r.issueDate : r.issueDate + 'T00:00:00').toLocaleDateString('en-AU') : '—', getValue: (r) => r.issueDate ? new Date(r.issueDate).getTime() : 0, width: '16%' },
@@ -87,7 +87,7 @@ export function renderInvoicesList(container) {
                   return [
                     inv.number || '',
                     inv.customerName || '',
-                    inv.jobNumber || '',
+                    store.invoiceJobNumbers(inv).join(', '),
                     (inv.subtotal || 0).toFixed(2),
                     (inv.tax || 0).toFixed(2),
                     (inv.total || 0).toFixed(2),
@@ -340,7 +340,7 @@ export function renderInvoicesList(container) {
       filtered = filtered.filter(i => {
         const num = i.number || '';
         const custName = i.customerName || '';
-        const jobNum = i.jobNumber || '';
+        const jobNum = store.invoiceJobNumbers(i).join(', ');
         return num.toLowerCase().includes(q) || 
                custName.toLowerCase().includes(q) || 
                jobNum.toLowerCase().includes(q);

@@ -602,7 +602,7 @@ export function renderJobDetail(container, { id, tab }) {
   function render() {
     const totalCost = (job.laborCost || 0) + (job.materialCost || 0);
 
-    const invoicesList = store.getAll('invoices').filter(i => i.jobId === job.id);
+    const invoicesList = store.getInvoicesForJob(job.id);
     const hasInvoice = invoicesList.length > 0;
 
     const cc = job.costCenterId ? store.getById('costCenters', job.costCenterId) : null;
@@ -2945,9 +2945,9 @@ export function renderJobDetail(container, { id, tab }) {
       const totalMatCost = matCost + additionalMatCost + totalPoCost;
 
       // Invoices
-      const jobInvoices = store.getAll('invoices').filter(i => (i.jobId === id || String(i.jobId) === String(id)) && i.status !== 'Void');
-      const totalInvoiced = jobInvoices.reduce((sum, i) => sum + (i.total || 0), 0);
-      const totalPaid = jobInvoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + (i.total || 0), 0);
+      const jobInvoices = store.getInvoicesForJob(id).filter(i => i.status !== 'Void');
+      const totalInvoiced = jobInvoices.reduce((sum, i) => sum + store.invoiceAmountForJob(i, id), 0);
+      const totalPaid = jobInvoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + store.invoiceAmountForJob(i, id), 0);
 
       // Determine billable material cost (with markup tiers)
       const settings = store.getSettings();
@@ -3208,16 +3208,21 @@ export function renderJobDetail(container, { id, tab }) {
               <table class="data-table" style="font-size:13px">
                 <thead><tr><th>Invoice #</th><th>Type</th><th>Issue Date</th><th>Due Date</th><th>Total</th><th>Status</th></tr></thead>
                 <tbody>
-                  ${jobInvoices.length ? jobInvoices.map(i => `
+                  ${jobInvoices.length ? jobInvoices.map(i => {
+                    const amount = store.invoiceAmountForJob(i, id);
+                    const sharedCount = store.invoiceJobIds(i).length;
+                    const isShared = sharedCount > 1;
+                    return `
                     <tr>
                       <td style="font-weight:600"><a href="#/invoices/${i.id}" class="text-primary">${escapeHTML(i.number)}</a></td>
-                      <td>${escapeHTML(i.type || 'Standard')}</td>
+                      <td>${escapeHTML(i.type || 'Standard')}${isShared ? ` <span class="badge badge-info" style="font-size:10px">Combined (${sharedCount} jobs)</span>` : ''}</td>
                       <td>${i.issueDate ? new Date(i.issueDate).toLocaleDateString() : '-'}</td>
                       <td>${i.dueDate ? new Date(i.dueDate).toLocaleDateString() : '-'}</td>
-                      <td style="font-weight:600">$${(i.total || 0).toFixed(2)}</td>
+                      <td style="font-weight:600">$${amount.toFixed(2)}${isShared ? `<div style="font-size:11px; font-weight:400; color:var(--text-tertiary)">This job's share of $${(i.total || 0).toFixed(2)}</div>` : ''}</td>
                       <td><span class="badge ${i.status === 'Paid' ? 'badge-success' : i.status === 'Overdue' ? 'badge-danger' : 'badge-warning'}">${escapeHTML(i.status || 'Draft')}</span></td>
                     </tr>
-                  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No invoices issued for this job yet.</td></tr>'}
+                  `;
+                  }).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No invoices issued for this job yet.</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -4396,7 +4401,7 @@ export function renderJobDetail(container, { id, tab }) {
         });
       });
     } else if (activeTab === 'invoices') {
-      const invoices = store.getAll('invoices').filter(i => i.jobId === id);
+      const invoices = store.getInvoicesForJob(id);
 
       tc.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-lg)">
@@ -4412,16 +4417,21 @@ export function renderJobDetail(container, { id, tab }) {
             <table class="data-table">
               <thead><tr><th>Number</th><th>Type</th><th>Issue Date</th><th>Due Date</th><th>Total</th><th>Status</th></tr></thead>
               <tbody>
-                ${invoices.length ? invoices.map(i => `
+                ${invoices.length ? invoices.map(i => {
+                  const amount = store.invoiceAmountForJob(i, id);
+                  const sharedCount = store.invoiceJobIds(i).length;
+                  const isShared = sharedCount > 1;
+                  return `
                   <tr>
                     <td><a href="#/invoices/${escapeHTML(i.id)}">${escapeHTML(i.number)}</a></td>
-                    <td><span class="badge badge-neutral">${escapeHTML(i.invoiceType || 'Standard')}</span></td>
+                    <td><span class="badge badge-neutral">${escapeHTML(i.invoiceType || 'Standard')}</span>${isShared ? ` <span class="badge badge-info" style="font-size:10px">Combined (${sharedCount} jobs)</span>` : ''}</td>
                     <td>${i.issueDate ? i.issueDate.split('T')[0] : '—'}</td>
                     <td>${i.dueDate ? i.dueDate.split('T')[0] : '—'}</td>
-                    <td style="font-weight:600;">$${(i.total || 0).toFixed(2)}</td>
+                    <td style="font-weight:600;">$${amount.toFixed(2)}${isShared ? `<div style="font-size:11px; font-weight:400; color:var(--text-tertiary)">This job's share of $${(i.total || 0).toFixed(2)}</div>` : ''}</td>
                     <td><span class="badge ${i.status === 'Paid' ? 'badge-success' : i.status === 'Draft' ? 'badge-neutral' : i.status === 'Overdue' ? 'badge-danger' : 'badge-info'}">${i.status}</span></td>
                   </tr>
-                `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No invoices created for this job yet</td></tr>'}
+                `;
+                }).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px" class="text-secondary">No invoices created for this job yet</td></tr>'}
               </tbody>
             </table>
           </div>
