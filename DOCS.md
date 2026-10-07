@@ -78,8 +78,9 @@ RELAY runs as a native desktop application (powered by Electron) or directly in 
 - **Desktop Wrapper:** Electron — runs natively on your machine
 - **Installer & Updates:** electron-builder + electron-updater — packages into a Windows NSIS Installer (.exe); installed builds check GitHub Releases in the background and prompt to restart when an update is ready
 - **Local storage:** browser localStorage (offline-first)
-- **Fonts:** self-hosted via `@fontsource` (Inter, Material Icons Outlined, plus the
-  document faces) — bundled with the build, so nothing is fetched from a CDN
+- **Fonts:** self-hosted via `@fontsource` (IBM Plex Sans and IBM Plex Mono for the app
+  UI, Inter for customer documents and the marketing site, Material Icons Outlined, plus
+  the document faces) — bundled with the build, so nothing is fetched from a CDN
 - **Cloud backend:** Supabase (Postgres, Auth, Storage) — Cloud mode only
 - **Charts/PDF:** print-friendly HTML render pipeline
 
