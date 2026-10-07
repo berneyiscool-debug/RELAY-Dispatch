@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<title>RELAY open-graph card generator</title>
+<meta name="robots" content="noindex">
+<style>
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: block;
+    src: url('../site/assets/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  }
+  html, body { margin: 0; }
+  body {
+    padding: 24px;
+    background: #f2f2f0;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #5c5c5a;
+    font-size: 13px;
+  }
+  canvas {
+    display: block;
+    width: 1200px;
+    max-width: 100%;
+    height: auto;
+    background: #fbfbfa;
+    border: 1px solid #dcdcda;
+  }
+  #status { margin: 12px 0 0; }
+</style>
+</head>
+<body>
+<canvas id="card" width="1200" height="630" aria-label="RELAY social sharing card"></canvas>
+<p id="status">drawing&hellip;</p>
+<script>
+(() => {
+  'use strict';
+
+  const W = 1200;
+  const H = 630;
+  const PAD = 64;
+  const GAP = 44;
+  const COPY_W = 458;
+
+  const BG = '#fbfbfa';
+  const SURFACE = '#ffffff';
+  const INK = '#1a1a1a';
+  const INK_2 = '#5c5c5a';
+  const INK_3 = '#6b6b68';
+  const ORANGE = '#ff5c00';
+  const LINE = '#e8e8e6';
+  const DOT = '#dcdcda';
+
+  const EYEBROW = 'Built in Australia for Australian trades';
+  const HEADLINE = 'Software that competes, without the sting.';
+  const SUB = 'Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer.';
+
+  const H1_SIZE = 44;
+  const H1_LH = H1_SIZE * 1.1;
+  const SUB_SIZE = 17;
+  const SUB_LH = SUB_SIZE * 1.55;
+  const LOGO_H = 32;
+  const PILL_H = 29;
+  const ITEM_GAP = 18;
+
+  const SHOT = { x: PAD + COPY_W + GAP, w: 0, h: 0, y: 0 };
+  SHOT.w = W - PAD - SHOT.x;
+  SHOT.h = SHOT.w * 900 / 1440;
+  SHOT.y = (H - SHOT.h) / 2;
+
+  const canvas = document.getElementById('card');
+  const ctx = canvas.getContext('2d');
+  const status = document.getElementById('status');
+
+  window.__ogCard = null;
+  window.__ogCardInfo = null;
+  window.__ogSaveResult = null;
+  window.__ogCardError = null;
+
+  function fail(err) {
+    const message = err && err.message ? err.message : String(err);
+    window.__ogCardError = message;
+    status.textContent = 'error: ' + message;
+  }
+
+  window.addEventListener('error', (event) => fail(event.error || event.message));
+  window.addEventListener('unhandledrejection', (event) => fail(event.reason));
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('could not load ' + src));
+      img.src = src;
+    });
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function wrap(text, maxW) {
+    const words = text.split(/\s+/);
+    const lines = [];
+    let line = '';
+    for (const word of words) {
+      const next = line ? line + ' ' + word : word;
+      if (line && ctx.measureText(next).width > maxW) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function fillLines(lines, x, top, lineHeight) {
+    for (let i = 0; i < lines.length; i += 1) {
+      ctx.fillText(lines[i], x, top + i * lineHeight + lineHeight / 2);
+    }
+  }
+
+  function drawDotGrid() {
+    ctx.fillStyle = DOT;
+    for (let y = 9; y < H; y += 18) {
+      for (let x = 9; x < W; x += 18) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawPill(text, x, y) {
+    ctx.font = '500 11px Inter, system-ui, sans-serif';
+    ctx.letterSpacing = '0.5px';
+    const label = text.toUpperCase();
+    const padX = 12;
+    const dotR = 3;
+    const dotGap = 8;
+    const w = Math.ceil(padX * 2 + dotR * 2 + dotGap + ctx.measureText(label).width);
+
+    roundRect(x + 0.5, y + 0.5, w - 1, PILL_H - 1, 6);
+    ctx.fillStyle = SURFACE;
+    ctx.fill();
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = ORANGE;
+    ctx.beginPath();
+    ctx.arc(x + padX + dotR, y + PILL_H / 2, dotR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = INK_3;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x + padX + dotR * 2 + dotGap, y + PILL_H / 2);
+    ctx.letterSpacing = '0px';
+  }
+
+  function drawShot(atlas) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(15,15,15,0.10)';
+    ctx.shadowBlur = 48;
+    ctx.shadowOffsetY = 24;
+    roundRect(SHOT.x, SHOT.y, SHOT.w, SHOT.h, 8);
+    ctx.fillStyle = SURFACE;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    roundRect(SHOT.x, SHOT.y, SHOT.w, SHOT.h, 8);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(atlas, 0, 0, 1440, 900, SHOT.x, SHOT.y, SHOT.w, SHOT.h);
+    ctx.restore();
+
+    roundRect(SHOT.x + 0.5, SHOT.y + 0.5, SHOT.w - 1, SHOT.h - 1, 7.5);
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  async function draw() {
+    await Promise.all([
+      document.fonts.load('700 ' + H1_SIZE + 'px Inter'),
+      document.fonts.load('400 ' + SUB_SIZE + 'px Inter'),
+      document.fonts.load('500 11px Inter'),
+    ]);
+    await document.fonts.ready;
+
+    const logo = await loadImage('../site/assets/img/logo-relay.svg');
+    const atlas = await loadImage('../site/assets/preview/atlas-00.webp');
+    if (logo.decode) await logo.decode();
+    if (atlas.decode) await atlas.decode();
+
+    ctx.textBaseline = 'middle';
+
+    ctx.font = '700 ' + H1_SIZE + 'px Inter, system-ui, sans-serif';
+    ctx.letterSpacing = '-1.1px';
+    const headline = wrap(HEADLINE, COPY_W);
+
+    ctx.font = '400 ' + SUB_SIZE + 'px Inter, system-ui, sans-serif';
+    ctx.letterSpacing = '0px';
+    const sub = wrap(SUB, COPY_W);
+
+    const stackH = LOGO_H + ITEM_GAP + PILL_H + ITEM_GAP
+      + headline.length * H1_LH + ITEM_GAP + sub.length * SUB_LH;
+
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+    drawDotGrid();
+
+    const top = (H - stackH) / 2;
+
+    const logoW = LOGO_H * (logo.naturalWidth / logo.naturalHeight);
+    ctx.drawImage(logo, PAD, top, logoW, LOGO_H);
+    let cursor = top + LOGO_H + ITEM_GAP;
+
+    drawPill(EYEBROW, PAD, cursor);
+    cursor += PILL_H + ITEM_GAP;
+
+    ctx.fillStyle = INK;
+    ctx.font = '700 ' + H1_SIZE + 'px Inter, system-ui, sans-serif';
+    ctx.letterSpacing = '-1.1px';
+    fillLines(headline, PAD, cursor, H1_LH);
+    ctx.letterSpacing = '0px';
+    cursor += headline.length * H1_LH + ITEM_GAP;
+
+    ctx.fillStyle = INK_2;
+    ctx.font = '400 ' + SUB_SIZE + 'px Inter, system-ui, sans-serif';
+    fillLines(sub, PAD, cursor, SUB_LH);
+
+    drawShot(atlas);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    window.__ogCard = dataUrl;
+    window.__ogCardInfo = {
+      width: W,
+      height: H,
+      lines: { headline: headline.length, sub: sub.length },
+      shot: { x: SHOT.x, y: SHOT.y, w: SHOT.w, h: SHOT.h },
+      bytes: dataUrl.length,
+    };
+
+    if (!location.search.includes('save')) {
+      status.textContent = 'drawn 1200x630. Add ?save to write site/assets/img/og.png.';
+      return;
+    }
+
+    const response = await fetch('/__save', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'assets/img/og.png', dataUrl }),
+    });
+    const text = await response.text();
+    window.__ogSaveResult = text;
+    status.textContent = 'save response: ' + text;
+  }
+
+  draw().catch(fail);
+})();
+</script>
+</body>
+</html>
