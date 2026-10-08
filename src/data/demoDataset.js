@@ -253,6 +253,15 @@ const COMMERCIAL = [
   },
 ];
 
+// Role labels for the demo crew. Permissions are left empty: in demo mode the
+// visitor plays the owner and every module is open (see utils/permissions.js).
+export const DEMO_USER_TYPES = [
+  { id: 'ut_admin', name: 'Admin', description: 'Full system access', permissions: [] },
+  { id: 'ut_manager', name: 'Manager', description: 'Runs the day-to-day: scheduling, quotes and invoices', permissions: [] },
+  { id: 'ut_tech', name: 'Technician', description: 'Field staff — their jobs, schedule and timesheets', permissions: [] },
+  { id: 'ut_office', name: 'Office Staff', description: 'Customers, quotes and invoices', permissions: [] },
+];
+
 export const DEMO_REFERENCE = { CREW, STOCK, SUPPLIERS, CONTRACTORS, COMMERCIAL, COST_CENTRES, RATE };
 
 // ---------------------------------------------------------------------------
@@ -485,13 +494,13 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
   const T = {};
   const ownerName = (owner.name || '').trim() || 'Mick Harbour';
   T.owner = {
-    id: owner.id || id('crew'), name: ownerName, role: 'Owner / Licensed Electrician', color: '#FF5C00',
+    id: owner.id || id('crew'), name: ownerName, role: 'Owner / Licensed Electrician', color: owner.color || '#FF5C00',
     userTypeId: owner.userTypeId || `${scope}ut_admin`, payRate: 70, email: owner.email || 'owner@harbourline-electrical.example', phone: '0491 570 010',
   };
   CREW.forEach((c) => {
     T[c.key] = {
       id: id('crew'), name: c.name, role: c.role, color: c.color, userTypeId: `${scope}${c.userType}`, payRate: c.payRate,
-      email: `${c.name.split(' ')[0].toLowerCase()}@harbourline-electrical.example`, phone: c.phone,
+      email: `${c.name.split(' ')[0].toLowerCase()}@harbourline-electrical.example`, phone: c.phone, fieldStaff: c.field,
     };
   });
   Object.values(T).forEach((t) => C.technicians.push({ ...t, deactivated: false, createdAt: isoAt(addDays(anchor, -400), 9), updatedAt: isoAt(addDays(anchor, -30), 9) }));

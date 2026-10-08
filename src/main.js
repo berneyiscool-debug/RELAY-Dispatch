@@ -31,6 +31,7 @@ import { initDatePicker } from './utils/clockPicker.js';
 import { hasPermission } from './utils/permissions.js';
 import { subscriptionRequired } from './utils/subscription.js';
 import { mountTrialBanner, unmountTrialBanner } from './components/TrialBanner.js';
+import { mountDemoBanner, unmountDemoBanner } from './components/DemoBanner.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import './utils/DeputyAutopilot.js';
 import { storageGet, storageSet } from './utils/persist.js';
@@ -726,6 +727,8 @@ const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads',
 // the app shell stays hidden and the paywall leaves them alone — `/setup` and
 // `/subscribe` are where an account with no company or no subscription is sent,
 // so requiring either would be circular.
+const DEMO_BLOCKED_PATHS = new Set(['/profile', '/subscribe']);
+
 const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
 // Set by the guard below; see the portal-scope note there.
@@ -756,6 +759,7 @@ router.onNavigate = (path, params) => {
     if (topbarEl) topbarEl.style.display = 'none';
     if (breadcrumbEl) breadcrumbEl.style.display = 'none';
     unmountTrialBanner();
+    unmountDemoBanner();
   } else {
     if (sidebarEl) sidebarEl.style.display = '';
     if (topbarEl) topbarEl.style.display = '';
@@ -766,12 +770,20 @@ router.onNavigate = (path, params) => {
     // Re-evaluated on every navigation: `days left` changes overnight, and the
     // trial can lapse while the tab is open.
     mountTrialBanner(mainContent);
+    mountDemoBanner();
   }
 
   if (!currentUser && !PUBLIC_PATHS.has(path) && !isPortal) {
     // Redirect to login if not authenticated
     router.navigate('/login');
     return false; // Prevent further navigation handling
+  }
+
+  // Demo mode is a sandbox: pages that act on the real account (its sign-in
+  // profile, its subscription) stay out of reach until the user exits.
+  if (currentUser && store.demoMode && DEMO_BLOCKED_PATHS.has(basePath)) {
+    import('./components/Notifications.js').then(({ showToast }) => showToast('Not available in demo mode — exit the demo to manage your account.', 'info'));
+    return '/';
   }
 
   if (currentUser) {
@@ -871,6 +883,7 @@ router.onNavigate = (path, params) => {
 
 // Handle logout events globally
 window.addEventListener('relay-logout', () => {
+  const wasDemo = store.demoMode;
   clearSessionUser();
   localStorage.removeItem('relay_login_mode');
   try { sessionStorage.removeItem('relay_active_account'); } catch {}
@@ -882,6 +895,8 @@ window.addEventListener('relay-logout', () => {
   if (topbar) topbar.style.display = 'none';
   if (breadcrumb) breadcrumb.style.display = 'none';
   router.navigate('/login');
+  // The store is still holding the demo business in memory; start clean.
+  if (wasDemo) window.location.reload();
 });
 
 // ---- Boot ----

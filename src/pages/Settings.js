@@ -13,7 +13,7 @@ import { MODULE_PERMS } from '../utils/permissions.js';
 import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { router } from '../router.js';
-import { seedMinimalData, seedData } from '../data/seed.js';
+import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
 import { PLAN_CATALOG, getTier, getSubscription, subscriptionActive, subscriptionPastDue, isComplimentary, startCheckout, changePlan, openBillingPortal, refreshSubscription, reconcileSubscription } from '../utils/subscription.js';
 import { connectInfo, connectReady, startConnectOnboarding, refreshConnectStatus, openConnectDashboard } from '../utils/payments.js';
 import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, emailSettings, sendEmail, emailBlockedReason } from '../utils/email.js';
@@ -104,11 +104,6 @@ function buildGranularPerms(valueFn) {
 }
 
 // Collections that only hold data once a company starts entering real (or demo) work
-const BUSINESS_COLLECTIONS = ['customers', 'quotes', 'jobs', 'invoices', 'assets', 'suppliers', 'contractors', 'purchaseOrders', 'formInstances', 'leads', 'schedule', 'stock', 'timesheets'];
-
-function hasAnyBusinessData() {
-  return BUSINESS_COLLECTIONS.some(col => (store.getAll(col) || []).length > 0);
-}
 
 // Helper to render visual timeline
 function renderTimelineHtml(activeHours = []) {
@@ -285,6 +280,23 @@ export function renderSettings(container) {
 
   function renderContent() {
     const tc = container.querySelector('#settings-content');
+
+    // Demo mode: these tabs act on the real account (its storage, backups,
+    // sign-ins and data management), so they stay closed until the user exits.
+    if (store.demoMode && ['system', 'local_storage', 'users', 'storage_options'].includes(activeTab)) {
+      tc.innerHTML = `
+        <div class="card" style="max-width:640px;">
+          <div class="card-header"><h4>Not available in demo mode</h4></div>
+          <div class="card-body">
+            <p class="text-secondary" style="margin-bottom:var(--space-lg); line-height:1.5;">
+              This part of Settings manages your real account, so it's switched off while you explore the demo. Everything else — company details, rates, materials, templates — is yours to try.
+            </p>
+            <button class="btn btn-primary" id="btn-exit-demo-settings"><span class="material-icons-outlined">logout</span> Exit Demo Mode</button>
+          </div>
+        </div>`;
+      tc.querySelector('#btn-exit-demo-settings')?.addEventListener('click', exitDemoMode);
+      return;
+    }
 
     if (activeTab === 'suppliers') {
       renderSuppliersSettings(tc);
@@ -960,6 +972,19 @@ export function renderSettings(container) {
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:var(--space-lg); max-width:100%; align-items:start;">
           <!-- Left Column -->
           <div style="display:flex; flex-direction:column; gap:var(--space-lg)">
+            <!-- Demo mode -->
+            <div class="card">
+              <div class="card-header"><h4>Demo Mode</h4></div>
+              <div class="card-body">
+                <p class="text-secondary" style="margin-bottom:var(--space-lg); line-height:1.5;">
+                  Explore a fully set-up sample business — a Newcastle electrical &amp; air-con crew with leads, quotes, jobs, a team schedule, timesheets and invoices. It runs in this browser tab only: nothing is saved or sent, and your own data is left exactly as it is.
+                </p>
+                <button class="btn btn-secondary" id="btn-enter-demo" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
+                  <span class="material-icons-outlined">science</span> Explore Demo Mode
+                </button>
+              </div>
+            </div>
+
             <!-- Data Management -->
             <div class="card">
               <div class="card-header"><h4>Data Management</h4></div>
@@ -972,20 +997,6 @@ export function renderSettings(container) {
                     <span class="material-icons-outlined">download</span> Download a Copy of My Data
                   </button>
 
-                  ${!hasAnyBusinessData() ? `
-                    <div style="margin-top:var(--space-md); padding-top:var(--space-md); border-top:1px solid var(--border-color)">
-                      <p style="color:var(--text-secondary); margin-bottom:12px; line-height:1.4;">
-                        This database is empty, so you can load a demonstration business — a working week of leads, quotes, jobs, crew schedules and invoices with months of history behind it — to walk through RELAY before entering real work.
-                      </p>
-                      <button class="btn btn-secondary" id="btn-seed-minimal" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
-                        <span class="material-icons-outlined">science</span> Seed Demonstration Data
-                      </button>
-                    </div>
-                  ` : `
-                    <p class="text-tertiary" style="margin-top:var(--space-md); line-height:1.4;">
-                      Demonstration data can only be loaded into an empty database. Restore to a blank state below if you want to run a walkthrough.
-                    </p>
-                  `}
                 ` : '<div style="color:var(--text-tertiary)">Data management is restricted to company administrators.</div>'}
               </div>
             </div>
@@ -1048,46 +1059,7 @@ export function renderSettings(container) {
         }
       });
 
-      tc.querySelector('#btn-seed-minimal')?.addEventListener('click', () => {
-        const content = document.createElement('div');
-        content.style.cssText = 'line-height:1.6; color:var(--text-primary);';
-        content.innerHTML = `
-          <p style="margin-bottom:12px">You are about to load a complete demonstration dataset.</p>
-          <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; margin-bottom:16px; border-radius:4px; color:var(--color-info); font-weight:500; display:flex; align-items:center; gap:8px;">
-            <span class="material-icons-outlined">info</span>
-            <span>A six-person electrical &amp; air-con business in Newcastle with four months of history: enquiries, quotes, jobs, a crew schedule, timesheets, invoices and payments — all connected, and dated around today.</span>
-          </div>
-          <p style="color:var(--text-secondary)">Loading it also sets your company profile to the demonstration company "Harbourline Electrical &amp; Air". You play the owner. Every person and business in it is fictional. Download a copy of your data first if you have entered company details.</p>
-        `;
-
-        showModal({
-          title: "Load Demonstration Data",
-          content: content,
-          actions: [
-            {
-              label: "Cancel",
-              className: "btn-secondary",
-              onClick: (close) => close()
-            },
-            {
-              label: "Load Demo Data",
-              className: "btn-primary",
-              onClick: async (close) => {
-                close();
-                showToast('Loading demonstration data...', 'info');
-                try {
-                  await seedMinimalData();
-                  showToast('Demonstration data loaded. Reloading...', 'success');
-                  setTimeout(() => window.location.reload(), 1200);
-                } catch (err) {
-                  console.error('Seeding failed:', err);
-                  showToast('Could not load the demonstration data.', 'error');
-                }
-              }
-            }
-          ]
-        });
-      });
+      tc.querySelector('#btn-enter-demo')?.addEventListener('click', enterDemoMode);
 
       tc.querySelector('#btn-restore-new')?.addEventListener('click', () => {
         const content = document.createElement('div');

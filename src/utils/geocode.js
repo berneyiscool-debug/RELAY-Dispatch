@@ -10,6 +10,7 @@
 // A geo record is: { lat, lng, formattedAddress, placeId, partialMatch, geocodedAt }
 
 import { supabase } from './supabase.js';
+import { isDemoSession } from './demoSession.js';
 
 const CACHE_KEY = 'relay.geocodeCache.v1';
 const inFlight = new Map(); // normalizedAddress -> Promise, dedupes concurrent lookups
@@ -89,8 +90,8 @@ export async function geocodeAddress(address, opts = {}) {
   // Offline and not cached — nothing we can do now; caller can retry when online.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
 
-  // Server-side geocoding is a cloud-gated paid feature.
-  if (!isCloudUser()) return null;
+  // Server-side geocoding is a cloud-gated paid feature — and never billed from a demo tab.
+  if (!isCloudUser() || isDemoSession()) return null;
 
   if (inFlight.has(key)) return inFlight.get(key);
 

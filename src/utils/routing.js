@@ -10,6 +10,7 @@
 // A route result: { legs:[{fromId,toId,durationSec,distanceMeters}],
 //                   totalDurationSec, totalDistanceMeters, order:[stopIds] }
 
+import { isDemoSession } from './demoSession.js';
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { geocodeAddress, getCachedGeo } from './geocode.js';
@@ -36,6 +37,8 @@ function cacheKeyFor(origin, stops, roundTrip, optimize) {
  */
 export async function computeRoute({ origin, stops, roundTrip = true, optimize = false }) {
   if (!origin || !stops?.length) return null;
+  // Route optimisation is a paid call; a demo tab never makes it.
+  if (isDemoSession()) return null;
   const key = cacheKeyFor(origin, stops, roundTrip, optimize);
   const ttl = optimize ? ORDER_TTL_MS : ETA_TTL_MS;
 

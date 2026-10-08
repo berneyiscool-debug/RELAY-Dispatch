@@ -7,6 +7,8 @@ import { store } from '../data/store.js';
 export function hasPermission(module, key) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   if (!currentUser) return false;
+  // Demo mode: the visitor plays the business owner, so every module is open.
+  if (store.demoMode) return true;
   if (currentUser.role === 'admin') return true;
   if (currentUser.role === 'customer') return false;
 

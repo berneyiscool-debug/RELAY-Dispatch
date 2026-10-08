@@ -68,7 +68,8 @@ export function renderScheduleView(container) {
   const isLocalAdmin = loginMode === 'local' && !store.isDemoCrew();
 
   function getVisibleTechsKey() {
-    return `relay_schedule_visible_techs_${currentUser.id || 'anon'}`;
+    // A demo tab keeps its own lane selection so it never overwrites the real one.
+    return `relay_schedule_visible_techs_${store.demoMode ? 'demo_' : ''}${currentUser.id || 'anon'}`;
   }
   function loadVisibleTechs() {
     try {
@@ -129,6 +130,9 @@ export function renderScheduleView(container) {
   let visibleTechIds;
   if (savedVisibleTechs && savedVisibleTechs.length > 0) {
     visibleTechIds = new Set(savedVisibleTechs);
+  } else if (store.demoMode) {
+    // The demo opens on the whole crew so the week reads as a team at work.
+    visibleTechIds = new Set(technicians.filter(t => t.fieldStaff !== false).map(t => t.id));
   } else if (currentUser.id) {
     visibleTechIds = new Set([currentUser.id]);
   } else {
