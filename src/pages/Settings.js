@@ -975,7 +975,7 @@ export function renderSettings(container) {
                   ${!hasAnyBusinessData() ? `
                     <div style="margin-top:var(--space-md); padding-top:var(--space-md); border-top:1px solid var(--border-color)">
                       <p style="color:var(--text-secondary); margin-bottom:12px; line-height:1.4;">
-                        This database is empty, so you can load a complete demonstration dataset — customers with quotes, jobs, assets, materials and timesheets — to walk through RELAY before entering real work.
+                        This database is empty, so you can load a demonstration business — a working week of leads, quotes, jobs, crew schedules and invoices with months of history behind it — to walk through RELAY before entering real work.
                       </p>
                       <button class="btn btn-secondary" id="btn-seed-minimal" style="width:100%; justify-content:center; border:1px solid var(--border-color)">
                         <span class="material-icons-outlined">science</span> Seed Demonstration Data
@@ -1055,9 +1055,9 @@ export function renderSettings(container) {
           <p style="margin-bottom:12px">You are about to load a complete demonstration dataset.</p>
           <div style="background:var(--color-info-bg); border-left:4px solid var(--color-info); padding:12px; margin-bottom:16px; border-radius:4px; color:var(--color-info); font-weight:500; display:flex; align-items:center; gap:8px;">
             <span class="material-icons-outlined">info</span>
-            <span>A realistic trade business to walk through: 5 customers with quotes, jobs, assets and materials, plus users, timesheets and stock.</span>
+            <span>A six-person electrical &amp; air-con business in Newcastle with four months of history: enquiries, quotes, jobs, a crew schedule, timesheets, invoices and payments — all connected, and dated around today.</span>
           </div>
-          <p style="color:var(--text-secondary)">Loading it also sets your company profile to the demonstration company "Apex Power Services", so download a copy of your data first if you have entered company details.</p>
+          <p style="color:var(--text-secondary)">Loading it also sets your company profile to the demonstration company "Harbourline Electrical &amp; Air". You play the owner. Every person and business in it is fictional. Download a copy of your data first if you have entered company details.</p>
         `;
 
         showModal({

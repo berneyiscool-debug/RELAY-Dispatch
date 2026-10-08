@@ -2310,7 +2310,7 @@ function renderRecentLeads(data, item) {
   const bc = { New:'badge-info', Contacted:'badge-primary', Qualified:'badge-warning', Won:'badge-success', Lost:'badge-danger' };
   return `<table class="data-table" style="width:100%;">
     <thead><tr><th>Lead</th><th>Customer</th><th>Status</th></tr></thead>
-    <tbody>${data.leads.slice(0,8).map(l => `
+    <tbody>${[...data.leads].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0,8).map(l => `
       <tr style="cursor:pointer;" data-nav="/leads/${l.id}">
         <td class="cell-link font-medium">${escapeHTML(l.title)}</td>
         <td style="color:var(--text-secondary);">${escapeHTML(l.customerName)}</td>
@@ -3088,7 +3088,8 @@ function renderInvoiceAging(data, item) {
 // Quote win rate: Accepted vs Declined (decided quotes), with open pipeline noted.
 function renderQuoteWinRate(data, item) {
   const quotes = data.quotes || [];
-  const accepted = quotes.filter(q => q.status === 'Accepted');
+  // A quote converted to a job was accepted first, so it counts as a win.
+  const accepted = quotes.filter(q => q.status === 'Accepted' || q.status === 'Converted');
   const declined = quotes.filter(q => q.status === 'Declined');
   const open = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending' || q.status === 'Draft');
   const decided = accepted.length + declined.length;

@@ -63,7 +63,9 @@ export function renderScheduleView(container) {
 
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const loginMode = localStorage.getItem('relay_login_mode');
-  const isLocalAdmin = loginMode === 'local';
+  // Local profiles are single-user, so every booking lands on the owner's row —
+  // except while the demo dataset is loaded, which brings its own crew.
+  const isLocalAdmin = loginMode === 'local' && !store.isDemoCrew();
 
   function getVisibleTechsKey() {
     return `relay_schedule_visible_techs_${currentUser.id || 'anon'}`;

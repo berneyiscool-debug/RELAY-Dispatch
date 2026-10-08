@@ -166,7 +166,11 @@ export function renderReports(container, params) {
     const totalRevenue = invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + invoiceShare(i), 0);
     const totalOutstanding = invoices.filter(i => i.status === 'Sent' || i.status === 'Overdue').reduce((s, i) => s + invoiceShare(i), 0);
     const avgJobValue = jobs.length > 0 ? jobs.reduce((s, j) => s + (j.laborCost || 0) + (j.materialCost || 0), 0) / jobs.length : 0;
-    const quoteWinRate = quotes.length > 0 ? (quotes.filter(q => q.status === 'Accepted').length / quotes.length * 100) : 0;
+    // Won = accepted, including quotes since converted to a job; measured against
+    // decided quotes only, so drafts and quotes awaiting a reply don't drag it down.
+    const wonQuotes = quotes.filter(q => q.status === 'Accepted' || q.status === 'Converted').length;
+    const decidedQuotes = wonQuotes + quotes.filter(q => q.status === 'Declined').length;
+    const quoteWinRate = decidedQuotes > 0 ? (wonQuotes / decidedQuotes * 100) : 0;
     const leadConvRate = leads.length > 0 ? (leads.filter(l => l.status === 'Won').length / leads.length * 100) : 0;
 
     // By status

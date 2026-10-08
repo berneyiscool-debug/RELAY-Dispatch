@@ -2748,10 +2748,27 @@ class DataStore {
 
   // ── Local-First Core API Operations ────────────────────────────────────────
 
+  // A local profile holding the demo dataset shows the demo crew as real rows
+  // (schedule lanes, staff pickers, labour costing) even though local accounts
+  // are single-user. Restoring to a blank state wipes the settings flag, which
+  // drops the profile straight back to the normal single-user behaviour.
+  isDemoCrew() {
+    if (this.companyId && !this.companyId.startsWith('acct_')) return false;
+    const settings = this.companySettings;
+    return !!(settings && settings.demoDataset) && (this.cache.technicians || []).length > 1;
+  }
+
   getAll(collection) {
     const items = this.cache[collection] || [];
     if (collection === 'technicians') {
       const loginMode = typeof localStorage !== 'undefined' ? localStorage.getItem('relay_login_mode') : null;
+      if (loginMode === 'local' && this.isDemoCrew()) {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        // The signed-in owner keeps their own name and colour on the crew list.
+        return currentUser && currentUser.id
+          ? items.map(t => (t.id === currentUser.id ? { ...t, name: currentUser.name || t.name, color: currentUser.color || t.color, startLocation: this._localStartLocation() } : t))
+          : items;
+      }
       if (loginMode === 'local') {
         const currentUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('currentUser') : null;
         if (currentUserStr) {
@@ -3729,9 +3746,12 @@ class DataStore {
         updatedAt: it.updatedAt || now,
       }, collection));
 
-    if (payload.length) {
-      const { error } = await supabase.from(table).upsert(payload);
-      if (error) this._notifyWriteError('save', collection, error);
+    // Upsert in chunks so a large collection (e.g. the demo dataset's history)
+    // stays well under the API's request-size limit.
+    const CHUNK = 400;
+    for (let i = 0; i < payload.length; i += CHUNK) {
+      const { error } = await supabase.from(table).upsert(payload.slice(i, i + CHUNK));
+      if (error) { this._notifyWriteError('save', collection, error); break; }
     }
 
     const currentIds = new Set(items.map(it => it && it.id));
@@ -4025,7 +4045,15 @@ class DataStore {
   }
 
   async clearAll() {
+    // clearSync() resets companyId/userId along with the caches. Hold on to them:
+    // the cloud wipe below is scoped by company id (with it nulled, the delete
+    // matched nothing), and the caller is still signed in to the same account
+    // afterwards — demo seeding writes straight back into it.
+    const companyId = this.companyId;
+    const userId = this.userId;
     this.clearSync();
+    this.companyId = companyId;
+    this.userId = userId;
     if (!this.companyId || this.companyId.startsWith('acct_')) {
       const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
       
