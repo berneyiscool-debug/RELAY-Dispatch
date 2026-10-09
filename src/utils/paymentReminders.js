@@ -61,7 +61,7 @@ export async function checkPaymentReminders() {
     if (!to) continue;
 
     try {
-      const { subject, html } = reminderEmail(inv, { portalUrl: portalUrlForDocument(inv) });
+      const { subject, html } = reminderEmail(inv, { portalUrl: await portalUrlForDocument(inv) });
       const attachments = await documentAttachment('invoice', inv);
       // sendEmail logs the attempt (sent/failed) to email_log, which is also our
       // de-dup source on the next sweep.

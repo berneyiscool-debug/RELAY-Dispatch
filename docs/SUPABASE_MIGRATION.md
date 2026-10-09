@@ -493,12 +493,12 @@ Why it lives on `relay-copilot` instead of a `relay-usage` function: it reuses t
 
 ## 12. Deploying an edge function
 
-Every function in `supabase/functions/` is self-contained and uses URL imports (`esm.sh`) rather than npm, so deploying one is usually a copy-paste in the dashboard: no local bundler, no Docker, no CLI. **`relay-copilot` is now the one exception** — it imports `./limits.js`, because the allowance maths (pool size, per-user ceiling, the Sydney day window) is worth testing directly rather than only through the proxy. The dashboard editor holds one file, so deploy that function with the CLI (Section 12a) and keep the two files together.
+Every function in `supabase/functions/` is self-contained and uses URL imports (`esm.sh`) rather than npm, so deploying one is usually a copy-paste in the dashboard: no local bundler, no Docker, no CLI. **Two functions are now exceptions** — `relay-copilot` imports `./limits.js`, because the allowance maths (pool size, per-user ceiling, the Sydney day window) is worth testing directly rather than only through the proxy, and `relay-portal` imports `./portal.js` for the same reason (token shape, PIN verification, write allow-lists). The dashboard editor holds one file, so deploy those two with the CLI (Sections 12a and 12c) and keep each pair of files together.
 
 1. Dashboard → the project → **Edge Functions** → pick the function, e.g. `relay-geocode`.
 2. Select everything in the editor, delete it, and paste the whole local `index.ts`.
 3. **Deploy**. The header shows the version timestamp once it is live.
-4. Leave **Enforce JWT verification** on for every function except two: `relay-create-payment` (public by design, authorises by invoice id) and `relay-stripe-webhook` (verifies Stripe's HMAC signature itself).
+4. Leave **Enforce JWT verification** on for every function except three: `relay-create-payment` (public by design, authorises by invoice id), `relay-stripe-webhook` (verifies Stripe's HMAC signature itself) and `relay-portal` (its callers are anonymous portal visitors with no session — see Section 12c).
 
 Secrets live under **Edge Functions → Secrets** and are read per-invocation, so changing `RELAY_AI_POOL_PER_SEAT` (or any other cap) takes effect on the next call with no redeploy. A quick smoke test after deploying: calling the function with only the anon key must answer `401`.
 
@@ -546,7 +546,7 @@ npx --yes supabase@2.119.0 functions deploy relay-copilot \
 
 Run it from the repository root so the CLI finds `supabase/functions/relay-copilot`. It prints one `Uploading asset` line per file — **both `index.ts` and `limits.js` must appear**, because the import is relative and the file has to sit beside `index.ts` inside the deployed bundle.
 
-Three flags to leave alone: **never `--prune`** (it deletes every remote function that has no local directory, and this repository holds only 14 of the project's functions), **never deploy without naming the function** (a bare `functions deploy` would push everything in `supabase/functions/`), and **never `--no-verify-jwt`** (every function in the project runs with verification on, and `relay-copilot` re-checks the caller's token itself, so the CLI default is correct).
+Three flags to leave alone: **never `--prune`** (it deletes every remote function that has no local directory, and this repository holds only 16 of the project's 29 functions), **never deploy without naming the function** (a bare `functions deploy` would push everything in `supabase/functions/`), and **never `--no-verify-jwt`** for a function that can expect a session (`relay-copilot` re-checks the caller's token itself, so the CLI default is correct). Nine of the project's functions do run with verification off — the public lead endpoints, the Stripe webhook, `relay-create-payment` and `relay-portal` — each because its caller cannot hold a session at all; Section 12c explains the reasoning.
 
 The CLI needs an account login, which on Windows lives in Credential Manager rather than a file. **Confirm it with `projects list`, never with the success message from `login`** — a failed login flow silently falls back to whatever token was stored earlier, and the CLI does not validate a token locally before sending it.
 
@@ -554,7 +554,7 @@ If the shell exports agent markers (`AI_AGENT`, `COPILOT_CLI`, …), the CLI's `
 
 Verify a deploy with three checks, in increasing order of certainty:
 
-1. `functions list --project-ref <ref> --output json` — `verify_jwt` must still be `true`. The table output does **not** show it; only the JSON does, and that JSON is an **object** (`{ "functions": [ … ] }`), so select `.functions[]` rather than iterating it directly. Do **not** read `version` as proof that code shipped: it also advances when secrets or config change, so a bumped `version` with an unchanged `entrypoint_path` means nothing was deployed. The reliable marker is the `_N` suffix on `entrypoint_path`, which advances once per code deploy (`_21` → `_27` for the usage-meter release).
+1. `functions list --project-ref <ref> --output json` — for `relay-copilot` (and any function that serves a signed-in user) `verify_jwt` must still be `true`. The table output does **not** show it; only the JSON does, and that JSON is an **object** (`{ "functions": [ … ] }`), so select `.functions[]` rather than iterating it directly. Do **not** read `version` as proof that code shipped: it also advances when secrets or config change, so a bumped `version` with an unchanged `entrypoint_path` means nothing was deployed. The reliable marker is the `_N` suffix on `entrypoint_path`, which advances once per code deploy (`_21` → `_27` for the usage-meter release).
 2. Call it with the anon key: with or without `?action=usage`, the answer must be `401 {"error":"Unauthorized: invalid token"}`. That comes from inside the function, after its module graph is instantiated, so it proves `limits.js` shipped. A `503` with `BOOT_ERROR` is the signature of a missing or unresolvable file. Note this check deliberately stops at the function's own `401` — the usage branch is behind the same Bearer check, so an anon-key call never reaches it, and only a real user token can prove the branch itself.
 3. `functions download relay-copilot --project-ref <ref> --use-api` into a scratch directory, then compare hashes against the local files. Byte-identical means production is running exactly the reviewed code.
 
@@ -588,6 +588,22 @@ Live as of 2026-10-02 (`zufsncswsoqlomtqhkks`, all with JWT verification on): `r
 `relay-copilot` was deployed again by the CLI on 2026-10-04 (version 21) to ship the pooled allowance and the disabled thinking mode. That deploy was checked by hash — the function downloaded back out of the project is byte-identical to `supabase/functions/relay-copilot/` in this repository — and by an anon-key call answering `401` from inside the function, which is what proves the two-file bundle boots. The allowances were then running on the `limits.js` defaults with no `RELAY_AI_*` secrets set, which is the intended state: one source of truth, and nothing to drift.
 
 The personal ceiling was then confirmed end-to-end on the same day: `RELAY_AI_USER_CAP_PLUS=1` against the Cloud+ test tenant, one message accepted and ledgered, the next refused with `429 scope: "user"` and the reset rendered in the reader's local clock ("resets at 12:00 AM tomorrow… your team can still send about 57 more messages today"). The first two attempts at this looked like a broken cap and were not — `RELAY_AI_USER_CAP` was set against a Cloud+ tenant, which reads the `_PLUS` twin and ignored it. The secret was unset afterwards and `secrets list` confirmed no `RELAY_AI_*` or `RELAY_COPILOT_*` keys remain, so the live system is back on the defaults.
+
+### 12c. Deploying `relay-portal` (a function with JWT verification off)
+
+`relay-portal` serves the customer and contractor portals, whose visitors are by definition not signed in — that is what a magic link is. So it must be deployed with verification **off**, alongside the project's other public entry points (`lead-submit`, `lead-track`, `relay-stripe-webhook`, `relay-create-payment`, …), and Section 12a's "never `--no-verify-jwt`" rule does not apply to it:
+
+```
+npx --yes supabase@2.119.0 functions deploy relay-portal \
+  --project-ref zufsncswsoqlomtqhkks --use-api --no-verify-jwt \
+  --agent no --output-format text
+```
+
+Run it from the repository root. Like `relay-copilot`, it has a relative import (`./portal.js`, holding the token/PIN/allow-list logic that the test runner executes directly), so **both `index.ts` and `portal.js` must appear** in the printed upload lines; a `503 BOOT_ERROR` afterwards means the relative import did not ship.
+
+Disabling verification is safe *for this function specifically* and only because it re-checks everything itself: it validates the token's shape, resolves it with the service role against `portal_token` (unique per row since `042`), refuses every action without a live row in `portal_sessions`, and re-reads ownership from the database on every call. Verification is being turned off for a caller who could not have a token, not for one whose token can be skipped. The test before copying the flag is whether the caller can hold a session at all — convenience is not a reason, so no function that serves a signed-in user may follow it.
+
+**Deploying the function and applying `042` are independent, and both are required.** Without `042` the resolver's lookup finds no `portal_token` index and answers `invalid` for every link; without the deploy the page asks a function that is not there and shows *Portal Unavailable* with a retry rather than blaming the link. Apply `042` with `supabase db push` (or the SQL editor) as in Section 12, then deploy, then load a real link in a signed-out browser — that is the only end-to-end proof, because every local test uses the pglite harness and a stubbed `functions.invoke`.
 
 ---
 

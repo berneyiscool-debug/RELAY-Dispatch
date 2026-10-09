@@ -9,7 +9,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showToast } from '../../components/Notifications.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
 import { portalInviteEmail } from '../../utils/emailTemplates.js';
-import { customerPortalUrl, generatePortalToken } from '../../utils/portalLinks.js';
+import { customerPortalUrl, savedCustomerPortalUrl } from '../../utils/portalLinks.js';
 import { updateBreadcrumbDetail } from '../../components/Breadcrumb.js';
 import { renderDetailHeader } from '../../components/DetailHeader.js';
 import { showDrawer } from '../../components/Drawer.js';
@@ -23,12 +23,10 @@ export function renderPersonDetail(container, { id, tab }) {
     return;
   }
 
-  // Self-healing customer portalToken generator
-  if (!person.portalToken) {
-    const generatedToken = generatePortalToken();
-    store.update('customers', person.id, { portalToken: generatedToken });
-    person.portalToken = generatedToken;
-  }
+  // The portal token is no longer minted here. Minting on render meant every visit to
+  // this page wrote to the customer's row — including from a read-only install, where
+  // the write is refused and the link shown on the page resolved to nothing. It is now
+  // minted by the explicit invite/copy action below, and only once the write is saved.
 
   updateBreadcrumbDetail(person.company);
 
@@ -174,7 +172,7 @@ export function renderPersonDetail(container, { id, tab }) {
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
               <input type="text" readonly id="customer-portal-url" class="form-input" 
                      style="flex:1; min-width:260px; font-family:var(--font-mono); background: var(--content-bg); font-size:13px; color:var(--text-secondary);" 
-                     value="${customerPortalUrl(person)}" />
+                     value="${savedCustomerPortalUrl(person) || ''}" placeholder="No portal link generated yet" />
               
               <button class="btn btn-secondary" id="btn-copy-portal-link" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px;">content_copy</span> Copy Link
@@ -195,14 +193,20 @@ export function renderPersonDetail(container, { id, tab }) {
       // Bind portal access events
       const copyBtn = tabContent.querySelector('#btn-copy-portal-link');
       if (copyBtn) {
-        copyBtn.addEventListener('click', () => {
+        copyBtn.addEventListener('click', async () => {
           const urlInput = tabContent.querySelector('#customer-portal-url');
-          if (urlInput) {
-            urlInput.select();
-            urlInput.setSelectionRange(0, 99999);
-            navigator.clipboard.writeText(urlInput.value);
-            showToast('Portal link copied to clipboard', 'success');
+          if (!urlInput) return;
+          // First press mints and stores the token; later presses reuse it.
+          const url = savedCustomerPortalUrl(person) || await customerPortalUrl(person);
+          if (!url) {
+            showToast('Could not save a portal link for this customer. Please try again.', 'error');
+            return;
           }
+          urlInput.value = url;
+          urlInput.select();
+          urlInput.setSelectionRange(0, 99999);
+          navigator.clipboard.writeText(url);
+          showToast('Portal link copied to clipboard', 'success');
         });
       }
 
@@ -261,8 +265,18 @@ export function renderPersonDetail(container, { id, tab }) {
                 // simulated notice below otherwise (local / unconfigured accounts).
                 if (emailEnabledFor('portal_invite') && person.email) {
                   // Must carry the customer's token — a bare /#/portal/customer
-                  // link lands them on the portal with no way in.
-                  const { subject, html } = portalInviteEmail(person, { portalUrl: customerPortalUrl(person) });
+                  // link lands them on the portal with no way in. The token is minted
+                  // and stored first: an invite for a link that was never saved is
+                  // worse than no invite, and it would invalidate the customer's
+                  // existing link.
+                  const portalUrl = await customerPortalUrl(person);
+                  if (!portalUrl) {
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = original;
+                    showToast('Could not save a portal link for this customer. The invite was not sent.', 'error');
+                    return;
+                  }
+                  const { subject, html } = portalInviteEmail(person, { portalUrl });
                   await sendEmail({ to: person.email, subject, html, template: 'portal_invite', relatedType: 'customer', relatedId: person.id });
                   showToast(`Portal invite emailed to ${person.email}`, 'success');
                   store.create('notifications', {

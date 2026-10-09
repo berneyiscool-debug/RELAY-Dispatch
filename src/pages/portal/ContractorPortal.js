@@ -4,58 +4,82 @@ import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { showToast } from '../../components/Notifications.js';
 import { applyTheme } from '../../utils/theme.js';
-import { hashPortalPin, verifyPortalPin, needsPortalPinUpgrade } from '../../utils/portalPin.js';
+import { loadPortal, portalAction } from '../../utils/portalClient.js';
 
-export function renderContractorPortal(container, params) {
+export async function renderContractorPortal(container, params) {
   const token = params.token;
-  const contractors = store.getAll('contractors');
-  const contractor = contractors.find(c => c.portalToken === token);
+
+  // Anonymous visitor: there is nothing in the store to look the token up in, so the
+  // resolver does it with the service role and answers with the rows this link is
+  // entitled to. Once it is open the store holds them and the rest of this file reads
+  // it exactly as it always has.
+  const bundle = await loadPortal('contractor', token);
+  const settings = bundle.settings || {};
+
+  const card = (icon, tone, title, body, extra = '') => `
+      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
+        <span class="material-icons-outlined text-${tone}" style="font-size: 64px; margin-bottom: 20px;">${icon}</span>
+        <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">${title}</h2>
+        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">${body}</p>
+        ${extra}
+        ${(settings.phone || settings.email) ? `
+        <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
+          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
+          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
+        </div>` : ''}
+      </div>`;
+
+  // The link itself was never in question — the database was simply not reachable.
+  if (bundle.status === 'error') {
+    container.innerHTML = card('cloud_off', 'warning', 'Portal Unavailable',
+      'The portal could not be reached just now. Your access link is unchanged — please try again.',
+      `<button type="button" id="portal-retry" class="btn btn-primary" style="margin-bottom:16px;">Try again</button>`);
+    container.querySelector('#portal-retry').addEventListener('click', () => {
+      loadPortal('contractor', token, { force: true }).then(() => renderContractorPortal(container, params));
+    });
+    return;
+  }
+
+  if (bundle.status === 'invalid') {
+    container.innerHTML = card('gpp_maybe', 'danger', 'Invalid Access Link', `
+          This secure subcontractor portal link is invalid or has expired. Please verify your portal URL or contact the operations office for assistance.
+        `, `
+        <a href="#/login" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px; margin-bottom:16px;">
+          <span class="material-icons-outlined">login</span> Go to Login
+        </a>`);
+    return;
+  }
+
+  if (bundle.status === 'offline') {
+    container.innerHTML = card('lock_clock', 'warning', 'Subcontractor Portal Offline', `
+          The secure subcontractor portal is currently offline. Please contact our main operations team for work orders or timesheet submittals:
+        `);
+    return;
+  }
+
+  // Open: the store holds this visitor's scope, so the record comes from there with
+  // every field the staff view reads. The two screens before the PIN only have the
+  // identity the resolver released.
+  const contractor = bundle.status === 'ok'
+    ? store.getById('contractors', bundle.record && bundle.record.id)
+    : store.normalizeRecord(bundle.record, 'contractors');
+
+  if (!contractor) {
+    container.innerHTML = card('gpp_maybe', 'danger', 'Invalid Access Link',
+      'This secure subcontractor portal link is invalid or has expired. Please verify your portal URL or contact the operations office for assistance.');
+    return;
+  }
 
   // Appearance is light only at launch (see utils/theme.js), which resolves the
   // stored preference for us. The per-contractor value is still read but never
   // rewritten, so a contractor who picked dark keeps that choice for when dark
   // mode ships.
-  const storedTheme = contractor ? (localStorage.getItem(`relay_theme_contractor_${contractor.id}`) || localStorage.getItem(`simpro_theme_contractor_${contractor.id}`) || 'light') : 'light';
+  const storedTheme = localStorage.getItem(`relay_theme_contractor_${contractor.id}`) || localStorage.getItem(`simpro_theme_contractor_${contractor.id}`) || 'light';
   applyTheme(storedTheme);
 
-  if (!contractor) {
-    container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-        <span class="material-icons-outlined text-danger" style="font-size: 64px; margin-bottom: 20px;">gpp_maybe</span>
-        <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Invalid Access Link</h2>
-        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-lg);">
-          This secure subcontractor portal link is invalid or has expired. Please verify your portal URL or contact the operations office for assistance.
-        </p>
-        <a href="#/login" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px;">
-          <span class="material-icons-outlined">login</span> Go to Login
-        </a>
-      </div>
-    `;
-    return;
-  }
-
-  const settings = store.getSettings();
-
-  if (settings.enableContractorPortal === false) {
-    container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-        <span class="material-icons-outlined text-warning" style="font-size: 64px; margin-bottom: 20px;">lock_clock</span>
-        <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Subcontractor Portal Offline</h2>
-        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">
-          The secure subcontractor portal is currently offline. Please contact our main operations team for work orders or timesheet submittals:
-        </p>
-        <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
-          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
-          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
-        </div>
-      </div>
-    `;
-    return;
-  }
-
   // --- Magic Link PIN/Passcode Security Layer ---
-  // If passcode is not configured, show First-Time Setup
-  if (!contractor.portalPasscode) {
+  // Nobody has claimed this link yet: the first visitor sets the PIN.
+  if (bundle.status === 'passcode_setup') {
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
@@ -101,31 +125,26 @@ export function renderContractorPortal(container, params) {
         return;
       }
 
-      // Save PIN
-      const hashedPin = await hashPortalPin(p1);
-      const result = await store.update('contractors', contractor.id, { portalPasscode: hashedPin });
-      if (result && result.ok === false) {
-        showToast('Could not save your PIN. Please try again.', 'error');
+      // Hashing and storing happen in the resolver: the digest is the secret, and it
+      // must never be something this page could choose or read back.
+      const result = await portalAction('contractor', token, { action: 'setPasscode', pin: p1 });
+      if (result.status !== 'ok') {
+        showToast(result.error || 'Could not save your PIN. Please try again.', 'error');
         return;
       }
-      contractor.portalPasscode = hashedPin; // update in-memory
 
-      // Set authenticated
-      sessionStorage.setItem('portal_contractor_auth_' + contractor.id, 'true');
       showToast('PIN set successfully. Portal secured!', 'success');
-      
-      // Reload portal layout
       renderContractorPortal(container, params);
     });
 
     return;
   }
 
-  // If passcode is set, check sessionStorage session
-  const sessionKey = 'portal_contractor_auth_' + contractor.id;
-  const isUnlocked = sessionStorage.getItem(sessionKey) === 'true';
-
-  if (!isUnlocked) {
+  // The link is claimed, but this tab holds no live grant — either the PIN has not
+  // been entered here yet, or too many attempts have been made and the resolver is
+  // holding the door shut for a while.
+  if (bundle.status !== 'ok') {
+    const retryMinutes = bundle.retryAfterSeconds ? Math.ceil(bundle.retryAfterSeconds / 60) : 0;
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
@@ -149,6 +168,9 @@ export function renderContractorPortal(container, params) {
             </button>
           </form>
           
+          ${retryMinutes ? `<p style="font-size:12px; color:var(--color-danger); margin:16px 0 0 0; line-height:1.4;">
+            Too many incorrect attempts. Please try again in about ${retryMinutes} minute${retryMinutes === 1 ? '' : 's'}.
+          </p>` : ''}
           <p style="font-size:11.5px; color:var(--text-tertiary); margin-top:24px; line-height:1.4;">
             Forgot your PIN? Please contact our operations office${settings.phone ? ` at <strong>${escapeHTML(settings.phone)}</strong>` : ''} to request a reset.
           </p>
@@ -160,21 +182,25 @@ export function renderContractorPortal(container, params) {
       e.preventDefault();
       const enteredPin = container.querySelector('#portal-pin').value.trim();
 
-      if (await verifyPortalPin(enteredPin, contractor.portalPasscode)) {
-        // Upgrade a pre-hashing cleartext PIN while we still have the plaintext.
-        if (needsPortalPinUpgrade(contractor.portalPasscode)) {
-          const upgraded = await hashPortalPin(enteredPin);
-          const saved = await store.update('contractors', contractor.id, { portalPasscode: upgraded });
-          if (!(saved && saved.ok === false)) contractor.portalPasscode = upgraded;
-        }
-        sessionStorage.setItem(sessionKey, 'true');
+      // The PIN never leaves this page in a form the browser decided was correct: the
+      // resolver verifies it, rate-limits the attempts, and hands back the grant that
+      // the reads and the writes both need.
+      const result = await portalAction('contractor', token, { action: 'unlock', pin: enteredPin });
+
+      if (result.status === 'ok') {
         showToast('Portal unlocked successfully', 'success');
         renderContractorPortal(container, params);
-      } else {
-        showToast('Incorrect PIN. Please try again.', 'error');
-        container.querySelector('#portal-pin').value = '';
-        container.querySelector('#portal-pin').focus();
+        return;
       }
+
+      showToast(result.status === 'throttled'
+        ? `Too many incorrect attempts. Please try again in about ${Math.ceil(result.retryAfterSeconds / 60)} minute(s).`
+        : (result.error || 'Incorrect PIN. Please try again.'), 'error');
+
+      // Redraw from a fresh read so the screen carries the server's current attempt
+      // count rather than the one it was built with.
+      const fresh = await loadPortal('contractor', token);
+      if (fresh.status !== 'error') renderContractorPortal(container, params);
     });
 
     return;
@@ -1229,10 +1255,6 @@ export function renderContractorPortal(container, params) {
             const newPin = content.querySelector('#portal-pin-new').value.trim();
             const confirmPin = content.querySelector('#portal-pin-new-confirm').value.trim();
 
-            if (!await verifyPortalPin(currentPin, contractor.portalPasscode)) {
-              showToast('Current PIN is incorrect', 'error');
-              return;
-            }
             if (!/^\d{4,6}$/.test(newPin)) {
               showToast('New PIN must be between 4 and 6 digits (numbers only)', 'error');
               return;
@@ -1242,15 +1264,20 @@ export function renderContractorPortal(container, params) {
               return;
             }
 
-            const hashedPin = await hashPortalPin(newPin);
-            const result = await store.update('contractors', contractor.id, { portalPasscode: hashedPin });
-            if (result && result.ok === false) {
-              showToast('Could not update your PIN. Please try again.', 'error');
+            // The old PIN is checked, hashed and stored by the resolver. This page
+            // never holds the digest, so it cannot decide for itself that the current
+            // PIN is right — and asking for it again means an unattended unlocked tab
+            // cannot be used to lock the owner out.
+            const result = await portalAction('contractor', token, {
+              action: 'setPasscode',
+              pin: newPin,
+              currentPin,
+            });
+            if (result.status !== 'ok') {
+              showToast(result.error || 'Could not update your PIN. Please try again.', 'error');
               return;
             }
 
-            contractor.portalPasscode = hashedPin;
-            sessionStorage.setItem('portal_contractor_auth_' + contractor.id, 'true');
             showToast('Portal PIN updated successfully', 'success');
             close();
           }}
@@ -1612,7 +1639,11 @@ export function renderContractorPortal(container, params) {
       store.create('customers', companyCustomer);
     }
 
-    // Helper to deep clone tasks and reset completion state
+    // Helper to deep clone tasks and reset completion state. The copy is assigned to
+    // the contractor importing it: the contractor's job list is built from task
+    // assignment (the server walks the tasks jsonb), so an unassigned copy would
+    // vanish from their portal the moment it was created — and the "already imported"
+    // check below, which matches on the job title, would never see it.
     function deepCloneAndResetTasks(tasksList) {
       if (!tasksList) return [];
       return tasksList.map(t => {
@@ -1625,8 +1656,8 @@ export function renderContractorPortal(container, params) {
           people: t.people || 1,
           startDate: t.startDate || new Date().toISOString(),
           subTasks: t.subTasks ? deepCloneAndResetTasks(t.subTasks) : [],
-          assignedContractorIds: [],
-          assignedContractorId: null
+          assignedContractorIds: [contractor.id],
+          assignedContractorId: contractor.id
         };
       });
     }

@@ -72,6 +72,66 @@ Adds only what genuinely needs the internet:
 
 RELAY runs as a native desktop application (powered by Electron) or directly in the browser. In **local mode** all data persists to your device (localStorage) and never leaves it. Switch on **Cloud mode** and the same app syncs through Supabase (Postgres + auth + storage) to add multi-device access and the hosted portals. The free, offline experience is complete on its own — the cloud is an upgrade, not a requirement.
 
+### Portals and magic links
+
+The customer and contractor portals are the only pages reachable **without a
+session**, and RLS correctly withholds every row from a signed-out caller — so a
+portal cannot read the store the way a staff page does. Each link carries a token
+(`c_pt_` plus 32 hex digits, from `generatePortalToken()` in
+[portalLinks.js](./src/utils/portalLinks.js)), and the whole resolution happens
+server-side in the `relay-portal` edge function:
+
+- **The token is looked up server-side.** `supabase/functions/relay-portal`
+  reads it with the service role and returns only the rows that link is entitled
+  to. Nothing in the browser is trusted to decide scope, because an anonymous
+  visitor cannot read the tables in the first place.
+- **The answer carries an allow-listed slice of company settings**, not the blob.
+  `settings` is projected through `PUBLIC_SETTINGS_KEYS` in
+  [portal.js](./supabase/functions/relay-portal/portal.js) before it is serialised,
+  because the same blob also carries the tenant's `ai` provider key and their
+  `_subscription` record — and these responses reach an anonymous visitor. It is an
+  allow-list, so a settings key added later is withheld until somebody adds it here
+  deliberately.
+- **The store is filled from that answer.** `store.hydratePortalScope()` swaps the
+  in-memory collections to the visitor's scope, so the portal pages read
+  `store.getAll(…)` exactly as they always have. `src/main.js` clears the scope on
+  leaving the portal route, which restores the operator's own data.
+- **Every portal write goes back through the resolver**, which re-checks the
+  collection, the columns and ownership against the token before it touches a row.
+  Writes are queued in issue order, so a page that creates a row and then
+  references it cannot race itself.
+- **The PIN never leaves the server.** It is hashed and compared inside the
+  function, so the page never holds a digest it could judge. PIN attempts are
+  throttled from an access log, and each successful unlock mints a short-lived
+  grant that is the only thing a write will accept.
+- **A link is only valid once its token has been saved.** `customerPortalUrl()`
+  and `contractorPortalUrl()` await the write and hand back `null` if it was
+  refused, so an email or a copied link is never built on a token that is not on
+  file — issuing a link that was not stored silently invalidated every link
+  handed out before it.
+
+The first visitor to an unclaimed link sets its PIN. Regenerating a token issues
+a new link **and revokes the old one**, because the previous token no longer
+matches the stored row.
+
+Two steps are needed before this works against the live project, and neither can
+be done from the repository:
+
+```bash
+# 1. The token indexes, the portal access log, the grant table and the
+#    portal_contractor_job_ids() helper.
+supabase db push        # applies 042_portal_token_lookup.sql
+
+# 2. The resolver. JWT verification MUST be off — the visitor has no session.
+supabase functions deploy relay-portal --project-ref <ref> --no-verify-jwt
+```
+
+`--no-verify-jwt` is deliberate here and only here — a magic-link visitor has no
+session. The project's other public entry points (the lead endpoints, the Stripe
+webhook, `relay-create-payment`) run the same way, but a function that serves a
+signed-in user must never copy the flag; see
+[docs/SUPABASE_MIGRATION.md](./docs/SUPABASE_MIGRATION.md) §12a and §12c.
+
 ## Tech stack
 
 - **Frontend:** Vanilla JS (ES modules) + Vite — no framework tax, fast loads

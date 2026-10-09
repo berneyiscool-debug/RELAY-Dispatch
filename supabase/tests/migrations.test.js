@@ -39,6 +39,7 @@ const UPDATE_SCOPE_SQL = readFileSync(join(MIGRATIONS_DIR, '039_tighten_profiles
 const TRIAL_SQL = readFileSync(join(MIGRATIONS_DIR, '037_terms_and_trial.sql'), 'utf8');
 const LEADS_PIPELINE_SQL = readFileSync(join(MIGRATIONS_DIR, '040_leads_pipeline_fields.sql'), 'utf8');
 const LEADS_ACTIVITY_SQL = readFileSync(join(MIGRATIONS_DIR, '041_leads_activity_log.sql'), 'utf8');
+const PORTAL_LOOKUP_SQL = readFileSync(join(MIGRATIONS_DIR, '042_portal_token_lookup.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -1947,5 +1948,337 @@ describe('041 leads activity log', () => {
     );
 
     await db.exec("UPDATE public.leads SET activity_log = '[]'::jsonb WHERE message = 'B lead'");
+  });
+});
+
+describe('042 portal token lookup', () => {
+  let db;
+  let contractorAId;
+
+  const PORTAL_TOKEN = 'c_pt_4f2a9c0d1e3b5a7f8c6d2e4b0a1f3c5d';
+  const CONTRACTOR_TOKEN = 'c_pt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const CUSTOMER_A = 'cccccccc-0000-0000-0000-000000000042';
+  const CUSTOMER_DUP = 'cccccccc-0000-0000-0000-000000000043';
+  const CUSTOMER_BLANK = 'cccccccc-0000-0000-0000-000000000044';
+  const CUSTOMER_B = 'dddddddd-0000-0000-0000-000000000042';
+
+  // The fixture types jobs.id as uuid, so the job ids have to be uuids even though
+  // the live column is text — hence the RPC's explicit ::text.
+  const JOB = {
+    A1: '00000000-0000-0000-0000-0000000000a1',
+    A2: '00000000-0000-0000-0000-0000000000a2',
+    A3: '00000000-0000-0000-0000-0000000000a3',
+    A4: '00000000-0000-0000-0000-0000000000a4',
+    A5: '00000000-0000-0000-0000-0000000000a5',
+    B1: '00000000-0000-0000-0000-0000000000b1',
+  };
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+
+    // The fixture gives customers the generic (id, company_id, label) shape and
+    // has no contractors table at all, so restate the live shape this migration
+    // is written against before it runs. Contractors normally get portal_token
+    // from the tail of 015, which this harness does not execute.
+    await db.exec('ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS portal_token text;');
+    await db.exec(`CREATE TABLE public.contractors (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id uuid REFERENCES public.companies(id),
+      label text,
+      portal_token text
+    );`);
+
+    // jobs is likewise a stand-in; the assignment lookup needs the real columns.
+    await db.exec(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS status text DEFAULT 'Pending';
+      ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS tasks jsonb DEFAULT '[]'::jsonb;`);
+
+    // Pre-existing state the de-duplication has to cope with: one token shared by
+    // two records, a whitespace-only token, and token-less records.
+    await db.query(`INSERT INTO public.customers (id, company_id, label, portal_token) VALUES
+      ('${CUSTOMER_A}', '${TENANT_A}', 'A customer', '${PORTAL_TOKEN}'),
+      ('${CUSTOMER_DUP}', '${TENANT_A}', 'A duplicate', '${PORTAL_TOKEN}'),
+      ('${CUSTOMER_BLANK}', '${TENANT_A}', 'A blank', '   '),
+      ('${CUSTOMER_B}', '${TENANT_B}', 'B customer', NULL)`);
+    await db.query(`INSERT INTO public.contractors (company_id, label, portal_token) VALUES
+      ('${TENANT_A}', 'A contractor', '${CONTRACTOR_TOKEN}'),
+      ('${TENANT_A}', 'A contractor duplicate', '${CONTRACTOR_TOKEN}')`);
+
+    await db.exec(PORTAL_LOOKUP_SQL);
+
+    // Supabase's default privileges hand a newly created table to the client
+    // roles. The fixture has no default privileges, so grant them here or this
+    // table would be unreachable by privilege before RLS ever gets a say.
+    await db.exec(`GRANT SELECT, INSERT, UPDATE, DELETE ON public.portal_access_log TO anon, authenticated;
+      GRANT ALL ON public.portal_access_log TO service_role;
+      GRANT USAGE, SELECT ON SEQUENCE public.portal_access_log_id_seq TO anon, authenticated, service_role;`);
+
+    // Jobs for the contractor-assignment lookup. Mixed shapes on purpose: the walk
+    // has to cope with a nested subTask, the singular field, another contractor's
+    // task, another tenant, and a NULL tasks column.
+    contractorAId = await value(db, `SELECT id FROM public.contractors WHERE label = 'A contractor'`);
+    await db.query(`INSERT INTO public.jobs (id, company_id, label, status, tasks) VALUES
+      ('${JOB.A1}', '${TENANT_A}', 'Direct', 'Scheduled',
+       '[{"id":"t1","assignedContractorIds":["${contractorAId}"]}]'::jsonb),
+      ('${JOB.A2}', '${TENANT_A}', 'Nested', 'Scheduled',
+       '[{"id":"t2","subTasks":[{"id":"t3","assignedContractorId":"${contractorAId}"}]}]'::jsonb),
+      ('${JOB.A3}', '${TENANT_A}', 'Someone else', 'Scheduled',
+       '[{"id":"t4","assignedContractorIds":["other-contractor"]}]'::jsonb),
+      ('${JOB.A4}', '${TENANT_A}', 'Recurring template', 'Recurring Template',
+       '[{"id":"t5","assignedContractorIds":["${contractorAId}"]}]'::jsonb),
+      ('${JOB.B1}', '${TENANT_B}', 'Other tenant', 'Scheduled',
+       '[{"id":"t6","assignedContractorIds":["${contractorAId}"]}]'::jsonb),
+      ('${JOB.A5}', '${TENANT_A}', 'No tasks', 'Scheduled', NULL)`);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds a nullable text token column to both portal tables', async () => {
+    for (const table of ['customers', 'contractors']) {
+      const column = await one(
+        db,
+        `SELECT data_type, is_nullable FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = '${table}' AND column_name = 'portal_token'`
+      );
+      assert.ok(column, `${table}.portal_token should exist`);
+      assert.strictEqual(column.data_type, 'text');
+      assert.strictEqual(column.is_nullable, 'YES');
+    }
+  });
+
+  test('de-duplicates a shared token down to one record per token', async () => {
+    assert.strictEqual(
+      await value(db, `SELECT count(*)::int FROM public.customers WHERE portal_token = '${PORTAL_TOKEN}'`),
+      1
+    );
+    // Deterministic keeper: the lowest id, not an arbitrary row, so a re-run of
+    // the migration cannot flip which record owns the token.
+    assert.strictEqual(
+      await value(db, `SELECT id FROM public.customers WHERE portal_token = '${PORTAL_TOKEN}'`),
+      CUSTOMER_A
+    );
+    assert.strictEqual(
+      await value(db, `SELECT portal_token FROM public.customers WHERE id = '${CUSTOMER_DUP}'`),
+      null
+    );
+    assert.strictEqual(
+      await value(db, `SELECT count(*)::int FROM public.contractors WHERE portal_token IS NOT NULL`),
+      1
+    );
+  });
+
+  test('treats a whitespace-only token as absent', async () => {
+    assert.strictEqual(
+      await value(db, `SELECT portal_token FROM public.customers WHERE id = '${CUSTOMER_BLANK}'`),
+      null
+    );
+  });
+
+  test('the index is partial, so any number of records may have no token', async () => {
+    assert.strictEqual(
+      await value(db, 'SELECT count(*)::int FROM public.customers WHERE portal_token IS NULL'),
+      3
+    );
+  });
+
+  test('refuses a second record claiming a token that is already taken', async () => {
+    await assert.rejects(
+      () => db.query(`UPDATE public.customers SET portal_token = '${PORTAL_TOKEN}' WHERE id = '${CUSTOMER_B}'`),
+      /duplicate key|unique/i
+    );
+    assert.strictEqual(
+      await value(db, `SELECT portal_token FROM public.customers WHERE id = '${CUSTOMER_B}'`),
+      null
+    );
+  });
+
+  test('creates the access log with its throttling and tenant indexes, RLS on', async () => {
+    for (const index of ['portal_access_log_throttle_idx', 'portal_access_log_company_idx']) {
+      assert.strictEqual(
+        await value(db, `SELECT to_regclass('public.${index}') IS NOT NULL`),
+        true,
+        `${index} should exist`
+      );
+    }
+    assert.strictEqual(
+      await value(db, "SELECT relrowsecurity FROM pg_class WHERE relname = 'portal_access_log'"),
+      true
+    );
+    const kind = await one(
+      db,
+      `SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'portal_access_log' AND column_name = 'token_kind'`
+    );
+    assert.strictEqual(kind.is_nullable, 'NO');
+    // The token itself must never be logged - it is the bearer credential.
+    assert.strictEqual(
+      await value(db, `SELECT count(*)::int FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'portal_access_log' AND column_name = 'token'`),
+      0
+    );
+  });
+
+  test('the anon key cannot read the access log', async () => {
+    await db.query(`INSERT INTO public.portal_access_log (token_kind, record_id, company_id, outcome) VALUES
+      ('customer', '${CUSTOMER_A}', '${TENANT_A}', 'resolve'),
+      ('customer', 'not-ours', '${TENANT_B}', 'resolve')`);
+
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.portal_access_log'), 0);
+    });
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 0);
+    });
+  });
+
+  test('a tenant sees only its own access log', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.portal_access_log'), 1);
+      assert.strictEqual(
+        await value(db, `SELECT count(*)::int FROM public.portal_access_log WHERE company_id = '${TENANT_B}'`),
+        0
+      );
+    });
+  });
+
+  test('a tenant can neither forge nor erase a throttle entry', async () => {
+    const before = await value(db, 'SELECT count(*)::int FROM public.portal_access_log');
+
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      await assert.rejects(
+        () =>
+          db.query(`INSERT INTO public.portal_access_log (token_kind, record_id, company_id, outcome)
+                    VALUES ('customer', '${CUSTOMER_A}', '${TENANT_A}', 'passcode_fail')`),
+        /row-level security|policy/i
+      );
+      // The guarantee is that the counter survives, not that DELETE throws:
+      // with no DELETE policy the rows are simply not matched.
+      await db.query('DELETE FROM public.portal_access_log');
+    });
+
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.portal_access_log'), before);
+  });
+
+  test('is re-runnable and leaves every expected object present', async () => {
+    const results = await db.exec(PORTAL_LOOKUP_SQL);
+    const grid = results[results.length - 1].rows;
+    assert.strictEqual(grid.length, 9);
+    assert.deepStrictEqual(grid.filter((r) => r.is_present !== true).map((r) => r.object_name), []);
+
+    assert.strictEqual(
+      await value(db, `SELECT count(*)::int FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND indexname IN ('customers_portal_token_key', 'contractors_portal_token_key')`),
+      2
+    );
+  });
+
+  test('holds unlock state as an opaque, record-scoped grant, never as a boolean', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT relrowsecurity FROM pg_class WHERE relname = 'portal_sessions'"),
+      true
+    );
+    // No policies at all: grants are the service role's business alone.
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'portal_sessions'"),
+      0
+    );
+    // The digest is stored, not the grant itself.
+    assert.strictEqual(
+      await value(db, `SELECT count(*)::int FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'portal_sessions' AND column_name = 'grant_hash'`),
+      1
+    );
+    assert.strictEqual(
+      await value(db, `SELECT count(*)::int FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'portal_sessions' AND column_name = 'grant'`),
+      0
+    );
+
+    // Two live sessions must never collide on one digest.
+    await db.query(`INSERT INTO public.portal_sessions (token_kind, record_id, grant_hash, expires_at)
+                    VALUES ('customer', 'a', 'same-digest', now() + interval '1 hour')`);
+    await assert.rejects(
+      () => db.query(`INSERT INTO public.portal_sessions (token_kind, record_id, grant_hash, expires_at)
+                      VALUES ('customer', 'a', 'same-digest', now() + interval '1 hour')`),
+      /duplicate key|unique/i
+    );
+  });
+
+  test('a client cannot read or forge grants even with table privileges', async () => {
+    // Supabase's default grants would hand this table to anon/authenticated, so
+    // grant them deliberately here: RLS with no policies is the only thing
+    // standing between a client and a grant, and this proves that is enough.
+    await db.exec('GRANT SELECT, INSERT ON public.portal_sessions TO anon, authenticated;');
+    await db.query(`INSERT INTO public.portal_sessions (token_kind, record_id, company_id, grant_hash, expires_at)
+                    VALUES ('customer', '${CUSTOMER_A}', '${TENANT_A}', 'digest-a', now() + interval '1 hour')`);
+
+    for (const uid of [null, ADMIN_A]) {
+      await asRole(db, uid ? 'authenticated' : 'anon', uid, async () => {
+        assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.portal_sessions'), 0);
+        await assert.rejects(
+          () =>
+            db.query(`INSERT INTO public.portal_sessions (token_kind, record_id, grant_hash, expires_at)
+                      VALUES ('customer', '${CUSTOMER_A}', 'forged', now() + interval '1 hour')`),
+          /row-level security|policy/i
+        );
+      });
+    }
+  });
+
+  test('never touches records, only tokens', async () => {
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 4);
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.contractors'), 2);
+  });
+
+  describe('portal_contractor_job_ids', () => {
+    const ids = async (company, contractor) => {
+      const { rows } = await db.query(
+        `SELECT public.portal_contractor_job_ids('${company}'::uuid, '${contractor}') AS id`
+      );
+      return rows.map((r) => r.id).sort();
+    };
+
+    test('finds a job through the task walk, however the task is nested', async () => {
+      assert.deepStrictEqual(await ids(TENANT_A, contractorAId), [JOB.A1, JOB.A2].sort());
+    });
+
+    test('never reaches across tenants', async () => {
+      // JOB.B1 carries the same contractor id but belongs to tenant B; a token
+      // holder must not be able to enumerate another business's jobs.
+      assert.ok(!(await ids(TENANT_B, contractorAId)).includes(JOB.A1));
+      assert.deepStrictEqual(await ids(TENANT_B, contractorAId), [JOB.B1]);
+      assert.ok(!(await ids(TENANT_A, contractorAId)).includes(JOB.B1));
+    });
+
+    test('drops recurring templates, other contractors and task-less jobs', async () => {
+      const found = await ids(TENANT_A, contractorAId);
+      assert.ok(!found.includes(JOB.A4), 'recurring template should be excluded');
+      assert.ok(!found.includes(JOB.A3), 'another contractor\'s task should not match');
+      // JOB.A5 has a NULL tasks column; lax jsonpath must skip it, not raise.
+      assert.ok(!found.includes(JOB.A5));
+    });
+
+    test('matches nothing for an empty or missing contractor id', async () => {
+      assert.deepStrictEqual(await ids(TENANT_A, ''), []);
+    });
+
+    test('is not executable by a client role, however privileged', async () => {
+      for (const role of ['anon', 'authenticated']) {
+        assert.strictEqual(
+          await value(db, `SELECT has_function_privilege('${role}', 'public.portal_contractor_job_ids(uuid,text)', 'EXECUTE')`),
+          false,
+          `${role} must not be able to run the lookup directly`
+        );
+      }
+      assert.strictEqual(
+        await value(db, "SELECT has_function_privilege('service_role', 'public.portal_contractor_job_ids(uuid,text)', 'EXECUTE')"),
+        true
+      );
+    });
   });
 });

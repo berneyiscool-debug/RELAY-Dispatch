@@ -2,6 +2,9 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { store } from './store.js';
 import { supabase } from '../utils/supabase.js';
+import {
+  rejectedColumns, isWritableCollection, canInsert, canUpdate
+} from '../../supabase/functions/relay-portal/portal.js';
 
 // Mock Supabase client database operations to return success and avoid console logs/errors
 supabase.from = () => ({
@@ -1083,5 +1086,473 @@ describe('migrateLocalToCloud', () => {
         assert.deepStrictEqual(store.getAll('technicians'), [{ id: `${ACCOUNT}_tech_1`, name: 'Jake Morrow' }]);
       });
     });
+  });
+});
+
+// A portal visitor is anonymous, so the portals cannot use the direct Supabase calls
+// the rest of the store relies on: there is no session to authorise them. Every read
+// and write made from a portal is routed through the relay-portal edge function and it
+// re-checks the collection, the columns and ownership on each call. That function lives
+// in JavaScript under supabase/functions and has no access to the store's TABLE_COLUMNS,
+// so its write allow-list is a hand-maintained mirror of what these pages actually send.
+//
+// These tests replay the exact payloads the portals build and assert the allow-list
+// accepts them. Without this the two lists drift apart silently and portal writes start
+// being refused after a deploy.
+describe('portal scope', () => {
+  const savedLocalStorage = globalThis.localStorage;
+  const savedSessionStorage = globalThis.sessionStorage;
+  const localMem = new Map();
+  const sessionMem = new Map();
+
+  const CUSTOMER_TOKEN = 'c_pt_0123456789abcdef0123456789abcdef';
+  const CONTRACTOR_TOKEN = 'c_pt_fedcba9876543210fedcba9876543210';
+  const grant = 'a'.repeat(64);
+
+  const memoryStore = (map) => ({
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => { map.set(key, String(value)); },
+    removeItem: (key) => { map.delete(key); }
+  });
+
+  // Replacement for the edge function. Records each call so a test can assert on the
+  // payload the resolver would have received, and can be told to refuse.
+  const stubInvoke = (respond) => {
+    const calls = [];
+    const originalInvoke = supabase.functions.invoke;
+    supabase.functions.invoke = async (name, options) => {
+      calls.push({ name, body: options.body });
+      const result = respond ? respond(options.body) : { data: { ok: true } };
+      return result || { data: { ok: true } };
+    };
+    return { calls, restore: () => { supabase.functions.invoke = originalInvoke; } };
+  };
+
+  // store.create() / store.update() are fire-and-forget, and the write is queued so a
+  // page's writes land in the order it issued them. Their follow-up work — the rollback
+  // or the dedupe swap below — hangs off the write promise rather than being part of the
+  // queue, so settle the queue and then let those microtasks run before asserting on what
+  // the resolver was sent or what the cache holds.
+  const flushWrites = async () => {
+    await store._portalQueue;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  // The customer record plus the bundle the resolver would return, as raw snake_case
+  // rows, which is what the client normalises.
+  const customerRow = {
+    id: 'company-a_cust_1',
+    company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    company: 'Northbridge Facilities',
+    first_name: 'Priya',
+    last_name: 'Raman',
+    email: 'priya@northbridge.example',
+    phone: '0400 000 000',
+    address: '12 Sample St',
+    status: 'Active',
+    type: 'Company',
+    portal_token: CUSTOMER_TOKEN,
+    portal_passcode: 'sha256$aa$bb',
+    portal_last_accessed: null,
+    created_at: '2026-01-05T00:00:00.000Z',
+    updated_at: '2026-01-05T00:00:00.000Z'
+  };
+
+  const jobRow = {
+    id: 'company-a_job_1',
+    company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    number: 'J-00007',
+    customer_id: 'company-a_cust_1',
+    customer_name: 'Northbridge Facilities',
+    title: 'Switchboard upgrade',
+    type: 'Electrical',
+    status: 'In Progress',
+    tasks: [],
+    notes: null,
+    created_at: '2026-01-06T00:00:00.000Z',
+    updated_at: '2026-01-06T00:00:00.000Z'
+  };
+
+  const quoteRow = {
+    id: 'company-a_quote_1',
+    company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    number: 'Q-00003',
+    customer_id: 'company-a_cust_1',
+    customer_name: 'Northbridge Facilities',
+    status: 'Sent',
+    line_items: [{ id: 'li_1', description: 'Labour', total: 120 }],
+    created_at: '2026-01-07T00:00:00.000Z',
+    updated_at: '2026-01-07T00:00:00.000Z'
+  };
+
+  const settings = { name: 'Apex Power Services', enableCustomerPortal: true };
+
+  const hydrateCustomer = () => store.hydratePortalScope({
+    kind: 'customer',
+    token: CUSTOMER_TOKEN,
+    grant,
+    record: customerRow,
+    settings,
+    tables: { jobs: [jobRow], quotes: [quoteRow], invoices: [], assets: [], maintenancePlans: [] }
+  });
+
+  beforeEach(() => {
+    localMem.clear();
+    sessionMem.clear();
+    globalThis.localStorage = memoryStore(localMem);
+    globalThis.sessionStorage = memoryStore(sessionMem);
+    store.clearSync();
+    store.listeners = {};
+    store.portalScope = null;
+    store._portalQueue = Promise.resolve();
+    store.db = null;
+  });
+
+  afterEach(() => {
+    if (savedLocalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = savedLocalStorage;
+    if (savedSessionStorage === undefined) delete globalThis.sessionStorage;
+    else globalThis.sessionStorage = savedSessionStorage;
+    store.clearSync();
+    store.portalScope = null;
+    store._portalQueue = Promise.resolve();
+    store.db = null;
+  });
+
+  test('serves the resolver bundle as normalised records', () => {
+    hydrateCustomer();
+
+    const customer = store.getById('customers', 'company-a_cust_1');
+    assert.strictEqual(customer.firstName, 'Priya');
+    assert.strictEqual(customer.portalToken, CUSTOMER_TOKEN);
+    // The whole point: an anonymous visitor sees the customer at all.
+    assert.strictEqual(store.getAll('jobs').length, 1);
+    assert.strictEqual(store.getAll('quotes').length, 1);
+    assert.deepStrictEqual(store.getAll('assets'), []);
+  });
+
+  test('normalises the resolver rows to the shapes the pages expect', () => {
+    hydrateCustomer();
+    const customer = store.getById('customers', 'company-a_cust_1');
+    assert.strictEqual(customer.firstName, 'Priya');
+    assert.strictEqual(customer.companyId, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+    // The resolver strips portal_passcode / portal_token (projectRecord); what it does
+    // send is camelCased here so the pages need no knowledge of the wire format.
+    assert.strictEqual(store.getById('jobs', 'company-a_job_1').customerId, 'company-a_cust_1');
+    assert.strictEqual(store.getById('quotes', 'company-a_quote_1').customerName, 'Northbridge Facilities');
+    assert.ok(!('customer_id' in store.getById('jobs', 'company-a_job_1')));
+  });
+
+  test('settings come from the token company, not the visitor', () => {
+    hydrateCustomer();
+    assert.strictEqual(store.getSettings().name, 'Apex Power Services');
+    assert.strictEqual(store.getSettings().enableCustomerPortal, true);
+  });
+
+  test('refuses a full-collection save', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      await store.save('customers', [{ id: 'company-a_cust_1', firstName: 'Overwritten' }]);
+      assert.strictEqual(calls.length, 0);
+      assert.strictEqual(store.getById('customers', 'company-a_cust_1').firstName, 'Priya');
+    } finally { restore(); }
+  });
+
+  test('refuses a delete', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      await store.delete('jobs', 'company-a_job_1');
+      assert.strictEqual(calls.length, 0);
+      assert.strictEqual(store.getAll('jobs').length, 1);
+    } finally { restore(); }
+  });
+
+  test('a portal update sends only the changed columns', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      // Portal.js:1801 — the customer posts a comment on a job. The entry is held in
+      // customerActivityLog, which the store packs into the job's `notes` column.
+      const job = store.getById('jobs', 'company-a_job_1');
+      const log = [...(job.customerActivityLog || []), { id: 'a1', content: 'Any update?', isCustomer: true }];
+      const result = await store.update('jobs', job.id, { customerActivityLog: log });
+
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(calls.length, 1);
+      const body = calls[0].body;
+      assert.strictEqual(body.action, 'write');
+      assert.strictEqual(body.kind, 'customer');
+      assert.strictEqual(body.token, CUSTOMER_TOKEN);
+      assert.strictEqual(body.grant, grant);
+      assert.deepStrictEqual(Object.keys(body.payload).sort(), ['notes', 'updated_at']);
+      assert.match(body.payload.notes, /Any update\?/);
+      assert.deepStrictEqual(rejectedColumns('customer', 'jobs', body.payload), []);
+    } finally { restore(); }
+  });
+
+  test('a portal update always carries the changed value plus the timestamp', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      const customer = store.getById('customers', 'company-a_cust_1');
+      const result = await store.update('customers', customer.id, { firstName: 'Priya' });
+      assert.strictEqual(result.ok, true);
+      // update() stamps updatedAt on every call, so even a re-send of the same value
+      // is a one-column write rather than a no-op.
+      assert.strictEqual(calls.length, 1);
+      assert.deepStrictEqual(Object.keys(calls[0].body.payload), ['updated_at']);
+    } finally { restore(); }
+  });
+
+  test('rolls the cache back when the resolver refuses an update', async () => {
+    hydrateCustomer();
+    const { restore } = stubInvoke(() => ({ data: { ok: false, error: 'Refused.' } }));
+    try {
+      const job = store.getById('jobs', 'company-a_job_1');
+      const result = await store.update('jobs', job.id, {
+        customerActivityLog: [{ id: 'a1', content: 'Nope', isCustomer: true }]
+      });
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(store.getById('jobs', 'company-a_job_1').customerActivityLog, undefined);
+    } finally { restore(); }
+  });
+
+  test('returns null for an id outside the bundle', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      // Same contract as the staff path: an id the cache does not hold is not found.
+      const result = store.update('jobs', 'company-a_job_999', { status: 'Complete' });
+      assert.strictEqual(result, null);
+      assert.strictEqual(calls.length, 0);
+    } finally { restore(); }
+  });
+
+  test('the resolver accepts every notification a portal raises', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      // Portal.js:1824 and :1876 — quote accepted / declined. Both also set `source`
+      // and `createdBy`, which are not columns and never reach the payload.
+      store.create('notifications', {
+        title: 'Quote Approved via Portal',
+        message: 'Proposal Q-00003 approved by Northbridge Facilities via portal link',
+        link: '/quotes/company-a_quote_1',
+        read: false,
+        source: 'customer_portal',
+        createdBy: 'Customer (Portal)',
+        createdAt: new Date().toISOString(),
+        status: 'Pending'
+      });
+
+      // Portal.js:1997 — a service request carries more of the notification's own
+      // columns plus the contact and asset it refers to.
+      store.create('notifications', {
+        title: 'Service Request: Repair',
+        message: 'Request from Northbridge Facilities via portal',
+        description: 'Request Type: Repair',
+        read: false,
+        source: 'customer_portal',
+        createdBy: 'Customer (Portal)',
+        type: 'Client Request',
+        priority: 'High',
+        status: 'Pending',
+        customerId: customerRow.id,
+        customerName: customerRow.company,
+        contactName: 'Priya Raman',
+        siteName: '12 Sample St',
+        assetId: '',
+        createdAt: new Date().toISOString()
+      });
+
+      await flushWrites();
+      assert.strictEqual(calls.length, 2);
+      calls.forEach(({ body }) => {
+        assert.strictEqual(body.collection, 'notifications');        assert.deepStrictEqual(rejectedColumns('customer', 'notifications', body.payload, 'insert'), []);
+        assert.ok(body.payload.number, 'expected the store to stamp a notification number');
+        assert.ok(!('source' in body.payload), 'source is not a column and must be stripped');
+        assert.ok(!('created_by' in body.payload), 'created_by is stamped by the resolver');
+        assert.strictEqual(store.getById('notifications', body.payload.id).createdBy, 'Customer (Portal)');
+        assert.ok(!('company_id' in body.payload), 'company_id is stamped by the resolver');
+      });
+    } finally { restore(); }
+  });
+
+  test('a customer portal may not create a job', () => {
+    hydrateCustomer();
+    // A service request becomes a notification, never a job, so the resolver refuses
+    // the insert outright rather than relying on a column check.
+    assert.strictEqual(canInsert('customer', 'jobs'), false);
+    assert.strictEqual(canUpdate('customer', 'jobs'), true);
+    assert.strictEqual(canInsert('customer', 'customers'), false);
+    assert.strictEqual(canInsert('customer', 'quotes'), false);
+  });
+
+  test('the resolver accepts the contractor B2B import', async () => {
+    const contractorRow = {
+      id: 'company-a_cont_1',
+      company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      name: 'Delta Electrical',
+      portal_token: CONTRACTOR_TOKEN,
+      portal_passcode: null,
+      created_at: '2026-01-05T00:00:00.000Z',
+      updated_at: '2026-01-05T00:00:00.000Z'
+    };
+    store.hydratePortalScope({
+      kind: 'contractor',
+      token: CONTRACTOR_TOKEN,
+      grant,
+      record: contractorRow,
+      settings,
+      tables: { jobs: [] }
+    });
+
+    const { calls, restore } = stubInvoke();
+    try {
+      // ContractorPortal.js:1598 — the office the contractor works for, created once.
+      store.create('customers', {
+        id: 'cust_b2b_abc123',
+        company: 'Apex Power Services',
+        firstName: 'Operations',
+        lastName: 'Staff',
+        email: 'dispatch@apex.example',
+        phone: '',
+        address: '',
+        status: 'Active',
+        type: 'Company',
+        notes: 'Auto-created customer representing our parent company during subcontractor B2B job imports.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      // ContractorPortal.js:1646 — the imported job.
+      store.create('jobs', {
+        id: 'job_b2b_def456',
+        number: store.getNextNumber('J-', 'jobs'),
+        customerId: 'cust_b2b_abc123',
+        customerName: 'Apex Power Services',
+        contactName: 'Operations Staff',
+        siteAddress: '9 Depot Rd',
+        title: '[B2B Dispatch] J-00011 - Cable tray',
+        type: 'Electrical',
+        status: 'Pending',
+        priority: 'Medium',
+        scheduledDate: '2026-02-01',
+        estimatedHours: 4,
+        laborCost: 480,
+        materialCost: 120,
+        tasks: [{ id: 'b2bt_1', name: 'Isolate', status: 'Not Started', subTasks: [], assignedContractorIds: [contractorRow.id], assignedContractorId: contractorRow.id }],
+        notes: 'Imported via magic-link B2B Dispatch API.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      await flushWrites();
+      assert.strictEqual(calls.length, 2);
+
+      const customerWrite = calls[0].body;
+      assert.strictEqual(customerWrite.collection, 'customers');
+      assert.deepStrictEqual(rejectedColumns('contractor', 'customers', customerWrite.payload, 'insert'), []);
+      // customers has no `notes` column, so the store strips it — as it does for staff.
+      assert.ok(!('notes' in customerWrite.payload));
+
+      const jobWrite = calls[1].body;
+      assert.strictEqual(jobWrite.collection, 'jobs');
+      assert.deepStrictEqual(rejectedColumns('contractor', 'jobs', jobWrite.payload, 'insert'), []);
+      assert.ok('tasks' in jobWrite.payload);
+      assert.ok(!('company_id' in jobWrite.payload));
+      // A contractor never creates a customer the office already has, nor a contractor row.
+      assert.strictEqual(canInsert('contractor', 'contractors'), false);
+      assert.strictEqual(canInsert('contractor', 'quotes'), false);
+    } finally { restore(); }
+  });
+
+  test('a refused create is removed from the cache again', async () => {
+    hydrateCustomer();
+    const { restore } = stubInvoke(() => ({ data: { ok: false, error: 'Refused.' } }));
+    try {
+      const before = store.getAll('notifications').length;
+      store.create('notifications', { title: 'Quote Approved via Portal', status: 'Pending' });
+      await flushWrites();
+      assert.strictEqual(store.getAll('notifications').length, before);
+    } finally { restore(); }
+  });
+
+  // The B2B import creates the office customer and then jobs that reference it, both
+  // without awaiting. Issued in parallel the second request can reach the database first
+  // and be refused for pointing at a row that does not exist yet.
+  test('a page’s writes reach the resolver in the order they were made', async () => {
+    hydrateCustomer();
+    const order = [];
+    let release;
+    const first = new Promise((resolve) => { release = resolve; });
+    const { calls, restore } = stubInvoke((body) => {
+      order.push(body.collection);
+      // Hold the first request open so a parallel second one would overtake it.
+      return body.collection === 'notifications' ? first.then(() => ({ data: { ok: true } })) : { data: { ok: true } };
+    });
+    try {
+      store.create('notifications', { title: 'First', status: 'Pending' });
+      store.create('notifications', { title: 'Second', status: 'Pending' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.strictEqual(calls.length, 1, 'the second write waits for the first');
+
+      release();
+      await flushWrites();
+      assert.deepStrictEqual(order, ['notifications', 'notifications']);
+      assert.strictEqual(calls.length, 2);
+    } finally { restore(); }
+  });
+
+  // The resolver refuses to add a second customer for an office already on file and
+  // answers with the row it found, so the id the page invented never existed.
+  test('a deduplicated create swaps the optimistic row for the real one', async () => {
+    hydrateCustomer();
+    const existing = {
+      id: 'company-a_cust_9',
+      company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      company: 'Apex Power Services',
+      first_name: 'Operations',
+      last_name: 'Staff',
+      email: 'dispatch@apex.example',
+      phone: '',
+      address: '',
+      status: 'Active',
+      type: 'Company',
+      created_at: '2026-01-05T00:00:00.000Z',
+      updated_at: '2026-01-05T00:00:00.000Z'
+    };
+    const { restore } = stubInvoke(() => ({ data: { ok: true, record: existing, existing: true } }));
+    try {
+      store.create('customers', { id: 'cust_b2b_abc123', company: 'Apex Power Services', type: 'Company' });
+      await flushWrites();
+
+      assert.strictEqual(store.getById('customers', 'cust_b2b_abc123'), null);
+      const kept = store.getById('customers', 'company-a_cust_9');
+      assert.ok(kept, 'the row the resolver kept should be in the cache');
+      assert.strictEqual(kept.companyId, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+    } finally { restore(); }
+  });
+
+  test('the resolver refuses collections no portal has any business writing', () => {
+    hydrateCustomer();
+    assert.strictEqual(isWritableCollection('customer', 'technicians'), false);
+    assert.strictEqual(isWritableCollection('customer', 'timesheets'), false);
+    assert.strictEqual(isWritableCollection('customer', 'invoices'), false);
+    assert.strictEqual(isWritableCollection('contractor', 'notifications'), false);
+  });
+
+  test('leaving the portal restores the signed-in store', async () => {
+    hydrateCustomer();
+    assert.ok(store.portalScope);
+    localMem.set('currentUser', JSON.stringify({ id: 'acct_1_admin', name: 'Dana', companyId: 'acct_1' }));
+
+    await store.clearPortalScope();
+
+    assert.strictEqual(store.portalScope, null);
+    // Back on the local path, and the visitor bundle is gone.
+    assert.strictEqual(store.companySettings, null);
   });
 });

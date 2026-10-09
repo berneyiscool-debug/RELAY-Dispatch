@@ -10,6 +10,15 @@ import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
 const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
 
+// Structural comparison for the jsonb-backed columns (tasks, line_items, the packed
+// `notes` meta blob), which are objects and arrays rather than scalars.
+function jsonEqual(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 
 // Table name mappings to match local collection keys with PostgreSQL tables
 const TABLE_MAP = {
@@ -108,6 +117,7 @@ const TABLE_COLUMNS = {
     "type",
     "portal_token",
     "portal_passcode",
+    "portal_last_accessed",
     "geo",
     "created_at",
     "updated_at"
@@ -295,6 +305,7 @@ const TABLE_COLUMNS = {
     "notes",
     "portal_token",
     "portal_passcode",
+    "portal_last_accessed",
     "compliance_docs",
     "created_at",
     "updated_at"
@@ -584,6 +595,8 @@ class DataStore {
     this.subscriptions = [];
     this.initPromise = null;
     this.db = null;
+    this.portalScope = null;
+    this._portalQueue = Promise.resolve();
     this.dirHandle = null;
     this.folderSyncEnabled = typeof localStorage !== 'undefined'
       ? localStorage.getItem(this.getStorageKey('folder_sync_enabled')) === 'true'
@@ -663,6 +676,9 @@ class DataStore {
   }
 
   async initializeUser(user) {
+    // Signing in ends any portal scope: the visitor is no longer the anonymous
+    // holder of a magic link, and their writes must go back to the staff path.
+    this.portalScope = null;
     if (user && user.companyId && !user.companyId.startsWith('acct_')) {
       this.userId = user.id;
       this.companyId = user.companyId;
@@ -1533,6 +1549,126 @@ class DataStore {
     });
   }
 
+  // ── Portal scope (anonymous magic-link visitor) ────────────────────────────
+  // A portal visitor has no session, so the boot path above hands them an empty
+  // local store: every read returns nothing and every write lands in their own
+  // IndexedDB while the database never hears about it. A portal scope replaces
+  // both. The resolver has already decided which rows the visitor may see, so the
+  // scope is filled from its answer and every write is routed back through it.
+  hydratePortalScope({ kind, token, record, settings, tables, grant } = {}) {
+    this.clearSync();
+    this._portalQueue = Promise.resolve();
+    this.portalScope = {
+      kind: kind || null,
+      token: token || null,
+      recordId: record?.id || null,
+      grant: grant || null,
+    };
+    this.companySettings = settings || {};
+
+    const rows = { ...(tables || {}) };
+    if (record) rows[kind === 'contractor' ? 'contractors' : 'customers'] = [record];
+
+    Object.entries(rows).forEach(([collection, items]) => {
+      if (!(collection in TABLE_MAP)) return;
+      const list = (items || []).map(item => this.normalizeRecord(item, collection));
+      this.cache[collection] = list;
+      this.emit(collection, list);
+    });
+
+    return this.portalScope;
+  }
+
+  // Leaving a portal has to restore whatever the tab was before it, and a hash route
+  // change does not reload the page — so an operator who opens a customer's link and
+  // navigates away gets their own data back rather than an empty store. Pending writes
+  // are allowed to finish first: their rollback handlers edit this.cache, and by then
+  // it holds the operator's rows again.
+  async clearPortalScope() {
+    if (!this.portalScope) return;
+    await this._portalQueue;
+    this.portalScope = null;
+    const bootUser = typeof localStorage !== 'undefined'
+      ? JSON.parse(localStorage.getItem('currentUser') || 'null')
+      : null;
+    this.initPromise = this.initializeUser(bootUser);
+    return this.initPromise;
+  }
+
+  // The visitor's only path to the database. The resolver re-checks the collection,
+  // the columns and ownership on every call, and a refusal is returned rather than
+  // thrown so the result shape matches the local write paths below.
+  async _portalWrite(collection, { id, payload }) {
+    const scope = this.portalScope || {};
+    // Writes are chained rather than fired in parallel. The pages issue them
+    // fire-and-forget, so two calls made in sequence (create the customer, then the
+    // job that references it) would otherwise race and the second could be refused
+    // for pointing at a row the first had not committed yet.
+    const send = async () => {
+      const { data, error } = await supabase.functions.invoke('relay-portal', {
+        body: {
+          action: 'write',
+          kind: scope.kind,
+          token: scope.token,
+          grant: scope.grant,
+          collection,
+          ...(id !== undefined && id !== null ? { id } : {}),
+          payload,
+        },
+      });
+      if (error) return { ok: false, error };
+      if (!data || data.ok !== true) {
+        return { ok: false, error: data?.error || 'That change was not permitted.', status: data?.status };
+      }
+      return { ok: true, record: data.record, existing: data.existing === true };
+    };
+    const result = this._portalQueue.then(send, send);
+    // Keep the chain alive after a refusal so one rejected write cannot stall the rest.
+    this._portalQueue = result.then(() => {}, () => {});
+    return result;
+  }
+
+  // Send only what changed. denormalizeRecord emits the record's own fields, and the
+  // resolver's write allow-list rejects anything outside it, so diffing the
+  // denormalised before/after reduces a one-field edit to a one-column payload — and
+  // it handles the packed columns (tasks, line_items, the `notes` meta blob) for free.
+  _changedColumns(collection, previous, next) {
+    const before = this.denormalizeRecord(previous, collection);
+    const after = this.denormalizeRecord(next, collection);
+    const changes = {};
+    Object.keys(after).forEach(key => {
+      // id identifies the row and company_id is stamped by the resolver from the
+      // token's own record, never from the request.
+      if (key === 'id' || key === 'company_id') return;
+      if (!jsonEqual(before[key], after[key])) changes[key] = after[key];
+    });
+    return changes;
+  }
+
+  _portalUpdate(collection, id, updates) {
+    const items = [...(this.cache[collection] || [])];
+    const index = items.findIndex(item => item.id === id);
+    if (index === -1) return null;
+
+    const previous = items[index];
+    const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
+    items[index] = updated;
+    this.cache[collection] = items;
+    this.emit(collection, items);
+
+    const payload = this._changedColumns(collection, previous, updated);
+    if (!Object.keys(payload).length) return Promise.resolve({ ok: true, record: updated });
+
+    return this._portalWrite(collection, { id, payload }).then(result => {
+      if (result.ok) return { ok: true, record: updated };
+      const arr = [...(this.cache[collection] || [])];
+      const i = arr.findIndex(x => x.id === id);
+      if (i !== -1) { arr[i] = previous; this.cache[collection] = arr; this.emit(collection, arr); }
+      this._notifyWriteError('update', collection, result.error);
+      return result;
+    });
+  }
+
   // Normalization Helpers (translates snake_case keys from Postgres -> camelCase for frontend)
   normalizeData(data, collection) {
     return data.map(item => this.normalizeRecord(item, collection));
@@ -1593,6 +1729,10 @@ class DataStore {
     if (record.portal_passcode !== undefined) {
       record.portalPasscode = record.portal_passcode;
       delete record.portal_passcode;
+    }
+    if (record.portal_last_accessed !== undefined) {
+      record.portalLastAccessed = record.portal_last_accessed;
+      delete record.portal_last_accessed;
     }
     if (record.owner_type !== undefined) {
       record.ownerType = record.owner_type;
@@ -2195,6 +2335,10 @@ class DataStore {
     if (record.portalPasscode !== undefined) {
       record.portal_passcode = record.portalPasscode;
       delete record.portalPasscode;
+    }
+    if (record.portalLastAccessed !== undefined) {
+      record.portal_last_accessed = record.portalLastAccessed;
+      delete record.portalLastAccessed;
     }
     if (record.ownerType !== undefined) {
       record.owner_type = record.ownerType;
@@ -2815,6 +2959,39 @@ class DataStore {
       item.companyId = this.companyId;
     }
 
+    // A portal visitor is anonymous: the cloud insert below would be attempted with
+    // no session, and the local branch would put the row in the visitor's own
+    // IndexedDB. Either way the database never hears about it. Ask the resolver.
+    if (this.portalScope) {
+      const items = [...(this.cache[collection] || []), item];
+      this.cache[collection] = items;
+      this.emit(collection, items);
+      const payload = this.denormalizeRecord(item, collection);
+      // company_id and created_by are stamped by the resolver from the token, not
+      // taken from the page — `created_by` decides whether the bell treats the record
+      // as machine-generated, so it is not the portal's to set.
+      delete payload.company_id;
+      delete payload.created_by;
+      this._portalWrite(collection, { payload }).then(result => {
+        if (result.ok) {
+          // The resolver refuses to add a second row for something already on file
+          // (the B2B import's office customer) and answers with the row it found, so
+          // the optimistic row — carrying an id the database never saw — is replaced
+          // by the real one rather than left sitting in the cache.
+          if (result.existing && result.record) {
+            this.cache[collection] = (this.cache[collection] || [])
+              .map(x => x.id === item.id ? this.normalizeRecord(result.record, collection) : x);
+            this.emit(collection, this.cache[collection]);
+          }
+          return;
+        }
+        this.cache[collection] = (this.cache[collection] || []).filter(x => x.id !== item.id);
+        this.emit(collection, this.cache[collection]);
+        this._notifyWriteError('save', collection, result.error);
+      });
+      return item;
+    }
+
     // Blocked here rather than at the top of the method: the identity above is
     // already stamped, and callers read .id/.number straight off the returned
     // item, so refusing earlier would hand back a record with neither. Nothing
@@ -2932,6 +3109,10 @@ class DataStore {
   }
 
   update(collection, id, updates) {
+    // A portal visitor is anonymous, so the local branch below would write to their
+    // own IndexedDB and the cloud branch would be attempted without a session —
+    // either way the database never hears about it. Ask the resolver instead.
+    if (this.portalScope) return this._portalUpdate(collection, id, updates);
     // Returns null like the not-found path below, which callers already handle.
     if (this._readOnlyBlocked(collection)) return null;
     const items = [...(this.cache[collection] || [])];
@@ -3114,6 +3295,12 @@ class DataStore {
   }
 
   delete(collection, id) {
+    // Deleting is not something a portal may do, and the local branch below would
+    // otherwise report success against the visitor's own IndexedDB.
+    if (this.portalScope) {
+      console.warn(`Blocked delete of ${collection} from a portal scope.`);
+      return;
+    }
     // Ahead of the cascade so children are left alone too.
     if (this._readOnlyBlocked(collection)) return;
 
@@ -3499,6 +3686,12 @@ class DataStore {
   }
 
   async save(collection, items) {
+    // A full-collection save is a staff operation. From a portal it would write the
+    // visitor's own partial view of one customer back over the whole book.
+    if (this.portalScope) {
+      console.warn(`Blocked full-collection save of ${collection} from a portal scope.`);
+      return;
+    }
     if (this._readOnlyBlocked(collection)) return;
     const prev = this.cache[collection] || [];
     this.cache[collection] = items;

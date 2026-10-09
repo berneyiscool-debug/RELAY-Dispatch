@@ -1043,7 +1043,7 @@ export function renderInvoiceDetail(container, params) {
               if (paymentsEnabledFor('invoice')) {
                 try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
               }
-              const { subject, html } = invoiceEmail(invoice, { payUrl, portalUrl: portalUrlForDocument(invoice) });
+              const { subject, html } = invoiceEmail(invoice, { payUrl, portalUrl: await portalUrlForDocument(invoice) });
               const attachments = await documentAttachment('invoice', invoice);
               await sendEmail({ to, subject, html, attachments, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
             }
@@ -1156,7 +1156,7 @@ export function renderInvoiceDetail(container, params) {
             if (paymentsEnabledFor('invoice')) {
               try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
             }
-            const { subject, html } = invoiceEmail(invoice, { payUrl, portalUrl: portalUrlForDocument(invoice) });
+            const { subject, html } = invoiceEmail(invoice, { payUrl, portalUrl: await portalUrlForDocument(invoice) });
             const attachments = await documentAttachment('invoice', invoice);
             await sendEmail({ to, subject, html, attachments, template: 'invoice', relatedType: 'invoice', relatedId: invoice.id });
             showToast(`Invoice emailed to ${to}`, 'success');
@@ -1239,7 +1239,7 @@ export function renderInvoiceDetail(container, params) {
             if (paymentsEnabledFor('invoice')) {
               try { const r = await createInvoicePaymentLink(invoice); payUrl = r.url; } catch (_) { /* email without a pay link */ }
             }
-            const { subject, html } = reminderEmail(invoice, { payUrl, portalUrl: portalUrlForDocument(invoice) });
+            const { subject, html } = reminderEmail(invoice, { payUrl, portalUrl: await portalUrlForDocument(invoice) });
             const attachments = await documentAttachment('invoice', invoice);
             await sendEmail({ to, subject, html, attachments, template: 'reminder', relatedType: 'invoice', relatedId: invoice.id });
             showToast(`Reminder email sent to ${to}`, 'success');
@@ -1361,7 +1361,7 @@ export function renderInvoiceDetail(container, params) {
           btn.disabled = true;
           btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
           try {
-            const { subject, html } = receiptEmail(invoice, { portalUrl: portalUrlForDocument(invoice) });
+            const { subject, html } = receiptEmail(invoice, { portalUrl: await portalUrlForDocument(invoice) });
             // The paid invoice doubles as the receipt document.
             const attachments = await documentAttachment('invoice', invoice);
             await sendEmail({ to, subject, html, attachments, template: 'receipt', relatedType: 'invoice', relatedId: invoice.id });

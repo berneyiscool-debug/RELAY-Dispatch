@@ -571,7 +571,7 @@ export function renderQuoteDetail(container, params) {
           btn.disabled = true;
           btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
           try {
-            const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
+            const { subject, html } = quoteEmail(quote, { portalUrl: await portalUrlForDocument(quote) });
             const attachments = await documentAttachment('quote', quote);
             await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
             showToast(`Quote emailed to ${to}`, 'success');
@@ -1007,7 +1007,7 @@ export function renderQuoteDetail(container, params) {
 
           try {
             if (canEmail) {
-              const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
+              const { subject, html } = quoteEmail(quote, { portalUrl: await portalUrlForDocument(quote) });
               const attachments = await documentAttachment('quote', quote);
               await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
             }

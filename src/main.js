@@ -728,6 +728,9 @@ const protectedRoutes = ['/', '/people', '/contractors', '/suppliers', '/leads',
 // so requiring either would be circular.
 const PUBLIC_PATHS = new Set(['/login', '/subscribe', '/setup', '/terms', '/privacy', '/refunds', '/acceptable-use']);
 
+// Set by the guard below; see the portal-scope note there.
+let portalRouteActive = false;
+
 router.onNavigate = (path, params) => {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   const basePath = path === '/' ? '/' : '/' + path.split('/').filter(Boolean)[0];
@@ -735,6 +738,13 @@ router.onNavigate = (path, params) => {
   const isContractorPortal = path.startsWith('/contractor-portal');
   const isCustomerPortal = path.startsWith('/portal/customer');
   const isPortal = isContractorPortal || isCustomerPortal;
+
+  // A portal page fills the store with a scope holding only that customer's or
+  // contractor's rows. Hash routing does not reload the page, so leaving the portal
+  // has to undo it — otherwise a signed-in operator who opened a customer's link and
+  // then navigated away would get their own screens rendered over an empty cache.
+  if (portalRouteActive && !isPortal) store.clearPortalScope();
+  portalRouteActive = isPortal;
 
   // Toggle app shell elements (sidebar, topbar, breadcrumb) based on whether it is a portal
   const sidebarEl = document.querySelector('.sidebar');

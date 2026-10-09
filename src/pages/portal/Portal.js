@@ -5,64 +5,88 @@ import { showToast } from '../../components/Notifications.js';
 import { paymentsEnabledFor, createInvoicePaymentLink } from '../../utils/payments.js';
 import { roundCurrency } from '../../utils/pricing.js';
 import { applyTheme } from '../../utils/theme.js';
-import { hashPortalPin, verifyPortalPin, needsPortalPinUpgrade } from '../../utils/portalPin.js';
+import { loadPortal, portalAction } from '../../utils/portalClient.js';
 
-export function renderCustomerPortal(container, params) {
+export async function renderCustomerPortal(container, params) {
   const token = params.token;
-  const customers = store.getAll('customers');
-  const customer = customers.find(c => c.portalToken === token);
+
+  // The visitor is anonymous, so there is nothing in the store to look the token up
+  // in — RLS withholds every row from a signed-out caller and the boot path hands
+  // them an empty cache. The resolver looks the token up server-side and answers
+  // with the rows this link is entitled to; once it is open the store holds them and
+  // the rest of this file reads it exactly as it always has.
+  const bundle = await loadPortal('customer', token);
+  const settings = bundle.settings || {};
+
+  // The contact block is what a visitor falls back on, so it is only drawn when the
+  // company actually published something — an unresolved link knows no company yet,
+  // and an empty card reads as a second failure.
+  const contactBlock = (settings.phone || settings.email) ? `
+        <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
+          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
+          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
+        </div>` : '';
+
+  const card = (icon, tone, title, body, extra = '') => `
+      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
+        <span class="material-icons-outlined text-${tone}" style="font-size: 64px; margin-bottom: 20px;">${icon}</span>
+        <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">${title}</h2>
+        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">${body}</p>
+        ${extra}
+        ${contactBlock}
+      </div>`;
+
+  // Nothing was asked of the database, so the link itself is not in question: say so
+  // rather than sending the visitor to the office over what may be one bad moment.
+  if (bundle.status === 'error') {
+    container.innerHTML = card('cloud_off', 'warning', 'Portal Unavailable',
+      'The portal could not be reached just now. Your access link is unchanged — please try again.',
+      `<button type="button" id="portal-retry" class="btn btn-primary" style="margin-bottom:16px;">Try again</button>`);
+    container.querySelector('#portal-retry').addEventListener('click', () => {
+      loadPortal('customer', token, { force: true }).then(() => renderCustomerPortal(container, params));
+    });
+    return;
+  }
+
+  // If customer portal is disabled globally in settings
+  if (bundle.status === 'offline') {
+    container.innerHTML = card('lock_clock', 'warning', 'Portal Access Offline', `
+          The secure customer portal is currently undergoing scheduled maintenance or has been offline by the operations team. Please contact our main office for immediate assistance:
+        `);
+    return;
+  }
+
+  // If token is invalid or missing
+  if (bundle.status === 'invalid') {
+    container.innerHTML = card('gpp_maybe', 'danger', 'Invalid Access Link', `
+          This secure portal access link is invalid, expired, or has been revoked. Please check the URL or request a new magic access link from the main office:
+        `);
+    return;
+  }
+
+  // Open: the store holds this visitor's scope, so the record comes from there with
+  // every field the staff view reads. The two screens before the PIN only have the
+  // identity the resolver released ('id', 'company', 'first_name', 'last_name').
+  const customer = bundle.status === 'ok'
+    ? store.getById('customers', bundle.record && bundle.record.id)
+    : store.normalizeRecord(bundle.record, 'customers');
+
+  if (!customer) {
+    container.innerHTML = card('gpp_maybe', 'danger', 'Invalid Access Link',
+      'This secure portal access link is invalid, expired, or has been revoked. Please check the URL or request a new magic access link from the main office:');
+    return;
+  }
 
   // Appearance is light only at launch (see utils/theme.js), which resolves the
   // stored preference for us. The per-customer value is still read but never
   // rewritten, so a customer who picked dark keeps that choice for when dark
   // mode ships.
-  const storedTheme = customer ? (localStorage.getItem(`relay_theme_customer_${customer.id}`) || localStorage.getItem(`simpro_theme_customer_${customer.id}`) || 'light') : 'light';
+  const storedTheme = localStorage.getItem(`relay_theme_customer_${customer.id}`) || localStorage.getItem(`simpro_theme_customer_${customer.id}`) || 'light';
   applyTheme(storedTheme);
 
-  const settings = store.getSettings();
-
-  // If customer portal is disabled globally in settings
-  if (settings.enableCustomerPortal === false) {
-    container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-        <span class="material-icons-outlined text-warning" style="font-size: 64px; margin-bottom: 20px;">lock_clock</span>
-        <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Portal Access Offline</h2>
-        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">
-          The secure customer portal is currently undergoing scheduled maintenance or has been offline by the operations team. Please contact our main office for immediate assistance:
-        </p>
-        <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
-          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
-          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
-        </div>
-      </div>
-    `;
-    return;
-  }
-
-  // If token is invalid or missing
-  if (!customer) {
-    container.innerHTML = `
-      <div style="max-width: 500px; margin: 80px auto; padding: 40px; text-align: center; background: var(--card-bg); border-radius: var(--border-radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-        <span class="material-icons-outlined text-danger" style="font-size: 64px; margin-bottom: 20px;">gpp_maybe</span>
-        <h2 style="font-size: var(--font-size-3xl); margin-bottom: 12px; color: var(--text-primary);">Invalid Access Link</h2>
-        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; font-size: var(--font-size-base);">
-          This secure portal access link is invalid, expired, or has been revoked. Please check the URL or request a new magic access link from the main office:
-        </p>
-        <div style="background: var(--content-bg); padding: 16px; border-radius: 6px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color);">
-          ${settings.phone ? `<div><strong>Main Phone:</strong> ${escapeHTML(settings.phone)}</div>` : ''}
-          ${settings.email ? `<div><strong>Email support:</strong> ${escapeHTML(settings.email)}</div>` : ''}
-        </div>
-      </div>
-    `;
-    return;
-  }
-
-  // Log last accessed date/time
-  personLastAccessedLog(customer.id);
-
   // --- Magic Link PIN/Passcode Security Layer ---
-  // If passcode is not configured, show First-Time Setup
-  if (!customer.portalPasscode) {
+  // Nobody has claimed this link yet: the first visitor sets the PIN.
+  if (bundle.status === 'passcode_setup') {
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:420px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
@@ -108,31 +132,26 @@ export function renderCustomerPortal(container, params) {
         return;
       }
 
-      // Save PIN
-      const hashedPin = await hashPortalPin(p1);
-      const result = await store.update('customers', customer.id, { portalPasscode: hashedPin });
-      if (result && result.ok === false) {
-        showToast('Could not save your PIN. Please try again.', 'error');
+      // Hashing and storing happen in the resolver: the digest is the secret, and it
+      // must never be something this page could choose or read back.
+      const result = await portalAction('customer', token, { action: 'setPasscode', pin: p1 });
+      if (result.status !== 'ok') {
+        showToast(result.error || 'Could not save your PIN. Please try again.', 'error');
         return;
       }
-      customer.portalPasscode = hashedPin; // update in-memory
 
-      // Set authenticated
-      sessionStorage.setItem('portal_customer_auth_' + customer.id, 'true');
       showToast('PIN set successfully. Portal secured!', 'success');
-      
-      // Reload portal layout
       renderCustomerPortal(container, params);
     });
 
     return;
   }
 
-  // If passcode is set, check sessionStorage session
-  const sessionKey = 'portal_customer_auth_' + customer.id;
-  const isUnlocked = sessionStorage.getItem(sessionKey) === 'true';
-
-  if (!isUnlocked) {
+  // The link is claimed, but this tab holds no live grant — either the PIN has not
+  // been entered here yet, or too many attempts have been made and the resolver is
+  // holding the door shut for a while.
+  if (bundle.status !== 'ok') {
+    const retryMinutes = bundle.retryAfterSeconds ? Math.ceil(bundle.retryAfterSeconds / 60) : 0;
     container.innerHTML = `
       <div class="customer-portal-shell" style="min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:20px; font-family:var(--font-family); background:var(--body-bg); position:relative;">
         <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--border-radius-md); padding:32px 40px; max-width:400px; width:100%; box-shadow:var(--shadow-sm); text-align:center;">
@@ -156,6 +175,9 @@ export function renderCustomerPortal(container, params) {
             </button>
           </form>
           
+          ${retryMinutes ? `<p style="font-size:12px; color:var(--color-danger); margin:16px 0 0 0; line-height:1.4;">
+            Too many incorrect attempts. Please try again in about ${retryMinutes} minute${retryMinutes === 1 ? '' : 's'}.
+          </p>` : ''}
           <p style="font-size:11.5px; color:var(--text-tertiary); margin-top:24px; line-height:1.4;">
             Forgot your PIN? Please contact our main office${settings.phone ? ` at <strong>${escapeHTML(settings.phone)}</strong>` : ''} to request a reset.
           </p>
@@ -167,23 +189,25 @@ export function renderCustomerPortal(container, params) {
       e.preventDefault();
       const enteredPin = container.querySelector('#portal-pin').value.trim();
 
-      if (await verifyPortalPin(enteredPin, customer.portalPasscode)) {
-        // A PIN created before hashing landed is still cleartext; now that the
-        // plaintext is in hand, replace it so the stored copy stops being the
-        // secret itself.
-        if (needsPortalPinUpgrade(customer.portalPasscode)) {
-          const upgraded = await hashPortalPin(enteredPin);
-          const saved = await store.update('customers', customer.id, { portalPasscode: upgraded });
-          if (!(saved && saved.ok === false)) customer.portalPasscode = upgraded;
-        }
-        sessionStorage.setItem(sessionKey, 'true');
+      // The PIN never leaves this page in a form the browser decided was correct: the
+      // resolver verifies it, rate-limits the attempts, and hands back the grant that
+      // the reads and the writes both need.
+      const result = await portalAction('customer', token, { action: 'unlock', pin: enteredPin });
+
+      if (result.status === 'ok') {
         showToast('Dashboard unlocked successfully', 'success');
         renderCustomerPortal(container, params);
-      } else {
-        showToast('Incorrect Portal PIN. Please try again.', 'error');
-        container.querySelector('#portal-pin').value = '';
-        container.querySelector('#portal-pin').focus();
+        return;
       }
+
+      showToast(result.status === 'throttled'
+        ? `Too many incorrect attempts. Please try again in about ${Math.ceil(result.retryAfterSeconds / 60)} minute(s).`
+        : (result.error || 'Incorrect Portal PIN. Please try again.'), 'error');
+
+      // Redraw from a fresh read so the screen carries the server's current attempt
+      // count rather than the one it was built with.
+      const fresh = await loadPortal('customer', token);
+      if (fresh.status !== 'error') renderCustomerPortal(container, params);
     });
 
     return;
@@ -208,14 +232,10 @@ export function renderCustomerPortal(container, params) {
   // Staged request confirmation status
   let requestSubmitted = false;
 
-  function personLastAccessedLog(customerId) {
-    const custs = store.getAll('customers');
-    const cIdx = custs.findIndex(c => c.id === customerId);
-    if (cIdx !== -1) {
-      custs[cIdx].portalLastAccessed = new Date().toISOString();
-      store.save('customers', custs);
-    }
-  }
+  // `portalLastAccessed` used to be stamped here by saving the WHOLE customers
+  // collection, which from this page meant writing one customer's partial cache back
+  // over the entire book. The resolver now stamps the column when it opens the link,
+  // which is also the only place that can be trusted to.
 
   // --- Core Layout & Portal Style ---
   function render() {
@@ -1709,10 +1729,6 @@ export function renderCustomerPortal(container, params) {
               const newPin = content.querySelector('#portal-pin-new').value.trim();
               const confirmPin = content.querySelector('#portal-pin-new-confirm').value.trim();
 
-              if (!await verifyPortalPin(currentPin, customer.portalPasscode)) {
-                showToast('Current PIN is incorrect', 'error');
-                return;
-              }
               if (!/^\d{4,6}$/.test(newPin)) {
                 showToast('New PIN must be between 4 and 6 digits (numbers only)', 'error');
                 return;
@@ -1722,15 +1738,20 @@ export function renderCustomerPortal(container, params) {
                 return;
               }
 
-              const hashedPin = await hashPortalPin(newPin);
-              const result = await store.update('customers', customer.id, { portalPasscode: hashedPin });
-              if (result && result.ok === false) {
-                showToast('Could not update your PIN. Please try again.', 'error');
+              // The old PIN is checked, hashed and stored by the resolver. This page
+              // never holds the digest, so it cannot decide for itself that the current
+              // PIN is right — and asking for it again means an unattended unlocked tab
+              // cannot be used to lock the owner out.
+              const result = await portalAction('customer', token, {
+                action: 'setPasscode',
+                pin: newPin,
+                currentPin,
+              });
+              if (result.status !== 'ok') {
+                showToast(result.error || 'Could not update your PIN. Please try again.', 'error');
                 return;
               }
 
-              customer.portalPasscode = hashedPin;
-              sessionStorage.setItem('portal_customer_auth_' + customer.id, 'true');
               showToast('Portal PIN updated successfully', 'success');
               close();
             }}
