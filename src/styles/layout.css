@@ -2666,6 +2666,78 @@ body.relay-assistant-open .relay-topbar-actions {
 .relay-chip-btn.warning-chip .chip-ico { color: var(--color-warning); }
 .relay-chip-btn.info-chip .chip-ico { color: var(--color-info); }
 
+/* ── Relay step trace (what brny did, and with what arguments) ── */
+.relay-steps {
+  margin: 4px 0 8px;
+  align-self: flex-start;
+  max-width: 86%;
+}
+.relay-steps-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.relay-steps-head:disabled { cursor: default; }
+.relay-steps-head:hover:not(:disabled) { background: var(--surface-hover); }
+.relay-steps-head .material-icons-outlined { font-size: 16px; transition: transform 0.15s ease; }
+.relay-steps.is-open .relay-steps-head .material-icons-outlined { transform: rotate(180deg); }
+.relay-steps-list {
+  display: none;
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--border-radius-sm);
+  background: var(--surface-secondary);
+}
+.relay-steps.is-open .relay-steps-list { display: block; }
+.relay-steps-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.relay-steps-row .material-icons-outlined { font-size: 15px; flex-shrink: 0; }
+.relay-steps-row.is-ok .material-icons-outlined { color: var(--color-success); }
+.relay-steps-row.is-failed .material-icons-outlined { color: var(--color-danger); }
+.relay-steps-row.is-declined .material-icons-outlined { color: var(--text-tertiary); }
+
+/* Free-text answer for an agent question card */
+.relay-question-card .relay-question-detail {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+.relay-question-card .relay-question-input {
+  flex: 1;
+  min-height: 34px;
+  max-height: 120px;
+  resize: none;
+}
+.relay-question-card.is-answered { opacity: 0.65; }
+
+/* Stop button lives beside the typing bubble, not inside it (the status line
+   rewrites the bubble's contents on every step). */
+.relay-stop-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.relay-stop-btn .material-icons-outlined { font-size: 16px; }
+
 /* ── Relay in-chat confirmation card (asks before writing to the CRM) ── */
 .relay-msg-relay .relay-bubble.relay-confirm {
   padding: 0;

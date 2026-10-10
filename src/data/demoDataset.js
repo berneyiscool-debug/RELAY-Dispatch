@@ -486,7 +486,7 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
     technicians: [], customers: [], leads: [], quotes: [], jobs: [], invoices: [], schedule: [], timesheets: [],
     jobMaterials: [], purchaseOrders: [], projects: [], costCenters: [], stock: [], storageLocations: [], suppliers: [],
     contractors: [], assets: [], maintenancePlans: [], notifications: [], formInstances: [], kits: [], kitTypes: [],
-    locationTypes: [], taskTemplates: [],
+    locationTypes: [], taskTemplates: [], todos: [],
   };
   const geo = {};
 
@@ -1421,6 +1421,70 @@ export function buildDemoDataset({ now = new Date(), scope = '', owner = {} } = 
     return value;
   };
   Object.values(C).forEach((list) => list.forEach(resolve));
+
+  // ---- To-dos ---------------------------------------------------------------
+  // Real records rather than the per-user localStorage blob the dashboard used
+  // to keep, so a to-do can be assigned, dated and linked to a job. The set
+  // deliberately spans overdue, due-today, undated and completed so the
+  // widget's ordering ("mine, overdue first") is visible on first load. Dated
+  // rows step by business day (bd) so a weekend load never lands work on a
+  // Saturday; the two "today" rows intentionally use the real calendar day so
+  // they read as Today rather than Overdue.
+  const jobLink = (job) => (job ? { type: 'job', id: job.id, label: `${job.number} ${job.title || ''}`.trim() } : null);
+  const custLink = (cust) => (cust ? { type: 'customer', id: cust.id, label: displayName(cust) } : null);
+
+  const toTodo = (owner, title, opts = {}) => {
+    const { notes = '', due = null, dueHour = 8, link = null, done = false, madeDaysAgo = 3, origin = 'ui', by = own } = opts;
+    const created = atTime(bd(-madeDaysAgo), 8.4);
+    const completedAt = done ? isoAt(anchor, 12.2) : null;
+    return {
+      id: id('todo'), title, notes, status: done ? 'done' : 'open',
+      assignedTo: owner.id, assignedToName: owner.name,
+      dueDate: due ? dateKey(due) : null, dueAt: due ? isoAt(due, dueHour) : null,
+      recordType: link ? link.type : null, recordId: link ? link.id : null, recordLabel: link ? link.label : '',
+      createdBy: by, createdByName: by, origin,
+      completedAt, completedBy: done ? owner.name : null,
+      createdAt: created.toISOString(), updatedAt: (completedAt ? new Date(completedAt) : created).toISOString(),
+    };
+  };
+
+  [
+    toTodo(T.owner, 'Chase the cool-room invoice — third reminder due', {
+      due: bd(-3), dueHour: 9, link: custLink(COM.brewing), madeDaysAgo: 9,
+      notes: 'Kim Ashby asked for it to go to their accounts inbox and nothing has come back. Invoice is now overdue — ask for a payment date rather than sending another copy.',
+    }),
+    toTodo(T.owner, 'Get a hazmat quote for the meter panel at 27 Kingfisher Rd', {
+      due: bd(-1), dueHour: 15, link: jobLink(j1), madeDaysAgo: 2,
+      notes: 'Dale flagged the fibrous cement backing board as a field fault. Sample first, then price the enclosure replacement.',
+    }),
+    toTodo(T.owner, 'Ring Louise Petrakis back before she rings us again', {
+      due: today, dueHour: 16, link: jobLink(j1), madeDaysAgo: 1,
+      notes: 'She wants a number for the meter panel. If the sample is not back, give her the range and a date.',
+    }),
+    toTodo(T.owner, 'Follow up Daniel Nguyen about the battery rebate paperwork', {
+      due: today, dueHour: 9.5, link: custLink(H.nguyen), madeDaysAgo: 1, origin: 'brny',
+      notes: 'Asked brny this morning to remind us — the network application still has not gone in and stage 3 cannot be claimed without it.',
+    }),
+    toTodo(T.owner, 'Decide on the Saturday callout rate before the next on-call roster', {
+      madeDaysAgo: 11, notes: 'Still on the old sheet — $180 after hours, $240 Saturdays. Priya has asked twice.',
+    }),
+    toTodo(T.owner, "Approve Tom's timesheet for last week", { done: true, madeDaysAgo: 5 }),
+    toTodo(T.dale, 'Book the meter panel replacement in with Louise once the sample clears', {
+      due: bd(1), dueHour: 8, link: jobLink(j1), madeDaysAgo: 1,
+      notes: 'She works from home Tuesdays and Thursdays, so a morning start suits.',
+    }),
+    toTodo(T.priya, 'Send the equipment supplier the OPG outlet heights', {
+      due: bd(1), dueHour: 12, link: jobLink(j2), madeDaysAgo: 2,
+      notes: "Shona needs them before the electrician from the supplier books their fit-off.",
+    }),
+    toTodo(T.bec, 'Invoice the dental surgery once Priya is off site', {
+      due: bd(2), dueHour: 9, link: jobLink(j2), madeDaysAgo: 1,
+      notes: 'They are on 14 day terms and always pay on time when the paperwork arrives within the week.',
+    }),
+    toTodo(T.bec, 'Order more RCBO20s — four left on the shelf', {
+      madeDaysAgo: 4, notes: 'Enclosure order last month cleaned us out. Two switchboard upgrades next week.',
+    }),
+  ].forEach((t) => C.todos.push(t));
 
   // ---- Reusable kits and task-list templates --------------------------------
   const kitItems = (list) => list.map(([k, q]) => ({ type: 'material', stockId: S[k].id, name: S[k].name, sku: STOCK.find((s) => s[0] === k)[2], qty: q, costPrice: S[k].cost, unitPrice: S[k].sell, unit: S[k].unit }));

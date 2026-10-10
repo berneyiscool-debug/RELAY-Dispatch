@@ -23,6 +23,8 @@ import { getThreads, getThread, createThread, renameThread, deleteThread, setThr
 import { getRoutines, getRoutine, createRoutine, updateRoutine, deleteRoutine, markRoutineRun, routineIsDue, describeTrigger } from '../utils/deputyRoutines.js';
 import { runEmergencyScan, summariseScan, SCAN_CATEGORIES } from '../utils/deputyScan.js';
 import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
+import { runTurn } from '../utils/brnyAgent.js';
+import { buildBrnyPlaybook } from '../utils/brnyPlaybook.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -38,6 +40,11 @@ let sidebarRailObserver = null;
 let routineTimer = null;
 let routineRunning = false;
 let routineDraft = null; // in-progress conversational routine build (per thread)
+// A turn that stopped to ask a question or wait for approval. The provider needs
+// that turn's own history replayed verbatim to match a tool result to its call,
+// so it is kept here rather than rebuilt from the chat log.
+let pendingTurn = null;
+let activeTurnController = null;
 
 // Align the expanded Deputy workspace to the live width of the main sidebar rail,
 // so the panel sits flush against the rail edge (covering the contextual submenu)
@@ -1895,7 +1902,8 @@ export async function openRelay() {
       if (canUseAI()) {
         const response = hasDeputyMax() ? await callAIEngineWithTriage() : await callAIEngine();
         typing.remove();
-        addMessage(thread, 'relay', response);
+        // The agent path renders its own bubble (and cards) and answers with null.
+        if (response) addMessage(thread, 'relay', response);
         void refreshUsageBars(panel);
       } else {
         // Fallback to rule-based local assistant
@@ -2819,6 +2827,11 @@ async function renderWeeklyReportWidget(container) {
 // ── AI Engine completions call ───────────────────────────────────
 
 async function callAIEngine() {
+  // A chat turn belongs to the agent loop, which calls the same actions the UI
+  // calls and reads their real results. The single-shot path below stays as the
+  // fallback for callers with no thread to draw in.
+  if (canRunBrnyAgent()) return callBrnyAgent();
+
   const s = store.getSettings();
   const ai = s.ai || {};
   const systemPrompt = buildSystemPrompt(ai);
@@ -2830,6 +2843,304 @@ async function callAIEngine() {
 
   const reply = await dispatchChat(messages);
   return finaliseExternalReply(reply, systemPrompt);
+}
+
+// ── brny agent turns ─────────────────────────────────────────────
+//
+// One chat turn = one runTurn() over the shared action layer. brny answers with
+// tools, the turn pauses on a question or an approval and resumes from there,
+// and only the prose it produces is shown as a bubble: the legacy tag catalogue
+// still drives routines, autopilot and the Deputy Max specialists, so nothing
+// below this block changes.
+
+function relayThreadEl() {
+  return panel ? panel.querySelector('#relay-thread') : null;
+}
+
+function canRunBrnyAgent() {
+  return canUseAI() && !!(panel && panel.querySelector('#relay-thread'));
+}
+
+function buildBrnyAgentPrompt(ai) {
+  return buildBrnyPlaybook({
+    override: ai.systemPrompt,
+    // The live data only. The policy half of the legacy context is a catalogue of
+    // text-protocol tags, and handing brny both that and native tools invites a
+    // second, duplicate write for the same intent.
+    context: getSystemContext(!hasDeputyMax(), { tags: false }),
+  });
+}
+
+function agentStopButton(hostEl) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-secondary relay-stop-btn';
+  btn.innerHTML = '<span class="material-icons-outlined">stop_circle</span>Stop';
+  btn.addEventListener('click', () => {
+    if (activeTurnController) activeTurnController.abort();
+    btn.disabled = true;
+    btn.textContent = 'Stopping…';
+  });
+  hostEl.appendChild(btn);
+  return btn;
+}
+
+// The rows under "Took N steps". Labels are emitted in the same order as the
+// actions they produced, which is how a step gets its human title back.
+function agentStepRows(result, labels) {
+  return (result.actions || []).map((action, index) => {
+    const label = labels[index] && labels[index].tool === action.tool ? labels[index] : null;
+    const title = label ? label.title : action.tool;
+    const arg = label && label.arg ? ` · ${escapeHtml(label.arg)}` : '';
+    const state = action.declined ? 'declined' : (action.ok ? 'ok' : 'failed');
+    const icon = state === 'ok' ? 'check_circle' : (state === 'declined' ? 'block' : 'error_outline');
+    const tail = state === 'ok' ? '' : ` — ${escapeHtml(action.summary || '')}`;
+    return `<li class="relay-steps-row is-${state}">
+      <span class="material-icons-outlined">${icon}</span>
+      <span>${escapeHtml(title)}${arg}${tail}</span>
+    </li>`;
+  }).join('');
+}
+
+function renderAgentSteps(thread, result, labels, elapsedMs) {
+  const rows = agentStepRows(result, labels);
+  const n = (result.actions || []).length;
+  if (!rows && !elapsedMs) return;
+
+  const box = document.createElement('div');
+  box.className = 'relay-steps';
+  box.innerHTML = `<button type="button" class="relay-steps-head">
+      <span class="material-icons-outlined">expand_more</span>
+      <span>${n ? `Took ${n} step${n === 1 ? '' : 's'}` : 'Thought it through'}${elapsedMs ? ` in ${Math.max(1, Math.round(elapsedMs / 1000))}s` : ''}</span>
+    </button>
+    ${rows ? `<ul class="relay-steps-list">${rows}</ul>` : ''}`;
+  const head = box.querySelector('.relay-steps-head');
+  if (rows) head.addEventListener('click', () => box.classList.toggle('is-open'));
+  else head.disabled = true;
+  thread.appendChild(box);
+  thread.scrollTop = thread.scrollHeight;
+  return box;
+}
+
+// The agent answers with null so submit() does not draw a second bubble for a
+// turn that has already drawn its own.
+function answerAgentTurn(thread, result, ai, labels, elapsedMs) {
+  renderAgentSteps(thread, result, labels, elapsedMs);
+  const answer = plainTurnAnswer(result);
+  if (!answer) return;
+  pushAssistant(answer);
+  // Same final step as the legacy path: maps, weather and the surviving escape
+  // hatches still run, and they need the legacy prompt to be understood.
+  const finalReply = finaliseExternalReply(answer, buildSystemPrompt(ai));
+  if (finalReply) addMessage(thread, 'relay', finalReply);
+}
+
+function plainTurnAnswer(result) {
+  const text = (result.text || '').trim();
+  if (result.status === 'done') {
+    if (text) return text;
+    const ran = (result.actions || []).filter(a => a.ok && !a.declined).length;
+    if (ran) return `Done — ${ran} action${ran === 1 ? '' : 's'} run.`;
+    if (result.failures && result.failures.length) return `That did not work: ${result.failures[0].message}`;
+    return '';
+  }
+  if (result.status === 'max_steps') {
+    return `${text || 'I did not get to a final answer.'}${result.note ? `\n\n${result.note}` : ''}`;
+  }
+  if (result.status === 'aborted') return text || 'Stopped.';
+  return text;
+}
+
+// A question card that resumes the paused turn instead of starting a new one:
+// the provider matches the answer to the tool call that asked for it.
+function renderAgentQuestion(thread, question) {
+  const card = document.createElement('div');
+  card.className = 'relay-question-card';
+  const options = question.options || [];
+  card.innerHTML = `<div class="relay-question-title">${escapeHtml(question.question || 'Which one?')}</div>
+    ${question.detail ? `<div class="relay-question-detail">${escapeHtml(question.detail)}</div>` : ''}
+    ${options.length
+      ? `<div class="relay-question-options">${options.map(o => `<button type="button" class="relay-question-opt-btn" data-value="${escapeHtml(String(o))}">${escapeHtml(String(o))}</button>`).join('')}</div>`
+      : ''}
+    <div class="relay-question-actions">
+      <textarea class="relay-input relay-question-input" rows="1" placeholder="${options.length ? 'Or type an answer…' : 'Type your answer…'}"></textarea>
+      <button type="button" class="btn btn-primary relay-question-submit-btn">Send</button>
+    </div>`;
+  thread.appendChild(card);
+  thread.scrollTop = thread.scrollHeight;
+
+  const input = card.querySelector('.relay-question-input');
+  const submit = card.querySelector('.relay-question-submit-btn');
+  let answered = false;
+
+  const answer = (value) => {
+    const text = String(value == null ? '' : value).trim();
+    if (answered || !text) return;
+    answered = true;
+    card.querySelectorAll('button, textarea').forEach(el => { el.disabled = true; });
+    card.classList.add('is-answered');
+    void resumeBrnyTurn({ toolUseId: question.toolUseId, answer: text }, text);
+  };
+
+  card.querySelectorAll('.relay-question-opt-btn').forEach(btn => {
+    btn.addEventListener('click', () => { btn.classList.add('selected'); answer(btn.dataset.value); });
+  });
+  submit.addEventListener('click', () => answer(input.value));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); answer(input.value); }
+  });
+}
+
+// Shown when an action changes something a person should see first. Approving
+// re-runs that one call with the exact input the card displayed, so the write
+// happens once and only once.
+function renderAgentApproval(thread, approval) {
+  const m = document.createElement('div');
+  m.className = 'relay-msg relay-msg-relay';
+  m.innerHTML = `<div class="relay-bubble relay-confirm">
+    <div class="relay-confirm-head">
+      <span class="material-icons-outlined">gavel</span>
+      <div class="relay-confirm-title">${escapeHtml(approval.title || approval.name)}</div>
+    </div>
+    <div class="relay-confirm-list">${escapeHtml(approval.summary || approval.message || '')}</div>
+    <div class="relay-confirm-actions">
+      <button type="button" class="btn btn-secondary relay-confirm-no">Cancel</button>
+      <button type="button" class="btn btn-primary relay-confirm-yes">Do it</button>
+    </div>
+  </div>`;
+  thread.appendChild(m);
+  thread.scrollTop = thread.scrollHeight;
+
+  const actionsBar = m.querySelector('.relay-confirm-actions');
+  const settle = (html) => {
+    actionsBar.innerHTML = html;
+    thread.scrollTop = thread.scrollHeight;
+  };
+
+  m.querySelector('.relay-confirm-yes').addEventListener('click', () => {
+    settle('<span class="relay-confirm-done is-success">✓ Approved.</span>');
+    void resumeBrnyTurn({
+      toolUseId: approval.toolUseId,
+      name: approval.name,
+      input: approval.input,
+      approved: true,
+    }, null);
+  });
+  m.querySelector('.relay-confirm-no').addEventListener('click', () => {
+    settle('<span class="relay-confirm-done">Cancelled — nothing was changed.</span>');
+    void resumeBrnyTurn({
+      toolUseId: approval.toolUseId,
+      name: approval.name,
+      approved: false,
+      reason: 'The user declined this action.',
+    }, null);
+  });
+}
+
+// ── the turn itself ──────────────────────────────────────────────
+
+async function callBrnyAgent({ thread, typing, messages = null, resume = null } = {}) {
+  const target = thread || relayThreadEl();
+  if (!target) return null;
+
+  const ai = store.getSettings().ai || {};
+  const controller = new AbortController();
+  activeTurnController = controller;
+  if (!resume) pendingTurn = null;
+
+  const labels = [];
+  const startedAt = Date.now();
+  let firstStepAt = null;
+
+  const onEvent = (event) => {
+    if (!event || !event.type) return;
+    if (event.type === 'step') {
+      if (firstStepAt === null) firstStepAt = Date.now();
+      if (typing && typing.isConnected) setTypingStatus(typing, 'Thinking…');
+    } else if (event.type === 'label') {
+      const arg = event.arg ? ` · ${event.arg}` : '';
+      if (typing && typing.isConnected) setTypingStatus(typing, `${event.title || event.tool}${arg}…`);
+    } else if (event.type === 'tool') {
+      labels.push({ tool: event.tool, title: event.title, arg: event.arg });
+      if (typing && typing.isConnected) {
+        setTypingStatus(typing, event.ok ? (event.summary || 'Done.') : (event.summary || 'That did not work.'));
+      }
+    }
+  };
+
+  const stopBtn = typing ? agentStopButton(typing) : null;
+
+  try {
+    const result = await runTurn({
+      // runTurn replaces its base instructions with this, so the playbook carries
+      // brny's identity as well as the domain rules.
+      system: buildBrnyAgentPrompt(ai),
+      messages: messages || aiHistory(),
+      resume,
+      signal: controller.signal,
+      onEvent,
+    });
+
+    if (result.status === 'limit' || result.status === 'error') {
+      // submit() already knows how to report these.
+      throw result.error || new Error('brny could not reach the assistant service.');
+    }
+
+    if (result.status === 'ask_user' && result.pendingQuestion) {
+      pendingTurn = { threadId: currentThreadId, messages: result.messages, pendingQuestion: result.pendingQuestion };
+      if (typing) typing.remove();
+      const text = plainTurnAnswer(result);
+      if (text) addMessage(target, 'relay', text);
+      renderAgentQuestion(target, result.pendingQuestion);
+      return null;
+    }
+
+    if (result.status === 'approval_required' && result.pendingApproval) {
+      pendingTurn = { threadId: currentThreadId, messages: result.messages, pendingApproval: result.pendingApproval };
+      if (typing) typing.remove();
+      const text = plainTurnAnswer(result);
+      if (text) addMessage(target, 'relay', text);
+      renderAgentApproval(target, result.pendingApproval);
+      return null;
+    }
+
+    if (typing) typing.remove();
+    const elapsed = typing ? Date.now() - (firstStepAt || startedAt) : 0;
+    answerAgentTurn(target, result, ai, labels, elapsed);
+    return null;
+  } finally {
+    if (stopBtn && stopBtn.isConnected) stopBtn.remove();
+    if (activeTurnController === controller) activeTurnController = null;
+  }
+}
+
+// Continue the turn that stopped on a card. The history it paused with is
+// replayed verbatim, because the provider matches an answer to the call that
+// asked for it.
+async function resumeBrnyTurn(resume, displayText) {
+  const thread = relayThreadEl();
+  const pending = pendingTurn;
+  if (!thread || !pending || pending.threadId !== currentThreadId) return;
+
+  pendingTurn = null;
+  if (displayText) {
+    chatHistory = loadChatHistory();
+    chatHistory.push({ role: 'user', content: displayText });
+    trimHistory();
+    saveChatHistory(chatHistory);
+    addMessage(thread, 'user', displayText);
+  }
+
+  const typing = addTyping(thread);
+  try {
+    await callBrnyAgent({ thread, typing, messages: pending.messages, resume });
+  } catch (err) {
+    typing.remove();
+    const reply = err instanceof AILimitError ? err.message : `I couldn't finish that: ${err.message || err}`;
+    pushAssistant(reply);
+    addMessage(thread, 'relay', reply);
+    void refreshUsageBars(panel);
+  }
 }
 
 function buildSystemPrompt(ai) {
@@ -2987,6 +3298,12 @@ async function callAIEngineWithTriage() {
   const lastUser = [...chatHistory].reverse().find(m => m.role === 'user');
   const text = lastUser ? lastUser.content : '';
   const triage = await triageMessage(text, { ai, chatHistory });
+
+  // A question is the agent loop's home ground: it looks the answer up with the
+  // same actions the UI uses. The specialist flows below stay for the requests
+  // that need them (action proposals, external data, urgent faults).
+  if (triage.intent === 'QUESTION' && canRunBrnyAgent()) return callBrnyAgent();
+
   const ctx = {
     text,
     answerQuestion: () => answerSynthesisPrompt(systemPrompt),
@@ -3168,7 +3485,10 @@ async function runRoutineBuilder(text) {
   return { handled: false };
 }
 
-export function getSystemContext(slim = false) {
+/** Where the static policy half of the system context ends and the live data begins. */
+const LIVE_CONTEXT_HEADING = 'Current Live CRM Data Context';
+
+export function getSystemContext(slim = false, { tags = true } = {}) {
   // Everything static is emitted before anything live, so DeepSeek's prefix
   // cache can reuse the bulk of this prompt between calls. Keep the live block
   // last when adding new sections.
@@ -3243,7 +3563,7 @@ export function getSystemContext(slim = false) {
     return `${m}: ${actions.length > 0 ? actions.join(', ') : 'Read-only'}`;
   }).join(' | ');
 
-  return `Assistant Role & Core Competencies:
+  const context = `Assistant Role & Core Competencies:
 - You are the central dispatch co-pilot and operations coordinator. You do NOT just answer questions passively; you proactively manage task allocation, schedule jobs to the best-suited technicians, resolve scheduling conflicts, and coordinate field operations.
 - Always check the list of active technicians and their roles. When a job is mentioned, match it to the technician with the corresponding role/skills. Suggest the best candidates based on workload, and proactively allocate the job using the appropriate action tags.
 - You must ONLY use, suggest, or assign jobs to technicians who are currently listed in the "Active Technicians" list below. Do NOT reference, suggest, or assign jobs to any other technicians (including those from older chat history, memory, or previous job assignments) as they are deactivated.
@@ -3318,6 +3638,13 @@ ${formattedMemory}
 - Manually Added Memory Keys (explicit user-supplied facts — treat these as authoritative and apply them whenever relevant):
 ${learnedKeys}
 `;
+
+  // The agent path takes the live data only. The policy half above is a catalogue
+  // of text-protocol tags; brny uses native tools, and handing it both invites a
+  // duplicate write (plus a second approval prompt) for the same intent.
+  if (tags) return context;
+  const at = context.indexOf(LIVE_CONTEXT_HEADING);
+  return at === -1 ? '' : context.slice(at);
 }
 
 const ACTION_REGEX = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;

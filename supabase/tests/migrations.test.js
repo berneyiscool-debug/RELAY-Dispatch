@@ -40,6 +40,7 @@ const TRIAL_SQL = readFileSync(join(MIGRATIONS_DIR, '037_terms_and_trial.sql'), 
 const LEADS_PIPELINE_SQL = readFileSync(join(MIGRATIONS_DIR, '040_leads_pipeline_fields.sql'), 'utf8');
 const LEADS_ACTIVITY_SQL = readFileSync(join(MIGRATIONS_DIR, '041_leads_activity_log.sql'), 'utf8');
 const PORTAL_LOOKUP_SQL = readFileSync(join(MIGRATIONS_DIR, '042_portal_token_lookup.sql'), 'utf8');
+const TODOS_SQL = readFileSync(join(MIGRATIONS_DIR, '043_todos.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -2280,5 +2281,217 @@ describe('042 portal token lookup', () => {
         true
       );
     });
+  });
+});
+
+describe('043 to-dos', () => {
+  let db;
+
+  const TODO_A1 = 'todo_00000000-0000-0000-0000-0000000000a1';
+  const TODO_B1 = 'todo_00000000-0000-0000-0000-0000000000b1';
+
+  // Exactly the columns src/actions/todos.js writes, plus the four the store
+  // owns (id, company_id, created_at, updated_at).
+  const COLUMNS = [
+    'id', 'company_id', 'title', 'notes', 'status', 'assigned_to', 'assigned_to_name',
+    'due_date', 'due_at', 'record_type', 'record_id', 'record_label', 'created_by',
+    'created_by_name', 'origin', 'completed_at', 'completed_by', 'created_at', 'updated_at',
+  ];
+
+  const NULLABLE_COLUMNS = [
+    'notes', 'assigned_to', 'assigned_to_name', 'due_date', 'due_at', 'record_type',
+    'record_id', 'record_label', 'created_by', 'created_by_name', 'completed_at',
+    'completed_by',
+  ];
+
+  before(async () => {
+    db = await createFixtureDb();
+    // 043 is written for a project where 030 already created the tenant helper.
+    // Dropping it here is what makes the guard test below meaningful.
+    await db.exec('DROP FUNCTION IF EXISTS public.get_user_company_id(uuid);');
+    // Run twice: the migration ships as IF NOT EXISTS throughout so a project
+    // that already has the table and the policy must not abort.
+    await db.exec(TODOS_SQL);
+    await db.exec(TODOS_SQL);
+    // Supabase's default privileges hand a newly created table to the client
+    // roles. The fixture grants before any migration runs, so this table would
+    // be unreachable by privilege before RLS ever gets a say.
+    await db.exec('GRANT ALL ON public.todos TO anon, authenticated, service_role;');
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('creates the table with the columns the to-do actions write', async () => {
+    assert.strictEqual(await value(db, "SELECT to_regclass('public.todos') IS NOT NULL"), true);
+    assert.strictEqual(
+      await value(
+        db,
+        `SELECT count(*)::int FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'todos'
+            AND column_name IN (${COLUMNS.map((c) => `'${c}'`).join(', ')})`
+      ),
+      COLUMNS.length
+    );
+    // Pins the shape: a column added here without a matching store.js whitelist
+    // entry would be dropped before the cloud write, silently.
+    assert.strictEqual(
+      await value(db, "SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'todos'"),
+      COLUMNS.length
+    );
+  });
+
+  test('keeps the optional to-do fields nullable and the identity fields not', async () => {
+    for (const column of NULLABLE_COLUMNS) {
+      assert.strictEqual(
+        await value(db, `SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'todos' AND column_name = '${column}'`),
+        'YES',
+        `${column} should stay nullable`
+      );
+    }
+    for (const column of ['company_id', 'title', 'status', 'origin', 'created_at', 'updated_at']) {
+      assert.strictEqual(
+        await value(db, `SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'todos' AND column_name = '${column}'`),
+        'NO',
+        `${column} should be not null`
+      );
+    }
+  });
+
+  test('the assignee and author columns are text, not uuid', async () => {
+    // assigned_to has to hold an actor id such as the API actor brny runs as,
+    // not only a profile id - the same reason leads.assigned_to is text (040).
+    for (const column of ['id', 'assigned_to', 'assigned_to_name', 'created_by', 'created_by_name', 'completed_by', 'record_id', 'record_type', 'record_label']) {
+      assert.strictEqual(
+        await value(db, `SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'todos' AND column_name = '${column}'`),
+        'text',
+        `${column} should be text`
+      );
+    }
+  });
+
+  test('a deleted company takes its to-dos with it', async () => {
+    assert.strictEqual(
+      await value(db, "SELECT confdeltype::text FROM pg_constraint WHERE conrelid = 'public.todos'::regclass AND contype = 'f'"),
+      'c'
+    );
+  });
+
+  test('an insert carrying only a company and a title still lands as a usable row', async () => {
+    await db.query(`INSERT INTO public.todos (company_id, title) VALUES ('${TENANT_A}', 'Minimal')`);
+    const row = await one(db, "SELECT id, status, origin, notes FROM public.todos WHERE title = 'Minimal'");
+    assert.strictEqual(row.status, 'open', 'status should default to open');
+    assert.strictEqual(row.origin, 'ui', 'origin should default to the UI');
+    assert.strictEqual(row.notes, '');
+    assert.strictEqual(row.id.length, 36, 'id should default to a uuid string');
+    await db.query("DELETE FROM public.todos WHERE title = 'Minimal'");
+  });
+
+  test('reports every expected object present in its verification grid', async () => {
+    const results = await db.exec(TODOS_SQL);
+    const grid = results[results.length - 1].rows;
+    assert.strictEqual(grid.length, COLUMNS.length + 1);
+    assert.deepStrictEqual(grid.filter((r) => r.is_present !== true).map((r) => r.object_name), []);
+  });
+
+  test('turns RLS on but leaves the policy to the tenant helper', async () => {
+    // If the guard only checked for an existing policy, this CREATE would abort
+    // on the missing helper and take every statement after it with it.
+    assert.strictEqual(await value(db, "SELECT relrowsecurity FROM pg_class WHERE relname = 'todos'"), true);
+    assert.strictEqual(await value(db, "SELECT to_regprocedure('public.get_user_company_id(uuid)') IS NULL"), true);
+    assert.strictEqual(await value(db, "SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'todos'"), 0);
+  });
+
+  test('creates the tenant policy once the helper exists, and is re-runnable', async () => {
+    await db.exec(TENANT_HELPER);
+    await db.exec(TODOS_SQL);
+    assert.strictEqual(await value(db, "SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'todos' AND policyname = 'todos_tenant_policy'"), 1);
+    await db.exec(TODOS_SQL);
+    assert.strictEqual(await value(db, "SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'todos' AND policyname = 'todos_tenant_policy'"), 1);
+  });
+
+  test('grants nothing to anon, the key published in the app bundle', async () => {
+    assert.strictEqual(await value(db, "SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'todos' AND roles::text LIKE '%anon%'"), 0);
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.todos'), 0);
+    });
+  });
+
+  test('round trips the row the add-todo action writes', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      await db.query(`INSERT INTO public.todos
+        (id, company_id, title, notes, status, assigned_to, assigned_to_name, due_date, due_at,
+         record_type, record_id, record_label, created_by, created_by_name, origin)
+        VALUES ('${TODO_A1}', '${TENANT_A}', 'Replace switchboard', 'Ring main unit is warm',
+                'open', '${TECH_A}', 'Tech A', '2026-10-12', '2026-10-12T08:00:00+11:00',
+                'job', 'job_a1', 'JOB-1001', '${ADMIN_A}', 'Admin A', 'brny')`);
+
+      const row = await one(
+        db,
+        `SELECT company_id, title, notes, status, assigned_to, assigned_to_name,
+                due_date::text AS due_date, record_type, record_id, record_label,
+                created_by, created_by_name, origin, completed_at,
+                (due_at = '2026-10-12T08:00:00+11:00'::timestamptz) AS due_at_matches
+           FROM public.todos WHERE id = '${TODO_A1}'`
+      );
+      assert.strictEqual(row.company_id, TENANT_A);
+      assert.strictEqual(row.title, 'Replace switchboard');
+      assert.strictEqual(row.notes, 'Ring main unit is warm');
+      assert.strictEqual(row.status, 'open');
+      assert.strictEqual(row.assigned_to, TECH_A);
+      assert.strictEqual(row.assigned_to_name, 'Tech A');
+      assert.strictEqual(row.due_date, '2026-10-12');
+      assert.strictEqual(row.due_at_matches, true);
+      assert.strictEqual(row.record_type, 'job');
+      assert.strictEqual(row.record_id, 'job_a1');
+      assert.strictEqual(row.record_label, 'JOB-1001');
+      assert.strictEqual(row.created_by, ADMIN_A);
+      assert.strictEqual(row.created_by_name, 'Admin A');
+      assert.strictEqual(row.origin, 'brny');
+      assert.strictEqual(row.completed_at, null);
+    });
+  });
+
+  test('another company can neither read nor write that row', async () => {
+    await asRole(db, 'authenticated', ADMIN_B, async () => {
+      assert.strictEqual(await value(db, "SELECT count(*)::int FROM public.todos"), 0);
+      await assert.rejects(
+        () => db.query(`INSERT INTO public.todos (id, company_id, title) VALUES ('${TODO_B1}', '${TENANT_A}', 'Sneaky')`),
+        /row-level security/i
+      );
+    });
+
+    // The rejected insert must not have landed.
+    assert.strictEqual(await value(db, `SELECT count(*)::int FROM public.todos WHERE id = '${TODO_B1}'`), 0);
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.todos'), 1);
+    });
+  });
+
+  test('completing a to-do round trips the completion stamp', async () => {
+    await asRole(db, 'authenticated', ADMIN_A, async () => {
+      await db.query(`UPDATE public.todos SET status = 'done', completed_at = now(), completed_by = '${ADMIN_A}' WHERE id = '${TODO_A1}'`);
+      assert.deepStrictEqual(
+        await one(db, `SELECT status, (completed_at IS NOT NULL) AS stamped, completed_by FROM public.todos WHERE id = '${TODO_A1}'`),
+        { status: 'done', stamped: true, completed_by: ADMIN_A }
+      );
+    });
+  });
+
+  test('indexes both dashboard questions', async () => {
+    for (const name of ['todos_company_due_idx', 'todos_company_assignee_idx']) {
+      assert.strictEqual(
+        await value(db, `SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'todos' AND indexname = '${name}'`),
+        1,
+        `${name} should exist`
+      );
+    }
+  });
+
+  test('never touches existing rows', async () => {
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.jobs'), 2);
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.profiles'), 3);
+    assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.notifications'), 1);
   });
 });

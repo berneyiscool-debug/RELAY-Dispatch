@@ -11,13 +11,14 @@
 //   • Layout, view (pan/zoom) and pins persist per-user; new users get a role-based default
 // ============================================
 import { store } from '../data/store.js';
+import { executeAction } from '../actions/index.js';
 import { supabase } from '../utils/supabase.js';
 import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { calculateTotalBillableMaterials, roundCurrency } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 import { FLAGS } from '../utils/flags.js';
-import { todayLocalISO } from '../utils/dateUtils.js';
+import { todayLocalISO, toDateKey, formatLocalDate } from '../utils/dateUtils.js';
 import { showDrawer } from '../components/Drawer.js';
 import { renderDeputyAsksWidget } from '../components/DeputyAsksWidget.js';
 import { getHideSystemNotifications, onNotificationPrefChanged, adoptNotificationPref, withNotificationPrefs } from '../utils/notificationPrefs.js';
@@ -175,6 +176,7 @@ const WIDGET_DEPS = {
   'invoice-aging':        ['invoices'],
   'quote-winrate':        ['quotes'],
   'notifications-widget': ['notifications'],
+  'daily-todo':           ['todos'],
 };
 
 // live.data only mirrors a few collections; map a store collection to its key.
@@ -642,6 +644,10 @@ function mountVisibleWidgets(viewport) {
     const body = el.querySelector('.card-body');
 
     try { body.innerHTML = mod.render(live.data || {}, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Error rendering widget'); }
+    // wireWidgetControls ran while this widget was still a placeholder, so its inner
+    // controls (checkboxes, add buttons, links) have no listeners yet. Bind them now
+    // that the real body exists — same scoped re-wire refreshWidgetsForCollections uses.
+    try { wireWidgetControls(body, live.data || {}); } catch (e) { /* controls stay inert rather than break the mount */ }
   });
 }
 
@@ -1753,52 +1759,71 @@ function wireWidgetControls(grid, data) {
     });
   });
 
-  // 9. Daily To-Do Checklist persistency
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  const userKey = currentUser ? `todo_${currentUser.id}` : 'todo_default';
+  // 9. Daily To-Do checklist — backed by the shared `todos` collection
+  const reloadTodoWidget = () => window.__relay.reloadDashboard?.();
+  const reportTodoError = (err) => {
+    import('../components/Notifications.js').then(({ showToast }) => {
+      showToast(err && err.message ? err.message : 'Could not update that to-do.', 'error');
+    });
+  };
+
+  void migrateLegacyTodos();
 
   grid.querySelectorAll('.todo-item-check').forEach(chk => {
     chk.addEventListener('change', e => {
-      let todos = [];
-      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
-      const idx = e.target.dataset.idx;
-      if (todos[idx]) {
-        todos[idx].completed = e.target.checked;
-        localStorage.setItem(userKey, JSON.stringify(todos));
-      }
-      window.__relay.reloadDashboard?.();
+      const box = e.currentTarget;
+      const id = box.dataset.todoId;
+      const request = box.checked
+        ? executeAction('complete_todo', { todo: id, note: '' })
+        : executeAction('update_todo', { todo: id, status: 'open' });
+
+      request
+        .then(reloadTodoWidget)
+        .catch(err => {
+          box.checked = !box.checked;
+          reportTodoError(err);
+        });
     });
   });
 
   grid.querySelectorAll('.btn-remove-todo').forEach(btn => {
     btn.addEventListener('click', e => {
-      let todos = [];
-      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
-      const idx = e.currentTarget.dataset.idx;
-      todos.splice(idx, 1);
-      localStorage.setItem(userKey, JSON.stringify(todos));
-      window.__relay.reloadDashboard?.();
+      store.delete('todos', e.currentTarget.dataset.todoId);
+      reloadTodoWidget();
     });
   });
 
   const todoInput = grid.querySelector('#todo-input-field');
+  const todoDueInput = grid.querySelector('#todo-due-field');
   const todoAddBtn = grid.querySelector('#btn-add-todo');
 
   if (todoAddBtn && todoInput) {
-    const handleAdd = () => {
+    const handleAdd = async () => {
       const text = todoInput.value.trim();
       if (!text) return;
-      let todos = [];
-      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
-      todos.push({ text, completed: false });
-      localStorage.setItem(userKey, JSON.stringify(todos));
+
+      // No `assign` — `add_todo` defaults the owner to the signed-in user.
+      const input = todoDueInput && todoDueInput.value
+        ? { title: text, due: todoDueInput.value }
+        : { title: text };
       todoInput.value = '';
-      window.__relay.reloadDashboard?.();
+      if (todoDueInput) todoDueInput.value = '';
+
+      try {
+        await executeAction('add_todo', input);
+        reloadTodoWidget();
+      } catch (err) {
+        reportTodoError(err);
+      }
     };
 
     todoAddBtn.addEventListener('click', handleAdd);
-    todoInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') handleAdd();
+    [todoInput, todoDueInput].filter(Boolean).forEach(field => {
+      field.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        void handleAdd();
+      });
     });
   }
 
@@ -2902,11 +2927,141 @@ function renderTopCustomers(data, item) {
   `;
 }
 
+const LEGACY_TODO_MIGRATION_KEY = 'todos_migrated_v1';
+
+/** The signed-in user, used to decide whose to-dos the card shows. */
+function todoViewer() {
+  try {
+    const user = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    return user && user.id ? user : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Move the pre-collection `todo_<userId>` localStorage checklist into the
+ * `todos` collection, once per browser. The flag is set before anything is
+ * written so a half-finished migration is never retried — a to-do the user
+ * has since deleted must not come back.
+ */
+async function migrateLegacyTodos() {
+  if (localStorage.getItem(LEGACY_TODO_MIGRATION_KEY)) return;
+
+  const viewer = todoViewer();
+  const userKey = viewer ? `todo_${viewer.id}` : 'todo_default';
+  let legacy = [];
+  try {
+    legacy = JSON.parse(localStorage.getItem(userKey) || '[]');
+  } catch {
+    legacy = [];
+  }
+  localStorage.setItem(LEGACY_TODO_MIGRATION_KEY, new Date().toISOString());
+  if (!Array.isArray(legacy) || !legacy.length) return;
+
+  for (const entry of legacy) {
+    const title = String((entry && entry.text) || '').trim();
+    if (!title) continue;
+    try {
+      const outcome = await executeAction('add_todo', { title });
+      if (entry.completed) await executeAction('complete_todo', { todo: outcome.result.todo.id });
+    } catch {
+      // Skip an unreadable legacy row rather than losing the rest of the list.
+    }
+  }
+
+  localStorage.removeItem(userKey);
+  window.__relay.reloadDashboard?.();
+}
+
+/**
+ * The rows the card shows: the viewer's open to-dos, or the whole team's when
+ * they have none assigned (so the widget is never empty for that reason), plus
+ * anything completed today. Overdue first, undated last.
+ */
+function dailyTodos() {
+  const viewer = todoViewer();
+  const all = store.getAll('todos') || [];
+  const today = todayLocalISO();
+
+  const byDue = (a, b) =>
+    String(a.dueDate || '9999-99-99').localeCompare(String(b.dueDate || '9999-99-99')) ||
+    String(a.dueAt || '').localeCompare(String(b.dueAt || ''));
+
+  // Someone with nothing under their name (an admin, or a stale login) sees the
+  // whole team's list rather than a permanently empty card.
+  const assigned = viewer ? all.filter(t => t.assignedTo === viewer.id) : all;
+  const rows = assigned.length ? assigned : all;
+
+  return {
+    viewer,
+    open: rows.filter(t => t.status !== 'done').sort(byDue),
+    doneToday: rows.filter(t => t.status === 'done' && toDateKey(t.completedAt) === today).sort(byDue),
+  };
+}
+
+function todoDueBadge(todo) {
+  if (!todo.dueDate) return '';
+  const today = todayLocalISO();
+  const tomorrow = todayLocalISO(new Date(Date.now() + 86400000));
+  let text;
+  let colour;
+  if (todo.dueDate < today) {
+    text = 'Overdue';
+    colour = 'var(--color-danger)';
+  } else if (todo.dueDate === today) {
+    text = 'Today';
+    colour = 'var(--color-warning)';
+  } else if (todo.dueDate === tomorrow) {
+    text = 'Tomorrow';
+    colour = 'var(--color-primary)';
+  } else {
+    text = formatLocalDate(todo.dueDate, { weekday: 'short', day: 'numeric', month: 'short' });
+    colour = 'var(--text-tertiary)';
+  }
+
+  const clock = todo.dueAt && todo.dueDate === today
+    ? new Date(todo.dueAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
+    : '';
+  return `<span style="color:${colour}; font-weight:600; white-space:nowrap;">${escapeHTML(text)}${clock ? ` ${escapeHTML(clock)}` : ''}</span>`;
+}
+
+function todoRow(todo, viewer, done) {
+  const meta = [];
+  const badge = todoDueBadge(todo);
+  if (badge) meta.push(badge);
+  if (viewer && todo.assignedTo !== viewer.id && todo.assignedToName) {
+    meta.push(`<span style="color:var(--text-tertiary);">${escapeHTML(todo.assignedToName)}</span>`);
+  }
+  if (todo.recordLabel) {
+    const href = todo.recordType === 'job'
+      ? `#/jobs/${todo.recordId}`
+      : todo.recordType === 'customer' ? `#/customers/${todo.recordId}` : null;
+    const label = `<span class="truncate" style="display:inline-block; max-width:140px; vertical-align:bottom;">${escapeHTML(todo.recordLabel)}</span>`;
+    meta.push(href
+      ? `<a href="${href}" style="color:var(--color-primary); text-decoration:none; display:inline-flex; align-items:center; gap:2px;"><span class="material-icons-outlined" style="font-size:11px;">link</span>${label}</a>`
+      : label);
+  }
+
+  return `
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; padding:8px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px;">
+      <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12px; color:${done ? 'var(--text-tertiary)' : 'var(--text-primary)'}; flex:1; min-width:0; margin:0;">
+        <input type="checkbox" class="todo-item-check" data-todo-id="${todo.id}" ${done ? 'checked' : ''} style="cursor:pointer; width:14px; height:14px; margin:2px 0 0; flex-shrink:0;" />
+        <span style="min-width:0;">
+          <span class="truncate" style="display:block; text-decoration:${done ? 'line-through' : 'none'};">${escapeHTML(todo.title)}</span>
+          ${meta.length ? `<span style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px; font-size:10px;">${meta.join('')}</span>` : ''}
+        </span>
+      </label>
+      <button class="btn btn-ghost btn-sm btn-icon btn-remove-todo" data-todo-id="${todo.id}" style="color:var(--color-danger); padding:0; width:22px; height:22px; flex-shrink:0;" title="Delete">
+        <span class="material-icons-outlined" style="font-size:16px;">delete</span>
+      </button>
+    </div>
+  `;
+}
+
 function renderDailyTodo(data, item) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  const userKey = currentUser ? `todo_${currentUser.id}` : 'todo_default';
-  let todos = [];
-  try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(e) {}
+  const { viewer, open, doneToday } = dailyTodos();
+  const rows = open.concat(doneToday);
 
   return `
     <div style="display:flex; flex-direction:column; gap:10px; height:100%;">
@@ -2914,18 +3069,14 @@ function renderDailyTodo(data, item) {
         <input type="text" id="todo-input-field" placeholder="Add custom task..." class="form-input" style="flex:1; height:30px; font-size:12px; padding:0 8px; margin:0;" />
         <button class="btn btn-primary btn-sm" id="btn-add-todo" style="padding:0 12px; height:30px; font-size:12px;">Add</button>
       </div>
-      <div id="todo-list-inner" style="display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto; padding-right:4px;">
-        ${todos.map((t, idx) => `
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px;">
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:${t.completed ? 'var(--text-tertiary)' : 'var(--text-primary)'}; text-decoration:${t.completed ? 'line-through' : 'none'}; flex:1; min-width:0; margin:0;">
-              <input type="checkbox" class="todo-item-check" data-idx="${idx}" ${t.completed ? 'checked' : ''} style="cursor:pointer; width:14px; height:14px; margin:0;" />
-              <span class="truncate">${escapeHTML(t.text)}</span>
-            </label>
-            <button class="btn btn-ghost btn-sm btn-icon btn-remove-todo" data-idx="${idx}" style="color:var(--color-danger); padding:0; width:22px; height:22px;" title="Delete">
-              <span class="material-icons-outlined" style="font-size:16px;">delete</span>
-            </button>
-          </div>
-        `).join('')}
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-tertiary);">
+        <span>Due</span>
+        <input type="date" id="todo-due-field" class="form-input" style="flex:1; height:26px; font-size:11px; padding:0 6px; margin:0;" />
+      </div>
+      <div id="todo-list-inner" style="display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; padding-right:4px;">
+        ${rows.length
+          ? rows.map(t => todoRow(t, viewer, t.status === 'done')).join('')
+          : '<div style="font-size:12px; color:var(--text-tertiary); text-align:center; padding:12px 0;">Nothing on your list</div>'}
       </div>
     </div>
   `;

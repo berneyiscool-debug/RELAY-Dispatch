@@ -2,7 +2,7 @@
  * Static guard for the per-tenant spend caps on the paid-API proxies.
  *
  * The caps cannot be exercised end to end without a live project (they need a
- * real JWT, a real tenant and a real DeepSeek/Google call), so this checks the
+ * real JWT, a real tenant and a real Anthropic/Google call), so this checks the
  * properties whose removal silently re-opens the abuse hole: the cap is read
  * from the environment, the tenant's spend is counted *before* the paid call,
  * and the spend is recorded after it. The ledger kind strings are cross-checked
@@ -198,9 +198,28 @@ describe('relay-copilot pooled allowance and per-user ceiling', () => {
     );
   });
 
-  test('disables DeepSeek thinking mode for the plain-temperature behaviour', () => {
-    assert.match(COPILOT, /thinking: \{ type: 'disabled' \}/, 'thinking mode is left to the provider default');
-    assert.match(COPILOT, /temperature: 0\.3/, 'the established temperature was changed');
+  test('sends an Anthropic request with sampling and thinking left off', () => {
+    assert.ok(
+      COPILOT.includes("const ALLOWED_HOST = 'api.anthropic.com'"),
+      'the proxy is not pinned to Anthropic'
+    );
+    assert.match(COPILOT, /'x-api-key': apiKey/, 'the key is not sent as x-api-key');
+    assert.match(COPILOT, /'anthropic-version': ANTHROPIC_VERSION/, 'the wire version is not sent');
+    assert.match(COPILOT, /ANTHROPIC_VERSION = '\d{4}-\d{2}-\d{2}'/, 'the wire version is not a pinned date');
+    // Both of these are mandatory upstream: an omitted ceiling is a 400 rather
+    // than a provider default, so neither may be dropped from the payload.
+    assert.match(COPILOT, /model: model \|\| DEFAULT_MODEL/, 'the model is not sent');
+    assert.match(
+      COPILOT,
+      /max_tokens: Number\(max_tokens\) > 0 \? Number\(max_tokens\) : DEFAULT_MAX_TOKENS/,
+      'the output ceiling is not sent'
+    );
+    // The 5.5 generation answers `temperature: 0.3` with a 400 — "`temperature`
+    // is deprecated for this model" — so pinning it would break every call.
+    assert.ok(!/temperature\s*:/.test(COPILOT), 'a sampling temperature is sent');
+    // Extended reasoning stays off: brny answers from CRM context, so thinking
+    // only adds latency and tokens here.
+    assert.ok(!/thinking\s*:/.test(COPILOT), 'a thinking budget is sent');
   });
 });
 

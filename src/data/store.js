@@ -60,7 +60,8 @@ const TABLE_MAP = {
   kitTypes: 'kit_types',
   locationTypes: 'location_types',
   deputyThreads: 'deputy_threads',
-  deputyRoutines: 'deputy_routines'
+  deputyRoutines: 'deputy_routines',
+  todos: 'todos'
 };
 
 const TABLE_COLUMNS = {
@@ -478,6 +479,27 @@ const TABLE_COLUMNS = {
     "total_material_cost",
     "created_by",
     "origin",
+    "created_at",
+    "updated_at"
+  ],
+  todos: [
+    "id",
+    "company_id",
+    "title",
+    "notes",
+    "status",
+    "assigned_to",
+    "assigned_to_name",
+    "due_date",
+    "due_at",
+    "record_type",
+    "record_id",
+    "record_label",
+    "created_by",
+    "created_by_name",
+    "origin",
+    "completed_at",
+    "completed_by",
     "created_at",
     "updated_at"
   ],
@@ -1994,6 +2016,39 @@ class DataStore {
       record.dueDate = record.due_date;
       delete record.due_date;
     }
+    // To-dos (043) store instants and record links alongside the due date.
+    if (record.due_at !== undefined) {
+      record.dueAt = record.due_at;
+      delete record.due_at;
+    }
+    if (record.assigned_to_name !== undefined) {
+      record.assignedToName = record.assigned_to_name;
+      delete record.assigned_to_name;
+    }
+    if (record.created_by_name !== undefined) {
+      record.createdByName = record.created_by_name;
+      delete record.created_by_name;
+    }
+    if (record.record_type !== undefined) {
+      record.recordType = record.record_type;
+      delete record.record_type;
+    }
+    if (record.record_id !== undefined) {
+      record.recordId = record.record_id;
+      delete record.record_id;
+    }
+    if (record.record_label !== undefined) {
+      record.recordLabel = record.record_label;
+      delete record.record_label;
+    }
+    if (record.completed_at !== undefined) {
+      record.completedAt = record.completed_at;
+      delete record.completed_at;
+    }
+    if (record.completed_by !== undefined) {
+      record.completedBy = record.completed_by;
+      delete record.completed_by;
+    }
     if (record.issue_date !== undefined) {
       record.issueDate = record.issue_date;
       delete record.issue_date;
@@ -2552,6 +2607,39 @@ class DataStore {
     if (record.dueDate !== undefined) {
       record.due_date = record.dueDate;
       delete record.dueDate;
+    }
+    // To-dos (043) store instants and record links alongside the due date.
+    if (record.dueAt !== undefined) {
+      record.due_at = record.dueAt;
+      delete record.dueAt;
+    }
+    if (record.assignedToName !== undefined) {
+      record.assigned_to_name = record.assignedToName;
+      delete record.assignedToName;
+    }
+    if (record.createdByName !== undefined) {
+      record.created_by_name = record.createdByName;
+      delete record.createdByName;
+    }
+    if (record.recordType !== undefined) {
+      record.record_type = record.recordType;
+      delete record.recordType;
+    }
+    if (record.recordId !== undefined) {
+      record.record_id = record.recordId;
+      delete record.recordId;
+    }
+    if (record.recordLabel !== undefined) {
+      record.record_label = record.recordLabel;
+      delete record.recordLabel;
+    }
+    if (record.completedAt !== undefined) {
+      record.completed_at = record.completedAt;
+      delete record.completedAt;
+    }
+    if (record.completedBy !== undefined) {
+      record.completed_by = record.completedBy;
+      delete record.completedBy;
     }
     if (record.issueDate !== undefined) {
       record.issue_date = record.issueDate;

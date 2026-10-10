@@ -409,6 +409,56 @@ describe('DataStore', () => {
       assert.strictEqual(norm.sections[0].lineItems[0].description, 'Test Material');
     });
 
+    test('a to-do round-trips through the 043 column whitelist without dropping fields', () => {
+      // The exact shape src/actions/todos.js add_todo() hands to store.create().
+      const todo = {
+        id: 'todo_1',
+        companyId: 'comp1',
+        title: 'Order the switchgear',
+        notes: '',
+        status: 'open',
+        assignedTo: 'tech_2',
+        assignedToName: 'Dana Whitfield',
+        dueDate: '2026-10-12',
+        dueAt: '2026-10-12T08:00:00.000Z',
+        recordType: 'job',
+        recordId: 'job_1',
+        recordLabel: 'JOB-1007 Switchboard upgrade',
+        createdBy: 'admin_1',
+        createdByName: 'Priya Raman',
+        origin: 'brny',
+        completedAt: null,
+        completedBy: null,
+        createdAt: '2026-10-10T00:00:00.000Z',
+        updatedAt: '2026-10-10T00:00:00.000Z'
+      };
+
+      const denorm = store.denormalizeRecord({ ...todo }, 'todos');
+
+      // Mirrors the columns created by supabase/migrations/043_todos.sql. A key
+      // absent from TABLE_COLUMNS.todos is deleted before the insert, so the write
+      // would silently drop the field rather than fail loudly.
+      assert.deepStrictEqual(Object.keys(denorm).sort(), [
+        'assigned_to', 'assigned_to_name', 'company_id', 'completed_at', 'completed_by',
+        'created_at', 'created_by', 'created_by_name', 'due_at', 'due_date', 'id',
+        'notes', 'origin', 'record_id', 'record_label', 'record_type', 'status',
+        'title', 'updated_at'
+      ]);
+
+      const norm = store.normalizeRecord({ ...denorm }, 'todos');
+
+      assert.strictEqual(norm.assignedToName, 'Dana Whitfield');
+      assert.strictEqual(norm.createdByName, 'Priya Raman');
+      assert.strictEqual(norm.dueAt, '2026-10-12T08:00:00.000Z');
+      assert.strictEqual(norm.recordType, 'job');
+      assert.strictEqual(norm.recordId, 'job_1');
+      assert.strictEqual(norm.recordLabel, 'JOB-1007 Switchboard upgrade');
+      assert.strictEqual(norm.completedAt, null);
+      assert.strictEqual(norm.completedBy, null);
+      assert.strictEqual(norm.assigned_to_name, undefined);
+      assert.strictEqual(norm.record_type, undefined);
+    });
+
     test('repairInvoiceIssueDates backfills missing issueDate from createdAt/dueDate', () => {
       store.cache.invoices = [
         { id: 'inv_no_date', number: 'INV-1', createdAt: '2026-08-10T10:00:00.000Z' },
