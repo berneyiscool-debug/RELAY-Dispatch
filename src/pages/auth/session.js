@@ -5,6 +5,8 @@
 // stay where they are: `localStorage.getItem('currentUser')` is how the rest of
 // the app discovers who is signed in, and that contract does not change.
 
+import { clearDemoFlag } from '../../utils/demoSession.js';
+
 const CURRENT_USER_KEY = 'currentUser';
 
 // Each sign-in form remembers its own identity so a username typed on the
@@ -29,6 +31,8 @@ export function setSessionUser(user) {
 /** Forget the signed-in user (sign out). */
 export function clearSessionUser() {
   localStorage.removeItem(CURRENT_USER_KEY);
+  // Signing out ends a demo session too, so the next sign-in lands on real data.
+  clearDemoFlag();
 }
 
 /** The signed-in user, or null when nobody is signed in. */

@@ -6,6 +6,11 @@ import { todayLocalISO } from '../utils/dateUtils.js';
 import { prebuiltForms } from './prebuiltForms.js';
 import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
 import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
+import { isDemoSession } from '../utils/demoSession.js';
+
+// Demo mode runs under this pseudo local account, so every "is this a cloud
+// company?" check in the app answers no and cloud features stay switched off.
+export const DEMO_COMPANY_ID = 'acct_demo';
 
 const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
@@ -609,9 +614,13 @@ class DataStore {
     const bootUser = typeof localStorage !== 'undefined'
       ? JSON.parse(localStorage.getItem('currentUser') || 'null')
       : null;
-    const isCloudUser = !!(bootUser && bootUser.companyId && !bootUser.companyId.startsWith('acct_'));
+    // Demo mode (see utils/demoSession.js): this tab runs on the in-memory demo
+    // business instead of the signed-in account's data. Nothing below touches
+    // that account — no cloud sync, no IndexedDB, no folder.
+    this.demoMode = !!(bootUser && bootUser.id && isDemoSession());
+    const isCloudUser = !this.demoMode && !!(bootUser && bootUser.companyId && !bootUser.companyId.startsWith('acct_'));
 
-    if (!isCloudUser && bootUser && bootUser.companyId && typeof sessionStorage !== 'undefined') {
+    if (!this.demoMode && !isCloudUser && bootUser && bootUser.companyId && typeof sessionStorage !== 'undefined') {
       sessionStorage.setItem('relay_active_account', bootUser.companyId);
     }
 
@@ -620,8 +629,8 @@ class DataStore {
       this.cache[col] = [];
     });
 
-    // Load local settings if they exist (only for offline/demo mode)
-    if (!isCloudUser && typeof localStorage !== 'undefined') {
+    // Load local settings if they exist (only for offline mode)
+    if (!this.demoMode && !isCloudUser && typeof localStorage !== 'undefined') {
       const localSettings = localStorage.getItem(this.getStorageKey('settings'));
       if (localSettings) {
         try {
@@ -632,6 +641,8 @@ class DataStore {
 
     // Handle authentication state changes
     supabase.auth.onAuthStateChange((event, session) => {
+      // A demo tab never syncs; signing out clears the demo flag (session.js).
+      if (this.demoMode) return;
       if (session) {
         this.userId = session.user.id;
         const userMeta = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -648,7 +659,12 @@ class DataStore {
     });
 
     // Auto-trigger sync or local load if user already logged in at boot
-    if (isCloudUser) {
+    if (this.demoMode) {
+      this.folderSyncEnabled = false;
+      this.userId = bootUser.id;
+      this.companyId = DEMO_COMPANY_ID;
+      this.initPromise = this.initializeDemo(bootUser);
+    } else if (isCloudUser) {
       this.userId = bootUser.id;
       this.companyId = bootUser.companyId;
       this.initPromise = this.initializeCloudSync();
@@ -679,6 +695,7 @@ class DataStore {
     // Signing in ends any portal scope: the visitor is no longer the anonymous
     // holder of a magic link, and their writes must go back to the staff path.
     this.portalScope = null;
+    if (this.demoMode) return this.initPromise;
     if (user && user.companyId && !user.companyId.startsWith('acct_')) {
       this.userId = user.id;
       this.companyId = user.companyId;
@@ -703,6 +720,37 @@ class DataStore {
       this.initPromise = this.initializeLocalStore();
       await this.initPromise;
     }
+  }
+
+  // ── Demo mode ───────────────────────────────────────────────────────────────
+  // Builds the demo business fresh in memory. Every write path below checks
+  // `demoMode` and stops at the cache, so edits last until the tab reloads.
+  async initializeDemo(user) {
+    const { buildDemoDataset, DEMO_USER_TYPES } = await import('./demoDataset.js');
+    const scope = 'demo_';
+    const { settings, collections, geo } = buildDemoDataset({
+      now: new Date(),
+      scope,
+      owner: { id: user.id, name: user.name, email: user.email, color: user.color },
+    });
+
+    Object.keys(TABLE_MAP).forEach(col => { this.cache[col] = []; });
+    Object.entries(collections).forEach(([col, items]) => { this.cache[col] = items; });
+    this.cache.userTypes = DEMO_USER_TYPES.map(ut => ({ ...ut, id: `${scope}${ut.id}` }));
+    this.cache.formTemplates = prebuiltForms.map(t => ({ ...t, id: `${scope}${t.id}` }));
+    this.companySettings = settings;
+
+    // The demo addresses are fictional: pre-warm the geocode cache with
+    // suburb-accurate pins so the map works without a lookup.
+    try {
+      const { setCachedGeo } = await import('../utils/geocode.js');
+      Object.entries(geo).forEach(([address, record]) => setCachedGeo(address, record));
+    } catch (err) {
+      console.warn('Demo geocode pre-warm skipped:', err);
+    }
+
+    this.emit('settings', this.getSettings());
+    Object.keys(this.cache).forEach(col => this.emit(col, this.cache[col]));
   }
 
   async initializeLocalStore() {
@@ -914,6 +962,7 @@ class DataStore {
   }
 
   writeRecordToIndexedDB(storeName, record) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -930,6 +979,7 @@ class DataStore {
   }
 
   deleteRecordFromIndexedDB(storeName, id) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -946,6 +996,7 @@ class DataStore {
   }
 
   writeAllToIndexedDB(storeName, items) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -978,6 +1029,7 @@ class DataStore {
   }
 
   clearAllIndexedDB() {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -1107,6 +1159,7 @@ class DataStore {
   }
 
   async backupToFolder(dirHandle) {
+    if (this.demoMode) return false;
     const handle = dirHandle || this.backupDirHandle;
     if (!handle) throw new Error('No backup directory configured.');
     
@@ -1136,6 +1189,7 @@ class DataStore {
   }
 
   async setLocalDirectory(dirHandle) {
+    if (this.demoMode) throw new Error('Not available in demo mode.');
     this.dirHandle = dirHandle;
     if (dirHandle) {
       this.folderSyncEnabled = true;
@@ -1180,6 +1234,7 @@ class DataStore {
   }
 
   async writeCollectionToFolder(collection, items) {
+    if (this.demoMode) return;
     if (!this.folderSyncEnabled) return;
 
     // 1. Capacitor Native environment
@@ -1286,6 +1341,7 @@ class DataStore {
   }
 
   async writeDocumentFileToFolder(docId, name, dataUrl) {
+    if (this.demoMode) return null;
     if (!this.folderSyncEnabled) return null;
 
     const ext = name.includes('.') ? name.split('.').pop() : 'bin';
@@ -2748,10 +2804,23 @@ class DataStore {
 
   // ── Local-First Core API Operations ────────────────────────────────────────
 
+  // Demo mode brings its own crew, shown as real rows (schedule lanes, staff
+  // pickers, labour costing) even for a single-user local account.
+  isDemoCrew() {
+    return !!this.demoMode && (this.cache.technicians || []).length > 1;
+  }
+
   getAll(collection) {
     const items = this.cache[collection] || [];
     if (collection === 'technicians') {
       const loginMode = typeof localStorage !== 'undefined' ? localStorage.getItem('relay_login_mode') : null;
+      if (loginMode === 'local' && this.isDemoCrew()) {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        // The signed-in owner keeps their own name and colour on the crew list.
+        return currentUser && currentUser.id
+          ? items.map(t => (t.id === currentUser.id ? { ...t, name: currentUser.name || t.name, color: currentUser.color || t.color, startLocation: this._localStartLocation() } : t))
+          : items;
+      }
       if (loginMode === 'local') {
         const currentUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('currentUser') : null;
         if (currentUserStr) {
@@ -2788,6 +2857,7 @@ class DataStore {
   // of writes in a second, so the persistent banner — not the toast — is the
   // real affordance. One nudge, then silence.
   _readOnlyBlocked(collection) {
+    if (this.demoMode) return false;
     if (!isReadOnly()) return false;
     const now = Date.now();
     if (now - (this._readOnlyNoticeAt || 0) > 8000) {
@@ -3569,7 +3639,7 @@ class DataStore {
     this.emit('settings', settings);
 
     if (!this.companyId || this.companyId.startsWith('acct_')) {
-      if (typeof localStorage !== 'undefined') {
+      if (!this.demoMode && typeof localStorage !== 'undefined') {
         localStorage.setItem(this.getStorageKey('settings'), JSON.stringify(settings));
       }
       return;
@@ -3637,6 +3707,7 @@ class DataStore {
       this.emit('technicians', techs);
     }
 
+    if (this.demoMode) return;
     if (!this.companyId || this.companyId.startsWith('acct_')) {
       // Local mode: persist on the local account record, because the synthesised
       // technicians row that reads it back is rebuilt from localStorage every time.
@@ -3729,9 +3800,12 @@ class DataStore {
         updatedAt: it.updatedAt || now,
       }, collection));
 
-    if (payload.length) {
-      const { error } = await supabase.from(table).upsert(payload);
-      if (error) this._notifyWriteError('save', collection, error);
+    // Upsert in chunks so a large collection (e.g. the demo dataset's history)
+    // stays well under the API's request-size limit.
+    const CHUNK = 400;
+    for (let i = 0; i < payload.length; i += CHUNK) {
+      const { error } = await supabase.from(table).upsert(payload.slice(i, i + CHUNK));
+      if (error) { this._notifyWriteError('save', collection, error); break; }
     }
 
     const currentIds = new Set(items.map(it => it && it.id));
@@ -3743,6 +3817,7 @@ class DataStore {
   }
 
   markSeeded() {
+    if (this.demoMode) return;
     localStorage.setItem(this.getStorageKey('seeded'), 'true');
   }
 
@@ -3928,6 +4003,7 @@ class DataStore {
   }
 
   async migrateLocalToCloud(companyId, adminUserId) {
+    if (this.demoMode) throw new Error('Not available in demo mode.');
     const localCompanyId = this.companyId;
 
     this.companyId = companyId;
@@ -3997,6 +4073,7 @@ class DataStore {
   }
 
   deleteLocalAccountData(accountId) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve) => {
       if (this.db) {
         this.db.close();
@@ -4025,7 +4102,18 @@ class DataStore {
   }
 
   async clearAll() {
+    // Never wipe the real account from a demo tab — there is nothing of the
+    // demo's to wipe either, it lives in memory.
+    if (this.demoMode) return;
+    // clearSync() resets companyId/userId along with the caches. Hold on to them:
+    // the cloud wipe below is scoped by company id (with it nulled, the delete
+    // matched nothing), and the caller is still signed in to the same account
+    // afterwards — demo seeding writes straight back into it.
+    const companyId = this.companyId;
+    const userId = this.userId;
     this.clearSync();
+    this.companyId = companyId;
+    this.userId = userId;
     if (!this.companyId || this.companyId.startsWith('acct_')) {
       const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
       

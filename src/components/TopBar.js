@@ -9,6 +9,7 @@ import { showModal } from './Modal.js';
 import relayIcon from '../assets/deputy-icon.svg?raw';
 import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 import { escapeHTML } from '../utils/security.js';
+import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
 
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
@@ -642,6 +643,16 @@ function openHelpModal() {
 
       <div class="help-right-col">
         <div>
+          <div class="help-section-title">Try it out</div>
+          <button class="help-action-card" id="help-demo-toggle">
+            <span class="material-icons-outlined">${store.demoMode ? 'logout' : 'science'}</span>
+            <div class="help-action-info">
+              <span class="help-action-label">${store.demoMode ? 'Exit demo mode' : 'Explore demo mode'}</span>
+              <span class="help-action-prompt">${store.demoMode ? 'Back to your own data' : 'A sample business — your data stays untouched'}</span>
+            </div>
+          </button>
+        </div>
+        <div>
           <div class="help-section-title">Keyboard Shortcuts</div>
           <div class="help-shortcut-row">
             <span>Focus search bar</span>
@@ -705,8 +716,13 @@ function openHelpModal() {
     size: 'modal-lg'
   });
 
+  content.querySelector('#help-demo-toggle')?.addEventListener('click', () => {
+    close();
+    if (store.demoMode) exitDemoMode(); else enterDemoMode();
+  });
+
   // Attach interactive quick action triggers
-  content.querySelectorAll('.help-action-card').forEach(card => {
+  content.querySelectorAll('.help-action-card[data-prompt]').forEach(card => {
     card.addEventListener('click', () => {
       const prompt = card.dataset.prompt;
       close();
