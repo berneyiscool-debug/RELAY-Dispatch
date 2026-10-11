@@ -4224,3 +4224,6 @@ body.relay-assistant-open .relay-topbar-actions {
   font-size: 13px;
   text-align: center;
 }
+.dash-period { display: flex; align-items: center; gap: 8px; }
+.dash-asof { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+.kpi-tile .kpi-loading { letter-spacing: 2px; }

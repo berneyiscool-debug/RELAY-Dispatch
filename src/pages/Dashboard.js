@@ -25,7 +25,7 @@ import { filterSystemNotifications } from '../utils/notificationVisibility.js';
 import { bindChecklistStoreListeners, mountSetupChecklist } from '../components/SetupChecklist.js';
 import Sortable from 'sortablejs';
 import {
-  KPIS, KPI_IDS, KPI_GROUPS, linkFilter, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
+  KPIS, KPI_IDS, KPI_GROUPS, linkFilter, kpiPermission, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
   formatKpiValue, formatKpiDelta, kpiSubline,
 } from '../utils/kpis.js';
 
@@ -136,16 +136,6 @@ OFFERED_KPIS.forEach(id => {
   MODULES[kpiModuleId(id)] = { title: KPIS[id].label, defaultW: 'KPI', defaultH: 'kpi', kpi: true, render: renderKpiCard };
 });
 
-// Who may see a card, by group, unless the card names its own permission.
-const KPI_GROUP_PERMS = {
-  money:         ['Invoices', 'view'],
-  profitability: ['Invoices', 'view'],
-  sales:         ['Quotes', 'view'],
-  jobs:          ['Jobs', 'view'],
-  team:          ['Jobs', 'view'],
-  customers:     ['Customers', 'view'],
-};
-
 // Module → permission required to even offer/show it. Absent = always allowed.
 const WIDGET_PERMS = {
   'cash-flow':            ['Invoices', 'view'],
@@ -170,7 +160,8 @@ function widgetAllowed(id) {
   const kpiId = kpiIdOf(id);
   if (kpiId) {
     if (!KPIS[kpiId]) return false;
-    const perm = KPIS[kpiId].perm || KPI_GROUP_PERMS[KPIS[kpiId].group];
+    // Same rule the dashboard-kpis function enforces (kpis.js kpiPermission).
+    const perm = kpiPermission(kpiId);
     return !perm || hasPermission(perm[0], perm[1]);
   }
   const perm = WIDGET_PERMS[id];
@@ -2054,14 +2045,17 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
   const kpiIds = OFFERED_KPIS.filter(id => widgetAllowed(kpiModuleId(id)) && (!KPIS[id].available || KPIS[id].available(env)));
   const widgets = Object.entries(MODULES).filter(([id, mod]) => !mod.kpi && widgetAllowed(id));
   const onCanvas = new Set(live.widgets.map(w => w.id));
-  // Live preview values from the user's own data, for the selected period.
-  const preview = computeKpis(kpiIds, live.period || DEFAULT_PERIOD);
+  // Live preview values from the user's own data, for the selected period. Cloud
+  // accounts ask the dashboard-kpis function and fill the values in when it answers.
+  const period = live.period || DEFAULT_PERIOD;
+  const cloud = isCloudAccount();
+  const preview = cloud ? {} : computeKpis(kpiIds, period);
+  const previewText = (id, r) => (!r || r.empty ? '—' : formatKpiValue(r.value, KPIS[id].format));
 
   const kpiCard = (id) => {
     const def = KPIS[id];
-    const r = preview[id];
     const added = onCanvas.has(kpiModuleId(id));
-    const value = !r || r.empty ? '—' : formatKpiValue(r.value, def.format);
+    const value = cloud ? '…' : previewText(id, preview[id]);
     return `
       <button type="button" data-id="${kpiModuleId(id)}" class="widget-picker-card kpi-picker-card${added ? ' is-added' : ''}" ${added ? 'aria-pressed="true"' : ''}>
         <div class="kpi-picker-text">
@@ -2100,6 +2094,19 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
       <div class="widget-picker-grid">${widgets.map(widgetCard).join('')}</div>
     </div>`;
 
+  if (cloud && kpiIds.length) {
+    supabase.functions.invoke('dashboard-kpis', { body: { ids: kpiIds, period, timeZone: timeZone() } })
+      .then(({ data, error }) => {
+        const results = !error && data && data.results ? data.results : computeKpis(kpiIds, period);
+        content.querySelectorAll('.kpi-picker-card').forEach(el => {
+          const id = kpiIdOf(el.dataset.id);
+          const v = el.querySelector('.kpi-picker-value');
+          if (v) v.textContent = previewText(id, results[id]);
+        });
+      })
+      .catch(() => {});
+  }
+
   import('../components/Modal.js').then(({ showModal }) => {
     showModal({ title: 'Add Widget', content, actions: [{ label: 'Close', className: 'btn-secondary', onClick: c => c() }] });
     content.querySelectorAll('[data-id]').forEach(el => {
@@ -2132,21 +2139,108 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
 
 // ── KPI cards ────────────────────────────────────────────────────────────────────
 
-// Results for every KPI card on the canvas, computed in one pass and kept until a
-// collection they read changes (refreshWidgetsForCollections), the period changes,
-// the set of cards changes, or the day rolls over. Opening the dashboard reuses them.
-let _kpiCache = null; // { key, results }
+// Results for every KPI card on the canvas, keyed by period + day + card set.
+//
+// Local accounts: computed on the device in one pass and kept until a collection
+// the cards read changes (invalidateKpis), so opening the dashboard reuses them.
+//
+// Cloud accounts: fetched from the dashboard-kpis Edge Function, which runs the
+// same formulas over the whole team's data in Postgres. The last answer is kept
+// per company, so the cards paint at once on the next open and, when offline,
+// show those figures marked "as of". A save (or a sync from a teammate) asks the
+// function for a fresh answer, skipping its 5-minute cache.
+let _kpiCache = null;   // local: { key, results }
+let _remote = null;     // cloud: { key, results, asOf, offline?, local? }
+let _remoteInflight = null;
+let _remoteRefresh = false;
 
-function invalidateKpis() { _kpiCache = null; }
+const isCloudAccount = () => {
+  if (store.demoMode) return false;
+  const u = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  return !!(u && u.companyId && !String(u.companyId).startsWith('acct_'));
+};
+const companyKey = () => `relay_kpis_${JSON.parse(localStorage.getItem('currentUser') || '{}').companyId || ''}`;
+const timeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } };
 
+function invalidateKpis() {
+  _kpiCache = null;
+  // Only once we've had an answer: the store's initial load shouldn't skip the
+  // server cache on every sign-in.
+  if (_remote && _remote.asOf) _remoteRefresh = true;
+  // On-device stand-in figures: drop them so the next paint tries the function
+  // again (and recalculates if it still can't be reached).
+  if (_remote && _remote.local) _remote = null;
+}
+
+function canvasKpiIds() {
+  return [...new Set((live?.widgets || []).map(w => kpiIdOf(w.id)).filter(Boolean))].sort();
+}
+
+// null while a cloud account's first answer is on its way.
 function kpiResults() {
-  const ids = [...new Set((live?.widgets || []).map(w => kpiIdOf(w.id)).filter(Boolean))].sort();
+  const ids = canvasKpiIds();
   const period = live?.period || DEFAULT_PERIOD;
   const key = `${period}|${todayLocalISO()}|${ids.join(',')}`;
+  if (isCloudAccount()) return remoteKpiResults(ids, period, key);
   if (_kpiCache && _kpiCache.key === key) return _kpiCache.results;
   const results = computeKpis(ids, period);
   _kpiCache = { key, results };
   return results;
+}
+
+function remoteKpiResults(ids, period, key) {
+  if (!ids.length) return {};
+  if (!_remote || _remote.key !== key) {
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(companyKey()) || 'null'); } catch { /* ignore */ }
+    _remote = stored && stored.key === key ? { ...stored, stale: true } : null;
+    fetchRemoteKpis(ids, period, key, false);
+  } else if (_remoteRefresh || _remote.stale || (_remote.offline && Date.now() - (_remote.triedAt || 0) > 60000)) {
+    fetchRemoteKpis(ids, period, key, _remoteRefresh);
+  }
+  return _remote ? _remote.results : null;
+}
+
+async function fetchRemoteKpis(ids, period, key, refresh) {
+  if (_remoteInflight === key) return;
+  _remoteInflight = key;
+  _remoteRefresh = false;
+  let data = null, error = null;
+  try {
+    ({ data, error } = await supabase.functions.invoke('dashboard-kpis', { body: { ids, period, timeZone: timeZone(), refresh } }));
+  } catch (e) { error = e; }
+  if (_remoteInflight === key) _remoteInflight = null;
+  // The canvas moved on (period or cards changed) while this was in flight.
+  const current = `${live?.period || DEFAULT_PERIOD}|${todayLocalISO()}|${canvasKpiIds().join(',')}`;
+  if (current !== key) return;
+
+  if (error || !data || !data.results) {
+    if (_remote && _remote.key === key && _remote.asOf) {
+      _remote = { ..._remote, offline: true, stale: false, triedAt: Date.now() };
+      setTimeout(() => { if (_remote && _remote.offline) repaintKpiWidgets(); }, 61000); // retry
+    } else {
+      // Nothing fetched yet (offline on first open, or the function isn't
+      // reachable): fall back to the figures the device can work out from the
+      // company data it already holds, rather than an empty dashboard.
+      _remote = { key, results: computeKpis(ids, period), asOf: null, local: true };
+    }
+  } else {
+    _remote = { key, results: data.results, asOf: data.asOf };
+    try { localStorage.setItem(companyKey(), JSON.stringify(_remote)); } catch { /* storage full: fine */ }
+  }
+  repaintKpiWidgets();
+}
+
+// "as of 9:41 am" beside the period picker while offline shows an earlier answer.
+// (The quick refresh after reopening isn't flagged; it lands in a moment.)
+function renderAsOf() {
+  const el = document.querySelector('#dash-asof');
+  if (!el) return;
+  const show = isCloudAccount() && _remote && _remote.asOf && _remote.offline;
+  el.textContent = show
+    ? `as of ${new Date(_remote.asOf).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: new Date(_remote.asOf).toDateString() === new Date().toDateString() ? undefined : 'numeric', month: new Date(_remote.asOf).toDateString() === new Date().toDateString() ? undefined : 'short' })}`
+    : '';
+  el.hidden = !show;
 }
 
 // Load each collection the cards read once, then run every formula.
@@ -2172,10 +2266,15 @@ function renderKpiCard(data, item) {
   const id = kpiIdOf(item.id);
   const def = KPIS[id];
   if (!def) return renderPlaceholder('error_outline', 'Unknown card');
-  const r = kpiResults()[id];
+  const all = kpiResults();
+  const r = all && all[id];
   // In edit mode a click picks the card up rather than leaving the dashboard.
   const nav = isEditMode ? '' : `data-nav="${escapeHTML(kpiHref(def))}"`;
   const open = `<div class="kpi-tile${isEditMode ? '' : ' is-link'}" ${nav} title="${escapeHTML(def.description)}">`;
+
+  if (!all) {
+    return `${open}<div class="kpi-value kpi-value-empty kpi-loading" aria-label="Loading">…</div></div>`;
+  }
 
   if (!r || r.empty) {
     return `${open}
@@ -2217,6 +2316,7 @@ function repaintKpiWidgets() {
     const body = el.querySelector('.card-body');
     if (body) body.innerHTML = renderKpiCard(live.data || {}, item);
   });
+  renderAsOf();
 }
 
 // The one period selector for every card. Hidden when no card is on the canvas.
@@ -2226,10 +2326,12 @@ function renderPeriodPicker() {
   if (!live.widgets.some(w => kpiIdOf(w.id))) { slot.innerHTML = ''; return; }
   const current = live.period || DEFAULT_PERIOD;
   slot.innerHTML = `
+    <span id="dash-asof" class="dash-asof" hidden></span>
     <label class="sr-only" for="dash-period-select">KPI period</label>
     <select id="dash-period-select" class="form-select dash-period-select">
       ${PERIODS.map(p => `<option value="${p.id}" ${p.id === current ? 'selected' : ''}>${p.label}</option>`).join('')}
     </select>`;
+  renderAsOf();
   slot.querySelector('select').addEventListener('change', e => {
     live.period = e.target.value;
     repaintKpiWidgets();
