@@ -3249,6 +3249,41 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
 }
+
+/* Add Widget modal: KPI cards grouped, then the other widgets */
+.widget-picker { max-height: 60vh; overflow-y: auto; padding-right: 2px; }
+.widget-picker-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin: 4px 0 10px;
+}
+.widget-picker-title:not(:first-child) { margin-top: 20px; }
+.widget-picker-group + .widget-picker-group { margin-top: 12px; }
+.widget-picker-heading { font-size: 12px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 6px; }
+.widget-picker-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+button.widget-picker-card {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  width: 100%;
+  min-width: 0;
+}
+.kpi-picker-card { gap: 10px; }
+.kpi-picker-text { flex: 1; min-width: 0; }
+.kpi-picker-name { font-weight: 600; font-size: 13px; }
+.kpi-picker-desc { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-picker-value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kpi-picker-tick { font-size: 18px; color: var(--text-tertiary); }
+.kpi-picker-card.is-added { cursor: default; border-color: var(--color-success); }
+.kpi-picker-card.is-added:hover { background: transparent; }
+.kpi-picker-card.is-added .kpi-picker-tick { color: var(--color-success); }
+@media (max-width: 560px) {
+  .widget-picker-grid { grid-template-columns: 1fr; }
+}
 /* ============================================
    LEADS — grouped pipeline table
    The leads list keeps the table it always had; these are the pieces that

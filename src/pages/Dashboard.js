@@ -24,6 +24,10 @@ import { getHideSystemNotifications, onNotificationPrefChanged, adoptNotificatio
 import { filterSystemNotifications } from '../utils/notificationVisibility.js';
 import { bindChecklistStoreListeners, mountSetupChecklist } from '../components/SetupChecklist.js';
 import Sortable from 'sortablejs';
+import {
+  KPIS, KPI_IDS, KPI_GROUPS, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
+  formatKpiValue, formatKpiDelta, kpiSubline,
+} from '../utils/kpis.js';
 
 function getHeaderActionsHtml() {
   const canCreateJob = hasPermission('Jobs', 'create');
@@ -57,8 +61,8 @@ const VIEW_INSET_X = 0;
 const VIEW_INSET_Y = 0;
 
 // Default pixel sizes derived from a widget's declared width/height class
-const W_PX = { S: 300, M: 460, L: 680, XL: 680 };
-const H_PX = { standard: 160, tall: 320, xtall: 480 };
+const W_PX = { KPI: 220, S: 300, M: 460, L: 680, XL: 680 };
+const H_PX = { kpi: 140, standard: 160, tall: 320, xtall: 480 };
 const MIN_W = 200, MIN_H = 120;
 
 // Pin palette for the "Drop Pin" tool
@@ -93,7 +97,6 @@ function getLockKey() {
 
 // Each module declares default size + which size options are sensible + its renderer
 const MODULES = {
-  'kpi-cards':            { title: 'KPI Cards',                   defaultW: 'L',  defaultH: 'standard', kpiStrip: true,  render: renderKpiCards },
   'job-status-chart':     { title: 'Job Status Chart',            defaultW: 'M',  defaultH: 'tall',     render: renderJobStatusChart },
   'tech-map':             { title: 'Technician Map',              defaultW: 'S',  defaultH: 'tall',     render: renderTechMap },
   'recent-activity':      { title: 'Recent Activity',             defaultW: 'M',  defaultH: 'tall',     render: renderRecentActivity },
@@ -112,7 +115,6 @@ const MODULES = {
   'top-customers':        { title: 'Top Customers',               defaultW: 'M',  defaultH: 'tall',     render: renderTopCustomers },
   'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     render: renderDailyTodo },
   'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', render: renderPendingApprovals },
-  'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', render: renderCustomerNPS },
   'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', render: renderCashFlow },
   'revenue-comparison':   { title: 'Revenue vs Last Month',       defaultW: 'S',  defaultH: 'standard', render: renderRevenueComparison },
   'invoice-aging':        { title: 'Invoice Aging',               defaultW: 'M',  defaultH: 'standard', render: renderInvoiceAging },
@@ -121,6 +123,27 @@ const MODULES = {
   'weather-forecast':     { title: 'Weather Forecast',            defaultW: 'S',  defaultH: 'standard', render: renderWeatherForecast },
   'notifications-widget': { title: 'Notifications',             defaultW: 'M',  defaultH: 'tall',     render: renderNotificationsWidget },
   'deputy-asks-widget':   { title: 'brny Proposals',            defaultW: 'M',  defaultH: 'tall',     render: renderDeputyAsksWidget },
+};
+
+// ── KPI cards ────────────────────────────────────────────────────────────────────
+// Each KPI is its own small widget with id 'kpi:<kpiId>'; the formulas live in
+// utils/kpis.js. Only the launch set is offered until it has proven itself.
+const KPI_PREFIX = 'kpi:';
+const kpiModuleId = (kpiId) => KPI_PREFIX + kpiId;
+const kpiIdOf = (moduleId) => (typeof moduleId === 'string' && moduleId.startsWith(KPI_PREFIX) ? moduleId.slice(KPI_PREFIX.length) : null);
+const OFFERED_KPIS = KPI_IDS.filter(id => KPIS[id].launch);
+OFFERED_KPIS.forEach(id => {
+  MODULES[kpiModuleId(id)] = { title: KPIS[id].label, defaultW: 'KPI', defaultH: 'kpi', kpi: true, render: renderKpiCard };
+});
+
+// Who may see a card, by group.
+const KPI_GROUP_PERMS = {
+  money:         ['Invoices', 'view'],
+  profitability: ['Invoices', 'view'],
+  sales:         ['Quotes', 'view'],
+  jobs:          ['Jobs', 'view'],
+  team:          ['Jobs', 'view'],
+  customers:     ['Customers', 'view'],
 };
 
 // Module → permission required to even offer/show it. Absent = always allowed.
@@ -144,6 +167,13 @@ const WIDGET_PERMS = {
 };
 
 function widgetAllowed(id) {
+  const kpiId = kpiIdOf(id);
+  if (kpiId) {
+    if (!KPIS[kpiId]) return false;
+    // New leads sits with sales but reads leads, not quotes.
+    const perm = kpiId === 'new_leads' ? ['Leads', 'view'] : KPI_GROUP_PERMS[KPIS[kpiId].group];
+    return !perm || hasPermission(perm[0], perm[1]);
+  }
   const perm = WIDGET_PERMS[id];
   if (!perm) return true;
   return hasPermission(perm[0], perm[1]);
@@ -155,7 +185,7 @@ function widgetAllowed(id) {
 // (tech-map, route-summary, today-schedule) are intentionally omitted — they own
 // their refresh lifecycle and re-running them would re-hit geocode/route services.
 const WIDGET_DEPS = {
-  'kpi-cards':            ['jobs', 'quotes', 'invoices'],
+  ...Object.fromEntries(OFFERED_KPIS.map(id => [kpiModuleId(id), KPIS[id].needs])),
   'job-status-chart':     ['jobs'],
   'recent-activity':      ['jobs', 'quotes', 'invoices'],
   'recent-leads':         ['leads'],
@@ -198,6 +228,7 @@ function refreshWidgetsForCollections(collections) {
     if (key && live.data) live.data[key] = store.getAll(coll);
   });
   const data = live.data || {};
+  invalidateKpis();
   live.widgets.forEach(item => {
     const mod = MODULES[item.id];
     if (!mod || !mod.render) return;
@@ -216,6 +247,9 @@ function refreshWidgetsForCollections(collections) {
 
 // Debounced + batched so a burst of writes triggers a single targeted refresh.
 function scheduleWidgetRefresh(coll) {
+  // Drop cached KPI results even when the dashboard isn't showing, so a save made
+  // on another page is reflected the next time the dashboard opens.
+  invalidateKpis();
   _dashRefreshPending.add(coll);
   clearTimeout(_dashRefreshTimer);
   _dashRefreshTimer = setTimeout(() => {
@@ -244,35 +278,79 @@ function subscribeWidgetRefresh() {
 }
 
 // ── Role-based default layouts (world px coordinates) ────────────────────────────
+// A row of KPI cards runs along the top (see defaultLayoutForUser); these sit below it.
 const ADMIN_DEFAULT = [
-  { id: 'kpi-cards',          x: 40,  y: 40,  w: 680, h: 130 },
-  { id: 'job-status-chart',   x: 40,  y: 190, w: 420, h: 320 },
-  { id: 'cash-flow',          x: 480, y: 190, w: 240, h: 320 },
-  { id: 'recent-leads',       x: 40,  y: 530, w: 420, h: 290 },
-  { id: 'tech-map',           x: 480, y: 530, w: 240, h: 290 },
-  { id: 'today-schedule',     x: 740, y: 40,  w: 440, h: 240 },
-  { id: 'recent-activity',    x: 740, y: 300, w: 440, h: 250 },
-  { id: 'deputy-asks-widget', x: 740, y: 570, w: 440, h: 250 },
+  { id: 'job-status-chart',   x: 40,  y: 200, w: 420, h: 320 },
+  { id: 'cash-flow',          x: 480, y: 200, w: 240, h: 320 },
+  { id: 'recent-leads',       x: 40,  y: 540, w: 420, h: 290 },
+  { id: 'tech-map',           x: 480, y: 540, w: 240, h: 290 },
+  { id: 'today-schedule',     x: 740, y: 200, w: 440, h: 240 },
+  { id: 'recent-activity',    x: 740, y: 460, w: 440, h: 250 },
+  { id: 'deputy-asks-widget', x: 740, y: 730, w: 440, h: 250 },
 ];
 
 const TECH_DEFAULT = [
-  { id: 'kpi-cards',        x: 40,  y: 40,  w: 300, h: 150 },
-  { id: 'weather-forecast', x: 360, y: 40,  w: 300, h: 150 },
-  { id: 'today-schedule',   x: 40,  y: 220, w: 440, h: 380 },
-  { id: 'daily-todo',       x: 500, y: 220, w: 300, h: 380 },
-  { id: 'recent-activity',  x: 700, y: 40,  w: 0,   h: 0 }, // placeholder removed below if dup
+  { id: 'weather-forecast', x: 520, y: 40,  w: 300, h: 140 },
+  { id: 'today-schedule',   x: 40,  y: 200, w: 440, h: 380 },
+  { id: 'daily-todo',       x: 500, y: 200, w: 300, h: 380 },
 ];
 
-function defaultLayoutForUser() {
-  const canViewQuotes = hasPermission('Quotes', 'view');
-  const canViewInvoices = hasPermission('Invoices', 'view');
-  const isTechUser = !canViewQuotes && !canViewInvoices;
+const newInstanceId = () => 'inst_' + Math.random().toString(36).substr(2, 9);
+const isTechUser = () => !hasPermission('Quotes', 'view') && !hasPermission('Invoices', 'view');
 
-  let base = isTechUser ? TECH_DEFAULT : ADMIN_DEFAULT;
-  // clone + drop any zero-size placeholders + drop disallowed widgets
-  return base
-    .filter(w => w.w > 0 && w.h > 0 && widgetAllowed(w.id) && MODULES[w.id])
-    .map(w => ({ ...w, instanceId: 'inst_' + Math.random().toString(36).substr(2, 9) }));
+// Spec: starting cards depend on how many people work in the business. Sign-up
+// doesn't ask yet, so active staff on the account stands in for the answer.
+function staffCount() {
+  return store.getAll('technicians').filter(t => !t.deactivated && t.role !== 'customer').length;
+}
+
+function defaultKpiIdsForUser() {
+  const ids = isTechUser() ? ['scheduled_today', 'jobs_completed'] : defaultKpiIds(staffCount());
+  return ids.filter(id => widgetAllowed(kpiModuleId(id)));
+}
+
+// KPI tiles laid out left to right from (x, y), wrapping after `cols`.
+function kpiTiles(ids, x, y, cols = ids.length) {
+  return ids.map((id, i) => ({
+    id: kpiModuleId(id),
+    instanceId: newInstanceId(),
+    x: x + (i % cols) * (W_PX.KPI + GRID),
+    y: y + Math.floor(i / cols) * (H_PX.kpi + GRID),
+    w: W_PX.KPI, h: H_PX.kpi,
+  }));
+}
+
+function defaultLayoutForUser() {
+  const base = isTechUser() ? TECH_DEFAULT : ADMIN_DEFAULT;
+  return [
+    ...kpiTiles(defaultKpiIdsForUser(), 40, 40),
+    ...base.filter(w => widgetAllowed(w.id) && MODULES[w.id]).map(w => ({ ...w, instanceId: newInstanceId() })),
+  ];
+}
+
+// Saved layouts from before the KPI overhaul have one 'kpi-cards' strip. Swap it
+// for the user's default cards, wrapped to the strip's width, and push whatever
+// sat under the strip down by however much taller the cards are.
+function expandLegacyKpiStrip(widgets) {
+  const strip = widgets.find(w => w.id === 'kpi-cards');
+  if (!strip) return widgets;
+  const rest = widgets.filter(w => w.id !== 'kpi-cards');
+  const ids = defaultKpiIdsForUser();
+  if (!ids.length) return rest;
+  const cols = Math.max(1, Math.floor((strip.w + 2 * GRID) / (W_PX.KPI + GRID)));
+  const tiles = kpiTiles(ids, strip.x, strip.y, cols);
+  const rows = Math.ceil(ids.length / cols);
+  const tilesW = Math.min(cols, ids.length) * (W_PX.KPI + GRID) - GRID;
+  const grow = rows * (H_PX.kpi + GRID) - GRID - strip.h;
+  if (grow > 0) {
+    const stripBottom = strip.y + strip.h;
+    rest.forEach(w => {
+      const below = w.y >= stripBottom;
+      const sideBySide = w.x < strip.x + Math.max(strip.w, tilesW) && w.x + w.w > strip.x;
+      if (below && sideBySide) w.y = snap(w.y + grow);
+    });
+  }
+  return [...tiles, ...rest];
 }
 
 // The default "Home" saved view — centred on the widget cluster. It's seeded for new
@@ -290,7 +368,7 @@ function makeHomeView(widgets) {
 }
 
 async function loadLayout() {
-  let widgets = null, view = null, pins = null, home = null, stored = false;
+  let widgets = null, view = null, pins = null, home = null, period = null, stored = false;
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   // For a logged-in cloud account, Supabase is the source of truth. Track whether it
   // actually answered so a stale per-origin localStorage copy can't mask the cloud
@@ -321,6 +399,7 @@ async function loadLayout() {
           view = parsed.view || null;
           pins = Array.isArray(parsed.pins) ? parsed.pins : [];
           home = parsed.home || null;
+          period = parsed.period || null;
         }
       }
     } catch (e) {
@@ -344,11 +423,13 @@ async function loadLayout() {
           view = parsed.view || null;
           pins = Array.isArray(parsed.pins) ? parsed.pins : [];
           home = parsed.home || null; // legacy separate home → migrate into views below
+          period = parsed.period || null;
         }
       }
     } catch (e) {}
   }
   if (!stored) widgets = defaultLayoutForUser();
+  else widgets = expandLegacyKpiStrip(widgets);
 
   // Drop modules that no longer exist (e.g. the removed embedded page widgets) and any
   // widget the user can't see. A layout that consisted only of those would load empty, so
@@ -379,6 +460,7 @@ async function loadLayout() {
     widgets,
     view: view || { panX: 0, panY: 0, zoom: 1 },
     pins,
+    period: PERIODS.some(p => p.id === period) ? period : DEFAULT_PERIOD,
   };
 }
 
@@ -386,7 +468,7 @@ async function saveLayout() {
   if (!live) return;
   // dashboard_layout also carries the notification-preference key, so the document
   // is merged rather than replaced.
-  const layout = withNotificationPrefs({ widgets: live.widgets, view: live.view, pins: live.pins });
+  const layout = withNotificationPrefs({ widgets: live.widgets, view: live.view, pins: live.pins, period: live.period });
   // Save to localStorage for offline fallback
   localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -439,7 +521,8 @@ export async function renderDashboard(container) {
         panY: VIEW_INSET_Y - firstPin.y * targetZoom
       };
     }
-    live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins };
+    live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins, period: loaded.period };
+    invalidateKpis();
   }
   // Canvas lock is a per-user view preference (independent of the saved layout)
   live.locked = localStorage.getItem(getLockKey()) === '1';
@@ -462,8 +545,12 @@ export async function renderDashboard(container) {
 
         <div class="dash-topbar">
           <div class="dash-topbar-left"></div>
-          <!-- Holds the edit-mode controls. Empty outside edit mode. -->
-          <div id="dashboard-header-actions" class="dash-topbar-right"></div>
+          <div class="dash-topbar-right">
+            <!-- One period for every KPI card. Shown while any card is on the canvas. -->
+            <div id="dash-period" class="dash-period"></div>
+            <!-- Holds the edit-mode controls. Empty outside edit mode. -->
+            <div id="dashboard-header-actions" class="dash-topbar-actions"></div>
+          </div>
         </div>
 
         <div class="dash-views" id="dash-views"></div>
@@ -498,8 +585,10 @@ export async function renderDashboard(container) {
 
   // Hooks the Relay assistant calls to perform real actions
   window.__relay.addWidgetById = (id) => {
+    if (!MODULES[id] && KPIS[id]) id = kpiModuleId(id);
     const mod = MODULES[id];
     if (!mod || !widgetAllowed(id)) return false;
+    if (mod.kpi && live.widgets.some(w => w.id === id)) return mod.title; // one of each card
     const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
     const cy = (viewport.clientHeight / 2 - live.view.panY) / live.view.zoom;
     const item = {
@@ -581,11 +670,6 @@ function renderWidgets(world, data) {
           </button>` : ''}
       </div>`;
 
-    const kpiCardsCount = item.id === 'kpi-cards'
-      ? ((hasPermission('Quotes', 'view') ? 1 : 0) + (hasPermission('Invoices', 'view') ? 2 : 0) + (hasPermission('Jobs', 'view') ? 1 : 0))
-      : 0;
-    const bodyStyle = item.id === 'kpi-cards' ? `style="display:grid; grid-template-columns: repeat(${Math.max(kpiCardsCount, 1)}, 1fr);"` : '';
-
     const resizeHandles = isEditMode ? `
       <div class="dash-resize dash-resize-r"  data-instance-id="${item.instanceId}" title="Drag to resize width"></div>
       <div class="dash-resize dash-resize-b"  data-instance-id="${item.instanceId}" title="Drag to resize height"></div>
@@ -602,12 +686,12 @@ function renderWidgets(world, data) {
     el.style.width = item.w + 'px';
     el.style.height = item.h + 'px';
     el.innerHTML = `
-      <div class="card dashboard-card ${mod.kpiStrip ? 'kpi-strip' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
+      <div class="card dashboard-card ${mod.kpi ? 'kpi-card' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
         <div class="card-header dash-drag-handle">
           <span style="font-weight:600;font-size:14px;">${mod.title}</span>
           ${widgetControls}
         </div>
-        <div class="card-body" ${bodyStyle} style="flex:1;overflow-y:auto;min-height:0;"></div>
+        <div class="card-body" style="flex:1;overflow-y:auto;min-height:0;"></div>
       </div>
       ${resizeHandles}`;
     world.appendChild(el);
@@ -622,6 +706,7 @@ function renderWidgets(world, data) {
 
   wireWidgetControls(world, data);
   if (isEditMode) wireEditControls(world, data);
+  renderPeriodPicker();
 
   // Mount any widgets that are already on screen (synchronously, before paint)
   const vp = document.querySelector('#dash-viewport');
@@ -1966,23 +2051,53 @@ function showEditHeader(container, viewport, world, guides, data) {
 
 // Reusable Add-Widget picker (used by the edit header, the context menu and double-click)
 function openAddWidgetModal(container, viewport, world, guides, data) {
-  const available = Object.entries(MODULES).filter(([id]) => widgetAllowed(id));
+  const kpiIds = OFFERED_KPIS.filter(id => widgetAllowed(kpiModuleId(id)));
+  const widgets = Object.entries(MODULES).filter(([id, mod]) => !mod.kpi && widgetAllowed(id));
+  const onCanvas = new Set(live.widgets.map(w => w.id));
+  // Live preview values from the user's own data, for the selected period.
+  const preview = computeKpis(kpiIds, live.period || DEFAULT_PERIOD);
 
-  const card = ([id, mod]) => `
-    <div data-id="${id}" class="widget-picker-card">
+  const kpiCard = (id) => {
+    const def = KPIS[id];
+    const r = preview[id];
+    const added = onCanvas.has(kpiModuleId(id));
+    const value = !r || r.empty ? '—' : formatKpiValue(r.value, def.format);
+    return `
+      <button type="button" data-id="${kpiModuleId(id)}" class="widget-picker-card kpi-picker-card${added ? ' is-added' : ''}" ${added ? 'aria-pressed="true"' : ''}>
+        <div class="kpi-picker-text">
+          <div class="kpi-picker-name">${escapeHTML(def.label)}</div>
+          <div class="kpi-picker-desc">${escapeHTML(def.description)}</div>
+        </div>
+        <div class="kpi-picker-value">${value}</div>
+        <span class="material-icons-outlined kpi-picker-tick" aria-label="${added ? 'On your dashboard' : ''}">${added ? 'check_circle' : 'add_circle_outline'}</span>
+      </button>`;
+  };
+
+  const kpiSection = KPI_GROUPS.map(g => {
+    const ids = kpiIds.filter(id => KPIS[id].group === g.id);
+    if (!ids.length) return '';
+    return `
+      <div class="widget-picker-group">
+        <div class="widget-picker-heading">${g.label}</div>
+        <div class="widget-picker-grid">${ids.map(kpiCard).join('')}</div>
+      </div>`;
+  }).join('');
+
+  const widgetCard = ([id, mod]) => `
+    <button type="button" data-id="${id}" class="widget-picker-card">
       <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">widgets</span>
       <div>
         <div style="font-weight:600;font-size:13px;">${mod.title}</div>
         <div style="font-size:11px;color:var(--text-tertiary);">${mod.defaultW} · ${mod.defaultH}</div>
       </div>
-    </div>`;
-
-  const grid = (items) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">${items.map(card).join('')}</div>`;
+    </button>`;
 
   const content = document.createElement('div');
   content.innerHTML = `
-    <div style="max-height:440px;overflow-y:auto;">
-      ${grid(available)}
+    <div class="widget-picker">
+      ${kpiSection ? `<div class="widget-picker-title">KPI cards</div>${kpiSection}` : ''}
+      <div class="widget-picker-title">Widgets</div>
+      <div class="widget-picker-grid">${widgets.map(widgetCard).join('')}</div>
     </div>`;
 
   import('../components/Modal.js').then(({ showModal }) => {
@@ -1991,11 +2106,12 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
       el.addEventListener('click', e => {
         const id = e.currentTarget.dataset.id;
         const mod = MODULES[id];
+        if (mod.kpi && live.widgets.some(w => w.id === id)) return; // one of each card
         const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
         const cy = (viewport.clientHeight / 2 - live.view.panY) / live.view.zoom;
         const item = {
           id,
-          instanceId: 'inst_' + Math.random().toString(36).substr(2, 9),
+          instanceId: newInstanceId(),
           x: snap(cx - (W_PX[mod.defaultW] || 460) / 2),
           y: snap(cy - (H_PX[mod.defaultH] || 200) / 2),
           w: W_PX[mod.defaultW] || 460,
@@ -2014,44 +2130,102 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
 
 // ── Module renderers ──────────────────────────────────────────────────────────
 
-function renderKpiCards(data, item) {
-  const activeJobs    = data.jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled').length;
-  const pendingQuotes = data.quotes.filter(q => q.status === 'Sent' || q.status === 'Draft').length;
-  const overdue       = data.invoices.filter(i => i.status === 'Overdue').length;
-  const revenue       = data.invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
+// ── KPI cards ────────────────────────────────────────────────────────────────────
 
-  const canViewQuotes = hasPermission('Quotes', 'view');
-  const canViewInvoices = hasPermission('Invoices', 'view');
+// Results for every KPI card on the canvas, computed in one pass and kept until a
+// collection they read changes (refreshWidgetsForCollections), the period changes,
+// the set of cards changes, or the day rolls over. Opening the dashboard reuses them.
+let _kpiCache = null; // { key, results }
 
-  const cards = [];
+function invalidateKpis() { _kpiCache = null; }
 
-  if (canViewInvoices) {
-    cards.push({ label: 'Total Revenue', value: '$' + revenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), icon: 'payments', color: 'blue', sub: '+12.5% vs last month', pos: true, tooltip: 'Total payments received from all successfully settled invoices.' });
+function kpiResults() {
+  const ids = [...new Set((live?.widgets || []).map(w => kpiIdOf(w.id)).filter(Boolean))].sort();
+  const period = live?.period || DEFAULT_PERIOD;
+  const key = `${period}|${todayLocalISO()}|${ids.join(',')}`;
+  if (_kpiCache && _kpiCache.key === key) return _kpiCache.results;
+  const results = computeKpis(ids, period);
+  _kpiCache = { key, results };
+  return results;
+}
+
+// Load each collection the cards read once, then run every formula.
+function computeKpis(ids, period) {
+  const needs = [...new Set(ids.flatMap(id => KPIS[id]?.needs || []))];
+  const data = Object.fromEntries(needs.map(c => [c, store.getAll(c)]));
+  return computeAll(ids, data, { period });
+}
+
+const PREV_LABEL = { today: 'yesterday', week: 'last week', month: 'last month', quarter: 'last quarter', fy: 'last year' };
+
+function kpiHref(def) {
+  const { route, filter } = def.link;
+  return filter ? `${route}?filter=${encodeURIComponent(filter)}` : route;
+}
+
+function renderKpiCard(data, item) {
+  const id = kpiIdOf(item.id);
+  const def = KPIS[id];
+  if (!def) return renderPlaceholder('error_outline', 'Unknown card');
+  const r = kpiResults()[id];
+  // In edit mode a click picks the card up rather than leaving the dashboard.
+  const nav = isEditMode ? '' : `data-nav="${escapeHTML(kpiHref(def))}"`;
+  const open = `<div class="kpi-tile${isEditMode ? '' : ' is-link'}" ${nav} title="${escapeHTML(def.description)}">`;
+
+  if (!r || r.empty) {
+    return `${open}
+      <div class="kpi-value kpi-value-empty">—</div>
+      <div class="kpi-hint">${escapeHTML(def.empty)}</div>
+    </div>`;
   }
 
-  if (hasPermission('Jobs', 'view')) {
-    cards.push({ label: 'Active Jobs', value: activeJobs, icon: 'build', color: 'green', sub: `${data.jobs.length} total`, pos: true, tooltip: 'Total volume of active projects and service tasks currently Scheduled or In Progress.' });
+  const value = formatKpiValue(r.value, def.format);
+  let foot = '';
+  if (r.value == null) {
+    foot = `<div class="kpi-hint">${escapeHTML(def.emptyPeriod || 'Nothing to measure this period')}</div>`;
+  } else {
+    const sub = kpiSubline(id, r);
+    const delta = def.type === 'period' && r.delta != null
+      ? `<span class="kpi-delta ${r.good === true ? 'good' : r.good === false ? 'bad' : ''}">${formatKpiDelta(r.delta, def.format)}</span>
+         <span class="kpi-vs">vs ${PREV_LABEL[live?.period || DEFAULT_PERIOD]}</span>`
+      : '';
+    foot = (delta ? `<div class="kpi-foot">${delta}</div>` : '') + (sub ? `<div class="kpi-sub">${escapeHTML(sub)}</div>` : '');
   }
+  return `${open}
+    <div class="kpi-value${r.extra?.alert ? ' kpi-value-alert' : ''}">${value}</div>
+    ${foot}
+  </div>`;
+}
 
-  if (canViewQuotes) {
-    cards.push({ label: 'Pending Quotes', value: pendingQuotes, icon: 'request_quote', color: 'orange', sub: `${data.quotes.length} total`, pos: null, tooltip: 'Draft proposals or sent estimates currently awaiting customer response.' });
-  }
+// Re-render the bodies of the KPI cards already mounted, e.g. after a period change.
+function repaintKpiWidgets() {
+  const world = document.querySelector('#dash-world');
+  if (!world || !live) return;
+  live.widgets.forEach(item => {
+    if (!kpiIdOf(item.id)) return;
+    const el = world.querySelector(`.dash-widget[data-instance-id="${item.instanceId}"]`);
+    if (!el || el.dataset.mountPending) return;
+    const body = el.querySelector('.card-body');
+    if (body) body.innerHTML = renderKpiCard(live.data || {}, item);
+  });
+}
 
-  if (canViewInvoices) {
-    cards.push({ label: 'Overdue Invoices', value: overdue, icon: 'warning', color: 'red', sub: overdue > 0 ? 'Requires attention' : 'All on track', pos: overdue === 0, tooltip: 'Invoices past their designated payment terms that remain unpaid.' });
-  }
-
-  return cards.map(k => `
-    <div class="stat-card" style="margin:0;" data-tooltip="${k.tooltip}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div class="stat-label">${k.label}</div>
-        <div class="stat-icon ${k.color}"><span class="material-icons-outlined">${k.icon}</span></div>
-      </div>
-      <div class="stat-value">${k.value}</div>
-      <div class="stat-change ${k.pos === true ? 'positive' : k.pos === false ? 'negative' : ''}">
-        <span style="font-size:12px;">${k.sub}</span>
-      </div>
-    </div>`).join('');
+// The one period selector for every card. Hidden when no card is on the canvas.
+function renderPeriodPicker() {
+  const slot = document.querySelector('#dash-period');
+  if (!slot || !live) return;
+  if (!live.widgets.some(w => kpiIdOf(w.id))) { slot.innerHTML = ''; return; }
+  const current = live.period || DEFAULT_PERIOD;
+  slot.innerHTML = `
+    <label class="sr-only" for="dash-period-select">KPI period</label>
+    <select id="dash-period-select" class="form-select dash-period-select">
+      ${PERIODS.map(p => `<option value="${p.id}" ${p.id === current ? 'selected' : ''}>${p.label}</option>`).join('')}
+    </select>`;
+  slot.querySelector('select').addEventListener('change', e => {
+    live.period = e.target.value;
+    repaintKpiWidgets();
+    saveLayout();
+  });
 }
 
 function renderJobStatusChart(data, item) {
@@ -2958,26 +3132,6 @@ function renderPendingApprovals(data, item) {
           </div>
         </div>
       `).join('')}
-    </div>
-  `;
-}
-
-function renderCustomerNPS(data, item) {
-  return `
-    <div style="display:flex; align-items:center; justify-content:center; gap:20px; height:100%; padding:8px;">
-      <div style="position:relative; width:80px; height:80px; display:flex; align-items:center; justify-content:center;">
-        <svg viewBox="0 0 36 36" style="width:100%; height:100%; transform: rotate(-90deg);">
-          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--bg-color)" stroke-width="3" />
-          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--color-success)" stroke-width="3.5" stroke-dasharray="88, 100" />
-        </svg>
-        <div style="position:absolute; font-size:18px; font-weight:800; color:var(--text-primary);">8.8</div>
-      </div>
-      <div style="font-size:12px; color:var(--text-secondary); line-height:1.4;">
-        <div style="font-weight:700; color:var(--color-success); font-size:13px;">Excellent Score</div>
-        <div>Promoters: <strong style="color:var(--text-primary)">82%</strong></div>
-        <div>Detractors: <strong style="color:var(--text-primary)">6%</strong></div>
-        <div style="color:var(--text-tertiary); font-size:10px; margin-top:2px;">Last 30 days review loop</div>
-      </div>
     </div>
   `;
 }
