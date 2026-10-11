@@ -1487,6 +1487,17 @@
 }
 .kpi-tile .kpi-value-empty { color: var(--text-tertiary); }
 .kpi-tile .kpi-value-alert { color: var(--color-danger); }
+.kpi-tile .kpi-value-warn { color: var(--color-warning); }
+.kpi-tile .kpi-sub.kpi-sub-alert { color: var(--color-danger); font-weight: var(--font-weight-semibold, 600); }
+/* Two-part bar (Labour vs materials): first part is the value's share */
+.kpi-tile .kpi-split {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--color-info, #3B82F6);
+}
+.kpi-tile .kpi-split > span { background: var(--color-primary); }
 .kpi-tile .kpi-foot {
   display: flex;
   align-items: baseline;

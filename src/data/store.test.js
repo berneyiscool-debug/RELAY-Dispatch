@@ -446,9 +446,11 @@ describe('DataStore', () => {
       assert.deepStrictEqual(invoice.payments.map(p => p.amount), [400]);
 
       const job = store.normalizeRecord(store.denormalizeRecord({
-        id: 'job_rt', status: 'Completed', completedAt: '2026-10-05T03:00:00Z',
+        id: 'job_rt', status: 'Completed', completedAt: '2026-10-05T03:00:00Z', isEmergency: true, isCallback: true,
       }, 'jobs'), 'jobs');
       assert.strictEqual(job.completedAt, '2026-10-05T03:00:00Z');
+      assert.strictEqual(job.isEmergency, true);
+      assert.strictEqual(job.isCallback, true);
     });
 
     test('repairInvoiceIssueDates backfills missing issueDate from createdAt/dueDate', () => {

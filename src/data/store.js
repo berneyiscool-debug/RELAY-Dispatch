@@ -2199,6 +2199,8 @@ class DataStore {
           if (meta.customerActivityLog !== undefined) record.customerActivityLog = meta.customerActivityLog;
           if (meta.historyLog !== undefined) record.historyLog = meta.historyLog;
           if (meta.completedAt) record.completedAt = meta.completedAt;
+          if (meta.isEmergency) record.isEmergency = true;
+          if (meta.isCallback) record.isCallback = true;
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
         }
@@ -2680,7 +2682,9 @@ class DataStore {
         activityLog: record.activityLog || [],
         customerActivityLog: record.customerActivityLog || [],
         historyLog: record.historyLog || [],
-        completedAt: record.completedAt || null
+        completedAt: record.completedAt || null,
+        isEmergency: record.isEmergency || false,
+        isCallback: record.isCallback || false
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
       delete record.activityLog;

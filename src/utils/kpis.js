@@ -304,6 +304,81 @@ const billedJobIds = (invoices = []) => {
   return billed;
 };
 
+const firstBookingByJob = (schedule = []) => {
+  const m = new Map();
+  schedule.forEach(s => {
+    if (!s.jobId || isLeaveEntry(s)) return;
+    const start = toDate(s.startTime) || toDate(s.date);
+    if (!start) return;
+    const k = String(s.jobId);
+    if (!m.has(k) || start < m.get(k)) m.set(k, start);
+  });
+  return m;
+};
+
+const mean = (xs) => (xs.length ? sum(xs, x => x) / xs.length : null);
+function median(xs) {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+// Days between two moments by the local wall clock, so a span across a daylight
+// saving change still counts 25 Sep → 5 Oct as 10 days, not 9.96.
+const wallMs = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+const daysBetween = (a, b) => { const x = toDate(a), y = toDate(b); return x && y ? (wallMs(y) - wallMs(x)) / DAY : null; };
+
+// When an invoice was paid off: its paid date, else the last recorded payment.
+// Null while anything is still owing.
+export function invoicePaidAt(inv) {
+  if (!isLiveInvoice(inv)) return null;
+  const pays = invoicePayments(inv);
+  if (inv.status !== 'Paid' && !(pays.length && sum(pays, p => p.amount) >= num(inv.total) - 0.005)) return null;
+  if (inv.paidDate) return inv.paidDate;
+  const dates = pays.map(p => toDate(p.date)).filter(Boolean);
+  return dates.length ? new Date(Math.max(...dates)) : null;
+}
+
+// Callbacks are flagged on the job, or booked as a callback / rework / warranty job type.
+export const isCallbackJob = (j) => j.isCallback === true || /callback|call-back|rework|warranty/i.test(String(j.type || ''));
+
+// Leads close as Won or Lost; the stage history says when.
+const LEAD_CLOSED = ['Won', 'Lost'];
+export function leadClosedAt(lead) {
+  if (!LEAD_CLOSED.includes(lead.status)) return null;
+  const hit = (lead.stageHistory || [])
+    .filter(h => h && h.status === lead.status && h.timestamp)
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))[0];
+  return hit ? hit.timestamp : (lead.closedAt || lead.updatedAt || null);
+}
+
+const timesheetHours = (t) => num(t.hours != null ? t.hours : t.durationHours);
+
+// Ex-GST amount of one invoice line.
+const lineAmount = (l) => num(l.total) || num(l.qty) * num(l.rate != null ? l.rate : l.unitPrice);
+const invoiceLines = (inv) => (inv.sections || []).flatMap(s => s.lineItems || []).concat(inv.lineItems || []);
+
+// Revenue by customer for invoices issued in a range.
+function revenueByCustomer(invoices, r) {
+  const m = new Map();
+  invoices.filter(i => isLiveInvoice(i) && inRange(invoiceIssued(i), r)).forEach(i => {
+    const k = String(i.customerId || i.customerName || '');
+    if (!k) return;
+    const e = m.get(k) || { name: i.customerName || '', revenue: 0 };
+    e.revenue += num(i.subtotal);
+    m.set(k, e);
+  });
+  return m;
+}
+
+// Active calendar plans due in the next 7 days, or already overdue.
+function maintenanceStatus(plan, today) {
+  if (plan.status && plan.status !== 'Active') return null;
+  const d = toDate(plan.nextServiceDate || plan.nextDue);
+  if (!d) return null;
+  if (d < today) return 'overdue';
+  return d < addDays(today, 7) ? 'due' : null;
+}
+
 export const KPI_FILTERS = {
   invoices: {
     issued: {
@@ -321,6 +396,10 @@ export const KPI_FILTERS = {
     overdue: {
       label: 'Overdue', periodic: false, needs: ['invoices'],
       build: (d, { today }) => i => invoiceBalance(i) > 0 && !!i.dueDate && toDate(i.dueDate) < today,
+    },
+    'paid-off': {
+      label: 'Paid off', periodic: true, needs: ['invoices'],
+      build: (d, { range }) => i => inRange(invoicePaidAt(i), range),
     },
   },
   jobs: {
@@ -350,6 +429,13 @@ export const KPI_FILTERS = {
         return j => !isTemplate(j) && OPEN_JOB.includes(j.status) && !booked.has(String(j.id));
       },
     },
+    callbacks: {
+      label: 'Callbacks', periodic: true, needs: ['jobs', 'schedule'],
+      build: (d, ctx) => {
+        const done = KPI_FILTERS.jobs.completed.build(d, ctx);
+        return j => isCallbackJob(j) && done(j);
+      },
+    },
   },
   quotes: {
     sent: {
@@ -368,11 +454,74 @@ export const KPI_FILTERS = {
       label: 'Awaiting an answer', periodic: false, needs: ['quotes'],
       build: (d, { today }) => q => !q.isTemplate && OPEN_QUOTE.includes(q.status) && !quoteExpired(q, today),
     },
+    accepted: {
+      label: 'Accepted', periodic: true, needs: ['quotes'],
+      build: (d, { range, today }) => q => {
+        if (q.isTemplate) return false;
+        const o = quoteOutcome(q, today);
+        return o.outcome === 'won' && inRange(o.at, range);
+      },
+    },
   },
   leads: {
     new: {
       label: 'New', periodic: true, needs: ['leads'],
       build: (d, { range }) => l => inRange(l.createdAt, range),
+    },
+    closed: {
+      label: 'Closed', periodic: true, needs: ['leads'],
+      build: (d, { range }) => l => inRange(leadClosedAt(l), range),
+    },
+  },
+  timesheets: {
+    logged: {
+      label: 'Logged', periodic: true, needs: ['timesheets'],
+      build: (d, { range }) => t => timesheetHours(t) > 0 && inRange(t.date, range),
+    },
+    'non-billable': {
+      label: 'Not on a job', periodic: true, needs: ['timesheets'],
+      build: (d, { range }) => t => timesheetHours(t) > 0 && !t.jobId && inRange(t.date, range),
+    },
+    pending: {
+      label: 'Awaiting approval', periodic: false, needs: ['timesheets'],
+      build: () => t => t.status === 'Pending',
+    },
+  },
+  customers: {
+    new: {
+      label: 'New', periodic: true, needs: ['customers'],
+      build: (d, { range }) => c => inRange(c.createdAt, range),
+    },
+    // Invoiced this period, and also invoiced at some point before it.
+    repeat: {
+      label: 'Repeat', periodic: true, needs: ['customers', 'invoices'],
+      build: (d, { range }) => {
+        const before = new Set(), now = new Set();
+        (d.invoices || []).filter(isLiveInvoice).forEach(i => {
+          const at = toDate(invoiceIssued(i));
+          if (!at || !i.customerId) return;
+          if (at < range.start) before.add(String(i.customerId));
+          else if (at < range.end) now.add(String(i.customerId));
+        });
+        return c => now.has(String(c.id)) && before.has(String(c.id));
+      },
+    },
+    invoiced: {
+      label: 'Invoiced', periodic: true, needs: ['customers', 'invoices'],
+      build: (d, { range }) => {
+        const billed = new Set((d.invoices || []).filter(i => isLiveInvoice(i) && inRange(invoiceIssued(i), range)).map(i => String(i.customerId)));
+        return c => billed.has(String(c.id));
+      },
+    },
+  },
+  assets: {
+    // The assets behind the Maintenance due card's plans.
+    'maintenance-due': {
+      label: 'Maintenance due', periodic: false, needs: ['assets', 'maintenancePlans'],
+      build: (d, { today }) => {
+        const ids = new Set((d.maintenancePlans || []).filter(p => maintenanceStatus(p, today)).map(p => String(p.assetId)));
+        return a => ids.has(String(a.id));
+      },
     },
   },
 };
@@ -380,6 +529,17 @@ export const KPI_FILTERS = {
 // Context for a filter outside computeAll (the list pages).
 export function filterContext(period = DEFAULT_PERIOD, now = new Date()) {
   return { ...periodRanges(period, now), period, today: startOfDay(now), now };
+}
+
+// The collection a card's link filters; the route names it unless they differ
+// (customers live at /people).
+export const linkCollection = (link) => link.collection || link.route.slice(1);
+
+// The filter definition a card's link names, or null.
+export function linkFilter(link) {
+  if (!link || !link.filter) return null;
+  const group = KPI_FILTERS[linkCollection(link)];
+  return group && Object.prototype.hasOwnProperty.call(group, link.filter) ? group[link.filter] : null;
 }
 
 // Records of `collection` matching the named filter.
@@ -527,6 +687,7 @@ export const KPIS = {
     description: 'Enquiries received this period',
     empty: 'Add your first lead to see this',
     needs: ['leads'],
+    perm: ['Leads', 'view'],
     compute: (data, ctx) => {
       if (!(data.leads || []).length) return null;
       return { value: rows('leads', 'new', data, ctx).length };
@@ -614,6 +775,283 @@ export const KPIS = {
     emptyPeriod: 'No costed jobs invoiced this period',
     link: { route: '/reports' },
   },
+
+  // ── Beyond the launch set ──────────────────────────────────────────────────
+  // Optional per-card fields used below:
+  //   perm      — [module, action] the viewer needs, overriding the group's
+  //   available — (env) => bool; hides the card from the menu, e.g. one-user accounts
+  //   display   — 'split' draws a two-part bar instead of a single number
+  //   upIsGood  — null when neither direction is good news (no delta colour)
+
+  // Money
+  average_invoice_value: {
+    group: 'money', label: 'Average invoice value', type: 'period', format: 'currency', upIsGood: true, launch: false,
+    description: 'Revenue invoiced ÷ invoices issued',
+    empty: 'Send your first invoice to see this',
+    needs: ['invoices'],
+    compute: (data, ctx) => {
+      if (!(data.invoices || []).some(isLiveInvoice)) return null;
+      const issued = rows('invoices', 'issued', data, ctx);
+      return { value: issued.length ? sum(issued, i => num(i.subtotal)) / issued.length : null, count: issued.length };
+    },
+    emptyPeriod: 'No invoices issued this period',
+    link: { route: '/invoices', filter: 'issued' },
+  },
+  average_days_to_pay: {
+    group: 'money', label: 'Average days to pay', type: 'period', format: 'days', upIsGood: false, launch: false,
+    description: 'Issue to paid in full, for invoices paid off',
+    empty: 'Get your first invoice paid to see this',
+    needs: ['invoices'],
+    compute: (data, ctx) => {
+      if (!(data.invoices || []).some(invoicePaidAt)) return null;
+      const days = rows('invoices', 'paid-off', data, ctx)
+        .map(i => daysBetween(invoiceIssued(i), invoicePaidAt(i)))
+        .filter(d => d != null).map(d => Math.max(0, d));
+      return { value: mean(days), count: days.length };
+    },
+    emptyPeriod: 'No invoices paid off this period',
+    link: { route: '/invoices', filter: 'paid-off' },
+  },
+
+  // Jobs
+  average_job_duration: {
+    group: 'jobs', label: 'Average job duration', type: 'period', format: 'duration', upIsGood: false, launch: false,
+    description: 'First booking to completion',
+    empty: 'Complete a booked job to see this',
+    needs: ['jobs', 'schedule'],
+    compute: (data, ctx) => {
+      const first = firstBookingByJob(data.schedule);
+      if (!(data.jobs || []).some(j => DONE_JOB.includes(j.status) && first.has(String(j.id)))) return null;
+      const last = lastBookingByJob(data.schedule);
+      const days = rows('jobs', 'completed', data, ctx)
+        .filter(j => first.has(String(j.id)))
+        .map(j => daysBetween(first.get(String(j.id)), jobCompletedAt(j, last)))
+        .filter(d => d != null).map(d => Math.max(0, d));
+      return { value: mean(days), count: days.length };
+    },
+    emptyPeriod: 'No booked jobs completed this period',
+    link: { route: '/jobs', filter: 'completed' },
+  },
+  callback_rate: {
+    group: 'jobs', label: 'Callback rate', type: 'period', format: 'percent', upIsGood: false, launch: false,
+    description: 'Callbacks ÷ jobs completed',
+    empty: 'Flag a callback job to start tracking this',
+    needs: ['jobs', 'schedule'],
+    // Until someone flags a callback, 0% would claim a quality record nobody measured.
+    compute: (data, ctx) => {
+      if (!(data.jobs || []).some(isCallbackJob)) return null;
+      const done = rows('jobs', 'completed', data, ctx);
+      const callbacks = done.filter(isCallbackJob).length;
+      return { value: done.length ? callbacks / done.length : null, count: callbacks };
+    },
+    emptyPeriod: 'No jobs completed this period',
+    link: { route: '/jobs', filter: 'callbacks' },
+  },
+
+  // Sales and quotes
+  days_to_accept: {
+    group: 'sales', label: 'Days to accept', type: 'period', format: 'days', upIsGood: false, launch: false,
+    description: 'Median days from sent to accepted',
+    empty: 'Get your first quote accepted to see this',
+    needs: ['quotes'],
+    // Median, so one quote left sitting for months doesn't skew it.
+    compute: (data, ctx) => {
+      const won = (data.quotes || []).filter(q => !q.isTemplate && WON_QUOTE.includes(q.status));
+      if (!won.length) return null;
+      const days = rows('quotes', 'accepted', data, ctx)
+        .map(q => daysBetween(quoteSentAt(q), quoteOutcome(q, ctx.today).at))
+        .filter(d => d != null).map(d => Math.max(0, d));
+      return { value: median(days), count: days.length };
+    },
+    emptyPeriod: 'No quotes accepted this period',
+    link: { route: '/quotes', filter: 'accepted' },
+  },
+  lead_conversion: {
+    group: 'sales', label: 'Lead conversion', type: 'period', format: 'percent', upIsGood: true, launch: false,
+    description: 'Won ÷ leads closed this period',
+    empty: 'Close your first lead to see this',
+    needs: ['leads'],
+    perm: ['Leads', 'view'],
+    compute: (data, ctx) => {
+      if (!(data.leads || []).some(l => LEAD_CLOSED.includes(l.status))) return null;
+      const closed = rows('leads', 'closed', data, ctx);
+      const won = closed.filter(l => l.status === 'Won').length;
+      return { value: closed.length ? won / closed.length : null, count: closed.length };
+    },
+    emptyPeriod: 'No leads closed this period',
+    link: { route: '/leads', filter: 'closed' },
+  },
+
+  // Team
+  hours_logged: {
+    group: 'team', label: 'Hours logged', type: 'period', format: 'hours', upIsGood: true, launch: false,
+    description: 'Timesheet hours this period',
+    empty: 'Log your first timesheet to see this',
+    needs: ['timesheets'],
+    perm: ['Timesheets', 'view'],
+    compute: (data, ctx) => {
+      if (!(data.timesheets || []).some(t => timesheetHours(t) > 0)) return null;
+      return { value: sum(rows('timesheets', 'logged', data, ctx), timesheetHours) };
+    },
+    link: { route: '/timesheets', filter: 'logged' },
+  },
+  billable_hours: {
+    group: 'team', label: 'Billable hours', type: 'period', format: 'percent', upIsGood: true, launch: false,
+    description: 'Share of logged hours on a job',
+    empty: 'Log your first timesheet to see this',
+    needs: ['timesheets'],
+    perm: ['Timesheets', 'view'],
+    compute: (data, ctx) => {
+      if (!(data.timesheets || []).some(t => timesheetHours(t) > 0)) return null;
+      const logged = rows('timesheets', 'logged', data, ctx);
+      const total = sum(logged, timesheetHours);
+      const billable = sum(logged.filter(t => t.jobId), timesheetHours);
+      return { value: total > 0 ? billable / total : null, hours: total - billable };
+    },
+    emptyPeriod: 'No hours logged this period',
+    link: { route: '/timesheets', filter: 'non-billable' },
+  },
+  jobs_per_tech: {
+    group: 'team', label: 'Jobs per tech', type: 'period', format: 'decimal', upIsGood: true, launch: false,
+    description: 'Jobs completed ÷ staff who logged time',
+    empty: 'Complete a job and log time to see this',
+    needs: ['jobs', 'schedule', 'timesheets'],
+    available: ({ staffCount }) => staffCount > 1,
+    compute: (data, ctx) => {
+      if (!(data.jobs || []).some(j => DONE_JOB.includes(j.status)) || !(data.timesheets || []).length) return null;
+      const techs = new Set(rows('timesheets', 'logged', data, ctx).map(t => String(t.technicianId)).filter(Boolean));
+      const done = rows('jobs', 'completed', data, ctx).length;
+      return { value: techs.size ? done / techs.size : null, techs: techs.size };
+    },
+    emptyPeriod: 'No time logged this period',
+    link: { route: '/jobs', filter: 'completed' },
+  },
+  pending_timesheets: {
+    group: 'team', label: 'Pending timesheets', type: 'snapshot', format: 'count', upIsGood: false, launch: false,
+    description: 'Waiting for approval',
+    empty: 'Log your first timesheet to see this',
+    needs: ['timesheets'],
+    perm: ['Timesheets', 'approve'],
+    compute: (data, ctx) => {
+      if (!(data.timesheets || []).length) return null;
+      const pending = rows('timesheets', 'pending', data, ctx);
+      return { value: pending.length, hours: sum(pending, timesheetHours) };
+    },
+    link: { route: '/timesheets', filter: 'pending' },
+  },
+
+  // Profitability
+  gross_profit: {
+    group: 'profitability', label: 'Gross profit', type: 'period', format: 'currency', upIsGood: true, launch: false,
+    description: 'Revenue less cost, on invoiced jobs',
+    empty: 'Invoice a costed job to see this',
+    needs: ['invoices', 'jobs', 'timesheets', 'technicians', 'jobMaterials', 'purchaseOrders'],
+    compute: (data, { range }) => {
+      if (!(data.invoices || []).some(i => isLiveInvoice(i) && invoiceJobShares(i).length)) return null;
+      const p = invoicedJobProfit(data, range);
+      return { value: p.jobsKnown ? p.profit : null, jobsKnown: p.jobsKnown, jobsTotal: p.jobsTotal };
+    },
+    emptyPeriod: 'No costed jobs invoiced this period',
+    link: { route: '/reports' },
+  },
+  labour_vs_materials: {
+    group: 'profitability', label: 'Labour vs materials', type: 'period', format: 'percent', upIsGood: null, launch: false,
+    display: 'split',
+    description: 'Share of invoiced revenue from each',
+    empty: 'Send your first invoice to see this',
+    needs: ['invoices'],
+    compute: (data, ctx) => {
+      if (!(data.invoices || []).some(isLiveInvoice)) return null;
+      let labour = 0, materials = 0;
+      rows('invoices', 'issued', data, ctx).forEach(inv => invoiceLines(inv).forEach(l => {
+        const t = String(l.type || '').toLowerCase();
+        if (t === 'labor' || t === 'labour') labour += lineAmount(l);
+        else if (t === 'material' || t === 'materials') materials += lineAmount(l);
+      }));
+      const base = labour + materials;
+      return { value: base > 0 ? labour / base : null, labour, materials };
+    },
+    emptyPeriod: 'No labour or material lines invoiced this period',
+    link: { route: '/invoices', filter: 'issued' },
+  },
+  average_job_profit: {
+    group: 'profitability', label: 'Average job profit', type: 'period', format: 'currency', upIsGood: true, launch: false,
+    description: 'Gross profit ÷ costed jobs invoiced',
+    empty: 'Invoice a costed job to see this',
+    needs: ['invoices', 'jobs', 'timesheets', 'technicians', 'jobMaterials', 'purchaseOrders'],
+    compute: (data, { range }) => {
+      if (!(data.invoices || []).some(i => isLiveInvoice(i) && invoiceJobShares(i).length)) return null;
+      const p = invoicedJobProfit(data, range);
+      return { value: p.jobsKnown ? p.profit / p.jobsKnown : null, jobsKnown: p.jobsKnown, jobsTotal: p.jobsTotal };
+    },
+    emptyPeriod: 'No costed jobs invoiced this period',
+    link: { route: '/reports' },
+  },
+
+  // Customers
+  new_customers: {
+    group: 'customers', label: 'New customers', type: 'period', format: 'count', upIsGood: true, launch: false,
+    description: 'Customers added this period',
+    empty: 'Add your first customer to see this',
+    needs: ['customers'],
+    compute: (data, ctx) => {
+      if (!(data.customers || []).length) return null;
+      return { value: rows('customers', 'new', data, ctx).length };
+    },
+    link: { route: '/people', collection: 'customers', filter: 'new' },
+  },
+  repeat_customers: {
+    group: 'customers', label: 'Repeat customers', type: 'period', format: 'percent', upIsGood: true, launch: false,
+    description: 'Invoiced customers who had bought before',
+    empty: 'Send your first invoice to see this',
+    needs: ['customers', 'invoices'],
+    perm: ['Invoices', 'view'],
+    compute: (data, ctx) => {
+      if (!(data.invoices || []).some(isLiveInvoice)) return null;
+      const invoiced = rows('customers', 'invoiced', data, ctx);
+      const repeat = rows('customers', 'repeat', data, ctx);
+      return { value: invoiced.length ? repeat.length / invoiced.length : null, count: repeat.length };
+    },
+    emptyPeriod: 'No customers invoiced this period',
+    link: { route: '/people', collection: 'customers', filter: 'repeat' },
+  },
+  maintenance_due: {
+    group: 'customers', label: 'Maintenance due', type: 'snapshot', format: 'count', upIsGood: false, launch: false,
+    description: 'Plans due in the next 7 days',
+    empty: 'Set up a maintenance plan to see this',
+    needs: ['maintenancePlans', 'assets'],
+    perm: ['Assets', 'view'],
+    compute: ({ maintenancePlans = [] }, { today }) => {
+      if (!maintenancePlans.length) return null;
+      let due = 0, overdue = 0;
+      maintenancePlans.forEach(p => {
+        const s = maintenanceStatus(p, today);
+        if (s === 'due') due++;
+        else if (s === 'overdue') overdue++;
+      });
+      return { value: due, overdue, subAlert: overdue > 0 };
+    },
+    link: { route: '/assets', filter: 'maintenance-due' },
+  },
+  top_customer_share: {
+    group: 'customers', label: 'Top customer share', type: 'period', format: 'percent', upIsGood: false, launch: false,
+    description: 'Biggest customer’s share of revenue',
+    empty: 'Send your first invoice to see this',
+    needs: ['invoices'],
+    perm: ['Invoices', 'view'],
+    // Over 30% means the business leans hard on one builder or strata manager.
+    compute: ({ invoices = [] }, { range }) => {
+      if (!invoices.some(isLiveInvoice)) return null;
+      const by = [...revenueByCustomer(invoices, range).values()];
+      const total = sum(by, c => c.revenue);
+      if (total <= 0) return { value: null };
+      const top = by.reduce((a, b) => (b.revenue > a.revenue ? b : a));
+      const share = top.revenue / total;
+      return { value: share, customer: top.name, warn: share > 0.3 };
+    },
+    emptyPeriod: 'No revenue invoiced this period',
+    link: { route: '/people', collection: 'customers', filter: 'invoiced' },
+  },
 };
 
 // Ids in the order the widget menu lists them.
@@ -658,7 +1096,7 @@ export function computeAll(ids, data, { period = DEFAULT_PERIOD, now = new Date(
     if (def.type === 'period' && value != null) {
       try { const p = def.compute(data, prevCtx); prev = p ? p.value : null; } catch (e) { prev = null; }
       delta = kpiDelta(value, prev, def.format);
-      if (delta != null && Math.round(Math.abs(delta) * 100) > 0) good = (delta > 0) === def.upIsGood;
+      if (delta != null && def.upIsGood != null && Math.round(Math.abs(delta) * 100) > 0) good = (delta > 0) === def.upIsGood;
     }
     out[id] = { empty: false, value, prev, delta, good, extra };
   });
@@ -667,7 +1105,7 @@ export function computeAll(ids, data, { period = DEFAULT_PERIOD, now = new Date(
 
 export function kpiDelta(value, prev, format) {
   if (value == null || prev == null) return null;
-  if (format === 'percent' || format === 'days') return value - prev;
+  if (format === 'percent' || format === 'days' || format === 'duration') return value - prev;
   if (prev === 0) return null; // "∞% up" tells nobody anything
   return (value - prev) / Math.abs(prev);
 }
@@ -688,14 +1126,24 @@ export function formatKpiValue(value, format) {
     case 'currency': return formatCurrency(value);
     case 'percent':  return `${Math.round(value * 100)}%`;
     case 'days':     return `${(Math.round(value * 10) / 10).toLocaleString('en-AU')} days`;
+    case 'hours':    return `${(Math.round(value * 10) / 10).toLocaleString('en-AU')} h`;
+    // A value in days; same-day work reads better in hours.
+    case 'duration': return value < 1 ? formatKpiValue(value * 24, 'hours') : formatKpiValue(value, 'days');
+    case 'decimal':  return (Math.round(value * 10) / 10).toLocaleString('en-AU');
     default:         return Math.round(value).toLocaleString('en-AU');
   }
 }
 
-// "+12%", "−3 pts", "+1.5 days"
+// "+12%", "−3 pts", "+1.5 days", "−2.4 h"
 export function formatKpiDelta(delta, format) {
   if (delta == null) return '';
   const a = Math.abs(delta);
+  if (format === 'duration') {
+    const inHours = a < 1;
+    const shown = Math.round((inHours ? a * 24 : a) * 10) / 10;
+    const sign = shown === 0 ? '' : delta > 0 ? '+' : '−';
+    return `${sign}${shown}${inHours ? ' h' : ' days'}`;
+  }
   const shown = format === 'days' ? Math.round(a * 10) / 10 : Math.round(a * 100);
   const sign = shown === 0 ? '' : delta > 0 ? '+' : '−';
   if (format === 'percent') return `${sign}${shown} pts`;
@@ -720,7 +1168,25 @@ export function kpiSubline(id, result) {
     case 'quotes_sent':
       return e.amount > 0 ? `${formatCurrency(e.amount)} quoted` : '';
     case 'gross_margin':
+    case 'gross_profit':
+    case 'average_job_profit':
       return e.jobsTotal && e.jobsKnown < e.jobsTotal ? `based on ${e.jobsKnown} of ${e.jobsTotal} jobs` : '';
+    case 'average_invoice_value':
+      return e.count ? `${e.count} invoice${e.count === 1 ? '' : 's'}` : '';
+    case 'callback_rate':
+      return result.value != null ? `${e.count} callback${e.count === 1 ? '' : 's'}` : '';
+    case 'billable_hours':
+      return e.hours > 0 ? `${formatKpiValue(e.hours, 'hours')} not on a job` : '';
+    case 'jobs_per_tech':
+      return e.techs ? `across ${e.techs} ${e.techs === 1 ? 'person' : 'people'}` : '';
+    case 'pending_timesheets':
+      return e.hours > 0 ? formatKpiValue(e.hours, 'hours') : '';
+    case 'labour_vs_materials':
+      return result.value != null ? `Labour ${Math.round(result.value * 100)}% · Materials ${100 - Math.round(result.value * 100)}%` : '';
+    case 'maintenance_due':
+      return e.overdue ? `+${e.overdue} overdue` : '';
+    case 'top_customer_share':
+      return e.customer || '';
     default:
       return '';
   }

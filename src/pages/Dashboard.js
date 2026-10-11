@@ -25,7 +25,7 @@ import { filterSystemNotifications } from '../utils/notificationVisibility.js';
 import { bindChecklistStoreListeners, mountSetupChecklist } from '../components/SetupChecklist.js';
 import Sortable from 'sortablejs';
 import {
-  KPIS, KPI_IDS, KPI_GROUPS, KPI_FILTERS, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
+  KPIS, KPI_IDS, KPI_GROUPS, linkFilter, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
   formatKpiValue, formatKpiDelta, kpiSubline,
 } from '../utils/kpis.js';
 
@@ -127,16 +127,16 @@ const MODULES = {
 
 // ── KPI cards ────────────────────────────────────────────────────────────────────
 // Each KPI is its own small widget with id 'kpi:<kpiId>'; the formulas live in
-// utils/kpis.js. Only the launch set is offered until it has proven itself.
+// utils/kpis.js. Every card is offered; `launch` marks the original 15.
 const KPI_PREFIX = 'kpi:';
 const kpiModuleId = (kpiId) => KPI_PREFIX + kpiId;
 const kpiIdOf = (moduleId) => (typeof moduleId === 'string' && moduleId.startsWith(KPI_PREFIX) ? moduleId.slice(KPI_PREFIX.length) : null);
-const OFFERED_KPIS = KPI_IDS.filter(id => KPIS[id].launch);
+const OFFERED_KPIS = KPI_IDS;
 OFFERED_KPIS.forEach(id => {
   MODULES[kpiModuleId(id)] = { title: KPIS[id].label, defaultW: 'KPI', defaultH: 'kpi', kpi: true, render: renderKpiCard };
 });
 
-// Who may see a card, by group.
+// Who may see a card, by group, unless the card names its own permission.
 const KPI_GROUP_PERMS = {
   money:         ['Invoices', 'view'],
   profitability: ['Invoices', 'view'],
@@ -170,8 +170,7 @@ function widgetAllowed(id) {
   const kpiId = kpiIdOf(id);
   if (kpiId) {
     if (!KPIS[kpiId]) return false;
-    // New leads sits with sales but reads leads, not quotes.
-    const perm = kpiId === 'new_leads' ? ['Leads', 'view'] : KPI_GROUP_PERMS[KPIS[kpiId].group];
+    const perm = KPIS[kpiId].perm || KPI_GROUP_PERMS[KPIS[kpiId].group];
     return !perm || hasPermission(perm[0], perm[1]);
   }
   const perm = WIDGET_PERMS[id];
@@ -2051,7 +2050,8 @@ function showEditHeader(container, viewport, world, guides, data) {
 
 // Reusable Add-Widget picker (used by the edit header, the context menu and double-click)
 function openAddWidgetModal(container, viewport, world, guides, data) {
-  const kpiIds = OFFERED_KPIS.filter(id => widgetAllowed(kpiModuleId(id)));
+  const env = { staffCount: staffCount() };
+  const kpiIds = OFFERED_KPIS.filter(id => widgetAllowed(kpiModuleId(id)) && (!KPIS[id].available || KPIS[id].available(env)));
   const widgets = Object.entries(MODULES).filter(([id, mod]) => !mod.kpi && widgetAllowed(id));
   const onCanvas = new Set(live.widgets.map(w => w.id));
   // Live preview values from the user's own data, for the selected period.
@@ -2164,7 +2164,7 @@ function kpiHref(def) {
   const { route, filter } = def.link;
   if (!filter) return route;
   const params = new URLSearchParams({ filter });
-  if (KPI_FILTERS[route.slice(1)]?.[filter]?.periodic) params.set('period', live?.period || DEFAULT_PERIOD);
+  if (linkFilter(def.link)?.periodic) params.set('period', live?.period || DEFAULT_PERIOD);
   return `${route}?${params}`;
 }
 
@@ -2190,14 +2190,18 @@ function renderKpiCard(data, item) {
     foot = `<div class="kpi-hint">${escapeHTML(def.emptyPeriod || 'Nothing to measure this period')}</div>`;
   } else {
     const sub = kpiSubline(id, r);
+    const split = def.display === 'split'
+      ? `<div class="kpi-split" role="img" aria-label="${escapeHTML(sub)}"><span style="width:${Math.round(r.value * 100)}%"></span></div>`
+      : '';
     const delta = def.type === 'period' && r.delta != null
       ? `<span class="kpi-delta ${r.good === true ? 'good' : r.good === false ? 'bad' : ''}">${formatKpiDelta(r.delta, def.format)}</span>
          <span class="kpi-vs">vs ${PREV_LABEL[live?.period || DEFAULT_PERIOD]}</span>`
       : '';
-    foot = (delta ? `<div class="kpi-foot">${delta}</div>` : '') + (sub ? `<div class="kpi-sub">${escapeHTML(sub)}</div>` : '');
+    foot = split + (delta ? `<div class="kpi-foot">${delta}</div>` : '')
+      + (sub ? `<div class="kpi-sub${r.extra?.subAlert ? ' kpi-sub-alert' : ''}">${escapeHTML(sub)}</div>` : '');
   }
   return `${open}
-    <div class="kpi-value${r.extra?.alert ? ' kpi-value-alert' : ''}">${value}</div>
+    <div class="kpi-value${r.extra?.alert ? ' kpi-value-alert' : r.extra?.warn ? ' kpi-value-warn' : ''}">${value}</div>
     ${foot}
   </div>`;
 }

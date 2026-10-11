@@ -13,6 +13,7 @@ import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { setListSearch } from '../../utils/listSearch.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
 export function renderTimesheetsList(container) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
@@ -36,6 +37,11 @@ export function renderTimesheetsList(container) {
 
   let filterStartDate = formatDate(oneWeekAgo);
   let filterEndDate = formatDate(today);
+
+  // Opened from a dashboard KPI card (?filter=pending): its own period replaces
+  // the default last-7-days window, or older entries behind the number would hide.
+  let kpiFilter = readKpiListFilter('timesheets');
+  if (kpiFilter) { filterStartDate = ''; filterEndDate = ''; }
 
   let selectedIds = [];
 
@@ -95,6 +101,7 @@ export function renderTimesheetsList(container) {
     // set the status-count chips are computed from, so their numbers match what the table
     // actually shows for the current tech/date window. The status filter is layered on top.
     let dateTechFiltered = [...visibleTimesheets];
+    if (kpiFilter) dateTechFiltered = dateTechFiltered.filter(kpiFilter.test);
     if (canViewAll && filterTechId !== 'All') {
       dateTechFiltered = dateTechFiltered.filter(t => String(t.technicianId) === String(filterTechId));
     }
@@ -334,6 +341,8 @@ export function renderTimesheetsList(container) {
     setListSearch((q) => {
       render();
     }, 'timesheets');
+
+    if (kpiFilter) mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; render(); });
 
     const dateMount = container.querySelector('#date-range-mount');
     if (dateMount) {

@@ -2,7 +2,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildDemoDataset } from '../data/demoDataset.js';
 import {
-  KPIS, KPI_IDS, KPI_GROUPS, KPI_FILTERS, filterContext, computeAll, periodRanges, defaultKpiIds, kpiNeeds,
+  KPIS, KPI_IDS, KPI_GROUPS, filterContext, linkFilter, linkCollection, computeAll,
+  invoicePaidAt, isCallbackJob, leadClosedAt, periodRanges, defaultKpiIds, kpiNeeds,
   invoiceBalance, exGst, jobCompletedAt, quoteOutcome,
   formatKpiValue, formatKpiDelta, formatCurrency, kpiSubline,
 } from './kpis.js';
@@ -36,7 +37,28 @@ describe('launch cards against the demo dataset', () => {
     open_pipeline:       [21338.2,  null,    21338.2],
     utilisation:         [0.4323,   0.4696,  0.4135],
     gross_margin:        [0.6016,   0.6047,  0.6072],
+    // Beyond the launch set
+    average_invoice_value: [570.4,    771.9615, 569.7556],
+    average_days_to_pay:   [7.3411,   8.2774,   12.7292],
+    average_job_duration:  [0.0915,   0.0942,   0.0954],
+    days_to_accept:        [4.0708,   5.6729,   4.0708],
+    lead_conversion:       [1,        1,        1],
+    hours_logged:          [97,       135.25,   45.5],
+    billable_hours:        [1,        1,        1],
+    jobs_per_tech:         [6.6,      10,       3.25],
+    pending_timesheets:    [19,       null,     19],
+    gross_profit:          [10980.37, 24272.04, 3113.75],
+    labour_vs_materials:   [0.661,    0.5634,   0.6887],
+    average_job_profit:    [343.1366, 466.77,   345.9722],
+    new_customers:         [4,        1,        3],
+    repeat_customers:      [1,        0.9762,   1],
+    maintenance_due:       [1,        null,     1],
+    top_customer_share:    [0.1285,   0.1502,   0.2018],
   };
+
+  test('callback rate waits for a flagged callback (the demo has none)', () => {
+    assert.equal(month.callback_rate.empty, true);
+  });
 
   for (const [id, [v, prev, wk]] of Object.entries(expected)) {
     test(id, () => {
@@ -58,25 +80,24 @@ describe('launch cards against the demo dataset', () => {
 
   test('tapping a card lists exactly the records behind its number', () => {
     const ctx = filterContext('month', now);
-    const listed = (id) => {
-      const { route, filter } = KPIS[id].link;
-      const coll = route.slice(1);
-      return data[coll].filter(KPI_FILTERS[coll][filter].build(data, ctx));
-    };
+    const listed = (id) => data[linkCollection(KPIS[id].link)].filter(linkFilter(KPIS[id].link).build(data, ctx));
     assert.equal(listed('overdue').length, month.overdue.extra.count);
     assert.equal(listed('outstanding').length, month.outstanding.extra.count);
     assert.equal(listed('revenue_invoiced').length, month.revenue_invoiced.extra.count);
     assert.equal(listed('quote_win_rate').length, month.quote_win_rate.extra.count);
     assert.equal(listed('open_pipeline').length, month.open_pipeline.extra.count);
-    for (const id of ['ready_to_invoice', 'active_jobs', 'jobs_completed', 'unscheduled_backlog', 'new_leads', 'quotes_sent']) {
+    for (const id of ['ready_to_invoice', 'active_jobs', 'jobs_completed', 'unscheduled_backlog', 'new_leads', 'quotes_sent', 'pending_timesheets', 'new_customers']) {
       assert.equal(listed(id).length, month[id].value, id);
+    }
+    for (const id of ['average_invoice_value', 'average_days_to_pay', 'days_to_accept', 'lead_conversion', 'repeat_customers']) {
+      assert.equal(listed(id).length, month[id].extra.count, id);
     }
   });
 
-  test('every launch card is defined and covered here', () => {
-    const launch = KPI_IDS.filter(id => KPIS[id].launch);
-    assert.equal(launch.length, 15);
-    assert.deepEqual(launch.sort(), Object.keys(expected).sort());
+  test('every card is defined and covered here', () => {
+    assert.equal(KPI_IDS.length, 32);
+    assert.equal(KPI_IDS.filter(id => KPIS[id].launch).length, 15);
+    assert.deepEqual([...KPI_IDS].sort(), [...Object.keys(expected), 'callback_rate'].sort());
   });
 });
 
@@ -89,13 +110,15 @@ describe('definitions', () => {
       const d = KPIS[id];
       assert.ok(groups.has(d.group), `${id} group`);
       assert.ok(['period', 'snapshot'].includes(d.type), `${id} type`);
-      assert.ok(['currency', 'count', 'percent', 'days'].includes(d.format), `${id} format`);
-      assert.equal(typeof d.upIsGood, 'boolean', `${id} upIsGood`);
+      assert.ok(['currency', 'count', 'percent', 'days', 'duration', 'hours', 'decimal'].includes(d.format), `${id} format`);
+      assert.ok(typeof d.upIsGood === 'boolean' || d.upIsGood === null, `${id} upIsGood`);
       assert.ok(d.label && d.description && d.empty, `${id} copy`);
       assert.ok(Array.isArray(d.needs) && d.needs.length, `${id} needs`);
       assert.ok(d.link && d.link.route.startsWith('/'), `${id} link`);
       if (d.link.filter) {
-        const f = (KPI_FILTERS[d.link.route.slice(1)] || {})[d.link.filter];
+        const f = linkFilter(d.link);
+        // The page loads the filter's collections itself; the card must read them too.
+        if (f) f.needs.forEach(c => assert.ok(d.needs.includes(c) || c === linkCollection(d.link), `${id} needs ${c}`));
         assert.ok(f, `${id} links to a filter its list understands`);
         // A period card's list must follow the period too, or the counts disagree.
         assert.equal(f.periodic, d.type === 'period', `${id} filter periodicity`);
@@ -327,5 +350,120 @@ describe('presentation', () => {
     assert.equal(formatKpiDelta(0.125, 'currency'), '+13%');
     assert.equal(formatKpiDelta(-0.03, 'percent'), '−3 pts');
     assert.equal(formatKpiDelta(-0.001, 'currency'), '0%');
+  });
+});
+
+// ── Cards beyond the launch set ──────────────────────────────────────────────
+
+describe('extended cards', () => {
+  const now = new Date(2026, 9, 8, 10, 0); // Thu 8 Oct 2026
+
+  test('an invoice is paid off on its paid date, or its last payment once nothing is owed', () => {
+    assert.equal(invoicePaidAt({ status: 'Paid', total: 100, paidDate: '2026-10-03' }), '2026-10-03');
+    const full = invoicePaidAt({ status: 'Sent', total: 100, payments: [{ amount: 40, date: '2026-10-01' }, { amount: 60, date: '2026-10-04' }] });
+    assert.deepEqual(full, new Date(2026, 9, 4));
+    assert.equal(invoicePaidAt({ status: 'Sent', total: 100, payments: [{ amount: 40, date: '2026-10-01' }] }), null);
+    assert.equal(invoicePaidAt({ status: 'Void', total: 100, paidDate: '2026-10-03' }), null);
+  });
+
+  test('average days to pay measures issue to paid off', () => {
+    const r = run('average_days_to_pay', { invoices: [
+      { status: 'Paid', total: 110, subtotal: 100, issueDate: '2026-09-25', paidDate: '2026-10-05' },
+      { status: 'Paid', total: 110, subtotal: 100, issueDate: '2026-10-01', paidDate: '2026-10-03' },
+    ] }, { now });
+    assert.equal(r.average_days_to_pay.value, 6);
+    assert.equal(formatKpiValue(r.average_days_to_pay.value, 'days'), '6 days');
+  });
+
+  test('callbacks come from the flag or a callback job type', () => {
+    assert.ok(isCallbackJob({ isCallback: true }));
+    assert.ok(isCallbackJob({ type: 'Warranty callback' }));
+    assert.ok(!isCallbackJob({ type: 'Installation' }));
+    const jobs = [
+      { id: 1, status: 'Completed', completedAt: '2026-10-02', isCallback: true },
+      { id: 2, status: 'Completed', completedAt: '2026-10-03' },
+      { id: 3, status: 'Invoiced', completedAt: '2026-10-04' },
+      { id: 4, status: 'Invoiced', completedAt: '2026-10-05' },
+    ];
+    const r = run('callback_rate', { jobs, schedule: [] }, { now });
+    assert.equal(r.callback_rate.value, 0.25);
+    assert.equal(kpiSubline('callback_rate', r.callback_rate), '1 callback');
+  });
+
+  test('days to accept is the median, so one slow quote does not skew it', () => {
+    const q = (sent, acc) => ({ status: 'Accepted', sentAt: sent, acceptedAt: acc });
+    const r = run('days_to_accept', { quotes: [q('2026-10-01', '2026-10-02'), q('2026-10-01', '2026-10-04'), q('2026-06-01', '2026-10-05')] }, { now });
+    assert.equal(r.days_to_accept.value, 3);
+  });
+
+  test('lead conversion uses the date the stage history closed the lead', () => {
+    const lead = (status, at) => ({ status, stageHistory: [{ status, timestamp: at }, { status: 'Proposal', timestamp: '2026-08-01' }] });
+    assert.equal(leadClosedAt(lead('Won', '2026-10-02T01:00:00Z')), '2026-10-02T01:00:00Z');
+    assert.equal(leadClosedAt({ status: 'Qualified' }), null);
+    const r = run('lead_conversion', { leads: [lead('Won', '2026-10-02'), lead('Lost', '2026-10-03'), lead('Lost', '2026-10-04'), lead('Won', '2026-08-04')] }, { now });
+    assert.equal(r.lead_conversion.value, 1 / 3);
+  });
+
+  test('timesheet cards: hours, billable share and pending approvals', () => {
+    const timesheets = [
+      { jobId: 'a', technicianId: 't1', date: '2026-10-05', hours: 6, status: 'Approved' },
+      { technicianId: 't1', date: '2026-10-06', hours: 2, status: 'Pending' },
+      { jobId: 'b', technicianId: 't2', date: '2026-09-02', hours: 8, status: 'Pending' },
+    ];
+    const r = run(['hours_logged', 'billable_hours', 'pending_timesheets'], { timesheets }, { now });
+    assert.equal(r.hours_logged.value, 8);
+    assert.equal(r.billable_hours.value, 0.75);
+    assert.equal(kpiSubline('billable_hours', r.billable_hours), '2 h not on a job');
+    assert.equal(r.pending_timesheets.value, 2); // snapshot: every pending entry, any date
+  });
+
+  test('jobs per tech is only offered to teams', () => {
+    assert.equal(KPIS.jobs_per_tech.available({ staffCount: 1 }), false);
+    assert.equal(KPIS.jobs_per_tech.available({ staffCount: 3 }), true);
+  });
+
+  test('labour vs materials splits invoiced line revenue and ignores other lines', () => {
+    const inv = { status: 'Sent', subtotal: 1000, total: 1100, issueDate: '2026-10-02', sections: [{ lineItems: [
+      { type: 'labor', total: 600 }, { type: 'material', qty: 2, rate: 100 }, { type: 'other', total: 200 },
+    ] }] };
+    const r = run('labour_vs_materials', { invoices: [inv] }, { now });
+    assert.equal(r.labour_vs_materials.value, 0.75);
+    assert.equal(kpiSubline('labour_vs_materials', r.labour_vs_materials), 'Labour 75% · Materials 25%');
+    assert.equal(r.labour_vs_materials.good, null); // neither direction is good news
+  });
+
+  test('repeat customers had an invoice before the period', () => {
+    const inv = (customerId, issueDate) => ({ status: 'Sent', subtotal: 100, total: 110, customerId, issueDate });
+    const r = run('repeat_customers', {
+      customers: [{ id: 'c1' }, { id: 'c2' }],
+      invoices: [inv('c1', '2026-05-01'), inv('c1', '2026-10-02'), inv('c2', '2026-10-03')],
+    }, { now });
+    assert.equal(r.repeat_customers.value, 0.5);
+  });
+
+  test('top customer share flags over 30% in amber', () => {
+    const inv = (customerId, subtotal) => ({ status: 'Sent', subtotal, total: subtotal * 1.1, customerId, customerName: customerId, issueDate: '2026-10-02' });
+    const r = run('top_customer_share', { invoices: [inv('Big Builder', 700), inv('A', 200), inv('B', 100)] }, { now });
+    assert.equal(r.top_customer_share.value, 0.7);
+    assert.equal(r.top_customer_share.extra.warn, true);
+    assert.equal(kpiSubline('top_customer_share', r.top_customer_share), 'Big Builder');
+  });
+
+  test('maintenance due counts the next 7 days and calls out overdue plans', () => {
+    const plan = (nextServiceDate, status = 'Active') => ({ assetId: 'a', status, nextServiceDate });
+    const r = run('maintenance_due', { maintenancePlans: [
+      plan('2026-10-08'), plan('2026-10-14'), plan('2026-10-15'), plan('2026-10-01'), plan('2026-10-02', 'Paused'), plan(null),
+    ] }, { now });
+    assert.equal(r.maintenance_due.value, 2);
+    assert.equal(kpiSubline('maintenance_due', r.maintenance_due), '+1 overdue');
+    assert.equal(r.maintenance_due.extra.subAlert, true);
+  });
+
+  test('durations under a day read in hours', () => {
+    assert.equal(formatKpiValue(0.1, 'duration'), '2.4 h');
+    assert.equal(formatKpiValue(3.25, 'duration'), '3.3 days');
+    assert.equal(formatKpiDelta(-0.05, 'duration'), '−1.2 h');
+    assert.equal(formatKpiValue(1503.8, 'hours'), '1,503.8 h');
+    assert.equal(formatKpiValue(6.62, 'decimal'), '6.6');
   });
 });
