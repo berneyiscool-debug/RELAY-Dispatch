@@ -23,6 +23,7 @@ import { hasWeatherAction, runWeatherActions } from '../utils/deputyWeather.js';
 import { getThreads, getThread, createThread, renameThread, deleteThread, setThreadMessages, ensureDefaultThread, deriveThreadTitle } from '../utils/deputyThreads.js';
 import { getRoutines, getRoutine, createRoutine, updateRoutine, deleteRoutine, markRoutineRun, routineIsDue, describeTrigger } from '../utils/deputyRoutines.js';
 import { runEmergencyScan, summariseScan, SCAN_CATEGORIES } from '../utils/deputyScan.js';
+import { runConflictScan } from '../utils/DeputyAutopilot.js';
 import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
 import { shouldUseAgentLoop } from '../utils/brnyRouting.js';
 import { runTurn } from '../utils/brnyAgent.js';
@@ -450,11 +451,12 @@ function renderWatchdogView(container) {
     showToast('Monitor data refreshed.', 'info');
   });
 
-  container.querySelector('.btn-run-scan')?.addEventListener('click', () => {
+  container.querySelector('.btn-run-scan')?.addEventListener('click', async () => {
     emergencyFindings = runEmergencyScan();
     surfaceEmergencyAsks(emergencyFindings);
     logAction('Emergency Scan', `Ran scan — ${emergencyFindings.length} finding${emergencyFindings.length === 1 ? '' : 's'}`, emergencyFindings.length ? 'warning' : 'success');
     renderWatchdogView(container);
+    await runUserInitiatedConflictScan(container);
   });
 
   container.querySelectorAll('.btn-open-scan').forEach(btn => {
@@ -898,6 +900,41 @@ function scheduleEmergencyScanRefresh() {
   if (!hasDeputyMax()) return;
   if (scanRefreshTimer) clearTimeout(scanRefreshTimer);
   scanRefreshTimer = setTimeout(refreshEmergencyScan, 1200);
+}
+
+// The AI conflict proposals are user-initiated only — each collision they draft
+// costs one AI call — so they hang off the Watchdog "Run Scan" button and are never
+// triggered by a store event. `runConflictScan` refuses to run while the panel is
+// closed, and refuses to run twice at once.
+async function runUserInitiatedConflictScan(container) {
+  if (!hasDeputyMax()) return;
+  showToast('brny is drafting conflict proposals…', 'info');
+
+  const result = await runConflictScan({ systemContext: getSystemContext() });
+
+  if (!result.ran) {
+    if (result.reason === 'closed') showToast('Open brny to draft conflict proposals.', 'info');
+    return;
+  }
+  if (result.limitError) {
+    logAction('Conflict Scan', result.limitError.message, 'error');
+    showToast(result.limitError.message, 'error');
+    return;
+  }
+  if (result.failed) {
+    logAction('Conflict Scan', 'Could not draft a conflict proposal', 'error');
+    showToast('brny could not draft a conflict proposal — try again in a few minutes.', 'error');
+    return;
+  }
+  if (result.proposed) {
+    logAction('Conflict Scan', `Drafted ${result.proposed} conflict proposal${result.proposed === 1 ? '' : 's'}`);
+    showToast(`${result.proposed} conflict proposal${result.proposed === 1 ? '' : 's'} ready — review in the Inspector.`, 'success');
+    if (container) renderWatchdogView(container);
+    return;
+  }
+  if (result.coolingDown) {
+    showToast('Conflict proposals are paused for a few minutes after a failed attempt.', 'info');
+  }
 }
 
 function updateWorkspaceView(panel) {
