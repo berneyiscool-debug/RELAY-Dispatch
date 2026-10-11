@@ -114,7 +114,7 @@ serve(async (req) => {
       asOf: new Date().toISOString(),
     }
     cache.set(key, { at: Date.now(), payload })
-    if (cache.size > 500) cache.delete(cache.keys().next().value)
+    if (cache.size > 500) cache.delete(cache.keys().next().value as string)
     return json({ ...payload, cached: false })
   } catch (err) {
     console.error('dashboard-kpis error:', err)
