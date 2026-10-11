@@ -125,6 +125,7 @@ const TABLE_COLUMNS = {
     "portal_passcode",
     "portal_last_accessed",
     "geo",
+    "sites",
     "created_at",
     "updated_at"
   ],
@@ -2887,6 +2888,44 @@ class DataStore {
     return record;
   }
 
+  // PostgREST rejects a write that names a column the database does not have --
+  // 42703 "column X does not exist", or PGRST204 "could not find the 'X' column
+  // ... in the schema cache". That is what a TABLE_COLUMNS entry ahead of its
+  // migration looks like on the wire. Retry once without the rejected column and
+  // say so in the console, rather than failing the whole record: the alternative
+  // (relying only on the whitelist) either drops the field silently or, once the
+  // entry is added before the column exists, turns every write into a 400.
+  async _writeThenDropUnknownColumns(write, payload) {
+    const attempt = await write(payload);
+    const error = attempt && attempt.error;
+    if (!error) return attempt;
+
+    const unknown = this._unknownColumnNames(error, payload);
+    if (!unknown.length) return attempt;
+
+    const pruned = { ...payload };
+    unknown.forEach(key => delete pruned[key]);
+    console.warn(
+      `[store] Supabase rejected unknown column(s): ${unknown.join(', ')}. ` +
+      'Retried without them; apply the pending migration to persist these fields.'
+    );
+    return write(pruned);
+  }
+
+  // The columns PostgREST complained about, limited to keys we actually sent, so
+  // an unrelated error never has payload silently dropped from it.
+  _unknownColumnNames(error, payload) {
+    const code = String((error && error.code) || '');
+    const message = `${(error && error.message) || ''} ${(error && error.details) || ''}`;
+    const isUnknownColumn = code === '42703' || code === 'PGRST204' ||
+      /column .* does not exist|could not find the .*column/i.test(message);
+    if (!isUnknownColumn) return [];
+    return Object.keys(payload || {}).filter(key => {
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^A-Za-z0-9_])${escaped}([^A-Za-z0-9_]|$)`).test(message);
+    });
+  }
+
   // Legacy compatibility / No-op migration call
   migrateNumberFields() {}
 
@@ -3253,7 +3292,12 @@ class DataStore {
     const dbPayload = this.denormalizeRecord(item, collection);
     const table = TABLE_MAP[collection];
     if (table) {
-      supabase.from(table).insert([dbPayload]).then(({ error }) => {
+      // Retried once without a column the database rejects (see the helper) so a
+      // whitelist entry that is ahead of its migration degrades instead of failing.
+      this._writeThenDropUnknownColumns(
+        (payload) => supabase.from(table).insert([payload]).then(({ error }) => ({ error })),
+        dbPayload
+      ).then(({ error }) => {
         if (error) {
           // Roll back the optimistic add so the UI matches the database
           this.cache[collection] = (this.cache[collection] || []).filter(x => x.id !== item.id);
@@ -3419,10 +3463,10 @@ class DataStore {
     // Resolve (never reject) with a result object so callers can tell success from
     // failure without triggering unhandled promise rejections in fire-and-forget
     // call sites. Success resolves to { ok: true, record }.
-    return supabase
-      .from(table)
-      .update(dbPayload)
-      .eq('id', id)
+    return this._writeThenDropUnknownColumns(
+      (payload) => supabase.from(table).update(payload).eq('id', id).then(({ error }) => ({ error })),
+      dbPayload
+    )
       .then(({ error }) => {
         if (error) {
           rollback(error);

@@ -41,6 +41,7 @@ const LEADS_PIPELINE_SQL = readFileSync(join(MIGRATIONS_DIR, '040_leads_pipeline
 const LEADS_ACTIVITY_SQL = readFileSync(join(MIGRATIONS_DIR, '041_leads_activity_log.sql'), 'utf8');
 const PORTAL_LOOKUP_SQL = readFileSync(join(MIGRATIONS_DIR, '042_portal_token_lookup.sql'), 'utf8');
 const TODOS_SQL = readFileSync(join(MIGRATIONS_DIR, '043_todos.sql'), 'utf8');
+const SITES_SQL = readFileSync(join(MIGRATIONS_DIR, '044_add_customer_sites.sql'), 'utf8');
 
 const TENANT_A = '00000000-0000-0000-0000-00000000000a';
 const TENANT_B = '00000000-0000-0000-0000-00000000000b';
@@ -2493,5 +2494,107 @@ describe('043 to-dos', () => {
     assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.jobs'), 2);
     assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.profiles'), 3);
     assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.notifications'), 1);
+  });
+});
+
+// 044 exists because the Sites tab looked like it saved. store.update() writes
+// the cache and IndexedDB first, denormalizeRecord() then deletes every key
+// missing from TABLE_COLUMNS, and the stripped cloud write still returned
+// { ok: true } - so the site survived until the next cloud load replaced the
+// record wholesale from a row that had no `sites`. This block pins the column
+// the client whitelists, and that adding it grants no new access path.
+describe('044 customer sites column', () => {
+  let db;
+
+  const CUSTOMER_A = 'aaaaaaaa-0000-0000-0000-000000000004';
+
+  before(async () => {
+    db = await createFixtureDb();
+    await db.exec(TENANT_HELPER);
+    await db.exec(CATCHUP_SQL);
+    await db.exec(HARDENING_SQL);
+    // Run twice: the migration ships as ADD COLUMN IF NOT EXISTS, so a project
+    // where it has already landed must not abort.
+    await db.exec(SITES_SQL);
+    await db.exec(SITES_SQL);
+  });
+
+  after(async () => {
+    await db.close();
+  });
+
+  test('adds a nullable jsonb column to customers', async () => {
+    const column = await one(
+      db,
+      `SELECT data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'sites'`
+    );
+    assert.ok(column, 'customers.sites should exist');
+    assert.strictEqual(column.data_type, 'jsonb');
+    assert.strictEqual(column.is_nullable, 'YES');
+  });
+
+  test('reports every expected object present in its verification grid', async () => {
+    const results = await db.exec(SITES_SQL);
+    const grid = results[results.length - 1].rows;
+    assert.strictEqual(grid.length, 1);
+    assert.deepStrictEqual(grid.filter((r) => r.is_present !== true).map((r) => r.object_name), []);
+    assert.deepStrictEqual(grid.filter((r) => r.has_expected_type !== true).map((r) => r.object_name), []);
+  });
+
+  test('round trips a site without flattening its nested geo', async () => {
+    await db.query(`INSERT INTO public.customers (id, company_id, label, sites) VALUES
+      ('${CUSTOMER_A}', '${TENANT_A}', 'A customer',
+       '[{"name":"Depot","address":"5 Cardington Street","notes":"gate code 4821","geo":{"lat":-33.8688,"lng":151.2093}}]'::jsonb)`);
+
+    const row = await one(db, `SELECT sites FROM public.customers WHERE id = '${CUSTOMER_A}'`);
+    assert.deepStrictEqual(row.sites, [
+      {
+        name: 'Depot',
+        address: '5 Cardington Street',
+        notes: 'gate code 4821',
+        geo: { lat: -33.8688, lng: 151.2093 },
+      },
+    ]);
+  });
+
+  test('a customer saved before the migration simply reads null, not an error', async () => {
+    await db.query(`INSERT INTO public.customers (id, company_id, label) VALUES
+      ('bbbbbbbb-0000-0000-0000-000000000004', '${TENANT_A}', 'No sites yet')`);
+    assert.strictEqual(
+      await value(db, "SELECT sites IS NULL FROM public.customers WHERE id = 'bbbbbbbb-0000-0000-0000-000000000004'"),
+      true
+    );
+  });
+
+  test('is re-runnable without disturbing stored sites', async () => {
+    await db.exec(SITES_SQL);
+    assert.strictEqual(
+      await value(db, `SELECT jsonb_array_length(sites)::int FROM public.customers WHERE id = '${CUSTOMER_A}'`),
+      1
+    );
+  });
+
+  test('the new column adds no cross-tenant read or write path', async () => {
+    await asRole(db, 'authenticated', ADMIN_B, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 0);
+      assert.strictEqual(
+        await value(db, `SELECT count(*)::int FROM public.customers WHERE id = '${CUSTOMER_A}'`),
+        0,
+        'tenant B must not see tenant A sites'
+      );
+      await db.query(`UPDATE public.customers SET sites = '[]'::jsonb WHERE id = '${CUSTOMER_A}'`);
+    });
+    assert.strictEqual(
+      await value(db, `SELECT jsonb_array_length(sites)::int FROM public.customers WHERE id = '${CUSTOMER_A}'`),
+      1,
+      'tenant B must not clear tenant A sites'
+    );
+  });
+
+  test('the anon key cannot read sites', async () => {
+    await asRole(db, 'anon', null, async () => {
+      assert.strictEqual(await value(db, 'SELECT count(*)::int FROM public.customers'), 0);
+    });
   });
 });

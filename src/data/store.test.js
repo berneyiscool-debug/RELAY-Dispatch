@@ -459,6 +459,115 @@ describe('DataStore', () => {
       assert.strictEqual(norm.record_type, undefined);
     });
 
+    test('a customer site round-trips through the 044 column whitelist without dropping fields', () => {
+      // The exact shape PersonDetail's site drawer and actions/customers.js add_site()
+      // hand to store.update('customers', id, { sites }).
+      const customer = {
+        id: 'cust_1',
+        companyId: 'comp1',
+        name: 'Dave Berney',
+        sites: [
+          {
+            name: '14 Marine Parade',
+            address: '14 Marine Parade, Mooloolaba QLD 4557',
+            notes: 'Gate code 4417',
+            geo: { lat: -26.6821, lng: 153.1201 }
+          }
+        ]
+      };
+
+      const denorm = store.denormalizeRecord({ ...customer }, 'customers');
+
+      // `sites` is the jsonb column added by supabase/migrations/044; a key missing
+      // from TABLE_COLUMNS.customers is deleted before the write, which is how the
+      // field used to be silently dropped instead of reaching the database.
+      assert.ok(Array.isArray(denorm.sites));
+      assert.strictEqual(denorm.sites[0].name, '14 Marine Parade');
+      assert.strictEqual(denorm.sites[0].geo.lat, -26.6821);
+
+      const norm = store.normalizeRecord({ ...denorm }, 'customers');
+
+      assert.strictEqual(norm.sites.length, 1);
+      assert.strictEqual(norm.sites[0].address, '14 Marine Parade, Mooloolaba QLD 4557');
+      assert.strictEqual(norm.sites[0].notes, 'Gate code 4417');
+    });
+
+    // A whitelist entry that lands before its migration must not turn every cloud
+    // write into a failure, so the rejected column is dropped and the write retried.
+    test('a write the database rejects for an unknown column is retried once without it', async () => {
+      const attempts = [];
+      const originalFrom = supabase.from;
+      const originalWarn = console.warn;
+      const warnings = [];
+      supabase.from = (table) => ({
+        ...originalFrom(table),
+        update: (payload) => {
+          attempts.push(payload);
+          return {
+            eq: async () => (attempts.length === 1
+              ? { error: { code: '42703', message: 'column customers.sites does not exist' } }
+              : { error: null, data: {} })
+          };
+        }
+      });
+      console.warn = (...args) => warnings.push(args.join(' '));
+
+      try {
+        store.companyId = 'test-company';
+        store.cache.customers = [{ id: 'cust_1', companyId: 'test-company', name: 'Dave Berney' }];
+
+        const result = await store.update('customers', 'cust_1', { sites: [{ name: 'Shed' }] });
+
+        assert.strictEqual(attempts.length, 2);
+        assert.deepStrictEqual(attempts[0].sites, [{ name: 'Shed' }]);
+        assert.strictEqual(attempts[1].sites, undefined);
+        // Only the offending key is dropped; everything else still goes up.
+        assert.strictEqual(attempts[1].company_id, 'test-company');
+        assert.strictEqual(result.ok, true);
+        assert.strictEqual(warnings.length, 1);
+        assert.match(warnings[0], /sites/);
+      } finally {
+        supabase.from = originalFrom;
+        console.warn = originalWarn;
+      }
+    });
+
+    test('an unrelated write failure still rolls back instead of dropping columns', async () => {
+      const attempts = [];
+      const originalFrom = supabase.from;
+      const originalError = console.error;
+      supabase.from = (table) => ({
+        ...originalFrom(table),
+        update: (payload) => {
+          attempts.push(payload);
+          return {
+            eq: async () => ({
+              error: {
+                code: '42501',
+                message: 'new row violates row-level security policy for table "customers"'
+              }
+            })
+          };
+        }
+      });
+      console.error = () => {};
+
+      try {
+        store.companyId = 'test-company';
+        store.cache.customers = [{ id: 'cust_1', companyId: 'test-company', name: 'Dave Berney' }];
+
+        const result = await store.update('customers', 'cust_1', { sites: [{ name: 'Shed' }] });
+
+        assert.strictEqual(attempts.length, 1);
+        assert.strictEqual(result.ok, false);
+        assert.strictEqual(result.error.code, '42501');
+        assert.strictEqual(store.getAll('customers')[0].sites, undefined);
+      } finally {
+        supabase.from = originalFrom;
+        console.error = originalError;
+      }
+    });
+
     test('repairInvoiceIssueDates backfills missing issueDate from createdAt/dueDate', () => {
       store.cache.invoices = [
         { id: 'inv_no_date', number: 'INV-1', createdAt: '2026-08-10T10:00:00.000Z' },
