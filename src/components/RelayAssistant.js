@@ -24,6 +24,7 @@ import { getThreads, getThread, createThread, renameThread, deleteThread, setThr
 import { getRoutines, getRoutine, createRoutine, updateRoutine, deleteRoutine, markRoutineRun, routineIsDue, describeTrigger } from '../utils/deputyRoutines.js';
 import { runEmergencyScan, summariseScan, SCAN_CATEGORIES } from '../utils/deputyScan.js';
 import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
+import { shouldUseAgentLoop } from '../utils/brnyRouting.js';
 import { runTurn } from '../utils/brnyAgent.js';
 import { buildBrnyPlaybook } from '../utils/brnyPlaybook.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
@@ -3312,10 +3313,13 @@ async function callAIEngineWithTriage() {
   const text = lastUser ? lastUser.content : '';
   const triage = await triageMessage(text, { ai, chatHistory });
 
-  // A question is the agent loop's home ground: it looks the answer up with the
-  // same actions the UI uses. The specialist flows below stay for the requests
-  // that need them (action proposals, external data, urgent faults).
-  if (triage.intent === 'QUESTION' && canRunBrnyAgent()) return callBrnyAgent();
+  // The agent loop is the only path with the action registry behind it, so a
+  // turn that writes has to land there - the specialist flows have no way to log
+  // time or add a task. Requests only the in-app shortcuts can serve (canvas,
+  // navigation, memory) and the external/urgent flows keep their own handlers.
+  if (shouldUseAgentLoop({ intent: triage.intent, text, agentAvailable: canRunBrnyAgent() })) {
+    return callBrnyAgent();
+  }
 
   const ctx = {
     text,

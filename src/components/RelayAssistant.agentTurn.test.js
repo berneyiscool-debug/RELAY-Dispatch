@@ -28,6 +28,12 @@
  * reference is stale, so every turn took the legacy text path and brny was sent
  * no tools at all — a silent downgrade that looks like a dumb assistant rather
  * than an error. The panel is now re-resolved from the document.
+ *
+ * A fifth: the tool loop was reached only for `QUESTION`, so the ACTION label
+ * that the rule-based triage attaches to words like "add", "create" and "book"
+ * sent every write to the legacy tag flow — which has no action registry, and so
+ * no way to log time. Writes now reach the loop; only the canvas, navigation and
+ * memory shortcuts (which the registry genuinely cannot do) stay behind.
  */
 
 import test from 'node:test';
@@ -138,4 +144,16 @@ test('the agent path survives a missing or detached panel reference', () => {
     'the panel must be re-resolved from the document when the cached node is stale',
   );
   assert.match(SOURCE, /function canRunBrnyAgent\(\) \{\s*\n\s*return canUseAI\(\) && !!relayThreadEl\(\);/, 'canRunBrnyAgent must go through relayThreadEl');
+});
+
+test('a write phrased as an action reaches the agent loop', () => {
+  assert.match(
+    SOURCE,
+    /if \(shouldUseAgentLoop\(\{ intent: triage\.intent, text, agentAvailable: canRunBrnyAgent\(\) \}\)\) \{\s*\n\s*return callBrnyAgent\(\);/,
+    'routing on the bare intent label sends writes to a flow with no tools',
+  );
+  assert.ok(
+    !/triage\.intent === 'QUESTION' && canRunBrnyAgent\(\)/.test(SOURCE),
+    'the QUESTION-only gate is what made "add 2 hours to J-00028" unanswerable',
+  );
 });
