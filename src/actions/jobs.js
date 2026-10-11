@@ -114,7 +114,7 @@ export function rollUpProgress(tasks, path) {
   return true;
 }
 
-function newTaskNode({ name, estimatedHours, people }) {
+function newTaskNode({ name, description, estimatedHours, people }) {
   const node = {
     id: store.generateId(),
     name: name || 'New Task',
@@ -124,6 +124,9 @@ function newTaskNode({ name, estimatedHours, people }) {
     technicians: [],
     subTasks: [],
   };
+  // Written only when there is something to say, so a bare node keeps the same
+  // shape the job screens hand-build in `JobForm.js` and `JobDetail.js`.
+  if (description != null && String(description).trim()) node.description = String(description).trim();
   if (estimatedHours != null) node.estimatedHours = estimatedHours;
   if (people != null) node.people = people;
   return node;
@@ -140,6 +143,36 @@ function newTaskNode({ name, estimatedHours, people }) {
  */
 export function mainTaskNode() {
   return newTaskNode({ name: 'Main Task' });
+}
+
+/**
+ * Keep the job's estimate and its task list in step when a job is created.
+ *
+ * The job screens read the task leaves first and fall back to the job's own
+ * `estimatedHours` only when the task list carries no hours (`JobDetail.js`),
+ * while the scheduler and the dashboards read `estimatedHours` alone, so a job
+ * written with one figure and not the other looks like a different size
+ * depending on where it is opened. Whichever side the caller filled in is
+ * copied to the other; when both are given they are left exactly as written.
+ *
+ * @param {Array<object>} tasks Task nodes to fill in, mutated in place.
+ * @param {number|string} [requestedHours] The job-level estimate the caller gave.
+ * @returns {number} The estimate the job record itself should carry.
+ */
+export function syncEstimateWithTasks(tasks, requestedHours) {
+  const requested = Number(requestedHours) || 0;
+  const fromTasks = tasks.reduce((sum, task) => sum + (Number(task.estimatedHours) || 0), 0);
+  if (fromTasks > 0) return requested > 0 ? requested : fromTasks;
+  if (requested <= 0 || !tasks.length) return requested;
+
+  // Nothing to work from on the task list, so the job's estimate is split across
+  // it. The last task takes the rounding remainder so the parts add back up.
+  const share = Math.round((requested / tasks.length) * 100) / 100;
+  tasks.forEach((task, index) => {
+    const isLast = index === tasks.length - 1 && tasks.length > 1;
+    task.estimatedHours = isLast ? Math.round((requested - share * index) * 100) / 100 : share;
+  });
+  return requested;
 }
 
 function cloneTasks(tasks) {
@@ -202,30 +235,31 @@ defineAction({
   name: 'create_job',
   title: 'Create job',
   description:
-    'Create a job for a customer, optionally with a first list of tasks, a priority and a scheduled date. Use this for new work that is not coming from a quote. The job always starts with a Main Task when no tasks are given, because hours are booked against a task.',
+    'Create a job for a customer, optionally with a first list of tasks, a priority and a scheduled date. Use this for new work that is not coming from a quote. Name the job from what the customer asked for, describe the work on the job, and break anything with more than one piece of work into named tasks that each carry a description and their hours. The job always starts with a Main Task when no tasks are given, because hours are booked against a task, and an estimate given only for the whole job is placed on that task list.',
   permission: { module: 'Jobs', key: 'create' },
   inputSchema: objectSchema(
     {
       customer: str('Customer name, number or id the job is for.'),
-      title: str('Short job title, e.g. "Switchboard upgrade".'),
-      description: str('What the job involves. Shown on the job card.'),
+      title: str('Short job title naming the work, e.g. "Switchboard upgrade".'),
+      description: str('What the job involves, in a sentence or two. Shown on the job card.'),
       siteAddress: str('Site address if different from the customer address.'),
       contactName: str('On-site contact person.'),
       priority: enumOf(JOB_PRIORITIES, 'Job priority. Defaults to Medium.'),
       status: enumOf(JOB_STATUSES, 'Starting status. Defaults to Scheduled when a date is given, otherwise Pending.'),
       scheduledDate: dateish('Date the job is booked for.'),
-      estimatedHours: num('Estimated labour hours for the whole job.'),
+      estimatedHours: num('Estimated labour hours for the whole job. Placed on the task list so the tasks are costed too.'),
       tasks: list(
         objectOf(
           {
-            name: str('Task name.'),
+            name: str('Task name, e.g. "Rough in" or "Fit off".'),
+            description: str('What this task covers.'),
             estimatedHours: num('Estimated hours for this task.'),
             people: int('How many people are needed for this task.'),
           },
           'A task in the job checklist.',
           ['name']
         ),
-        'Optional first tasks, in order.'
+        'The job checklist, in order. Worth filling in whenever the work has more than one step.'
       ),
       createCustomer: bool('Create the customer if no existing customer matches the name.'),
       customerType: enumOf(['Company', 'Individual'], 'Type to use when creating a new customer.'),
@@ -239,6 +273,7 @@ defineAction({
     const tasks = (input.tasks || []).map((task) => newTaskNode(task));
     // A job without a task cannot take hours, so the checklist is never empty.
     if (!tasks.length) tasks.push(mainTaskNode());
+    const estimatedHours = syncEstimateWithTasks(tasks, input.estimatedHours);
     const scheduledDate = input.scheduledDate ? parseDate(input.scheduledDate) : null;
     const status = input.status || (scheduledDate ? 'Scheduled' : 'Pending');
     const number = store.getNextNumber('J-', 'jobs');
@@ -256,7 +291,7 @@ defineAction({
       status,
       priority: input.priority || 'Medium',
       scheduledDate,
-      estimatedHours: input.estimatedHours || 0,
+      estimatedHours,
       laborCost: 0,
       materialCost: 0,
       tasks,
@@ -385,13 +420,14 @@ defineAction({
 defineAction({
   name: 'add_job_task',
   title: 'Add job task',
-  description: 'Add a task to a job checklist, or a sub-task under an existing task.',
+  description: 'Add a task with a name, a description and its hours to a job checklist, or a sub-task under an existing task.',
   permission: { module: 'Jobs', key: 'manage_tasks' },
   inputSchema: objectSchema(
     {
       job: str('Job number, title, customer or id.'),
       customer: str('Customer, to narrow the job down when the name is not unique.'),
       name: str('Task name.'),
+      description: str('What this task covers.'),
       parent: str('Existing task to nest this under, for a sub-task.'),
       estimatedHours: num('Estimated hours for this task.'),
       people: int('How many people are needed for this task.'),
@@ -432,7 +468,7 @@ defineAction({
 defineAction({
   name: 'update_job_task',
   title: 'Update job task',
-  description: 'Rename a job task, change its estimate, or set how complete it is. Parent task progress is recalculated automatically.',
+  description: 'Rename a job task, change its description or estimate, or set how complete it is. Parent task progress is recalculated automatically.',
   permission: { module: 'Jobs', key: 'manage_tasks' },
   inputSchema: objectSchema(
     {
@@ -440,6 +476,7 @@ defineAction({
       customer: str('Customer, to narrow the job down when the name is not unique.'),
       task: str('Task name, or a sub-task name.'),
       name: str('New task name.'),
+      description: str('New description of what this task covers.'),
       status: enumOf(TASK_STATUSES, 'New task status.'),
       progress: int('Percent complete, 0-100.'),
       estimatedHours: num('New estimated hours for this task.'),
@@ -459,6 +496,10 @@ defineAction({
     if (input.name != null) {
       entry.node.name = input.name;
       fields.push('name');
+    }
+    if (input.description != null) {
+      entry.node.description = input.description;
+      fields.push('description');
     }
     if (input.estimatedHours != null) {
       entry.node.estimatedHours = input.estimatedHours;

@@ -26,6 +26,7 @@ HOW THE BUSINESS WORKS
 - Leads move through stages and end in Converted when they become a customer with work. "Converted" means a real record exists, not that someone phoned back.
 - The flow is lead -> quote -> job -> invoice. A quote can be converted into a job; a job produces invoices.
 - A job carries a task list, and hours are booked against a task rather than against the job. Every job you create starts with a Main Task; use \`add_task\` when the work needs more than one.
+- Author a job fully, never as a placeholder. Name it from what the customer asked for and say in the job description what the work involves. Give every task a name, a description of what it covers, and its hours — a task with no hours is a task nobody can be booked against. When the request gives one total for the whole job, put it on the job and let the tasks carry their share; when it names the pieces, give each task its own hours.
 - Customers are Companies or Individuals (nothing else — not "Commercial"). A Company has \`company\`, an Individual has \`firstName\`/\`lastName\`.
 - A quote carries \`sections\`, and sections carry the line items. There is no \`line_items\` field on a quote.
 - Invoice types are Standard, Deposit, Progress and CreditNote. Statuses are Draft, Sent, Paid, Overdue and Void. Jobs can carry more than one invoice, so never assume one invoice per job.

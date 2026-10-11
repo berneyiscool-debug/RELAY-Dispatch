@@ -4005,11 +4005,14 @@ function executeAction(action, param) {
           tasks: [{
             id: store.generateId(),
             name: 'Main Task',
+            ...(notes ? { description: notes } : {}),
             status: 'Not Started',
             progress: 0,
             startDate: new Date().toISOString(),
             technicians: [],
-            subTasks: []
+            subTasks: [],
+            // Hours are booked against a task, so the job's estimate belongs on one.
+            ...(estHours > 0 ? { estimatedHours: estHours } : {})
           }],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()

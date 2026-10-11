@@ -85,8 +85,114 @@ describe('assistant job creation always leaves a task to book hours against', ()
     assert.deepStrictEqual(outcome.result.tasks.map((task) => task.name), ['Rough in', 'Fit off']);
   });
 
+  test('create_job keeps the task descriptions it was given', async () => {
+    const outcome = await executeAction('create_job', {
+      customer: CUSTOMER,
+      title: 'Rough in the new circuit',
+      tasks: [
+        { name: 'Rough in', description: 'Pull the new circuit through to the board.' },
+        { name: 'Fit off', description: '   ' },
+      ],
+    }, CTX);
+
+    const [roughIn, fitOff] = outcome.result.tasks;
+    assert.strictEqual(roughIn.description, 'Pull the new circuit through to the board.');
+    assert.ok(!('description' in fitOff), 'an empty description must not add the key the job screens do not write');
+  });
+
+  test('a job estimate lands on the task list so the Tasks tab is not blank', async () => {
+    const outcome = await executeAction('create_job', {
+      customer: CUSTOMER,
+      title: 'Switchboard upgrade',
+      description: 'Replace the old board and re-certify.',
+      estimatedHours: 6,
+    }, CTX);
+
+    const { job, tasks } = outcome.result;
+    assert.strictEqual(job.estimatedHours, 6);
+    assert.strictEqual(job.description, 'Replace the old board and re-certify.');
+    assert.strictEqual(tasks[0].estimatedHours, 6, 'a job-level estimate alone leaves every task unbookable');
+  });
+
+  test('a job estimate is shared across several named tasks', async () => {
+    const outcome = await executeAction('create_job', {
+      customer: CUSTOMER,
+      title: 'Full rewire',
+      estimatedHours: 10,
+      tasks: [{ name: 'Rough in' }, { name: 'Fit off' }, { name: 'Test and tag' }],
+    }, CTX);
+
+    const hours = outcome.result.tasks.map((task) => task.estimatedHours);
+    assert.deepStrictEqual(hours, [3.33, 3.33, 3.34]);
+    assert.strictEqual(outcome.result.job.estimatedHours, 10);
+    assert.strictEqual(hours.reduce((sum, value) => sum + value, 0), 10, 'the parts must add back to the whole');
+  });
+
+  test('task hours roll up into the job estimate when no job figure was given', async () => {
+    const outcome = await executeAction('create_job', {
+      customer: CUSTOMER,
+      title: 'Two-part job',
+      tasks: [{ name: 'Rough in', estimatedHours: 2 }, { name: 'Fit off', estimatedHours: 3 }],
+    }, CTX);
+
+    assert.strictEqual(outcome.result.job.estimatedHours, 5, 'the scheduler reads the job figure, not the task list');
+    assert.deepStrictEqual(outcome.result.tasks.map((task) => task.estimatedHours), [2, 3]);
+  });
+
+  test('a job estimate and task hours given together are left as written', async () => {
+    const outcome = await executeAction('create_job', {
+      customer: CUSTOMER,
+      title: 'Estimate and task hours',
+      estimatedHours: 8,
+      tasks: [{ name: 'Rough in', estimatedHours: 2 }],
+    }, CTX);
+
+    assert.strictEqual(outcome.result.job.estimatedHours, 8);
+    assert.strictEqual(outcome.result.tasks[0].estimatedHours, 2);
+  });
+
+  test('add_job_task writes the description and hours it was given', async () => {
+    const created = await executeAction('create_job', { customer: CUSTOMER, title: 'Add task probe' }, CTX);
+
+    const outcome = await executeAction('add_job_task', {
+      job: created.result.job.number,
+      name: 'Fit off',
+      description: 'Terminate and test the new circuit.',
+      estimatedHours: 2.5,
+    }, CTX);
+
+    assert.strictEqual(outcome.result.task.description, 'Terminate and test the new circuit.');
+    assert.strictEqual(outcome.result.task.estimatedHours, 2.5);
+    assert.deepStrictEqual(outcome.result.tasks.map((task) => task.name), ['Main Task', 'Fit off']);
+  });
+
+  test('update_job_task changes a task description', async () => {
+    const created = await executeAction('create_job', {
+      customer: CUSTOMER,
+      title: 'Update task probe',
+      tasks: [{ name: 'Rough in', description: 'Old wording.' }],
+    }, CTX);
+
+    const outcome = await executeAction('update_job_task', {
+      job: created.result.job.number,
+      task: 'Rough in',
+      description: 'New wording.',
+    }, CTX);
+
+    assert.deepStrictEqual(outcome.result.fields, ['description']);
+    assert.strictEqual(outcome.result.task.description, 'New wording.');
+  });
+
   test('the create_job description tells the model about the Main Task', () => {
     assert.match(getAction('create_job').description, /main task/i);
+  });
+
+  test('the create_job description asks for a name, a description and task hours', () => {
+    const { description } = getAction('create_job');
+    assert.match(description, /name the job/i);
+    assert.match(description, /describe the work/i);
+    assert.match(description, /description/i);
+    assert.match(description, /hours/i);
   });
 
   test('convert_quote_to_job gives a sectionless quote a Main Task', async () => {
