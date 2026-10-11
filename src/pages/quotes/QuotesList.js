@@ -6,6 +6,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
 export function renderQuotesList(container, params) {
   const customerId = params?.customerId;
@@ -264,9 +265,12 @@ export function renderQuotesList(container, params) {
   let searchQuery = '';
   let filterStartDate = '';
   let filterEndDate = '';
+  // Opened from a dashboard KPI card (?filter=sent&period=month)
+  let kpiFilter = readKpiListFilter('quotes');
 
   function applyFilters() {
     let filtered = [...quotes];
+    if (kpiFilter) filtered = filtered.filter(kpiFilter.test);
     if (activeStatusFilter !== 'all') {
       filtered = filtered.filter(q => q.status === activeStatusFilter);
     }
@@ -303,4 +307,9 @@ export function renderQuotesList(container, params) {
 
   const dateMount = container.querySelector('#date-range-mount');
   if (dateMount) dateMount.replaceWith(createDateRangeFilter({ onChange: (s, e) => { filterStartDate = s; filterEndDate = e; applyFilters(); } }));
+
+  if (kpiFilter) {
+    mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; applyFilters(); });
+    applyFilters();
+  }
 }

@@ -4006,3 +4006,32 @@ button.widget-picker-card {
 }
 .demo-banner-text { flex: 1 1 320px; min-width: 0; }
 .demo-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* List opened from a dashboard KPI card (utils/kpiListFilter.js) */
+.kpi-filter-bar { margin: 0 0 10px; }
+.kpi-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.kpi-filter-chip > .material-icons-outlined { font-size: 15px; color: var(--color-primary); }
+.kpi-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.kpi-filter-clear:hover { background: rgba(0, 0, 0, 0.08); color: var(--text-primary); }
+.kpi-filter-clear .material-icons-outlined { font-size: 15px; }

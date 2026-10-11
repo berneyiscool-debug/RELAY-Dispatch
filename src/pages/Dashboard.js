@@ -25,7 +25,7 @@ import { filterSystemNotifications } from '../utils/notificationVisibility.js';
 import { bindChecklistStoreListeners, mountSetupChecklist } from '../components/SetupChecklist.js';
 import Sortable from 'sortablejs';
 import {
-  KPIS, KPI_IDS, KPI_GROUPS, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
+  KPIS, KPI_IDS, KPI_GROUPS, KPI_FILTERS, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
   formatKpiValue, formatKpiDelta, kpiSubline,
 } from '../utils/kpis.js';
 
@@ -2158,9 +2158,14 @@ function computeKpis(ids, period) {
 
 const PREV_LABEL = { today: 'yesterday', week: 'last week', month: 'last month', quarter: 'last quarter', fy: 'last year' };
 
+// The card's list, filtered to the records behind its number. Period cards pass
+// the dashboard's period on so the list covers the same days.
 function kpiHref(def) {
   const { route, filter } = def.link;
-  return filter ? `${route}?filter=${encodeURIComponent(filter)}` : route;
+  if (!filter) return route;
+  const params = new URLSearchParams({ filter });
+  if (KPI_FILTERS[route.slice(1)]?.[filter]?.periodic) params.set('period', live?.period || DEFAULT_PERIOD);
+  return `${route}?${params}`;
 }
 
 function renderKpiCard(data, item) {

@@ -282,6 +282,111 @@ function invoicedJobProfit(data, r) {
   return { revenue, cost, profit: revenue - cost, jobsKnown: known.size, jobsTotal: all.size };
 }
 
+// ── List filters ─────────────────────────────────────────────────────────────
+// What a card counts, as a row filter. Tapping a card opens its list with the
+// same filter applied (?filter=<name>&period=<id>), and the card's formula is
+// built on that filter too, so the list always holds exactly the records behind
+// the number. build(data, ctx) returns a predicate for one record of `collection`.
+
+const lastBookingByJob = (schedule = []) => {
+  const m = new Map();
+  schedule.forEach(s => {
+    if (!s.jobId || !s.date) return;
+    const k = String(s.jobId);
+    if (!m.has(k) || s.date > m.get(k)) m.set(k, s.date);
+  });
+  return m;
+};
+
+const billedJobIds = (invoices = []) => {
+  const billed = new Set();
+  invoices.filter(i => i.status !== 'Void').forEach(i => invoiceJobShares(i).forEach(s => billed.add(s.jobId)));
+  return billed;
+};
+
+export const KPI_FILTERS = {
+  invoices: {
+    issued: {
+      label: 'Invoiced', periodic: true, needs: ['invoices'],
+      build: (d, { range }) => i => isLiveInvoice(i) && inRange(invoiceIssued(i), range),
+    },
+    paid: {
+      label: 'Payment received', periodic: true, needs: ['invoices'],
+      build: (d, { range }) => i => isLiveInvoice(i) && invoicePayments(i).some(p => inRange(p.date, range)),
+    },
+    unpaid: {
+      label: 'Outstanding', periodic: false, needs: ['invoices'],
+      build: () => i => invoiceBalance(i) > 0,
+    },
+    overdue: {
+      label: 'Overdue', periodic: false, needs: ['invoices'],
+      build: (d, { today }) => i => invoiceBalance(i) > 0 && !!i.dueDate && toDate(i.dueDate) < today,
+    },
+  },
+  jobs: {
+    active: {
+      label: 'Active', periodic: false, needs: ['jobs'],
+      build: () => j => !isTemplate(j) && ACTIVE_JOB.includes(j.status),
+    },
+    completed: {
+      label: 'Completed', periodic: true, needs: ['jobs', 'schedule'],
+      build: (d, { range }) => {
+        const last = lastBookingByJob(d.schedule);
+        return j => !isTemplate(j) && DONE_JOB.includes(j.status) && inRange(jobCompletedAt(j, last), range);
+      },
+    },
+    'ready-to-invoice': {
+      label: 'Ready to invoice', periodic: false, needs: ['jobs', 'invoices'],
+      build: (d) => {
+        const billed = billedJobIds(d.invoices);
+        return j => !isTemplate(j) && j.status === 'Completed' && !billed.has(String(j.id));
+      },
+    },
+    unscheduled: {
+      label: 'Unscheduled', periodic: false, needs: ['jobs', 'schedule'],
+      build: (d, { today }) => {
+        const todayKey = dayKey(today);
+        const booked = new Set((d.schedule || []).filter(s => s.jobId && s.date && s.date >= todayKey).map(s => String(s.jobId)));
+        return j => !isTemplate(j) && OPEN_JOB.includes(j.status) && !booked.has(String(j.id));
+      },
+    },
+  },
+  quotes: {
+    sent: {
+      label: 'Sent', periodic: true, needs: ['quotes'],
+      build: (d, { range }) => q => !q.isTemplate && inRange(quoteSentAt(q), range),
+    },
+    decided: {
+      label: 'Decided', periodic: true, needs: ['quotes'],
+      build: (d, { range, today }) => q => {
+        if (q.isTemplate) return false;
+        const o = quoteOutcome(q, today);
+        return !!o.outcome && inRange(o.at, range);
+      },
+    },
+    open: {
+      label: 'Awaiting an answer', periodic: false, needs: ['quotes'],
+      build: (d, { today }) => q => !q.isTemplate && OPEN_QUOTE.includes(q.status) && !quoteExpired(q, today),
+    },
+  },
+  leads: {
+    new: {
+      label: 'New', periodic: true, needs: ['leads'],
+      build: (d, { range }) => l => inRange(l.createdAt, range),
+    },
+  },
+};
+
+// Context for a filter outside computeAll (the list pages).
+export function filterContext(period = DEFAULT_PERIOD, now = new Date()) {
+  return { ...periodRanges(period, now), period, today: startOfDay(now), now };
+}
+
+// Records of `collection` matching the named filter.
+function rows(collection, name, data, ctx) {
+  return (data[collection] || []).filter(KPI_FILTERS[collection][name].build(data, ctx));
+}
+
 // ── Definitions ──────────────────────────────────────────────────────────────
 
 export const KPI_GROUPS = [
@@ -295,7 +400,8 @@ export const KPI_GROUPS = [
 
 // format: 'currency' | 'count' | 'percent' | 'days'
 // type:   'period' (has a delta) | 'snapshot' (current state, no delta)
-// link:   where tapping the card goes; `filter` is passed as a query param.
+// link:   where tapping the card goes; `filter` names a KPI_FILTERS entry for
+//         the route's collection.
 export const KPIS = {
   // ── Money ──
   revenue_invoiced: {
@@ -303,37 +409,36 @@ export const KPIS = {
     description: 'Invoiced this period, ex GST',
     empty: 'Send your first invoice to see this',
     needs: ['invoices'],
-    compute: ({ invoices = [] }, { range }) => {
-      const live = invoices.filter(isLiveInvoice);
-      if (!live.length) return null;
-      const inPeriod = live.filter(i => inRange(invoiceIssued(i), range));
-      return { value: sum(inPeriod, i => num(i.subtotal)), count: inPeriod.length };
+    compute: (data, ctx) => {
+      if (!(data.invoices || []).some(isLiveInvoice)) return null;
+      const issued = rows('invoices', 'issued', data, ctx);
+      return { value: sum(issued, i => num(i.subtotal)), count: issued.length };
     },
-    link: { route: '/invoices' },
+    link: { route: '/invoices', filter: 'issued' },
   },
   payments_received: {
     group: 'money', label: 'Payments received', type: 'period', format: 'currency', upIsGood: true, launch: true,
     description: 'Money in this period, ex GST',
     empty: 'Record your first payment to see this',
     needs: ['invoices'],
-    compute: ({ invoices = [] }, { range }) => {
-      const live = invoices.filter(isLiveInvoice);
+    compute: (data, ctx) => {
+      const live = (data.invoices || []).filter(isLiveInvoice);
       if (!live.some(i => invoicePayments(i).length)) return null;
       let value = 0;
-      live.forEach(inv => invoicePayments(inv).forEach(p => { if (inRange(p.date, range)) value += exGst(inv, p.amount); }));
+      rows('invoices', 'paid', data, ctx).forEach(inv =>
+        invoicePayments(inv).forEach(p => { if (inRange(p.date, ctx.range)) value += exGst(inv, p.amount); }));
       return { value };
     },
-    link: { route: '/invoices', filter: 'Paid' },
+    link: { route: '/invoices', filter: 'paid' },
   },
   outstanding: {
     group: 'money', label: 'Outstanding', type: 'snapshot', format: 'currency', upIsGood: false, launch: true,
     description: 'Unpaid on sent invoices, ex GST',
     empty: 'Send your first invoice to see this',
     needs: ['invoices'],
-    compute: ({ invoices = [] }) => {
-      const live = invoices.filter(isLiveInvoice);
-      if (!live.length) return null;
-      const owing = live.filter(i => invoiceBalance(i) > 0);
+    compute: (data, ctx) => {
+      if (!(data.invoices || []).some(isLiveInvoice)) return null;
+      const owing = rows('invoices', 'unpaid', data, ctx);
       return { value: sum(owing, i => exGst(i, invoiceBalance(i))), count: owing.length };
     },
     link: { route: '/invoices', filter: 'unpaid' },
@@ -343,27 +448,23 @@ export const KPIS = {
     description: 'Past the due date and still unpaid',
     empty: 'Send your first invoice to see this',
     needs: ['invoices'],
-    compute: ({ invoices = [] }, { today }) => {
-      const live = invoices.filter(isLiveInvoice);
-      if (!live.length) return null;
-      const late = live.filter(i => invoiceBalance(i) > 0 && i.dueDate && toDate(i.dueDate) < today);
+    compute: (data, ctx) => {
+      if (!(data.invoices || []).some(isLiveInvoice)) return null;
+      const late = rows('invoices', 'overdue', data, ctx);
       return { value: sum(late, i => exGst(i, invoiceBalance(i))), count: late.length, alert: late.length > 0 };
     },
-    link: { route: '/invoices', filter: 'Overdue' },
+    link: { route: '/invoices', filter: 'overdue' },
   },
   ready_to_invoice: {
     group: 'money', label: 'Ready to invoice', type: 'snapshot', format: 'count', upIsGood: false, launch: true,
     description: 'Completed jobs with no invoice yet',
     empty: 'Complete your first job to see this',
     needs: ['jobs', 'invoices', 'quotes'],
-    compute: ({ jobs = [], invoices = [], quotes = [] }) => {
-      const real = jobs.filter(j => !isTemplate(j));
-      if (!real.some(j => DONE_JOB.includes(j.status))) return null;
-      const billed = new Set();
-      invoices.filter(i => i.status !== 'Void').forEach(i => invoiceJobShares(i).forEach(s => billed.add(s.jobId)));
-      const ready = real.filter(j => j.status === 'Completed' && !billed.has(String(j.id)));
+    compute: (data, ctx) => {
+      if (!(data.jobs || []).some(j => !isTemplate(j) && DONE_JOB.includes(j.status))) return null;
+      const ready = rows('jobs', 'ready-to-invoice', data, ctx);
       // Estimated value: the job's accepted quote, where it has one.
-      const quoteById = new Map(quotes.map(q => [String(q.id), q]));
+      const quoteById = new Map((data.quotes || []).map(q => [String(q.id), q]));
       const estimate = sum(ready, j => { const q = j.quoteId && quoteById.get(String(j.quoteId)); return q ? num(q.subtotal) : 0; });
       return { value: ready.length, estimate };
     },
@@ -376,10 +477,9 @@ export const KPIS = {
     description: 'Scheduled, in progress or on hold',
     empty: 'Create your first job to see this',
     needs: ['jobs'],
-    compute: ({ jobs = [] }) => {
-      const real = jobs.filter(j => !isTemplate(j));
-      if (!real.length) return null;
-      return { value: real.filter(j => ACTIVE_JOB.includes(j.status)).length };
+    compute: (data, ctx) => {
+      if (!(data.jobs || []).some(j => !isTemplate(j))) return null;
+      return { value: rows('jobs', 'active', data, ctx).length };
     },
     link: { route: '/jobs', filter: 'active' },
   },
@@ -388,18 +488,11 @@ export const KPIS = {
     description: 'Finished this period',
     empty: 'Complete your first job to see this',
     needs: ['jobs', 'schedule'],
-    compute: ({ jobs = [], schedule = [] }, { range }) => {
-      const done = jobs.filter(j => !isTemplate(j) && DONE_JOB.includes(j.status));
-      if (!done.length) return null;
-      const lastBooking = new Map();
-      schedule.forEach(s => {
-        if (!s.jobId || !s.date) return;
-        const k = String(s.jobId);
-        if (!lastBooking.has(k) || s.date > lastBooking.get(k)) lastBooking.set(k, s.date);
-      });
-      return { value: done.filter(j => inRange(jobCompletedAt(j, lastBooking), range)).length };
+    compute: (data, ctx) => {
+      if (!(data.jobs || []).some(j => !isTemplate(j) && DONE_JOB.includes(j.status))) return null;
+      return { value: rows('jobs', 'completed', data, ctx).length };
     },
-    link: { route: '/jobs', filter: 'Completed' },
+    link: { route: '/jobs', filter: 'completed' },
   },
   scheduled_today: {
     group: 'jobs', label: 'Scheduled today', type: 'snapshot', format: 'count', upIsGood: true, launch: true,
@@ -421,12 +514,9 @@ export const KPIS = {
     description: 'Open jobs with nothing booked ahead',
     empty: 'Create your first job to see this',
     needs: ['jobs', 'schedule'],
-    compute: ({ jobs = [], schedule = [] }, { today }) => {
-      const open = jobs.filter(j => !isTemplate(j) && OPEN_JOB.includes(j.status));
-      if (!jobs.some(j => !isTemplate(j))) return null;
-      const todayKey = dayKey(today);
-      const booked = new Set(schedule.filter(s => s.jobId && s.date && s.date >= todayKey).map(s => String(s.jobId)));
-      return { value: open.filter(j => !booked.has(String(j.id))).length };
+    compute: (data, ctx) => {
+      if (!(data.jobs || []).some(j => !isTemplate(j))) return null;
+      return { value: rows('jobs', 'unscheduled', data, ctx).length };
     },
     link: { route: '/jobs', filter: 'unscheduled' },
   },
@@ -437,24 +527,23 @@ export const KPIS = {
     description: 'Enquiries received this period',
     empty: 'Add your first lead to see this',
     needs: ['leads'],
-    compute: ({ leads = [] }, { range }) => {
-      if (!leads.length) return null;
-      return { value: leads.filter(l => inRange(l.createdAt, range)).length };
+    compute: (data, ctx) => {
+      if (!(data.leads || []).length) return null;
+      return { value: rows('leads', 'new', data, ctx).length };
     },
-    link: { route: '/leads' },
+    link: { route: '/leads', filter: 'new' },
   },
   quotes_sent: {
     group: 'sales', label: 'Quotes sent', type: 'period', format: 'count', upIsGood: true, launch: true,
     description: 'Quotes sent this period, with value',
     empty: 'Send your first quote to see this',
     needs: ['quotes'],
-    compute: ({ quotes = [] }, { range }) => {
-      const real = quotes.filter(q => !q.isTemplate);
-      if (!real.some(quoteSentAt)) return null;
-      const sent = real.filter(q => inRange(quoteSentAt(q), range));
+    compute: (data, ctx) => {
+      if (!(data.quotes || []).some(q => !q.isTemplate && quoteSentAt(q))) return null;
+      const sent = rows('quotes', 'sent', data, ctx);
       return { value: sent.length, amount: sum(sent, q => num(q.subtotal)) };
     },
-    link: { route: '/quotes', filter: 'Sent' },
+    link: { route: '/quotes', filter: 'sent' },
   },
   quote_win_rate: {
     group: 'sales', label: 'Quote win rate', type: 'period', format: 'percent', upIsGood: true, launch: true,
@@ -462,33 +551,26 @@ export const KPIS = {
     empty: 'Send your first quote to see this',
     needs: ['quotes'],
     // Converted counts as a win and the base is decided quotes, matching Reports.
-    compute: ({ quotes = [] }, { range, today }) => {
-      const real = quotes.filter(q => !q.isTemplate);
-      if (!real.some(quoteSentAt)) return null;
-      let won = 0, decided = 0;
-      real.forEach(q => {
-        const o = quoteOutcome(q, today);
-        if (!o.outcome || !inRange(o.at, range)) return;
-        decided++;
-        if (o.outcome === 'won') won++;
-      });
-      return { value: decided ? won / decided : null, count: decided };
+    compute: (data, ctx) => {
+      if (!(data.quotes || []).some(q => !q.isTemplate && quoteSentAt(q))) return null;
+      const decided = rows('quotes', 'decided', data, ctx);
+      const won = decided.filter(q => quoteOutcome(q, ctx.today).outcome === 'won').length;
+      return { value: decided.length ? won / decided.length : null, count: decided.length };
     },
     emptyPeriod: 'No quotes decided this period',
-    link: { route: '/quotes' },
+    link: { route: '/quotes', filter: 'decided' },
   },
   open_pipeline: {
     group: 'sales', label: 'Open pipeline', type: 'snapshot', format: 'currency', upIsGood: true, launch: true,
     description: 'Sent quotes still awaiting an answer',
     empty: 'Send your first quote to see this',
     needs: ['quotes'],
-    compute: ({ quotes = [] }, { today }) => {
-      const real = quotes.filter(q => !q.isTemplate);
-      if (!real.some(quoteSentAt)) return null;
-      const open = real.filter(q => OPEN_QUOTE.includes(q.status) && !quoteExpired(q, today));
+    compute: (data, ctx) => {
+      if (!(data.quotes || []).some(q => !q.isTemplate && quoteSentAt(q))) return null;
+      const open = rows('quotes', 'open', data, ctx);
       return { value: sum(open, q => num(q.subtotal)), count: open.length };
     },
-    link: { route: '/quotes', filter: 'Sent' },
+    link: { route: '/quotes', filter: 'open' },
   },
 
   // ── Team ──

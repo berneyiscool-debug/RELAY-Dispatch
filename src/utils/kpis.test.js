@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildDemoDataset } from '../data/demoDataset.js';
 import {
-  KPIS, KPI_IDS, KPI_GROUPS, computeAll, periodRanges, defaultKpiIds, kpiNeeds,
+  KPIS, KPI_IDS, KPI_GROUPS, KPI_FILTERS, filterContext, computeAll, periodRanges, defaultKpiIds, kpiNeeds,
   invoiceBalance, exGst, jobCompletedAt, quoteOutcome,
   formatKpiValue, formatKpiDelta, formatCurrency, kpiSubline,
 } from './kpis.js';
@@ -56,6 +56,23 @@ describe('launch cards against the demo dataset', () => {
     assert.equal(kpiSubline('gross_margin', month.gross_margin), ''); // every job costed
   });
 
+  test('tapping a card lists exactly the records behind its number', () => {
+    const ctx = filterContext('month', now);
+    const listed = (id) => {
+      const { route, filter } = KPIS[id].link;
+      const coll = route.slice(1);
+      return data[coll].filter(KPI_FILTERS[coll][filter].build(data, ctx));
+    };
+    assert.equal(listed('overdue').length, month.overdue.extra.count);
+    assert.equal(listed('outstanding').length, month.outstanding.extra.count);
+    assert.equal(listed('revenue_invoiced').length, month.revenue_invoiced.extra.count);
+    assert.equal(listed('quote_win_rate').length, month.quote_win_rate.extra.count);
+    assert.equal(listed('open_pipeline').length, month.open_pipeline.extra.count);
+    for (const id of ['ready_to_invoice', 'active_jobs', 'jobs_completed', 'unscheduled_backlog', 'new_leads', 'quotes_sent']) {
+      assert.equal(listed(id).length, month[id].value, id);
+    }
+  });
+
   test('every launch card is defined and covered here', () => {
     const launch = KPI_IDS.filter(id => KPIS[id].launch);
     assert.equal(launch.length, 15);
@@ -77,6 +94,12 @@ describe('definitions', () => {
       assert.ok(d.label && d.description && d.empty, `${id} copy`);
       assert.ok(Array.isArray(d.needs) && d.needs.length, `${id} needs`);
       assert.ok(d.link && d.link.route.startsWith('/'), `${id} link`);
+      if (d.link.filter) {
+        const f = (KPI_FILTERS[d.link.route.slice(1)] || {})[d.link.filter];
+        assert.ok(f, `${id} links to a filter its list understands`);
+        // A period card's list must follow the period too, or the counts disagree.
+        assert.equal(f.periodic, d.type === 'period', `${id} filter periodicity`);
+      }
     }
   });
 
