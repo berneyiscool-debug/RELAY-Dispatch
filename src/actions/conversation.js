@@ -14,7 +14,7 @@ defineAction({
   name: 'ask_user',
   title: 'Ask the user',
   description:
-    'Ask the user a question and end the turn. Use this when the request is genuinely ambiguous — two customers with the same name, a date you cannot pin down, or a choice only the user can make. Give short options when the answer is a choice. Do not use it to confirm something you could have looked up, and do not use it for anything that changes money or books a technician in — those need approval, not a question.',
+    'Ask the user a question and end the turn; their answer resumes this same turn. Use this instead of writing a question into your reply — a prose question cannot be answered with a button. Call it when the request is genuinely ambiguous, when two records match, when a required detail is missing (which day, which customer, how long), or when only the user can decide. Always pass 2 to 6 short options when the answer is a choice (a day, a customer, a duration, yes or no), and omit them only when the answer is free text. Ask one question per call: the one that unblocks you, not a list. Do not use it to confirm something you could have looked up, and do not use it for anything that changes money or books a technician in — those need approval, not a question.',
   interactive: true,
   inputSchema: objectSchema(
     {

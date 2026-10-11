@@ -157,3 +157,33 @@ test('a write phrased as an action reaches the agent loop', () => {
     'the QUESTION-only gate is what made "add 2 hours to J-00028" unanswerable',
   );
 });
+
+test('an interactive outcome pauses the turn and asks with buttons', () => {
+  assert.match(
+    SOURCE,
+    /if \(result\.status === 'ask_user' && result\.pendingQuestion\) \{[\s\S]{0,260}?pendingTurn = \{ threadId: currentThreadId, messages: result\.messages, pendingQuestion: result\.pendingQuestion \};[\s\S]{0,200}?renderAgentQuestion\(target, result\.pendingQuestion\);/,
+    'the question card needs the paused message history, or the answer cannot resume the turn',
+  );
+});
+
+test('the question card renders one button per option and resumes the paused turn', () => {
+  assert.match(SOURCE, /function renderAgentQuestion\(thread, question\) \{/);
+  assert.match(
+    SOURCE,
+    /class="relay-question-opt-btn" data-value="\$\{escapeHtml\(String\(o\)\)\}">\$\{escapeHtml\(String\(o\)\)\}<\/button>/,
+    'option text is model-supplied and must be escaped before it reaches the DOM',
+  );
+  assert.match(
+    SOURCE,
+    /void resumeBrnyTurn\(\{ toolUseId: question\.toolUseId, answer: text \}, text\);/,
+    'the answer is matched to the tool call that asked for it'
+  );
+});
+
+test('the resume replays the paused history verbatim', () => {
+  assert.match(
+    SOURCE,
+    /if \(!thread \|\| !pending \|\| pending\.threadId !== currentThreadId\) return;[\s\S]{0,400}?await callBrnyAgent\(\{ thread, typing, messages: pending\.messages, resume \}\);/,
+    'the provider matches the answer to a tool call in the history it paused with'
+  );
+});
