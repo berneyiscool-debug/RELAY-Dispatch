@@ -18,6 +18,7 @@ import { resolveCustomer, customerLabel } from './customers.js';
 import { parseDate } from './dates.js';
 import { roundCurrency } from '../utils/pricing.js';
 import { findTechnician } from './leads.js';
+import { mainTaskNode } from './jobs.js';
 
 const QUOTE_STATUSES = ['Draft', 'Finalised', 'Sent', 'Accepted', 'Declined', 'Archived'];
 
@@ -309,6 +310,9 @@ defineAction({
       startDate: new Date().toISOString(),
       technicians: [],
     }));
+    // A quote with no sections would otherwise convert into a job that cannot
+    // take hours, so it converts the same way a hand-built job is created.
+    if (!jobTasks.length) jobTasks.push(mainTaskNode());
 
     const job = store.create('jobs', {
       number: store.getNextNumber('J-', 'jobs'),

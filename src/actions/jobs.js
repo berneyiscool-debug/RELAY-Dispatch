@@ -129,6 +129,19 @@ function newTaskNode({ name, estimatedHours, people }) {
   return node;
 }
 
+/**
+ * The one task every job starts with.
+ *
+ * Hours are booked against a task, not against a job, so a job with no tasks is
+ * a dead end: `log_time` has nothing to attach to and the timesheet has to
+ * invent a task the first time somebody opens it. `JobDetail.js`,
+ * `ScheduleView.js` and `timesheetModals.js` all create this same node by hand,
+ * and this is the same node built the same way.
+ */
+export function mainTaskNode() {
+  return newTaskNode({ name: 'Main Task' });
+}
+
 function cloneTasks(tasks) {
   return JSON.parse(JSON.stringify(tasks || []));
 }
@@ -189,7 +202,7 @@ defineAction({
   name: 'create_job',
   title: 'Create job',
   description:
-    'Create a job for a customer, optionally with a first list of tasks, a priority and a scheduled date. Use this for new work that is not coming from a quote.',
+    'Create a job for a customer, optionally with a first list of tasks, a priority and a scheduled date. Use this for new work that is not coming from a quote. The job always starts with a Main Task when no tasks are given, because hours are booked against a task.',
   permission: { module: 'Jobs', key: 'create' },
   inputSchema: objectSchema(
     {
@@ -224,6 +237,8 @@ defineAction({
   async run(input) {
     const customer = requireCustomer(input);
     const tasks = (input.tasks || []).map((task) => newTaskNode(task));
+    // A job without a task cannot take hours, so the checklist is never empty.
+    if (!tasks.length) tasks.push(mainTaskNode());
     const scheduledDate = input.scheduledDate ? parseDate(input.scheduledDate) : null;
     const status = input.status || (scheduledDate ? 'Scheduled' : 'Pending');
     const number = store.getNextNumber('J-', 'jobs');

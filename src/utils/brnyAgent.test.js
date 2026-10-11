@@ -6,8 +6,8 @@
  * That is what lets them assert the things that are easy to break silently: that
  * a failed tool is fed back as an error rather than swallowed, that a risky
  * action stops for approval before it writes, that a question that has not been
- * answered is not answered on the wire, and that the history returned to the
- * caller holds real values while the wire held placeholders.
+ * answered is not answered on the wire, and that the history handed back is the
+ * conversation itself - what travels to the provider is what the user typed.
  *
  * The store is empty on purpose. Nothing here needs a dataset, which keeps the
  * assertions about the loop rather than about seeded records.
@@ -370,7 +370,7 @@ test('usage accumulates across steps and only becomes a cost when priced', async
   });
 });
 
-test('the wire carries placeholders while the history returned holds real values', async () => {
+test('the conversation travels as written and the history comes back the same way', async () => {
   await withCloud(async () => {
     stubProvider((body, call) => (call === 1
       // The model only ever sees what it was sent, so echoing it back is what a
@@ -380,17 +380,22 @@ test('the wire carries placeholders while the history returned holds real values
 
     const turn = await runTurn({ prompt: `Email ${EMAIL} about the quote`, briefing: false, tools: [] });
 
-    const sent = JSON.stringify(requests[0]);
-    assert.ok(!sent.includes(EMAIL), `the address reached the provider: ${sent}`);
-    assert.match(sent, /\[\[PII_\d+\]\]/);
+    // Nothing rewrites the user's words on the way out...
+    assert.equal(requests[0].messages[0].content, `Email ${EMAIL} about the quote`);
+    // ...and customer details travel in every request, unmasked.
+    assert.ok(requests.every((r) => JSON.stringify(r).includes(EMAIL)));
 
-    // Step one's assistant turn is redacted on the wire...
-    const assistantOnWire = requests[1].messages.find((m) => m.role === 'assistant');
-    assert.ok(!JSON.stringify(assistantOnWire).includes(EMAIL));
-
-    // ...but the history handed back is real values again, ready to re-redact.
+    // ...so what comes back is that same conversation, tool call and result
+    // included, and a later turn can hand it straight back in.
+    assert.equal(turn.messages[0].content, `Email ${EMAIL} about the quote`);
     const assistant = turn.messages.find((m) => m.role === 'assistant');
-    assert.ok(JSON.stringify(assistant).includes(EMAIL), 'the returned history must not carry placeholder numbers');
+    assert.equal(assistant.content[0].input.note, `Email ${EMAIL} about the quote`);
+    assert.equal(lastToolResult(requests[1]).tool_use_id, 'tool_1');
+
+    // The second request carried that conversation verbatim, and the turn hands
+    // it back with the final reply appended, so a later turn can send it again.
+    assert.equal(JSON.stringify(turn.messages.slice(0, -1)), JSON.stringify(requests[1].messages));
+    assert.equal(turn.messages.at(-1).content[0].text, 'Noted.');
   });
 });
 

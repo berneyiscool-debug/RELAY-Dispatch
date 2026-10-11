@@ -1,9 +1,14 @@
 // `completeChat` is the seam between the app and the provider, and the agent
 // loop depends on three things it alone guarantees: the conversation arrives in
 // a shape Anthropic accepts, the model's tool arguments come back as real values
-// the store can act on, and what we send back up is redacted. Each of those is a
-// silent failure otherwise - a 400 the user reads as "brny is broken", a lookup
-// that finds nothing, or a customer's email leaving the machine.
+// the store can act on, and the assistant turn is handed back verbatim so a tool
+// result lines up with the call it answers. Each of those is a silent failure
+// otherwise - a 400 the user reads as "brny is broken", or a lookup that finds
+// nothing.
+//
+// The conversation is not rewritten on the way out: what a caller hands in is
+// what the provider receives, so the history from one turn can be handed
+// straight back in on the next.
 //
 // The response shape is pinned here too. A tool-calling loop that reads the
 // wrong field does not throw; it just never calls anything.
@@ -12,13 +17,12 @@ import assert from 'node:assert/strict';
 import { supabase } from './supabase.js';
 import { store } from '../data/store.js';
 import { completeChat, dispatchChat } from './aiEngine.js';
-import { createRedactionContext } from './piiRedaction.js';
 
 const realInvoke = supabase.functions.invoke;
 
 // Captures the request body and answers with an Anthropic-shaped payload. The
-// answering function sees the body, which is how a test can echo back a
-// placeholder the transport invented for this call.
+// answering function sees the body, which is how a test can prove what actually
+// left the machine.
 function stubProvider(reply) {
   let sent = null;
   supabase.functions.invoke = async (name, options) => {
@@ -93,42 +97,38 @@ test('tools, a tool choice and a token ceiling reach the provider', async () => 
   });
 });
 
-test('a tool call comes back rehydrated for the executor and verbatim for echo', async () => {
+test('a tool call reaches the executor and the provider as the same real values', async () => {
   await asCloud(async () => {
-    const body = stubProvider((request) => {
-      const placeholder = request.messages[0].content.match(/\[\[PII_\d+\]\]/)[0];
-      return {
-        content: [
-          { type: 'text', text: `Looking up ${placeholder} now.` },
-          { type: 'tool_use', id: 'toolu_1', name: 'find_customer', input: { query: placeholder } },
-        ],
-        stop_reason: 'tool_use',
-        usage: { input_tokens: 12, output_tokens: 7 },
-      };
-    });
-    const result = await completeChat([{ role: 'user', content: `Find ${EMAIL}` }], {
-      redaction: createRedactionContext(),
-    });
+    const body = stubProvider(() => ({
+      content: [
+        { type: 'text', text: `Looking up ${EMAIL} now.` },
+        { type: 'tool_use', id: 'toolu_1', name: 'find_customer', input: { query: EMAIL } },
+      ],
+      stop_reason: 'tool_use',
+      usage: { input_tokens: 12, output_tokens: 7 },
+    }));
+    const result = await completeChat([{ role: 'user', content: `Find ${EMAIL}` }]);
 
-    // What left the machine, what the user reads, and what the store is asked
-    // for are three different values, and only the third is real.
-    assert.ok(!body().messages[0].content.includes(EMAIL));
+    // The address travels exactly as the user typed it: there is no placeholder
+    // layer to hide it, and nothing to expand back before the store is asked.
+    assert.equal(body().messages[0].content, `Find ${EMAIL}`);
     assert.equal(result.content, `Looking up ${EMAIL} now.`);
     assert.equal(result.toolCalls[0].input.query, EMAIL);
     assert.equal(result.toolCalls[0].name, 'find_customer');
     assert.equal(result.toolCalls[0].id, 'toolu_1');
     // The assistant turn is echoed back untouched, so the provider sees exactly
     // what it wrote and the tool result lines up with its own call.
-    assert.equal(result.contentBlocks[1].input.query, body().messages[0].content.match(/\[\[PII_\d+\]\]/)[0]);
+    assert.deepEqual(result.contentBlocks[1], {
+      type: 'tool_use', id: 'toolu_1', name: 'find_customer', input: { query: EMAIL },
+    });
     assert.equal(result.stopReason, 'tool_use');
     assert.equal(result.usage.input_tokens, 12);
   });
 });
 
-test('a tool result is redacted on the way back up', async () => {
+test('a tool result goes back up as it was written', async () => {
   await asCloud(async () => {
     const body = stubProvider({ content: [{ type: 'text', text: 'Done.' }] });
-    const ctx = createRedactionContext();
     await completeChat([
       { role: 'user', content: `Find ${EMAIL}` },
       {
@@ -139,13 +139,14 @@ test('a tool result is redacted on the way back up', async () => {
         role: 'user',
         content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: `One match: ${EMAIL}` }],
       },
-    ], { redaction: ctx });
+    ]);
 
-    const serialised = JSON.stringify(body().messages);
-    assert.ok(!serialised.includes(EMAIL), 'the tool result must not carry the raw value back');
-    // The shared context is what makes the round trip reversible: the call made
-    // on turn one has to redact to the same placeholder on turn three.
-    assert.equal(body().messages[1].content[0].input.query, body().messages[2].content[0].content.split(': ')[1]);
+    const messages = body().messages;
+    assert.equal(messages.length, 3);
+    // The result the model asked for is the result it reads back, unchanged.
+    assert.equal(messages[2].content[0].content, `One match: ${EMAIL}`);
+    assert.equal(messages[1].content[0].input.query, messages[2].content[0].content.split(': ')[1]);
+    assert.equal(messages[1].content[0].id, messages[2].content[0].tool_use_id);
   });
 });
 

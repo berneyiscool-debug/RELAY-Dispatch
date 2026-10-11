@@ -18,6 +18,16 @@
  * `const` is block scoped, so those branches threw `ReferenceError: list is not
  * defined`, the catch only logged, and the assistant still told the user the
  * record was created. Each branch must declare its own collection.
+ *
+ * A third invariant pinned here: hours attach to a task, not to a job, so the
+ * legacy CREATE_JOB branch has to build the same "Main Task" node the job
+ * screens build by hand instead of shipping an empty `tasks: []`.
+ *
+ * A fourth: `canRunBrnyAgent()` gated the whole tool loop on the cached `panel`
+ * element. When the panel is already open at boot (or rebuilt by HMR) that
+ * reference is stale, so every turn took the legacy text path and brny was sent
+ * no tools at all — a silent downgrade that looks like a dumb assistant rather
+ * than an error. The panel is now re-resolved from the document.
  */
 
 import test from 'node:test';
@@ -96,4 +106,36 @@ test('a failed action is surfaced instead of logged only', () => {
     /showToast\(`Could not complete the "\$\{action\}" action\.`, 'error'\)/,
     'a silently swallowed action failure lets the assistant claim success',
   );
+});
+
+test('a job the legacy action path creates starts with a Main Task', () => {
+  const lines = SOURCE.split(/\r?\n/);
+  const start = lines.findIndex((line) => /else if \(action === 'CREATE_JOB'/.test(line));
+  assert.notEqual(start, -1, 'the legacy CREATE_JOB branch is gone');
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index++) {
+    if (/else if \(action === /.test(lines[index])) { end = index; break; }
+  }
+
+  const branch = lines.slice(start, end).join('\n');
+  assert.match(branch, /tasks: \[\{/, 'the job literal must build a task list, not ship it empty');
+  assert.match(branch, /name: 'Main Task'/, 'hours attach to a task, so a job cannot arrive without one');
+});
+
+test('no assistant job branch ships an empty task list', () => {
+  assert.ok(!/tasks:\s*\[\s*\]/.test(SOURCE), 'every job the assistant builds starts with a Main Task');
+});
+
+test('the agent path survives a missing or detached panel reference', () => {
+  assert.ok(
+    !/canRunBrnyAgent\(\)[\s\S]{0,120}?panel && panel\.querySelector/.test(SOURCE),
+    'gating the tool loop on the cached panel reference silently drops brny to the legacy path',
+  );
+  assert.match(
+    SOURCE,
+    /function relayHostEl\(\) \{\s*\n\s*if \(panel && panel\.isConnected\) return panel;\s*\n\s*return document\.querySelector\('\.relay-panel'\);/,
+    'the panel must be re-resolved from the document when the cached node is stale',
+  );
+  assert.match(SOURCE, /function canRunBrnyAgent\(\) \{\s*\n\s*return canUseAI\(\) && !!relayThreadEl\(\);/, 'canRunBrnyAgent must go through relayThreadEl');
 });

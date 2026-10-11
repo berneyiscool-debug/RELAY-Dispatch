@@ -130,11 +130,11 @@ export const DOCS = {
         id: 'ai',
         heading: '8. AI features',
         blocks: [
-          'RELAY includes AI features, including the brny assistant and AI Insights on reports. To use them, we send the relevant request to a third-party AI model provider. Before a request leaves your device, RELAY replaces customer names, contact details, addresses and similar identifiers with placeholders. The {{doc:privacy|Privacy Policy}} explains this, including which provider we use and where it is located.',
+          'RELAY includes AI features, including the brny assistant and AI Insights on reports. To use them, we send the relevant request to a third-party AI model provider. What brny needs in order to find the record and answer you - including the customer names, contact details and addresses involved in the question you asked - is sent to that provider as you wrote it, because the assistant has to work with the real records. The {{doc:privacy|Privacy Policy}} explains this, including which provider we use and where it is located.',
           [
             'AI output can be wrong, incomplete or out of date. Treat it as a suggestion and check it before relying on it.',
             'AI output is not professional, legal, financial, tax, safety or electrical-compliance advice. Do not use it as the sole basis for a decision about safety, compliance with standards such as AS/NZS 3000, or a person’s employment.',
-            'Images and documents you attach to an AI request are sent as they are, and redaction cannot be applied to what is inside them. Only attach what you are comfortable sending.',
+            'Images and documents you attach to an AI request are sent as they are. Only attach what you are comfortable sending.',
             'AI features are subject to fair-use limits for each plan, which we may adjust.',
           ],
         ],
@@ -348,8 +348,8 @@ export const DOCS = {
         blocks: [
           'RELAY’s AI features, the brny assistant and AI Insights, send the relevant request to an AI model provider through our servers. Our current provider is DeepSeek, which is located in the People’s Republic of China.',
           [
-            'Before a request leaves your device, RELAY replaces the names, contact details, addresses and similar identifiers of your customers with placeholders such as [[PII_1]]. The real values are put back into the answer on your device, so the AI provider never receives them.',
-            'Images and documents you choose to attach to an AI request are sent as they are. Redaction cannot be applied to their contents.',
+            'The request is sent as you wrote it, including the customer names, contact details and addresses involved, because the assistant has to work with your real records. Those details are not replaced with placeholders or otherwise masked before they leave your device.',
+            'Images and documents you choose to attach to an AI request are sent as they are. Only attach what you are comfortable sending.',
             'The provider processes requests under its API terms. We do not permit our data to be used to train our own models, and we choose provider settings that minimise retention where they are available.',
             'brny can keep a short "memory" of your preferences to tailor its answers. It is stored on your device, and you can view, clear or turn it off from the brny panel.',
             'AI features are optional. You can use RELAY without them.',
@@ -369,7 +369,7 @@ export const DOCS = {
               ['Stripe', 'Subscription billing and customer payments', 'Australia and the United States'],
               ['Resend', 'Sending emails, quotes, invoices and receipts', 'United States'],
               ['Google Maps Platform', 'Maps, address lookup and route planning', 'United States'],
-              ['DeepSeek', 'AI features (with identifiers redacted, see section 7)', 'People’s Republic of China'],
+              ['DeepSeek', 'AI features', 'People’s Republic of China'],
               ['GitHub Pages', 'Hosting the website and web app files', 'United States'],
             ],
           },

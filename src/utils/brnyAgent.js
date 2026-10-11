@@ -15,11 +15,9 @@
  * - The turn ends on its own only when it has prose, a question, an approval, or
  *   a real failure. The 12-step cap exists so a model looping on the same call
  *   cannot run up a bill; it is user-visible, not silent.
- * - Redaction is one context per turn. A context per request would renumber the
- *   placeholders mid-turn and a value redacted on step one would no longer
- *   rehydrate on step three.
- * - The context handed back in `messages` holds real values, not the placeholders
- *   the model sees, because it is the history a later turn will re-redact.
+ * - A conversation is sent to the provider as the caller wrote it, and the
+ *   history handed back in `messages` is that same conversation, so a later turn
+ *   can hand it straight in again.
  *
  * @example
  * const turn = await runTurn({ prompt: 'Who owes us money?', onEvent: onProgress });
@@ -30,8 +28,7 @@
  * }
  */
 
-import { completeChat, rehydrateBlocks } from './aiEngine.js';
-import { createRedactionContext } from './piiRedaction.js';
+import { completeChat } from './aiEngine.js';
 import { executeTool, getAction, toolDefinitions } from '../actions/index.js';
 import { currentActor } from '../actions/context.js';
 
@@ -134,7 +131,6 @@ export async function runTurn(options = {}) {
   const signal = options.signal || null;
   const approve = typeof options.approve === 'function' ? options.approve : null;
   const actor = options.actor || currentActor();
-  const redaction = options.redaction || createRedactionContext();
 
   // `source: 'brny'` is what puts the risky actions behind an approval; the same
   // actions run without one when the user clicks them in the UI.
@@ -207,7 +203,6 @@ export async function runTurn(options = {}) {
       reply = await completeChat(turn, {
         system,
         tools,
-        redaction,
         signal,
         maxTokens: options.maxTokens,
       });
@@ -238,8 +233,8 @@ export async function runTurn(options = {}) {
       break;
     }
 
-    // The assistant turn goes back exactly as it arrived - placeholders, ids and
-    // all - because the provider matches a tool result to the call it answers.
+    // The assistant turn goes back exactly as it arrived - ids and all - because
+    // the provider matches a tool result to the call it answers.
     turn.push({ role: 'assistant', content: blocks.length ? blocks : reply.content });
 
     if (!calls.length) break;
@@ -265,11 +260,8 @@ export async function runTurn(options = {}) {
     if (results.length) turn.push({ role: 'user', content: results });
   }
 
-  const messages = turn.map((message) => (
-    message.role === 'assistant'
-      ? { ...message, content: rehydrateBlocks(message.content, redaction) }
-      : message
-  ));
+  // The history is returned as it was sent: a later turn hands it straight back.
+  const messages = turn;
 
   const result = {
     status,

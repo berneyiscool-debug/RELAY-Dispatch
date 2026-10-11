@@ -2,10 +2,11 @@
 // RELAY — Central AI engine / pipeline
 // ============================================
 // The single transport for every AI call in the app: Deputy chat, autopilot,
-// RELAY Insights and the attachment batches. Pipeline: redact PII -> request the
-// provider -> rehydrate PII. Returns the full completion (content + usage) so
-// callers can observe token usage where needed, and the assistant's content
-// blocks so a tool-calling loop can continue the turn.
+// RELAY Insights and the attachment batches. What a caller hands in is what the
+// provider receives - the conversation is not rewritten on the way out. Returns
+// the full completion (content + usage) so callers can observe token usage where
+// needed, and the assistant's content blocks so a tool-calling loop can continue
+// the turn.
 //
 // Provider routing is deliberately not a caller concern. The Supabase edge
 // function `relay-copilot` holds the Anthropic key server-side and is hard-coded
@@ -15,7 +16,6 @@
 
 import { supabase } from './supabase.js';
 import { isCloudUser } from './aiTier.js';
-import { createRedactionContext, redactText, rehydrateText } from './piiRedaction.js';
 
 // The allowance resets at Sydney midnight. Callers show the reset in the user's
 // own local time, so the instant matters more than the wording.
@@ -90,56 +90,6 @@ function limitErrorFrom(parsed) {
   });
 }
 
-// Walks a value and redacts every string inside it, preserving the shape. Tool
-// arguments are arbitrary JSON, so the only safe assumption is that any string
-// anywhere might carry a customer detail.
-function redactValue(value, ctx) {
-  if (typeof value === 'string') return redactText(value, ctx);
-  if (Array.isArray(value)) return value.map((item) => redactValue(item, ctx));
-  if (value && typeof value === 'object') {
-    const out = {};
-    for (const [key, item] of Object.entries(value)) out[key] = redactValue(item, ctx);
-    return out;
-  }
-  return value;
-}
-
-// The same walk in reverse. The model reasons and calls tools in terms of the
-// placeholders it was given, so anything it hands back has to become the real
-// value before it reaches the store.
-function rehydrateValue(value, ctx) {
-  if (typeof value === 'string') return rehydrateText(value, ctx);
-  if (Array.isArray(value)) return value.map((item) => rehydrateValue(item, ctx));
-  if (value && typeof value === 'object') {
-    const out = {};
-    for (const [key, item] of Object.entries(value)) out[key] = rehydrateValue(item, ctx);
-    return out;
-  }
-  return value;
-}
-
-// Redacts one message's content. Beyond plain text this covers Anthropic's
-// content blocks, because a tool call's arguments (`tool_use.input`) and a
-// tool's answer (`tool_result.content`) are both free text that our own tooling
-// produced and neither is safe to forward unread.
-function redactMessageContent(content, ctx) {
-  if (typeof content === 'string') return redactText(content, ctx);
-  if (Array.isArray(content)) {
-    return content.map((part) => {
-      if (!part || typeof part !== 'object') return part;
-      if (typeof part.text === 'string') return { ...part, text: redactText(part.text, ctx) };
-      if (part.type === 'tool_use' && part.input !== undefined) {
-        return { ...part, input: redactValue(part.input, ctx) };
-      }
-      if (part.type === 'tool_result' && part.content !== undefined) {
-        return { ...part, content: redactMessageContent(part.content, ctx) };
-      }
-      return part;
-    });
-  }
-  return content;
-}
-
 function textOfContent(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -148,7 +98,7 @@ function textOfContent(content) {
   return '';
 }
 
-// Redacts the outgoing history and makes it fit Anthropic's wire contract.
+// Makes the outgoing history fit Anthropic's wire contract.
 // Every caller in the app passes the system prompt as the first message, but the
 // provider takes it as a top-level field and rejects any other role inside
 // `messages`; it also requires the remaining turns to alternate strictly, and
@@ -156,11 +106,11 @@ function textOfContent(content) {
 // of the same role. Plain-text duplicates are therefore merged rather than
 // rejected upstream - skipped when either side carries content blocks, where
 // concatenation would reorder a tool call around its result.
-function toProviderMessages(messages, ctx) {
+function toProviderMessages(messages) {
   const out = [];
   for (const message of messages) {
     if (message.role === 'system') continue;
-    const content = redactMessageContent(message.content, ctx);
+    const content = message.content;
     const previous = out[out.length - 1];
     if (previous && previous.role === message.role
       && typeof previous.content === 'string' && typeof content === 'string') {
@@ -220,49 +170,30 @@ function textFromBlocks(blocks) {
     .map((b) => b.text).join('\n\n');
 }
 
-// Redact -> call -> rehydrate.
+// One request to the provider.
 //
 // Returns { content, contentBlocks, toolCalls, stopReason, usage }. `content` is
-// the prose shown to the user, rehydrated. `contentBlocks` is the assistant turn
-// exactly as the provider sent it - placeholders and all - because it must be
-// echoed back verbatim on the next request. `toolCalls` carries the same calls
-// with their arguments rehydrated, which is what an executor needs.
-//
-// Callers driving several requests for one conversational turn should create a
-// single redaction context with `createRedactionContext()` and pass it as
-// `options.redaction`. A context per call would renumber placeholders mid-turn,
-// so a value redacted on turn one would no longer rehydrate on turn three.
+// the prose shown to the user. `contentBlocks` is the assistant turn exactly as
+// the provider sent it, because it must be echoed back verbatim on the next
+// request. `toolCalls` is the same calls lifted out for an executor to run.
 export async function completeChat(messages, options = {}) {
-  const ctx = options.redaction || createRedactionContext();
   // The system prompt is lifted out of the history here rather than at each call
   // site, so a caller can keep passing it as an ordinary message.
   const system = [options.system, ...messages.filter((m) => m.role === 'system').map((m) => textOfContent(m.content))]
     .filter((part) => typeof part === 'string' && part.trim())
     .join('\n\n');
-  const data = await requestCompletion(toProviderMessages(messages, ctx), { ...options, system });
+  const data = await requestCompletion(toProviderMessages(messages), { ...options, system });
   const contentBlocks = Array.isArray(data?.content) ? data.content : [];
   const toolCalls = contentBlocks
     .filter((b) => b && b.type === 'tool_use')
-    .map((b) => ({ id: b.id, name: b.name, input: rehydrateValue(b.input || {}, ctx) }));
+    .map((b) => ({ id: b.id, name: b.name, input: b.input || {} }));
   return {
-    content: rehydrateText(textFromBlocks(contentBlocks), ctx),
+    content: textFromBlocks(contentBlocks),
     contentBlocks,
     toolCalls,
     stopReason: data?.stop_reason || null,
     usage: data?.usage || null,
   };
-}
-
-// Provider content blocks converted back to real values, ready to be kept as
-// conversation history.
-//
-// A reply cannot be stored as the provider sent it: the model reasons in
-// [[PII_n]] placeholders and that numbering is per redaction context, so a
-// placeholder carried into a later turn could rehydrate to a different person.
-// Rehydration at the end of each turn keeps the history in real values, and the
-// next turn redacts it afresh with its own context.
-export function rehydrateBlocks(content, ctx = createRedactionContext()) {
-  return rehydrateValue(content, ctx);
 }
 
 // Back-compatible wrapper: returns just the content string.

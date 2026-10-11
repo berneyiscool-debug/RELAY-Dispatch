@@ -2854,12 +2854,22 @@ async function callAIEngine() {
 // still drives routines, autopilot and the Deputy Max specialists, so nothing
 // below this block changes.
 
+// The cached reference can be missing or detached: the panel is sometimes already
+// open when the app boots, and HMR rebuilds it in place. Falling back to the
+// document keeps brny on the tool loop instead of silently dropping to the legacy
+// text path with no tools at all.
+function relayHostEl() {
+  if (panel && panel.isConnected) return panel;
+  return document.querySelector('.relay-panel');
+}
+
 function relayThreadEl() {
-  return panel ? panel.querySelector('#relay-thread') : null;
+  const host = relayHostEl();
+  return host ? host.querySelector('#relay-thread') : null;
 }
 
 function canRunBrnyAgent() {
-  return canUseAI() && !!(panel && panel.querySelector('#relay-thread'));
+  return canUseAI() && !!relayThreadEl();
 }
 
 function buildBrnyAgentPrompt(ai) {
@@ -3951,7 +3961,15 @@ function executeAction(action, param) {
           scheduledDate,
           estimated_hours: estHours,
           notes,
-          tasks: [],
+          tasks: [{
+            id: store.generateId(),
+            name: 'Main Task',
+            status: 'Not Started',
+            progress: 0,
+            startDate: new Date().toISOString(),
+            technicians: [],
+            subTasks: []
+          }],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
