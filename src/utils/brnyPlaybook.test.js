@@ -41,3 +41,19 @@ test('the assembled prompt carries the ask_user rule', () => {
   assert.match(prompt, /call ask_user/);
   assert.match(prompt, /TODAY IS 2026-10-11\./);
 });
+
+test('the playbook tells brny to read a customer\'s sites before booking', () => {
+  assert.match(BRNY_PLAYBOOK, /what keeps one customer's jobs at different premises apart/);
+  assert.match(BRNY_PLAYBOOK, /Read them with `list_sites`/);
+  assert.match(BRNY_PLAYBOOK, /Pass `site` to `create_job` and `update_job`/);
+});
+
+test('the playbook asks rather than guesses between two of a customer\'s sites', () => {
+  assert.match(BRNY_PLAYBOOK, /could mean two of the customer's sites, ask with ask_user/);
+});
+
+test('the playbook never invents a site', () => {
+  assert.match(BRNY_PLAYBOOK, /Never invent a site/);
+  assert.match(BRNY_PLAYBOOK, /add it with `add_site` first/);
+  assert.match(BRNY_PLAYBOOK, /Only ever change an existing site with `update_site`/);
+});

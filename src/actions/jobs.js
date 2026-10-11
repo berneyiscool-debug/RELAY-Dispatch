@@ -15,7 +15,7 @@ import { resolveOne, scoreRecord } from './resolve.js';
 import { objectSchema, str, num, int, bool, enumOf, list, objectOf, dateish } from './schema.js';
 import { ambiguousMatch, invalidInput, notFound } from './errors.js';
 import { actorStamp, logActivity } from './context.js';
-import { customerLabel, resolveCustomer } from './customers.js';
+import { customerLabel, resolveCustomer, resolveSite, siteAmbiguous, siteNotFound } from './customers.js';
 import { findTechnician } from './leads.js';
 import { parseDate } from './dates.js';
 
@@ -231,17 +231,45 @@ function jobScope(input) {
   return customer ? { customerId: customer.id } : {};
 }
 
+function customerAddress(customer) {
+  return customer?.siteAddress || customer?.address || '';
+}
+
+/** The live customer record a job belongs to, so its sites can be read. */
+function jobCustomer(job) {
+  const customer = job.customerId ? store.getById('customers', job.customerId) : null;
+  if (!customer) throw invalidInput(`${jobLabel(job)} is not linked to a customer, so it has no sites to book to.`);
+  return customer;
+}
+
+/**
+ * The site a job is being booked to, as the name and address to store on it.
+ *
+ * A site has to be a real one: a name that matches nothing is refused with the
+ * customer's actual sites rather than written onto the job as a guess.
+ */
+function resolveJobSite(customer, query) {
+  const found = resolveSite(customer, query);
+  if (found.kind === 'many') throw siteAmbiguous(query, found.hits);
+  if (found.kind === 'none') throw siteNotFound(customer, query);
+  return {
+    siteName: String(found.site.name || '').trim(),
+    siteAddress: String(found.site.address || '').trim(),
+  };
+}
+
 defineAction({
   name: 'create_job',
   title: 'Create job',
   description:
-    'Create a job for a customer, optionally with a first list of tasks, a priority and a scheduled date. Use this for new work that is not coming from a quote. Name the job from what the customer asked for, describe the work on the job, and break anything with more than one piece of work into named tasks that each carry a description and their hours. The job always starts with a Main Task when no tasks are given, because hours are booked against a task, and an estimate given only for the whole job is placed on that task list.',
+    'Create a job for a customer, optionally with a first list of tasks, a priority and a scheduled date. Use this for new work that is not coming from a quote. Name the job from what the customer asked for, describe the work on the job, and break anything with more than one piece of work into named tasks that each carry a description and their hours. When the customer has more than one site, pass `site` so the job is booked to the right premises — `list_sites` shows what they have. The job always starts with a Main Task when no tasks are given, because hours are booked against a task, and an estimate given only for the whole job is placed on that task list.',
   permission: { module: 'Jobs', key: 'create' },
   inputSchema: objectSchema(
     {
       customer: str('Customer name, number or id the job is for.'),
       title: str('Short job title naming the work, e.g. "Switchboard upgrade".'),
       description: str('What the job involves, in a sentence or two. Shown on the job card.'),
+      site: str('Which of the customer\'s sites the job is at — the site name or its address. Use list_sites to see them.'),
       siteAddress: str('Site address if different from the customer address.'),
       contactName: str('On-site contact person.'),
       priority: enumOf(JOB_PRIORITIES, 'Job priority. Defaults to Medium.'),
@@ -270,6 +298,7 @@ defineAction({
   artifacts: (result) => [{ label: `Open job ${result.job.number}`, path: `/jobs/${result.job.id}` }],
   async run(input) {
     const customer = requireCustomer(input);
+    const site = input.site ? resolveJobSite(customer, input.site) : null;
     const tasks = (input.tasks || []).map((task) => newTaskNode(task));
     // A job without a task cannot take hours, so the checklist is never empty.
     if (!tasks.length) tasks.push(mainTaskNode());
@@ -283,7 +312,8 @@ defineAction({
       customerId: customer.id,
       customerName: customerLabel(customer),
       contactName: input.contactName || customer.contactName || '',
-      siteAddress: input.siteAddress || customer.siteAddress || customer.address || '',
+      ...(site ? { siteName: site.siteName } : {}),
+      siteAddress: site ? (site.siteAddress || customerAddress(customer)) : (input.siteAddress || customerAddress(customer)),
       title: input.title,
       // `jobs.notes` is what survives to Postgres; the UI reads `description || notes`.
       description: input.description || '',
@@ -312,7 +342,7 @@ defineAction({
 defineAction({
   name: 'update_job',
   title: 'Update job',
-  description: 'Change the details of an existing job — title, description, priority, site address, contact or estimated hours.',
+  description: 'Change the details of an existing job — title, description, priority, the customer site it is booked to, contact or estimated hours.',
   permission: { module: 'Jobs', key: 'edit' },
   inputSchema: objectSchema(
     {
@@ -322,6 +352,7 @@ defineAction({
       description: str('New job description.'),
       priority: enumOf(JOB_PRIORITIES, 'New priority.'),
       contactName: str('New on-site contact.'),
+      site: str('Move the job to one of the customer\'s sites — the site name or its address. Use list_sites to see them.'),
       siteAddress: str('New site address.'),
       estimatedHours: num('New estimated labour hours.'),
       project: str('Project to file the job under.'),
@@ -342,6 +373,19 @@ defineAction({
         fields.push(key);
       }
     });
+
+    if (input.site) {
+      const customer = jobCustomer(job);
+      const site = resolveJobSite(customer, input.site);
+      const existing = fields.indexOf('siteAddress');
+      if (existing === -1) fields.push('site');
+      else fields[existing] = 'site';
+      // The chosen site carries both its name and its address, so it wins over
+      // a bare siteAddress passed in the same call. A site saved without an
+      // address leaves the job's own address alone.
+      patch.siteName = site.siteName;
+      patch.siteAddress = site.siteAddress || job.siteAddress || customerAddress(customer);
+    }
 
     if (input.description != null) {
       patch.description = input.description;

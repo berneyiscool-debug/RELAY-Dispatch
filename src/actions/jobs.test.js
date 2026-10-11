@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { store, DEMO_COMPANY_ID } from '../data/store.js';
 import { supabase } from '../utils/supabase.js';
 import { executeAction, getAction } from './registry.js';
+import { ERROR_CODES } from './errors.js';
 import { mainTaskNode } from './jobs.js';
 import './quotes.js';
 
@@ -231,5 +232,146 @@ describe('assistant job creation always leaves a task to book hours against', ()
     const outcome = await executeAction('convert_quote_to_job', { quote: quote.number }, CTX);
 
     assert.deepStrictEqual(outcome.result.job.tasks.map((task) => task.name), ['Switchboard', 'Fit off']);
+  });
+});
+
+describe('a job booked at a customer site names the site it is at', () => {
+  let calls;
+  let customer;
+  const saved = {};
+
+  beforeEach(async () => {
+    calls = [];
+    saved.from = supabase.from;
+    supabase.from = (table) => { calls.push(table); return { upsert: async () => ({}), insert: async () => ({}), delete: () => ({ eq: async () => ({}), in: async () => ({}) }) }; };
+    store.demoMode = true;
+    store.companyId = DEMO_COMPANY_ID;
+    store.db = { transaction: () => { calls.push('indexeddb'); throw new Error('IndexedDB touched'); } };
+    await store.initializeDemo({ id: 'user_test', name: 'Test Admin', email: 'test@example.com' });
+    customer = store.create('customers', {
+      company: CUSTOMER,
+      status: 'Active',
+      type: 'Company',
+      address: '1 Head Office Rd',
+      sites: [
+        { name: 'Home', address: '12 Smith Street, Ballarat' },
+        { name: 'Ipswich depot', address: '4 Wattle Lane, Ipswich' },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    supabase.from = saved.from;
+    store.demoMode = false;
+    store.db = null;
+    store.clearSync();
+  });
+
+  const setSites = (sites) => store.update('customers', customer.id, { sites });
+  const jobCount = () => store.getAll('jobs').length;
+
+  test('create_job puts the named site on the job', async () => {
+    const outcome = await executeAction('create_job', { customer: CUSTOMER, title: 'Fit off at the depot', site: 'the depot' }, CTX);
+
+    assert.strictEqual(outcome.result.job.siteName, 'Ipswich depot');
+    assert.strictEqual(outcome.result.job.siteAddress, '4 Wattle Lane, Ipswich');
+    assert.strictEqual(outcome.result.job.customerId, customer.id);
+  });
+
+  test('create_job without a site falls back to the address it was given', async () => {
+    const plain = await executeAction('create_job', { customer: CUSTOMER, title: 'No site given' }, CTX);
+    assert.strictEqual(plain.result.job.siteName, undefined);
+    assert.strictEqual(plain.result.job.siteAddress, '1 Head Office Rd');
+
+    const given = await executeAction('create_job', { customer: CUSTOMER, title: 'Free text address', siteAddress: '9 Elsewhere Rd' }, CTX);
+    assert.strictEqual(given.result.job.siteAddress, '9 Elsewhere Rd');
+  });
+
+  test('two sites the customer calls Depot are a question, not a guess', async () => {
+    setSites([{ name: 'Depot', address: '4 Wattle Lane' }, { name: 'Depot', address: '9 Bell St' }]);
+    const before = jobCount();
+
+    await assert.rejects(
+      () => executeAction('create_job', { customer: CUSTOMER, title: 'Ambiguous site probe', site: 'Depot' }, CTX),
+      (error) => {
+        assert.strictEqual(error.code, ERROR_CODES.AMBIGUOUS);
+        assert.deepStrictEqual(error.details.options.map((option) => option.label), ['Depot (4 Wattle Lane)', 'Depot (9 Bell St)']);
+        return true;
+      }
+    );
+    assert.strictEqual(jobCount(), before, 'a question is not a job');
+  });
+
+  test('a site the customer does not have is never invented', async () => {
+    setSites([{ name: 'Home', address: '12 Smith Street, Ballarat' }]);
+
+    await assert.rejects(
+      () => executeAction('create_job', { customer: CUSTOMER, title: 'Unknown site probe', site: 'Warehouse' }, CTX),
+      (error) => {
+        assert.strictEqual(error.code, ERROR_CODES.INVALID_INPUT);
+        assert.match(error.message, /No site matched "Warehouse"/);
+        assert.match(error.message, /Home \(12 Smith Street, Ballarat\)/);
+        assert.match(error.message, /add_site/);
+        return true;
+      }
+    );
+  });
+
+  test('a customer with no sites at all is told to add one', async () => {
+    setSites([]);
+
+    await assert.rejects(
+      () => executeAction('create_job', { customer: CUSTOMER, title: 'No sites probe', site: 'Depot' }, CTX),
+      /has no sites saved yet/
+    );
+  });
+
+  test('update_job moves a job to another site', async () => {
+    const created = await executeAction('create_job', { customer: CUSTOMER, title: 'Move me', site: 'Home' }, CTX);
+
+    const outcome = await executeAction('update_job', { job: created.result.job.number, site: 'Ipswich depot' }, CTX);
+
+    assert.deepStrictEqual(outcome.result.fields, ['site']);
+    assert.strictEqual(outcome.result.job.siteName, 'Ipswich depot');
+    assert.strictEqual(outcome.result.job.siteAddress, '4 Wattle Lane, Ipswich');
+  });
+
+  test('the site wins over a bare siteAddress passed in the same call', async () => {
+    const created = await executeAction('create_job', { customer: CUSTOMER, title: 'Address clash', site: 'Home' }, CTX);
+
+    const outcome = await executeAction('update_job', {
+      job: created.result.job.number,
+      site: 'Ipswich depot',
+      siteAddress: '9 Elsewhere Rd',
+    }, CTX);
+
+    assert.deepStrictEqual(outcome.result.fields, ['site'], 'the address is reported once, as the site');
+    assert.strictEqual(outcome.result.job.siteAddress, '4 Wattle Lane, Ipswich');
+  });
+
+  test('a site saved without an address leaves the job\'s address alone', async () => {
+    const created = await executeAction('create_job', { customer: CUSTOMER, title: 'Addressless site', site: 'Home' }, CTX);
+    setSites([
+      { name: 'Home', address: '12 Smith Street, Ballarat' },
+      { name: 'Second depot' },
+    ]);
+
+    const outcome = await executeAction('update_job', { job: created.result.job.number, site: 'Second depot' }, CTX);
+
+    assert.strictEqual(outcome.result.job.siteName, 'Second depot');
+    assert.strictEqual(outcome.result.job.siteAddress, '12 Smith Street, Ballarat');
+  });
+
+  test('the job actions point the model at the sites', () => {
+    assert.ok(getAction('create_job').inputSchema.properties.site, 'create_job takes a site');
+    assert.ok(getAction('update_job').inputSchema.properties.site, 'update_job takes a site');
+    assert.match(getAction('create_job').description, /list_sites/);
+    assert.match(getAction('update_job').inputSchema.properties.site.description, /list_sites/);
+  });
+
+  test('the demo business must not reach Supabase or IndexedDB', async () => {
+    await executeAction('create_job', { customer: CUSTOMER, title: 'Demo site probe', site: 'Home' }, CTX);
+
+    assert.deepStrictEqual(calls, [], 'the demo business must not reach Supabase or IndexedDB');
   });
 });
