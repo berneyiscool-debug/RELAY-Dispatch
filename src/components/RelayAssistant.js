@@ -14,6 +14,7 @@ import { usageBarsHtml, refreshUsageBars } from './UsageBars.js';
 import { isCloudUser, hasDeputyMax } from '../utils/aiTier.js';
 import { hasPermission } from '../utils/permissions.js';
 import { prepareAttachments, isSupportedAttachment, fileKind, chunk, MAX_PDF_PAGES, VISION_BATCH_SIZE } from '../utils/relayAttachments.js';
+import { extractActions } from '../utils/relayActionTags.js';
 import { loadUserMemory, loadUserMemorySync, saveUserMemory, clearStaleMemory, getStructuredMemory } from '../utils/userMemory.js';
 import { FLAGS } from '../utils/flags.js';
 import { buildIntroCard, jobsScheduledToday, unassignedJobCount } from '../utils/introCard.js';
@@ -2924,14 +2925,16 @@ function renderAgentSteps(thread, result, labels, elapsedMs) {
 
 // The agent answers with null so submit() does not draw a second bubble for a
 // turn that has already drawn its own.
-function answerAgentTurn(thread, result, ai, labels, elapsedMs) {
+async function answerAgentTurn(thread, result, ai, labels, elapsedMs) {
   renderAgentSteps(thread, result, labels, elapsedMs);
   const answer = plainTurnAnswer(result);
   if (!answer) return;
-  pushAssistant(answer);
   // Same final step as the legacy path: maps, weather and the surviving escape
-  // hatches still run, and they need the legacy prompt to be understood.
-  const finalReply = finaliseExternalReply(answer, buildSystemPrompt(ai));
+  // hatches still run, and they need the legacy prompt to be understood. It
+  // records the answer in history itself, so there is nothing to push here first.
+  // It resolves to the cleaned prose, so it must be awaited — the caller draws a
+  // bubble from this value.
+  const finalReply = await finaliseExternalReply(answer, buildSystemPrompt(ai));
   if (finalReply) addMessage(thread, 'relay', finalReply);
 }
 
@@ -3106,7 +3109,7 @@ async function callBrnyAgent({ thread, typing, messages = null, resume = null } 
 
     if (typing) typing.remove();
     const elapsed = typing ? Date.now() - (firstStepAt || startedAt) : 0;
-    answerAgentTurn(target, result, ai, labels, elapsed);
+    await answerAgentTurn(target, result, ai, labels, elapsed);
     return null;
   } finally {
     if (stopBtn && stopBtn.isConnected) stopBtn.remove();
@@ -3649,57 +3652,6 @@ ${learnedKeys}
 
 const ACTION_REGEX = /\[ACTION:\s*([A-Z_]+)(?:\s*,\s*([^\]]+))?\]/gi;
 
-// Parse [ACTION: ...] tags out of a reply WITHOUT executing them.
-// Returns { actions: [{ action, param }], cleanReply }. The attachment flow uses
-// this to hold extracted records for user confirmation before creating them.
-function extractActions(reply) {
-  const actions = [];
-  let cleanReply = reply;
-  
-  const prefix = '[ACTION:';
-  let startIndex = 0;
-  
-  while ((startIndex = cleanReply.toUpperCase().indexOf(prefix, startIndex)) !== -1) {
-    let bracketCount = 0;
-    let endIndex = -1;
-    
-    for (let i = startIndex; i < cleanReply.length; i++) {
-      if (cleanReply[i] === '[') bracketCount++;
-      else if (cleanReply[i] === ']') bracketCount--;
-      
-      if (bracketCount === 0) {
-        endIndex = i;
-        break;
-      }
-    }
-    
-    if (endIndex !== -1) {
-      const fullTag = cleanReply.substring(startIndex, endIndex + 1);
-      const inner = fullTag.substring(prefix.length, fullTag.length - 1).trim();
-      
-      const firstComma = inner.indexOf(',');
-      let actionName, paramStr;
-      
-      if (firstComma !== -1) {
-        actionName = inner.substring(0, firstComma).trim().toUpperCase();
-        paramStr = inner.substring(firstComma + 1).trim();
-      } else {
-        actionName = inner.toUpperCase();
-        paramStr = null;
-      }
-      
-      actions.push({ action: actionName, param: paramStr });
-      cleanReply = cleanReply.substring(0, startIndex) + cleanReply.substring(endIndex + 1);
-    } else {
-      // Malformed tag, just skip past it
-      startIndex += prefix.length;
-    }
-  }
-  
-  cleanReply = cleanReply.trim();
-  return { actions, cleanReply };
-}
-
 function parseJsonParam(param) {
   if (!param) return null;
   const trimmed = param.trim();
@@ -3971,6 +3923,7 @@ function executeAction(action, param) {
         }
 
         const nextNum = store.getNextNumber('J-', 'jobs');
+        const list = store.getAll('jobs') || [];
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase() || c.company?.toLowerCase() === customerName.toLowerCase());
@@ -4031,6 +3984,7 @@ function executeAction(action, param) {
         }
 
         const nextNum = store.getNextNumber('Q-', 'quotes');
+        const list = store.getAll('quotes') || [];
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
@@ -4082,6 +4036,7 @@ function executeAction(action, param) {
         }
 
         const nextNum = store.getNextNumber('INV-', 'invoices');
+        const list = store.getAll('invoices') || [];
 
         const customers = store.getAll('customers') || [];
         const customer = customers.find(c => `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase() === customerName.toLowerCase());
@@ -4278,6 +4233,7 @@ function executeAction(action, param) {
       }
     } catch (e) {
       console.error(`AI action failed: ${action}`, e);
+      showToast(`Could not complete the "${action}" action.`, 'error');
     }
 }
 
