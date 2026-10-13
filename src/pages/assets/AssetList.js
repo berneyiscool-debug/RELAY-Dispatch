@@ -6,6 +6,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { showAssetQuickAdd } from '../../utils/quickModals.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
 export function renderAssetList(container, params) {
   const customerId = params?.customerId;
@@ -28,9 +29,12 @@ export function renderAssetList(container, params) {
 
   let activeFilter = 'all';
   let searchTerm = '';
+  // Opened from the dashboard's Maintenance due card (?filter=maintenance-due)
+  let kpiFilter = readKpiListFilter('assets');
 
   function updateFilteredData() {
     let result = [...assets];
+    if (kpiFilter) result = result.filter(kpiFilter.test);
 
     // Apply filter
     if (activeFilter === 'My Business') {
@@ -274,4 +278,9 @@ export function renderAssetList(container, params) {
     activeFilter = e.target.value;
     updateFilteredData();
   });
+
+  if (kpiFilter) {
+    mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; updateFilteredData(); });
+    updateFilteredData();
+  }
 }

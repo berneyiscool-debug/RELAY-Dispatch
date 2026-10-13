@@ -10,6 +10,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { roundCurrency } from '../../utils/pricing.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
 export function renderInvoicesList(container) {
   const invoices = store.getAll('invoices');
@@ -329,9 +330,12 @@ export function renderInvoicesList(container) {
   let searchQuery = '';
   let filterStartDate = '';
   let filterEndDate = '';
+  // Opened from a dashboard KPI card (?filter=overdue&period=month)
+  let kpiFilter = readKpiListFilter('invoices');
 
   function applyFilters() {
     let filtered = [...invoices];
+    if (kpiFilter) filtered = filtered.filter(kpiFilter.test);
     if (activeStatusFilter !== 'all') {
       filtered = filtered.filter(i => i.status === activeStatusFilter);
     }
@@ -378,6 +382,11 @@ export function renderInvoicesList(container) {
     activeStatusFilter = e.target.value;
     applyFilters();
   });
+
+  if (kpiFilter) {
+    mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; applyFilters(); });
+    applyFilters();
+  }
 
   btnExport.addEventListener('click', () => {
     const paidInvoices = filteredData.filter(i => i.status === 'Paid');

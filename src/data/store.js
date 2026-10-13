@@ -2159,6 +2159,8 @@ class DataStore {
         record.jobIds = meta.jobIds || []; // consolidated invoices link multiple jobs
         record.jobAmounts = meta.jobAmounts || []; // per-job share of a multi-job invoice
         record.jobNumbers = meta.jobNumbers || [];
+        if (Array.isArray(meta.payments)) record.payments = meta.payments;
+        if (meta.sentAt) record.sentAt = meta.sentAt;
       }
     }
     if (collection === 'quotes') {
@@ -2178,6 +2180,7 @@ class DataStore {
         record.description = meta.description || '';
         record.isTemplate = meta.isTemplate || false;
         record.templateId = meta.templateId || '';
+        ['sentAt', 'acceptedAt', 'signedAt', 'declinedAt'].forEach(k => { if (meta[k]) record[k] = meta[k]; });
       }
     }
     if (collection === 'jobs') {
@@ -2195,6 +2198,9 @@ class DataStore {
           if (meta.activityLog !== undefined) record.activityLog = meta.activityLog;
           if (meta.customerActivityLog !== undefined) record.customerActivityLog = meta.customerActivityLog;
           if (meta.historyLog !== undefined) record.historyLog = meta.historyLog;
+          if (meta.completedAt) record.completedAt = meta.completedAt;
+          if (meta.isEmergency) record.isEmergency = true;
+          if (meta.isCallback) record.isCallback = true;
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
         }
@@ -2675,7 +2681,10 @@ class DataStore {
         notes: record.notes || '',
         activityLog: record.activityLog || [],
         customerActivityLog: record.customerActivityLog || [],
-        historyLog: record.historyLog || []
+        historyLog: record.historyLog || [],
+        completedAt: record.completedAt || null,
+        isEmergency: record.isEmergency || false,
+        isCallback: record.isCallback || false
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
       delete record.activityLog;
@@ -2701,7 +2710,11 @@ class DataStore {
         totalInternalCost: record.totalInternalCost || 0,
         jobIds: record.jobIds || [], // consolidated invoices link multiple jobs
         jobAmounts: record.jobAmounts || [], // per-job share of a multi-job invoice
-        jobNumbers: record.jobNumbers || []
+        jobNumbers: record.jobNumbers || [],
+        // Recorded payments have no column; without this a cloud invoice loses its
+        // part-payments (and its balance) on the next load.
+        payments: record.payments || [],
+        sentAt: record.sentAt || null
       };
       record.line_items = meta;
       delete record.lineItems;
@@ -2716,7 +2729,12 @@ class DataStore {
         laborProfileId: record.laborProfileId || '',
         description: record.description || '',
         isTemplate: record.isTemplate || false,
-        templateId: record.templateId || ''
+        templateId: record.templateId || '',
+        // Lifecycle stamps the dashboard KPIs measure by (no columns for these).
+        sentAt: record.sentAt || null,
+        acceptedAt: record.acceptedAt || null,
+        signedAt: record.signedAt || null,
+        declinedAt: record.declinedAt || null
       };
       record.line_items = meta;
       delete record.lineItems;
@@ -2890,6 +2908,29 @@ class DataStore {
     } catch (e) {}
   }
 
+  // Stamp the moment a record reaches a lifecycle status, so dashboard KPIs can
+  // say "completed this week" or "quotes sent this month" without guessing from
+  // updatedAt. Mutates `changes` (the update payload or new record). An explicit
+  // stamp in `changes` wins, and an existing stamp is kept.
+  _stampLifecycle(collection, previous, changes) {
+    const status = changes.status;
+    if (!status || (previous && previous.status === status)) return;
+    const now = new Date().toISOString();
+    const has = (k) => changes[k] || (previous && previous[k]);
+    if (collection === 'jobs') {
+      if (status === 'Completed' || status === 'Invoiced') {
+        if (!has('completedAt')) changes.completedAt = now;
+      } else if (previous && previous.completedAt && changes.completedAt === undefined) {
+        changes.completedAt = null; // reopened
+      }
+    }
+    if (collection === 'quotes') {
+      if (status !== 'Draft' && !has('sentAt')) changes.sentAt = now;
+      if ((status === 'Accepted' || status === 'Converted') && !has('acceptedAt')) changes.acceptedAt = changes.signedAt || now;
+      if (status === 'Declined' && !has('declinedAt')) changes.declinedAt = now;
+    }
+  }
+
   // All jobs an invoice bills: single jobId and/or consolidated jobIds
   _invoiceJobIds(inv) {
     return [inv?.jobId, ...(inv?.jobIds || [])].filter(Boolean);
@@ -2966,6 +3007,7 @@ class DataStore {
   // Pushes write changes asynchronously to Supabase while updating local cache synchronously
   create(collection, item) {
     item.id = item.id || this.generateId();
+    this._stampLifecycle(collection, null, item);
     if (collection === 'leads' && !item.number) {
       item.number = this.getNextNumber('LD-', 'leads');
     }
@@ -3190,6 +3232,8 @@ class DataStore {
     if (index === -1) return null;
 
     const previous = items[index];
+    updates = { ...updates };
+    this._stampLifecycle(collection, previous, updates);
 
     // If not running in cloud mode, perform local cache update and write to IndexedDB / Folder Sync
     if (!this.companyId || this.companyId.startsWith('acct_')) {

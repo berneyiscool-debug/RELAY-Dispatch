@@ -3249,6 +3249,41 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
 }
+
+/* Add Widget modal: KPI cards grouped, then the other widgets */
+.widget-picker { max-height: 60vh; overflow-y: auto; padding-right: 2px; }
+.widget-picker-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin: 4px 0 10px;
+}
+.widget-picker-title:not(:first-child) { margin-top: 20px; }
+.widget-picker-group + .widget-picker-group { margin-top: 12px; }
+.widget-picker-heading { font-size: 12px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 6px; }
+.widget-picker-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+button.widget-picker-card {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  width: 100%;
+  min-width: 0;
+}
+.kpi-picker-card { gap: 10px; }
+.kpi-picker-text { flex: 1; min-width: 0; }
+.kpi-picker-name { font-weight: 600; font-size: 13px; }
+.kpi-picker-desc { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-picker-value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kpi-picker-tick { font-size: 18px; color: var(--text-tertiary); }
+.kpi-picker-card.is-added { cursor: default; border-color: var(--color-success); }
+.kpi-picker-card.is-added:hover { background: transparent; }
+.kpi-picker-card.is-added .kpi-picker-tick { color: var(--color-success); }
+@media (max-width: 560px) {
+  .widget-picker-grid { grid-template-columns: 1fr; }
+}
 /* ============================================
    LEADS — grouped pipeline table
    The leads list keeps the table it always had; these are the pieces that
@@ -3971,3 +4006,32 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 }
 .demo-banner-text { flex: 1 1 320px; min-width: 0; }
 .demo-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* List opened from a dashboard KPI card (utils/kpiListFilter.js) */
+.kpi-filter-bar { margin: 0 0 10px; }
+.kpi-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.kpi-filter-chip > .material-icons-outlined { font-size: 15px; color: var(--color-primary); }
+.kpi-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.kpi-filter-clear:hover { background: rgba(0, 0, 0, 0.08); color: var(--text-primary); }
+.kpi-filter-clear .material-icons-outlined { font-size: 15px; }

@@ -455,6 +455,13 @@ export function renderJobForm(container, params) {
                 <label class="form-label" style="margin:0; color:var(--color-danger);" for="is-emergency">Is Emergency (Applies Callout Fee)</label>
               </div>
             </div>
+            <!-- Callback / rework (feeds the dashboard's Callback rate card) -->
+            <div class="form-row">
+              <div class="form-group" style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="is-callback" style="width:16px;height:16px" ${job.isCallback ? 'checked' : ''} />
+                <label class="form-label" style="margin:0;" for="is-callback">Callback / rework — a return visit to fix earlier work</label>
+              </div>
+            </div>
             <div id="emergency-dispatch-suggestion" style="display:none; background:var(--color-warning-bg); border:1px solid var(--color-warning); padding:15px; border-radius:8px; margin-bottom:15px;">
               <strong>Emergency Dispatch Suggestion:</strong>
               <p style="margin:5px 0 0 0;" id="dispatch-reason">Loading best technician...</p>
@@ -1621,6 +1628,7 @@ export function renderJobForm(container, params) {
     delete data.notes;
     const isEmg = container.querySelector('#is-emergency')?.checked;
     data.isEmergency = isEmg;
+    data.isCallback = !!container.querySelector('#is-callback')?.checked;
 
     if (!isEdit) {
       data.technicians = [];
