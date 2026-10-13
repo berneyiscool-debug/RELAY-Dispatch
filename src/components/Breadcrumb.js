@@ -21,18 +21,18 @@ export function createBreadcrumb(path) {
   const container = document.getElementById('breadcrumb');
   if (!container) return;
 
-  if (path === '/') {
-    container.style.display = 'none';
-    return;
-  }
-
   container.style.display = 'flex';
   container.style.justifyContent = 'space-between';
   container.style.alignItems = 'center';
-  
+
   const parts = path.split('/').filter(Boolean);
 
-  let linksHtml = `
+  // The dashboard shows the bar too: it holds the permanent quick actions.
+  let linksHtml = path === '/'
+    ? `<span class="breadcrumb-item current">
+        <span class="material-icons-outlined" style="font-size:14px">home</span> Dashboard
+      </span>`
+    : `
     <span class="breadcrumb-item" data-path="/">
       <span class="material-icons-outlined" style="font-size:14px">home</span>
     </span>

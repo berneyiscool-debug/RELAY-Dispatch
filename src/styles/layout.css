@@ -4227,3 +4227,11 @@ body.relay-assistant-open .relay-topbar-actions {
 .dash-period { display: flex; align-items: center; gap: 8px; }
 .dash-asof { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
 .kpi-tile .kpi-loading { letter-spacing: 2px; }
+
+/* Dashboard quick actions: rendered as page-header actions so the shell moves
+   them into the breadcrumb bar; the header itself never shows on the canvas. */
+.dash-page > .dash-quick-header { display: none !important; }
+@media (max-width: 900px) {
+  #breadcrumb-actions .dash-quick-action .btn-label { display: none; }
+  #breadcrumb-actions .dash-quick-action { padding: 0 8px !important; }
+}

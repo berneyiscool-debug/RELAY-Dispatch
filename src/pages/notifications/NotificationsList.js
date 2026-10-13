@@ -351,6 +351,14 @@ export function renderNotificationsList(container, params) {
 
   container.querySelector('#btn-raise-notification')?.addEventListener('click', () => openNotificationFormDrawer());
 
+  // Opened from the dashboard's "Notification" quick action (?raise=1): go
+  // straight to the form, and drop the flag so a refresh doesn't reopen it.
+  if (params && params.raise) {
+    const { pathname, search, hash } = window.location;
+    history.replaceState(history.state, '', pathname + search + hash.replace(/([?&])raise=1&?/, '$1').replace(/[?&]$/, ''));
+    setTimeout(() => openNotificationFormDrawer(), 0);
+  }
+
   table.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;

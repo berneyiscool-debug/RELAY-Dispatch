@@ -29,23 +29,26 @@ import {
   formatKpiValue, formatKpiDelta, kpiSubline,
 } from '../utils/kpis.js';
 
-function getHeaderActionsHtml() {
-  const canCreateJob = hasPermission('Jobs', 'create');
-  const canCreateQuote = hasPermission('Quotes', 'create');
-  let html = '';
-  if (canCreateJob) {
-    html += `
-      <button class="btn btn-secondary btn-sm" data-nav="/jobs/new">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
-      </button>`;
-  }
-  if (canCreateQuote) {
-    html += `
-      <button class="btn btn-primary btn-sm" data-nav="/quotes/new">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
-      </button>`;
-  }
-  return html;
+// Permanent quick actions. They're rendered as the page's header actions, so
+// the app shell moves them into the breadcrumb bar at the same size as every
+// other page's action buttons.
+const QUICK_ACTIONS = [
+  { label: 'New Job',          icon: 'add',             href: '/jobs/new',                  perm: ['Jobs', 'create'], primary: true },
+  { label: 'New Quote',        icon: 'request_quote',   href: '/quotes/new',                perm: ['Quotes', 'create'] },
+  { label: 'New Lead',         icon: 'person_search',   href: '/leads/new',                 perm: ['Leads', 'create'] },
+  { label: 'New Customer',     icon: 'person_add',      href: '/people/new',                perm: ['Customers', 'create'] },
+  { label: 'New Job Template', icon: 'event_repeat',    href: '/jobs/new?isRecurring=true', perm: ['Jobs', 'create'] },
+  { label: 'Notification',     icon: 'campaign',        href: '/notifications?raise=1' },
+];
+
+function getQuickActionsHtml() {
+  return QUICK_ACTIONS
+    .filter(a => !a.perm || hasPermission(a.perm[0], a.perm[1]))
+    .map(a => `
+      <button type="button" class="btn ${a.primary ? 'btn-primary' : 'btn-secondary'} btn-sm dash-quick-action" data-nav="${a.href}" title="${a.label}">
+        <span class="material-icons-outlined" style="font-size:13px;">${a.icon}</span> <span class="btn-label">${a.label}</span>
+      </button>`)
+    .join('');
 }
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -529,6 +532,7 @@ export async function renderDashboard(container) {
   container.innerHTML = `
     <div class="page-content-wrapper dash-page">
       <h1 class="sr-only">Dashboard</h1>
+      <div class="page-header dash-quick-header"><div class="page-header-actions">${getQuickActionsHtml()}</div></div>
       <div id="dash-viewport" class="dash-viewport">
         <div id="dash-world" class="dash-world"></div>
         <div id="dash-guides" class="dash-guides"></div>
