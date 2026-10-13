@@ -1459,20 +1459,65 @@
   overflow-y: auto;
   min-height: 0;
 }
-.dash-widget.kpi-strip .card-body,
-.dash-widget .card.kpi-strip .card-body {
-  display: grid;
-  gap: var(--space-sm);
-  align-items: stretch;
-  overflow: visible;
-  padding: var(--space-xs) var(--space-md);
+/* KPI cards: one number per widget (utils/kpis.js) */
+.dash-widget .card.kpi-card .card-body {
+  padding: 0;
+  overflow: hidden;
 }
-.dash-widget .card.kpi-strip .stat-card {
-  margin: 0;
-  height: auto;
-  padding: var(--space-xs) var(--space-md);
-  gap: 2px;
+.kpi-tile {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 14px 12px;
+  min-width: 0;
 }
+.kpi-tile.is-link { cursor: pointer; }
+.kpi-tile.is-link:hover { background: var(--bg-color-alt, rgba(0, 0, 0, 0.025)); }
+.kpi-tile .kpi-value {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi-tile .kpi-value-empty { color: var(--text-tertiary); }
+.kpi-tile .kpi-value-alert { color: var(--color-danger); }
+.kpi-tile .kpi-value-warn { color: var(--color-warning); }
+.kpi-tile .kpi-sub.kpi-sub-alert { color: var(--color-danger); font-weight: var(--font-weight-semibold, 600); }
+/* Two-part bar (Labour vs materials): first part is the value's share */
+.kpi-tile .kpi-split {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--color-info, #3B82F6);
+}
+.kpi-tile .kpi-split > span { background: var(--color-primary); }
+.kpi-tile .kpi-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kpi-tile .kpi-delta { font-weight: var(--font-weight-semibold, 600); color: var(--text-secondary); }
+.kpi-tile .kpi-delta.good { color: var(--color-success); }
+.kpi-tile .kpi-delta.bad { color: var(--color-danger); }
+.kpi-tile .kpi-vs,
+.kpi-tile .kpi-sub,
+.kpi-tile .kpi-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi-tile .kpi-sub { white-space: nowrap; }
+.kpi-tile .kpi-hint { line-height: 1.35; }
 
 /* Edit mode: header becomes a drag handle */
 .dash-widget.edit-mode .dash-drag-handle { cursor: grab; }
@@ -2300,8 +2345,18 @@ body.relay-assistant-open .relay-topbar-actions {
     rgba(247, 249, 251, 0) 100%);
 }
 .dash-topbar-left { display: flex; align-items: center; gap: 10px; }
-.dash-topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.dash-topbar button { pointer-events: auto; }
+.dash-topbar-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.dash-topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.dash-topbar-actions:empty { display: none; }
+.dash-topbar button,
+.dash-topbar select { pointer-events: auto; }
+.dash-period-select {
+  height: 30px;
+  width: auto;
+  margin: 0;
+  padding: 0 28px 0 10px;
+  font-size: 13px;
+}
 .dash-topbar h1 { font-size: var(--font-size-3xl); }
 
 [data-theme-mode="dark"] .dash-topbar {
@@ -4241,3 +4296,13 @@ body.relay-assistant-open .relay-topbar-actions {
   font-size: 13px;
   text-align: center;
 }
+.dash-period { display: flex; align-items: center; gap: 8px; }
+.dash-asof { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+.kpi-tile .kpi-loading { letter-spacing: 2px; }
+
+/* Dashboard quick actions: rendered as page-header actions so the shell moves
+   them into the breadcrumb bar; the header itself never shows on the canvas. */
+.dash-page > .dash-quick-header { display: none !important; }
+/* Icon-only, square, the bar's 25px height; the name shows on hover. */
+#breadcrumb-actions .dash-quick-action { width: 25px; min-width: 25px; padding: 0 !important; }
+#breadcrumb-actions .dash-quick-action .material-icons-outlined { font-size: 15px; }

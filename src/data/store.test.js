@@ -86,6 +86,28 @@ describe('DataStore', () => {
   });
 
   describe('update', () => {
+    test('stamps completedAt when a job is finished and clears it when reopened', async () => {
+      store.cache.jobs = [{ id: 'j_life', status: 'In Progress' }];
+      const done = await store.update('jobs', 'j_life', { status: 'Completed' });
+      assert.ok(done.completedAt);
+      const invoiced = await store.update('jobs', 'j_life', { status: 'Invoiced' });
+      assert.strictEqual(invoiced.completedAt, done.completedAt);
+      const reopened = await store.update('jobs', 'j_life', { status: 'In Progress' });
+      assert.strictEqual(reopened.completedAt, null);
+    });
+
+    test('stamps quote sent / accepted / declined dates once', async () => {
+      store.cache.quotes = [{ id: 'q_life', status: 'Draft' }, { id: 'q_dec', status: 'Sent', sentAt: '2026-01-01' }];
+      const sent = await store.update('quotes', 'q_life', { status: 'Sent' });
+      assert.ok(sent.sentAt);
+      const won = await store.update('quotes', 'q_life', { status: 'Accepted' });
+      assert.ok(won.acceptedAt);
+      assert.strictEqual(won.sentAt, sent.sentAt);
+      const declined = await store.update('quotes', 'q_dec', { status: 'Declined' });
+      assert.ok(declined.declinedAt);
+      assert.strictEqual(declined.sentAt, '2026-01-01');
+    });
+
     test('updates item in cache in local mode (companyId not set)', async () => {
       const item = { id: 'local_1', name: 'Original' };
       store.cache.customers = [item];
@@ -576,6 +598,28 @@ describe('DataStore', () => {
         supabase.from = originalFrom;
         console.error = originalError;
       }
+    });
+
+    test('KPI lifecycle stamps and invoice payments survive a cloud round trip', () => {
+      const quote = store.normalizeRecord(store.denormalizeRecord({
+        id: 'q_rt', status: 'Converted', sections: [],
+        sentAt: '2026-10-01T01:00:00Z', acceptedAt: '2026-10-03T01:00:00Z', signedAt: '2026-10-03T01:00:00Z',
+      }, 'quotes'), 'quotes');
+      assert.strictEqual(quote.sentAt, '2026-10-01T01:00:00Z');
+      assert.strictEqual(quote.acceptedAt, '2026-10-03T01:00:00Z');
+
+      const invoice = store.normalizeRecord(store.denormalizeRecord({
+        id: 'inv_rt', status: 'Sent', sections: [], total: 1100,
+        payments: [{ id: 'p1', amount: 400, date: '2026-10-04T00:00:00Z' }],
+      }, 'invoices'), 'invoices');
+      assert.deepStrictEqual(invoice.payments.map(p => p.amount), [400]);
+
+      const job = store.normalizeRecord(store.denormalizeRecord({
+        id: 'job_rt', status: 'Completed', completedAt: '2026-10-05T03:00:00Z', isEmergency: true, isCallback: true,
+      }, 'jobs'), 'jobs');
+      assert.strictEqual(job.completedAt, '2026-10-05T03:00:00Z');
+      assert.strictEqual(job.isEmergency, true);
+      assert.strictEqual(job.isCallback, true);
     });
 
     test('repairInvoiceIssueDates backfills missing issueDate from createdAt/dueDate', () => {

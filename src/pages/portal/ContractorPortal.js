@@ -413,6 +413,11 @@ export async function renderContractorPortal(container, params) {
     container.innerHTML = `
       <style>
         .portal-container {
+          /* The auto cross-axis margins make this a shrink-to-fit flex item
+             (they defeat align-items: stretch), so without a definite width the
+             container sized itself to its content and the whole page jumped wider
+             when a job was expanded. width: 100% pins it at the full 1200px. */
+          width: 100%;
           max-width: 1200px;
           margin: 0 auto;
           padding: 24px;

@@ -9,6 +9,7 @@ import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
 export function renderJobsList(container, params) {
   const customerId = params?.customerId;
@@ -540,10 +541,13 @@ export function renderJobsList(container, params) {
   let searchQuery = '';
   let filterStartDate = '';
   let filterEndDate = '';
+  // Opened from a dashboard KPI card (?filter=ready-to-invoice)
+  let kpiFilter = readKpiListFilter('jobs');
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
     const filtered = jobs.filter(j => {
+      if (kpiFilter && !kpiFilter.test(j)) return false;
       if (selectedStatus) {
         if (selectedStatus === 'ALL_WITH_TEMPLATES') {
           // Allow all statuses including templates
@@ -614,6 +618,8 @@ export function renderJobsList(container, params) {
     }
     applyFilters();
   });
+
+  if (kpiFilter) mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; applyFilters(); });
 
   // Apply initial filters (e.g. from URL status parameter)
   applyFilters();

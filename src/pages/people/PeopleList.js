@@ -10,6 +10,7 @@ import { escapeHTML } from '../../utils/security.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { setListSearch } from '../../utils/listSearch.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
 export function renderPeopleList(container) {
   const customers = store.getAll('customers');
@@ -166,10 +167,13 @@ export function renderPeopleList(container) {
   });
 
   let selectedStatus = 'all';
+  // Opened from a dashboard KPI card (?filter=repeat&period=month)
+  let kpiFilter = readKpiListFilter('customers');
 
   function applyFilters() {
     const q = searchQuery.toLowerCase();
     const filtered = customers.filter(c => {
+      if (kpiFilter && !kpiFilter.test(c)) return false;
       if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
       if (!q) return true;
       const company = c.company || '';
@@ -203,4 +207,9 @@ export function renderPeopleList(container) {
     selectedStatus = e.target.value;
     applyFilters();
   });
+
+  if (kpiFilter) {
+    mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; applyFilters(); });
+    applyFilters();
+  }
 }

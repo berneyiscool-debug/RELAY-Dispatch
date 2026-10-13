@@ -12,6 +12,7 @@ import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { isCloudUser } from '../../utils/aiTier.js';
 import { showCloudUpgradePrompt } from '../../components/CloudUpgrade.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 import {
   LEAD_STAGES, OPEN_STAGES, LEAD_LIKELIHOOD, LEAD_PRIORITY_BADGES,
   STALE_DAYS, isLeadStale, isOpenLead, leadNextActionHtml, leadOwnerHtml, leadStageBadge,
@@ -405,6 +406,9 @@ function renderLeadsTable(container, opts = {}) {
     return true;
   }
 
+  // Opened from a dashboard KPI card (?filter=new&period=month)
+  let kpiFilter = readKpiListFilter('leads');
+
   function applyFilters() {
     allLeads = readLeads();
     updateKpis();
@@ -412,6 +416,7 @@ function renderLeadsTable(container, opts = {}) {
 
     const chip = CHIPS.find(c => c.key === activeChip) || CHIPS[0];
     let filtered = allLeads.filter(chip.test);
+    if (kpiFilter) filtered = filtered.filter(kpiFilter.test);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(l => {
@@ -474,6 +479,7 @@ function renderLeadsTable(container, opts = {}) {
   });
 
   updateGroupToggle();
+  if (kpiFilter) mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; applyFilters(); });
   applyFilters();
 }
 
