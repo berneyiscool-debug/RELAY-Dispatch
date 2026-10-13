@@ -27,16 +27,16 @@ export function createBreadcrumb(path) {
 
   const parts = path.split('/').filter(Boolean);
 
-  // The dashboard shows the bar too: it holds the permanent quick actions.
-  let linksHtml = path === '/'
-    ? `<span class="breadcrumb-item current">
-        <span class="material-icons-outlined" style="font-size:14px">home</span> Dashboard
-      </span>`
-    : `
+  let linksHtml = `
     <span class="breadcrumb-item" data-path="/">
       <span class="material-icons-outlined" style="font-size:14px">home</span>
     </span>
   `;
+  // The dashboard shows the bar too (it holds the permanent quick actions), as
+  // home › Dashboard like every other page.
+  if (path === '/') {
+    linksHtml += `<span class="breadcrumb-separator">›</span><span class="breadcrumb-item current">Dashboard</span>`;
+  }
 
   let currentPath = '';
   parts.forEach((part, i) => {
