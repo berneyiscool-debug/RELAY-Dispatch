@@ -28,6 +28,7 @@ import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
 import { shouldUseAgentLoop } from '../utils/brnyRouting.js';
 import { runTurn } from '../utils/brnyAgent.js';
 import { buildBrnyPlaybook, LEGACY_BASE_PROMPT } from '../utils/brnyPlaybook.js';
+import { brnyVoiceLine } from '../utils/brnyPersonalities.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -2915,6 +2916,8 @@ function buildBrnyAgentPrompt(ai) {
     // A deliberate override only — `settings.ai.playbook`, not the legacy
     // `systemPrompt`. See buildBrnyPlaybook for why a default must never sit here.
     override: ai.playbook,
+    // The voice layer only — it rewrites the tone bullet and cannot touch policy.
+    personality: ai.personality,
     // The live data only. The policy half of the legacy context is a catalogue of
     // text-protocol tags, and handing brny both that and native tools invites a
     // second, duplicate write for the same intent.
@@ -3198,7 +3201,16 @@ async function resumeBrnyTurn(resume, displayText) {
 
 function buildSystemPrompt(ai) {
   const basePrompt = ai.systemPrompt || LEGACY_BASE_PROMPT;
-  return `${basePrompt}\n\n${getSystemContext(!hasDeputyMax())}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
+  // The non-agent paths do not build from the playbook, so the selected
+  // personality's tone has to be appended here. Empty for the default, which
+  // keeps this prompt byte-identical for anyone who never picks one.
+  const voice = brnyVoiceLine(ai.personality);
+  return [
+    basePrompt,
+    voice,
+    getSystemContext(!hasDeputyMax()),
+    'Your name is brny (lowercase). Never call yourself Deputy or Relay.'
+  ].filter(Boolean).join('\n\n');
 }
 
 // Some actions can't be answered in one turn: they need real external data

@@ -321,6 +321,7 @@ export function getContextualMenu(hash) {
         id: 'general', label: 'General', icon: 'settings',
         items: [
           { id: 'company', icon: 'business', label: 'Company Profile', path: '/settings?tab=company' },
+          { id: 'assistant', icon: 'smart_toy', label: 'brny Assistant', path: '/settings?tab=assistant' },
           { id: 'billing', icon: 'credit_card', label: 'Plan & Billing', path: '/settings?tab=billing' },
           { id: 'portal', icon: 'web', label: 'Customer Portal', path: '/settings?tab=portal', ...gate('portal') },
           { id: 'portal_contractor', icon: 'engineering', label: 'Contractor Portal', path: '/settings?tab=portal_contractor', ...gate('portal_contractor') },

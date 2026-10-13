@@ -149,6 +149,18 @@ the client bundle. Changing either is an ordinary frontend change: commit to
   `toToolDefinitions`. Adding a skill means a new module there plus an entry in
   that folder's `index.js`. The action's `description` is the whole of the model's
   instructions, so write it for the model, not for a reader.
+- **Personalities are the selectable voice layer.**
+  [src/utils/brnyPersonalities.js](./src/utils/brnyPersonalities.js) holds the
+  presets (Straight, Friendly, Brief, Trainer, Formal), and Settings → brny
+  Assistant saves the pick to `settings.ai.personality`. A personality swaps
+  exactly one line of the playbook — the `HOW TO TALK` tone bullet — so what brny
+  is allowed to do, and how it has to report hours, tasks and questions, stay
+  fixed for every preset. Precedence is `settings.ai.playbook` (if set) →
+  `settings.ai.personality` → the shipped default, and
+  `BRNY_PERSONALITIES[0].tone` must stay byte-identical to that tone bullet:
+  [src/utils/brnyPlaybook.test.js](./src/utils/brnyPlaybook.test.js) asserts the
+  bullet appears exactly once, so a playbook edit that drifts from the preset
+  fails the suite instead of silently no-op'ing the swap.
 - **`relay-copilot` is plumbing, not behaviour.** The edge function is a
   passthrough proxy: the client sends `system` and `tools` in the request body and
   the function forwards them upstream. Redeploy it only to change the pinned
@@ -167,7 +179,10 @@ the client bundle. Changing either is an ordinary frontend change: commit to
 The paths that are not tool loops — attachment vision, external replies, routine
 writing, the conflict scan — have no playbook of their own. They build from the
 shared `LEGACY_BASE_PROMPT` and are the only place that still reads
-`settings.ai.systemPrompt`.
+`settings.ai.systemPrompt`. The ones that go through `buildSystemPrompt` (external
+replies, routine writing) also append the selected personality's tone line, so
+brny sounds like the chosen preset wherever it writes prose; attachment vision and
+the conflict scan keep their own inline prompts and never see a personality.
 
 ## Tech stack
 

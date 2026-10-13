@@ -16,6 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { BRNY_PLAYBOOK, LEGACY_BASE_PROMPT, buildBrnyPlaybook } from './brnyPlaybook.js';
+import { BRNY_PERSONALITIES, DEFAULT_BRNY_TONE } from './brnyPersonalities.js';
 
 test('the playbook names ask_user as the way to ask', () => {
   assert.match(BRNY_PLAYBOOK, /call ask_user/);
@@ -83,4 +84,60 @@ test('a blank override keeps the playbook', () => {
 test('the legacy base prompt is exported for the non-agent paths', () => {
   assert.ok(LEGACY_BASE_PROMPT.length > 0);
   assert.ok(!BRNY_PLAYBOOK.includes(LEGACY_BASE_PROMPT));
+});
+
+// --- personalities -----------------------------------------------------------
+//
+// A personality rewrites one bullet. If the shipped tone line is ever reworded
+// without the catalogue, every personality but the default silently stops working,
+// so the first test here is the drift guard.
+
+test('the personality tone line matches the shipped playbook exactly once', () => {
+  assert.strictEqual(BRNY_PLAYBOOK.split(DEFAULT_BRNY_TONE).length - 1, 1);
+});
+
+test('no personality and the default personality produce the same prompt', () => {
+  const withDefault = buildBrnyPlaybook({ personality: 'straight' });
+  assert.strictEqual(withDefault, buildBrnyPlaybook());
+  assert.ok(withDefault.startsWith(BRNY_PLAYBOOK));
+});
+
+test('a personality swaps the tone bullet and nothing else', () => {
+  const tone = BRNY_PERSONALITIES.find((p) => p.id === 'brief').tone;
+  const prompt = buildBrnyPlaybook({ personality: 'brief' });
+
+  assert.ok(prompt.includes(tone));
+  assert.ok(!prompt.includes(DEFAULT_BRNY_TONE));
+  // The policy half is untouched.
+  assert.match(prompt, /Every job you create starts with a Main Task/);
+  assert.match(prompt, /Read them with `list_sites`/);
+  assert.match(prompt, /call ask_user/);
+  assert.match(prompt, /HOW TO TALK/);
+  // The four presentation rules under the tone line are invariant.
+  assert.match(prompt, /Do not use asterisks, bold markers, or emoji headings/);
+  assert.match(prompt, /Write money as the business says it/);
+  assert.match(prompt, /If you used a to-do or a notification/);
+  assert.match(prompt, /\[QUESTION:\] \/ \[QUESTION_MULTI:\]/);
+  assert.match(prompt, /Your name is brny \(lowercase\)/);
+});
+
+test('every personality is reachable and distinct from the default', () => {
+  for (const personality of BRNY_PERSONALITIES) {
+    const prompt = buildBrnyPlaybook({ personality: personality.id });
+    assert.match(prompt, /HOW TO TALK/);
+    if (personality.id === 'straight') continue;
+    assert.ok(prompt.includes(personality.tone), `${personality.id} was not applied`);
+    assert.ok(!prompt.includes(DEFAULT_BRNY_TONE), `${personality.id} kept the default tone`);
+  }
+});
+
+test('an unknown personality falls back to the shipped playbook', () => {
+  assert.strictEqual(buildBrnyPlaybook({ personality: 'not-a-personality' }), buildBrnyPlaybook());
+});
+
+test('an explicit override still beats the personality', () => {
+  const prompt = buildBrnyPlaybook({ override: 'Talk like a pirate.', personality: 'trainer' });
+  assert.match(prompt, /Talk like a pirate\./);
+  assert.ok(!prompt.includes('HOW TO TALK'));
+  assert.ok(!prompt.includes(BRNY_PERSONALITIES.find((p) => p.id === 'trainer').tone));
 });
