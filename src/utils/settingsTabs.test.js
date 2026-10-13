@@ -4,7 +4,7 @@ import { resolveSettingsTab, SETTINGS_DEFAULT_TAB, TAB_ALIASES } from './setting
 
 // The canonical settings tabs both the settings page and the sidebar agree on.
 const CANONICAL_SETTINGS_TABS = [
-  'company', 'billing', 'portal', 'portal_contractor', 'local_storage', 'system',
+  'company', 'assistant', 'billing', 'portal', 'portal_contractor', 'local_storage', 'system',
   'templates_forms', 'invoices_quotes', 'payments', 'email',
   'users', 'suppliers', 'materials', 'storage_options', 'cost_centers', 'tax'
 ];
@@ -60,7 +60,7 @@ describe('Settings Tabs: resolveSettingsTab', () => {
   test('should map merged and removed pages onto their replacement tab', () => {
     assert.strictEqual(resolveSettingsTab('email_templates').tab, 'email');
     assert.strictEqual(resolveSettingsTab('api_keys').tab, 'company');
-    assert.strictEqual(resolveSettingsTab('ai_assistant').tab, 'company');
+    assert.strictEqual(resolveSettingsTab('ai_assistant').tab, 'assistant');
     assert.strictEqual(resolveSettingsTab('folder_sync').tab, 'local_storage');
   });
 

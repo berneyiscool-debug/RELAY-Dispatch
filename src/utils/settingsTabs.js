@@ -28,10 +28,10 @@ export const TAB_ALIASES = {
   // Email Templates was merged into the Email & Domain tab.
   email_templates: { tab: 'email' },
 
-  // The model provider and credentials are RELAY's own, so the old AI/API
-  // sub-tabs are gone.
+  // The model provider and credentials are RELAY's own, so the API sub-tab is
+  // gone. The old AI assistant tab now opens brny's own tab.
   api_keys: { tab: 'company' },
-  ai_assistant: { tab: 'company' },
+  ai_assistant: { tab: 'assistant' },
 
   // Folder Sync and Local Data Backup described the same directory handle.
   folder_sync: { tab: 'local_storage' }

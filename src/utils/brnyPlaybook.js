@@ -12,7 +12,13 @@
  * The two facts the old prompt got wrong are corrected here: customer `type` is
  * Company or Individual (never "Commercial"), and a quote holds `sections`, not
  * `line_items`.
+ *
+ * The first `HOW TO TALK` bullet — the tone line — is the one line a personality
+ * swaps out (see `brnyPersonalities.js`). Everything else, including the four
+ * presentation rules under it, is invariant.
  */
+
+import { DEFAULT_BRNY_TONE, DEFAULT_PERSONALITY_ID, getBrnyPersonality } from './brnyPersonalities.js';
 
 /** The identity, behaviour and domain rules. */
 export const BRNY_PLAYBOOK = `You are brny (lowercase, never Deputy, never Relay), the assistant inside RELAY — a field-service app used by Australian electrical and HVAC businesses.
@@ -86,6 +92,25 @@ const IDENTITY_TAIL = 'Your name is brny (lowercase). Never call yourself Deputy
 export const LEGACY_BASE_PROMPT = 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
 
 /**
+ * The playbook body for the selected personality.
+ *
+ * The default returns the shipped literal untouched. Anything else swaps the tone
+ * bullet for the personality's. The missing-line check is a loud fallback rather
+ * than a throw: a reworded tone line would otherwise leave every personality
+ * silently doing nothing while the app looked healthy — the same class of failure
+ * as a default `systemPrompt` shadowing the playbook.
+ */
+function playbookFor(personality) {
+  const selected = getBrnyPersonality(personality);
+  if (selected.id === DEFAULT_PERSONALITY_ID) return BRNY_PLAYBOOK;
+  if (!BRNY_PLAYBOOK.includes(DEFAULT_BRNY_TONE)) {
+    console.error('brny: the shipped tone line is missing from the playbook, so the selected personality is ignored.');
+    return BRNY_PLAYBOOK;
+  }
+  return BRNY_PLAYBOOK.replace(DEFAULT_BRNY_TONE, selected.tone);
+}
+
+/**
  * Build the system prompt for one conversational turn.
  *
  * `override` is a *deliberate* custom playbook, set as `settings.ai.playbook`.
@@ -96,13 +121,18 @@ export const LEGACY_BASE_PROMPT = 'You are brny, an intelligent CRM co-pilot ass
  * here, so the agent path no longer reads that key and no default is shipped.
  * See "brny: changing its behaviour and skills" in `DOCS.md`.
  *
+ * `personality` is the voice layer, set as `settings.ai.personality`. It only ever
+ * rewrites the tone bullet, so an override still beats it and the policy cannot be
+ * lost to a preset. An unknown or absent value is the shipped default.
+ *
  * @param {object} [options]
- * @param {string} [options.override] A deliberate custom playbook; replaces the playbook text.
- * @param {string} [options.context]  The live data block from `getSystemContext`, if any.
+ * @param {string} [options.override]    A deliberate custom playbook; replaces the playbook text.
+ * @param {string} [options.personality] The selected personality id.
+ * @param {string} [options.context]     The live data block from `getSystemContext`, if any.
  * @returns {string}
  */
-export function buildBrnyPlaybook({ override, context } = {}) {
-  const body = (override && String(override).trim()) || BRNY_PLAYBOOK;
+export function buildBrnyPlaybook({ override, personality, context } = {}) {
+  const body = (override && String(override).trim()) || playbookFor(personality);
   return [body, LEGACY_ESCAPE_HATCHES, context, IDENTITY_TAIL]
     .filter(Boolean)
     .join('\n\n');
