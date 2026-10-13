@@ -33,7 +33,6 @@ import { subscriptionRequired } from './utils/subscription.js';
 import { mountTrialBanner, unmountTrialBanner } from './components/TrialBanner.js';
 import { mountDemoBanner, unmountDemoBanner } from './components/DemoBanner.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
-import './utils/DeputyAutopilot.js';
 import { storageGet, storageSet } from './utils/persist.js';
 import { setSessionUser, clearSessionUser } from './pages/auth/session.js';
 import { installDelegatedEvents } from './utils/delegatedEvents.js';
