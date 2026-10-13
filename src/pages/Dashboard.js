@@ -29,13 +29,14 @@ import {
   formatKpiValue, formatKpiDelta, kpiSubline,
 } from '../utils/kpis.js';
 
-// Permanent quick actions. They're rendered as the page's header actions, so
-// the app shell moves them into the breadcrumb bar at the same size as every
-// other page's action buttons.
+// Permanent quick actions, icon-only (name on hover). They're rendered as the
+// page's header actions, so the app shell moves them into the breadcrumb bar at
+// the same size as every other page's action buttons. Icons match the sidebar's
+// for each area and are all mapped in utils/icons.js.
 const QUICK_ACTIONS = [
-  { label: 'New Job',          icon: 'add',             href: '/jobs/new',                  perm: ['Jobs', 'create'], primary: true },
+  { label: 'New Job',          icon: 'build',           href: '/jobs/new',                  perm: ['Jobs', 'create'], primary: true },
   { label: 'New Quote',        icon: 'request_quote',   href: '/quotes/new',                perm: ['Quotes', 'create'] },
-  { label: 'New Lead',         icon: 'person_search',   href: '/leads/new',                 perm: ['Leads', 'create'] },
+  { label: 'New Lead',         icon: 'trending_up',     href: '/leads/new',                 perm: ['Leads', 'create'] },
   { label: 'New Customer',     icon: 'person_add',      href: '/people/new',                perm: ['Customers', 'create'] },
   { label: 'New Job Template', icon: 'event_repeat',    href: '/jobs/new?isRecurring=true', perm: ['Jobs', 'create'] },
   { label: 'Notification',     icon: 'campaign',        href: '/notifications?raise=1' },
@@ -45,8 +46,8 @@ function getQuickActionsHtml() {
   return QUICK_ACTIONS
     .filter(a => !a.perm || hasPermission(a.perm[0], a.perm[1]))
     .map(a => `
-      <button type="button" class="btn ${a.primary ? 'btn-primary' : 'btn-secondary'} btn-sm dash-quick-action" data-nav="${a.href}" title="${a.label}">
-        <span class="material-icons-outlined" style="font-size:13px;">${a.icon}</span> <span class="btn-label">${a.label}</span>
+      <button type="button" class="btn ${a.primary ? 'btn-primary' : 'btn-secondary'} btn-sm dash-quick-action" data-nav="${a.href}" title="${a.label}" aria-label="${a.label}">
+        <span class="material-icons-outlined" aria-hidden="true">${a.icon}</span>
       </button>`)
     .join('');
 }

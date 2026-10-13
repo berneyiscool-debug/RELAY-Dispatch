@@ -4231,7 +4231,6 @@ body.relay-assistant-open .relay-topbar-actions {
 /* Dashboard quick actions: rendered as page-header actions so the shell moves
    them into the breadcrumb bar; the header itself never shows on the canvas. */
 .dash-page > .dash-quick-header { display: none !important; }
-@media (max-width: 900px) {
-  #breadcrumb-actions .dash-quick-action .btn-label { display: none; }
-  #breadcrumb-actions .dash-quick-action { padding: 0 8px !important; }
-}
+/* Icon-only, square, the bar's 25px height; the name shows on hover. */
+#breadcrumb-actions .dash-quick-action { width: 25px; min-width: 25px; padding: 0 !important; }
+#breadcrumb-actions .dash-quick-action .material-icons-outlined { font-size: 15px; }
