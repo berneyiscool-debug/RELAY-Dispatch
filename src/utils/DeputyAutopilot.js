@@ -19,6 +19,7 @@ import { store } from '../data/store.js';
 import { dispatchChat } from './aiEngine.js';
 import { hasDeputyMax } from './aiTier.js';
 import { collectCollisionGroups, hasPendingAsk, isAllowanceError, createAttemptGuard } from './deputyScanPolicy.js';
+import { LEGACY_BASE_PROMPT } from './brnyPlaybook.js';
 
 const guard = createAttemptGuard();
 
@@ -38,7 +39,7 @@ export async function runConflictScan({ systemContext = '' } = {}) {
   try {
     const settings = store.getSettings() || {};
     const ai = settings.ai || {};
-    const basePrompt = ai.systemPrompt || 'You are brny, an intelligent CRM co-pilot assistant.';
+    const basePrompt = ai.systemPrompt || LEGACY_BASE_PROMPT;
     const context = systemContext ? `\n\n${systemContext}` : '';
     const systemPrompt = `${basePrompt}${context}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
 

@@ -15,7 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BRNY_PLAYBOOK, buildBrnyPlaybook } from './brnyPlaybook.js';
+import { BRNY_PLAYBOOK, LEGACY_BASE_PROMPT, buildBrnyPlaybook } from './brnyPlaybook.js';
 
 test('the playbook names ask_user as the way to ask', () => {
   assert.match(BRNY_PLAYBOOK, /call ask_user/);
@@ -56,4 +56,31 @@ test('the playbook never invents a site', () => {
   assert.match(BRNY_PLAYBOOK, /Never invent a site/);
   assert.match(BRNY_PLAYBOOK, /add it with `add_site` first/);
   assert.match(BRNY_PLAYBOOK, /Only ever change an existing site with `update_site`/);
+});
+
+test('the assembled prompt with no override is the whole policy, not a base prompt', () => {
+  const prompt = buildBrnyPlaybook();
+  assert.match(prompt, /Every job you create starts with a Main Task/);
+  assert.match(prompt, /HOW TO TALK/);
+  assert.match(prompt, /Read them with `list_sites`/);
+  assert.ok(!prompt.includes(LEGACY_BASE_PROMPT), 'the agent path must not fall back to the legacy base');
+});
+
+test('an override replaces the policy outright', () => {
+  const prompt = buildBrnyPlaybook({ override: 'Talk like a pirate.' });
+  assert.match(prompt, /Talk like a pirate\./);
+  assert.ok(!prompt.includes('Every job you create starts with a Main Task'));
+  assert.ok(!prompt.includes('HOW TO TALK'));
+  // The escape hatches and the identity line are not part of the body, so they stay.
+  assert.match(prompt, /\[QUESTION:\] \/ \[QUESTION_MULTI:\]/);
+  assert.match(prompt, /Your name is brny \(lowercase\)/);
+});
+
+test('a blank override keeps the playbook', () => {
+  assert.match(buildBrnyPlaybook({ override: '   ' }), /Every job you create starts with a Main Task/);
+});
+
+test('the legacy base prompt is exported for the non-agent paths', () => {
+  assert.ok(LEGACY_BASE_PROMPT.length > 0);
+  assert.ok(!BRNY_PLAYBOOK.includes(LEGACY_BASE_PROMPT));
 });

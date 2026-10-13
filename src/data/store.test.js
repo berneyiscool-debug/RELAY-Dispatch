@@ -167,6 +167,16 @@ describe('DataStore', () => {
       assert.strictEqual(settings.name, 'Custom Company');
       assert.strictEqual(settings.materialMarkup.defaultPercent, 40);
     });
+
+    // A prompt shipped here merges into every tenant's settings and stands in for
+    // the playbook, which drops brny's whole policy without anything looking wrong.
+    // See "brny: changing its behaviour and skills" in DOCS.md.
+    test('ships no default AI prompt that could shadow the playbook', () => {
+      store.companySettings = null;
+      const ai = store.getSettings().ai;
+      assert.strictEqual(ai.playbook, undefined);
+      assert.strictEqual(ai.systemPrompt, undefined);
+    });
   });
 
   describe('saveSettings', () => {

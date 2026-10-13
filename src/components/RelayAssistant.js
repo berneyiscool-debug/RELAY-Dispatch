@@ -27,7 +27,7 @@ import { runConflictScan } from '../utils/DeputyAutopilot.js';
 import { triageMessage, routeIntent } from '../utils/deputyTriage.js';
 import { shouldUseAgentLoop } from '../utils/brnyRouting.js';
 import { runTurn } from '../utils/brnyAgent.js';
-import { buildBrnyPlaybook } from '../utils/brnyPlaybook.js';
+import { buildBrnyPlaybook, LEGACY_BASE_PROMPT } from '../utils/brnyPlaybook.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -2589,7 +2589,7 @@ async function runVisionExtraction(userText, files, thread, typing) {
 
 async function callVisionEngine(userText, images, batchIndex, batchCount) {
   const ai = (store.getSettings() || {}).ai || {};
-  const basePrompt = ai.systemPrompt || 'You are brny, an intelligent CRM co-pilot assistant.';
+  const basePrompt = ai.systemPrompt || LEGACY_BASE_PROMPT;
   const systemPrompt = `${basePrompt}\n\n${getVisionContext()}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
 
   const instruction = batchCount > 1
@@ -2912,7 +2912,9 @@ function canRunBrnyAgent() {
 
 function buildBrnyAgentPrompt(ai) {
   return buildBrnyPlaybook({
-    override: ai.systemPrompt,
+    // A deliberate override only — `settings.ai.playbook`, not the legacy
+    // `systemPrompt`. See buildBrnyPlaybook for why a default must never sit here.
+    override: ai.playbook,
     // The live data only. The policy half of the legacy context is a catalogue of
     // text-protocol tags, and handing brny both that and native tools invites a
     // second, duplicate write for the same intent.
@@ -3195,7 +3197,7 @@ async function resumeBrnyTurn(resume, displayText) {
 }
 
 function buildSystemPrompt(ai) {
-  const basePrompt = ai.systemPrompt || 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
+  const basePrompt = ai.systemPrompt || LEGACY_BASE_PROMPT;
   return `${basePrompt}\n\n${getSystemContext(!hasDeputyMax())}\n\nYour name is brny (lowercase). Never call yourself Deputy or Relay.`;
 }
 

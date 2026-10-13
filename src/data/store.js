@@ -3733,10 +3733,13 @@ class DataStore {
       ai: {
         // Deputy ships with a paid Cloud workspace, so there is no on/off switch,
         // client key, model or endpoint to configure: every AI call goes to the
-        // DeepSeek API through the relay-copilot edge function. `tier` is the only
+        // Anthropic API through the relay-copilot edge function. `tier` is the only
         // field here that varies, and it is written server-side (see aiTier.js).
-        tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local',
-        systemPrompt: 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
+        //
+        // No default prompt belongs here. `playbook` is the agent's deliberate
+        // override and an empty one keeps the shipped playbook, so shipping a
+        // default would shadow the playbook for every tenant (see brnyPlaybook.js).
+        tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local'
       }
     };
 

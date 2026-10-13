@@ -132,6 +132,43 @@ webhook, `relay-create-payment`) run the same way, but a function that serves a
 signed-in user must never copy the flag; see
 [docs/SUPABASE_MIGRATION.md](./docs/SUPABASE_MIGRATION.md) §12a and §12c.
 
+### brny: changing its behaviour and skills
+
+brny is the assistant in the panel, and both its behaviour and its skills live in
+the client bundle. Changing either is an ordinary frontend change: commit to
+`main`, and `deploy.yml` rebuilds and publishes the app. Neither one needs
+`supabase functions deploy`.
+
+- **Behaviour is the playbook.** [src/utils/brnyPlaybook.js](./src/utils/brnyPlaybook.js)
+  exports `BRNY_PLAYBOOK` — who brny is, what the CRM's words mean, when to ask
+  instead of act, how to talk. Edit the text and push. The same file's
+  `LEGACY_ESCAPE_HATCHES` holds the few UI-only moves that have no tool
+  (navigation, the canvas, maps and weather, the factsheet).
+- **Skills are the action registry.** Every tool the model may call is defined by
+  `defineAction` in [src/actions/](./src/actions) and exported as `tools` through
+  `toToolDefinitions`. Adding a skill means a new module there plus an entry in
+  that folder's `index.js`. The action's `description` is the whole of the model's
+  instructions, so write it for the model, not for a reader.
+- **`relay-copilot` is plumbing, not behaviour.** The edge function is a
+  passthrough proxy: the client sends `system` and `tools` in the request body and
+  the function forwards them upstream. Redeploy it only to change the pinned
+  model, the upstream host allowlist, the per-seat limits or the usage ledger.
+- **`settings.ai.playbook` is a deliberate per-company override.** Set it by SQL or
+  from the dashboard (there is no UI for it yet) and it *replaces* the playbook body
+  for that company, policy rules and all — so an override is for a tenant that wants
+  different behaviour outright, not for a tweak.
+- **No prompt text belongs in `defaultSettings`.** Anything shipped in
+  `settings.ai` merges into every tenant's settings, and a non-empty override stands
+  in for the playbook: a leftover `systemPrompt` default used to leave brny running
+  ~1.4 KB of legacy prompt while the app looked healthy, and none of the policy
+  reached the model. [src/data/store.test.js](./src/data/store.test.js) asserts the
+  default stays empty.
+
+The paths that are not tool loops — attachment vision, external replies, routine
+writing, the conflict scan — have no playbook of their own. They build from the
+shared `LEGACY_BASE_PROMPT` and are the only place that still reads
+`settings.ai.systemPrompt`.
+
 ## Tech stack
 
 - **Frontend:** Vanilla JS (ES modules) + Vite — no framework tax, fast loads

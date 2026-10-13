@@ -76,10 +76,28 @@ When the user asks for a route, travel time or weather, call the tag AND give th
 const IDENTITY_TAIL = 'Your name is brny (lowercase). Never call yourself Deputy or Relay.';
 
 /**
+ * The base the non-agent paths still build from — attachment vision, external
+ * replies, routine writing and the conflict scan. None of those is a tool loop, so
+ * they get this plus their own context block instead of the playbook.
+ *
+ * It is exported so every one of them falls back to the *same* string. The
+ * playbook is the only prompt that should ever change shape.
+ */
+export const LEGACY_BASE_PROMPT = 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.';
+
+/**
  * Build the system prompt for one conversational turn.
  *
+ * `override` is a *deliberate* custom playbook, set as `settings.ai.playbook`.
+ * Nothing ships one, and that matters: a non-empty override replaces the playbook
+ * body outright, so the whole policy — the Main Task rule, the site rules, the
+ * ask_user policy, HOW TO TALK — never reaches the model while the app still looks
+ * healthy. That is what a leftover `settings.ai.systemPrompt` default used to do
+ * here, so the agent path no longer reads that key and no default is shipped.
+ * See "brny: changing its behaviour and skills" in `DOCS.md`.
+ *
  * @param {object} [options]
- * @param {string} [options.override] A user-set custom system prompt; replaces the playbook text.
+ * @param {string} [options.override] A deliberate custom playbook; replaces the playbook text.
  * @param {string} [options.context]  The live data block from `getSystemContext`, if any.
  * @returns {string}
  */
