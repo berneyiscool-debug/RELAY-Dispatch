@@ -68,12 +68,47 @@ function textReply(value, usage) {
   };
 }
 
-function toolReply(name, input, id = 'tool_1', usage) {
+function toolCallsReply(calls, usage) {
   return {
-    content: [{ type: 'tool_use', id, name, input, caller: { type: 'direct' } }],
+    content: calls.map(({ id, name, input }) => ({ type: 'tool_use', id, name, input, caller: { type: 'direct' } })),
     stop_reason: 'tool_use',
     usage: usage || { input_tokens: 10, output_tokens: 5 },
   };
+}
+
+function toolReply(name, input, id = 'tool_1', usage) {
+  return toolCallsReply([{ id, name, input }], usage);
+}
+
+/**
+ * Anthropic's rule for a tool-calling conversation, checked the way the provider
+ * enforces it: every `tool_use` in an assistant turn has to be answered by a
+ * `tool_result` in the message immediately after it, and the turns alternate.
+ * A conversation that breaks this comes back as a 400 instead of a reply.
+ */
+function wireFaults(body) {
+  const faults = [];
+  body.messages.forEach((message, index) => {
+    if (index > 0 && message.role === body.messages[index - 1].role) {
+      faults.push(`two ${message.role} turns in a row at ${index}`);
+    }
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) return;
+    const ids = message.content.filter((b) => b && b.type === 'tool_use').map((b) => b.id);
+    if (!ids.length) return;
+    const next = body.messages[index + 1];
+    const answered = Array.isArray(next && next.content)
+      ? next.content.filter((b) => b && b.type === 'tool_result').map((b) => b.tool_use_id)
+      : [];
+    for (const id of ids) if (!answered.includes(id)) faults.push(`${id} is unanswered at ${index}`);
+  });
+  return faults;
+}
+
+/** The tool_results the conversation holds for its assistant turn. */
+function answeredCalls(messages) {
+  const assistant = messages.findIndex((m) => m.role === 'assistant' && Array.isArray(m.content));
+  const next = messages[assistant + 1];
+  return (Array.isArray(next && next.content) ? next.content : []).filter((p) => p && p.type === 'tool_result');
 }
 
 /** The last tool_result the loop sent back, with its content parsed when it is JSON. */
@@ -274,6 +309,119 @@ test('a question stops the turn and is answered on the next one', async () => {
     assert.equal(result.content, 'Acme North');
     assert.equal(result.json, null, 'a plain answer is passed through as text');
     assert.equal(result.is_error, undefined, 'an answer is not an error result');
+  });
+});
+
+// A step can ask for several calls at once, and a pause lands in the middle of
+// them. Whatever the model asked for still has to be answered in the user turn
+// that follows it, or the resumed request is rejected with a 400 ("tool_use ids
+// were found without tool_result blocks immediately after") rather than answered.
+
+test('a step that pauses on an approval still answers every call it asked for', async () => {
+  await withCloud(async () => {
+    stubProvider((body, call) => (call === 1
+      ? toolCallsReply([
+        { id: 'tool_1', name: 'get_today', input: {} },
+        { id: 'tool_2', name: 'send_invoice', input: { invoice: 'INV-1001' } },
+        { id: 'tool_3', name: 'get_today', input: {} },
+      ])
+      : textReply('Done.')));
+
+    const first = await runTurn({ prompt: 'Send the invoice, then tell me about today', briefing: false, tools: [] });
+
+    assert.equal(first.status, 'approval_required');
+    assert.deepEqual(wireFaults(requests[0]), []);
+    assert.deepEqual(first.actions.map((a) => a.tool), ['get_today'], 'only the call before the pause ran');
+
+    // The call that stopped the step, and the one behind it, are answered with a
+    // result rather than dropped.
+    const held = answeredCalls(first.messages);
+    assert.deepEqual(held.map((r) => r.tool_use_id), ['tool_1', 'tool_2', 'tool_3']);
+    assert.equal(held[0].is_error, false, 'the call that ran carries its own result');
+    assert.equal(JSON.parse(held[1].content).code, 'awaiting_user');
+    assert.equal(JSON.parse(held[2].content).code, 'not_run', 'a call the pause stopped from running is not reported as done');
+
+    const second = await runTurn({
+      messages: first.messages,
+      briefing: false,
+      tools: [],
+      resume: { toolUseId: 'tool_2', name: 'send_invoice', input: { invoice: 'INV-1001' }, approved: true },
+    });
+
+    assert.equal(second.status, 'done');
+    assert.equal(requests.length, 2);
+    assert.deepEqual(wireFaults(requests[1]), [], 'the resumed request is a conversation the provider accepts');
+
+    // The approval lands in the turn already holding the step's results...
+    const settled = answeredCalls(second.messages);
+    assert.deepEqual(settled.map((r) => r.tool_use_id), ['tool_1', 'tool_2', 'tool_3']);
+    assert.equal(JSON.parse(settled[1].content).code, 'not_found', 'the real result replaced the placeholder');
+    // ...and not in a second user turn of its own.
+    assert.equal(second.messages.filter((m) => m.role === 'user').length, 2);
+  });
+});
+
+test('a question leaves the calls behind it answered, not dropped', async () => {
+  await withCloud(async () => {
+    stubProvider((body, call) => (call === 1
+      ? toolCallsReply([
+        { id: 'tool_1', name: 'ask_user', input: { question: 'Which Acme did you mean?', options: ['Acme North', 'Acme South'] } },
+        { id: 'tool_2', name: 'get_today', input: {} },
+      ])
+      : textReply('Quoted for Acme North.')));
+
+    const first = await runTurn({ prompt: 'Quote the Acme job', briefing: false, tools: [] });
+
+    assert.equal(first.status, 'ask_user');
+    assert.deepEqual(answeredCalls(first.messages).map((r) => r.tool_use_id), ['tool_1', 'tool_2']);
+    assert.equal(first.actions.length, 1, 'the call behind the question never ran');
+
+    const second = await runTurn({
+      messages: first.messages,
+      briefing: false,
+      tools: [],
+      resume: { toolUseId: 'tool_1', answer: 'Acme North' },
+    });
+
+    assert.equal(second.status, 'done');
+    assert.equal(second.text, 'Quoted for Acme North.');
+    assert.deepEqual(wireFaults(requests[1]), []);
+
+    const settled = answeredCalls(second.messages);
+    assert.equal(settled[0].content, 'Acme North', 'the answer replaces the placeholder where it stood');
+    assert.equal(settled[0].is_error, undefined, 'an answer is not an error result');
+    assert.equal(JSON.parse(settled[1].content).code, 'not_run');
+    assert.equal(second.messages.filter((m) => m.role === 'user').length, 2);
+  });
+});
+
+test('a turn stopped between calls still answers the ones it did not run', async () => {
+  await withCloud(async () => {
+    stubProvider(toolCallsReply([
+      { id: 'tool_1', name: 'get_today', input: {} },
+      { id: 'tool_2', name: 'get_today', input: {} },
+    ]));
+    const controller = new AbortController();
+
+    const turn = await runTurn({
+      prompt: 'Anything?',
+      briefing: false,
+      tools: [],
+      signal: controller.signal,
+      // The stop button lands while the step is mid-flight: the first call has
+      // run, the second has not.
+      onEvent: (event) => { if (event.type === 'tool') controller.abort(); },
+    });
+
+    assert.equal(turn.status, 'aborted');
+    assert.equal(turn.steps, 1);
+    assert.equal(requests.length, 1, 'a stopped turn asks the provider nothing more');
+    assert.deepEqual(wireFaults(requests[0]), []);
+
+    const settled = answeredCalls(turn.messages);
+    assert.deepEqual(settled.map((r) => r.tool_use_id), ['tool_1', 'tool_2']);
+    assert.equal(settled[0].is_error, false);
+    assert.equal(JSON.parse(settled[1].content).code, 'not_run');
   });
 });
 

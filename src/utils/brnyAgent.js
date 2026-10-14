@@ -12,6 +12,11 @@
  * - A tool failure is never swallowed. It goes back to the model as an `is_error`
  *   tool result so it can correct itself, and it is counted, so a turn that
  *   mostly failed cannot be reported as a success.
+ * - Every call the model makes is answered in the user turn that follows it, even
+ *   the ones a pause stopped from running. The provider rejects a conversation
+ *   that leaves a `tool_use` block without a `tool_result`, and a pause is
+ *   exactly when the loop stops part-way through a step's calls, so a paused turn
+ *   writes a placeholder result that the resume replaces with the real one.
  * - The turn ends on its own only when it has prose, a question, an approval, or
  *   a real failure. The 12-step cap exists so a model looping on the same call
  *   cannot run up a bill; it is user-visible, not silent.
@@ -95,6 +100,52 @@ function cancelledResult(toolUseId, reason) {
   };
 }
 
+/**
+ * The result for a call this turn did not finish.
+ *
+ * The provider accepts a conversation only when every `tool_use` block in an
+ * assistant turn is answered in the user turn directly after it, so a step that
+ * pauses on a question or an approval has to answer the calls it left behind -
+ * and the one it stopped on - even though there is no outcome yet. The pause
+ * point is settled by the resume, which replaces this with the real result; the
+ * calls behind it never ran and are answered as such so the model can re-issue
+ * them, rather than being reported as done.
+ */
+function unansweredResult(toolUseId, code, message) {
+  return {
+    type: 'tool_result',
+    tool_use_id: toolUseId,
+    is_error: true,
+    content: JSON.stringify({ code, message }),
+  };
+}
+
+/**
+ * Put a resume's tool result where the provider expects it: in the user turn
+ * that already answers the call it belongs to.
+ *
+ * A second user turn would leave the call unanswered in the message immediately
+ * after the assistant turn, which the provider rejects - and it would be a second
+ * turn of the same role in a row. So the placeholder the pause left in that turn
+ * is what gets replaced, and an answer with no placeholder to replace joins the
+ * results already there. Only a history whose last turn is not a user turn gets
+ * a turn of its own, as the resume always did.
+ */
+function settleResumedResult(turn, message) {
+  const lastIndex = turn.length - 1;
+  const last = turn[lastIndex];
+  const content = last && last.role === 'user' && Array.isArray(last.content) ? last.content : null;
+  if (!content) {
+    turn.push({ role: 'user', content: [message] });
+    return;
+  }
+  const placeholder = content.findIndex((part) => part && part.type === 'tool_result' && part.tool_use_id === message.tool_use_id);
+  const settled = placeholder < 0
+    ? content.concat(message)
+    : content.map((part, index) => (index === placeholder ? message : part));
+  turn[lastIndex] = { ...last, content: settled };
+}
+
 /** One short line of grounding so the model does not have to spend a step asking what day it is. */
 async function buildBriefing(baseCtx) {
   const { outcome, error } = await executeTool('get_today', {}, baseCtx);
@@ -170,7 +221,7 @@ export async function runTurn(options = {}) {
     const resumed = await resumeCall(options.resume, baseCtx, { actions, failures, approvals, emit });
     if (resumed.status) status = resumed.status;
     if (resumed.error) error = resumed.error;
-    if (resumed.message) turn.push({ role: 'user', content: [resumed.message] });
+    if (resumed.message) settleResumedResult(turn, resumed.message);
   }
 
   if (options.prompt) turn.push({ role: 'user', content: String(options.prompt) });
@@ -240,7 +291,9 @@ export async function runTurn(options = {}) {
     if (!calls.length) break;
 
     const results = [];
-    for (const call of calls) {
+    let stoppedAt = -1;
+    for (let index = 0; index < calls.length; index += 1) {
+      const call = calls[index];
       if (signal && signal.aborted) {
         status = 'aborted';
         break;
@@ -248,6 +301,7 @@ export async function runTurn(options = {}) {
       const handled = await handleCall(call, steps, baseCtx, { actions, failures, questions, approvals, approve, emit });
       if (handled.stop) {
         status = handled.stop;
+        stoppedAt = index;
         if (handled.pendingQuestion) pendingQuestion = handled.pendingQuestion;
         if (handled.pendingApproval) pendingApproval = handled.pendingApproval;
         break;
@@ -255,8 +309,16 @@ export async function runTurn(options = {}) {
       results.push(handled.toolResult);
     }
 
-    // Anything already run must still be answered, or the provider rejects the
-    // next request for a tool call left without a result.
+    // Every call in the assistant turn is answered here, run or not: the provider
+    // matches a result to the call it answers and rejects a request in which any
+    // tool_use block is left without one, so a pause that stopped this step
+    // part-way through its calls would otherwise fail on the way back in.
+    if (stoppedAt >= 0) {
+      results.push(unansweredResult(calls[stoppedAt].id, 'awaiting_user', 'Waiting for the user to answer or approve this call.'));
+    }
+    for (let index = results.length; index < calls.length; index += 1) {
+      results.push(unansweredResult(calls[index].id, 'not_run', 'Not run: this step stopped at an earlier call.'));
+    }
     if (results.length) turn.push({ role: 'user', content: results });
   }
 
