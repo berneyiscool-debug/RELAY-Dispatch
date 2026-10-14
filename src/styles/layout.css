@@ -4296,6 +4296,23 @@ body.relay-assistant-open .relay-topbar-actions {
   font-size: 13px;
   text-align: center;
 }
+
+/* ============================================
+   Schedule — Presence Panel (who is clocked in)
+   ============================================ */
+#presence-panel {
+  width: 200px;
+  flex: 0 0 200px;
+}
+/* The Electron window sets no minimum width, so on a narrow window give the
+   calendar its room back instead of letting the panel dominate it. */
+@media (max-width: 1100px) {
+  #presence-panel {
+    width: 168px;
+    flex: 0 0 168px;
+  }
+}
+
 .dash-period { display: flex; align-items: center; gap: 8px; }
 .dash-asof { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
 .kpi-tile .kpi-loading { letter-spacing: 2px; }

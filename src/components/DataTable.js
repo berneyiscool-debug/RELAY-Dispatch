@@ -188,7 +188,7 @@ export function resolveDropGroup(rows, index, dropTarget = null) {
   return null;
 }
 
-export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc', groupBy = null }) {
+export function createDataTable({ columns, data, onRowClick, getId, emptyMessage = 'No records found', emptyIcon = 'inbox', selectable = false, onSelectionChange = null, defaultSortKey = null, defaultSortDir = 'desc', groupBy = null, rowClass = null }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'card data-table-card';
   wrapper.style.cssText = 'width:100%; max-width:100%; overflow:hidden;';
@@ -408,7 +408,8 @@ export function createDataTable({ columns, data, onRowClick, getId, emptyMessage
 
     function rowHtml(row, rowId) {
       const isSelected = selectedIds.has(rowId);
-      let html = `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}">`;
+      const customClass = rowClass ? rowClass(row) : '';
+      let html = `<tr data-id="${escapeHTML(rowId)}" style="cursor:pointer" class="${isSelected ? 'selected-row' : ''}${customClass ? ' ' + escapeHTML(customClass) : ''}">`;
       
       if (selectable) {
         html += `<td class="dt-select-cell">
