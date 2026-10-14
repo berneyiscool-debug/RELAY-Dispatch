@@ -29,6 +29,7 @@ import {
   KPIS, KPI_IDS, KPI_GROUPS, linkFilter, kpiPermission, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
   formatKpiValue, formatKpiDelta, kpiSubline,
 } from '../utils/kpis.js';
+import { ACTION_WIDGETS, wireActionWidgets, openRevenueGoalEditor } from './dashboard/actionWidgets.js';
 
 // Permanent quick actions, icon-only (name on hover). They're rendered as the
 // page's header actions, so the app shell moves them into the breadcrumb bar at
@@ -202,6 +203,29 @@ const WIDGET_DEPS = {
   'notifications-widget': ['notifications'],
   'daily-todo':           ['todos'],
 };
+
+// The action widgets (dashboard/actionWidgets.js) bring their own title, size,
+// permission and the collections they read.
+Object.entries(ACTION_WIDGETS).forEach(([id, w]) => {
+  MODULES[id] = { title: w.title, defaultW: w.defaultW, defaultH: w.defaultH, configurable: !!w.configurable, render: w.render };
+  WIDGET_PERMS[id] = w.perm;
+  WIDGET_DEPS[id] = w.deps;
+});
+
+// Set a revenue-goal widget's monthly target, save it and repaint that widget.
+function editRevenueGoal(instanceId) {
+  const item = live && live.widgets.find(w => w.instanceId === instanceId);
+  if (!item) return;
+  openRevenueGoalEditor(item.config && item.config.target, (target) => {
+    item.config = { ...item.config, target };
+    if (!isEditMode) saveLayout();
+    const body = document.querySelector(`.dash-widget[data-instance-id="${instanceId}"] .card-body`);
+    if (body) {
+      body.innerHTML = MODULES[item.id].render(live.data || {}, item);
+      wireWidgetControls(body, live.data || {});
+    }
+  });
+}
 
 // live.data only mirrors a few collections; map a store collection to its key.
 function dataKeyForCollection(coll) {
@@ -1599,6 +1623,9 @@ function resolveOverlap(item) {
 
 // ── Inner widget interactions (preserved verbatim from the grid version) ─────────
 function wireWidgetControls(grid, data) {
+  // Action widgets: resend / remind / set-goal buttons
+  wireActionWidgets(grid, { onSetGoal: editRevenueGoal });
+
   // Configure button (always available if widget is configurable)
   grid.querySelectorAll('.btn-configure').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -1606,6 +1633,8 @@ function wireWidgetControls(grid, data) {
       const instId = e.currentTarget.dataset.instanceId;
       const item = live.widgets.find(i => i.instanceId === instId);
       if (!item) return;
+
+      if (item.id === 'revenue-goal') { editRevenueGoal(instId); return; }
 
       if (item.id === 'pinned-job') {
         const jobs = data.jobs;
@@ -2073,7 +2102,9 @@ function showEditHeader(container, viewport, world, guides, data) {
 function openAddWidgetModal(container, viewport, world, guides, data) {
   const env = { staffCount: staffCount() };
   const kpiIds = OFFERED_KPIS.filter(id => widgetAllowed(kpiModuleId(id)) && (!KPIS[id].available || KPIS[id].available(env)));
-  const widgets = Object.entries(MODULES).filter(([id, mod]) => !mod.kpi && widgetAllowed(id));
+  const allowedWidgets = Object.entries(MODULES).filter(([id, mod]) => !mod.kpi && widgetAllowed(id));
+  const actionWidgets = allowedWidgets.filter(([id]) => ACTION_WIDGETS[id]);
+  const widgets = allowedWidgets.filter(([id]) => !ACTION_WIDGETS[id]);
   const onCanvas = new Set(live.widgets.map(w => w.id));
   // Live preview values from the user's own data, for the selected period. Cloud
   // accounts ask the dashboard-kpis function and fill the values in when it answers.
@@ -2120,6 +2151,8 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
   content.innerHTML = `
     <div class="widget-picker">
       ${kpiSection ? `<div class="widget-picker-title">KPI cards</div>${kpiSection}` : ''}
+      ${actionWidgets.length ? `<div class="widget-picker-title">Action widgets</div>
+      <div class="widget-picker-grid">${actionWidgets.map(widgetCard).join('')}</div>` : ''}
       <div class="widget-picker-title">Widgets</div>
       <div class="widget-picker-grid">${widgets.map(widgetCard).join('')}</div>
     </div>`;
