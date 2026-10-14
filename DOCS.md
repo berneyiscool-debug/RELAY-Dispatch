@@ -174,6 +174,19 @@ the client bundle. Changing either is an ordinary frontend change: commit to
   passthrough proxy: the client sends `system` and `tools` in the request body and
   the function forwards them upstream. Redeploy it only to change the pinned
   model, the upstream host allowlist, the per-seat limits or the usage ledger.
+- **The wire contract is the loop's, not the proxy's.**
+  [src/utils/brnyAgent.js](./src/utils/brnyAgent.js) builds the conversation, and
+  the provider rejects one in which any `tool_use` block in an assistant turn has
+  no `tool_result` in the user turn immediately after it (`400 … tool_use ids were
+  found without tool_result blocks`). A step pauses part-way through its calls on a
+  question or an approval, so every call in that step is answered where it stands:
+  the one it stopped on as `awaiting_user`, the ones behind it as `not_run` — they
+  never ran, and the model is told so it can re-issue them rather than read as done.
+  The resume replaces the stopping call's placeholder in that same turn, because a
+  second user turn would leave the call unanswered in the message right after the
+  assistant turn. Nothing downstream repairs the history, so keep that invariant:
+  [src/utils/brnyAgent.test.js](./src/utils/brnyAgent.test.js) replays a paused step
+  and checks the request the resume sends.
 - **`settings.ai.playbook` is a deliberate per-company override.** Set it by SQL or
   from the dashboard (there is no UI for it yet) and it *replaces* the playbook body
   for that company, policy rules and all — so an override is for a tenant that wants
