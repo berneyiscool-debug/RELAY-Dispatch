@@ -10,6 +10,9 @@ import { supabase } from '../utils/supabase.js';
 import { FLAGS } from '../utils/flags.js';
 import { setSessionUser } from './auth/session.js';
 import { DESKTOP_RELEASES_URL, bindInstallerDownload, isDesktopBuild } from '../utils/desktopApp.js';
+import { getBrnyPersonality } from '../utils/brnyPersonalities.js';
+import { getUserBrnyPersonality, setUserBrnyPersonality } from '../utils/brnyPersonalityPref.js';
+import { brnyPersonalityPickerHTML, wireBrnyPersonalityPicker } from '../components/brnyPersonalityPicker.js';
 
 const PRESET_AVATAR_COLORS = [
   '#FF5C00', // Orange
@@ -81,6 +84,10 @@ export function renderProfile(container) {
     const enabledKey = `relay_factsheet_enabled_${currentUser.id || 'default'}`;
     const factsheetVal = localStorage.getItem(factsheetKey) || '';
     const memoryEnabled = localStorage.getItem(enabledKey) !== 'false';
+
+    // Per user, not per company: two people here can want a different voice, and most
+    // roles never reach Settings. See utils/brnyPersonalityPref.js.
+    const personality = getUserBrnyPersonality(currentUser.id);
 
     container.innerHTML = `
       <style>
@@ -323,8 +330,20 @@ export function renderProfile(container) {
           </div>
         </div>
 
+        <!-- Section 5: brny's Personality (a personal preference, not a company setting) -->
+        <div class="profile-section">
+          <div class="profile-section-header">
+            <h2 class="profile-section-title">brny's Personality</h2>
+            <p class="profile-section-desc">How brny talks to you. This is your own choice, and it is not shared with the rest of the company — it changes brny's wording only, never what brny is allowed to do.</p>
+          </div>
+
+          <div id="profile-brny-personality" style="max-width:800px;">
+            ${brnyPersonalityPickerHTML(personality)}
+          </div>
+        </div>
+
         ${isDesktopBuild() ? '' : `
-        <!-- Section 5: Desktop App -->
+        <!-- Section 6: Desktop App -->
         <div class="profile-section">
           <div class="profile-section-header">
             <h2 class="profile-section-title">Desktop App</h2>
@@ -578,6 +597,23 @@ export function renderProfile(container) {
 
         window.dispatchEvent(new Event('storage'));
         showToast('AI memory settings saved successfully.', 'success');
+      });
+    }
+
+    // 7. brny's personality. Saved the moment a card is picked rather than behind a Save
+    // button, so the page is deliberately not re-rendered here: doing so would wipe any
+    // half-typed name, phone number or factsheet above.
+    const personalitySection = container.querySelector('#profile-brny-personality');
+
+    if (personalitySection) {
+      wireBrnyPersonalityPicker(personalitySection, {
+        selectedId: personality,
+        onSelect: (id) => {
+          const saved = setUserBrnyPersonality(currentUser.id, id);
+          window.dispatchEvent(new Event('storage'));
+          showToast(`brny will talk in the ${getBrnyPersonality(saved).name} style from now on.`, 'success');
+          return saved;
+        }
       });
     }
   };

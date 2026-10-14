@@ -121,9 +121,10 @@ function playbookFor(personality) {
  * here, so the agent path no longer reads that key and no default is shipped.
  * See "brny: changing its behaviour and skills" in `DOCS.md`.
  *
- * `personality` is the voice layer, set as `settings.ai.personality`. It only ever
- * rewrites the tone bullet, so an override still beats it and the policy cannot be
- * lost to a preset. An unknown or absent value is the shipped default.
+ * `personality` is the voice layer, read per user from My Profile (see
+ * `src/utils/brnyPersonalityPref.js`). It only ever rewrites the tone bullet, so an
+ * override still beats it and the policy cannot be lost to a preset. An unknown or
+ * absent value is the shipped default.
  *
  * @param {object} [options]
  * @param {string} [options.override]    A deliberate custom playbook; replaces the playbook text.

@@ -11,7 +11,7 @@
  * both sit in the agent path, so a cycle would be silently tolerated and then bite
  * whenever the load order changed.
  *
- * `example` is UI-only — it is a preview for the Settings card and never enters a
+ * `example` is UI-only — it is a preview for the picker card and never enters a
  * prompt.
  */
 

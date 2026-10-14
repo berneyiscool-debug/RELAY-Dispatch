@@ -29,9 +29,12 @@ export const TAB_ALIASES = {
   email_templates: { tab: 'email' },
 
   // The model provider and credentials are RELAY's own, so the API sub-tab is
-  // gone. The old AI assistant tab now opens brny's own tab.
+  // gone. brny's personality moved to My Profile because it is a per-user choice
+  // that most roles can't reach Settings to make, so `assistant` is only kept as a
+  // landing spot for old links rather than a tab of its own.
   api_keys: { tab: 'company' },
-  ai_assistant: { tab: 'assistant' },
+  ai_assistant: { tab: 'company' },
+  assistant: { tab: 'company' },
 
   // Folder Sync and Local Data Backup described the same directory handle.
   folder_sync: { tab: 'local_storage' }

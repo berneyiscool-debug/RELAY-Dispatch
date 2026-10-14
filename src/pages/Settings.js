@@ -20,7 +20,6 @@ import { addEmailDomain, getEmailDomain, verifyEmailDomain, getSenderInfo, email
 import { EMAIL_TEMPLATES } from '../utils/emailTemplates.js';
 import { storageGet, storageSet } from '../utils/persist.js';
 import { resolveSettingsTab, SETTINGS_DEFAULT_TAB } from '../utils/settingsTabs.js';
-import { BRNY_PERSONALITIES, getBrnyPersonality } from '../utils/brnyPersonalities.js';
 import { attachAddressAutocomplete } from '../utils/placesAutocomplete.js';
 import { renderLeadProfileSetup } from './leads/leadProfile.js';
 import { hashPassword, verifyPassword } from './auth/password.js';
@@ -332,16 +331,10 @@ export function renderSettings(container) {
       return;
     }
 
-    if (activeTab === 'assistant') {
-      renderAssistantTab(tc);
-      return;
-    }
-
     if (activeTab === 'email') {
       renderEmailTab(tc);
       return;
     }
-
 
     if (activeTab === 'cost_centers') {
       // Unreachable while cost_centers is in COMING_SOON_SETTINGS_TABS (the guard
@@ -3251,73 +3244,6 @@ export function renderSettings(container) {
         } catch (err) {
           showToast(err.message || 'Could not change plan', 'error');
           e.currentTarget.disabled = false;
-        }
-      });
-    });
-  }
-
-  // brny's personality is the voice layer only: the playbook's rules — what it may
-  // do, and how it has to report hours, tasks and questions — are not selectable.
-  // Stored as settings.ai.personality (companies.settings JSONB, see
-  // brnyPersonalities.js); an explicit custom playbook still wins over it.
-  function renderAssistantTab(tc) {
-    const current = getBrnyPersonality((store.getSettings() || {}).ai?.personality);
-    const hasCustomPlaybook = !!String(((store.getSettings() || {}).ai || {}).playbook || '').trim();
-
-    tc.innerHTML = `
-      <div class="card" style="max-width:100%">
-        <div class="card-header"><h4>brny Assistant</h4></div>
-        <div class="card-body">
-          <p style="color:var(--text-secondary); line-height:1.5; margin:0 0 var(--space-lg);">
-            Choose how brny talks to you. This changes its voice only — what it is allowed to
-            do, and the way it reports hours, tasks and questions, stay exactly the same.
-          </p>
-          ${hasCustomPlaybook ? `
-          <div style="display:flex;align-items:center;gap:10px;background:var(--color-warning-bg,#fff7ed);border:1px solid var(--color-warning);border-radius:8px;padding:12px 14px;margin-bottom:var(--space-lg);">
-            <span class="material-icons-outlined" style="color:var(--color-warning);">edit_note</span>
-            <div style="color:var(--text-secondary); line-height:1.4;">You have custom brny instructions saved, and those take priority — the personality below is used for the answers that aren't covered by them.</div>
-          </div>` : ''}
-          <div class="settings-stack" role="radiogroup" aria-label="brny personality">
-            ${BRNY_PERSONALITIES.map((p) => {
-              const isCurrent = p.id === current.id;
-              return `
-              <div class="card" role="radio" aria-checked="${isCurrent}" tabindex="0" data-personality="${p.id}"
-                   style="max-width:100%; cursor:pointer; ${isCurrent ? 'border:2px solid var(--color-accent,#FF5C00);' : ''}">
-                <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-                  <h4 style="margin:0">${escapeHTML(p.name)}</h4>
-                  ${isCurrent ? '<span style="font-weight:700;letter-spacing:.5px;color:var(--color-accent,#FF5C00);">CURRENT</span>' : ''}
-                </div>
-                <div class="card-body">
-                  <div style="color:var(--text-secondary); line-height:1.5;">${escapeHTML(p.summary)}</div>
-                  <div style="margin-top:10px; padding-left:12px; border-left:2px solid var(--border-color); color:var(--text-tertiary); line-height:1.5;">${escapeHTML(p.example)}</div>
-                </div>
-              </div>`;
-            }).join('')}
-          </div>
-        </div>
-      </div>`;
-
-    const apply = async (id) => {
-      if (id === current.id) return;
-      try {
-        const s = store.getSettings() || {};
-        s.ai = { ...(s.ai || {}), personality: id };
-        await store.saveSettings(s);
-        showToast(`brny will use the ${getBrnyPersonality(id).name} personality`, 'success');
-        window.dispatchEvent(new CustomEvent('relay:settings-updated'));
-        renderAssistantTab(tc);
-      } catch (err) {
-        console.error('Error saving brny personality:', err);
-        showToast('Could not save personality', 'error');
-      }
-    };
-
-    tc.querySelectorAll('[data-personality]').forEach((card) => {
-      card.addEventListener('click', () => apply(card.dataset.personality));
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          apply(card.dataset.personality);
         }
       });
     });
