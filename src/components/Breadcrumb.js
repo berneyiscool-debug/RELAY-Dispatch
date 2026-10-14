@@ -21,15 +21,10 @@ export function createBreadcrumb(path) {
   const container = document.getElementById('breadcrumb');
   if (!container) return;
 
-  if (path === '/') {
-    container.style.display = 'none';
-    return;
-  }
-
   container.style.display = 'flex';
   container.style.justifyContent = 'space-between';
   container.style.alignItems = 'center';
-  
+
   const parts = path.split('/').filter(Boolean);
 
   let linksHtml = `
@@ -37,6 +32,11 @@ export function createBreadcrumb(path) {
       <span class="material-icons-outlined" style="font-size:14px">home</span>
     </span>
   `;
+  // The dashboard shows the bar too (it holds the permanent quick actions), as
+  // home › Dashboard like every other page.
+  if (path === '/') {
+    linksHtml += `<span class="breadcrumb-separator">›</span><span class="breadcrumb-item current">Dashboard</span>`;
+  }
 
   let currentPath = '';
   parts.forEach((part, i) => {

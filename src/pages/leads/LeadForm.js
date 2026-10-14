@@ -7,6 +7,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { isCloudUser } from '../../utils/aiTier.js';
+import { LEAD_STAGES, leadStageBadge, leadDatePart, logLeadStageChange, notifyLeadOwner } from './leadStages.js';
 
 export function renderLeadForm(container, { id, origin }) {
   const isEdit = id && id !== 'new';
@@ -19,12 +20,21 @@ export function renderLeadForm(container, { id, origin }) {
   // local workspace can't reach, so ignore it there.
   const defaultOrigin = lead.origin || (isCloudUser() ? origin : null) || 'Internal';
   const customers = store.getAll('customers');
+  const technicians = (store.getAll('technicians') || []).filter(t => !t.deactivated);
+  // A lead can carry an owner that isn't in the local technicians list (cloud
+  // workspace, or a technician since removed). Keep it selectable so saving an
+  // unrelated field can't silently clear the assignment.
+  const ownerName = lead.salesRepName || lead.sales_rep_name || '';
+  const orphanOwner = Boolean(lead.assignedTo) && !technicians.some(t => t.id === lead.assignedTo);
 
   container.innerHTML = `
     <div class="page-header"><h1>${isEdit ? 'Edit Lead' : 'New Lead'}</h1></div>
-    <div class="card" style="max-width:760px">
-      <div class="card-body">
-        <form id="lead-form">
+    <form id="lead-form" class="lead-form" style="max-width:900px">
+      <section class="card">
+        <div class="card-header">
+          <h4><span class="material-icons-outlined">badge</span> Lead Details</h4>
+        </div>
+        <div class="card-body">
           <div class="form-group">
             <label class="form-label">Title *</label>
             <input class="form-input" name="title" value="${escapeHTML(lead.title || '')}" required placeholder="e.g. Commercial Switchboard Upgrade" />
@@ -60,11 +70,20 @@ export function renderLeadForm(container, { id, origin }) {
               <input class="form-input" id="lead-email" type="email" name="email" value="${escapeHTML(lead.email || '')}" placeholder="e.g. contact@example.com" />
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h4><span class="material-icons-outlined">trending_up</span> Pipeline &amp; Value</h4>
+          ${isEdit && lead.status ? `<span class="badge ${leadStageBadge(lead.status)}">${escapeHTML(lead.status)}</span>` : ''}
+        </div>
+        <div class="card-body">
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Status</label>
               <select class="form-select" name="status">
-                ${['New','Contacted','Qualified','Proposal','Negotiation','Won','Lost'].map(s => `<option ${lead.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                ${LEAD_STAGES.map(s => `<option ${lead.status === s ? 'selected' : ''}>${s}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -84,6 +103,36 @@ export function renderLeadForm(container, { id, origin }) {
               <input class="form-input" type="number" name="value" value="${escapeHTML(lead.value ?? '')}" step="0.01" placeholder="e.g. 12000" />
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h4><span class="material-icons-outlined">person</span> Ownership</h4>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Owner</label>
+              <select class="form-select" name="assignedTo" id="lead-owner-select">
+                <option value="">Unassigned</option>
+                ${orphanOwner ? `<option value="${lead.assignedTo}" selected>${escapeHTML(ownerName || 'Former owner')}</option>` : ''}
+                ${technicians.map(t => `<option value="${t.id}" ${lead.assignedTo === t.id ? 'selected' : ''}>${escapeHTML(t.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Next Action</label>
+              <input class="form-input" type="date" name="nextActionDate" id="lead-next-action" value="${leadDatePart(lead.nextActionDate)}" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h4><span class="material-icons-outlined">assignment</span> Scope &amp; Notes</h4>
+        </div>
+        <div class="card-body">
           <div class="form-group">
             <label class="form-label">Project Requirements</label>
             <textarea class="form-textarea" name="requirements" placeholder="Enter detailed project scope or client requirements..." style="min-height:100px">${escapeHTML(lead.requirements || '')}</textarea>
@@ -92,13 +141,14 @@ export function renderLeadForm(container, { id, origin }) {
             <label class="form-label">Notes</label>
             <textarea class="form-textarea" name="description" placeholder="Internal pipeline notes...">${escapeHTML(lead.description || '')}</textarea>
           </div>
-        </form>
-      </div>
+        </div>
+      </section>
+
       <div class="card-footer">
-        <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
-        <button class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> ${isEdit ? 'Update' : 'Create'} Lead</button>
+        <button type="button" class="btn btn-secondary" id="btn-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save"><span class="material-icons-outlined">save</span> ${isEdit ? 'Update' : 'Create'} Lead</button>
       </div>
-    </div>
+    </form>
   `;
 
   const customerSelect = container.querySelector('#lead-customer-select');
@@ -121,8 +171,29 @@ export function renderLeadForm(container, { id, origin }) {
     const cust = customers.find(c => c.id === data.customerId);
     data.customerName = cust ? (cust.company || `${cust.firstName || ''} ${cust.lastName || ''}`.trim()) : '';
     data.contactName = cust ? `${cust.firstName} ${cust.lastName}` : '';
+    const owner = technicians.find(t => t.id === data.assignedTo);
+    data.assignedToName = owner ? owner.name : (data.assignedTo === lead.assignedTo ? ownerName : '');
+    data.salesRepName = owner ? owner.name : (data.assignedTo ? ownerName : '');
 
-    if (isEdit) { store.update('leads', id, data); showToast('Lead updated', 'success'); router.navigate(`/leads/${id}`); }
-    else { const n = store.create('leads', data); showToast('Lead created', 'success'); router.navigate(`/leads/${n.id}`); }
+    const prevStatus = lead.status || 'New';
+    const nextStatus = data.status || 'New';
+    const statusChanged = isEdit && nextStatus !== prevStatus;
+    if (statusChanged) data.stageHistory = logLeadStageChange(lead, prevStatus, nextStatus);
+
+    if (isEdit) {
+      store.update('leads', id, data);
+      if (statusChanged) {
+        notifyLeadOwner({ ...lead, ...data }, {
+          title: 'Lead stage updated',
+          message: `${data.title || 'Lead'} moved from ${prevStatus} to ${nextStatus}.`,
+        });
+      }
+      showToast('Lead updated', 'success');
+      router.navigate(`/leads/${id}`);
+    } else {
+      const n = store.create('leads', data);
+      showToast('Lead created', 'success');
+      router.navigate(`/leads/${n.id}`);
+    }
   });
 }

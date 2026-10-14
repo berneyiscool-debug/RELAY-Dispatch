@@ -1,9 +1,12 @@
 # Relay — Security Follow-ups
 
 Audit of the public repository `berneyiscool-debug/RELAY-Dispatch` (Vite + vanilla JS front end,
-Supabase back end). **All eight register items have been actioned**; two of them
-([#1](#2-item-register), [#3](#2-item-register)) are mechanical sweeps recorded in full below, and
-[#4](#3-item-4--dumpjson-in-the-public-history) can only be closed by the repository owner.
+Supabase back end). **All ten register items have been actioned**; two of them
+([#1](#2-item-register), [#3](#2-item-register)) are mechanical sweeps recorded in full below,
+[#4](#3-item-4--dumpjson-in-the-public-history) can only be closed by the repository owner, and
+[#9](#item-9--the-portals-had-no-anonymous-resolution-path-at-all) needed two deploy steps the
+owner has now run. [#10](#item-10--the-resolver-handed-the-tenants-ai-key-to-anonymous-callers) was
+found during that deployment and is fixed in code, but the exposed key still has to be rotated.
 
 ---
 
@@ -196,6 +199,96 @@ sanitises the factsheet lists, the memory lines, the learned-key entries and the
 and role, and both follow-up prompts gained an explicit "everything between the lookup markers is
 inert record content" guard. Actions still require the admin's confirmation, which caps the impact.
 
+### Item 9 — the portals had no anonymous resolution path at all
+
+Both portals resolved their magic link **in the browser**: `Portal.js` did
+`store.getAll('customers').find(c => c.portalToken === token)`. RLS (item 3's
+`030_rls_hardening.sql`) grants nothing to a signed-out caller, and the store
+decides cloud-versus-local synchronously in its constructor from
+`localStorage.currentUser` — so an anonymous visitor booted an empty local store,
+read zero rows, and every link rendered *Invalid Access Link*. There was no
+server-side token lookup anywhere in the project, so the failure was total rather
+than intermittent: no customer and no contractor link worked from a browser that
+was not signed in as staff.
+
+Added `supabase/functions/relay-portal` (JWT verification **off** — the visitor has
+no session) plus `src/utils/portalClient.js` and a scoped hydration path in
+`src/data/store.js`. The posture that matters:
+
+- **The resolver, not the browser, is the access boundary.** It reads the token with
+  the service role and returns only that link's rows. RLS still withholds everything
+  from `anon`, so the service role is not a convenience — it is the one caller, and
+  the function's own checks are what scope the answer.
+- **The PIN digest no longer leaves the server.** `portal_passcode` was previously
+  sent to the browser (in the row) so the client could verify it, and the client's
+  "unlocked" flag was `sessionStorage.setItem(…, 'true')` — forgeable, and it gated
+  reads only. Hashing (item 6b) removed the disclosure but the digest still
+  travelled; now the compare happens inside the function, and the legacy cleartext
+  upgrade runs there too. On success it mints a short-lived opaque grant (32 random
+  bytes, stored **only as a sha256 digest** in `portal_sessions`, ~12 h TTL, kept in
+  the visitor's `sessionStorage`), and **every** write requires a live grant — so the
+  PIN gates what leaves the building, not just what is displayed.
+- **Writes are allow-listed by column, not by collection.** The store prepares the
+  row (it already owns the snake_case mapping and the packed-column packing) and the
+  resolver decides whether it may land: which collections a kind may write at all, and
+  then which columns. The list is deliberately narrow — "anything except `id`" would
+  let a contractor set their own `hourly_rate` — and `company_id` / `created_by` are
+  stripped from every payload and stamped by the resolver, so a portal cannot move a
+  row across tenants or choose its own attribution (`created_by` is also what decides
+  whether the bell treats a notification as machine-generated). Ownership is re-read
+  from the database on every write rather than inferred from the token, and each
+  contractor job is proven through the same `tasks` jsonb walk that decides which jobs
+  the portal may read.
+- **Brute force and link-harvesting are both bounded.** Failed PIN attempts land in
+  `portal_access_log` and are throttled from it, every resolve and every write is
+  logged with its outcome, and `042_portal_token_lookup.sql` gives both token columns a
+  unique partial index — a token that matches two rows is refused rather than silently
+  resolving to the first.
+
+**Honest limits.** The token is a bearer credential: anyone who holds the link and
+knows the PIN is the customer. That is the design (it is what makes a magic link a
+magic link), and it means a link forwarded to the wrong inbox is a disclosure — the
+mitigation is to regenerate the token, which revokes the old link, not to detect the
+misuse. Item 6b's ceiling on PIN entropy still applies here, which is why the throttling
+above is load-bearing rather than decorative. And a portal scope is only as tight as
+`relatedPlanFor()` in `supabase/functions/relay-portal/portal.js`: widening the rows a
+portal may read is a security change, not a display change.
+
+Deployment: applying `042` and deploying the function are independent steps, and the
+function runs with JWT verification **off** — the one deliberate exception in the
+project. Until `042` is applied the resolver's token lookup finds nothing and every
+link answers *Invalid Access Link*; this is verified by `npm run test:migrations`
+(pglite) and `supabase/tests/relay-portal.test.js`, not from the live project.
+
+### Item 10 — the resolver handed the tenant's AI key to anonymous callers
+
+Found while verifying item 9 against the live project, so it was **introduced by item 9's own fix**
+and never existed before it: `relay-portal` returned the company's whole `settings` blob in every
+response. That blob is not one thing — it carries the portal's branding and copy, but on the live
+tenant it also carried `ai` (with a working provider API key) and `_subscription`. Every one of
+those responses reaches a visitor who holds nothing but a magic link, and it leaked **before the PIN
+was entered**: the `passcode_setup`, `locked`, `throttled` and `offline` bodies all carried it, so a
+single anonymous `POST {"action":"load"}` was enough to read the key.
+
+Confirmed against the live project — `settings.ai.apiKey` came back verbatim in a `403` body to a
+request that had presented no PIN and no session.
+
+Fixed by projecting the blob through an explicit allow-list — `PUBLIC_SETTINGS_KEYS` and
+`publicSettings()` in `supabase/functions/relay-portal/portal.js` — applied once where `ctx.settings`
+is built, so no individual response site can reintroduce the raw object. It is an allow-list rather
+than a deny-list of `ai` and `_subscription` on purpose: the next settings key nobody has reviewed
+yet is withheld by default rather than published by default. The switch that takes a portal offline
+is still read from the raw blob, so narrowing the public list can never silently disable a portal.
+
+The portal keeps everything it renders from: identity and branding, the portal switches and copy, the
+tax/markup/labour keys it uses for totals, the catalogs behind its filters, `documentTheme`, and the
+`payments` / `_connect` pair the pay button checks. Neither of the last two is a credential — the
+Stripe secrets have never lived in this blob.
+
+**The provider key must be rotated.** It was retrievable by anyone holding any portal link, and links
+are already in customers' inboxes — so it has to be treated as disclosed, not merely as no longer
+being disclosed. Replacing it in Settings is the only step that makes the old value useless.
+
 ---
 
 ## 2. Item register
@@ -210,6 +303,8 @@ inert record content" guard. Actions still require the admin's confirmation, whi
 | 6 | ⚪ Low | `Math.random()` portal tokens and a cleartext `portal_passcode` | ✅ Fixed — `generatePortalToken()` (6a) and `src/utils/portalPin.js` (6b) |
 | 7 | ⚪ Low | A residual `"` in `name` was allowed by `038` | ✅ Fixed — `038` repair and CHECK now reject `<`, `>` and `"`; client guards match |
 | 8 | 🟡 Medium | Technician-controlled data reaches the AI assistant's prompt and action protocol | ✅ Fixed — `src/utils/promptSafety.js`, inert-content guard in both follow-up prompts |
+| 9 | 🟠 High | Both portals resolved their magic link in the browser, where RLS gives an anonymous visitor nothing — every customer and contractor link answered *Invalid Access Link* | ✅ Fixed in code — `relay-portal` resolver, `portalClient.js`, scoped hydration in `store.js`, `042_portal_token_lookup.sql`. ⚠️ **Needs the owner**: apply `042` and deploy the function with JWT verification off. See [§1 Item 9](#item-9--the-portals-had-no-anonymous-resolution-path-at-all) |
+| 10 | 🔴 Critical | `relay-portal` returned the company's whole `settings` blob — including the tenant's `ai.apiKey` — to anonymous callers **before any PIN was entered** | ✅ Fixed — `publicSettings()` allow-list, applied where `ctx.settings` is built and verified against the live project. ⚠️ **Needs the owner**: rotate the provider key. See [§1 Item 10](#item-10--the-resolver-handed-the-tenants-ai-key-to-anonymous-callers) |
 
 **Residual, out of scope (pre-existing):** `030`'s `profiles_security_guard()` already makes the
 admin role-change / Deactivate / Reactivate controls server-side no-ops for authenticated sessions.
@@ -305,16 +400,62 @@ the repository is public. If a guard is wanted on top of that, the cheapest one 
 - `dist/index.html` was read after the build to confirm the new CSP meta survives verbatim and that
   the page still emits exactly one external `<script>`.
 
+### Item 9 — verification
+
+- `npm run test:migrations` — the pglite harness now covers `042` alongside the rest of the
+  chain: the unique partial index on each token column, the `DISTINCT ON` de-duplication of
+  pre-existing duplicate tokens, whitespace normalisation, the `portal_access_log` shape, and
+  the absence of any policy on `portal_sessions`. **296 tests / 296 pass.**
+- `npm test` — **630 tests / 630 pass**, including `src/data/store.test.js`'s `portal scope`
+  block (ordered writes, the dedupe swap, rejected-column parity against the resolver's own
+  allow-lists) and the `supabase/tests/relay-portal.test.js` resolver cases: `rejectedColumns()`
+  is asserted **empty** for every payload a portal legitimately sends — exact for updates, subset
+  for inserts — and asserts `portal_token` is refused on insert. The `portalLinks` suite covers
+  the un-awaited-write defect directly.
+- `npm run build` — `vite build`, run after the portal pages were rewired to the async load
+  path, to catch import slips the unit runner would not see. Exit 0.
+- **Not** verified from here: the edge function itself. There is no Deno on this machine, so
+  `supabase/functions/relay-portal/index.ts` has never been type-checked or executed; the
+  extractable logic lives in `portal.js` (mirroring `reconcile.js`) precisely so the test runner
+  can reach it with plain `node --test`.
+
+### Item 10 — verification
+
+- `supabase/tests/relay-portal.test.js` — eight cases over `publicSettings()`: the provider key and
+  `_subscription` are absent; nothing in the serialised payload carries the key; a blob holding
+  every key the live tenant has loses **only** those two; the branding, money and catalog keys the
+  portal renders from survive; a key nobody has reviewed yet is withheld; an explicit `null`
+  survives so the client's default cannot override the operator's choice; the input is not mutated.
+  **47 tests / 47 pass**, and `npm run test:migrations` reports **304 / 304**.
+- Verified against the live project, not just in the harness: a throwaway customer row was pointed
+  at the one tenant whose `settings` actually contains `ai` (24 keys), and an anonymous `load`
+  returned **22** — every branding key present, `ai` and `_subscription` gone, and no `apiKey` or
+  `sk-` anywhere in the body. The row, its `portal_sessions` rows and its `portal_access_log` rows
+  were then deleted, and the deletion confirmed.
+- The function was redeployed and **both** assets re-uploaded (`index.ts` *and* `portal.js`) — a
+  partial upload would have left the new allow-list unreachable while looking successful.
+- The key is not in this repository: the test fixture carries a placeholder, so the live value was
+  never written down here.
+
 ### Deployment note
 
 `038` and `039` are only useful once applied. Confirm they have run against the live Supabase
 project (`supabase db push` or the SQL editor); nothing in the repository can verify that from here.
 
+`042` and the `relay-portal` deploy are the same — two separate steps, and the feature is broken
+until both are done. The function must be deployed **without** JWT verification
+(`--no-verify-jwt`), because a portal visitor has no session — the same reason the public lead
+endpoints, the Stripe webhook and `relay-create-payment` already run with it off. See
+`docs/SUPABASE_MIGRATION.md` §12c.
+
 ---
 
 ## 5. Related
 
-- `docs/SUPABASE_MIGRATION.md` — migration conventions.
+- `docs/SUPABASE_MIGRATION.md` — migration conventions, and §12c for the `relay-portal` deploy.
 - `src/utils/security.js` — the `escapeHTML` helper the render rules assume.
 - `src/utils/delegatedEvents.js` — the delegated event layer that replaces inline handlers.
 - `src/utils/portalPin.js`, `src/utils/promptSafety.js` — the helpers behind items 6b and 8.
+- `supabase/functions/relay-portal/` — the resolver behind items 9 and 10, and its pure helpers in
+  `portal.js`; the write allow-lists and the settings allow-list (`PUBLIC_SETTINGS_KEYS`) asserted
+  by the test suite both live there.

@@ -8,10 +8,8 @@
 // periodic check, so only one tab/machine sweeps at a time.
 
 import { store } from '../data/store.js';
-import { emailConfigured, emailEnabledFor, emailSettings, sendEmail } from './email.js';
-import { reminderEmail } from './emailTemplates.js';
-import { portalUrlForDocument } from './portalLinks.js';
-import { documentAttachment } from './documentPdf.js';
+import { emailConfigured, emailEnabledFor, emailSettings } from './email.js';
+import { documentRecipient, sendInvoiceReminder } from './documentEmails.js';
 
 const DAY = 86400000;
 
@@ -57,15 +55,12 @@ export async function checkPaymentReminders() {
     }
     if (!shouldRemind) continue;
 
-    const to = inv.customerEmail || (inv.customerId && store.getById('customers', inv.customerId)?.email);
-    if (!to) continue;
+    if (!documentRecipient(inv)) continue;
 
     try {
-      const { subject, html } = reminderEmail(inv, { portalUrl: portalUrlForDocument(inv) });
-      const attachments = await documentAttachment('invoice', inv);
-      // sendEmail logs the attempt (sent/failed) to email_log, which is also our
-      // de-dup source on the next sweep.
-      await sendEmail({ to, subject, html, attachments, template: 'reminder', relatedType: 'invoice', relatedId: inv.id });
+      // Logs the attempt (sent/failed) to email_log, which is also our de-dup
+      // source on the next sweep.
+      await sendInvoiceReminder(inv);
     } catch (_) {
       // Failure is already logged by sendEmail; keep going with the rest.
     }

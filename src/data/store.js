@@ -6,9 +6,23 @@ import { todayLocalISO } from '../utils/dateUtils.js';
 import { prebuiltForms } from './prebuiltForms.js';
 import { SYSTEM_ORIGIN, isMachineNotification } from '../utils/notificationVisibility.js';
 import { isReadOnly, readOnlyReason } from '../utils/subscription.js';
+import { isDemoSession } from '../utils/demoSession.js';
+
+// Demo mode runs under this pseudo local account, so every "is this a cloud
+// company?" check in the app answers no and cloud features stay switched off.
+export const DEMO_COMPANY_ID = 'acct_demo';
 
 const defaultLogoLarge = new URL('../assets/RELAY_Dispatch_Logo.png', import.meta.url).href;
 const defaultLogoSmall = new URL('../assets/logo-small.png', import.meta.url).href;
+
+// Structural comparison for the jsonb-backed columns (tasks, line_items, the packed
+// `notes` meta blob), which are objects and arrays rather than scalars.
+function jsonEqual(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 
 // Table name mappings to match local collection keys with PostgreSQL tables
@@ -47,7 +61,8 @@ const TABLE_MAP = {
   locationTypes: 'location_types',
   deputyThreads: 'deputy_threads',
   deputyRoutines: 'deputy_routines',
-  timeClocks: 'time_clocks'
+  timeClocks: 'time_clocks',
+  todos: 'todos'
 };
 
 const TABLE_COLUMNS = {
@@ -109,7 +124,9 @@ const TABLE_COLUMNS = {
     "type",
     "portal_token",
     "portal_passcode",
+    "portal_last_accessed",
     "geo",
+    "sites",
     "created_at",
     "updated_at"
   ],
@@ -296,6 +313,7 @@ const TABLE_COLUMNS = {
     "notes",
     "portal_token",
     "portal_passcode",
+    "portal_last_accessed",
     "compliance_docs",
     "created_at",
     "updated_at"
@@ -325,6 +343,8 @@ const TABLE_COLUMNS = {
     "customer_id",
     "customer_name",
     "contact_name",
+    "phone",
+    "email",
     "status",
     "source",
     "value",
@@ -333,6 +353,11 @@ const TABLE_COLUMNS = {
     "budget",
     "requirements",
     "origin",
+    "assigned_to",
+    "sales_rep_name",
+    "stage_history",
+    "activity_log",
+    "next_action_date",
     "created_at",
     "updated_at"
   ],
@@ -477,6 +502,27 @@ const TABLE_COLUMNS = {
     "created_at",
     "updated_at"
   ],
+  todos: [
+    "id",
+    "company_id",
+    "title",
+    "notes",
+    "status",
+    "assigned_to",
+    "assigned_to_name",
+    "due_date",
+    "due_at",
+    "record_type",
+    "record_id",
+    "record_label",
+    "created_by",
+    "created_by_name",
+    "origin",
+    "completed_at",
+    "completed_by",
+    "created_at",
+    "updated_at"
+  ],
   form_templates: [
     "id",
     "company_id",
@@ -596,6 +642,8 @@ class DataStore {
     this.subscriptions = [];
     this.initPromise = null;
     this.db = null;
+    this.portalScope = null;
+    this._portalQueue = Promise.resolve();
     this.dirHandle = null;
     this.folderSyncEnabled = typeof localStorage !== 'undefined'
       ? localStorage.getItem(this.getStorageKey('folder_sync_enabled')) === 'true'
@@ -608,9 +656,13 @@ class DataStore {
     const bootUser = typeof localStorage !== 'undefined'
       ? JSON.parse(localStorage.getItem('currentUser') || 'null')
       : null;
-    const isCloudUser = !!(bootUser && bootUser.companyId && !bootUser.companyId.startsWith('acct_'));
+    // Demo mode (see utils/demoSession.js): this tab runs on the in-memory demo
+    // business instead of the signed-in account's data. Nothing below touches
+    // that account — no cloud sync, no IndexedDB, no folder.
+    this.demoMode = !!(bootUser && bootUser.id && isDemoSession());
+    const isCloudUser = !this.demoMode && !!(bootUser && bootUser.companyId && !bootUser.companyId.startsWith('acct_'));
 
-    if (!isCloudUser && bootUser && bootUser.companyId && typeof sessionStorage !== 'undefined') {
+    if (!this.demoMode && !isCloudUser && bootUser && bootUser.companyId && typeof sessionStorage !== 'undefined') {
       sessionStorage.setItem('relay_active_account', bootUser.companyId);
     }
 
@@ -619,8 +671,8 @@ class DataStore {
       this.cache[col] = [];
     });
 
-    // Load local settings if they exist (only for offline/demo mode)
-    if (!isCloudUser && typeof localStorage !== 'undefined') {
+    // Load local settings if they exist (only for offline mode)
+    if (!this.demoMode && !isCloudUser && typeof localStorage !== 'undefined') {
       const localSettings = localStorage.getItem(this.getStorageKey('settings'));
       if (localSettings) {
         try {
@@ -631,6 +683,8 @@ class DataStore {
 
     // Handle authentication state changes
     supabase.auth.onAuthStateChange((event, session) => {
+      // A demo tab never syncs; signing out clears the demo flag (session.js).
+      if (this.demoMode) return;
       if (session) {
         this.userId = session.user.id;
         const userMeta = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -647,7 +701,12 @@ class DataStore {
     });
 
     // Auto-trigger sync or local load if user already logged in at boot
-    if (isCloudUser) {
+    if (this.demoMode) {
+      this.folderSyncEnabled = false;
+      this.userId = bootUser.id;
+      this.companyId = DEMO_COMPANY_ID;
+      this.initPromise = this.initializeDemo(bootUser);
+    } else if (isCloudUser) {
       this.userId = bootUser.id;
       this.companyId = bootUser.companyId;
       this.initPromise = this.initializeCloudSync();
@@ -675,6 +734,10 @@ class DataStore {
   }
 
   async initializeUser(user) {
+    // Signing in ends any portal scope: the visitor is no longer the anonymous
+    // holder of a magic link, and their writes must go back to the staff path.
+    this.portalScope = null;
+    if (this.demoMode) return this.initPromise;
     if (user && user.companyId && !user.companyId.startsWith('acct_')) {
       this.userId = user.id;
       this.companyId = user.companyId;
@@ -699,6 +762,37 @@ class DataStore {
       this.initPromise = this.initializeLocalStore();
       await this.initPromise;
     }
+  }
+
+  // ── Demo mode ───────────────────────────────────────────────────────────────
+  // Builds the demo business fresh in memory. Every write path below checks
+  // `demoMode` and stops at the cache, so edits last until the tab reloads.
+  async initializeDemo(user) {
+    const { buildDemoDataset, DEMO_USER_TYPES } = await import('./demoDataset.js');
+    const scope = 'demo_';
+    const { settings, collections, geo } = buildDemoDataset({
+      now: new Date(),
+      scope,
+      owner: { id: user.id, name: user.name, email: user.email, color: user.color },
+    });
+
+    Object.keys(TABLE_MAP).forEach(col => { this.cache[col] = []; });
+    Object.entries(collections).forEach(([col, items]) => { this.cache[col] = items; });
+    this.cache.userTypes = DEMO_USER_TYPES.map(ut => ({ ...ut, id: `${scope}${ut.id}` }));
+    this.cache.formTemplates = prebuiltForms.map(t => ({ ...t, id: `${scope}${t.id}` }));
+    this.companySettings = settings;
+
+    // The demo addresses are fictional: pre-warm the geocode cache with
+    // suburb-accurate pins so the map works without a lookup.
+    try {
+      const { setCachedGeo } = await import('../utils/geocode.js');
+      Object.entries(geo).forEach(([address, record]) => setCachedGeo(address, record));
+    } catch (err) {
+      console.warn('Demo geocode pre-warm skipped:', err);
+    }
+
+    this.emit('settings', this.getSettings());
+    Object.keys(this.cache).forEach(col => this.emit(col, this.cache[col]));
   }
 
   async initializeLocalStore() {
@@ -910,6 +1004,7 @@ class DataStore {
   }
 
   writeRecordToIndexedDB(storeName, record) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -926,6 +1021,7 @@ class DataStore {
   }
 
   deleteRecordFromIndexedDB(storeName, id) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -942,6 +1038,7 @@ class DataStore {
   }
 
   writeAllToIndexedDB(storeName, items) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -974,6 +1071,7 @@ class DataStore {
   }
 
   clearAllIndexedDB() {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve, reject) => {
       if (!this.db) return resolve();
       try {
@@ -1103,6 +1201,7 @@ class DataStore {
   }
 
   async backupToFolder(dirHandle) {
+    if (this.demoMode) return false;
     const handle = dirHandle || this.backupDirHandle;
     if (!handle) throw new Error('No backup directory configured.');
     
@@ -1132,6 +1231,7 @@ class DataStore {
   }
 
   async setLocalDirectory(dirHandle) {
+    if (this.demoMode) throw new Error('Not available in demo mode.');
     this.dirHandle = dirHandle;
     if (dirHandle) {
       this.folderSyncEnabled = true;
@@ -1176,6 +1276,7 @@ class DataStore {
   }
 
   async writeCollectionToFolder(collection, items) {
+    if (this.demoMode) return;
     if (!this.folderSyncEnabled) return;
 
     // 1. Capacitor Native environment
@@ -1282,6 +1383,7 @@ class DataStore {
   }
 
   async writeDocumentFileToFolder(docId, name, dataUrl) {
+    if (this.demoMode) return null;
     if (!this.folderSyncEnabled) return null;
 
     const ext = name.includes('.') ? name.split('.').pop() : 'bin';
@@ -1545,6 +1647,126 @@ class DataStore {
     });
   }
 
+  // ── Portal scope (anonymous magic-link visitor) ────────────────────────────
+  // A portal visitor has no session, so the boot path above hands them an empty
+  // local store: every read returns nothing and every write lands in their own
+  // IndexedDB while the database never hears about it. A portal scope replaces
+  // both. The resolver has already decided which rows the visitor may see, so the
+  // scope is filled from its answer and every write is routed back through it.
+  hydratePortalScope({ kind, token, record, settings, tables, grant } = {}) {
+    this.clearSync();
+    this._portalQueue = Promise.resolve();
+    this.portalScope = {
+      kind: kind || null,
+      token: token || null,
+      recordId: record?.id || null,
+      grant: grant || null,
+    };
+    this.companySettings = settings || {};
+
+    const rows = { ...(tables || {}) };
+    if (record) rows[kind === 'contractor' ? 'contractors' : 'customers'] = [record];
+
+    Object.entries(rows).forEach(([collection, items]) => {
+      if (!(collection in TABLE_MAP)) return;
+      const list = (items || []).map(item => this.normalizeRecord(item, collection));
+      this.cache[collection] = list;
+      this.emit(collection, list);
+    });
+
+    return this.portalScope;
+  }
+
+  // Leaving a portal has to restore whatever the tab was before it, and a hash route
+  // change does not reload the page — so an operator who opens a customer's link and
+  // navigates away gets their own data back rather than an empty store. Pending writes
+  // are allowed to finish first: their rollback handlers edit this.cache, and by then
+  // it holds the operator's rows again.
+  async clearPortalScope() {
+    if (!this.portalScope) return;
+    await this._portalQueue;
+    this.portalScope = null;
+    const bootUser = typeof localStorage !== 'undefined'
+      ? JSON.parse(localStorage.getItem('currentUser') || 'null')
+      : null;
+    this.initPromise = this.initializeUser(bootUser);
+    return this.initPromise;
+  }
+
+  // The visitor's only path to the database. The resolver re-checks the collection,
+  // the columns and ownership on every call, and a refusal is returned rather than
+  // thrown so the result shape matches the local write paths below.
+  async _portalWrite(collection, { id, payload }) {
+    const scope = this.portalScope || {};
+    // Writes are chained rather than fired in parallel. The pages issue them
+    // fire-and-forget, so two calls made in sequence (create the customer, then the
+    // job that references it) would otherwise race and the second could be refused
+    // for pointing at a row the first had not committed yet.
+    const send = async () => {
+      const { data, error } = await supabase.functions.invoke('relay-portal', {
+        body: {
+          action: 'write',
+          kind: scope.kind,
+          token: scope.token,
+          grant: scope.grant,
+          collection,
+          ...(id !== undefined && id !== null ? { id } : {}),
+          payload,
+        },
+      });
+      if (error) return { ok: false, error };
+      if (!data || data.ok !== true) {
+        return { ok: false, error: data?.error || 'That change was not permitted.', status: data?.status };
+      }
+      return { ok: true, record: data.record, existing: data.existing === true };
+    };
+    const result = this._portalQueue.then(send, send);
+    // Keep the chain alive after a refusal so one rejected write cannot stall the rest.
+    this._portalQueue = result.then(() => {}, () => {});
+    return result;
+  }
+
+  // Send only what changed. denormalizeRecord emits the record's own fields, and the
+  // resolver's write allow-list rejects anything outside it, so diffing the
+  // denormalised before/after reduces a one-field edit to a one-column payload — and
+  // it handles the packed columns (tasks, line_items, the `notes` meta blob) for free.
+  _changedColumns(collection, previous, next) {
+    const before = this.denormalizeRecord(previous, collection);
+    const after = this.denormalizeRecord(next, collection);
+    const changes = {};
+    Object.keys(after).forEach(key => {
+      // id identifies the row and company_id is stamped by the resolver from the
+      // token's own record, never from the request.
+      if (key === 'id' || key === 'company_id') return;
+      if (!jsonEqual(before[key], after[key])) changes[key] = after[key];
+    });
+    return changes;
+  }
+
+  _portalUpdate(collection, id, updates) {
+    const items = [...(this.cache[collection] || [])];
+    const index = items.findIndex(item => item.id === id);
+    if (index === -1) return null;
+
+    const previous = items[index];
+    const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() };
+    items[index] = updated;
+    this.cache[collection] = items;
+    this.emit(collection, items);
+
+    const payload = this._changedColumns(collection, previous, updated);
+    if (!Object.keys(payload).length) return Promise.resolve({ ok: true, record: updated });
+
+    return this._portalWrite(collection, { id, payload }).then(result => {
+      if (result.ok) return { ok: true, record: updated };
+      const arr = [...(this.cache[collection] || [])];
+      const i = arr.findIndex(x => x.id === id);
+      if (i !== -1) { arr[i] = previous; this.cache[collection] = arr; this.emit(collection, arr); }
+      this._notifyWriteError('update', collection, result.error);
+      return result;
+    });
+  }
+
   // Normalization Helpers (translates snake_case keys from Postgres -> camelCase for frontend)
   normalizeData(data, collection) {
     return data.map(item => this.normalizeRecord(item, collection));
@@ -1606,6 +1828,10 @@ class DataStore {
       record.portalPasscode = record.portal_passcode;
       delete record.portal_passcode;
     }
+    if (record.portal_last_accessed !== undefined) {
+      record.portalLastAccessed = record.portal_last_accessed;
+      delete record.portal_last_accessed;
+    }
     if (record.owner_type !== undefined) {
       record.ownerType = record.owner_type;
       delete record.owner_type;
@@ -1617,6 +1843,26 @@ class DataStore {
     if (record.customer_name !== undefined) {
       record.customerName = record.customer_name;
       delete record.customer_name;
+    }
+    if (record.assigned_to !== undefined) {
+      record.assignedTo = record.assigned_to;
+      delete record.assigned_to;
+    }
+    if (record.sales_rep_name !== undefined) {
+      record.salesRepName = record.sales_rep_name;
+      delete record.sales_rep_name;
+    }
+    if (record.stage_history !== undefined) {
+      record.stageHistory = record.stage_history;
+      delete record.stage_history;
+    }
+    if (record.activity_log !== undefined) {
+      record.activityLog = record.activity_log;
+      delete record.activity_log;
+    }
+    if (record.next_action_date !== undefined) {
+      record.nextActionDate = record.next_action_date;
+      delete record.next_action_date;
     }
     if (record.created_by !== undefined) {
       record.createdBy = record.created_by;
@@ -1818,6 +2064,39 @@ class DataStore {
       record.dueDate = record.due_date;
       delete record.due_date;
     }
+    // To-dos (043) store instants and record links alongside the due date.
+    if (record.due_at !== undefined) {
+      record.dueAt = record.due_at;
+      delete record.due_at;
+    }
+    if (record.assigned_to_name !== undefined) {
+      record.assignedToName = record.assigned_to_name;
+      delete record.assigned_to_name;
+    }
+    if (record.created_by_name !== undefined) {
+      record.createdByName = record.created_by_name;
+      delete record.created_by_name;
+    }
+    if (record.record_type !== undefined) {
+      record.recordType = record.record_type;
+      delete record.record_type;
+    }
+    if (record.record_id !== undefined) {
+      record.recordId = record.record_id;
+      delete record.record_id;
+    }
+    if (record.record_label !== undefined) {
+      record.recordLabel = record.record_label;
+      delete record.record_label;
+    }
+    if (record.completed_at !== undefined) {
+      record.completedAt = record.completed_at;
+      delete record.completed_at;
+    }
+    if (record.completed_by !== undefined) {
+      record.completedBy = record.completed_by;
+      delete record.completed_by;
+    }
     if (record.issue_date !== undefined) {
       record.issueDate = record.issue_date;
       delete record.issue_date;
@@ -1981,6 +2260,10 @@ class DataStore {
         record.pendingVariationsSum = meta.pendingVariationsSum || 0;
         record.totalInternalCost = meta.totalInternalCost || 0;
         record.jobIds = meta.jobIds || []; // consolidated invoices link multiple jobs
+        record.jobAmounts = meta.jobAmounts || []; // per-job share of a multi-job invoice
+        record.jobNumbers = meta.jobNumbers || [];
+        if (Array.isArray(meta.payments)) record.payments = meta.payments;
+        if (meta.sentAt) record.sentAt = meta.sentAt;
       }
     }
     if (collection === 'quotes') {
@@ -2000,6 +2283,7 @@ class DataStore {
         record.description = meta.description || '';
         record.isTemplate = meta.isTemplate || false;
         record.templateId = meta.templateId || '';
+        ['sentAt', 'acceptedAt', 'signedAt', 'declinedAt'].forEach(k => { if (meta[k]) record[k] = meta[k]; });
       }
     }
     if (collection === 'jobs') {
@@ -2017,6 +2301,9 @@ class DataStore {
           if (meta.activityLog !== undefined) record.activityLog = meta.activityLog;
           if (meta.customerActivityLog !== undefined) record.customerActivityLog = meta.customerActivityLog;
           if (meta.historyLog !== undefined) record.historyLog = meta.historyLog;
+          if (meta.completedAt) record.completedAt = meta.completedAt;
+          if (meta.isEmergency) record.isEmergency = true;
+          if (meta.isCallback) record.isCallback = true;
         } catch (e) {
           console.error('Error parsing jobs meta:', e);
         }
@@ -2214,6 +2501,10 @@ class DataStore {
       record.portal_passcode = record.portalPasscode;
       delete record.portalPasscode;
     }
+    if (record.portalLastAccessed !== undefined) {
+      record.portal_last_accessed = record.portalLastAccessed;
+      delete record.portalLastAccessed;
+    }
     if (record.ownerType !== undefined) {
       record.owner_type = record.ownerType;
       delete record.ownerType;
@@ -2225,6 +2516,28 @@ class DataStore {
     if (record.customerName !== undefined) {
       record.customer_name = record.customerName;
       delete record.customerName;
+    }
+    if (record.assignedTo !== undefined) {
+      record.assigned_to = record.assignedTo;
+      delete record.assignedTo;
+    }
+    if (record.salesRepName !== undefined) {
+      record.sales_rep_name = record.salesRepName;
+      delete record.salesRepName;
+    }
+    if (record.stageHistory !== undefined) {
+      record.stage_history = record.stageHistory;
+      delete record.stageHistory;
+    }
+    // Jobs serialise their activity logs into the __meta__ notes blob below,
+    // so only non-jobs collections map straight to a real column here.
+    if (record.activityLog !== undefined && collection !== 'jobs') {
+      record.activity_log = record.activityLog;
+      delete record.activityLog;
+    }
+    if (record.nextActionDate !== undefined) {
+      record.next_action_date = record.nextActionDate;
+      delete record.nextActionDate;
     }
     if (record.createdBy !== undefined) {
       record.created_by = record.createdBy;
@@ -2377,6 +2690,39 @@ class DataStore {
       record.due_date = record.dueDate;
       delete record.dueDate;
     }
+    // To-dos (043) store instants and record links alongside the due date.
+    if (record.dueAt !== undefined) {
+      record.due_at = record.dueAt;
+      delete record.dueAt;
+    }
+    if (record.assignedToName !== undefined) {
+      record.assigned_to_name = record.assignedToName;
+      delete record.assignedToName;
+    }
+    if (record.createdByName !== undefined) {
+      record.created_by_name = record.createdByName;
+      delete record.createdByName;
+    }
+    if (record.recordType !== undefined) {
+      record.record_type = record.recordType;
+      delete record.recordType;
+    }
+    if (record.recordId !== undefined) {
+      record.record_id = record.recordId;
+      delete record.recordId;
+    }
+    if (record.recordLabel !== undefined) {
+      record.record_label = record.recordLabel;
+      delete record.recordLabel;
+    }
+    if (record.completedAt !== undefined) {
+      record.completed_at = record.completedAt;
+      delete record.completedAt;
+    }
+    if (record.completedBy !== undefined) {
+      record.completed_by = record.completedBy;
+      delete record.completedBy;
+    }
     if (record.issueDate !== undefined) {
       record.issue_date = record.issueDate;
       delete record.issueDate;
@@ -2499,7 +2845,14 @@ class DataStore {
         notes: record.notes || '',
         activityLog: record.activityLog || [],
         customerActivityLog: record.customerActivityLog || [],
-        historyLog: record.historyLog || []
+        historyLog: record.historyLog || [],
+        // The generic pass above relocates `completedAt` to `completed_at` (a
+        // to-do column), and jobs have no such column, so the whitelist below
+        // would drop the stamp and every completed job would come back
+        // unfinished. Read it back from wherever the generic pass parked it.
+        completedAt: record.completedAt || record.completed_at || null,
+        isEmergency: record.isEmergency || false,
+        isCallback: record.isCallback || false
       };
       record.notes = '__meta__:' + JSON.stringify(meta);
       delete record.activityLog;
@@ -2523,7 +2876,13 @@ class DataStore {
         approvedVariationsSum: record.approvedVariationsSum || 0,
         pendingVariationsSum: record.pendingVariationsSum || 0,
         totalInternalCost: record.totalInternalCost || 0,
-        jobIds: record.jobIds || [] // consolidated invoices link multiple jobs
+        jobIds: record.jobIds || [], // consolidated invoices link multiple jobs
+        jobAmounts: record.jobAmounts || [], // per-job share of a multi-job invoice
+        jobNumbers: record.jobNumbers || [],
+        // Recorded payments have no column; without this a cloud invoice loses its
+        // part-payments (and its balance) on the next load.
+        payments: record.payments || [],
+        sentAt: record.sentAt || null
       };
       record.line_items = meta;
       delete record.lineItems;
@@ -2538,7 +2897,12 @@ class DataStore {
         laborProfileId: record.laborProfileId || '',
         description: record.description || '',
         isTemplate: record.isTemplate || false,
-        templateId: record.templateId || ''
+        templateId: record.templateId || '',
+        // Lifecycle stamps the dashboard KPIs measure by (no columns for these).
+        sentAt: record.sentAt || null,
+        acceptedAt: record.acceptedAt || null,
+        signedAt: record.signedAt || null,
+        declinedAt: record.declinedAt || null
       };
       record.line_items = meta;
       delete record.lineItems;
@@ -2621,15 +2985,66 @@ class DataStore {
     return record;
   }
 
+  // PostgREST rejects a write that names a column the database does not have --
+  // 42703 "column X does not exist", or PGRST204 "could not find the 'X' column
+  // ... in the schema cache". That is what a TABLE_COLUMNS entry ahead of its
+  // migration looks like on the wire. Retry once without the rejected column and
+  // say so in the console, rather than failing the whole record: the alternative
+  // (relying only on the whitelist) either drops the field silently or, once the
+  // entry is added before the column exists, turns every write into a 400.
+  async _writeThenDropUnknownColumns(write, payload) {
+    const attempt = await write(payload);
+    const error = attempt && attempt.error;
+    if (!error) return attempt;
+
+    const unknown = this._unknownColumnNames(error, payload);
+    if (!unknown.length) return attempt;
+
+    const pruned = { ...payload };
+    unknown.forEach(key => delete pruned[key]);
+    console.warn(
+      `[store] Supabase rejected unknown column(s): ${unknown.join(', ')}. ` +
+      'Retried without them; apply the pending migration to persist these fields.'
+    );
+    return write(pruned);
+  }
+
+  // The columns PostgREST complained about, limited to keys we actually sent, so
+  // an unrelated error never has payload silently dropped from it.
+  _unknownColumnNames(error, payload) {
+    const code = String((error && error.code) || '');
+    const message = `${(error && error.message) || ''} ${(error && error.details) || ''}`;
+    const isUnknownColumn = code === '42703' || code === 'PGRST204' ||
+      /column .* does not exist|could not find the .*column/i.test(message);
+    if (!isUnknownColumn) return [];
+    return Object.keys(payload || {}).filter(key => {
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^A-Za-z0-9_])${escaped}([^A-Za-z0-9_]|$)`).test(message);
+    });
+  }
+
   // Legacy compatibility / No-op migration call
   migrateNumberFields() {}
 
   // ── Local-First Core API Operations ────────────────────────────────────────
 
+  // Demo mode brings its own crew, shown as real rows (schedule lanes, staff
+  // pickers, labour costing) even for a single-user local account.
+  isDemoCrew() {
+    return !!this.demoMode && (this.cache.technicians || []).length > 1;
+  }
+
   getAll(collection) {
     const items = this.cache[collection] || [];
     if (collection === 'technicians') {
       const loginMode = typeof localStorage !== 'undefined' ? localStorage.getItem('relay_login_mode') : null;
+      if (loginMode === 'local' && this.isDemoCrew()) {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        // The signed-in owner keeps their own name and colour on the crew list.
+        return currentUser && currentUser.id
+          ? items.map(t => (t.id === currentUser.id ? { ...t, name: currentUser.name || t.name, color: currentUser.color || t.color, startLocation: this._localStartLocation() } : t))
+          : items;
+      }
       if (loginMode === 'local') {
         const currentUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('currentUser') : null;
         if (currentUserStr) {
@@ -2666,6 +3081,7 @@ class DataStore {
   // of writes in a second, so the persistent banner — not the toast — is the
   // real affordance. One nudge, then silence.
   _readOnlyBlocked(collection) {
+    if (this.demoMode) return false;
     if (!isReadOnly()) return false;
     const now = Date.now();
     if (now - (this._readOnlyNoticeAt || 0) > 8000) {
@@ -2698,9 +3114,78 @@ class DataStore {
     } catch (e) {}
   }
 
+  // Stamp the moment a record reaches a lifecycle status, so dashboard KPIs can
+  // say "completed this week" or "quotes sent this month" without guessing from
+  // updatedAt. Mutates `changes` (the update payload or new record). An explicit
+  // stamp in `changes` wins, and an existing stamp is kept.
+  _stampLifecycle(collection, previous, changes) {
+    const status = changes.status;
+    if (!status || (previous && previous.status === status)) return;
+    const now = new Date().toISOString();
+    const has = (k) => changes[k] || (previous && previous[k]);
+    if (collection === 'jobs') {
+      if (status === 'Completed' || status === 'Invoiced') {
+        if (!has('completedAt')) changes.completedAt = now;
+      } else if (previous && previous.completedAt && changes.completedAt === undefined) {
+        changes.completedAt = null; // reopened
+      }
+    }
+    if (collection === 'quotes') {
+      if (status !== 'Draft' && !has('sentAt')) changes.sentAt = now;
+      if ((status === 'Accepted' || status === 'Converted') && !has('acceptedAt')) changes.acceptedAt = changes.signedAt || now;
+      if (status === 'Declined' && !has('declinedAt')) changes.declinedAt = now;
+    }
+  }
+
   // All jobs an invoice bills: single jobId and/or consolidated jobIds
   _invoiceJobIds(inv) {
     return [inv?.jobId, ...(inv?.jobIds || [])].filter(Boolean);
+  }
+
+  // Public form of _invoiceJobIds for pages that render "Combined (N jobs)" labels.
+  invoiceJobIds(inv) {
+    return this._invoiceJobIds(inv);
+  }
+
+  // Every invoice that bills a job — including combined/consolidated invoices that
+  // only reference it through their jobIds array. Ids are compared as strings
+  // because the app mixes numeric and string job ids.
+  getInvoicesForJob(jobId, { excludeVoid = false } = {}) {
+    if (jobId === undefined || jobId === null || jobId === '') return [];
+    const key = String(jobId);
+    return (this.cache.invoices || []).filter(inv => {
+      if (excludeVoid && inv.status === 'Void') return false;
+      return this._invoiceJobIds(inv).some(id => String(id) === key);
+    });
+  }
+
+  // The jobs an invoice bills (inverse of getInvoicesForJob).
+  getJobsForInvoice(inv) {
+    return this._invoiceJobIds(inv).map(id => this.getById('jobs', id)).filter(Boolean);
+  }
+
+  // Job references to show for an invoice: its stored job numbers, or the numbers
+  // of every job it bills. Covers combined invoices created before jobNumbers existed.
+  invoiceJobNumbers(inv) {
+    const stored = (inv?.jobNumbers || []).filter(Boolean);
+    if (stored.length) return stored;
+    return this.getJobsForInvoice(inv).map(j => j.number).filter(Boolean);
+  }
+
+  // Portion of an invoice that belongs to one job. Combined invoices record each
+  // job's subtotal at creation, scaled here by the invoice's discounts/tax so the
+  // parts always add up to the invoice total. Anything predating that splits evenly
+  // so a shared invoice is never counted in full against every one of its jobs.
+  invoiceAmountForJob(inv, jobId) {
+    const total = inv?.total || 0;
+    const ids = this._invoiceJobIds(inv);
+    if (ids.length <= 1) return total;
+    const key = String(jobId);
+    const recorded = (inv?.jobAmounts || []).find(a => String(a.jobId) === key);
+    if (recorded && typeof recorded.subtotal === 'number') {
+      return inv.subtotal ? recorded.subtotal * (total / inv.subtotal) : recorded.subtotal;
+    }
+    return total / ids.length;
   }
 
   // Invoice lifecycle → job status sync. Jobs are only marked "Invoiced" when their
@@ -2728,6 +3213,7 @@ class DataStore {
   // Pushes write changes asynchronously to Supabase while updating local cache synchronously
   create(collection, item) {
     item.id = item.id || this.generateId();
+    this._stampLifecycle(collection, null, item);
     if (collection === 'leads' && !item.number) {
       item.number = this.getNextNumber('LD-', 'leads');
     }
@@ -2789,6 +3275,39 @@ class DataStore {
     item.updatedAt = new Date().toISOString();
     if (this.companyId) {
       item.companyId = this.companyId;
+    }
+
+    // A portal visitor is anonymous: the cloud insert below would be attempted with
+    // no session, and the local branch would put the row in the visitor's own
+    // IndexedDB. Either way the database never hears about it. Ask the resolver.
+    if (this.portalScope) {
+      const items = [...(this.cache[collection] || []), item];
+      this.cache[collection] = items;
+      this.emit(collection, items);
+      const payload = this.denormalizeRecord(item, collection);
+      // company_id and created_by are stamped by the resolver from the token, not
+      // taken from the page — `created_by` decides whether the bell treats the record
+      // as machine-generated, so it is not the portal's to set.
+      delete payload.company_id;
+      delete payload.created_by;
+      this._portalWrite(collection, { payload }).then(result => {
+        if (result.ok) {
+          // The resolver refuses to add a second row for something already on file
+          // (the B2B import's office customer) and answers with the row it found, so
+          // the optimistic row — carrying an id the database never saw — is replaced
+          // by the real one rather than left sitting in the cache.
+          if (result.existing && result.record) {
+            this.cache[collection] = (this.cache[collection] || [])
+              .map(x => x.id === item.id ? this.normalizeRecord(result.record, collection) : x);
+            this.emit(collection, this.cache[collection]);
+          }
+          return;
+        }
+        this.cache[collection] = (this.cache[collection] || []).filter(x => x.id !== item.id);
+        this.emit(collection, this.cache[collection]);
+        this._notifyWriteError('save', collection, result.error);
+      });
+      return item;
     }
 
     // Blocked here rather than at the top of the method: the identity above is
@@ -2894,7 +3413,12 @@ class DataStore {
     const dbPayload = this.denormalizeRecord(item, collection);
     const table = TABLE_MAP[collection];
     if (table) {
-      supabase.from(table).insert([dbPayload]).then(({ error }) => {
+      // Retried once without a column the database rejects (see the helper) so a
+      // whitelist entry that is ahead of its migration degrades instead of failing.
+      this._writeThenDropUnknownColumns(
+        (payload) => supabase.from(table).insert([payload]).then(({ error }) => ({ error })),
+        dbPayload
+      ).then(({ error }) => {
         if (error) {
           // Roll back the optimistic add so the UI matches the database
           this.cache[collection] = (this.cache[collection] || []).filter(x => x.id !== item.id);
@@ -2908,6 +3432,10 @@ class DataStore {
   }
 
   update(collection, id, updates) {
+    // A portal visitor is anonymous, so the local branch below would write to their
+    // own IndexedDB and the cloud branch would be attempted without a session —
+    // either way the database never hears about it. Ask the resolver instead.
+    if (this.portalScope) return this._portalUpdate(collection, id, updates);
     // Returns null like the not-found path below, which callers already handle.
     if (this._readOnlyBlocked(collection)) return null;
     const items = [...(this.cache[collection] || [])];
@@ -2915,6 +3443,8 @@ class DataStore {
     if (index === -1) return null;
 
     const previous = items[index];
+    updates = { ...updates };
+    this._stampLifecycle(collection, previous, updates);
 
     // If not running in cloud mode, perform local cache update and write to IndexedDB / Folder Sync
     if (!this.companyId || this.companyId.startsWith('acct_')) {
@@ -3056,10 +3586,10 @@ class DataStore {
     // Resolve (never reject) with a result object so callers can tell success from
     // failure without triggering unhandled promise rejections in fire-and-forget
     // call sites. Success resolves to { ok: true, record }.
-    return supabase
-      .from(table)
-      .update(dbPayload)
-      .eq('id', id)
+    return this._writeThenDropUnknownColumns(
+      (payload) => supabase.from(table).update(payload).eq('id', id).then(({ error }) => ({ error })),
+      dbPayload
+    )
       .then(({ error }) => {
         if (error) {
           rollback(error);
@@ -3090,6 +3620,12 @@ class DataStore {
   }
 
   delete(collection, id) {
+    // Deleting is not something a portal may do, and the local branch below would
+    // otherwise report success against the visitor's own IndexedDB.
+    if (this.portalScope) {
+      console.warn(`Blocked delete of ${collection} from a portal scope.`);
+      return;
+    }
     // Ahead of the cascade so children are left alone too.
     if (this._readOnlyBlocked(collection)) return;
 
@@ -3320,10 +3856,13 @@ class DataStore {
       ai: {
         // Deputy ships with a paid Cloud workspace, so there is no on/off switch,
         // client key, model or endpoint to configure: every AI call goes to the
-        // DeepSeek API through the relay-copilot edge function. `tier` is the only
+        // Anthropic API through the relay-copilot edge function. `tier` is the only
         // field here that varies, and it is written server-side (see aiTier.js).
-        tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local',
-        systemPrompt: 'You are brny, an intelligent CRM co-pilot assistant. You help dispatchers manage jobs, quotes, invoices, and scheduling.'
+        //
+        // No default prompt belongs here. `playbook` is the agent's deliberate
+        // override and an empty one keeps the shipped playbook, so shipping a
+        // default would shadow the playbook for every tenant (see brnyPlaybook.js).
+        tier: (this.companyId && !this.companyId.startsWith('acct_')) ? 'cloud' : 'local'
       }
     };
 
@@ -3358,7 +3897,7 @@ class DataStore {
     this.emit('settings', settings);
 
     if (!this.companyId || this.companyId.startsWith('acct_')) {
-      if (typeof localStorage !== 'undefined') {
+      if (!this.demoMode && typeof localStorage !== 'undefined') {
         localStorage.setItem(this.getStorageKey('settings'), JSON.stringify(settings));
       }
       return;
@@ -3426,6 +3965,7 @@ class DataStore {
       this.emit('technicians', techs);
     }
 
+    if (this.demoMode) return;
     if (!this.companyId || this.companyId.startsWith('acct_')) {
       // Local mode: persist on the local account record, because the synthesised
       // technicians row that reads it back is rebuilt from localStorage every time.
@@ -3475,6 +4015,12 @@ class DataStore {
   }
 
   async save(collection, items) {
+    // A full-collection save is a staff operation. From a portal it would write the
+    // visitor's own partial view of one customer back over the whole book.
+    if (this.portalScope) {
+      console.warn(`Blocked full-collection save of ${collection} from a portal scope.`);
+      return;
+    }
     if (this._readOnlyBlocked(collection)) return;
     const prev = this.cache[collection] || [];
     this.cache[collection] = items;
@@ -3512,9 +4058,12 @@ class DataStore {
         updatedAt: it.updatedAt || now,
       }, collection));
 
-    if (payload.length) {
-      const { error } = await supabase.from(table).upsert(payload);
-      if (error) this._notifyWriteError('save', collection, error);
+    // Upsert in chunks so a large collection (e.g. the demo dataset's history)
+    // stays well under the API's request-size limit.
+    const CHUNK = 400;
+    for (let i = 0; i < payload.length; i += CHUNK) {
+      const { error } = await supabase.from(table).upsert(payload.slice(i, i + CHUNK));
+      if (error) { this._notifyWriteError('save', collection, error); break; }
     }
 
     const currentIds = new Set(items.map(it => it && it.id));
@@ -3526,6 +4075,7 @@ class DataStore {
   }
 
   markSeeded() {
+    if (this.demoMode) return;
     localStorage.setItem(this.getStorageKey('seeded'), 'true');
   }
 
@@ -3711,6 +4261,7 @@ class DataStore {
   }
 
   async migrateLocalToCloud(companyId, adminUserId) {
+    if (this.demoMode) throw new Error('Not available in demo mode.');
     const localCompanyId = this.companyId;
 
     this.companyId = companyId;
@@ -3780,6 +4331,7 @@ class DataStore {
   }
 
   deleteLocalAccountData(accountId) {
+    if (this.demoMode) return Promise.resolve();
     return new Promise((resolve) => {
       if (this.db) {
         this.db.close();
@@ -3808,7 +4360,18 @@ class DataStore {
   }
 
   async clearAll() {
+    // Never wipe the real account from a demo tab — there is nothing of the
+    // demo's to wipe either, it lives in memory.
+    if (this.demoMode) return;
+    // clearSync() resets companyId/userId along with the caches. Hold on to them:
+    // the cloud wipe below is scoped by company id (with it nulled, the delete
+    // matched nothing), and the caller is still signed in to the same account
+    // afterwards — demo seeding writes straight back into it.
+    const companyId = this.companyId;
+    const userId = this.userId;
     this.clearSync();
+    this.companyId = companyId;
+    this.userId = userId;
     if (!this.companyId || this.companyId.startsWith('acct_')) {
       const activeAccount = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('relay_active_account') : null;
       

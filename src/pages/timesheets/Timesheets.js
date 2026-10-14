@@ -18,6 +18,7 @@ import { renderAttendanceView } from './Attendance.js';
 import { renderHoursView } from './Hours.js';
 import { renderPayrollView } from './Payroll.js';
 import { resolveSection, sectionTitle } from '../../utils/timesheetSections.js';
+import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
 export function renderTimesheetsList(container, params = {}) {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"role":"admin"}');
@@ -43,6 +44,11 @@ export function renderTimesheetsList(container, params = {}) {
 
   let filterStartDate = formatDate(oneWeekAgo);
   let filterEndDate = formatDate(today);
+
+  // Opened from a dashboard KPI card (?filter=pending): its own period replaces
+  // the default last-7-days window, or older entries behind the number would hide.
+  let kpiFilter = readKpiListFilter('timesheets');
+  if (kpiFilter) { filterStartDate = ''; filterEndDate = ''; }
 
   let selectedIds = [];
 
@@ -102,6 +108,7 @@ export function renderTimesheetsList(container, params = {}) {
     // Apply the tech + date-range filters. Job hours carry no approval state of their
     // own — they are a record of what was booked to a job — so there is no status filter.
     let dateTechFiltered = [...visibleTimesheets];
+    if (kpiFilter) dateTechFiltered = dateTechFiltered.filter(kpiFilter.test);
     if (canViewAll && filterTechId !== 'All') {
       dateTechFiltered = dateTechFiltered.filter(t => String(t.technicianId) === String(filterTechId));
     }
@@ -155,9 +162,9 @@ export function renderTimesheetsList(container, params = {}) {
               <span>${pageSize}</span>
               <span class="material-icons-outlined" style="font-size:13px">unfold_more</span>
             </button>
-            <div class="dt-page-size-pop" hidden style="position:absolute; bottom:calc(100% + 4px); left:46px; background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--border-radius); box-shadow:var(--shadow-lg); padding:4px 0; z-index:1000; min-width:64px;">
+            <div class="dropdown-menu dropdown-menu-up dt-page-size-pop" hidden>
               ${[15, 30, 45, 60].map(sz => `
-                <div class="dt-page-size-opt ${sz === pageSize ? 'active' : ''}" data-val="${sz}" style="padding:4px 10px; cursor:pointer; font-size:11px; background:${sz === pageSize ? 'var(--color-primary-light)' : 'transparent'}; color:${sz === pageSize ? 'var(--color-primary)' : 'var(--text-primary)'}; font-weight:${sz === pageSize ? '600' : '400'};">
+                <div class="dropdown-item dt-page-size-opt${sz === pageSize ? ' selected' : ''}" data-val="${sz}">
                   ${sz}
                 </div>
               `).join('')}
@@ -288,6 +295,8 @@ export function renderTimesheetsList(container, params = {}) {
     setListSearch((q) => {
       render();
     }, 'timesheets');
+
+    if (kpiFilter) mountKpiFilterChip(container, kpiFilter, () => { kpiFilter = null; render(); });
 
     const dateMount = container.querySelector('#date-range-mount');
     if (dateMount) {

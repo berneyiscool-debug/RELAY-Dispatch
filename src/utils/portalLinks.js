@@ -39,50 +39,71 @@ export function generatePortalToken() {
   return 'c_pt_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36).substr(-4);
 }
 
-// Returns the customer's portal token, minting and persisting one if this
-// record predates portal access. Mutates the passed record so the caller can
-// keep using it.
-export function ensureCustomerToken(customer) {
+// Writes the token and reports whether the database actually took it.
+//
+// This used to be an un-awaited store.update() inside a try/catch, which could not
+// work: store.update resolves with { ok: false } instead of throwing, and the record
+// is handed the token either way. The link therefore went out for a token that was
+// never stored — and because the next visit mints a *different* token for the same
+// record, issuing a link that was not saved silently invalidated every link issued
+// before it. Awaited here so a link is only ever built on a token that is on file.
+async function persistToken(collection, record, token) {
+  const result = await store.update(collection, record.id, { portalToken: token });
+  // null: the record is not in the loaded cache, or the install is read-only (both
+  // return null rather than writing). { ok: false }: the cloud write was refused.
+  if (!result || result.ok === false) {
+    console.warn('Could not save a portal token, so no link was issued.', result);
+    return null;
+  }
+  record.portalToken = token;
+  return token;
+}
+
+// Returns the record's portal token, minting and persisting one if it predates portal
+// access. Mutates the passed record so the caller can keep using it. Async because the
+// write has to be confirmed before a link may be built from the token.
+export async function ensureCustomerToken(customer) {
   if (!customer || !customer.id) return null;
   if (customer.portalToken) return customer.portalToken;
-  const token = generatePortalToken();
-  try {
-    store.update('customers', customer.id, { portalToken: token });
-    customer.portalToken = token;
-  } catch (err) {
-    console.warn('Could not save a portal token for this customer:', err);
-    return null;
-  }
-  return token;
+  return persistToken('customers', customer, generatePortalToken());
 }
 
-export function ensureContractorToken(contractor) {
+export async function ensureContractorToken(contractor) {
   if (!contractor || !contractor.id) return null;
   if (contractor.portalToken) return contractor.portalToken;
-  const token = generatePortalToken();
-  try {
-    store.update('contractors', contractor.id, { portalToken: token });
-    contractor.portalToken = token;
-  } catch (err) {
-    console.warn('Could not save a portal token for this contractor:', err);
-    return null;
-  }
-  return token;
+  return persistToken('contractors', contractor, generatePortalToken());
 }
 
-// Magic link to the customer portal — quotes to review and accept, invoices,
-// job history. Returns null when no token could be established.
-export function customerPortalUrl(customer) {
-  const token = ensureCustomerToken(customer);
-  if (!token) return null;
+function customerUrlForToken(token) {
   return `${webAppBaseUrl()}#/portal/customer?token=${encodeURIComponent(token)}`;
 }
 
-// Magic link to the contractor portal — assigned jobs, documents, timesheets.
-export function contractorPortalUrl(contractor) {
-  const token = ensureContractorToken(contractor);
-  if (!token) return null;
+function contractorUrlForToken(token) {
   return `${webAppBaseUrl()}#/contractor-portal/${encodeURIComponent(token)}`;
+}
+
+// Magic link to the customer portal — quotes to review and accept, invoices, job
+// history. Returns null when no token could be established and stored.
+export async function customerPortalUrl(customer) {
+  const token = await ensureCustomerToken(customer);
+  return token ? customerUrlForToken(token) : null;
+}
+
+// Magic link to the contractor portal — assigned jobs, documents, timesheets.
+export async function contractorPortalUrl(contractor) {
+  const token = await ensureContractorToken(contractor);
+  return token ? contractorUrlForToken(token) : null;
+}
+
+// The link for a token that already exists, or null. Writes nothing, so this is safe
+// to call while rendering a page that merely wants to display the link — minting stays
+// an explicit action.
+export function savedCustomerPortalUrl(customer) {
+  return customer && customer.portalToken ? customerUrlForToken(customer.portalToken) : null;
+}
+
+export function savedContractorPortalUrl(contractor) {
+  return contractor && contractor.portalToken ? contractorUrlForToken(contractor.portalToken) : null;
 }
 
 // Resolve the customer record behind a quote/invoice so its email can carry a
@@ -101,8 +122,10 @@ export function customerForDocument(doc) {
   return store.getAll('customers').find(c => c.name === name) || null;
 }
 
-// The portal link for whoever a quote/invoice belongs to, or null.
-export function portalUrlForDocument(doc) {
+// The portal link for whoever a quote/invoice belongs to, or null. Awaited by the
+// email paths so a message never carries a link that was not stored: a link that does
+// not resolve is worse than no link, and callers render the same email either way.
+export async function portalUrlForDocument(doc) {
   const customer = customerForDocument(doc);
-  return customer ? customerPortalUrl(customer) : null;
+  return customer ? await customerPortalUrl(customer) : null;
 }

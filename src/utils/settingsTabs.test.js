@@ -61,6 +61,7 @@ describe('Settings Tabs: resolveSettingsTab', () => {
     assert.strictEqual(resolveSettingsTab('email_templates').tab, 'email');
     assert.strictEqual(resolveSettingsTab('api_keys').tab, 'company');
     assert.strictEqual(resolveSettingsTab('ai_assistant').tab, 'company');
+    assert.strictEqual(resolveSettingsTab('assistant').tab, 'company');
     assert.strictEqual(resolveSettingsTab('folder_sync').tab, 'local_storage');
   });
 
@@ -85,7 +86,7 @@ describe('Settings Tabs: resolveSettingsTab', () => {
 
   test('should still provide every legacy link the app itself emits', () => {
     // The in-app back buttons and old bookmarks documented in the backlog item.
-    const emittedLegacyTabs = ['forms', 'tasks', 'tasklists', 'quotes', 'quote_templates', 'email_templates', 'api_keys', 'ai_assistant', 'folder_sync'];
+    const emittedLegacyTabs = ['forms', 'tasks', 'tasklists', 'quotes', 'quote_templates', 'email_templates', 'api_keys', 'ai_assistant', 'assistant', 'folder_sync'];
     for (const raw of emittedLegacyTabs) {
       assert.ok(TAB_ALIASES[raw], `"${raw}" is no longer mapped`);
     }

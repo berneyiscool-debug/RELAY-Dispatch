@@ -21,15 +21,22 @@ const corsHeaders = {
 
 // The only host the proxy may talk to. Never trust a caller-supplied URL:
 // forwarding the server-side API key to an arbitrary endpoint exfiltrates it.
-// Deputy is DeepSeek-only, and clients no longer send an endpoint at all, so the
+// brny is Anthropic-only, and clients no longer send an endpoint at all, so the
 // allowlist below is defence in depth for older deployed builds.
-// The single model: Flash covers chat AND the attachment images. The legacy ids
-// `deepseek-chat` / `deepseek-reasoner` were retired on 2026-07-24, and V4-Pro
-// cannot read images.
-const ALLOWED_HOST = 'api.deepseek.com'
-const API_KEY_ENV = 'DEEPSEEK_API_KEY'
-const DEFAULT_MODEL = 'deepseek-flash'
-const DEFAULT_ENDPOINT = 'https://api.deepseek.com/chat/completions'
+// The default model: Haiku covers chat AND the attachment images, and is the
+// cheapest tier that still drives tool use reliably. Costlier models stay
+// reachable by name - `model` is passed through - but the default is pinned here
+// so a stale saved setting can never quietly move the fleet onto a dearer one.
+const ALLOWED_HOST = 'api.anthropic.com'
+const API_KEY_ENV = 'ANTHROPIC_API_KEY'
+const DEFAULT_MODEL = 'claude-haiku-5-5'
+const DEFAULT_ENDPOINT = 'https://api.anthropic.com/v1/messages'
+// Anthropic requires an explicit output ceiling on every request; leaving it out
+// is a 400 rather than a default. It also caps what one runaway turn can cost.
+const DEFAULT_MAX_TOKENS = 4096
+// Pinned because the wire format is versioned: an unpinned client works until it
+// silently doesn't.
+const ANTHROPIC_VERSION = '2023-06-01'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -61,7 +68,7 @@ serve(async (req) => {
     }
 
     // ── Daily allowance: company pool + per-user ceiling ───────────────
-    // The DeepSeek budget is shared by every tenant, so no single account may
+    // The Anthropic budget is shared by every tenant, so no single account may
     // drain it — and inside one account no single seat may drain the day. Spend
     // is ledgered in public.api_usage (migration 031); 034 adds the user_id that
     // the ceiling counts. The tier comes from the company row, never the client.
@@ -102,7 +109,7 @@ serve(async (req) => {
     // `relay-copilot?action=usage` answers "how much of today is left?" for the
     // two bars in the app. It is placed after authentication and before the
     // limit check, so a seat that is already blocked can still read its meters,
-    // and it never reaches DeepSeek or the ledger.
+    // and it never reaches Anthropic or the ledger.
     //
     // The company figure is an aggregate, and the personal figure is the
     // caller's own row; no other seat's spend is ever returned. A query
@@ -158,7 +165,7 @@ serve(async (req) => {
     }
 
     // ── Resolve target against the allowlist ───────────────────────────
-    const { messages, endpoint, model } = await req.json()
+    const { messages, endpoint, model, system, tools, tool_choice, max_tokens } = await req.json()
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: 'messages is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -189,21 +196,36 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+
+    // Anthropic takes the system prompt as a top-level field rather than as a
+    // message, and rejects an empty one, so it is only sent when supplied.
+    const payload: Record<string, unknown> = {
+      model: model || DEFAULT_MODEL,
+      // Mandatory upstream: an omitted ceiling is a 400, not a default.
+      max_tokens: Number(max_tokens) > 0 ? Number(max_tokens) : DEFAULT_MAX_TOKENS,
+      messages,
+      // No `temperature`. The 5.5 generation rejects it outright with a 400
+      // ("`temperature` is deprecated for this model"), so pinned sampling is
+      // unavailable on the models this proxy is pointed at. Extended reasoning
+      // stays off for the original reason: brny answers from CRM context, and
+      // thinking only adds latency and tokens here.
+    }
+    if (system) payload.system = system
+    if (Array.isArray(tools) && tools.length) {
+      payload.tools = tools
+      // `auto` still lets the model answer a plain question without calling
+      // anything; anything else the caller asks for is forwarded verbatim.
+      payload.tool_choice = tool_choice || { type: 'auto' }
+    }
 
     const response = await fetch(targetUrl.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'x-api-key': apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
       },
-      body: JSON.stringify({
-        model: model || DEFAULT_MODEL,
-        messages,
-        temperature: 0.3,
-        // Deputy answers from CRM context, so chain-of-thought only adds latency
-        // and tokens here. Explicit so an upstream default change can't re-enable it.
-        thinking: { type: 'disabled' }
-      })
+      body: JSON.stringify(payload),
     })
 
     if (!response.ok) {
@@ -215,7 +237,7 @@ serve(async (req) => {
     }
 
     const data = await response.json()
-    // Bill the tenant only for calls DeepSeek actually served.
+    // Bill the tenant only for calls Anthropic actually served.
     await recordUsage(admin, companyId, 'copilot', 1, user.id)
     return new Response(
       JSON.stringify(data),

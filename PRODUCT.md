@@ -29,7 +29,7 @@ Two mechanisms a neighboring CRM could not truthfully copy:
 
 - Desktop-first, used during the working day; also packaged as an Electron desktop app.
 - Hash-routed SPA with a persistent left sidebar (collapsible, categorized) and a top bar.
-- "brny" is an in-app AI assistant that can read app state and propose actions (e.g. drafting SMS, surfacing proposals on the dashboard).
+- "brny" is an in-app AI assistant that runs the app by conversation: it reads live state through a permission-gated read layer (`src/actions/reads.js`) and performs writes through the typed action registry (`src/actions/`). Risky actions — `send_invoice`, `record_invoice_payment`, `void_invoice`, `delete_job`, `issue_purchase_order`, `receive_purchase_order`, `convert_quote_to_job` — surface an approval card first and only run once approved; every write is permission-checked and audit-logged.
 - Public GitHub repository: no build-time secrets, no committed customer data.
 
 ## Capabilities and Constraints

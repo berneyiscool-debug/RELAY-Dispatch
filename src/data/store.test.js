@@ -2,6 +2,9 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { store } from './store.js';
 import { supabase } from '../utils/supabase.js';
+import {
+  rejectedColumns, isWritableCollection, canInsert, canUpdate
+} from '../../supabase/functions/relay-portal/portal.js';
 
 // Mock Supabase client database operations to return success and avoid console logs/errors
 supabase.from = () => ({
@@ -83,6 +86,28 @@ describe('DataStore', () => {
   });
 
   describe('update', () => {
+    test('stamps completedAt when a job is finished and clears it when reopened', async () => {
+      store.cache.jobs = [{ id: 'j_life', status: 'In Progress' }];
+      const done = await store.update('jobs', 'j_life', { status: 'Completed' });
+      assert.ok(done.completedAt);
+      const invoiced = await store.update('jobs', 'j_life', { status: 'Invoiced' });
+      assert.strictEqual(invoiced.completedAt, done.completedAt);
+      const reopened = await store.update('jobs', 'j_life', { status: 'In Progress' });
+      assert.strictEqual(reopened.completedAt, null);
+    });
+
+    test('stamps quote sent / accepted / declined dates once', async () => {
+      store.cache.quotes = [{ id: 'q_life', status: 'Draft' }, { id: 'q_dec', status: 'Sent', sentAt: '2026-01-01' }];
+      const sent = await store.update('quotes', 'q_life', { status: 'Sent' });
+      assert.ok(sent.sentAt);
+      const won = await store.update('quotes', 'q_life', { status: 'Accepted' });
+      assert.ok(won.acceptedAt);
+      assert.strictEqual(won.sentAt, sent.sentAt);
+      const declined = await store.update('quotes', 'q_dec', { status: 'Declined' });
+      assert.ok(declined.declinedAt);
+      assert.strictEqual(declined.sentAt, '2026-01-01');
+    });
+
     test('updates item in cache in local mode (companyId not set)', async () => {
       const item = { id: 'local_1', name: 'Original' };
       store.cache.customers = [item];
@@ -163,6 +188,16 @@ describe('DataStore', () => {
       const settings = store.getSettings();
       assert.strictEqual(settings.name, 'Custom Company');
       assert.strictEqual(settings.materialMarkup.defaultPercent, 40);
+    });
+
+    // A prompt shipped here merges into every tenant's settings and stands in for
+    // the playbook, which drops brny's whole policy without anything looking wrong.
+    // See "brny: changing its behaviour and skills" in DOCS.md.
+    test('ships no default AI prompt that could shadow the playbook', () => {
+      store.companySettings = null;
+      const ai = store.getSettings().ai;
+      assert.strictEqual(ai.playbook, undefined);
+      assert.strictEqual(ai.systemPrompt, undefined);
     });
   });
 
@@ -341,6 +376,36 @@ describe('DataStore', () => {
       assert.strictEqual(norm.sections[0].lineItems[0].description, 'Test Labor');
     });
 
+    test('multi-job invoice job linkage and per-job amounts survive a cloud round-trip', () => {
+      const invoicePayload = {
+        id: 'inv_combined_1',
+        number: 'INV-88888',
+        customerId: 'cust_abc',
+        status: 'Sent',
+        total: 400,
+        subtotal: 400,
+        sections: [],
+        jobIds: [1, 2],
+        jobAmounts: [{ jobId: 1, subtotal: 160 }, { jobId: 2, subtotal: 240 }],
+        jobNumbers: ['1001', '1002']
+      };
+
+      const denorm = store.denormalizeRecord(invoicePayload, 'invoices');
+
+      assert.strictEqual(denorm.jobIds, undefined);
+      assert.strictEqual(denorm.jobAmounts, undefined);
+      assert.strictEqual(denorm.jobNumbers, undefined);
+      assert.deepStrictEqual(denorm.line_items.jobIds, [1, 2]);
+      assert.deepStrictEqual(denorm.line_items.jobAmounts, [{ jobId: 1, subtotal: 160 }, { jobId: 2, subtotal: 240 }]);
+      assert.deepStrictEqual(denorm.line_items.jobNumbers, ['1001', '1002']);
+
+      const norm = store.normalizeRecord(denorm, 'invoices');
+
+      assert.deepStrictEqual(norm.jobIds, [1, 2]);
+      assert.deepStrictEqual(norm.jobAmounts, [{ jobId: 1, subtotal: 160 }, { jobId: 2, subtotal: 240 }]);
+      assert.deepStrictEqual(norm.jobNumbers, ['1001', '1002']);
+    });
+
     test('quotes serialization and deserialization via line_items works correctly', () => {
       const quotePayload = {
         id: 'q_test_1',
@@ -374,6 +439,187 @@ describe('DataStore', () => {
       assert.strictEqual(norm.isTemplate, true);
       assert.strictEqual(norm.sections[0].name, 'Phase 2');
       assert.strictEqual(norm.sections[0].lineItems[0].description, 'Test Material');
+    });
+
+    test('a to-do round-trips through the 043 column whitelist without dropping fields', () => {
+      // The exact shape src/actions/todos.js add_todo() hands to store.create().
+      const todo = {
+        id: 'todo_1',
+        companyId: 'comp1',
+        title: 'Order the switchgear',
+        notes: '',
+        status: 'open',
+        assignedTo: 'tech_2',
+        assignedToName: 'Dana Whitfield',
+        dueDate: '2026-10-12',
+        dueAt: '2026-10-12T08:00:00.000Z',
+        recordType: 'job',
+        recordId: 'job_1',
+        recordLabel: 'JOB-1007 Switchboard upgrade',
+        createdBy: 'admin_1',
+        createdByName: 'Priya Raman',
+        origin: 'brny',
+        completedAt: null,
+        completedBy: null,
+        createdAt: '2026-10-10T00:00:00.000Z',
+        updatedAt: '2026-10-10T00:00:00.000Z'
+      };
+
+      const denorm = store.denormalizeRecord({ ...todo }, 'todos');
+
+      // Mirrors the columns created by supabase/migrations/043_todos.sql. A key
+      // absent from TABLE_COLUMNS.todos is deleted before the insert, so the write
+      // would silently drop the field rather than fail loudly.
+      assert.deepStrictEqual(Object.keys(denorm).sort(), [
+        'assigned_to', 'assigned_to_name', 'company_id', 'completed_at', 'completed_by',
+        'created_at', 'created_by', 'created_by_name', 'due_at', 'due_date', 'id',
+        'notes', 'origin', 'record_id', 'record_label', 'record_type', 'status',
+        'title', 'updated_at'
+      ]);
+
+      const norm = store.normalizeRecord({ ...denorm }, 'todos');
+
+      assert.strictEqual(norm.assignedToName, 'Dana Whitfield');
+      assert.strictEqual(norm.createdByName, 'Priya Raman');
+      assert.strictEqual(norm.dueAt, '2026-10-12T08:00:00.000Z');
+      assert.strictEqual(norm.recordType, 'job');
+      assert.strictEqual(norm.recordId, 'job_1');
+      assert.strictEqual(norm.recordLabel, 'JOB-1007 Switchboard upgrade');
+      assert.strictEqual(norm.completedAt, null);
+      assert.strictEqual(norm.completedBy, null);
+      assert.strictEqual(norm.assigned_to_name, undefined);
+      assert.strictEqual(norm.record_type, undefined);
+    });
+
+    test('a customer site round-trips through the 044 column whitelist without dropping fields', () => {
+      // The exact shape PersonDetail's site drawer and actions/customers.js add_site()
+      // hand to store.update('customers', id, { sites }).
+      const customer = {
+        id: 'cust_1',
+        companyId: 'comp1',
+        name: 'Dave Berney',
+        sites: [
+          {
+            name: '14 Marine Parade',
+            address: '14 Marine Parade, Mooloolaba QLD 4557',
+            notes: 'Gate code 4417',
+            geo: { lat: -26.6821, lng: 153.1201 }
+          }
+        ]
+      };
+
+      const denorm = store.denormalizeRecord({ ...customer }, 'customers');
+
+      // `sites` is the jsonb column added by supabase/migrations/044; a key missing
+      // from TABLE_COLUMNS.customers is deleted before the write, which is how the
+      // field used to be silently dropped instead of reaching the database.
+      assert.ok(Array.isArray(denorm.sites));
+      assert.strictEqual(denorm.sites[0].name, '14 Marine Parade');
+      assert.strictEqual(denorm.sites[0].geo.lat, -26.6821);
+
+      const norm = store.normalizeRecord({ ...denorm }, 'customers');
+
+      assert.strictEqual(norm.sites.length, 1);
+      assert.strictEqual(norm.sites[0].address, '14 Marine Parade, Mooloolaba QLD 4557');
+      assert.strictEqual(norm.sites[0].notes, 'Gate code 4417');
+    });
+
+    // A whitelist entry that lands before its migration must not turn every cloud
+    // write into a failure, so the rejected column is dropped and the write retried.
+    test('a write the database rejects for an unknown column is retried once without it', async () => {
+      const attempts = [];
+      const originalFrom = supabase.from;
+      const originalWarn = console.warn;
+      const warnings = [];
+      supabase.from = (table) => ({
+        ...originalFrom(table),
+        update: (payload) => {
+          attempts.push(payload);
+          return {
+            eq: async () => (attempts.length === 1
+              ? { error: { code: '42703', message: 'column customers.sites does not exist' } }
+              : { error: null, data: {} })
+          };
+        }
+      });
+      console.warn = (...args) => warnings.push(args.join(' '));
+
+      try {
+        store.companyId = 'test-company';
+        store.cache.customers = [{ id: 'cust_1', companyId: 'test-company', name: 'Dave Berney' }];
+
+        const result = await store.update('customers', 'cust_1', { sites: [{ name: 'Shed' }] });
+
+        assert.strictEqual(attempts.length, 2);
+        assert.deepStrictEqual(attempts[0].sites, [{ name: 'Shed' }]);
+        assert.strictEqual(attempts[1].sites, undefined);
+        // Only the offending key is dropped; everything else still goes up.
+        assert.strictEqual(attempts[1].company_id, 'test-company');
+        assert.strictEqual(result.ok, true);
+        assert.strictEqual(warnings.length, 1);
+        assert.match(warnings[0], /sites/);
+      } finally {
+        supabase.from = originalFrom;
+        console.warn = originalWarn;
+      }
+    });
+
+    test('an unrelated write failure still rolls back instead of dropping columns', async () => {
+      const attempts = [];
+      const originalFrom = supabase.from;
+      const originalError = console.error;
+      supabase.from = (table) => ({
+        ...originalFrom(table),
+        update: (payload) => {
+          attempts.push(payload);
+          return {
+            eq: async () => ({
+              error: {
+                code: '42501',
+                message: 'new row violates row-level security policy for table "customers"'
+              }
+            })
+          };
+        }
+      });
+      console.error = () => {};
+
+      try {
+        store.companyId = 'test-company';
+        store.cache.customers = [{ id: 'cust_1', companyId: 'test-company', name: 'Dave Berney' }];
+
+        const result = await store.update('customers', 'cust_1', { sites: [{ name: 'Shed' }] });
+
+        assert.strictEqual(attempts.length, 1);
+        assert.strictEqual(result.ok, false);
+        assert.strictEqual(result.error.code, '42501');
+        assert.strictEqual(store.getAll('customers')[0].sites, undefined);
+      } finally {
+        supabase.from = originalFrom;
+        console.error = originalError;
+      }
+    });
+
+    test('KPI lifecycle stamps and invoice payments survive a cloud round trip', () => {
+      const quote = store.normalizeRecord(store.denormalizeRecord({
+        id: 'q_rt', status: 'Converted', sections: [],
+        sentAt: '2026-10-01T01:00:00Z', acceptedAt: '2026-10-03T01:00:00Z', signedAt: '2026-10-03T01:00:00Z',
+      }, 'quotes'), 'quotes');
+      assert.strictEqual(quote.sentAt, '2026-10-01T01:00:00Z');
+      assert.strictEqual(quote.acceptedAt, '2026-10-03T01:00:00Z');
+
+      const invoice = store.normalizeRecord(store.denormalizeRecord({
+        id: 'inv_rt', status: 'Sent', sections: [], total: 1100,
+        payments: [{ id: 'p1', amount: 400, date: '2026-10-04T00:00:00Z' }],
+      }, 'invoices'), 'invoices');
+      assert.deepStrictEqual(invoice.payments.map(p => p.amount), [400]);
+
+      const job = store.normalizeRecord(store.denormalizeRecord({
+        id: 'job_rt', status: 'Completed', completedAt: '2026-10-05T03:00:00Z', isEmergency: true, isCallback: true,
+      }, 'jobs'), 'jobs');
+      assert.strictEqual(job.completedAt, '2026-10-05T03:00:00Z');
+      assert.strictEqual(job.isEmergency, true);
+      assert.strictEqual(job.isCallback, true);
     });
 
     test('repairInvoiceIssueDates backfills missing issueDate from createdAt/dueDate', () => {
@@ -436,6 +682,111 @@ describe('DataStore', () => {
       } finally {
         supabase.from = originalFrom;
       }
+    });
+  });
+
+  // Combined ("combine into one invoice") invoices reference their jobs through a
+  // jobIds array instead of a single jobId, so every job they bill must still see the
+  // invoice in its Financials tab.
+  describe('combined invoice ⇄ job linkage', () => {
+    const seedJobs = async (jobs) => {
+      for (const job of jobs) {
+        await store.create('jobs', job);
+      }
+    };
+
+    test('a combined invoice is returned for every job it bills', async () => {
+      await seedJobs([
+        { id: '1', number: 'J-1001' },
+        { id: '2', number: 'J-1002' }
+      ]);
+      const inv = await store.create('invoices', {
+        number: 'INV-0001',
+        invoiceType: 'Standard',
+        status: 'Sent',
+        subtotal: 320,
+        total: 400,
+        jobIds: [1, 2],
+        jobAmounts: [{ jobId: 1, subtotal: 128 }, { jobId: 2, subtotal: 192 }],
+        jobNumbers: ['J-1001', 'J-1002']
+      });
+
+      assert.deepStrictEqual(store.getInvoicesForJob('1').map(i => i.id), [inv.id]);
+      assert.deepStrictEqual(store.getInvoicesForJob(2).map(i => i.id), [inv.id]);
+      assert.deepStrictEqual(store.getInvoicesForJob('3'), []);
+    });
+
+    test('a single-job invoice is still returned for its job', async () => {
+      await seedJobs([{ id: '9', number: 'J-1009' }]);
+      const inv = await store.create('invoices', {
+        number: 'INV-0002', status: 'Sent', subtotal: 50, total: 50, jobId: '9', jobNumber: 'J-1009'
+      });
+
+      assert.deepStrictEqual(store.getInvoicesForJob('9').map(i => i.id), [inv.id]);
+    });
+
+    test('void invoices are excluded on request', async () => {
+      await seedJobs([{ id: '1', number: 'J-1001' }]);
+      await store.create('invoices', { number: 'INV-0003', status: 'Void', total: 10, jobIds: ['1'] });
+
+      assert.strictEqual(store.getInvoicesForJob('1').length, 1);
+      assert.strictEqual(store.getInvoicesForJob('1', { excludeVoid: true }).length, 0);
+    });
+
+    test('each job is credited its own share, and the shares add up to the invoice total', async () => {
+      const inv = await store.create('invoices', {
+        number: 'INV-0004',
+        subtotal: 320,
+        total: 400,
+        jobIds: ['1', '2'],
+        jobAmounts: [{ jobId: '1', subtotal: 128 }, { jobId: '2', subtotal: 192 }]
+      });
+
+      const first = store.invoiceAmountForJob(inv, '1');
+      const second = store.invoiceAmountForJob(inv, 2);
+
+      assert.strictEqual(first, 160);
+      assert.strictEqual(second, 240);
+      assert.strictEqual(first + second, inv.total);
+    });
+
+    test('a combined invoice without recorded amounts splits evenly', async () => {
+      const inv = await store.create('invoices', {
+        number: 'INV-0005', subtotal: 300, total: 300, jobIds: ['1', '2']
+      });
+
+      assert.strictEqual(store.invoiceAmountForJob(inv, '1'), 150);
+      assert.strictEqual(store.invoiceAmountForJob(inv, 2), 150);
+    });
+
+    test('a single-job invoice is credited its full total', async () => {
+      const inv = await store.create('invoices', { number: 'INV-0006', total: 275, jobId: '1' });
+
+      assert.strictEqual(store.invoiceAmountForJob(inv, '1'), 275);
+    });
+
+    test('job references list every job a combined invoice bills, stored or derived', async () => {
+      await seedJobs([
+        { id: '1', number: 'J-1001' },
+        { id: '2', number: 'J-1002' }
+      ]);
+      const stored = await store.create('invoices', {
+        number: 'INV-0007', total: 100, jobIds: ['1', '2'], jobNumbers: ['J-1001', 'J-1002']
+      });
+      const legacy = await store.create('invoices', { number: 'INV-0008', total: 100, jobIds: ['1', '2'] });
+
+      assert.deepStrictEqual(store.invoiceJobNumbers(stored), ['J-1001', 'J-1002']);
+      assert.deepStrictEqual(store.invoiceJobNumbers(legacy), ['J-1001', 'J-1002']);
+    });
+
+    test('getJobsForInvoice resolves the jobs behind a combined invoice', async () => {
+      await seedJobs([
+        { id: '1', number: 'J-1001' },
+        { id: '2', number: 'J-1002' }
+      ]);
+      const inv = await store.create('invoices', { number: 'INV-0009', total: 100, jobIds: ['1', '2'] });
+
+      assert.deepStrictEqual(store.getJobsForInvoice(inv).map(j => j.number), ['J-1001', 'J-1002']);
     });
   });
 });
@@ -948,5 +1299,473 @@ describe('migrateLocalToCloud', () => {
         assert.deepStrictEqual(store.getAll('technicians'), [{ id: `${ACCOUNT}_tech_1`, name: 'Jake Morrow' }]);
       });
     });
+  });
+});
+
+// A portal visitor is anonymous, so the portals cannot use the direct Supabase calls
+// the rest of the store relies on: there is no session to authorise them. Every read
+// and write made from a portal is routed through the relay-portal edge function and it
+// re-checks the collection, the columns and ownership on each call. That function lives
+// in JavaScript under supabase/functions and has no access to the store's TABLE_COLUMNS,
+// so its write allow-list is a hand-maintained mirror of what these pages actually send.
+//
+// These tests replay the exact payloads the portals build and assert the allow-list
+// accepts them. Without this the two lists drift apart silently and portal writes start
+// being refused after a deploy.
+describe('portal scope', () => {
+  const savedLocalStorage = globalThis.localStorage;
+  const savedSessionStorage = globalThis.sessionStorage;
+  const localMem = new Map();
+  const sessionMem = new Map();
+
+  const CUSTOMER_TOKEN = 'c_pt_0123456789abcdef0123456789abcdef';
+  const CONTRACTOR_TOKEN = 'c_pt_fedcba9876543210fedcba9876543210';
+  const grant = 'a'.repeat(64);
+
+  const memoryStore = (map) => ({
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => { map.set(key, String(value)); },
+    removeItem: (key) => { map.delete(key); }
+  });
+
+  // Replacement for the edge function. Records each call so a test can assert on the
+  // payload the resolver would have received, and can be told to refuse.
+  const stubInvoke = (respond) => {
+    const calls = [];
+    const originalInvoke = supabase.functions.invoke;
+    supabase.functions.invoke = async (name, options) => {
+      calls.push({ name, body: options.body });
+      const result = respond ? respond(options.body) : { data: { ok: true } };
+      return result || { data: { ok: true } };
+    };
+    return { calls, restore: () => { supabase.functions.invoke = originalInvoke; } };
+  };
+
+  // store.create() / store.update() are fire-and-forget, and the write is queued so a
+  // page's writes land in the order it issued them. Their follow-up work — the rollback
+  // or the dedupe swap below — hangs off the write promise rather than being part of the
+  // queue, so settle the queue and then let those microtasks run before asserting on what
+  // the resolver was sent or what the cache holds.
+  const flushWrites = async () => {
+    await store._portalQueue;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  // The customer record plus the bundle the resolver would return, as raw snake_case
+  // rows, which is what the client normalises.
+  const customerRow = {
+    id: 'company-a_cust_1',
+    company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    company: 'Northbridge Facilities',
+    first_name: 'Priya',
+    last_name: 'Raman',
+    email: 'priya@northbridge.example',
+    phone: '0400 000 000',
+    address: '12 Sample St',
+    status: 'Active',
+    type: 'Company',
+    portal_token: CUSTOMER_TOKEN,
+    portal_passcode: 'sha256$aa$bb',
+    portal_last_accessed: null,
+    created_at: '2026-01-05T00:00:00.000Z',
+    updated_at: '2026-01-05T00:00:00.000Z'
+  };
+
+  const jobRow = {
+    id: 'company-a_job_1',
+    company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    number: 'J-00007',
+    customer_id: 'company-a_cust_1',
+    customer_name: 'Northbridge Facilities',
+    title: 'Switchboard upgrade',
+    type: 'Electrical',
+    status: 'In Progress',
+    tasks: [],
+    notes: null,
+    created_at: '2026-01-06T00:00:00.000Z',
+    updated_at: '2026-01-06T00:00:00.000Z'
+  };
+
+  const quoteRow = {
+    id: 'company-a_quote_1',
+    company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    number: 'Q-00003',
+    customer_id: 'company-a_cust_1',
+    customer_name: 'Northbridge Facilities',
+    status: 'Sent',
+    line_items: [{ id: 'li_1', description: 'Labour', total: 120 }],
+    created_at: '2026-01-07T00:00:00.000Z',
+    updated_at: '2026-01-07T00:00:00.000Z'
+  };
+
+  const settings = { name: 'Apex Power Services', enableCustomerPortal: true };
+
+  const hydrateCustomer = () => store.hydratePortalScope({
+    kind: 'customer',
+    token: CUSTOMER_TOKEN,
+    grant,
+    record: customerRow,
+    settings,
+    tables: { jobs: [jobRow], quotes: [quoteRow], invoices: [], assets: [], maintenancePlans: [] }
+  });
+
+  beforeEach(() => {
+    localMem.clear();
+    sessionMem.clear();
+    globalThis.localStorage = memoryStore(localMem);
+    globalThis.sessionStorage = memoryStore(sessionMem);
+    store.clearSync();
+    store.listeners = {};
+    store.portalScope = null;
+    store._portalQueue = Promise.resolve();
+    store.db = null;
+  });
+
+  afterEach(() => {
+    if (savedLocalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = savedLocalStorage;
+    if (savedSessionStorage === undefined) delete globalThis.sessionStorage;
+    else globalThis.sessionStorage = savedSessionStorage;
+    store.clearSync();
+    store.portalScope = null;
+    store._portalQueue = Promise.resolve();
+    store.db = null;
+  });
+
+  test('serves the resolver bundle as normalised records', () => {
+    hydrateCustomer();
+
+    const customer = store.getById('customers', 'company-a_cust_1');
+    assert.strictEqual(customer.firstName, 'Priya');
+    assert.strictEqual(customer.portalToken, CUSTOMER_TOKEN);
+    // The whole point: an anonymous visitor sees the customer at all.
+    assert.strictEqual(store.getAll('jobs').length, 1);
+    assert.strictEqual(store.getAll('quotes').length, 1);
+    assert.deepStrictEqual(store.getAll('assets'), []);
+  });
+
+  test('normalises the resolver rows to the shapes the pages expect', () => {
+    hydrateCustomer();
+    const customer = store.getById('customers', 'company-a_cust_1');
+    assert.strictEqual(customer.firstName, 'Priya');
+    assert.strictEqual(customer.companyId, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+    // The resolver strips portal_passcode / portal_token (projectRecord); what it does
+    // send is camelCased here so the pages need no knowledge of the wire format.
+    assert.strictEqual(store.getById('jobs', 'company-a_job_1').customerId, 'company-a_cust_1');
+    assert.strictEqual(store.getById('quotes', 'company-a_quote_1').customerName, 'Northbridge Facilities');
+    assert.ok(!('customer_id' in store.getById('jobs', 'company-a_job_1')));
+  });
+
+  test('settings come from the token company, not the visitor', () => {
+    hydrateCustomer();
+    assert.strictEqual(store.getSettings().name, 'Apex Power Services');
+    assert.strictEqual(store.getSettings().enableCustomerPortal, true);
+  });
+
+  test('refuses a full-collection save', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      await store.save('customers', [{ id: 'company-a_cust_1', firstName: 'Overwritten' }]);
+      assert.strictEqual(calls.length, 0);
+      assert.strictEqual(store.getById('customers', 'company-a_cust_1').firstName, 'Priya');
+    } finally { restore(); }
+  });
+
+  test('refuses a delete', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      await store.delete('jobs', 'company-a_job_1');
+      assert.strictEqual(calls.length, 0);
+      assert.strictEqual(store.getAll('jobs').length, 1);
+    } finally { restore(); }
+  });
+
+  test('a portal update sends only the changed columns', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      // Portal.js:1801 — the customer posts a comment on a job. The entry is held in
+      // customerActivityLog, which the store packs into the job's `notes` column.
+      const job = store.getById('jobs', 'company-a_job_1');
+      const log = [...(job.customerActivityLog || []), { id: 'a1', content: 'Any update?', isCustomer: true }];
+      const result = await store.update('jobs', job.id, { customerActivityLog: log });
+
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(calls.length, 1);
+      const body = calls[0].body;
+      assert.strictEqual(body.action, 'write');
+      assert.strictEqual(body.kind, 'customer');
+      assert.strictEqual(body.token, CUSTOMER_TOKEN);
+      assert.strictEqual(body.grant, grant);
+      assert.deepStrictEqual(Object.keys(body.payload).sort(), ['notes', 'updated_at']);
+      assert.match(body.payload.notes, /Any update\?/);
+      assert.deepStrictEqual(rejectedColumns('customer', 'jobs', body.payload), []);
+    } finally { restore(); }
+  });
+
+  test('a portal update always carries the changed value plus the timestamp', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      const customer = store.getById('customers', 'company-a_cust_1');
+      const result = await store.update('customers', customer.id, { firstName: 'Priya' });
+      assert.strictEqual(result.ok, true);
+      // update() stamps updatedAt on every call, so even a re-send of the same value
+      // is a one-column write rather than a no-op.
+      assert.strictEqual(calls.length, 1);
+      assert.deepStrictEqual(Object.keys(calls[0].body.payload), ['updated_at']);
+    } finally { restore(); }
+  });
+
+  test('rolls the cache back when the resolver refuses an update', async () => {
+    hydrateCustomer();
+    const { restore } = stubInvoke(() => ({ data: { ok: false, error: 'Refused.' } }));
+    try {
+      const job = store.getById('jobs', 'company-a_job_1');
+      const result = await store.update('jobs', job.id, {
+        customerActivityLog: [{ id: 'a1', content: 'Nope', isCustomer: true }]
+      });
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(store.getById('jobs', 'company-a_job_1').customerActivityLog, undefined);
+    } finally { restore(); }
+  });
+
+  test('returns null for an id outside the bundle', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      // Same contract as the staff path: an id the cache does not hold is not found.
+      const result = store.update('jobs', 'company-a_job_999', { status: 'Complete' });
+      assert.strictEqual(result, null);
+      assert.strictEqual(calls.length, 0);
+    } finally { restore(); }
+  });
+
+  test('the resolver accepts every notification a portal raises', async () => {
+    hydrateCustomer();
+    const { calls, restore } = stubInvoke();
+    try {
+      // Portal.js:1824 and :1876 — quote accepted / declined. Both also set `source`
+      // and `createdBy`, which are not columns and never reach the payload.
+      store.create('notifications', {
+        title: 'Quote Approved via Portal',
+        message: 'Proposal Q-00003 approved by Northbridge Facilities via portal link',
+        link: '/quotes/company-a_quote_1',
+        read: false,
+        source: 'customer_portal',
+        createdBy: 'Customer (Portal)',
+        createdAt: new Date().toISOString(),
+        status: 'Pending'
+      });
+
+      // Portal.js:1997 — a service request carries more of the notification's own
+      // columns plus the contact and asset it refers to.
+      store.create('notifications', {
+        title: 'Service Request: Repair',
+        message: 'Request from Northbridge Facilities via portal',
+        description: 'Request Type: Repair',
+        read: false,
+        source: 'customer_portal',
+        createdBy: 'Customer (Portal)',
+        type: 'Client Request',
+        priority: 'High',
+        status: 'Pending',
+        customerId: customerRow.id,
+        customerName: customerRow.company,
+        contactName: 'Priya Raman',
+        siteName: '12 Sample St',
+        assetId: '',
+        createdAt: new Date().toISOString()
+      });
+
+      await flushWrites();
+      assert.strictEqual(calls.length, 2);
+      calls.forEach(({ body }) => {
+        assert.strictEqual(body.collection, 'notifications');        assert.deepStrictEqual(rejectedColumns('customer', 'notifications', body.payload, 'insert'), []);
+        assert.ok(body.payload.number, 'expected the store to stamp a notification number');
+        assert.ok(!('source' in body.payload), 'source is not a column and must be stripped');
+        assert.ok(!('created_by' in body.payload), 'created_by is stamped by the resolver');
+        assert.strictEqual(store.getById('notifications', body.payload.id).createdBy, 'Customer (Portal)');
+        assert.ok(!('company_id' in body.payload), 'company_id is stamped by the resolver');
+      });
+    } finally { restore(); }
+  });
+
+  test('a customer portal may not create a job', () => {
+    hydrateCustomer();
+    // A service request becomes a notification, never a job, so the resolver refuses
+    // the insert outright rather than relying on a column check.
+    assert.strictEqual(canInsert('customer', 'jobs'), false);
+    assert.strictEqual(canUpdate('customer', 'jobs'), true);
+    assert.strictEqual(canInsert('customer', 'customers'), false);
+    assert.strictEqual(canInsert('customer', 'quotes'), false);
+  });
+
+  test('the resolver accepts the contractor B2B import', async () => {
+    const contractorRow = {
+      id: 'company-a_cont_1',
+      company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      name: 'Delta Electrical',
+      portal_token: CONTRACTOR_TOKEN,
+      portal_passcode: null,
+      created_at: '2026-01-05T00:00:00.000Z',
+      updated_at: '2026-01-05T00:00:00.000Z'
+    };
+    store.hydratePortalScope({
+      kind: 'contractor',
+      token: CONTRACTOR_TOKEN,
+      grant,
+      record: contractorRow,
+      settings,
+      tables: { jobs: [] }
+    });
+
+    const { calls, restore } = stubInvoke();
+    try {
+      // ContractorPortal.js:1598 — the office the contractor works for, created once.
+      store.create('customers', {
+        id: 'cust_b2b_abc123',
+        company: 'Apex Power Services',
+        firstName: 'Operations',
+        lastName: 'Staff',
+        email: 'dispatch@apex.example',
+        phone: '',
+        address: '',
+        status: 'Active',
+        type: 'Company',
+        notes: 'Auto-created customer representing our parent company during subcontractor B2B job imports.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      // ContractorPortal.js:1646 — the imported job.
+      store.create('jobs', {
+        id: 'job_b2b_def456',
+        number: store.getNextNumber('J-', 'jobs'),
+        customerId: 'cust_b2b_abc123',
+        customerName: 'Apex Power Services',
+        contactName: 'Operations Staff',
+        siteAddress: '9 Depot Rd',
+        title: '[B2B Dispatch] J-00011 - Cable tray',
+        type: 'Electrical',
+        status: 'Pending',
+        priority: 'Medium',
+        scheduledDate: '2026-02-01',
+        estimatedHours: 4,
+        laborCost: 480,
+        materialCost: 120,
+        tasks: [{ id: 'b2bt_1', name: 'Isolate', status: 'Not Started', subTasks: [], assignedContractorIds: [contractorRow.id], assignedContractorId: contractorRow.id }],
+        notes: 'Imported via magic-link B2B Dispatch API.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      await flushWrites();
+      assert.strictEqual(calls.length, 2);
+
+      const customerWrite = calls[0].body;
+      assert.strictEqual(customerWrite.collection, 'customers');
+      assert.deepStrictEqual(rejectedColumns('contractor', 'customers', customerWrite.payload, 'insert'), []);
+      // customers has no `notes` column, so the store strips it — as it does for staff.
+      assert.ok(!('notes' in customerWrite.payload));
+
+      const jobWrite = calls[1].body;
+      assert.strictEqual(jobWrite.collection, 'jobs');
+      assert.deepStrictEqual(rejectedColumns('contractor', 'jobs', jobWrite.payload, 'insert'), []);
+      assert.ok('tasks' in jobWrite.payload);
+      assert.ok(!('company_id' in jobWrite.payload));
+      // A contractor never creates a customer the office already has, nor a contractor row.
+      assert.strictEqual(canInsert('contractor', 'contractors'), false);
+      assert.strictEqual(canInsert('contractor', 'quotes'), false);
+    } finally { restore(); }
+  });
+
+  test('a refused create is removed from the cache again', async () => {
+    hydrateCustomer();
+    const { restore } = stubInvoke(() => ({ data: { ok: false, error: 'Refused.' } }));
+    try {
+      const before = store.getAll('notifications').length;
+      store.create('notifications', { title: 'Quote Approved via Portal', status: 'Pending' });
+      await flushWrites();
+      assert.strictEqual(store.getAll('notifications').length, before);
+    } finally { restore(); }
+  });
+
+  // The B2B import creates the office customer and then jobs that reference it, both
+  // without awaiting. Issued in parallel the second request can reach the database first
+  // and be refused for pointing at a row that does not exist yet.
+  test('a page’s writes reach the resolver in the order they were made', async () => {
+    hydrateCustomer();
+    const order = [];
+    let release;
+    const first = new Promise((resolve) => { release = resolve; });
+    const { calls, restore } = stubInvoke((body) => {
+      order.push(body.collection);
+      // Hold the first request open so a parallel second one would overtake it.
+      return body.collection === 'notifications' ? first.then(() => ({ data: { ok: true } })) : { data: { ok: true } };
+    });
+    try {
+      store.create('notifications', { title: 'First', status: 'Pending' });
+      store.create('notifications', { title: 'Second', status: 'Pending' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.strictEqual(calls.length, 1, 'the second write waits for the first');
+
+      release();
+      await flushWrites();
+      assert.deepStrictEqual(order, ['notifications', 'notifications']);
+      assert.strictEqual(calls.length, 2);
+    } finally { restore(); }
+  });
+
+  // The resolver refuses to add a second customer for an office already on file and
+  // answers with the row it found, so the id the page invented never existed.
+  test('a deduplicated create swaps the optimistic row for the real one', async () => {
+    hydrateCustomer();
+    const existing = {
+      id: 'company-a_cust_9',
+      company_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      company: 'Apex Power Services',
+      first_name: 'Operations',
+      last_name: 'Staff',
+      email: 'dispatch@apex.example',
+      phone: '',
+      address: '',
+      status: 'Active',
+      type: 'Company',
+      created_at: '2026-01-05T00:00:00.000Z',
+      updated_at: '2026-01-05T00:00:00.000Z'
+    };
+    const { restore } = stubInvoke(() => ({ data: { ok: true, record: existing, existing: true } }));
+    try {
+      store.create('customers', { id: 'cust_b2b_abc123', company: 'Apex Power Services', type: 'Company' });
+      await flushWrites();
+
+      assert.strictEqual(store.getById('customers', 'cust_b2b_abc123'), null);
+      const kept = store.getById('customers', 'company-a_cust_9');
+      assert.ok(kept, 'the row the resolver kept should be in the cache');
+      assert.strictEqual(kept.companyId, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+    } finally { restore(); }
+  });
+
+  test('the resolver refuses collections no portal has any business writing', () => {
+    hydrateCustomer();
+    assert.strictEqual(isWritableCollection('customer', 'technicians'), false);
+    assert.strictEqual(isWritableCollection('customer', 'timesheets'), false);
+    assert.strictEqual(isWritableCollection('customer', 'invoices'), false);
+    assert.strictEqual(isWritableCollection('contractor', 'notifications'), false);
+  });
+
+  test('leaving the portal restores the signed-in store', async () => {
+    hydrateCustomer();
+    assert.ok(store.portalScope);
+    localMem.set('currentUser', JSON.stringify({ id: 'acct_1_admin', name: 'Dana', companyId: 'acct_1' }));
+
+    await store.clearPortalScope();
+
+    assert.strictEqual(store.portalScope, null);
+    // Back on the local path, and the visitor bundle is gone.
+    assert.strictEqual(store.companySettings, null);
   });
 });

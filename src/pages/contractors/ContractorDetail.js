@@ -9,7 +9,7 @@ import { showDrawer } from '../../components/Drawer.js';
 import { getContractorCompliance, getDocStatus } from '../../utils/compliance.js';
 import { emailEnabledFor, sendEmail } from '../../utils/email.js';
 import { contractorInviteEmail } from '../../utils/emailTemplates.js';
-import { contractorPortalUrl, generatePortalToken } from '../../utils/portalLinks.js';
+import { contractorPortalUrl, savedContractorPortalUrl } from '../../utils/portalLinks.js';
 
 export function renderContractorDetail(container, { id, tab }) {
   const contractor = store.getById('contractors', id);
@@ -18,12 +18,10 @@ export function renderContractorDetail(container, { id, tab }) {
     return;
   }
 
-  // Self-healing check for contractor portal magic link token
-  if (!contractor.portalToken) {
-    const generatedToken = generatePortalToken();
-    store.update('contractors', contractor.id, { portalToken: generatedToken });
-    contractor.portalToken = generatedToken;
-  }
+  // The portal token is no longer minted here. Minting on render meant every visit to
+  // this page wrote to the contractor's row — including from a read-only install, where
+  // the write is refused and the link shown on the page resolved to nothing. It is now
+  // minted by the explicit copy/send actions below, and only once the write is saved.
 
   updateBreadcrumbDetail(contractor.businessName);
 
@@ -181,7 +179,7 @@ export function renderContractorDetail(container, { id, tab }) {
               Share this secure magic link with the subcontractor. They will be able to view their assigned tasks, slide progress updates, leave site comments, and upload compliance documents without needing a password.
             </p>
             <div style="display:flex; gap: var(--space-sm); align-items:center;">
-              <input type="text" readonly id="magic-link-url" class="form-input" style="flex:1; font-family:var(--font-mono); background: var(--content-bg); font-size:13px; color:var(--text-secondary);" value="${contractorPortalUrl(contractor)}" />
+              <input type="text" readonly id="magic-link-url" class="form-input" style="flex:1; font-family:var(--font-mono); background: var(--content-bg); font-size:13px; color:var(--text-secondary);" value="${savedContractorPortalUrl(contractor) || ''}" placeholder="No portal link generated yet" />
               <button class="btn btn-primary btn-sm" id="btn-copy-magic-link" style="display:flex; align-items:center; gap:6px; height: 32px; white-space:nowrap;">
                 <span class="material-icons-outlined" style="font-size:16px">content_copy</span> Copy Magic Link
               </button>
@@ -199,15 +197,21 @@ export function renderContractorDetail(container, { id, tab }) {
       // Copy magic link clipboard click handler
       const copyBtn = tabContent.querySelector('#btn-copy-magic-link');
       if (copyBtn) {
-        copyBtn.addEventListener('click', () => {
+        copyBtn.addEventListener('click', async () => {
           const urlInput = tabContent.querySelector('#magic-link-url');
-          if (urlInput) {
-            navigator.clipboard.writeText(urlInput.value).then(() => {
-              showToast('Magic link copied to clipboard!', 'success');
-            }).catch(() => {
-              showToast('Failed to copy link', 'error');
-            });
+          if (!urlInput) return;
+          // First press mints and stores the token; later presses reuse it.
+          const url = savedContractorPortalUrl(contractor) || await contractorPortalUrl(contractor);
+          if (!url) {
+            showToast('Could not save a portal link for this contractor. Please try again.', 'error');
+            return;
           }
+          urlInput.value = url;
+          navigator.clipboard.writeText(url).then(() => {
+            showToast('Magic link copied to clipboard!', 'success');
+          }).catch(() => {
+            showToast('Failed to copy link', 'error');
+          });
         });
       }
 
@@ -263,7 +267,15 @@ export function renderContractorDetail(container, { id, tab }) {
                 try {
                   // Real send via Resend when email is configured
                   if (emailEnabledFor('contractor_invite') && contractor.email) {
-                    const { subject, html } = contractorInviteEmail(contractor, { portalUrl: contractorPortalUrl(contractor) });
+                    // The token is minted and stored before the invite goes out: an invite
+                    // carrying a link that was never saved would not resolve, and it would
+                    // invalidate the contractor's previously issued link.
+                    const portalUrl = await contractorPortalUrl(contractor);
+                    if (!portalUrl) {
+                      showToast('Could not save a portal link for this contractor. The invite was not sent.', 'error');
+                      return;
+                    }
+                    const { subject, html } = contractorInviteEmail(contractor, { portalUrl });
                     await sendEmail({ to: contractor.email, subject, html, template: 'contractor_invite', relatedType: 'contractor', relatedId: contractor.id });
                     showToast(`Portal invite emailed to ${contractor.email}`, 'success');
                     store.create('notifications', {

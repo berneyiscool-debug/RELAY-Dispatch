@@ -6,9 +6,9 @@ import { store } from '../data/store.js';
 import { router } from '../router.js';
 import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssistant.js';
 import { showModal } from './Modal.js';
-import relayIcon from '../assets/deputy-icon.svg?raw';
 import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 import { escapeHTML } from '../utils/security.js';
+import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
 
 // Brand lockup for the top bar's left (moved up from the sidebar). Uses the
 // company logo when set, else the Relay mark + wordmark.
@@ -45,7 +45,7 @@ export function createTopBar() {
            top bar while the Deputy drawer is open. -->
       <div class="relay-topbar-group relay-deputy-slot">
         <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="brny — your co-pilot" aria-label="Open brny assistant" style="position: relative;">
-          ${relayIcon}
+          <span class="material-icons-outlined">smart_toy</span>
           <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--color-danger); color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
         </button>
       </div>
@@ -214,7 +214,7 @@ function toggleNotificationsDropdown(btn) {
   dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'notifications-dropdown';
-  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;z-index:var(--z-dropdown);box-shadow:var(--shadow-lg);border-radius:var(--border-radius-md);background:var(--card-bg);border:1px solid var(--card-border);padding:0;';
+  dropdown.style.cssText = 'position:absolute;top:100%;right:0;margin-top:8px;width:320px;max-height:420px;overflow-y:auto;padding:0;';
   // dark theme handled by [data-theme-mode="dark"] .dropdown-menu in components.css
 
   const header = document.createElement('div');
@@ -429,19 +429,18 @@ function showSearchResults(query) {
   const dropdown = document.createElement('div');
   dropdown.className = 'dropdown-menu';
   dropdown.id = 'search-results';
-  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050; background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:4px 0;';
+  // Surface, radius, shadow and padding come from .dropdown-menu; only the
+  // full-width anchoring, scroll cap and stacking order are set here.
+  dropdown.style.cssText = 'position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:340px; overflow-y:auto; z-index:1050;';
 
   results.slice(0, 10).forEach(r => {
     const item = document.createElement('button');
     item.className = 'dropdown-item';
-    item.style.cssText = 'display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:none; background:none; text-align:left; cursor:pointer; font-size:13px; color:var(--text-primary); transition:background 0.15s ease;';
     item.innerHTML = `
       <span class="material-icons-outlined" style="font-size:16px; color:var(--color-primary)">${r.icon}</span>
       <span style="flex:1" class="truncate">${escapeHTML(r.label)}</span>
       <span class="badge badge-neutral" style="font-size:10px; padding:2px 6px">${escapeHTML(r.type)}</span>
     `;
-    item.addEventListener('mouseenter', () => { item.style.background = 'var(--bg-color)'; });
-    item.addEventListener('mouseleave', () => { item.style.background = 'none'; });
     item.addEventListener('click', () => {
       router.navigate(r.path);
       hideSearchResults();
@@ -634,7 +633,7 @@ function openHelpModal() {
           <h4>brny Assistant co-pilot</h4>
           <p>brny is your automated assistant that can perform commands, aggregate metrics, and manage canvas layouts.</p>
           <ul>
-            <li><strong>Opening brny:</strong> Click the Star icon in the top right bar or press <kbd>Shift</kbd> + <kbd>B</kbd> to open the co-pilot.</li>
+            <li><strong>Opening brny:</strong> Click the robot icon in the top right bar or press <kbd>Shift</kbd> + <kbd>B</kbd> to open the co-pilot.</li>
             <li><strong>Direct Commands:</strong> Type in plain English to manage your screen. Try saying: <em>"add a schedule widget"</em> or <em>"zoom canvas to fit"</em>.</li>
             <li><strong>Overview Queries:</strong> Ask questions like: <em>"how many active jobs do we have?"</em> or <em>"show me overdue invoices"</em> to get immediate operational updates.</li>
           </ul>
@@ -642,6 +641,16 @@ function openHelpModal() {
       </div>
 
       <div class="help-right-col">
+        <div>
+          <div class="help-section-title">Try it out</div>
+          <button class="help-action-card" id="help-demo-toggle">
+            <span class="material-icons-outlined">${store.demoMode ? 'logout' : 'science'}</span>
+            <div class="help-action-info">
+              <span class="help-action-label">${store.demoMode ? 'Exit demo mode' : 'Explore demo mode'}</span>
+              <span class="help-action-prompt">${store.demoMode ? 'Back to your own data' : 'A sample business — your data stays untouched'}</span>
+            </div>
+          </button>
+        </div>
         <div>
           <div class="help-section-title">Keyboard Shortcuts</div>
           <div class="help-shortcut-row">
@@ -706,8 +715,13 @@ function openHelpModal() {
     size: 'modal-lg'
   });
 
+  content.querySelector('#help-demo-toggle')?.addEventListener('click', () => {
+    close();
+    if (store.demoMode) exitDemoMode(); else enterDemoMode();
+  });
+
   // Attach interactive quick action triggers
-  content.querySelectorAll('.help-action-card').forEach(card => {
+  content.querySelectorAll('.help-action-card[data-prompt]').forEach(card => {
     card.addEventListener('click', () => {
       const prompt = card.dataset.prompt;
       close();

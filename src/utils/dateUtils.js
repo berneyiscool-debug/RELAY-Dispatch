@@ -20,6 +20,54 @@ export function todayLocalISO(d = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The UTC offset in force on that day, e.g. "UTC+11". */
+function utcOffsetLabel(d) {
+  const minutes = -d.getTimezoneOffset();
+  const sign = minutes < 0 ? '-' : '+';
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const rest = abs % 60;
+  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, '0')}` : ''}`;
+}
+
+/**
+ * Today's date in full English: "Thursday, 15 October 2026".
+ *
+ * Written from fixed name tables rather than a locale string, because the
+ * locale belongs to whoever is reading: `new Date().toLocaleString()` renders
+ * "15/10/2026" for an Australian user, which a model reads as a month-first
+ * date and then answers about the wrong day. The weekday is spelled out because
+ * "is Friday this week?" cannot be answered without it and nothing else in a
+ * prompt supplies it.
+ *
+ * @param {Date} [d] optional date; defaults to now
+ * @returns {string} e.g. "Thursday, 15 October 2026", or '' for an unusable date
+ */
+export function localDateLabel(d = new Date()) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  return `${WEEKDAY_NAMES[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/**
+ * The same day plus the local clock time and the offset in force on that day:
+ * "Thursday, 15 October 2026, 9:14 am (UTC+11)". The offset is what makes the
+ * line unambiguous to a reader in another timezone.
+ *
+ * @param {Date} [d] optional date; defaults to now
+ * @returns {string}
+ */
+export function localDateTimeLabel(d = new Date()) {
+  const day = localDateLabel(d);
+  if (!day) return '';
+  const hours24 = d.getHours();
+  const hours = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}, ${hours}:${minutes} ${hours24 < 12 ? 'am' : 'pm'} (${utcOffsetLabel(d)})`;
+}
+
 /**
  * Normalises anything date-like to a canonical local "YYYY-MM-DD" key.
  *

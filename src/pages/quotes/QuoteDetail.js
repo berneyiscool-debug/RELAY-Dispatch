@@ -125,10 +125,10 @@ export function renderQuoteDetail(container, params) {
           ${!isNew && quote.status === 'Draft' && hasPermission('Quotes', 'edit') ? `<button class="btn btn-primary" id="btn-send-quote" data-tooltip="Email professional proposal to primary customer contact" data-tooltip-pos="left"><span class="material-icons-outlined">send</span> Send Quote</button>` : ''}
           <div class="dropdown">
              <button class="btn btn-secondary btn-icon"><span class="material-icons-outlined">more_vert</span></button>
-             <div class="dropdown-menu dropdown-menu-right" style="display:none;position:absolute;right:0;top:100%;background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px;box-shadow:var(--shadow-md);z-index:var(--z-dropdown);min-width:160px">
-                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-import-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Import Template</a>` : ''}
-                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-save-template" style="display:block;padding:8px 12px;text-decoration:none;color:var(--text-primary)">Save as Template</a>` : ''}
-                ${!isNew && hasPermission('Quotes', 'delete') ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="display:block;padding:8px 12px;text-decoration:none;color:var(--color-danger)">Delete Quote</a>` : ''}
+             <div class="dropdown-menu" style="display:none; min-width:160px">
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-import-template">Import Template</a>` : ''}
+                ${hasPermission('Quotes', 'edit') ? `<a href="#" class="dropdown-item" id="btn-save-template">Save as Template</a>` : ''}
+                ${!isNew && hasPermission('Quotes', 'delete') ? `<a href="#" class="dropdown-item" id="btn-delete-quote" style="color:var(--color-danger)">Delete Quote</a>` : ''}
              </div>
           </div>
         `
@@ -571,7 +571,7 @@ export function renderQuoteDetail(container, params) {
           btn.disabled = true;
           btn.innerHTML = `<span class="material-icons-outlined">hourglass_empty</span> Sending…`;
           try {
-            const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
+            const { subject, html } = quoteEmail(quote, { portalUrl: await portalUrlForDocument(quote) });
             const attachments = await documentAttachment('quote', quote);
             await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
             showToast(`Quote emailed to ${to}`, 'success');
@@ -1007,7 +1007,7 @@ export function renderQuoteDetail(container, params) {
 
           try {
             if (canEmail) {
-              const { subject, html } = quoteEmail(quote, { portalUrl: portalUrlForDocument(quote) });
+              const { subject, html } = quoteEmail(quote, { portalUrl: await portalUrlForDocument(quote) });
               const attachments = await documentAttachment('quote', quote);
               await sendEmail({ to, subject, html, attachments, template: 'quote', relatedType: 'quote', relatedId: quote.id });
             }

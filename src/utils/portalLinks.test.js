@@ -25,6 +25,8 @@ const {
   ensureContractorToken,
   customerPortalUrl,
   contractorPortalUrl,
+  savedCustomerPortalUrl,
+  savedContractorPortalUrl,
   customerForDocument,
   portalUrlForDocument,
   generatePortalToken,
@@ -34,15 +36,22 @@ const { store } = await import('../data/store.js');
 
 const realUpdate = store.update;
 let writes;
+let writeResult;
 
 describe('portal links', () => {
   beforeEach(() => {
     mem.clear();
     writes = [];
+    writeResult = { ok: true };
     useLocation(browserLocation);
     store.cache = {};
     store.companyId = null;
-    store.update = (collection, id, data) => { writes.push({ collection, id, data }); };
+    store.update = (collection, id, data) => {
+      writes.push({ collection, id, data });
+      // store.update resolves with { ok } in cloud mode and returns the record itself
+      // in local mode; null when the row is not cached or the install is read-only.
+      return writeResult;
+    };
   });
 
   after(() => { store.update = realUpdate; });
@@ -51,7 +60,7 @@ describe('portal links', () => {
     assert.strictEqual(webAppBaseUrl(), 'https://relay.example/app/');
   });
 
-  test('points at the hosted web app when the desktop build serves file://', () => {
+  test('points at the hosted web app when the desktop build serves file://', async () => {
     // Electron loads the bundle from file://, where the origin is the string
     // "null" and the pathname is the local index.html — neither belongs in a
     // link we email to a customer.
@@ -59,24 +68,24 @@ describe('portal links', () => {
 
     assert.strictEqual(webAppBaseUrl(), 'https://relaydispatch.com.au/app/');
     assert.strictEqual(
-      customerPortalUrl({ id: 'cus_1', portalToken: 'c_pt_abc' }),
+      await customerPortalUrl({ id: 'cus_1', portalToken: 'c_pt_abc' }),
       'https://relaydispatch.com.au/app/#/portal/customer?token=c_pt_abc'
     );
     assert.strictEqual(
-      contractorPortalUrl({ id: 'con_1', portalToken: 'c_pt_con' }),
+      await contractorPortalUrl({ id: 'con_1', portalToken: 'c_pt_con' }),
       'https://relaydispatch.com.au/app/#/contractor-portal/c_pt_con'
     );
   });
 
-  test('customer links carry the portal token', () => {
+  test('customer links carry the portal token', async () => {
     const customer = { id: 'cus_1', portalToken: 'c_pt_abc' };
-    assert.strictEqual(customerPortalUrl(customer), 'https://relay.example/app/#/portal/customer?token=c_pt_abc');
+    assert.strictEqual(await customerPortalUrl(customer), 'https://relay.example/app/#/portal/customer?token=c_pt_abc');
     assert.deepStrictEqual(writes, []);
   });
 
-  test('mints and persists a token for legacy customers', () => {
+  test('mints and persists a token for legacy customers', async () => {
     const customer = { id: 'cus_2' };
-    const url = customerPortalUrl(customer);
+    const url = await customerPortalUrl(customer);
 
     assert.ok(customer.portalToken, 'the record should be mutated for the caller');
     assert.match(customer.portalToken, /^c_pt_/);
@@ -87,25 +96,59 @@ describe('portal links', () => {
     assert.ok(url.includes(encodeURIComponent(customer.portalToken)));
   });
 
-  test('reuses a token instead of minting a second one', () => {
+  // A link is only worth issuing if its token is on file. Minting one that was never
+  // stored hands out a URL that resolves to nothing — and because the next visit mints
+  // a different token for the same record, it also kills every link issued before it.
+  test('issues no link when the token could not be stored', async () => {
+    for (const refusal of [null, { ok: false, error: new Error('denied') }]) {
+      writeResult = refusal;
+      const customer = { id: 'cus_4' };
+      assert.strictEqual(await customerPortalUrl(customer), null);
+      assert.strictEqual(customer.portalToken, undefined, 'an unsaved token must not reach the record');
+      assert.strictEqual(await ensureCustomerToken(customer), null);
+    }
+  });
+
+  test('issues no contractor link when the token could not be stored', async () => {
+    writeResult = null;
+    const contractor = { id: 'con_2' };
+    assert.strictEqual(await contractorPortalUrl(contractor), null);
+    assert.strictEqual(contractor.portalToken, undefined);
+  });
+
+  test('saved-link helpers never write and never mint', () => {
+    assert.strictEqual(savedCustomerPortalUrl({ id: 'cus_5' }), null);
+    assert.strictEqual(savedContractorPortalUrl({ id: 'con_5' }), null);
+    assert.strictEqual(
+      savedCustomerPortalUrl({ id: 'cus_5', portalToken: 'c_pt_have' }),
+      'https://relay.example/app/#/portal/customer?token=c_pt_have'
+    );
+    assert.strictEqual(
+      savedContractorPortalUrl({ id: 'con_5', portalToken: 'c_pt_have' }),
+      'https://relay.example/app/#/contractor-portal/c_pt_have'
+    );
+    assert.deepStrictEqual(writes, []);
+  });
+
+  test('reuses a token instead of minting a second one', async () => {
     const customer = { id: 'cus_3', portalToken: 'c_pt_keep' };
-    ensureCustomerToken(customer);
-    ensureCustomerToken(customer);
+    await ensureCustomerToken(customer);
+    await ensureCustomerToken(customer);
     assert.deepStrictEqual(writes, []);
     assert.strictEqual(customer.portalToken, 'c_pt_keep');
   });
 
-  test('contractor links use the token path form', () => {
+  test('contractor links use the token path form', async () => {
     const contractor = { id: 'con_1', portalToken: 'c_pt_con' };
-    assert.strictEqual(contractorPortalUrl(contractor), 'https://relay.example/app/#/contractor-portal/c_pt_con');
+    assert.strictEqual(await contractorPortalUrl(contractor), 'https://relay.example/app/#/contractor-portal/c_pt_con');
     assert.deepStrictEqual(writes, []);
   });
 
-  test('returns null when a record has no id to persist against', () => {
-    assert.strictEqual(ensureCustomerToken(null), null);
-    assert.strictEqual(ensureCustomerToken({}), null);
-    assert.strictEqual(customerPortalUrl({}), null);
-    assert.strictEqual(ensureContractorToken(undefined), null);
+  test('returns null when a record has no id to persist against', async () => {
+    assert.strictEqual(await ensureCustomerToken(null), null);
+    assert.strictEqual(await ensureCustomerToken({}), null);
+    assert.strictEqual(await customerPortalUrl({}), null);
+    assert.strictEqual(await ensureContractorToken(undefined), null);
   });
 
   test('resolves a document owner by customerId', () => {
@@ -125,21 +168,27 @@ describe('portal links', () => {
     assert.strictEqual(customerForDocument({ customer: 'Acme' })?.id, 'cus_9');
   });
 
-  test('returns nothing when the document has no resolvable owner', () => {
+  test('returns nothing when the document has no resolvable owner', async () => {
     store.cache = { customers: [{ id: 'cus_9', name: 'Acme' }] };
     assert.strictEqual(customerForDocument({}), null);
     assert.strictEqual(customerForDocument(null), null);
     assert.strictEqual(customerForDocument({ customerName: 'Nobody' }), null);
-    assert.strictEqual(portalUrlForDocument({ customerName: 'Nobody' }), null);
+    assert.strictEqual(await portalUrlForDocument({ customerName: 'Nobody' }), null);
   });
 
-  test('gives a document the same link its customer would get', () => {
+  test('gives a document the same link its customer would get', async () => {
     const customer = { id: 'cus_9', name: 'Acme', portalToken: 'c_pt_acme' };
     store.cache = { customers: [customer] };
     assert.strictEqual(
-      portalUrlForDocument({ customerId: 'cus_9' }),
+      await portalUrlForDocument({ customerId: 'cus_9' }),
       'https://relay.example/app/#/portal/customer?token=c_pt_acme'
     );
+  });
+
+  test('an emailed document link is withheld when the token cannot be saved', async () => {
+    store.cache = { customers: [{ id: 'cus_9', name: 'Acme' }] };
+    writeResult = { ok: false, error: new Error('denied') };
+    assert.strictEqual(await portalUrlForDocument({ customerId: 'cus_9' }), null);
   });
 
   test('tokens come from the CSPRNG, not Math.random()', () => {

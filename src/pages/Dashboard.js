@@ -11,37 +11,47 @@
 //   • Layout, view (pan/zoom) and pins persist per-user; new users get a role-based default
 // ============================================
 import { store } from '../data/store.js';
+import { executeAction } from '../actions/index.js';
 import { supabase } from '../utils/supabase.js';
 import { escapeHTML } from '../utils/security.js';
 import { showConfirm } from '../utils/confirmDialog.js';
 import { calculateTotalBillableMaterials, roundCurrency } from '../utils/pricing.js';
 import { hasPermission } from '../utils/permissions.js';
 import { FLAGS } from '../utils/flags.js';
-import { todayLocalISO } from '../utils/dateUtils.js';
+import { todayLocalISO, toDateKey, formatLocalDate } from '../utils/dateUtils.js';
 import { showDrawer } from '../components/Drawer.js';
 import { renderDeputyAsksWidget } from '../components/DeputyAsksWidget.js';
 import { getHideSystemNotifications, onNotificationPrefChanged, adoptNotificationPref, withNotificationPrefs } from '../utils/notificationPrefs.js';
 import { filterSystemNotifications } from '../utils/notificationVisibility.js';
 import { bindChecklistStoreListeners, mountSetupChecklist } from '../components/SetupChecklist.js';
 import Sortable from 'sortablejs';
+import {
+  KPIS, KPI_IDS, KPI_GROUPS, linkFilter, kpiPermission, PERIODS, DEFAULT_PERIOD, computeAll, defaultKpiIds,
+  formatKpiValue, formatKpiDelta, kpiSubline,
+} from '../utils/kpis.js';
+import { ACTION_WIDGETS, wireActionWidgets, openRevenueGoalEditor } from './dashboard/actionWidgets.js';
 
-function getHeaderActionsHtml() {
-  const canCreateJob = hasPermission('Jobs', 'create');
-  const canCreateQuote = hasPermission('Quotes', 'create');
-  let html = '';
-  if (canCreateJob) {
-    html += `
-      <button class="btn btn-secondary btn-sm" data-nav="/jobs/new">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Job
-      </button>`;
-  }
-  if (canCreateQuote) {
-    html += `
-      <button class="btn btn-primary btn-sm" data-nav="/quotes/new">
-        <span class="material-icons-outlined" style="font-size:16px;">add</span> New Quote
-      </button>`;
-  }
-  return html;
+// Permanent quick actions, icon-only (name on hover). They're rendered as the
+// page's header actions, so the app shell moves them into the breadcrumb bar at
+// the same size as every other page's action buttons. Icons match the sidebar's
+// for each area and are all mapped in utils/icons.js.
+const QUICK_ACTIONS = [
+  { label: 'New Job',          icon: 'build',           href: '/jobs/new',                  perm: ['Jobs', 'create'], primary: true },
+  { label: 'New Quote',        icon: 'request_quote',   href: '/quotes/new',                perm: ['Quotes', 'create'] },
+  { label: 'New Lead',         icon: 'trending_up',     href: '/leads/new',                 perm: ['Leads', 'create'] },
+  { label: 'New Customer',     icon: 'person_add',      href: '/people/new',                perm: ['Customers', 'create'] },
+  { label: 'New Job Template', icon: 'event_repeat',    href: '/jobs/new?isRecurring=true', perm: ['Jobs', 'create'] },
+  { label: 'Notification',     icon: 'campaign',        href: '/notifications?raise=1' },
+];
+
+function getQuickActionsHtml() {
+  return QUICK_ACTIONS
+    .filter(a => !a.perm || hasPermission(a.perm[0], a.perm[1]))
+    .map(a => `
+      <button type="button" class="btn ${a.primary ? 'btn-primary' : 'btn-secondary'} btn-sm dash-quick-action" data-nav="${a.href}" title="${a.label}" aria-label="${a.label}">
+        <span class="material-icons-outlined" aria-hidden="true">${a.icon}</span>
+      </button>`)
+    .join('');
 }
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -57,8 +67,8 @@ const VIEW_INSET_X = 0;
 const VIEW_INSET_Y = 0;
 
 // Default pixel sizes derived from a widget's declared width/height class
-const W_PX = { S: 300, M: 460, L: 680, XL: 680 };
-const H_PX = { standard: 160, tall: 320, xtall: 480 };
+const W_PX = { KPI: 220, S: 300, M: 460, L: 680, XL: 680 };
+const H_PX = { kpi: 140, standard: 160, tall: 320, xtall: 480 };
 const MIN_W = 200, MIN_H = 120;
 
 // Pin palette for the "Drop Pin" tool
@@ -93,7 +103,6 @@ function getLockKey() {
 
 // Each module declares default size + which size options are sensible + its renderer
 const MODULES = {
-  'kpi-cards':            { title: 'KPI Cards',                   defaultW: 'L',  defaultH: 'standard', kpiStrip: true,  render: renderKpiCards },
   'job-status-chart':     { title: 'Job Status Chart',            defaultW: 'M',  defaultH: 'tall',     render: renderJobStatusChart },
   'tech-map':             { title: 'Technician Map',              defaultW: 'S',  defaultH: 'tall',     render: renderTechMap },
   'recent-activity':      { title: 'Recent Activity',             defaultW: 'M',  defaultH: 'tall',     render: renderRecentActivity },
@@ -111,7 +120,6 @@ const MODULES = {
   'top-customers':        { title: 'Top Customers',               defaultW: 'M',  defaultH: 'tall',     render: renderTopCustomers },
   'daily-todo':           { title: 'Daily To-Do',                 defaultW: 'S',  defaultH: 'tall',     render: renderDailyTodo },
   'pending-approvals':    { title: 'Pending Approvals',           defaultW: 'M',  defaultH: 'standard', render: renderPendingApprovals },
-  'customer-nps':         { title: 'Customer Satisfaction',       defaultW: 'S',  defaultH: 'standard', render: renderCustomerNPS },
   'cash-flow':            { title: 'Cash Flow Summary',           defaultW: 'S',  defaultH: 'standard', render: renderCashFlow },
   'revenue-comparison':   { title: 'Revenue vs Last Month',       defaultW: 'S',  defaultH: 'standard', render: renderRevenueComparison },
   'invoice-aging':        { title: 'Invoice Aging',               defaultW: 'M',  defaultH: 'standard', render: renderInvoiceAging },
@@ -121,6 +129,17 @@ const MODULES = {
   'notifications-widget': { title: 'Notifications',             defaultW: 'M',  defaultH: 'tall',     render: renderNotificationsWidget },
   'deputy-asks-widget':   { title: 'brny Proposals',            defaultW: 'M',  defaultH: 'tall',     render: renderDeputyAsksWidget },
 };
+
+// ── KPI cards ────────────────────────────────────────────────────────────────────
+// Each KPI is its own small widget with id 'kpi:<kpiId>'; the formulas live in
+// utils/kpis.js. Every card is offered; `launch` marks the original 15.
+const KPI_PREFIX = 'kpi:';
+const kpiModuleId = (kpiId) => KPI_PREFIX + kpiId;
+const kpiIdOf = (moduleId) => (typeof moduleId === 'string' && moduleId.startsWith(KPI_PREFIX) ? moduleId.slice(KPI_PREFIX.length) : null);
+const OFFERED_KPIS = KPI_IDS;
+OFFERED_KPIS.forEach(id => {
+  MODULES[kpiModuleId(id)] = { title: KPIS[id].label, defaultW: 'KPI', defaultH: 'kpi', kpi: true, render: renderKpiCard };
+});
 
 // Module → permission required to even offer/show it. Absent = always allowed.
 const WIDGET_PERMS = {
@@ -142,6 +161,13 @@ const WIDGET_PERMS = {
 };
 
 function widgetAllowed(id) {
+  const kpiId = kpiIdOf(id);
+  if (kpiId) {
+    if (!KPIS[kpiId]) return false;
+    // Same rule the dashboard-kpis function enforces (kpis.js kpiPermission).
+    const perm = kpiPermission(kpiId);
+    return !perm || hasPermission(perm[0], perm[1]);
+  }
   const perm = WIDGET_PERMS[id];
   if (!perm) return true;
   return hasPermission(perm[0], perm[1]);
@@ -153,7 +179,7 @@ function widgetAllowed(id) {
 // (tech-map, route-summary, today-schedule) are intentionally omitted — they own
 // their refresh lifecycle and re-running them would re-hit geocode/route services.
 const WIDGET_DEPS = {
-  'kpi-cards':            ['jobs', 'quotes', 'invoices'],
+  ...Object.fromEntries(OFFERED_KPIS.map(id => [kpiModuleId(id), KPIS[id].needs])),
   'job-status-chart':     ['jobs'],
   'recent-activity':      ['jobs', 'quotes', 'invoices'],
   'recent-leads':         ['leads'],
@@ -172,7 +198,31 @@ const WIDGET_DEPS = {
   'invoice-aging':        ['invoices'],
   'quote-winrate':        ['quotes'],
   'notifications-widget': ['notifications'],
+  'daily-todo':           ['todos'],
 };
+
+// The action widgets (dashboard/actionWidgets.js) bring their own title, size,
+// permission and the collections they read.
+Object.entries(ACTION_WIDGETS).forEach(([id, w]) => {
+  MODULES[id] = { title: w.title, defaultW: w.defaultW, defaultH: w.defaultH, configurable: !!w.configurable, render: w.render };
+  WIDGET_PERMS[id] = w.perm;
+  WIDGET_DEPS[id] = w.deps;
+});
+
+// Set a revenue-goal widget's monthly target, save it and repaint that widget.
+function editRevenueGoal(instanceId) {
+  const item = live && live.widgets.find(w => w.instanceId === instanceId);
+  if (!item) return;
+  openRevenueGoalEditor(item.config && item.config.target, (target) => {
+    item.config = { ...item.config, target };
+    if (!isEditMode) saveLayout();
+    const body = document.querySelector(`.dash-widget[data-instance-id="${instanceId}"] .card-body`);
+    if (body) {
+      body.innerHTML = MODULES[item.id].render(live.data || {}, item);
+      wireWidgetControls(body, live.data || {});
+    }
+  });
+}
 
 // live.data only mirrors a few collections; map a store collection to its key.
 function dataKeyForCollection(coll) {
@@ -195,6 +245,7 @@ function refreshWidgetsForCollections(collections) {
     if (key && live.data) live.data[key] = store.getAll(coll);
   });
   const data = live.data || {};
+  invalidateKpis();
   live.widgets.forEach(item => {
     const mod = MODULES[item.id];
     if (!mod || !mod.render) return;
@@ -213,6 +264,9 @@ function refreshWidgetsForCollections(collections) {
 
 // Debounced + batched so a burst of writes triggers a single targeted refresh.
 function scheduleWidgetRefresh(coll) {
+  // Drop cached KPI results even when the dashboard isn't showing, so a save made
+  // on another page is reflected the next time the dashboard opens.
+  invalidateKpis();
   _dashRefreshPending.add(coll);
   clearTimeout(_dashRefreshTimer);
   _dashRefreshTimer = setTimeout(() => {
@@ -241,35 +295,79 @@ function subscribeWidgetRefresh() {
 }
 
 // ── Role-based default layouts (world px coordinates) ────────────────────────────
+// A row of KPI cards runs along the top (see defaultLayoutForUser); these sit below it.
 const ADMIN_DEFAULT = [
-  { id: 'kpi-cards',          x: 40,  y: 40,  w: 680, h: 130 },
-  { id: 'job-status-chart',   x: 40,  y: 190, w: 420, h: 320 },
-  { id: 'cash-flow',          x: 480, y: 190, w: 240, h: 320 },
-  { id: 'recent-leads',       x: 40,  y: 530, w: 420, h: 290 },
-  { id: 'tech-map',           x: 480, y: 530, w: 240, h: 290 },
-  { id: 'today-schedule',     x: 740, y: 40,  w: 440, h: 240 },
-  { id: 'recent-activity',    x: 740, y: 300, w: 440, h: 250 },
-  { id: 'deputy-asks-widget', x: 740, y: 570, w: 440, h: 250 },
+  { id: 'job-status-chart',   x: 40,  y: 200, w: 420, h: 320 },
+  { id: 'cash-flow',          x: 480, y: 200, w: 240, h: 320 },
+  { id: 'recent-leads',       x: 40,  y: 540, w: 420, h: 290 },
+  { id: 'tech-map',           x: 480, y: 540, w: 240, h: 290 },
+  { id: 'today-schedule',     x: 740, y: 200, w: 440, h: 240 },
+  { id: 'recent-activity',    x: 740, y: 460, w: 440, h: 250 },
+  { id: 'deputy-asks-widget', x: 740, y: 730, w: 440, h: 250 },
 ];
 
 const TECH_DEFAULT = [
-  { id: 'kpi-cards',        x: 40,  y: 40,  w: 300, h: 150 },
-  { id: 'weather-forecast', x: 360, y: 40,  w: 300, h: 150 },
-  { id: 'today-schedule',   x: 40,  y: 220, w: 440, h: 380 },
-  { id: 'daily-todo',       x: 500, y: 220, w: 300, h: 380 },
-  { id: 'recent-activity',  x: 700, y: 40,  w: 0,   h: 0 }, // placeholder removed below if dup
+  { id: 'weather-forecast', x: 520, y: 40,  w: 300, h: 140 },
+  { id: 'today-schedule',   x: 40,  y: 200, w: 440, h: 380 },
+  { id: 'daily-todo',       x: 500, y: 200, w: 300, h: 380 },
 ];
 
-function defaultLayoutForUser() {
-  const canViewQuotes = hasPermission('Quotes', 'view');
-  const canViewInvoices = hasPermission('Invoices', 'view');
-  const isTechUser = !canViewQuotes && !canViewInvoices;
+const newInstanceId = () => 'inst_' + Math.random().toString(36).substr(2, 9);
+const isTechUser = () => !hasPermission('Quotes', 'view') && !hasPermission('Invoices', 'view');
 
-  let base = isTechUser ? TECH_DEFAULT : ADMIN_DEFAULT;
-  // clone + drop any zero-size placeholders + drop disallowed widgets
-  return base
-    .filter(w => w.w > 0 && w.h > 0 && widgetAllowed(w.id) && MODULES[w.id])
-    .map(w => ({ ...w, instanceId: 'inst_' + Math.random().toString(36).substr(2, 9) }));
+// Spec: starting cards depend on how many people work in the business. Sign-up
+// doesn't ask yet, so active staff on the account stands in for the answer.
+function staffCount() {
+  return store.getAll('technicians').filter(t => !t.deactivated && t.role !== 'customer').length;
+}
+
+function defaultKpiIdsForUser() {
+  const ids = isTechUser() ? ['scheduled_today', 'jobs_completed'] : defaultKpiIds(staffCount());
+  return ids.filter(id => widgetAllowed(kpiModuleId(id)));
+}
+
+// KPI tiles laid out left to right from (x, y), wrapping after `cols`.
+function kpiTiles(ids, x, y, cols = ids.length) {
+  return ids.map((id, i) => ({
+    id: kpiModuleId(id),
+    instanceId: newInstanceId(),
+    x: x + (i % cols) * (W_PX.KPI + GRID),
+    y: y + Math.floor(i / cols) * (H_PX.kpi + GRID),
+    w: W_PX.KPI, h: H_PX.kpi,
+  }));
+}
+
+function defaultLayoutForUser() {
+  const base = isTechUser() ? TECH_DEFAULT : ADMIN_DEFAULT;
+  return [
+    ...kpiTiles(defaultKpiIdsForUser(), 40, 40),
+    ...base.filter(w => widgetAllowed(w.id) && MODULES[w.id]).map(w => ({ ...w, instanceId: newInstanceId() })),
+  ];
+}
+
+// Saved layouts from before the KPI overhaul have one 'kpi-cards' strip. Swap it
+// for the user's default cards, wrapped to the strip's width, and push whatever
+// sat under the strip down by however much taller the cards are.
+function expandLegacyKpiStrip(widgets) {
+  const strip = widgets.find(w => w.id === 'kpi-cards');
+  if (!strip) return widgets;
+  const rest = widgets.filter(w => w.id !== 'kpi-cards');
+  const ids = defaultKpiIdsForUser();
+  if (!ids.length) return rest;
+  const cols = Math.max(1, Math.floor((strip.w + 2 * GRID) / (W_PX.KPI + GRID)));
+  const tiles = kpiTiles(ids, strip.x, strip.y, cols);
+  const rows = Math.ceil(ids.length / cols);
+  const tilesW = Math.min(cols, ids.length) * (W_PX.KPI + GRID) - GRID;
+  const grow = rows * (H_PX.kpi + GRID) - GRID - strip.h;
+  if (grow > 0) {
+    const stripBottom = strip.y + strip.h;
+    rest.forEach(w => {
+      const below = w.y >= stripBottom;
+      const sideBySide = w.x < strip.x + Math.max(strip.w, tilesW) && w.x + w.w > strip.x;
+      if (below && sideBySide) w.y = snap(w.y + grow);
+    });
+  }
+  return [...tiles, ...rest];
 }
 
 // The default "Home" saved view — centred on the widget cluster. It's seeded for new
@@ -287,7 +385,7 @@ function makeHomeView(widgets) {
 }
 
 async function loadLayout() {
-  let widgets = null, view = null, pins = null, home = null, stored = false;
+  let widgets = null, view = null, pins = null, home = null, period = null, stored = false;
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
   // For a logged-in cloud account, Supabase is the source of truth. Track whether it
   // actually answered so a stale per-origin localStorage copy can't mask the cloud
@@ -318,6 +416,7 @@ async function loadLayout() {
           view = parsed.view || null;
           pins = Array.isArray(parsed.pins) ? parsed.pins : [];
           home = parsed.home || null;
+          period = parsed.period || null;
         }
       }
     } catch (e) {
@@ -341,11 +440,13 @@ async function loadLayout() {
           view = parsed.view || null;
           pins = Array.isArray(parsed.pins) ? parsed.pins : [];
           home = parsed.home || null; // legacy separate home → migrate into views below
+          period = parsed.period || null;
         }
       }
     } catch (e) {}
   }
   if (!stored) widgets = defaultLayoutForUser();
+  else widgets = expandLegacyKpiStrip(widgets);
 
   // Drop modules that no longer exist (e.g. the removed embedded page widgets) and any
   // widget the user can't see. A layout that consisted only of those would load empty, so
@@ -376,6 +477,7 @@ async function loadLayout() {
     widgets,
     view: view || { panX: 0, panY: 0, zoom: 1 },
     pins,
+    period: PERIODS.some(p => p.id === period) ? period : DEFAULT_PERIOD,
   };
 }
 
@@ -383,7 +485,7 @@ async function saveLayout() {
   if (!live) return;
   // dashboard_layout also carries the notification-preference key, so the document
   // is merged rather than replaced.
-  const layout = withNotificationPrefs({ widgets: live.widgets, view: live.view, pins: live.pins });
+  const layout = withNotificationPrefs({ widgets: live.widgets, view: live.view, pins: live.pins, period: live.period });
   // Save to localStorage for offline fallback
   localStorage.setItem(getLayoutKey(), JSON.stringify(layout));
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -436,7 +538,8 @@ export async function renderDashboard(container) {
         panY: VIEW_INSET_Y - firstPin.y * targetZoom
       };
     }
-    live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins };
+    live = { userId: uid, widgets: loaded.widgets, view: loaded.view, pins: loaded.pins, period: loaded.period };
+    invalidateKpis();
   }
   // Canvas lock is a per-user view preference (independent of the saved layout)
   live.locked = localStorage.getItem(getLockKey()) === '1';
@@ -453,14 +556,19 @@ export async function renderDashboard(container) {
   container.innerHTML = `
     <div class="page-content-wrapper dash-page">
       <h1 class="sr-only">Dashboard</h1>
+      <div class="page-header dash-quick-header"><div class="page-header-actions">${getQuickActionsHtml()}</div></div>
       <div id="dash-viewport" class="dash-viewport">
         <div id="dash-world" class="dash-world"></div>
         <div id="dash-guides" class="dash-guides"></div>
 
         <div class="dash-topbar">
           <div class="dash-topbar-left"></div>
-          <!-- Holds the edit-mode controls. Empty outside edit mode. -->
-          <div id="dashboard-header-actions" class="dash-topbar-right"></div>
+          <div class="dash-topbar-right">
+            <!-- One period for every KPI card. Shown while any card is on the canvas. -->
+            <div id="dash-period" class="dash-period"></div>
+            <!-- Holds the edit-mode controls. Empty outside edit mode. -->
+            <div id="dashboard-header-actions" class="dash-topbar-actions"></div>
+          </div>
         </div>
 
         <div class="dash-views" id="dash-views"></div>
@@ -495,8 +603,10 @@ export async function renderDashboard(container) {
 
   // Hooks the Relay assistant calls to perform real actions
   window.__relay.addWidgetById = (id) => {
+    if (!MODULES[id] && KPIS[id]) id = kpiModuleId(id);
     const mod = MODULES[id];
     if (!mod || !widgetAllowed(id)) return false;
+    if (mod.kpi && live.widgets.some(w => w.id === id)) return mod.title; // one of each card
     const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
     const cy = (viewport.clientHeight / 2 - live.view.panY) / live.view.zoom;
     const item = {
@@ -578,11 +688,6 @@ function renderWidgets(world, data) {
           </button>` : ''}
       </div>`;
 
-    const kpiCardsCount = item.id === 'kpi-cards'
-      ? ((hasPermission('Quotes', 'view') ? 1 : 0) + (hasPermission('Invoices', 'view') ? 2 : 0) + (hasPermission('Jobs', 'view') ? 1 : 0))
-      : 0;
-    const bodyStyle = item.id === 'kpi-cards' ? `style="display:grid; grid-template-columns: repeat(${Math.max(kpiCardsCount, 1)}, 1fr);"` : '';
-
     const resizeHandles = isEditMode ? `
       <div class="dash-resize dash-resize-r"  data-instance-id="${item.instanceId}" title="Drag to resize width"></div>
       <div class="dash-resize dash-resize-b"  data-instance-id="${item.instanceId}" title="Drag to resize height"></div>
@@ -599,12 +704,12 @@ function renderWidgets(world, data) {
     el.style.width = item.w + 'px';
     el.style.height = item.h + 'px';
     el.innerHTML = `
-      <div class="card dashboard-card ${mod.kpiStrip ? 'kpi-strip' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
+      <div class="card dashboard-card ${mod.kpi ? 'kpi-card' : ''}" style="height:100%;display:flex;flex-direction:column;overflow:hidden;margin:0;">
         <div class="card-header dash-drag-handle">
           <span style="font-weight:600;font-size:14px;">${mod.title}</span>
           ${widgetControls}
         </div>
-        <div class="card-body" ${bodyStyle} style="flex:1;overflow-y:auto;min-height:0;"></div>
+        <div class="card-body" style="flex:1;overflow-y:auto;min-height:0;"></div>
       </div>
       ${resizeHandles}`;
     world.appendChild(el);
@@ -619,6 +724,7 @@ function renderWidgets(world, data) {
 
   wireWidgetControls(world, data);
   if (isEditMode) wireEditControls(world, data);
+  renderPeriodPicker();
 
   // Mount any widgets that are already on screen (synchronously, before paint)
   const vp = document.querySelector('#dash-viewport');
@@ -639,6 +745,10 @@ function mountVisibleWidgets(viewport) {
     const body = el.querySelector('.card-body');
 
     try { body.innerHTML = mod.render(live.data || {}, item); } catch (e) { body.innerHTML = renderPlaceholder('error_outline', 'Error rendering widget'); }
+    // wireWidgetControls ran while this widget was still a placeholder, so its inner
+    // controls (checkboxes, add buttons, links) have no listeners yet. Bind them now
+    // that the real body exists — same scoped re-wire refreshWidgetsForCollections uses.
+    try { wireWidgetControls(body, live.data || {}); } catch (e) { /* controls stay inert rather than break the mount */ }
   });
 }
 
@@ -1510,6 +1620,9 @@ function resolveOverlap(item) {
 
 // ── Inner widget interactions (preserved verbatim from the grid version) ─────────
 function wireWidgetControls(grid, data) {
+  // Action widgets: resend / remind / set-goal buttons
+  wireActionWidgets(grid, { onSetGoal: editRevenueGoal });
+
   // Configure button (always available if widget is configurable)
   grid.querySelectorAll('.btn-configure').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -1517,6 +1630,8 @@ function wireWidgetControls(grid, data) {
       const instId = e.currentTarget.dataset.instanceId;
       const item = live.widgets.find(i => i.instanceId === instId);
       if (!item) return;
+
+      if (item.id === 'revenue-goal') { editRevenueGoal(instId); return; }
 
       if (item.id === 'pinned-job') {
         const jobs = data.jobs;
@@ -1727,52 +1842,71 @@ function wireWidgetControls(grid, data) {
     });
   });
 
-  // 9. Daily To-Do Checklist persistency
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  const userKey = currentUser ? `todo_${currentUser.id}` : 'todo_default';
+  // 9. Daily To-Do checklist — backed by the shared `todos` collection
+  const reloadTodoWidget = () => window.__relay.reloadDashboard?.();
+  const reportTodoError = (err) => {
+    import('../components/Notifications.js').then(({ showToast }) => {
+      showToast(err && err.message ? err.message : 'Could not update that to-do.', 'error');
+    });
+  };
+
+  void migrateLegacyTodos();
 
   grid.querySelectorAll('.todo-item-check').forEach(chk => {
     chk.addEventListener('change', e => {
-      let todos = [];
-      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
-      const idx = e.target.dataset.idx;
-      if (todos[idx]) {
-        todos[idx].completed = e.target.checked;
-        localStorage.setItem(userKey, JSON.stringify(todos));
-      }
-      window.__relay.reloadDashboard?.();
+      const box = e.currentTarget;
+      const id = box.dataset.todoId;
+      const request = box.checked
+        ? executeAction('complete_todo', { todo: id, note: '' })
+        : executeAction('update_todo', { todo: id, status: 'open' });
+
+      request
+        .then(reloadTodoWidget)
+        .catch(err => {
+          box.checked = !box.checked;
+          reportTodoError(err);
+        });
     });
   });
 
   grid.querySelectorAll('.btn-remove-todo').forEach(btn => {
     btn.addEventListener('click', e => {
-      let todos = [];
-      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
-      const idx = e.currentTarget.dataset.idx;
-      todos.splice(idx, 1);
-      localStorage.setItem(userKey, JSON.stringify(todos));
-      window.__relay.reloadDashboard?.();
+      store.delete('todos', e.currentTarget.dataset.todoId);
+      reloadTodoWidget();
     });
   });
 
   const todoInput = grid.querySelector('#todo-input-field');
+  const todoDueInput = grid.querySelector('#todo-due-field');
   const todoAddBtn = grid.querySelector('#btn-add-todo');
 
   if (todoAddBtn && todoInput) {
-    const handleAdd = () => {
+    const handleAdd = async () => {
       const text = todoInput.value.trim();
       if (!text) return;
-      let todos = [];
-      try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(err) {}
-      todos.push({ text, completed: false });
-      localStorage.setItem(userKey, JSON.stringify(todos));
+
+      // No `assign` — `add_todo` defaults the owner to the signed-in user.
+      const input = todoDueInput && todoDueInput.value
+        ? { title: text, due: todoDueInput.value }
+        : { title: text };
       todoInput.value = '';
-      window.__relay.reloadDashboard?.();
+      if (todoDueInput) todoDueInput.value = '';
+
+      try {
+        await executeAction('add_todo', input);
+        reloadTodoWidget();
+      } catch (err) {
+        reportTodoError(err);
+      }
     };
 
     todoAddBtn.addEventListener('click', handleAdd);
-    todoInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') handleAdd();
+    [todoInput, todoDueInput].filter(Boolean).forEach(field => {
+      field.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        void handleAdd();
+      });
     });
   }
 
@@ -1940,24 +2074,75 @@ function showEditHeader(container, viewport, world, guides, data) {
 
 // Reusable Add-Widget picker (used by the edit header, the context menu and double-click)
 function openAddWidgetModal(container, viewport, world, guides, data) {
-  const available = Object.entries(MODULES).filter(([id]) => widgetAllowed(id));
+  const env = { staffCount: staffCount() };
+  const kpiIds = OFFERED_KPIS.filter(id => widgetAllowed(kpiModuleId(id)) && (!KPIS[id].available || KPIS[id].available(env)));
+  const allowedWidgets = Object.entries(MODULES).filter(([id, mod]) => !mod.kpi && widgetAllowed(id));
+  const actionWidgets = allowedWidgets.filter(([id]) => ACTION_WIDGETS[id]);
+  const widgets = allowedWidgets.filter(([id]) => !ACTION_WIDGETS[id]);
+  const onCanvas = new Set(live.widgets.map(w => w.id));
+  // Live preview values from the user's own data, for the selected period. Cloud
+  // accounts ask the dashboard-kpis function and fill the values in when it answers.
+  const period = live.period || DEFAULT_PERIOD;
+  const cloud = isCloudAccount();
+  const preview = cloud ? {} : computeKpis(kpiIds, period);
+  const previewText = (id, r) => (!r || r.empty ? '—' : formatKpiValue(r.value, KPIS[id].format));
 
-  const card = ([id, mod]) => `
-    <div data-id="${id}" class="widget-picker-card">
+  const kpiCard = (id) => {
+    const def = KPIS[id];
+    const added = onCanvas.has(kpiModuleId(id));
+    const value = cloud ? '…' : previewText(id, preview[id]);
+    return `
+      <button type="button" data-id="${kpiModuleId(id)}" class="widget-picker-card kpi-picker-card${added ? ' is-added' : ''}" ${added ? 'aria-pressed="true"' : ''}>
+        <div class="kpi-picker-text">
+          <div class="kpi-picker-name">${escapeHTML(def.label)}</div>
+          <div class="kpi-picker-desc">${escapeHTML(def.description)}</div>
+        </div>
+        <div class="kpi-picker-value">${value}</div>
+        <span class="material-icons-outlined kpi-picker-tick" aria-label="${added ? 'On your dashboard' : ''}">${added ? 'check_circle' : 'add_circle_outline'}</span>
+      </button>`;
+  };
+
+  const kpiSection = KPI_GROUPS.map(g => {
+    const ids = kpiIds.filter(id => KPIS[id].group === g.id);
+    if (!ids.length) return '';
+    return `
+      <div class="widget-picker-group">
+        <div class="widget-picker-heading">${g.label}</div>
+        <div class="widget-picker-grid">${ids.map(kpiCard).join('')}</div>
+      </div>`;
+  }).join('');
+
+  const widgetCard = ([id, mod]) => `
+    <button type="button" data-id="${id}" class="widget-picker-card">
       <span class="material-icons-outlined" style="color:var(--color-primary);font-size:18px;">widgets</span>
       <div>
         <div style="font-weight:600;font-size:13px;">${mod.title}</div>
         <div style="font-size:11px;color:var(--text-tertiary);">${mod.defaultW} · ${mod.defaultH}</div>
       </div>
-    </div>`;
-
-  const grid = (items) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">${items.map(card).join('')}</div>`;
+    </button>`;
 
   const content = document.createElement('div');
   content.innerHTML = `
-    <div style="max-height:440px;overflow-y:auto;">
-      ${grid(available)}
+    <div class="widget-picker">
+      ${kpiSection ? `<div class="widget-picker-title">KPI cards</div>${kpiSection}` : ''}
+      ${actionWidgets.length ? `<div class="widget-picker-title">Action widgets</div>
+      <div class="widget-picker-grid">${actionWidgets.map(widgetCard).join('')}</div>` : ''}
+      <div class="widget-picker-title">Widgets</div>
+      <div class="widget-picker-grid">${widgets.map(widgetCard).join('')}</div>
     </div>`;
+
+  if (cloud && kpiIds.length) {
+    supabase.functions.invoke('dashboard-kpis', { body: { ids: kpiIds, period, timeZone: timeZone() } })
+      .then(({ data, error }) => {
+        const results = !error && data && data.results ? data.results : computeKpis(kpiIds, period);
+        content.querySelectorAll('.kpi-picker-card').forEach(el => {
+          const id = kpiIdOf(el.dataset.id);
+          const v = el.querySelector('.kpi-picker-value');
+          if (v) v.textContent = previewText(id, results[id]);
+        });
+      })
+      .catch(() => {});
+  }
 
   import('../components/Modal.js').then(({ showModal }) => {
     showModal({ title: 'Add Widget', content, actions: [{ label: 'Close', className: 'btn-secondary', onClick: c => c() }] });
@@ -1965,11 +2150,12 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
       el.addEventListener('click', e => {
         const id = e.currentTarget.dataset.id;
         const mod = MODULES[id];
+        if (mod.kpi && live.widgets.some(w => w.id === id)) return; // one of each card
         const cx = (viewport.clientWidth / 2 - live.view.panX) / live.view.zoom;
         const cy = (viewport.clientHeight / 2 - live.view.panY) / live.view.zoom;
         const item = {
           id,
-          instanceId: 'inst_' + Math.random().toString(36).substr(2, 9),
+          instanceId: newInstanceId(),
           x: snap(cx - (W_PX[mod.defaultW] || 460) / 2),
           y: snap(cy - (H_PX[mod.defaultH] || 200) / 2),
           w: W_PX[mod.defaultW] || 460,
@@ -1988,44 +2174,206 @@ function openAddWidgetModal(container, viewport, world, guides, data) {
 
 // ── Module renderers ──────────────────────────────────────────────────────────
 
-function renderKpiCards(data, item) {
-  const activeJobs    = data.jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled').length;
-  const pendingQuotes = data.quotes.filter(q => q.status === 'Sent' || q.status === 'Draft').length;
-  const overdue       = data.invoices.filter(i => i.status === 'Overdue').length;
-  const revenue       = data.invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
+// ── KPI cards ────────────────────────────────────────────────────────────────────
 
-  const canViewQuotes = hasPermission('Quotes', 'view');
-  const canViewInvoices = hasPermission('Invoices', 'view');
+// Results for every KPI card on the canvas, keyed by period + day + card set.
+//
+// Local accounts: computed on the device in one pass and kept until a collection
+// the cards read changes (invalidateKpis), so opening the dashboard reuses them.
+//
+// Cloud accounts: fetched from the dashboard-kpis Edge Function, which runs the
+// same formulas over the whole team's data in Postgres. The last answer is kept
+// per company, so the cards paint at once on the next open and, when offline,
+// show those figures marked "as of". A save (or a sync from a teammate) asks the
+// function for a fresh answer, skipping its 5-minute cache.
+let _kpiCache = null;   // local: { key, results }
+let _remote = null;     // cloud: { key, results, asOf, offline?, local? }
+let _remoteInflight = null;
+let _remoteRefresh = false;
 
-  const cards = [];
+const isCloudAccount = () => {
+  if (store.demoMode) return false;
+  const u = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  return !!(u && u.companyId && !String(u.companyId).startsWith('acct_'));
+};
+const companyKey = () => `relay_kpis_${JSON.parse(localStorage.getItem('currentUser') || '{}').companyId || ''}`;
+const timeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } };
 
-  if (canViewInvoices) {
-    cards.push({ label: 'Total Revenue', value: '$' + revenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), icon: 'payments', color: 'blue', sub: '+12.5% vs last month', pos: true, tooltip: 'Total payments received from all successfully settled invoices.' });
+function invalidateKpis() {
+  _kpiCache = null;
+  // Only once we've had an answer: the store's initial load shouldn't skip the
+  // server cache on every sign-in.
+  if (_remote && _remote.asOf) _remoteRefresh = true;
+  // On-device stand-in figures: drop them so the next paint tries the function
+  // again (and recalculates if it still can't be reached).
+  if (_remote && _remote.local) _remote = null;
+}
+
+function canvasKpiIds() {
+  return [...new Set((live?.widgets || []).map(w => kpiIdOf(w.id)).filter(Boolean))].sort();
+}
+
+// null while a cloud account's first answer is on its way.
+function kpiResults() {
+  const ids = canvasKpiIds();
+  const period = live?.period || DEFAULT_PERIOD;
+  const key = `${period}|${todayLocalISO()}|${ids.join(',')}`;
+  if (isCloudAccount()) return remoteKpiResults(ids, period, key);
+  if (_kpiCache && _kpiCache.key === key) return _kpiCache.results;
+  const results = computeKpis(ids, period);
+  _kpiCache = { key, results };
+  return results;
+}
+
+function remoteKpiResults(ids, period, key) {
+  if (!ids.length) return {};
+  if (!_remote || _remote.key !== key) {
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(companyKey()) || 'null'); } catch { /* ignore */ }
+    _remote = stored && stored.key === key ? { ...stored, stale: true } : null;
+    fetchRemoteKpis(ids, period, key, false);
+  } else if (_remoteRefresh || _remote.stale || (_remote.offline && Date.now() - (_remote.triedAt || 0) > 60000)) {
+    fetchRemoteKpis(ids, period, key, _remoteRefresh);
+  }
+  return _remote ? _remote.results : null;
+}
+
+async function fetchRemoteKpis(ids, period, key, refresh) {
+  if (_remoteInflight === key) return;
+  _remoteInflight = key;
+  _remoteRefresh = false;
+  let data = null, error = null;
+  try {
+    ({ data, error } = await supabase.functions.invoke('dashboard-kpis', { body: { ids, period, timeZone: timeZone(), refresh } }));
+  } catch (e) { error = e; }
+  if (_remoteInflight === key) _remoteInflight = null;
+  // The canvas moved on (period or cards changed) while this was in flight.
+  const current = `${live?.period || DEFAULT_PERIOD}|${todayLocalISO()}|${canvasKpiIds().join(',')}`;
+  if (current !== key) return;
+
+  if (error || !data || !data.results) {
+    if (_remote && _remote.key === key && _remote.asOf) {
+      _remote = { ..._remote, offline: true, stale: false, triedAt: Date.now() };
+      setTimeout(() => { if (_remote && _remote.offline) repaintKpiWidgets(); }, 61000); // retry
+    } else {
+      // Nothing fetched yet (offline on first open, or the function isn't
+      // reachable): fall back to the figures the device can work out from the
+      // company data it already holds, rather than an empty dashboard.
+      _remote = { key, results: computeKpis(ids, period), asOf: null, local: true };
+    }
+  } else {
+    _remote = { key, results: data.results, asOf: data.asOf };
+    try { localStorage.setItem(companyKey(), JSON.stringify(_remote)); } catch { /* storage full: fine */ }
+  }
+  repaintKpiWidgets();
+}
+
+// "as of 9:41 am" beside the period picker while offline shows an earlier answer.
+// (The quick refresh after reopening isn't flagged; it lands in a moment.)
+function renderAsOf() {
+  const el = document.querySelector('#dash-asof');
+  if (!el) return;
+  const show = isCloudAccount() && _remote && _remote.asOf && _remote.offline;
+  el.textContent = show
+    ? `as of ${new Date(_remote.asOf).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: new Date(_remote.asOf).toDateString() === new Date().toDateString() ? undefined : 'numeric', month: new Date(_remote.asOf).toDateString() === new Date().toDateString() ? undefined : 'short' })}`
+    : '';
+  el.hidden = !show;
+}
+
+// Load each collection the cards read once, then run every formula.
+function computeKpis(ids, period) {
+  const needs = [...new Set(ids.flatMap(id => KPIS[id]?.needs || []))];
+  const data = Object.fromEntries(needs.map(c => [c, store.getAll(c)]));
+  return computeAll(ids, data, { period });
+}
+
+const PREV_LABEL = { today: 'yesterday', week: 'last week', month: 'last month', quarter: 'last quarter', fy: 'last year' };
+
+// The card's list, filtered to the records behind its number. Period cards pass
+// the dashboard's period on so the list covers the same days.
+function kpiHref(def) {
+  const { route, filter } = def.link;
+  if (!filter) return route;
+  const params = new URLSearchParams({ filter });
+  if (linkFilter(def.link)?.periodic) params.set('period', live?.period || DEFAULT_PERIOD);
+  return `${route}?${params}`;
+}
+
+function renderKpiCard(data, item) {
+  const id = kpiIdOf(item.id);
+  const def = KPIS[id];
+  if (!def) return renderPlaceholder('error_outline', 'Unknown card');
+  const all = kpiResults();
+  const r = all && all[id];
+  // In edit mode a click picks the card up rather than leaving the dashboard.
+  const nav = isEditMode ? '' : `data-nav="${escapeHTML(kpiHref(def))}"`;
+  const open = `<div class="kpi-tile${isEditMode ? '' : ' is-link'}" ${nav} title="${escapeHTML(def.description)}">`;
+
+  if (!all) {
+    return `${open}<div class="kpi-value kpi-value-empty kpi-loading" aria-label="Loading">…</div></div>`;
   }
 
-  if (hasPermission('Jobs', 'view')) {
-    cards.push({ label: 'Active Jobs', value: activeJobs, icon: 'build', color: 'green', sub: `${data.jobs.length} total`, pos: true, tooltip: 'Total volume of active projects and service tasks currently Scheduled or In Progress.' });
+  if (!r || r.empty) {
+    return `${open}
+      <div class="kpi-value kpi-value-empty">—</div>
+      <div class="kpi-hint">${escapeHTML(def.empty)}</div>
+    </div>`;
   }
 
-  if (canViewQuotes) {
-    cards.push({ label: 'Pending Quotes', value: pendingQuotes, icon: 'request_quote', color: 'orange', sub: `${data.quotes.length} total`, pos: null, tooltip: 'Draft proposals or sent estimates currently awaiting customer response.' });
+  const value = formatKpiValue(r.value, def.format);
+  let foot = '';
+  if (r.value == null) {
+    foot = `<div class="kpi-hint">${escapeHTML(def.emptyPeriod || 'Nothing to measure this period')}</div>`;
+  } else {
+    const sub = kpiSubline(id, r);
+    const split = def.display === 'split'
+      ? `<div class="kpi-split" role="img" aria-label="${escapeHTML(sub)}"><span style="width:${Math.round(r.value * 100)}%"></span></div>`
+      : '';
+    const delta = def.type === 'period' && r.delta != null
+      ? `<span class="kpi-delta ${r.good === true ? 'good' : r.good === false ? 'bad' : ''}">${formatKpiDelta(r.delta, def.format)}</span>
+         <span class="kpi-vs">vs ${PREV_LABEL[live?.period || DEFAULT_PERIOD]}</span>`
+      : '';
+    foot = split + (delta ? `<div class="kpi-foot">${delta}</div>` : '')
+      + (sub ? `<div class="kpi-sub${r.extra?.subAlert ? ' kpi-sub-alert' : ''}">${escapeHTML(sub)}</div>` : '');
   }
+  return `${open}
+    <div class="kpi-value${r.extra?.alert ? ' kpi-value-alert' : r.extra?.warn ? ' kpi-value-warn' : ''}">${value}</div>
+    ${foot}
+  </div>`;
+}
 
-  if (canViewInvoices) {
-    cards.push({ label: 'Overdue Invoices', value: overdue, icon: 'warning', color: 'red', sub: overdue > 0 ? 'Requires attention' : 'All on track', pos: overdue === 0, tooltip: 'Invoices past their designated payment terms that remain unpaid.' });
-  }
+// Re-render the bodies of the KPI cards already mounted, e.g. after a period change.
+function repaintKpiWidgets() {
+  const world = document.querySelector('#dash-world');
+  if (!world || !live) return;
+  live.widgets.forEach(item => {
+    if (!kpiIdOf(item.id)) return;
+    const el = world.querySelector(`.dash-widget[data-instance-id="${item.instanceId}"]`);
+    if (!el || el.dataset.mountPending) return;
+    const body = el.querySelector('.card-body');
+    if (body) body.innerHTML = renderKpiCard(live.data || {}, item);
+  });
+  renderAsOf();
+}
 
-  return cards.map(k => `
-    <div class="stat-card" style="margin:0;" data-tooltip="${k.tooltip}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div class="stat-label">${k.label}</div>
-        <div class="stat-icon ${k.color}"><span class="material-icons-outlined">${k.icon}</span></div>
-      </div>
-      <div class="stat-value">${k.value}</div>
-      <div class="stat-change ${k.pos === true ? 'positive' : k.pos === false ? 'negative' : ''}">
-        <span style="font-size:12px;">${k.sub}</span>
-      </div>
-    </div>`).join('');
+// The one period selector for every card. Hidden when no card is on the canvas.
+function renderPeriodPicker() {
+  const slot = document.querySelector('#dash-period');
+  if (!slot || !live) return;
+  if (!live.widgets.some(w => kpiIdOf(w.id))) { slot.innerHTML = ''; return; }
+  const current = live.period || DEFAULT_PERIOD;
+  slot.innerHTML = `
+    <span id="dash-asof" class="dash-asof" hidden></span>
+    <label class="sr-only" for="dash-period-select">KPI period</label>
+    <select id="dash-period-select" class="form-select dash-period-select">
+      ${PERIODS.map(p => `<option value="${p.id}" ${p.id === current ? 'selected' : ''}>${p.label}</option>`).join('')}
+    </select>`;
+  renderAsOf();
+  slot.querySelector('select').addEventListener('change', e => {
+    live.period = e.target.value;
+    repaintKpiWidgets();
+    saveLayout();
+  });
 }
 
 function renderJobStatusChart(data, item) {
@@ -2284,7 +2632,7 @@ function renderRecentLeads(data, item) {
   const bc = { New:'badge-info', Contacted:'badge-primary', Qualified:'badge-warning', Won:'badge-success', Lost:'badge-danger' };
   return `<table class="data-table" style="width:100%;">
     <thead><tr><th>Lead</th><th>Customer</th><th>Status</th></tr></thead>
-    <tbody>${data.leads.slice(0,8).map(l => `
+    <tbody>${[...data.leads].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0,8).map(l => `
       <tr style="cursor:pointer;" data-nav="/leads/${l.id}">
         <td class="cell-link font-medium">${escapeHTML(l.title)}</td>
         <td style="color:var(--text-secondary);">${escapeHTML(l.customerName)}</td>
@@ -2845,11 +3193,141 @@ function renderTopCustomers(data, item) {
   `;
 }
 
+const LEGACY_TODO_MIGRATION_KEY = 'todos_migrated_v1';
+
+/** The signed-in user, used to decide whose to-dos the card shows. */
+function todoViewer() {
+  try {
+    const user = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    return user && user.id ? user : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Move the pre-collection `todo_<userId>` localStorage checklist into the
+ * `todos` collection, once per browser. The flag is set before anything is
+ * written so a half-finished migration is never retried — a to-do the user
+ * has since deleted must not come back.
+ */
+async function migrateLegacyTodos() {
+  if (localStorage.getItem(LEGACY_TODO_MIGRATION_KEY)) return;
+
+  const viewer = todoViewer();
+  const userKey = viewer ? `todo_${viewer.id}` : 'todo_default';
+  let legacy = [];
+  try {
+    legacy = JSON.parse(localStorage.getItem(userKey) || '[]');
+  } catch {
+    legacy = [];
+  }
+  localStorage.setItem(LEGACY_TODO_MIGRATION_KEY, new Date().toISOString());
+  if (!Array.isArray(legacy) || !legacy.length) return;
+
+  for (const entry of legacy) {
+    const title = String((entry && entry.text) || '').trim();
+    if (!title) continue;
+    try {
+      const outcome = await executeAction('add_todo', { title });
+      if (entry.completed) await executeAction('complete_todo', { todo: outcome.result.todo.id });
+    } catch {
+      // Skip an unreadable legacy row rather than losing the rest of the list.
+    }
+  }
+
+  localStorage.removeItem(userKey);
+  window.__relay.reloadDashboard?.();
+}
+
+/**
+ * The rows the card shows: the viewer's open to-dos, or the whole team's when
+ * they have none assigned (so the widget is never empty for that reason), plus
+ * anything completed today. Overdue first, undated last.
+ */
+function dailyTodos() {
+  const viewer = todoViewer();
+  const all = store.getAll('todos') || [];
+  const today = todayLocalISO();
+
+  const byDue = (a, b) =>
+    String(a.dueDate || '9999-99-99').localeCompare(String(b.dueDate || '9999-99-99')) ||
+    String(a.dueAt || '').localeCompare(String(b.dueAt || ''));
+
+  // Someone with nothing under their name (an admin, or a stale login) sees the
+  // whole team's list rather than a permanently empty card.
+  const assigned = viewer ? all.filter(t => t.assignedTo === viewer.id) : all;
+  const rows = assigned.length ? assigned : all;
+
+  return {
+    viewer,
+    open: rows.filter(t => t.status !== 'done').sort(byDue),
+    doneToday: rows.filter(t => t.status === 'done' && toDateKey(t.completedAt) === today).sort(byDue),
+  };
+}
+
+function todoDueBadge(todo) {
+  if (!todo.dueDate) return '';
+  const today = todayLocalISO();
+  const tomorrow = todayLocalISO(new Date(Date.now() + 86400000));
+  let text;
+  let colour;
+  if (todo.dueDate < today) {
+    text = 'Overdue';
+    colour = 'var(--color-danger)';
+  } else if (todo.dueDate === today) {
+    text = 'Today';
+    colour = 'var(--color-warning)';
+  } else if (todo.dueDate === tomorrow) {
+    text = 'Tomorrow';
+    colour = 'var(--color-primary)';
+  } else {
+    text = formatLocalDate(todo.dueDate, { weekday: 'short', day: 'numeric', month: 'short' });
+    colour = 'var(--text-tertiary)';
+  }
+
+  const clock = todo.dueAt && todo.dueDate === today
+    ? new Date(todo.dueAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
+    : '';
+  return `<span style="color:${colour}; font-weight:600; white-space:nowrap;">${escapeHTML(text)}${clock ? ` ${escapeHTML(clock)}` : ''}</span>`;
+}
+
+function todoRow(todo, viewer, done) {
+  const meta = [];
+  const badge = todoDueBadge(todo);
+  if (badge) meta.push(badge);
+  if (viewer && todo.assignedTo !== viewer.id && todo.assignedToName) {
+    meta.push(`<span style="color:var(--text-tertiary);">${escapeHTML(todo.assignedToName)}</span>`);
+  }
+  if (todo.recordLabel) {
+    const href = todo.recordType === 'job'
+      ? `#/jobs/${todo.recordId}`
+      : todo.recordType === 'customer' ? `#/customers/${todo.recordId}` : null;
+    const label = `<span class="truncate" style="display:inline-block; max-width:140px; vertical-align:bottom;">${escapeHTML(todo.recordLabel)}</span>`;
+    meta.push(href
+      ? `<a href="${href}" style="color:var(--color-primary); text-decoration:none; display:inline-flex; align-items:center; gap:2px;"><span class="material-icons-outlined" style="font-size:11px;">link</span>${label}</a>`
+      : label);
+  }
+
+  return `
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; padding:8px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px;">
+      <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12px; color:${done ? 'var(--text-tertiary)' : 'var(--text-primary)'}; flex:1; min-width:0; margin:0;">
+        <input type="checkbox" class="todo-item-check" data-todo-id="${todo.id}" ${done ? 'checked' : ''} style="cursor:pointer; width:14px; height:14px; margin:2px 0 0; flex-shrink:0;" />
+        <span style="min-width:0;">
+          <span class="truncate" style="display:block; text-decoration:${done ? 'line-through' : 'none'};">${escapeHTML(todo.title)}</span>
+          ${meta.length ? `<span style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px; font-size:10px;">${meta.join('')}</span>` : ''}
+        </span>
+      </label>
+      <button class="btn btn-ghost btn-sm btn-icon btn-remove-todo" data-todo-id="${todo.id}" style="color:var(--color-danger); padding:0; width:22px; height:22px; flex-shrink:0;" title="Delete">
+        <span class="material-icons-outlined" style="font-size:16px;">delete</span>
+      </button>
+    </div>
+  `;
+}
+
 function renderDailyTodo(data, item) {
-  const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  const userKey = currentUser ? `todo_${currentUser.id}` : 'todo_default';
-  let todos = [];
-  try { todos = JSON.parse(localStorage.getItem(userKey) || '[]'); } catch(e) {}
+  const { viewer, open, doneToday } = dailyTodos();
+  const rows = open.concat(doneToday);
 
   return `
     <div style="display:flex; flex-direction:column; gap:10px; height:100%;">
@@ -2857,18 +3335,14 @@ function renderDailyTodo(data, item) {
         <input type="text" id="todo-input-field" placeholder="Add custom task..." class="form-input" style="flex:1; height:30px; font-size:12px; padding:0 8px; margin:0;" />
         <button class="btn btn-primary btn-sm" id="btn-add-todo" style="padding:0 12px; height:30px; font-size:12px;">Add</button>
       </div>
-      <div id="todo-list-inner" style="display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto; padding-right:4px;">
-        ${todos.map((t, idx) => `
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px; background:var(--bg-color); border:1px solid var(--border-color); border-radius:6px;">
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:${t.completed ? 'var(--text-tertiary)' : 'var(--text-primary)'}; text-decoration:${t.completed ? 'line-through' : 'none'}; flex:1; min-width:0; margin:0;">
-              <input type="checkbox" class="todo-item-check" data-idx="${idx}" ${t.completed ? 'checked' : ''} style="cursor:pointer; width:14px; height:14px; margin:0;" />
-              <span class="truncate">${escapeHTML(t.text)}</span>
-            </label>
-            <button class="btn btn-ghost btn-sm btn-icon btn-remove-todo" data-idx="${idx}" style="color:var(--color-danger); padding:0; width:22px; height:22px;" title="Delete">
-              <span class="material-icons-outlined" style="font-size:16px;">delete</span>
-            </button>
-          </div>
-        `).join('')}
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-tertiary);">
+        <span>Due</span>
+        <input type="date" id="todo-due-field" class="form-input" style="flex:1; height:26px; font-size:11px; padding:0 6px; margin:0;" />
+      </div>
+      <div id="todo-list-inner" style="display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; padding-right:4px;">
+        ${rows.length
+          ? rows.map(t => todoRow(t, viewer, t.status === 'done')).join('')
+          : '<div style="font-size:12px; color:var(--text-tertiary); text-align:center; padding:12px 0;">Nothing on your list</div>'}
       </div>
     </div>
   `;
@@ -2901,26 +3375,6 @@ function renderPendingApprovals(data, item) {
           </div>
         </div>
       `).join('')}
-    </div>
-  `;
-}
-
-function renderCustomerNPS(data, item) {
-  return `
-    <div style="display:flex; align-items:center; justify-content:center; gap:20px; height:100%; padding:8px;">
-      <div style="position:relative; width:80px; height:80px; display:flex; align-items:center; justify-content:center;">
-        <svg viewBox="0 0 36 36" style="width:100%; height:100%; transform: rotate(-90deg);">
-          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--bg-color)" stroke-width="3" />
-          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--color-success)" stroke-width="3.5" stroke-dasharray="88, 100" />
-        </svg>
-        <div style="position:absolute; font-size:18px; font-weight:800; color:var(--text-primary);">8.8</div>
-      </div>
-      <div style="font-size:12px; color:var(--text-secondary); line-height:1.4;">
-        <div style="font-weight:700; color:var(--color-success); font-size:13px;">Excellent Score</div>
-        <div>Promoters: <strong style="color:var(--text-primary)">82%</strong></div>
-        <div>Detractors: <strong style="color:var(--text-primary)">6%</strong></div>
-        <div style="color:var(--text-tertiary); font-size:10px; margin-top:2px;">Last 30 days review loop</div>
-      </div>
     </div>
   `;
 }
@@ -3031,7 +3485,8 @@ function renderInvoiceAging(data, item) {
 // Quote win rate: Accepted vs Declined (decided quotes), with open pipeline noted.
 function renderQuoteWinRate(data, item) {
   const quotes = data.quotes || [];
-  const accepted = quotes.filter(q => q.status === 'Accepted');
+  // A quote converted to a job was accepted first, so it counts as a win.
+  const accepted = quotes.filter(q => q.status === 'Accepted' || q.status === 'Converted');
   const declined = quotes.filter(q => q.status === 'Declined');
   const open = quotes.filter(q => q.status === 'Sent' || q.status === 'Pending' || q.status === 'Draft');
   const decided = accepted.length + declined.length;
