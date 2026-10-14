@@ -42,7 +42,7 @@ const MAP = {
   badge: 'IdCard',
   bar_chart: 'ChartColumn',
   block: 'Ban',
-  bolt: 'Zap',
+  bolt: 'Bolt',
   bookmark_add: 'BookmarkPlus',
   build: 'Wrench',
   business: 'Building2',
