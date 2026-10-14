@@ -10,6 +10,7 @@ import { store } from '../data/store.js';
 import { defineAction } from './registry.js';
 import { resolveOne, scoreRecord } from './resolve.js';
 import { objectSchema, str, num, enumOf, bool, dateish } from './schema.js';
+import { localDateLabel } from '../utils/dateUtils.js';
 import { toDateKey, todayLocalISO, parseDate, dateLabel } from './dates.js';
 import { LEAD_STAGES, LEAD_STAGE_ORDER, weightedLeadValue, isOpenLead, isLeadStale } from '../pages/leads/leadStages.js';
 import { invalidInput } from './errors.js';
@@ -481,11 +482,12 @@ defineAction({
   name: 'get_today',
   title: "Read today's briefing",
   description:
-    "A short briefing for today: jobs booked, overdue invoices, overdue to-dos and any leads going cold. Call this first when the request is open-ended like 'what should I do today'.",
+    "A short briefing for today: jobs booked, overdue invoices, overdue to-dos and any leads going cold. Call this first when the request is open-ended like 'what should I do today'. `date` is today in ISO form and `dateLabel` spells the same day out in full with its weekday.",
   readOnly: true,
   inputSchema: objectSchema({}, []),
   run: async () => {
-    const today = todayLocalISO();
+    const now = new Date();
+    const today = todayLocalISO(now);
     const jobs = (store.getAll('jobs') || []).filter((job) => toDateKey(job.scheduledDate) === today);
     const techs = store.getAll('technicians') || [];
     const overdueInvoices = (store.getAll('invoices') || []).filter((invoice) => {
@@ -502,6 +504,7 @@ defineAction({
     return {
       summary: `${jobs.length} job${jobs.length === 1 ? '' : 's'} booked today, ${overdueInvoices.length} overdue invoice${overdueInvoices.length === 1 ? '' : 's'}, ${overdueTodos.length} overdue to-do${overdueTodos.length === 1 ? '' : 's'}.`,
       date: today,
+      dateLabel: localDateLabel(now),
       jobsToday: jobs.slice(0, 25).map((job) => ({
         ...compact('jobs', job),
         technicianName: techs.find((t) => t.id === job.technicianId)?.name || job.technicianName || null,

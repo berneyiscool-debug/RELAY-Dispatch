@@ -34,6 +34,14 @@
  * sent every write to the legacy tag flow — which has no action registry, and so
  * no way to log time. Writes now reach the loop; only the canvas, navigation and
  * memory shortcuts (which the registry genuinely cannot do) stay behind.
+ *
+ * A sixth: the live context told the model the date with
+ * `new Date().toLocaleString()`, which renders "15/10/2026, 9:14:03 am" for an
+ * Australian user. A model reads that day-first form month-first, so the date
+ * itself was the first thing to go wrong, and the line carried no weekday at
+ * all. The live block now states the date with the same spelled-out,
+ * weekday-bearing label the agent loop's briefing uses, so both prompt paths
+ * agree on what day it is.
  */
 
 import test from 'node:test';
@@ -185,5 +193,27 @@ test('the resume replays the paused history verbatim', () => {
     SOURCE,
     /if \(!thread \|\| !pending \|\| pending\.threadId !== currentThreadId\) return;[\s\S]{0,400}?await callBrnyAgent\(\{ thread, typing, messages: pending\.messages, resume \}\);/,
     'the provider matches the answer to a tool call in the history it paused with'
+  );
+});
+
+test('the live context states the date the way the agent loop states it', () => {
+  assert.match(
+    SOURCE,
+    /import \{ localDateTimeLabel \} from '\.\.\/utils\/dateUtils\.js';/,
+    'the label comes from dateUtils, so both prompt paths spell the date out identically'
+  );
+  assert.match(
+    SOURCE,
+    /- Current Local Date & Time: \$\{localDateTimeLabel\(\)\}/,
+    'the line the CRITICAL DATE AWARENESS paragraph points at must be this one'
+  );
+  assert.ok(
+    !/new Date\(\)\.toLocaleString\(\)/.test(SOURCE),
+    'toLocaleString renders "15/10/2026, 9:14:03 am" here, which models read month-first'
+  );
+  assert.match(
+    SOURCE,
+    /CRITICAL DATE AWARENESS: [^\n]*weekday[^\n]*earlier messages[^\n]*/,
+    'the statement that today is not to be inferred, and outranks the thread, is the point of the paragraph'
   );
 });

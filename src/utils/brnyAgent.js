@@ -36,6 +36,7 @@
 import { completeChat } from './aiEngine.js';
 import { executeTool, getAction, toolDefinitions } from '../actions/index.js';
 import { currentActor } from '../actions/context.js';
+import { localDateLabel, todayLocalISO } from './dateUtils.js';
 
 /** Hard stop for one turn. Long enough for a real multi-step job, short enough to cap a loop. */
 export const MAX_STEPS = 12;
@@ -146,12 +147,25 @@ function settleResumedResult(turn, message) {
   turn[lastIndex] = { ...last, content: settled };
 }
 
+/**
+ * The line that tells the model what day it is. This is the one piece of the
+ * briefing that is never optional: without it the model answers "what's on
+ * today?" out of its training data. `get_today` supplies the counts as well, so
+ * the date is written twice on purpose — the counts can be missing, the date
+ * cannot.
+ */
+function dateLine(result = {}) {
+  const now = new Date();
+  const iso = result.date || todayLocalISO(now);
+  return `Today is ${iso} (${result.dateLabel || localDateLabel(now)}).`;
+}
+
 /** One short line of grounding so the model does not have to spend a step asking what day it is. */
 async function buildBriefing(baseCtx) {
   const { outcome, error } = await executeTool('get_today', {}, baseCtx);
   if (error || !outcome) return null;
   const result = outcome.result || {};
-  return `Today is ${result.date}. ${result.summary || ''}`.trim();
+  return `${dateLine(result)} ${result.summary || ''}`.trim();
 }
 
 /**
@@ -230,10 +244,11 @@ export async function runTurn(options = {}) {
 
   let system = options.system || BASE_INSTRUCTIONS;
   if (options.briefing !== false) {
+    let briefing = dateLine();
     try {
-      const briefing = await buildBriefing(baseCtx);
-      if (briefing) system = `${system}\n\n${briefing}`;
-    } catch (_) { /* the briefing is a nicety; a turn still works without it */ }
+      briefing = (await buildBriefing(baseCtx)) || briefing;
+    } catch (_) { /* the date alone still grounds the turn; only the counts are lost */ }
+    system = `${system}\n\n${briefing}`;
   }
 
   while (status === 'done') {
