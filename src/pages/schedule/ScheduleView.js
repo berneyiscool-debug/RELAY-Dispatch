@@ -152,6 +152,7 @@ export function renderScheduleView(container) {
   // 15-min precision: 1 hour = 32px, so 1 quarter = 8px
   const PX_PER_HOUR = 32;
   const PX_PER_QUARTER = PX_PER_HOUR / 4; // 8px
+  let nowMarkerTimer = null;
 
   function snapToQuarter(hours) {
     return Math.round(hours * 4) / 4;
@@ -161,6 +162,44 @@ export function renderScheduleView(container) {
     const hrs = Math.floor(h);
     const mins = Math.round((h - hrs) * 60);
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+  }
+
+  // The grid is a fixed 24-hour canvas, so the current time is just an offset into it.
+  function nowOffset() {
+    const now = new Date();
+    return (now.getHours() + now.getMinutes() / 60) * PX_PER_HOUR;
+  }
+
+  function formatNow() {
+    const now = new Date();
+    return formatHour(now.getHours() + now.getMinutes() / 60);
+  }
+
+  function nowMarkerHTML(withChip = true) {
+    // The line is drawn once per column so it reads as one rule across the row, but the
+    // time is only labelled on the first column — repeating it under every technician
+    // would read as a row of ticks rather than a single time.
+    const chip = withChip ? `<span class="sched-now-chip">${formatNow()}</span>` : '';
+    return `<div class="sched-now-line" data-now-marker style="top:${nowOffset()}px">${chip}</div>`;
+  }
+
+  // Nothing else on the grid depends on the clock, so the marker is moved in place on a
+  // timer instead of re-rendering the whole view every minute.
+  function startNowMarker() {
+    if (nowMarkerTimer) { clearInterval(nowMarkerTimer); nowMarkerTimer = null; }
+    const markers = container.querySelectorAll('[data-now-marker]');
+    if (!markers.length) return;
+    const move = () => {
+      const top = `${nowOffset()}px`;
+      const label = formatNow();
+      markers.forEach(el => {
+        el.style.top = top;
+        const chip = el.querySelector('.sched-now-chip');
+        if (chip) chip.textContent = label;
+      });
+    };
+    move();
+    nowMarkerTimer = setInterval(move, 30000);
   }
 
   function saveScroll() {
@@ -731,6 +770,7 @@ export function renderScheduleView(container) {
 
   function render() {
     try {
+      if (nowMarkerTimer) { clearInterval(nowMarkerTimer); nowMarkerTimer = null; }
       saveScroll();
       technicians = getTechnicians();
 
@@ -901,12 +941,13 @@ export function renderScheduleView(container) {
                     </div>
 
                     <!-- Technician Columns for this Day -->
-                    ${visibleTechs.map(tech => {
+                    ${visibleTechs.map((tech, techIdx) => {
         const techBlocks = blocks.filter(b => b.technicianId === tech.id);
         return `
                         <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
                           ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
-                          ${renderBlocks(techBlocks, dayIdx, tech.color)}
+                          ${renderBlocks(techBlocks, dayIdx)}
+                          ${isToday ? nowMarkerHTML(techIdx === 0) : ''}
                         </div>
                       `;
       }).join('')}
@@ -947,10 +988,12 @@ export function renderScheduleView(container) {
                 ${days.map((day, dayIdx) => {
       const tech = technicians.find(t => t.id === [...visibleTechIds][0]);
       const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+      const isToday = day.toDateString() === new Date().toDateString();
       return `
                     <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
                       ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
-                      ${renderBlocks(techBlocks, dayIdx, tech.color)}
+                      ${renderBlocks(techBlocks, dayIdx)}
+                      ${isToday ? nowMarkerHTML() : ''}
                     </div>
                   `;
     }).join('')}
@@ -969,6 +1012,7 @@ export function renderScheduleView(container) {
     applySelectionStyles();
     updateSelectionBar();
     restoreScroll();
+    startNowMarker();
     renderSearchResultsList();
     } catch (err) {
       console.error("RENDER ERROR:", err);
@@ -1833,105 +1877,48 @@ export function renderScheduleView(container) {
 
 
 
-  function renderBlocks(techBlocks, dayIdx, color) {
-    const safeColor = escapeHTML(color);
-    const priorityBorders = { 'Urgent': '#EF4444', 'High': '#F59E0B' };
-    const isDark = document.documentElement.getAttribute('data-theme-mode') === 'dark';
+  function renderBlocks(techBlocks, dayIdx) {
+    const priorityMarkers = { 'Urgent': 'sched-priority', 'High': 'sched-priority sched-priority-high' };
     return techBlocks
       .filter(b => b.dayIdx === dayIdx)
       .map(b => {
         const top = b.startHour * PX_PER_HOUR;
         const height = Math.max((b.endHour - b.startHour) * PX_PER_HOUR - 2, PX_PER_QUARTER);
-        const statusColors = {
-          'Pending': {
-            border: 'var(--color-warning, #F59E0B)',
-            bg: 'var(--color-warning-bg, rgba(245, 158, 11, 0.08))',
-            text: 'var(--color-warning, #D97706)'
-          },
-          'Scheduled': {
-            border: 'var(--color-info, #3B82F6)',
-            bg: 'var(--color-info-bg, rgba(59, 130, 246, 0.08))',
-            text: 'var(--color-info, #2563EB)'
-          },
-          'In Progress': {
-            border: 'var(--color-primary, #6366F1)',
-            bg: 'var(--color-primary-light, rgba(99, 102, 241, 0.08))',
-            text: 'var(--color-primary, #4F46E5)'
-          },
-          'On Hold': {
-            border: 'var(--text-secondary, #6B7280)',
-            bg: 'var(--content-bg, rgba(107, 114, 128, 0.08))',
-            text: 'var(--text-secondary, #4B5563)'
-          },
-          'Completed': {
-            border: 'var(--color-success, #10B981)',
-            bg: 'var(--color-success-bg, rgba(16, 185, 129, 0.08))',
-            text: 'var(--color-success, #059669)'
-          },
-          'Invoiced': {
-            border: '#9CA3AF',
-            bg: isDark ? 'rgba(55, 65, 81, 0.3)' : 'rgba(243, 244, 246, 0.7)',
-            text: isDark ? '#D1D5DB' : '#6B7280'
-          },
-          'Recurring Template': {
-            border: '#9333ea',
-            bg: 'rgba(147, 51, 234, 0.08)',
-            text: '#9333ea'
-          }
+        // One opaque fill per meaning. Fills are shared where the meanings are the same
+        // (leave-pending and job-pending are both "waiting on someone") and distinct
+        // wherever a glance has to tell them apart.
+        const statusFills = {
+          'Pending': 'var(--sched-fill-pending, #B45309)',
+          'Scheduled': 'var(--sched-fill-scheduled, #2563EB)',
+          'In Progress': 'var(--sched-fill-progress, #FF5C00)',
+          'On Hold': 'var(--sched-fill-hold, #4B5563)',
+          'Completed': 'var(--sched-fill-completed, #15803D)',
+          'Invoiced': 'var(--sched-fill-invoiced, #6D28D9)',
+          'Recurring Template': 'var(--sched-fill-template, #BE185D)'
+        };
+        const fills = {
+          'leave-approved': 'var(--sched-fill-leave-approved, #15803D)',
+          'leave-denied': 'var(--sched-fill-leave-denied, #B91C1C)',
+          'leave-pending': 'var(--sched-fill-leave-pending, #B45309)',
+          'blockout': 'var(--sched-fill-blockout, #4B5563)',
+          'meeting': 'var(--sched-fill-meeting, #0E7490)'
         };
 
-        let borderColor = priorityBorders[b.priority] || safeColor;
-        let background = `${safeColor}12`;
-        let textColor = safeColor;
-
-        // Custom styling overrides for leave, blockout, meeting
+        let fill = null;
         if (b.type === 'leave') {
-          if (b.status === 'Approved') {
-            borderColor = '#10B981'; // Green for approved leave
-            background = 'rgba(16, 185, 129, 0.16)';
-            textColor = '#059669';
-          } else if (b.status === 'Denied' || b.status === 'Rejected') {
-            borderColor = '#EF4444'; // Red for denied leave
-            background = 'rgba(239, 68, 68, 0.16)';
-            textColor = '#DC2626';
-          } else {
-            borderColor = '#F59E0B'; // Orange for pending leave
-            background = 'rgba(245, 158, 11, 0.1)';
-            textColor = '#D97706';
-          }
+          fill = b.status === 'Approved' ? fills['leave-approved']
+            : (b.status === 'Denied' || b.status === 'Rejected') ? fills['leave-denied']
+            : fills['leave-pending'];
         } else if (b.type === 'blockout') {
-          borderColor = '#6B7280'; // Gray for blockout
-          background = 'rgba(107, 114, 128, 0.1)';
-          textColor = '#4B5563';
+          fill = fills['blockout'];
         } else if (b.type === 'meeting') {
-          borderColor = '#3B82F6'; // Blue for meetings
-          background = 'rgba(59, 130, 246, 0.1)';
-          textColor = '#2563EB';
-        } else if (b.type === 'virtual') {
-          if (b.hasCollision) {
-            borderColor = '#EF4444';
-            background = 'rgba(239, 68, 68, 0.16)';
-            textColor = '#DC2626';
-          } else {
-            borderColor = '#9333ea';
-            background = 'rgba(147, 51, 234, 0.08)';
-            textColor = '#9333ea';
-          }
-        } else {
-          // Standard jobs: use status colors!
-          const colors = statusColors[b.status];
-          if (colors) {
-            borderColor = priorityBorders[b.priority] || colors.border;
-            background = colors.bg;
-            textColor = colors.text;
-          }
+          fill = fills['meeting'];
+        } else if (b.type !== 'virtual') {
+          fill = statusFills[b.status] || 'var(--sched-fill-hold, #4B5563)';
         }
-        // Apply styling for collisions to ALL blocks
-        if (b.hasCollision) {
-          borderColor = '#EF4444';
-          background = 'rgba(239, 68, 68, 0.16)';
-          textColor = '#DC2626';
-        }
+        // A collision overrides the fill for every committed block. Virtual blocks are
+        // left unpainted so the ghost style keeps them distinct from a real booking.
+        if (b.hasCollision && b.type !== 'virtual') fill = 'var(--sched-fill-collision, #B91C1C)';
 
         const isVirtual = b.type === 'virtual';
         const timeLabel = `${formatHour(b.startHour)} — ${formatHour(b.endHour)}`;
@@ -1951,6 +1938,13 @@ export function renderScheduleView(container) {
           tooltipTitle = `⚠️ COLLISION DETECTED: ${tooltipTitle} (Overlaps existing schedule)`;
         }
 
+        // The In Progress fill is the light one, so it is the only block that needs dark
+        // ink; everything else carries the default white.
+        const needsDarkInk = !isVirtual && b.status === 'In Progress';
+        const paint = isVirtual
+          ? ''
+          : `background:${fill};${needsDarkInk ? 'color:var(--sched-ink-dark, #1A1A1A);' : ''}`;
+
         return `
           <div class="schedule-block ${b.hasCollision ? 'schedule-block-collision' : ''} ${isVirtual ? 'schedule-block-virtual' : ''}"
             draggable="${isVirtual ? 'false' : 'true'}"
@@ -1969,18 +1963,17 @@ export function renderScheduleView(container) {
             style="
               top:${top}px;
               height:${height}px;
-              background:${background};
-              border-color:${borderColor};
-              color:${textColor};
+              ${paint}
               pointer-events:auto;
             ">
-            <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:space-between">
-              <span>${escapeHTML(b.jobNumber)}</span>
-              ${b.hasCollision ? `<span class="virtual-forecast-badge virtual-collision-badge">COLLISION</span>` : (isVirtual ? `<span class="virtual-forecast-badge">FORECAST</span>` : '')}
-              ${b.type === 'leave' && (b.status === 'Approved' || b.status === 'Denied' || b.status === 'Rejected') ? `<span class="virtual-forecast-badge" style="background:${b.status === 'Approved' ? '#10B981' : '#EF4444'};color:white;border:none;">${b.status.toUpperCase()}</span>` : ''}
+            <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px">
+              ${priorityMarkers[b.priority] ? `<span class="${priorityMarkers[b.priority]}" title="${escapeHTML(b.priority)} priority"></span>` : ''}
+              <span style="overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.jobNumber)}</span>
+              ${b.hasCollision ? `<span class="virtual-forecast-badge sched-badge-onfill" style="margin-left:auto">COLLISION</span>` : (isVirtual ? `<span class="virtual-forecast-badge" style="margin-left:auto">FORECAST</span>` : '')}
+              ${b.type === 'leave' && (b.status === 'Approved' || b.status === 'Denied' || b.status === 'Rejected') ? `<span class="virtual-forecast-badge sched-badge-onfill" style="margin-left:auto">${b.status.toUpperCase()}</span>` : ''}
             </div>
-            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.9;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.customerName || '')}</div>` : ''}
-            ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.7;margin-top:2px">${timeLabel}</div>` : ''}
+            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.95;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.customerName || '')}</div>` : ''}
+            ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.92;margin-top:2px">${timeLabel}</div>` : ''}
             ${!isVirtual ? `<div class="schedule-resize-handle" data-block-job-id="${b.jobId || ''}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>` : ''}
           </div>
         `;

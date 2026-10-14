@@ -1216,20 +1216,31 @@ select.badge {
 .print-document .pdf-footer-text { font-size: 11px; color: #5A6B7F; line-height: 1.6; margin-bottom: 8px; }
 .print-document .pdf-footer-company { font-size: 10px; color: #8A97A8; font-weight: 500; }
 
-/* ---- Schedule Blocks ---- */
+/* ---- Schedule Blocks ----
+   The grid is the one place in RELAY that uses saturated colour as data rather than
+   decoration, so a block is a single opaque status fill: no accent rail, no translucent
+   tint, square corners. Shape carries the exceptions — dashed and hatched means
+   virtual/forecast (not a committed job), a white hatch over the red fill means
+   collision, and a small square marks priority. */
 .schedule-block {
   position: absolute;
-  left: 3px;
-  right: 3px;
-  border-radius: 4px;
-  border-left: 3px solid;
-  padding: 3px 6px 10px;
+  left: 2px;
+  right: 2px;
+  border: 0 solid transparent; /* lets .schedule-block-virtual supply its dashed frame */
+  border-radius: var(--sched-radius, 0);
+  padding: 3px 6px 9px;
+  font-size: var(--font-size-xs);
+  color: var(--sched-ink, #FFFFFF);
   cursor: pointer;
   overflow: hidden;
-  transition: opacity var(--transition-fast), box-shadow var(--transition-fast);
+  transition: filter var(--transition-fast), box-shadow var(--transition-fast);
   z-index: 1;
 }
-.schedule-block:hover {
+/* Hover and marquee-select exclude each other: both states describe their box-shadow
+   with a different shadow list, so a selected block would lose its halo on hover. An
+   opaque fill cannot darken the way a tinted card can, so hover brightens it instead. */
+.schedule-block:not(.schedule-block-virtual):not(.sched-selected):hover {
+  filter: brightness(1.12);
   box-shadow: var(--shadow-md);
 }
 /* Marquee multi-select — selected blocks "light up" and lift rather than
@@ -1240,13 +1251,38 @@ select.badge {
   transform: translateY(-1px);
   z-index: 4;
 }
+/* Priority marker — a silhouette in the block's own ink rather than a hue, because a
+   red or amber dot vanishes into the red or amber status fill it lands on. */
+.sched-priority {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--sched-radius, 0);
+  background: currentColor;
+}
+.sched-priority-high {
+  background: transparent;
+  border: 1.5px solid currentColor;
+}
+/* A chip sitting on a saturated fill: a dark tag rather than the chip's usual hue,
+   which would disappear into a same-hue fill. The wash is translucent so the fill still
+   tints it, and the dark ground is what makes white chip text legible on the lightest
+   fills the palette uses (a white wash would do the opposite). */
+.sched-badge-onfill {
+  background: rgba(0, 0, 0, 0.55) !important;
+  color: #FFFFFF !important;
+}
 
-/* Virtual / Forecast Recurring Schedule Blocks */
+/* Virtual / Forecast Recurring Schedule Blocks
+   Kept in their own visual language — translucent, dashed and hatched — so a forecast
+   occurrence can never be mistaken for a committed job. They are painted entirely from
+   here: the block renderer gives them no inline fill. */
 .schedule-block-virtual {
-  border-style: dashed !important;
-  border-width: 1.5px !important;
+  border: 1.5px dashed #9333EA !important;
   opacity: 0.88;
+  background-color: rgba(147, 51, 234, 0.08) !important;
   background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(147, 51, 234, 0.04) 10px, rgba(147, 51, 234, 0.04) 20px) !important;
+  color: #9333EA !important;
   cursor: context-menu !important;
 }
 .schedule-block-virtual:hover {
@@ -1256,9 +1292,10 @@ select.badge {
 .virtual-forecast-badge {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 2px;
   background: rgba(147, 51, 234, 0.15);
-  color: #9333ea;
+  color: #7E22CE;
   border-radius: 3px;
   padding: 1px 4px;
   font-size: 8.5px;
@@ -1267,15 +1304,60 @@ select.badge {
   letter-spacing: 0.3px;
   margin-left: 4px;
 }
+/* Collision — the fill is the alarm red and the hatch is redrawn in white, because a
+   red-on-red hatch over an opaque red fill is invisible. */
 .schedule-block-collision {
-  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(239, 68, 68, 0.08) 10px, rgba(239, 68, 68, 0.08) 20px) !important;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255, 255, 255, 0.15) 10px, rgba(255, 255, 255, 0.15) 20px) !important;
 }
 .schedule-block-collision:hover {
   box-shadow: 0 0 0 1.5px #EF4444, 0 4px 12px rgba(239, 68, 68, 0.35) !important;
 }
-.virtual-collision-badge {
-  background: #EF4444 !important;
-  color: #FFFFFF !important;
+/* A forecast block that collides keeps the forecast shape so the two signals don't
+   fight; the alarm is carried by its border, ink and the COLLISION chip. Its ink is a
+   step darker than the alarm red, because the ghost it sits on is a light red wash and
+   the alarm red only clears 3.9:1 against it. */
+.schedule-block-virtual.schedule-block-collision {
+  background-color: rgba(239, 68, 68, 0.16) !important;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(239, 68, 68, 0.08) 10px, rgba(239, 68, 68, 0.08) 20px) !important;
+  border-color: #DC2626 !important;
+  color: #B91C1C !important;
+}
+
+/* ---- Schedule now marker ----
+   Where the current time falls on today's column. Positioned from the clock rather than
+   from data, so it is placed in the grid and moved on a timer. Drawn above the blocks
+   because an opaque status fill would otherwise hide it, and in ink rather than a hue
+   because every hue in this palette already means a job state.
+
+   The core is black-on-white or white-on-black with a 1px halo of the opposite colour.
+   That halo is what makes the marker readable over a fill of any lightness: whichever
+   of the two is far from the fill, the other one is doing the visible work, and the
+   worst case over the whole lightness range is still above the 3:1 that a non-text
+   graphic needs. */
+.sched-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--sched-now-ink, #000000);
+  box-shadow: 0 0 0 1px var(--sched-now-halo, #FFFFFF);
+  pointer-events: none;
+  z-index: 3;
+}
+.sched-now-chip {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 4px;
+  border-radius: var(--sched-radius, 0);
+  background: var(--sched-now-ink, #000000);
+  box-shadow: 0 0 0 1px var(--sched-now-halo, #FFFFFF);
+  color: var(--sched-now-halo, #FFFFFF);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 /* Resize grip at the bottom of each block */
@@ -1289,10 +1371,9 @@ select.badge {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0 0 3px 3px;
+  border-radius: 0;
   opacity: 0;
   transition: opacity var(--transition-fast);
-  background: linear-gradient(transparent, rgba(0,0,0,0.08));
   z-index: 2;
 }
 .schedule-resize-handle::after {
@@ -1300,12 +1381,57 @@ select.badge {
   display: block;
   width: 20px;
   height: 2px;
-  border-radius: 1px;
+  border-radius: 0;
   background: currentColor;
-  opacity: 0.4;
+  opacity: 0.55;
 }
 .schedule-block:hover .schedule-resize-handle {
   opacity: 1;
+}
+
+/* Theme-aware fills.
+   Re-tuned for the dark canvas rather than reused at the theme-independent values: the
+   ink has to invert to dark on the warmer hues, because a fill saturated enough to be
+   distinguishable on a light canvas is too light to carry white. */
+[data-theme-mode="dark"] {
+  --sched-ink: #0B0B0C;
+  --sched-ink-dark: #0B0B0C;
+
+  --sched-fill-pending: #E08A1E;
+  --sched-fill-scheduled: #3B82F6;
+  --sched-fill-progress: var(--color-primary);
+  --sched-fill-hold: #9CA3AF;
+  --sched-fill-completed: #34D058;
+  --sched-fill-invoiced: #A855F7;
+  --sched-fill-template: #F43F5E;
+  --sched-fill-leave-approved: #34D058;
+  --sched-fill-leave-denied: #EF6B6B;
+  --sched-fill-leave-pending: #E08A1E;
+  --sched-fill-blockout: #9CA3AF;
+  --sched-fill-meeting: #22A5BF;
+  --sched-fill-collision: #EF6B6B;
+
+  /* Opposite ends of the lightness range, so the pair is strongest exactly where a single
+     ink is weakest. */
+  --sched-now-ink: #FFFFFF;
+  --sched-now-halo: #000000;
+}
+[data-theme-mode="dark"] .sched-badge-onfill {
+  background: rgba(0, 0, 0, 0.45) !important;
+}
+/* The forecast ink is decided here now rather than in the renderer, so the dark canvas
+   needs its own value: the light violet that reads on a near-white ghost only clears
+   3.1:1 against the near-black one, and the ghost does not get lighter to compensate.
+   The collision case is excluded because it has to keep carrying the alarm. */
+[data-theme-mode="dark"] .schedule-block-virtual:not(.schedule-block-collision) {
+  color: #C084FC !important;
+  border-color: #A855F7 !important;
+}
+[data-theme-mode="dark"] .schedule-block-virtual.schedule-block-collision {
+  color: #F87171 !important;
+}
+[data-theme-mode="dark"] .virtual-forecast-badge {
+  color: #C084FC;
 }
 
 /* ---- Dark Mode (Sleek Nordic Volcanic/Graphite) ---- */

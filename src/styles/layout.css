@@ -1179,21 +1179,9 @@
   min-height: 50px;
   position: relative;
 }
-.schedule-block {
-  position: absolute;
-  left: 2px;
-  right: 2px;
-  border-radius: var(--border-radius);
-  padding: var(--space-xs) var(--space-sm);
-  font-size: var(--font-size-xs);
-  cursor: pointer;
-  overflow: hidden;
-  border-left: 3px solid;
-  transition: box-shadow var(--transition-fast);
-}
-.schedule-block:hover {
-  box-shadow: var(--shadow-md);
-}
+/* .schedule-block lives in components.css — it owns every part of the block's
+   appearance (fill, radius, padding, hover). Duplicating any of it here would win on
+   load order and silently undo a change made there. */
 
 /* ============================================================
    DASHBOARD CSS GRID SYSTEM
