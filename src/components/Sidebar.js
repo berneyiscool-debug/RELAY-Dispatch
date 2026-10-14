@@ -50,7 +50,7 @@ const navItems = [
     ],
   },
   {
-    category: 'Admin', id: 'cat-admin', icon: 'admin_panel_settings',
+    category: 'Admin', id: 'cat-admin', icon: 'bolt',
     items: [
       { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents', hasChildren: true },
       { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports', hasChildren: true, dividerAfter: true },
