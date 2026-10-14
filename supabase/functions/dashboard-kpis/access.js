@@ -18,7 +18,7 @@ const TECH_DEFAULTS = {
   Assets: ['view', 'create', 'edit', 'delete'],
   Stock: ['view', 'create', 'edit', 'delete'],
   'Purchase Orders': ['view', 'create', 'approve'],
-  Timesheets: ['view_own', 'view', 'create', 'edit_all'],
+  Timesheets: ['view_own', 'create', 'edit_all'], // own time only, as in the app
   Settings: ['view', 'edit_company'],
   Documents: ['view', 'upload'],
   Projects: ['view', 'create', 'edit'],

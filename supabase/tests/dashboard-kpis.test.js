@@ -87,6 +87,8 @@ describe('access', () => {
     assert.ok(!canSee({ role: 'technician' }, ut, ['Timesheets', 'view']));
     assert.ok(canSee({ role: 'manager' }, null, ['Invoices', 'view']));
     assert.ok(canSee({ role: 'technician' }, null, ['Invoices', 'view'])); // built-in technician defaults
+    assert.ok(!canSee({ role: 'technician' }, null, ['Timesheets', 'view'])); // own time only
+    assert.ok(canSee({ role: 'technician' }, null, ['Timesheets', 'view_own']));
   });
 
   test('a technician with jobs only gets job and team cards', () => {
