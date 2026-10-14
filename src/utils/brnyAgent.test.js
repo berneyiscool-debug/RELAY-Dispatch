@@ -7,7 +7,9 @@
  * a failed tool is fed back as an error rather than swallowed, that a risky
  * action stops for approval before it writes, that a question that has not been
  * answered is not answered on the wire, and that the history handed back is the
- * conversation itself - what travels to the provider is what the user typed.
+ * conversation itself - what travels to the provider is what the user typed, and
+ * that what day it is reaches the model as a day rather than as a number it has
+ * to interpret.
  *
  * The store is empty on purpose. Nothing here needs a dataset, which keeps the
  * assertions about the loop rather than about seeded records.
@@ -558,6 +560,57 @@ test('the base instructions and the briefing make up the system prompt', async (
     assert.match(system, /You are brny/);
     assert.match(system, /Today is \d{4}-\d{2}-\d{2}/);
     assert.equal(requests[0].messages[0].role, 'user', 'no system turn is ever sent inside messages');
+  });
+});
+
+/**
+ * The bug these pin: the model was told the date as `2026-10-15`, and a
+ * weekday is not recoverable from that without arithmetic the small, fast
+ * models brny runs on get wrong - so "is Friday this week?" was answered from
+ * an unrelated week. An ISO date and the same day spelled out both travel, and
+ * the spelled-out form is the one a model can read without guessing.
+ */
+test('the briefing spells the day out as well as naming it in ISO', async () => {
+  await withCloud(async () => {
+    stubProvider(textReply('Nothing on today.'));
+
+    await runTurn({ prompt: 'What is on today?', tools: [] });
+
+    assert.match(
+      requests[0].system,
+      /Today is \d{4}-\d{2}-\d{2} \(\w+day, \d{1,2} \w+ \d{4}\)\./,
+      'an ISO date alone leaves the weekday to be worked out',
+    );
+  });
+});
+
+test('the date reaches the provider even when the briefing cannot be built', async () => {
+  await withCloud(async () => {
+    stubProvider(textReply('Nothing on today.'));
+    const realGetAll = store.getAll;
+    store.getAll = () => { throw new Error('the store is unavailable'); };
+
+    let turn;
+    try {
+      turn = await runTurn({ prompt: 'What is on today?', tools: [] });
+    } finally {
+      store.getAll = realGetAll;
+    }
+
+    assert.equal(turn.status, 'done');
+    assert.match(requests[0].system, /Today is \d{4}-\d{2}-\d{2} \(\w+day, \d{1,2} \w+ \d{4}\)\./);
+  });
+});
+
+test('a caller-supplied system prompt still gets the date appended', async () => {
+  await withCloud(async () => {
+    stubProvider(textReply('ok'));
+
+    await runTurn({ prompt: 'Hi', system: 'You are brny, written by RELAY.', tools: [] });
+
+    const system = requests[0].system;
+    assert.match(system, /You are brny, written by RELAY\./);
+    assert.match(system, /Today is \d{4}-\d{2}-\d{2} \(\w+day, \d{1,2} \w+ \d{4}\)\./);
   });
 });
 

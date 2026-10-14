@@ -187,6 +187,32 @@ the client bundle. Changing either is an ordinary frontend change: commit to
   assistant turn. Nothing downstream repairs the history, so keep that invariant:
   [src/utils/brnyAgent.test.js](./src/utils/brnyAgent.test.js) replays a paused step
   and checks the request the resume sends.
+- **Every prompt states today's date once, and spells the weekday out.**
+  `2026-10-15` does not tell a model what weekday it is, and the small, fast models
+  brny runs on get that arithmetic wrong — so `localDateLabel` and
+  `localDateTimeLabel` in [src/utils/dateUtils.js](./src/utils/dateUtils.js) build
+  the label from fixed English name tables instead: `Thursday, 15 October 2026`.
+  Fixed tables are the point, not a shortcut — `toLocaleString()` renders
+  `15/10/2026, 9:14:03 am` for an Australian user, which models read month-first,
+  and it would otherwise follow the machine's locale, which is neither ours to
+  choose nor stable. The three model-facing paths all use that one label:
+  - the agent loop's briefing appends `Today is 2026-10-15 (Thursday, 15 October 2026).`
+    to the system prompt *after* the playbook (or a company override), so it cannot
+    be replaced; if the store read behind the rest of the briefing fails it still
+    sends the date alone, because a turn with no counts is fine and a turn with no
+    date is what caused the bug.
+  - `get_today` returns `date` (ISO, for actions) beside `dateLabel` (the same day,
+    spelled out), so a model reading the tool result is told the weekday too.
+  - the live context block in
+    [src/components/RelayAssistant.js](./src/components/RelayAssistant.js) states it
+    as `Current Local Date & Time`, and the playbook says outright that the
+    `Today is ...` line outranks the thread, the model's memory and the month in
+    the data above. Both prompt paths agreeing is the invariant:
+    [src/utils/brnyAgent.test.js](./src/utils/brnyAgent.test.js) asserts the line
+    survives a caller-supplied `system` and an unreadable store, and
+    [src/components/RelayAssistant.agentTurn.test.js](./src/components/RelayAssistant.agentTurn.test.js)
+    asserts the live block's line, that nothing on that path calls
+    `new Date().toLocaleString()`, and that the paragraph still claims primacy.
 - **`settings.ai.playbook` is a deliberate per-company override.** Set it by SQL or
   from the dashboard (there is no UI for it yet) and it *replaces* the playbook body
   for that company, policy rules and all — so an override is for a tenant that wants

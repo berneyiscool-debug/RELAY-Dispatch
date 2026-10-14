@@ -30,6 +30,7 @@ import { runTurn } from '../utils/brnyAgent.js';
 import { buildBrnyPlaybook, LEGACY_BASE_PROMPT } from '../utils/brnyPlaybook.js';
 import { brnyVoiceLine } from '../utils/brnyPersonalities.js';
 import { getUserBrnyPersonality } from '../utils/brnyPersonalityPref.js';
+import { localDateTimeLabel } from '../utils/dateUtils.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -3686,8 +3687,8 @@ Weather (live forecast data):
 Always perform requested actions using action tags. Do not state you are unable to modify data.
 
 Current Live CRM Data Context (updated real-time):
-- Current Local Date & Time: ${new Date().toLocaleString()}
-- CRITICAL DATE AWARENESS: The "Current Local Date & Time" above is the absolute ground truth. If it differs from any dates mentioned in past chat messages, ALWAYS use the date above.
+- Current Local Date & Time: ${localDateTimeLabel()}
+- CRITICAL DATE AWARENESS: The "Current Local Date & Time" above is the absolute ground truth for today's date, its weekday and the current time. Take today's date and weekday from that line and nowhere else — not from your memory, not from earlier messages, not from the current month in the data above. If it differs from any dates mentioned in past chat messages, ALWAYS use the line above.
 - Active Technicians & Workloads: ${techWorkloadMap || 'None'}
 - Total Registered Customers: ${customers.length}
 - Jobs Summary: Total: ${jobs.length}, Active/Scheduled: ${activeJobs.length}, Completed/Invoiced: ${completedJobs.length}, Pending: ${pendingJobs.length}, Unassigned: ${unassignedJobs.length}
