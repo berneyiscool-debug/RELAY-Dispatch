@@ -63,3 +63,18 @@ test('the top bar assistant trigger renders the Bot glyph', () => {
   );
   assert.doesNotMatch(TOPBAR, /deputy-icon\.svg/, 'the star asset is no longer the assistant icon');
 });
+
+/**
+ * `bolt` is the Admin group's rail icon (Sidebar.js) and one entry in the
+ * dashboard pin palette. It used to point at Lucide `Zap`, which draws a
+ * lightning bolt — not the glyph the Lucide pack names `bolt`. Pinning the
+ * mapping here keeps the ligature from silently drifting back to `Zap`.
+ */
+test('bolt resolves to Lucide Bolt, not Zap', () => {
+  const span = fakeIconSpan('bolt');
+  applyLucideIcons(span);
+
+  assert.match(span.innerHTML, /^<svg /, 'expected the shim to swap in an SVG');
+  assert.match(span.innerHTML, /<circle /, 'Lucide Bolt is the hexagon-with-circle; Zap is a single path');
+  assert.equal(span.dataset.licon, 'bolt');
+});
