@@ -151,16 +151,25 @@ the client bundle. Changing either is an ordinary frontend change: commit to
   instructions, so write it for the model, not for a reader.
 - **Personalities are the selectable voice layer.**
   [src/utils/brnyPersonalities.js](./src/utils/brnyPersonalities.js) holds the
-  presets (Straight, Friendly, Brief, Trainer, Formal), and Settings → brny
-  Assistant saves the pick to `settings.ai.personality`. A personality swaps
-  exactly one line of the playbook — the `HOW TO TALK` tone bullet — so what brny
-  is allowed to do, and how it has to report hours, tasks and questions, stay
-  fixed for every preset. Precedence is `settings.ai.playbook` (if set) →
-  `settings.ai.personality` → the shipped default, and
-  `BRNY_PERSONALITIES[0].tone` must stay byte-identical to that tone bullet:
+  presets (Straight, Friendly, Brief, Trainer, Formal), and My Profile → brny's
+  Personality saves the pick to the device-local, per-user key
+  `relay_brny_personality_<userId>`
+  ([src/utils/brnyPersonalityPref.js](./src/utils/brnyPersonalityPref.js)) — the same
+  precedent as the profile factsheet. It lives on My Profile, not in Settings,
+  because it is one person's choice rather than a company one: every user has a
+  profile, but not every role can reach Settings, and a caller must never inherit
+  someone else's voice. A personality swaps exactly one line of the playbook — the
+  `HOW TO TALK` tone bullet — so what brny is allowed to do, and how it has to
+  report hours, tasks and questions, stay fixed for every preset. Precedence is
+  `settings.ai.playbook` (a deliberate per-company override, if set) → the user's
+  personality → the shipped default, and `BRNY_PERSONALITIES[0].tone` must stay
+  byte-identical to that tone bullet:
   [src/utils/brnyPlaybook.test.js](./src/utils/brnyPlaybook.test.js) asserts the
   bullet appears exactly once, so a playbook edit that drifts from the preset
-  fails the suite instead of silently no-op'ing the swap.
+  fails the suite instead of silently no-op'ing the swap. A `settings.ai.personality`
+  value left over from the short-lived Settings tab is simply ignored — nothing reads
+  it, and it must not be revived, because the pick is the individual's and not the
+  company's.
 - **`relay-copilot` is plumbing, not behaviour.** The edge function is a
   passthrough proxy: the client sends `system` and `tools` in the request body and
   the function forwards them upstream. Redeploy it only to change the pinned

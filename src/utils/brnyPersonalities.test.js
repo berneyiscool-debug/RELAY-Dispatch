@@ -1,6 +1,6 @@
 /**
- * The personality catalogue feeds two things: the Settings cards and the tone
- * bullet. A bad entry breaks the Settings page silently (a missing tone means the
+ * The personality catalogue feeds two things: the picker cards on My Profile and
+ * the tone bullet. A bad entry breaks the picker silently (a missing tone means the
  * card does nothing), so these pin the shape of the data.
  */
 
@@ -20,7 +20,7 @@ test('the default personality is the first entry', () => {
   assert.strictEqual(DEFAULT_BRNY_TONE, BRNY_PERSONALITIES[0].tone);
 });
 
-test('every personality carries the fields the Settings card renders', () => {
+test('every personality carries the fields the picker card renders', () => {
   for (const personality of BRNY_PERSONALITIES) {
     assert.match(personality.id, /^[a-z][a-z0-9_]*$/, `${personality.id} is not a stable id`);
     assert.ok(personality.name && personality.name.trim(), `${personality.id} has no name`);

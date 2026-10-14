@@ -29,6 +29,7 @@ import { shouldUseAgentLoop } from '../utils/brnyRouting.js';
 import { runTurn } from '../utils/brnyAgent.js';
 import { buildBrnyPlaybook, LEGACY_BASE_PROMPT } from '../utils/brnyPlaybook.js';
 import { brnyVoiceLine } from '../utils/brnyPersonalities.js';
+import { getUserBrnyPersonality } from '../utils/brnyPersonalityPref.js';
 import { sanitizePromptText, promptAction } from '../utils/promptSafety.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -2917,7 +2918,8 @@ function buildBrnyAgentPrompt(ai) {
     // `systemPrompt`. See buildBrnyPlaybook for why a default must never sit here.
     override: ai.playbook,
     // The voice layer only — it rewrites the tone bullet and cannot touch policy.
-    personality: ai.personality,
+    // Read per user (My Profile), never from company settings.
+    personality: getUserBrnyPersonality(getUserId()),
     // The live data only. The policy half of the legacy context is a catalogue of
     // text-protocol tags, and handing brny both that and native tools invites a
     // second, duplicate write for the same intent.
@@ -3202,9 +3204,10 @@ async function resumeBrnyTurn(resume, displayText) {
 function buildSystemPrompt(ai) {
   const basePrompt = ai.systemPrompt || LEGACY_BASE_PROMPT;
   // The non-agent paths do not build from the playbook, so the selected
-  // personality's tone has to be appended here. Empty for the default, which
-  // keeps this prompt byte-identical for anyone who never picks one.
-  const voice = brnyVoiceLine(ai.personality);
+  // personality's tone has to be appended here. It is the signed-in user's own pick
+  // (My Profile, not company settings). Empty for the default, which keeps this
+  // prompt byte-identical for anyone who never picks one.
+  const voice = brnyVoiceLine(getUserBrnyPersonality(getUserId()));
   return [
     basePrompt,
     voice,
