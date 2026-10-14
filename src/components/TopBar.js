@@ -6,7 +6,6 @@ import { store } from '../data/store.js';
 import { router } from '../router.js';
 import { toggleRelay, onRelayToggle, openDeputyWithPrompt } from './RelayAssistant.js';
 import { showModal } from './Modal.js';
-import relayIcon from '../assets/deputy-icon.svg?raw';
 import { getListSearch, getListSearchLabel } from '../utils/listSearch.js';
 import { escapeHTML } from '../utils/security.js';
 import { enterDemoMode, exitDemoMode } from '../utils/demoSession.js';
@@ -46,7 +45,7 @@ export function createTopBar() {
            top bar while the Deputy drawer is open. -->
       <div class="relay-topbar-group relay-deputy-slot">
         <button class="relay-btn topbar-relay" id="btn-relay-assistant" title="brny — your co-pilot" aria-label="Open brny assistant" style="position: relative;">
-          ${relayIcon}
+          <span class="material-icons-outlined">smart_toy</span>
           <span class="deputy-ask-badge" id="deputy-ask-badge" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--color-danger); color:white; font-size:10px; font-weight:bold; border-radius:12px; padding:2px 6px; border:2px solid var(--bg-color);">0</span>
         </button>
       </div>
@@ -634,7 +633,7 @@ function openHelpModal() {
           <h4>brny Assistant co-pilot</h4>
           <p>brny is your automated assistant that can perform commands, aggregate metrics, and manage canvas layouts.</p>
           <ul>
-            <li><strong>Opening brny:</strong> Click the Star icon in the top right bar or press <kbd>Shift</kbd> + <kbd>B</kbd> to open the co-pilot.</li>
+            <li><strong>Opening brny:</strong> Click the robot icon in the top right bar or press <kbd>Shift</kbd> + <kbd>B</kbd> to open the co-pilot.</li>
             <li><strong>Direct Commands:</strong> Type in plain English to manage your screen. Try saying: <em>"add a schedule widget"</em> or <em>"zoom canvas to fit"</em>.</li>
             <li><strong>Overview Queries:</strong> Ask questions like: <em>"how many active jobs do we have?"</em> or <em>"show me overdue invoices"</em> to get immediate operational updates.</li>
           </ul>

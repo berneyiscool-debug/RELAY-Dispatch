@@ -200,6 +200,7 @@ const MAP = {
   settings_suggest: 'Settings2',
   shield: 'Shield',
   shopping_cart: 'ShoppingCart',
+  smart_toy: 'Bot',
   space_bar: 'Space',
   space_dashboard: 'LayoutDashboard',
   speed: 'Gauge',
