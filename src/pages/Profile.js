@@ -607,7 +607,9 @@ export function renderProfile(container) {
 
     if (personalitySection) {
       wireBrnyPersonalityPicker(personalitySection, {
-        selectedId: personality,
+        // Read here rather than reusing render()'s local: this listener block is a sibling
+        // scope and cannot see it.
+        selectedId: getUserBrnyPersonality(currentUser.id),
         onSelect: (id) => {
           const saved = setUserBrnyPersonality(currentUser.id, id);
           window.dispatchEvent(new Event('storage'));
