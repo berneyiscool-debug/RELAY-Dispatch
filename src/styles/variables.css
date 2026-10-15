@@ -113,43 +113,75 @@
   --z-modal: 2000;
   --z-toast: 3000;
 
-  /* ---- Schedule Block Fills ----
-     The schedule grid is the one place in RELAY that uses saturated colour as data
-     rather than decoration, so a block is a single opaque status fill carrying the ink
-     it was contrast-checked against, and the board reads without a legend.
+  /* ---- Schedule Block Paint ----
+     The schedule grid is the one place in RELAY that uses colour as data rather than
+     decoration, so a block says its status twice and only twice: the card is a soft tint
+     of the status hue, and a 3px edge along the bottom is that same hue at full strength.
+     Nothing else on a block is coloured.
 
-     Opaque by design: an alpha low enough to read as translucent also composites the
-     fill towards the canvas and washes the hue out. Every fill clears 4.5:1 against its
-     ink at the text opacities the blocks use, and no two states that mean different
-     things sit closer than dE2000 15. Pairs that are deliberately identical
-     (Pending/Leave Pending, On Hold/Blockout, Completed/Leave Approved,
+     The tint is what the board is read from at a glance, which is why it stays light:
+     every fill clears 13:1 against the near-black ink, so a single ink serves the whole
+     board and the sub-labels can sit at 0.92 opacity and still clear AA. Tints this light
+     cannot be separated by luminance, so no two states that mean different things sit
+     closer than dE2000 9; the saturated edge is the fully separated channel (dE2000 15.5
+     at worst) and is what carries the categorical signal. Pairs that are deliberately
+     identical (Pending/Leave Pending, On Hold/Blockout, Completed/Leave Approved,
      Leave Denied/Collision) share a meaning rather than a colour. */
-  --sched-radius: 0;
-  --sched-ink: #FFFFFF;
-  --sched-ink-dark: #1A1A1A; /* for the one fill light enough to need dark text */
+  /* Corner softening. The reference board's cards measure ~2px, which is the ceiling for
+     "still reads as a rectangle"; 3px is that same intent with just enough curve to stop
+     the corners looking like an unstyled div. */
+  --sched-radius: 3px;
+  --sched-ink: #1A1A1A;
+  --sched-select-ring: rgba(0, 0, 0, 0.6);
 
-  --sched-fill-pending: #B45309;
-  --sched-fill-scheduled: #2563EB;
-  --sched-fill-progress: var(--color-primary); /* the accent is reserved for status */
-  --sched-fill-hold: #4B5563;
-  --sched-fill-completed: #15803D;
-  --sched-fill-invoiced: #6D28D9;
-  --sched-fill-template: #BE185D;
-  --sched-fill-leave-approved: #15803D;
-  --sched-fill-leave-denied: #B91C1C;
-  --sched-fill-leave-pending: #B45309;
-  --sched-fill-blockout: #4B5563;
-  --sched-fill-meeting: #0E7490;
-  --sched-fill-collision: #B91C1C;
+  --sched-fill-pending: #FCEFCB;
+  --sched-fill-scheduled: #D2E2F2;
+  --sched-fill-progress: #FEE1C8;
+  --sched-fill-hold: #EAE7E2;
+  --sched-fill-completed: #D3EFD6;
+  --sched-fill-invoiced: #E4DEF8;
+  --sched-fill-template: #F9DBE7;
+  --sched-fill-leave-approved: #D3EFD6;
+  --sched-fill-leave-denied: #FADBDB;
+  --sched-fill-leave-pending: #FCEFCB;
+  --sched-fill-blockout: #E6E6E4;
+  --sched-fill-meeting: #D0EAEE;
+  --sched-fill-collision: #FADBDB;
 
-  /* The now marker is the one schedule element that sits on top of an arbitrary fill, so
-     its two colours are paired rather than chosen: a core with a flush halo. One of the
-     pair always clears 4.5:1 against whatever it is drawn over (the worst case is the
-     middle of the lightness range, where the pair still gives 4.58), which a single ink
-     cannot do — near-black is only 2.3:1 on the On Hold grey, and near-white only 1.95:1
-     on the Completed green. */
-  --sched-now-ink: #000000;
-  --sched-now-halo: #FFFFFF;
+  --sched-accent-pending: #B45309;
+  --sched-accent-scheduled: #2563EB;
+  --sched-accent-progress: var(--color-primary); /* the brand accent is reserved for status */
+  --sched-accent-hold: #4B5563;
+  --sched-accent-completed: #15803D;
+  --sched-accent-invoiced: #6D28D9;
+  --sched-accent-template: #BE185D;
+  --sched-accent-leave-approved: #15803D;
+  --sched-accent-leave-denied: #B91C1C;
+  --sched-accent-leave-pending: #B45309;
+  --sched-accent-blockout: #4B5563;
+  --sched-accent-meeting: #0E7490;
+  --sched-accent-collision: #B91C1C;
+
+  /* The now marker is the one schedule element that sits on top of an arbitrary fill. The
+     rule and the chip take the brand accent. The chip's time is set in white so the chip
+     reads as one solid accent tag; that pairing is 3.1:1, weaker than the 5.6:1 the near-
+     black it replaced managed, and it is the only text the marker owns. The rule is
+     deliberately unoutlined: over the palest status fill the accent clears only 2.3:1, so
+     the line is quiet there on purpose — the outline that used to make up the difference
+     read as a box drawn around the marker, and it was the more visible of the two. */
+  --sched-now-ink: #FF5C00;
+  --sched-now-contrast: #FFFFFF;
+
+  /* Weekend canvas: neutral rather than tinted. A colour here would have to compete with
+     the status fills for meaning; grey only has to say "not the working week". Held about
+     7 luminance below the content background — a light step, clear enough to read as a
+     separate surface and faint enough to leave the hour rules and the status fills the
+     loudest things in the column. */
+  --sched-weekend-bg: #F4F4F3;
+
+  /* Half-hour rule. Deliberately a step below the hour rule in contrast: it should be
+     findable when looked for and not otherwise. */
+  --sched-halfhour-line: rgba(0, 0, 0, 0.04);
 
   /* ---- Legacy aliases (referenced elsewhere in the CSS; mapped to real tokens) ---- */
   --color-primary-bg: var(--color-primary-light);

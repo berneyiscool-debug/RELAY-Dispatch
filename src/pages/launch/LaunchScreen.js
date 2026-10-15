@@ -774,10 +774,7 @@ export function renderLaunchScreen(container, onComplete) {
 
   const renderCloudSignInHTML = () => {
     return `
-      <h2 class="launch-title" style="color: #FF5C00;">
-        <span class="material-icons-outlined" style="font-size: 22px; color: #FF5C00;">cloud_queue</span> RELAY Cloud Services
-      </h2>
-      <p class="launch-subtitle">Team, sync and the mobile app &#8212; paid per user. Sign in to continue.</p>
+      <p class="launch-subtitle">Sign in to access team scheduling, synced data and the RELAY mobile app.</p>
 
       <div id="cloud-error" class="auth-error" style="display: none;">
         <span class="material-icons-outlined" style="font-size:18px;">error_outline</span>
