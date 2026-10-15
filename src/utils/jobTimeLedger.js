@@ -8,7 +8,8 @@
 // both stores intact and lets the plan and the record disagree in the open,
 // which is exactly what the Status/Scheduled/Booked columns are for.
 
-function hoursOf(record) {
+// Also used by invoiceLabour.js, which prices invoices from booked hours.
+export function hoursOf(record) {
   const raw = record?.hours ?? record?.durationHours ?? record?.duration_hours;
   const value = Number(raw);
   return Number.isFinite(value) ? value : 0;

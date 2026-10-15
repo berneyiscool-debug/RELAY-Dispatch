@@ -10,6 +10,17 @@ import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
 import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
+import {
+  HOURS_SOURCE,
+  bookedHoursByJob,
+  bookedHoursForJob,
+  bookedLabourLine,
+  defaultLabourRate,
+  hoursSourceCardHtml,
+  hoursSourceError,
+  readHoursSource,
+  setHoursSourceError
+} from '../../utils/invoiceLabour.js';
 
 export function renderJobsList(container, params) {
   const customerId = params?.customerId;
@@ -176,16 +187,17 @@ export function renderJobsList(container, params) {
                 return acceptedQuotes.length > 1;
               });
 
-              function createInvoices(selectedQuotesMap) {
+              function createInvoices(selectedQuotesMap, hoursSource = HOURS_SOURCE.ESTIMATED) {
                 const taxRate = store.getTaxRate();
                 jobs.forEach(job => {
                   const qId = selectedQuotesMap[job.id];
                   const quote = qId && qId !== 'tasklist' ? store.getById('quotes', qId) : null;
-                  const { sections, subtotal, worksDescription } = getInvoiceDataForJob(job, quote);
+                  const { sections, subtotal, worksDescription, hoursSource: appliedHoursSource } = getInvoiceDataForJob(job, quote, hoursSource);
 
                   store.create('invoices', {
                     number: store.getNextNumber('INV-', 'invoices'),
                     invoiceType: 'Job Invoice',
+                    hoursSource: appliedHoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : '',
                     jobId: job.id,
                     jobNumber: job.number,
                     customerId: job.customerId,
@@ -230,6 +242,17 @@ export function renderJobsList(container, params) {
                       }).join('')}
                     </div>
                   `;
+                  const hoursCard = mountHoursSourceCard({
+                    wrap: content.appendChild(document.createElement('div')),
+                    jobs,
+                    quoteIdForJob: job => {
+                      const sel = content.querySelector(`.bulk-job-quote-select[data-jobid="${job.id}"]`);
+                      return sel ? sel.value : defaultQuoteIdForJob(job);
+                    }
+                  });
+                  content.addEventListener('change', () => hoursCard.refresh());
+                  hoursCard.refresh();
+
                   showModal({
                     title: 'Select Quote for Invoices',
                     content,
@@ -251,7 +274,14 @@ export function renderJobsList(container, params) {
                           document.querySelectorAll('.bulk-job-quote-select').forEach(sel => {
                             selectedQuotesMap[sel.dataset.jobid] = sel.value;
                           });
-                          createInvoices(selectedQuotesMap);
+                          const hoursSource = hoursCard.read();
+                          const hoursError = hoursSourceError(hoursSource, hoursCard.refresh());
+                          if (hoursError) {
+                            hoursCard.showError(hoursError);
+                            import('../../components/Notifications.js').then(({ showToast }) => showToast(hoursError, 'error'));
+                            return;
+                          }
+                          createInvoices(selectedQuotesMap, hoursSource);
                           c();
                         }
                       }
@@ -260,9 +290,18 @@ export function renderJobsList(container, params) {
                 });
               } else {
                 import('../../components/Modal.js').then(({ showModal }) => {
+                  const content = document.createElement('div');
+                  content.innerHTML = `<p>Are you sure you want to generate draft invoices for all ${ids.length} selected jobs? Their statuses will change to 'Invoiced' once each invoice is sent.</p>`;
+                  const hoursCard = mountHoursSourceCard({
+                    wrap: content.appendChild(document.createElement('div')),
+                    jobs,
+                    quoteIdForJob: defaultQuoteIdForJob
+                  });
+                  hoursCard.refresh();
+
                   showModal({
                     title: 'Confirm Bulk Invoicing',
-                    content: `<p>Are you sure you want to generate draft invoices for all ${ids.length} selected jobs? Their statuses will change to 'Invoiced' once each invoice is sent.</p>`,
+                    content,
                     actions: [
                       { label: 'Cancel', className: 'btn-secondary', onClick: c => c() },
                       {
@@ -278,7 +317,14 @@ export function renderJobsList(container, params) {
                               selectedQuotesMap[j.id] = 'tasklist';
                             }
                           });
-                          createInvoices(selectedQuotesMap);
+                          const hoursSource = hoursCard.read();
+                          const hoursError = hoursSourceError(hoursSource, hoursCard.refresh());
+                          if (hoursError) {
+                            hoursCard.showError(hoursError);
+                            import('../../components/Notifications.js').then(({ showToast }) => showToast(hoursError, 'error'));
+                            return;
+                          }
+                          createInvoices(selectedQuotesMap, hoursSource);
                           c();
                         }
                       }
@@ -311,16 +357,18 @@ export function renderJobsList(container, params) {
                 return acceptedQuotes.length > 1;
               });
 
-              function createCombinedInvoice(selectedQuotesMap) {
+              function createCombinedInvoice(selectedQuotesMap, hoursSource = HOURS_SOURCE.ESTIMATED) {
                 const combinedSections = [];
                 const jobAmounts = [];
                 let subtotal = 0;
+                let bookedHoursUsed = false;
                 const worksDoneNotes = [];
 
                 jobs.forEach(job => {
                   const qId = selectedQuotesMap[job.id];
                   const quote = qId && qId !== 'tasklist' ? store.getById('quotes', qId) : null;
-                  const { sections, subtotal: jobSub, worksDescription } = getInvoiceDataForJob(job, quote);
+                  const { sections, subtotal: jobSub, worksDescription, hoursSource: appliedHoursSource } = getInvoiceDataForJob(job, quote, hoursSource);
+                  if (appliedHoursSource === HOURS_SOURCE.BOOKED) bookedHoursUsed = true;
                   
                   const jobTitle = job.title || 'Untitled Job';
                   
@@ -354,6 +402,7 @@ export function renderJobsList(container, params) {
                 store.create('invoices', {
                   number: store.getNextNumber('INV-', 'invoices'),
                   invoiceType: 'Standard',
+                  hoursSource: bookedHoursUsed ? HOURS_SOURCE.BOOKED : '',
                   customerId: jobs[0].customerId,
                   customerName: jobs[0].customerName,
                   contactName: jobs[0].contactName || '',
@@ -397,6 +446,17 @@ export function renderJobsList(container, params) {
                       }).join('')}
                     </div>
                   `;
+                  const hoursCard = mountHoursSourceCard({
+                    wrap: content.appendChild(document.createElement('div')),
+                    jobs,
+                    quoteIdForJob: job => {
+                      const sel = content.querySelector(`.combine-job-quote-select[data-jobid="${job.id}"]`);
+                      return sel ? sel.value : defaultQuoteIdForJob(job);
+                    }
+                  });
+                  content.addEventListener('change', () => hoursCard.refresh());
+                  hoursCard.refresh();
+
                   showModal({
                     title: 'Select Quote for Combined Invoice',
                     content,
@@ -418,7 +478,14 @@ export function renderJobsList(container, params) {
                           document.querySelectorAll('.combine-job-quote-select').forEach(sel => {
                             selectedQuotesMap[sel.dataset.jobid] = sel.value;
                           });
-                          createCombinedInvoice(selectedQuotesMap);
+                          const hoursSource = hoursCard.read();
+                          const hoursError = hoursSourceError(hoursSource, hoursCard.refresh());
+                          if (hoursError) {
+                            hoursCard.showError(hoursError);
+                            import('../../components/Notifications.js').then(({ showToast }) => showToast(hoursError, 'error'));
+                            return;
+                          }
+                          createCombinedInvoice(selectedQuotesMap, hoursSource);
                           c();
                         }
                       }
@@ -440,6 +507,13 @@ export function renderJobsList(container, params) {
                     </div>
                     <p style="font-size:12px; color:var(--text-secondary);">Customer: <strong>${escapeHTML(jobs[0].customerName) || 'Unknown'}</strong></p>
                   `;
+                  const hoursCard = mountHoursSourceCard({
+                    wrap: content.appendChild(document.createElement('div')),
+                    jobs,
+                    quoteIdForJob: defaultQuoteIdForJob
+                  });
+                  hoursCard.refresh();
+
                   showModal({
                     title: 'Combine Jobs into One Invoice',
                     content,
@@ -458,7 +532,14 @@ export function renderJobsList(container, params) {
                               selectedQuotesMap[j.id] = 'tasklist';
                             }
                           });
-                          createCombinedInvoice(selectedQuotesMap);
+                          const hoursSource = hoursCard.read();
+                          const hoursError = hoursSourceError(hoursSource, hoursCard.refresh());
+                          if (hoursError) {
+                            hoursCard.showError(hoursError);
+                            import('../../components/Notifications.js').then(({ showToast }) => showToast(hoursError, 'error'));
+                            return;
+                          }
+                          createCombinedInvoice(selectedQuotesMap, hoursSource);
                           c();
                         }
                       }
@@ -679,10 +760,70 @@ function generateWorksDoneDescription(tasks) {
   return 'Works Done:\n' + descriptions.map(d => `• ${d}`).join('\n');
 }
 
-function getInvoiceDataForJob(job, selectedQuote) {
+function quotesForJob(job) {
+  return store.getAll('quotes').filter(q => (q.jobId === job.id || q.id === job.quoteId) && q.status === 'Accepted');
+}
+
+function defaultQuoteIdForJob(job) {
+  const acceptedQuotes = quotesForJob(job);
+  return acceptedQuotes.length === 1 ? acceptedQuotes[0].id : 'tasklist';
+}
+
+/**
+ * True when the job's invoice draft would be priced from its tasklist, which is
+ * the only case where the labour hours could come from booked time instead.
+ */
+function invoicesLabourFromTasklist(job, selectedQuoteId) {
+  const selected = selectedQuoteId && selectedQuoteId !== 'tasklist'
+    ? store.getById('quotes', selectedQuoteId)
+    : null;
+  const quoteToUse = selected || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+  if (!quoteToUse) return true;
+  return !(quoteToUse.sections && quoteToUse.sections.length > 0) && !quoteToUse.lineItems;
+}
+
+/** Estimate vs booked hours for the jobs an invoice is about to cover. */
+function hoursSourceRows(jobs) {
+  const bookedByJob = bookedHoursByJob(store.getAll('timesheets'));
+  return jobs.map(job => ({
+    jobId: job.id,
+    jobNumber: job.number,
+    jobTitle: job.title,
+    estimatedHours: getJobTasklistHours(job.tasks || []),
+    bookedHours: bookedHoursForJob(bookedByJob, job.id)
+  }));
+}
+
+/**
+ * Mounts the "Bill Labour From" chooser into `wrap`. Rows are recomputed on
+ * every refresh because the quote each job is invoiced from decides whether the
+ * choice applies at all.
+ */
+function mountHoursSourceCard({ wrap, jobs, quoteIdForJob }) {
+  let rows = [];
+
+  function refresh() {
+    const selected = readHoursSource(wrap);
+    const rate = defaultLabourRate(store.getSettings()).rate;
+    rows = hoursSourceRows(jobs.filter(job => invoicesLabourFromTasklist(job, quoteIdForJob(job))));
+    wrap.innerHTML = rows.length > 0 ? hoursSourceCardHtml({ selected, rows, rate }) : '';
+    return rows;
+  }
+
+  return {
+    wrap,
+    refresh,
+    rows: () => rows,
+    read: () => readHoursSource(wrap),
+    showError: message => setHoursSourceError(wrap, message)
+  };
+}
+
+function getInvoiceDataForJob(job, selectedQuote, hoursSource = HOURS_SOURCE.ESTIMATED) {
   let sections = [];
   let subtotal = 0;
   let worksDescription = '';
+  let appliedHoursSource = HOURS_SOURCE.ESTIMATED;
 
   const quoteToUse = selectedQuote || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
   if (quoteToUse) {
@@ -703,11 +844,21 @@ function getInvoiceDataForJob(job, selectedQuote) {
     const totalHours = getJobTasklistHours(tasks);
     worksDescription = generateWorksDoneDescription(tasks);
 
-    const defaultLaborRateObj = settings.laborRates.find(r => r.isDefault) || settings.laborRates[0];
-    const rate = defaultLaborRateObj ? defaultLaborRateObj.rate : 85;
-    const rateName = defaultLaborRateObj ? defaultLaborRateObj.name : 'Labour';
+    const { rate, name: rateName } = defaultLabourRate(settings);
 
-    if (totalHours > 0) {
+    const bookedLine = hoursSource === HOURS_SOURCE.BOOKED
+      ? bookedLabourLine({
+          hours: bookedHoursForJob(bookedHoursByJob(store.getAll('timesheets')), job.id),
+          rate,
+          rateName,
+          makeId: () => store.generateId()
+        })
+      : null;
+
+    if (bookedLine) {
+      appliedHoursSource = HOURS_SOURCE.BOOKED;
+      lineItems.push(bookedLine);
+    } else if (totalHours > 0) {
       lineItems.push({
         id: store.generateId(),
         description: `${rateName} (${totalHours.toFixed(2)} hrs)`,
@@ -768,5 +919,5 @@ function getInvoiceDataForJob(job, selectedQuote) {
     subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
   }
 
-  return { sections, subtotal, worksDescription };
+  return { sections, subtotal, worksDescription, hoursSource: appliedHoursSource };
 }

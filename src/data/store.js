@@ -2262,6 +2262,9 @@ class DataStore {
         record.jobIds = meta.jobIds || []; // consolidated invoices link multiple jobs
         record.jobAmounts = meta.jobAmounts || []; // per-job share of a multi-job invoice
         record.jobNumbers = meta.jobNumbers || [];
+        // Labour billed from booked timesheet hours is stamped 'booked'; the
+        // blank default means the labour came from the tasklist estimates.
+        record.hoursSource = meta.hoursSource || '';
         if (Array.isArray(meta.payments)) record.payments = meta.payments;
         if (meta.sentAt) record.sentAt = meta.sentAt;
       }
@@ -2879,6 +2882,9 @@ class DataStore {
         jobIds: record.jobIds || [], // consolidated invoices link multiple jobs
         jobAmounts: record.jobAmounts || [], // per-job share of a multi-job invoice
         jobNumbers: record.jobNumbers || [],
+        // Which hours the labour line was priced from ('booked', or blank for the
+        // tasklist estimates) has no column either, so it rides in here.
+        hoursSource: record.hoursSource || '',
         // Recorded payments have no column; without this a cloud invoice loses its
         // part-payments (and its balance) on the next load.
         payments: record.payments || [],

@@ -32,7 +32,8 @@ regional. RELAY flips both:
 - Jobs — hierarchical task lists, progress rollup, materials & costs, activity
   timeline, attachments, recurring schedules, create-invoice
 - Invoices — progress & deposit billing, credit notes, payment tracking,
-  overdue reminders
+  overdue reminders, labour billed from tasklist estimates or from booked
+  timesheet hours
 - **PDF export** for quotes and invoices (branded, print-ready)
 
 **Scheduling & time**
