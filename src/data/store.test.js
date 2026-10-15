@@ -406,6 +406,51 @@ describe('DataStore', () => {
       assert.deepStrictEqual(norm.jobNumbers, ['1001', '1002']);
     });
 
+    test('invoice hoursSource survives a cloud round-trip', () => {
+      const invoicePayload = {
+        id: 'inv_booked_1',
+        number: 'INV-77777',
+        customerId: 'cust_abc',
+        status: 'Sent',
+        total: 400,
+        subtotal: 400,
+        sections: [],
+        jobIds: [1],
+        hoursSource: 'booked'
+      };
+
+      const denorm = store.denormalizeRecord(invoicePayload, 'invoices');
+
+      assert.strictEqual(denorm.hoursSource, undefined);
+      assert.strictEqual(denorm.line_items.hoursSource, 'booked');
+
+      const norm = store.normalizeRecord(denorm, 'invoices');
+
+      assert.strictEqual(norm.hoursSource, 'booked');
+    });
+
+    test('invoice hoursSource comes back blank when the labour was billed from estimates', () => {
+      const invoicePayload = {
+        id: 'inv_estimated_1',
+        number: 'INV-77778',
+        customerId: 'cust_abc',
+        status: 'Sent',
+        total: 400,
+        subtotal: 400,
+        sections: [],
+        jobIds: [1],
+        hoursSource: ''
+      };
+
+      const denorm = store.denormalizeRecord(invoicePayload, 'invoices');
+
+      assert.strictEqual(denorm.line_items.hoursSource, '');
+
+      const norm = store.normalizeRecord(denorm, 'invoices');
+
+      assert.strictEqual(norm.hoursSource, '');
+    });
+
     test('quotes serialization and deserialization via line_items works correctly', () => {
       const quotePayload = {
         id: 'q_test_1',

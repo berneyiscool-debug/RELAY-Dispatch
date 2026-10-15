@@ -29,6 +29,13 @@ import { resolveQuote } from './quotes.js';
 import { tasklistHours, worksDoneDescription } from './timeMaterials.js';
 import { parseDate, todayLocalISO, dateLabel } from './dates.js';
 import { roundCurrency, calculateBillableMaterialPrice, calculateTotalBillableMaterials } from '../utils/pricing.js';
+import {
+  HOURS_SOURCE,
+  bookedHoursByJob,
+  bookedHoursForJob,
+  bookedLabourLine,
+  defaultLabourRate as defaultBookedLabourRate,
+} from '../utils/invoiceLabour.js';
 
 export const INVOICE_STATUSES = ['Draft', 'Sent', 'Paid', 'Overdue', 'Void'];
 export const INVOICE_TYPES = ['Standard', 'Deposit', 'Progress'];
@@ -120,23 +127,41 @@ function defaultLaborRate(settings) {
 /**
  * Price a job from its tasklist and materials — the fallback the UI uses when
  * there is no quote, and the basis for a progress payment.
+ *
+ * `hoursSource` decides what the labour line is priced from: the tasklist
+ * estimates (the default) or the hours booked against the job in timesheets.
+ * With booked hours there is nothing to estimate, so a job with no time
+ * recorded is refused rather than quietly invoiced from the estimates.
  */
-function tasklistSource(job) {
+function tasklistSource(job, hoursSource = HOURS_SOURCE.ESTIMATED) {
   const settings = store.getSettings() || {};
   const lines = [];
 
-  const hours = tasklistHours(job.tasks || []);
-  const labor = defaultLaborRate(settings);
-  if (hours > 0) {
-    const total = roundCurrency(hours * labor.rate);
-    lines.push({
-      id: store.generateId(),
-      description: `${labor.name} (${hours.toFixed(2)} hrs)`,
-      type: 'labor',
-      qty: hours,
-      rate: labor.rate,
-      total,
-    });
+  if (hoursSource === HOURS_SOURCE.BOOKED) {
+    const { rate, name: rateName } = defaultBookedLabourRate(settings);
+    const hours = bookedHoursForJob(bookedHoursByJob(store.getAll('timesheets')), job.id);
+    const line = bookedLabourLine({ hours, rate, rateName, makeId: () => store.generateId() });
+    if (!line) {
+      throw conflict(
+        `Job ${job.number} has no hours booked in timesheets, so there is nothing to bill from booked hours. Record time against the job, or bill from the tasklist estimates.`,
+        { jobNumber: job.number, hoursSource }
+      );
+    }
+    lines.push(line);
+  } else {
+    const hours = tasklistHours(job.tasks || []);
+    const labor = defaultLaborRate(settings);
+    if (hours > 0) {
+      const total = roundCurrency(hours * labor.rate);
+      lines.push({
+        id: store.generateId(),
+        description: `${labor.name} (${hours.toFixed(2)} hrs)`,
+        type: 'labor',
+        qty: hours,
+        rate: labor.rate,
+        total,
+      });
+    }
   }
 
   const additionalCost = Number(job.additionalMaterialCost) || 0;
@@ -187,16 +212,23 @@ function tasklistSource(job) {
     kind: 'tasklist',
     sections: [{ id: store.generateId(), name: 'Job Items', lineItems: lines }],
     worksDescription: worksDoneDescription(job.tasks || []),
+    hoursSource: hoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : '',
   };
 }
 
 /** The full price of a job: its quote when there is one, otherwise the tasklist. */
-function standardSource(job, quote) {
+function standardSource(job, quote, hoursSource = HOURS_SOURCE.ESTIMATED) {
   const sections = quoteSections(quote);
   if (sections.length) {
-    return { kind: 'quote', sections, subtotal: subtotalOf(sections), worksDescription: '' };
+    if (hoursSource === HOURS_SOURCE.BOOKED) {
+      throw conflict(
+        `Job ${job.number} is being invoiced from quote ${quote.number || quote.id}, so its labour is priced from that quote rather than its booked hours. Bill the tasklist instead, or drop the hoursSource choice.`,
+        { jobNumber: job.number, quoteNumber: quote.number || quote.id }
+      );
+    }
+    return { kind: 'quote', sections, subtotal: subtotalOf(sections), worksDescription: '', hoursSource: '' };
   }
-  const fallback = tasklistSource(job);
+  const fallback = tasklistSource(job, hoursSource);
   return { ...fallback, subtotal: subtotalOf(fallback.sections) };
 }
 
@@ -311,7 +343,7 @@ defineAction({
   name: 'create_invoice',
   title: 'Draft an invoice',
   description:
-    'Draft an invoice for a job from its accepted quote, or from the job\'s own tasklist and materials. Pass type "Deposit" or "Progress" with a percent to bill part of the job up front. The invoice starts as a draft and only reaches the customer once you send it, so the job is not marked as invoiced yet.',
+    'Draft an invoice for a job from its accepted quote, or from the job\'s own tasklist and materials. Pass type "Deposit" or "Progress" with a percent to bill part of the job up front. The invoice starts as a draft and only reaches the customer once you send it, so the job is not marked as invoiced yet. Pass hoursSource "booked" to price the tasklist labour from the hours booked against the job in timesheets instead of its task estimates.',
   permission: { module: 'Invoices', key: 'create' },
   inputSchema: objectSchema(
     {
@@ -321,6 +353,10 @@ defineAction({
       type: enumOf(INVOICE_TYPES, 'Kind of invoice. Defaults to Standard, or Deposit/Progress when a percent is given.'),
       percent: num('How much of the job to bill, for a Deposit or Progress invoice, e.g. 30.'),
       basis: enumOf(['quoted', 'actual'], 'Deposit only: price the deposit on quoted figures or actual costs.'),
+      hoursSource: enumOf(
+        [HOURS_SOURCE.ESTIMATED, HOURS_SOURCE.BOOKED],
+        'Price the labour from the tasklist estimates (default) or from the hours booked against the job in timesheets.'
+      ),
       applyDeposits: bool('Standard invoices: deduct any deposit already billed. Defaults to true.'),
       dueInDays: num('Payment terms in days from today. Defaults to 30.'),
       notes: str('Notes to show on the invoice.'),
@@ -345,13 +381,23 @@ defineAction({
     }
 
     const reference = resolveInvoiceQuote(job, input.quote);
+    // The validator has already narrowed this to the two enum values, so
+    // anything that is not an explicit "booked" request keeps the old pricing.
+    const hoursSource = input.hoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : HOURS_SOURCE.ESTIMATED;
 
     let sections;
     let subtotal;
     let worksDescription = '';
+    let hoursSourceApplied = '';
     let source;
 
     if (type === 'Deposit') {
+      if (hoursSource === HOURS_SOURCE.BOOKED) {
+        throw conflict(
+          `A deposit invoice is priced from quoted or actual labour and materials, never from the job's tasklist hours, so booked hours do not apply. Drop the hoursSource choice.`,
+          { jobNumber: job.number, hoursSource }
+        );
+      }
       const bases = depositBases(job, reference);
       const basis = input.basis === 'actual' ? 'actual' : 'quoted';
       const labor = basis === 'actual' ? bases.actualLabor : bases.quotedLabor;
@@ -385,7 +431,7 @@ defineAction({
       ];
       source = { kind: 'deposit', basis, percent, basisTotal: roundCurrency(labor + materials) };
     } else if (type === 'Progress') {
-      const base = standardSource(job, reference);
+      const base = standardSource(job, reference, hoursSource);
       subtotal = roundCurrency(base.subtotal * (percent / 100));
       if (!(subtotal > 0)) {
         throw conflict(
@@ -410,11 +456,13 @@ defineAction({
         },
       ];
       source = { kind: base.kind, percent, jobTotal: base.subtotal };
+      hoursSourceApplied = base.hoursSource || '';
     } else {
-      const base = standardSource(job, reference);
+      const base = standardSource(job, reference, hoursSource);
       sections = base.sections;
       subtotal = base.subtotal;
       worksDescription = base.worksDescription || '';
+      hoursSourceApplied = base.hoursSource || '';
       let credited = 0;
 
       if (subtotal <= 0) {
@@ -438,6 +486,7 @@ defineAction({
     const invoice = store.create('invoices', {
       number: store.getNextNumber('INV-', 'invoices'),
       invoiceType: type,
+      hoursSource: hoursSourceApplied,
       jobId: job.id,
       jobNumber: job.number,
       customerId: job.customerId,

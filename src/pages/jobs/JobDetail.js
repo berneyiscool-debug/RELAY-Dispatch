@@ -16,6 +16,17 @@ import { calculateTotalBillableMaterials, calculateBillableMaterialPrice } from 
 import { hasPermission } from '../../utils/permissions.js';
 import { createBulkActionBar } from '../../components/BulkActionBar.js';
 import { buildJobTimeLedger, summariseJobTimeLedger } from '../../utils/jobTimeLedger.js';
+import {
+  HOURS_SOURCE,
+  bookedHoursByJob,
+  bookedHoursForJob,
+  bookedLabourLine,
+  defaultLabourRate,
+  hoursSourceCardHtml,
+  hoursSourceError,
+  readHoursSource,
+  setHoursSourceError
+} from '../../utils/invoiceLabour.js';
 import { calculateDynamicLabor } from '../../utils/rateCalculator.js';
 import { parsePreferredTime, todayLocalISO } from '../../utils/dateUtils.js';
 import { JOB_STATUS_BADGES, PRIORITY_BADGES } from '../../utils/statusColors.js';
@@ -91,7 +102,7 @@ export function renderJobDetail(container, { id, tab }) {
     return 'Works Done:\n' + descriptions.map(d => `• ${d}`).join('\n');
   }
 
-  function createDraftInvoice(type, sections, subtotal, selectedQuote, worksDescription) {
+  function createDraftInvoice(type, sections, subtotal, selectedQuote, worksDescription, hoursSource) {
     let originalQuoteNumber = '';
     let originalQuoteId = '';
     
@@ -109,6 +120,7 @@ export function renderJobDetail(container, { id, tab }) {
     const inv = store.create('invoices', {
       number: store.getNextNumber('INV-', 'invoices'),
       invoiceType: type,
+      hoursSource: hoursSource === HOURS_SOURCE.BOOKED ? HOURS_SOURCE.BOOKED : '',
       jobId: id, jobNumber: job.number,
       customerId: job.customerId, customerName: job.customerName, contactName: job.contactName,
       status: 'Draft',
@@ -125,10 +137,11 @@ export function renderJobDetail(container, { id, tab }) {
     router.navigate(`/invoices/${inv.id}`);
   }
 
-  function getJobInvoiceData(selectedQuote) {
+  function getJobInvoiceData(selectedQuote, hoursSource = HOURS_SOURCE.ESTIMATED) {
     let sections = [];
     let subtotal = 0;
     let worksDescription = '';
+    let appliedHoursSource = HOURS_SOURCE.ESTIMATED;
 
     // 1. Try to pull from Quote Sections first (using passed selectedQuote or fallback quoteId)
     const quoteToUse = selectedQuote || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
@@ -153,11 +166,21 @@ export function renderJobDetail(container, { id, tab }) {
       worksDescription = generateWorksDoneDescription(tasks);
 
       // Multiply hours by the default labor rate (or first rate) from settings
-      const defaultLaborRateObj = settings.laborRates.find(r => r.isDefault) || settings.laborRates[0];
-      const rate = defaultLaborRateObj ? defaultLaborRateObj.rate : 85;
-      const rateName = defaultLaborRateObj ? defaultLaborRateObj.name : 'Labour';
+      const { rate, name: rateName } = defaultLabourRate(settings);
 
-      if (totalHours > 0) {
+      const bookedLine = hoursSource === HOURS_SOURCE.BOOKED
+        ? bookedLabourLine({
+            hours: bookedHoursForJob(bookedHoursByJob(store.getAll('timesheets')), job.id),
+            rate,
+            rateName,
+            makeId: () => store.generateId()
+          })
+        : null;
+
+      if (bookedLine) {
+        appliedHoursSource = HOURS_SOURCE.BOOKED;
+        lineItems.push(bookedLine);
+      } else if (totalHours > 0) {
         lineItems.push({
           id: store.generateId(),
           description: `${rateName} (${totalHours.toFixed(2)} hrs)`,
@@ -222,7 +245,50 @@ export function renderJobDetail(container, { id, tab }) {
       subtotal = sections.reduce((sum, s) => sum + (s.lineItems.reduce((ls, li) => ls + (li.total || 0), 0)), 0);
     }
 
-    return { sections, subtotal, worksDescription };
+    return { sections, subtotal, worksDescription, hoursSource: appliedHoursSource };
+  }
+
+  /**
+   * True when the drafted invoice would be priced from the job's tasklist, which
+   * is the only case where the labour hours could come from booked time instead.
+   */
+  function invoicesLabourFromTasklist(selectedQuote) {
+    const quoteToUse = selectedQuote || (job.quoteId ? store.getById('quotes', job.quoteId) : null);
+    if (!quoteToUse) return true;
+    return !(quoteToUse.sections && quoteToUse.sections.length > 0) && !quoteToUse.lineItems;
+  }
+
+  /**
+   * Mounts the "Bill Labour From" chooser for this job into `wrap`. The row is
+   * recomputed on refresh because the quote the invoice is built from decides
+   * whether the choice applies at all.
+   */
+  function mountJobHoursSourceCard(wrap, selectedQuoteGetter) {
+    let rows = [];
+
+    function refresh() {
+      const selected = readHoursSource(wrap);
+      const rate = defaultLabourRate(store.getSettings()).rate;
+      rows = invoicesLabourFromTasklist(selectedQuoteGetter())
+        ? [{
+            jobId: job.id,
+            jobNumber: job.number,
+            jobTitle: job.title,
+            estimatedHours: getJobTasklistHours(job.tasks || []),
+            bookedHours: bookedHoursForJob(bookedHoursByJob(store.getAll('timesheets')), job.id)
+          }]
+        : [];
+      wrap.innerHTML = rows.length > 0 ? hoursSourceCardHtml({ selected, rows, rate }) : '';
+      return rows;
+    }
+
+    return {
+      wrap,
+      refresh,
+      rows: () => rows,
+      read: () => readHoursSource(wrap),
+      showError: message => setHoursSourceError(wrap, message)
+    };
   }
 
   function triggerInvoiceGenerationFlow(type) {
@@ -230,6 +296,10 @@ export function renderJobDetail(container, { id, tab }) {
       (q.jobId === job.id || q.id === job.quoteId) && 
       q.status === 'Accepted'
     );
+
+    // Deposit invoices pick their own labour and materials basis, so the hours
+    // source is only offered for the invoices built from the job's tasklist.
+    const wantsHoursSource = type !== 'Deposit';
 
     if (acceptedQuotes.length > 1) {
       const content = document.createElement('div');
@@ -245,6 +315,16 @@ export function renderJobDetail(container, { id, tab }) {
           </select>
         </div>
       `;
+      const hoursCard = wantsHoursSource
+        ? mountJobHoursSourceCard(content.appendChild(document.createElement('div')), () => {
+            const value = document.getElementById('invoice-quote-selector')?.value;
+            return value && value !== 'tasklist' ? acceptedQuotes.find(q => q.id === value) || null : null;
+          })
+        : null;
+      if (hoursCard) {
+        content.addEventListener('change', () => hoursCard.refresh());
+        hoursCard.refresh();
+      }
       showModal({
         title: 'Select Quote for Invoice',
         content,
@@ -257,7 +337,16 @@ export function renderJobDetail(container, { id, tab }) {
               if (selectedVal !== 'tasklist') {
                 selectedQuote = acceptedQuotes.find(q => q.id === selectedVal);
               }
-              generateInvoiceWithSelectedQuote(type, selectedQuote);
+              const hoursSource = hoursCard ? hoursCard.read() : HOURS_SOURCE.ESTIMATED;
+              if (hoursCard) {
+                const hoursError = hoursSourceError(hoursSource, hoursCard.refresh());
+                if (hoursError) {
+                  hoursCard.showError(hoursError);
+                  showToast(hoursError, 'error');
+                  return;
+                }
+              }
+              generateInvoiceWithSelectedQuote(type, selectedQuote, hoursSource);
               close();
             }
           }
@@ -265,11 +354,42 @@ export function renderJobDetail(container, { id, tab }) {
       });
     } else {
       const selectedQuote = acceptedQuotes.length === 1 ? acceptedQuotes[0] : null;
-      generateInvoiceWithSelectedQuote(type, selectedQuote);
+      if (wantsHoursSource && invoicesLabourFromTasklist(selectedQuote)) {
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="margin-bottom:var(--space-md); font-size:14px; color:var(--text-secondary)">
+            Choose which hours this invoice should bill for the labour on this job.
+          </div>
+        `;
+        const hoursCard = mountJobHoursSourceCard(content.appendChild(document.createElement('div')), () => selectedQuote);
+        hoursCard.refresh();
+        showModal({
+          title: `Generate ${type} Invoice`,
+          content,
+          actions: [
+            { label: 'Cancel', className: 'btn-secondary', onClick: (close) => close() },
+            {
+              label: 'Generate Invoice', className: 'btn-primary', onClick: (close) => {
+                const hoursSource = hoursCard.read();
+                const hoursError = hoursSourceError(hoursSource, hoursCard.refresh());
+                if (hoursError) {
+                  hoursCard.showError(hoursError);
+                  showToast(hoursError, 'error');
+                  return;
+                }
+                generateInvoiceWithSelectedQuote(type, selectedQuote, hoursSource);
+                close();
+              }
+            }
+          ]
+        });
+      } else {
+        generateInvoiceWithSelectedQuote(type, selectedQuote);
+      }
     }
   }
 
-  function generateInvoiceWithSelectedQuote(type, selectedQuote) {
+  function generateInvoiceWithSelectedQuote(type, selectedQuote, hoursSource = HOURS_SOURCE.ESTIMATED) {
     if (type === 'Deposit') {
       openDepositInvoiceModal(selectedQuote);
     } else if (type === 'Progress') {
@@ -289,7 +409,7 @@ export function renderJobDetail(container, { id, tab }) {
             label: 'Create', className: 'btn-primary', onClick: (close) => {
               const pct = parseFloat(document.getElementById('progress-percent').value) || 0;
               if (pct <= 0 || pct > 100) { showToast('Enter a valid percentage (1-100)', 'error'); return; }
-              const { subtotal } = getJobInvoiceData(selectedQuote);
+              const { subtotal, hoursSource: appliedHoursSource } = getJobInvoiceData(selectedQuote, hoursSource);
               const partialAmount = subtotal * (pct / 100);
               const sections = [{
                 id: store.generateId(),
@@ -297,14 +417,14 @@ export function renderJobDetail(container, { id, tab }) {
                 lineItems: [{ description: `Progress Payment (${pct}% of job)`, type: 'other', qty: 1, rate: partialAmount, total: partialAmount }],
                 subtotal: partialAmount
               }];
-              createDraftInvoice('Progress', sections, partialAmount, selectedQuote);
+              createDraftInvoice('Progress', sections, partialAmount, selectedQuote, '', appliedHoursSource);
               close();
             }
           }
         ]
       });
     } else {
-      const { sections, subtotal, worksDescription } = getJobInvoiceData(selectedQuote);
+      const { sections, subtotal, worksDescription, hoursSource: appliedHoursSource } = getJobInvoiceData(selectedQuote, hoursSource);
 
       // Deduct prior deposit invoices
       const depositInvoices = store.getAll('invoices').filter(i => 
@@ -336,9 +456,9 @@ export function renderJobDetail(container, { id, tab }) {
         }
 
         const finalSubtotal = Math.max(0, subtotal - totalDepositBilled);
-        createDraftInvoice('Standard', sections, finalSubtotal, selectedQuote, worksDescription);
+        createDraftInvoice('Standard', sections, finalSubtotal, selectedQuote, worksDescription, appliedHoursSource);
       } else {
-        createDraftInvoice('Standard', sections, subtotal, selectedQuote, worksDescription);
+        createDraftInvoice('Standard', sections, subtotal, selectedQuote, worksDescription, appliedHoursSource);
       }
     }
   }
