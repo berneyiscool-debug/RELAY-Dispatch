@@ -1336,37 +1336,128 @@ select.badge {
 .print-document .pdf-footer-text { font-size: 11px; color: #5A6B7F; line-height: 1.6; margin-bottom: 8px; }
 .print-document .pdf-footer-company { font-size: 10px; color: #8A97A8; font-weight: 500; }
 
-/* ---- Schedule Blocks ---- */
+/* ---- Schedule Blocks ----
+   The grid is the one place in RELAY that uses colour as data rather than decoration, so
+   a block carries its status in exactly two places: a soft tint of the status hue as the
+   card, and that same hue at full strength along the bottom edge. Nothing else on a block
+   is coloured — no left rail, square corners. Shape carries the exceptions — dashed and
+   hatched means virtual/forecast (not a committed job), a white hatch over the red fill
+   means collision, and a small square marks priority. */
 .schedule-block {
   position: absolute;
-  left: 3px;
-  right: 3px;
-  border-radius: 4px;
-  border-left: 3px solid;
-  padding: 3px 6px 10px;
+  left: 2px;
+  right: 2px;
+  /* The edge is the block's own bottom border rather than a pseudo-element so the box
+     lays it out and it cannot drift while the block is being resized. It is transparent
+     until a status rule sets --sched-accent, which is also what keeps the virtual
+     forecast ghost (which sets --sched-fill but no accent) edge-free. */
+  --sched-fill: var(--sched-fill-hold);
+  --sched-accent: transparent;
+  border: 0 solid transparent; /* lets .schedule-block-virtual supply its dashed frame */
+  border-bottom-width: 3px;
+  border-bottom-color: var(--sched-accent);
+  border-radius: var(--sched-radius, 0);
+  background: var(--sched-fill);
+  padding: 3px 6px 9px;
+  font-size: var(--font-size-xs);
+  color: var(--sched-ink, #1A1A1A);
   cursor: pointer;
   overflow: hidden;
-  transition: opacity var(--transition-fast), box-shadow var(--transition-fast);
+  transition: filter var(--transition-fast), box-shadow var(--transition-fast);
   z-index: 1;
 }
-.schedule-block:hover {
+/* Hover and marquee-select exclude each other: both states describe their box-shadow
+   with a different shadow list, so a selected block would lose its halo on hover. A
+   tinted card cannot be brightened the way an opaque one can, so hover deepens the tint
+   and pushes the chroma instead. */
+.schedule-block:not(.schedule-block-virtual):not(.sched-selected):hover {
+  filter: saturate(1.25) brightness(0.97);
   box-shadow: var(--shadow-md);
 }
-/* Marquee multi-select — selected blocks "light up" and lift rather than
-   getting a hard same-colour outline. */
+/* Marquee multi-select — selected blocks "light up" (the tint gains chroma) and lift.
+   The ring is the board's ink rather than white, because a white ring is invisible
+   against the white ground the blocks are drawn on. */
 .schedule-block.sched-selected {
-  filter: brightness(1.15) saturate(1.05);
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 5px 16px rgba(0, 0, 0, 0.3);
+  filter: saturate(1.5) brightness(1.02);
+  box-shadow: 0 0 0 1.5px var(--sched-select-ring, rgba(0, 0, 0, 0.6)), 0 5px 16px rgba(0, 0, 0, 0.22);
   transform: translateY(-1px);
   z-index: 4;
 }
+/* Priority marker — a silhouette in the block's own ink rather than a hue, because a
+   red or amber dot vanishes into the red or amber status fill it lands on. */
+.sched-priority {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  /* Capped rather than tied to --sched-radius: the marker is only 6px, so the card's 3px
+     would round it into a circle and turn a priority flag into a plain coloured dot. */
+  border-radius: 1px;
+  background: currentColor;
+}
+.sched-priority-high {
+  background: transparent;
+  border: 1.5px solid currentColor;
+}
+/* Job flag symbols — see SCHED_FLAGS in ScheduleView.js for which shape means what.
+   Monochrome paths in currentColor, so one glyph works on all fifteen status tints and
+   on the inverted ink of the forecast ghost without a per-status override; a coloured
+   icon here would be the third hue on a card whose fill and bottom edge already mean
+   status. Wider than the 6px priority marker because a path needs the room to stay
+   recognisable, and no taller than the 11px title line it sits on. */
+.sched-flag {
+  flex: 0 0 auto;
+  display: block;
+  width: 9px;
+  height: 9px;
+}
+/* The status in words, on the card's title line. Uppercase at 8px with tracking so it
+   reads as a field of its own rather than as the tail of the job number beside it, and a
+   7% black wash to separate the two without spending a third colour on a card whose fill
+   and bottom edge already carry the status. */
+.sched-status-tag {
+  flex: 0 0 auto;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.07);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+/* The dot in the change-status modal, painted from the same two tokens as the card it
+   describes — the tint as the core, the saturated accent as the ring — because a bare
+   saturated dot was the one place in the app where "Scheduled" was a different blue than
+   the block it was describing. The ring is an inset shadow rather than a border so the
+   dot stays the 12px the list rows are spaced for. */
+.sched-status-dot {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dot-fill, transparent);
+  box-shadow: inset 0 0 0 2px var(--dot-accent, transparent);
+}
+/* A chip sitting on a status tint: a white tag in the block's own ink. The chip cannot
+   take a hue of its own here — three colours on one block is the decoration this design
+   is getting rid of — and white is the only ground that keeps the chip legible on every
+   tint in the palette without a per-status override. */
+.sched-badge-onfill {
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: var(--sched-ink) !important;
+  border-radius: var(--sched-radius, 0) !important;
+}
 
-/* Virtual / Forecast Recurring Schedule Blocks */
+/* Virtual / Forecast Recurring Schedule Blocks
+   Kept in their own visual language — translucent, dashed and hatched — so a forecast
+   occurrence can never be mistaken for a committed job. They are painted entirely from
+   here: the block renderer gives them no inline fill. */
 .schedule-block-virtual {
-  border-style: dashed !important;
-  border-width: 1.5px !important;
+  border: 1.5px dashed #9333EA !important;
   opacity: 0.88;
+  background-color: rgba(147, 51, 234, 0.08) !important;
   background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(147, 51, 234, 0.04) 10px, rgba(147, 51, 234, 0.04) 20px) !important;
+  color: #9333EA !important;
   cursor: context-menu !important;
 }
 .schedule-block-virtual:hover {
@@ -1376,9 +1467,10 @@ select.badge {
 .virtual-forecast-badge {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 2px;
   background: rgba(147, 51, 234, 0.15);
-  color: #9333ea;
+  color: #7E22CE;
   border-radius: 3px;
   padding: 1px 4px;
   font-size: 8.5px;
@@ -1387,15 +1479,76 @@ select.badge {
   letter-spacing: 0.3px;
   margin-left: 4px;
 }
+/* Collision — the alarm is the fill's hue and the hatch is drawn in that same red rather
+   than in white, because the fill is a low-chroma tint and a white hatch on it would
+   disappear. */
 .schedule-block-collision {
-  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(239, 68, 68, 0.08) 10px, rgba(239, 68, 68, 0.08) 20px) !important;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(185, 28, 28, 0.16) 10px, rgba(185, 28, 28, 0.16) 20px) !important;
 }
 .schedule-block-collision:hover {
   box-shadow: 0 0 0 1.5px #EF4444, 0 4px 12px rgba(239, 68, 68, 0.35) !important;
 }
-.virtual-collision-badge {
-  background: #EF4444 !important;
-  color: #FFFFFF !important;
+/* A forecast block that collides keeps the forecast shape so the two signals don't
+   fight; the alarm is carried by its border, ink and the COLLISION chip. Its ink is a
+   step darker than the alarm red, because the ghost it sits on is a light red wash and
+   the alarm red only clears 3.9:1 against it. */
+.schedule-block-virtual.schedule-block-collision {
+  background-color: rgba(239, 68, 68, 0.16) !important;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(239, 68, 68, 0.08) 10px, rgba(239, 68, 68, 0.08) 20px) !important;
+  border-color: #DC2626 !important;
+  color: #B91C1C !important;
+}
+
+/* ---- Schedule now marker ----
+   Where the current time falls on today's column. Positioned from the clock rather than
+   from data, so it is placed in the grid and moved on a timer. Drawn above the blocks
+   because an opaque status fill would otherwise hide it.
+
+   The rule is a bare accent line, with no outline. An outline was there to hold the rule
+   apart from a card edge it happened to land on, but on a 2px line it read as a drawn
+   frame around the marker, and the frame was the more noticeable of the two. The line
+   separates from the fills on its own hue instead; what that costs it over the palest
+   fills is noted on --sched-now-ink in variables.css. The accent doubles as the
+   in-progress status colour, and the two never read as one signal, because one is a 3px
+   edge on a single card and the other a rule across the whole column.
+
+   z-index stays at the block's own level, and wins on tree order because the marker is
+   emitted after the blocks. Anything higher would paint over the sticky hours column,
+   which sits at 2 to stay on top of the blocks it scrolls over. */
+.sched-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--sched-now-ink, #000000);
+  pointer-events: none;
+  z-index: 1;
+}
+/* Single-technician week view transposes the grid, so one marker has to stretch across
+   every day column rather than being drawn once per technician. It starts after the
+   sticky hours gutter instead of running through it. */
+.sched-now-line-week {
+  left: 56px;
+}
+/* The time rides in the hours gutter, not on the line: pinned to the left wall of a day
+   column it covered the start of any job booked on the hour, and the gutter is the one
+   part of the grid that is sticky, so the label survives scrolling sideways. Right-aligned
+   so its edge meets the day column and the line then runs out from under it. */
+.sched-now-chip {
+  position: absolute;
+  right: 4px;
+  top: 0;
+  transform: translateY(-50%);
+  padding: 1px 4px;
+  border-radius: var(--sched-radius, 0);
+  background: var(--sched-now-ink, #000000);
+  color: var(--sched-now-contrast, #FFFFFF);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* Resize grip at the bottom of each block */
@@ -1409,10 +1562,10 @@ select.badge {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0 0 3px 3px;
+  /* Follows the card's own bottom corners so the grip band can never square them off. */
+  border-radius: 0 0 var(--sched-radius, 0) var(--sched-radius, 0);
   opacity: 0;
   transition: opacity var(--transition-fast);
-  background: linear-gradient(transparent, rgba(0,0,0,0.08));
   z-index: 2;
 }
 .schedule-resize-handle::after {
@@ -1422,10 +1575,80 @@ select.badge {
   height: 2px;
   border-radius: 1px;
   background: currentColor;
-  opacity: 0.4;
+  opacity: 0.55;
 }
 .schedule-block:hover .schedule-resize-handle {
   opacity: 1;
+}
+
+/* Theme-aware paint.
+   The dark board mirrors the light one rather than reusing its values: the card becomes a
+   deep tint of the status hue and the bottom edge the same hue at full strength. Retuned
+   for the dark canvas rather than inverted, because a tint light enough to read on white
+   is stark here, and each edge is checked against the tint it sits on rather than against
+   the canvas. */
+[data-theme-mode="dark"] {
+  --sched-ink: #F5F5F5;
+  --sched-select-ring: rgba(255, 255, 255, 0.75);
+
+  --sched-fill-pending: #3A2A10;
+  --sched-fill-scheduled: #16243D;
+  --sched-fill-progress: #3A1D0C;
+  --sched-fill-hold: #26262A;
+  --sched-fill-completed: #0F2A18;
+  --sched-fill-invoiced: #281A3D;
+  --sched-fill-template: #3A1428;
+  --sched-fill-leave-approved: #0F2A18;
+  --sched-fill-leave-denied: #3A1417;
+  --sched-fill-leave-pending: #3A2A10;
+  --sched-fill-blockout: #232326;
+  --sched-fill-meeting: #0C2A31;
+  --sched-fill-collision: #3A1417;
+
+  --sched-accent-pending: #E08A1E;
+  --sched-accent-scheduled: #3B82F6;
+  --sched-accent-progress: var(--color-primary);
+  --sched-accent-hold: #9CA3AF;
+  --sched-accent-completed: #34D058;
+  --sched-accent-invoiced: #A855F7;
+  --sched-accent-template: #F472B6;
+  --sched-accent-leave-approved: #34D058;
+  --sched-accent-leave-denied: #EF6B6B;
+  --sched-accent-leave-pending: #E08A1E;
+  --sched-accent-blockout: #9CA3AF;
+  --sched-accent-meeting: #22A5BF;
+  --sched-accent-collision: #EF6B6B;
+
+  /* Same accent core as light. The contrast colour is pure black rather than the light
+     theme's near-black, because it is set on the accent itself rather than on a card. */
+  --sched-now-ink: #FF5C00;
+  --sched-now-contrast: #FFFFFF;
+
+  /* Held at the same separation from the dark canvas as the light tint is from its own,
+     and checked against every dark status fill so no card is swallowed by the column. */
+  --sched-weekend-bg: #131313;
+
+  --sched-halfhour-line: rgba(255, 255, 255, 0.06);
+}
+[data-theme-mode="dark"] .sched-badge-onfill {
+  background: rgba(0, 0, 0, 0.45) !important;
+}
+[data-theme-mode="dark"] .sched-status-tag {
+  background: rgba(255, 255, 255, 0.12);
+}
+/* The forecast ink is decided here now rather than in the renderer, so the dark canvas
+   needs its own value: the light violet that reads on a near-white ghost only clears
+   3.1:1 against the near-black one, and the ghost does not get lighter to compensate.
+   The collision case is excluded because it has to keep carrying the alarm. */
+[data-theme-mode="dark"] .schedule-block-virtual:not(.schedule-block-collision) {
+  color: #C084FC !important;
+  border-color: #A855F7 !important;
+}
+[data-theme-mode="dark"] .schedule-block-virtual.schedule-block-collision {
+  color: #F87171 !important;
+}
+[data-theme-mode="dark"] .virtual-forecast-badge {
+  color: #C084FC;
 }
 
 /* ---- Dark Mode (Sleek Nordic Volcanic/Graphite) ---- */
@@ -1566,7 +1789,45 @@ select.badge {
   cursor: grabbing;
 }
 .schedule-hour-slot {
+  /* Half-hour rule, drawn as a background layer so it costs no DOM and paints under the
+     blocks for free. Horizontal dashes come from a repeating gradient clipped to a 1px
+     tall tile; measuring 50% of the border box puts that tile on the slot's true midpoint,
+     because the hour rule is the slot's own 1px bottom border. */
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--sched-halfhour-line, rgba(0, 0, 0, 0.04)) 0 2px,
+    transparent 2px 6px
+  );
+  background-repeat: repeat-x;
+  background-size: 100% 1px;
+  background-position: 0 50%;
+  background-origin: border-box;
   transition: background var(--transition-fast);
+}
+/* Weekend columns are painted from a class rather than an inline style so the drag
+   highlight can take the column over and hand it back on dragleave/drop. As an inline
+   background it was overwritten by dragover and then cleared to a bare '' on exit, which
+   is what used to leave a weekend column flat after a job was dragged over it. */
+.schedule-day-col.is-weekend {
+  background: var(--sched-weekend-bg);
+}
+.schedule-tech-header {
+  background: var(--card-bg);
+}
+.schedule-tech-header.has-tech-tint {
+  background: color-mix(in srgb, var(--sched-tech-color) 4%, var(--card-bg));
+}
+.schedule-day-col.has-tech-tint {
+  background: color-mix(in srgb, var(--sched-tech-color) 4%, transparent);
+}
+.schedule-day-col.is-weekend.has-tech-tint {
+  background: color-mix(in srgb, var(--sched-tech-color) 4%, var(--sched-weekend-bg));
+}
+.schedule-day-col.is-drop-target {
+  background: rgba(27, 109, 224, 0.05);
+}
+.schedule-day-col.has-tech-tint.is-drop-target {
+  background: rgba(27, 109, 224, 0.05);
 }
 
 
@@ -1628,6 +1889,139 @@ select.badge {
   gap: var(--space-sm);
   padding: var(--space-md) var(--space-xl);
   border-top: 1px solid var(--border-color);
+}
+
+/* ---- Job quick view drawer ---- */
+/* The board's detail surface. The status chip reads the same --sched-* pair as the
+   block that opened the drawer (core = card tint, ring and label = accent), which is
+   why the pair is set on the element rather than baked into a light/dark rule. */
+.qv-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
+  border-radius: 999px;
+  background: var(--qv-fill, var(--content-bg));
+  color: var(--qv-accent, var(--text-primary));
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5;
+}
+.qv-status .sched-status-dot {
+  width: 10px;
+  height: 10px;
+}
+.qv-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.qv-count {
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--content-bg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+}
+.qv-progress {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+.qv-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition);
+}
+.qv-entry {
+  display: flex;
+  gap: 10px;
+  padding: 9px 0;
+}
+.qv-entry + .qv-entry {
+  border-top: 1px solid var(--border-color);
+}
+.qv-entry-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--content-bg);
+  color: var(--text-secondary);
+}
+.qv-entry-icon.is-customer {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+.qv-entry-icon.is-office {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+[data-theme-mode="dark"] .qv-entry-icon.is-customer {
+  background: rgba(59, 130, 246, 0.18);
+  color: #7fa9f7;
+}
+[data-theme-mode="dark"] .qv-entry-icon.is-office {
+  background: rgba(34, 197, 94, 0.16);
+  color: #5fd07e;
+}
+.qv-entry-icon .material-icons-outlined {
+  font-size: 15px;
+}
+.qv-entry-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.qv-entry-author {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.qv-entry-date {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+.qv-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--content-bg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.7;
+}
+.qv-entry-body {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.qv-empty {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+.qv-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--content-bg);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
 }
 
 @keyframes slideLeftIn {
@@ -3989,16 +4383,24 @@ button.widget-picker-card {
   margin-top: 8px;
 }
 .lead-activity-thumb {
+  display: inline-flex;
   padding: 0;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   background: var(--card-bg);
   line-height: 0;
   overflow: hidden;
+  text-decoration: none;
   cursor: pointer;
   transition: border-color var(--transition-fast);
 }
 .lead-activity-thumb:hover { border-color: var(--color-primary); }
+.lead-activity-thumb:focus-visible,
+.lead-activity-file-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.lead-activity-thumb.is-unavailable { cursor: default; }
 .lead-activity-thumb img {
   display: block;
   width: 64px;
@@ -4031,6 +4433,15 @@ button.widget-picker-card {
 .lead-activity-file-size {
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+.lead-activity-file-link {
+  display: inline-flex;
+  max-width: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+.lead-activity-file-link:hover .lead-activity-file {
+  border-color: var(--color-primary);
 }
 .lead-activity-expand { margin-top: 8px; }
 .lead-activity-expand-btn {

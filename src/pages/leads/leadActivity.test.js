@@ -14,6 +14,7 @@ import {
   removeLeadActivityEntry,
   shouldCollapseLeadActivity,
   isLeadActivityImage,
+  leadActivityFileUrl,
   leadActivityFileSize,
   leadActivityInitials,
 } from './leadActivity.js';
@@ -161,6 +162,30 @@ test('isLeadActivityImage only accepts image mime types', () => {
   assert.strictEqual(isLeadActivityImage({ type: 'application/pdf' }), false);
   assert.strictEqual(isLeadActivityImage({ name: 'a.png' }), false);
   assert.strictEqual(isLeadActivityImage(null), false);
+});
+
+test('leadActivityFileUrl allows supported uploaded files to open in a browser', () => {
+  const image = 'data:image/png;base64,aGVsbG8=';
+  const pdf = 'data:application/pdf;base64,aGVsbG8=';
+  assert.strictEqual(leadActivityFileUrl({ data: image, type: 'image/png' }), image);
+  assert.strictEqual(leadActivityFileUrl({ data: pdf, type: 'application/pdf' }), pdf);
+  assert.strictEqual(leadActivityFileUrl({
+    data: 'data:application/octet-stream;base64,aGVsbG8=',
+    type: 'application/octet-stream',
+    name: 'report.xlsx',
+  }), 'data:application/octet-stream;base64,aGVsbG8=');
+});
+
+test('leadActivityFileUrl rejects unsupported or mismatched file URLs', () => {
+  assert.strictEqual(leadActivityFileUrl(null), '');
+  assert.strictEqual(leadActivityFileUrl({ data: 'javascript:alert(1)', type: 'text/html' }), '');
+  assert.strictEqual(leadActivityFileUrl({ data: 'data:text/html;base64,PGgxPm5vPC9oMT4=', type: 'text/html' }), '');
+  assert.strictEqual(leadActivityFileUrl({ data: 'data:image/png;base64,aGVsbG8=', type: 'application/pdf' }), '');
+  assert.strictEqual(leadActivityFileUrl({
+    data: 'data:application/octet-stream;base64,aGVsbG8=',
+    type: 'application/octet-stream',
+    name: 'notes.txt',
+  }), '');
 });
 
 test('leadActivityFileSize scales and never renders NaN', () => {

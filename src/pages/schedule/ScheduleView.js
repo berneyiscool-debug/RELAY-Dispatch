@@ -10,9 +10,10 @@ import { showDrawer } from '../../components/Drawer.js';
 import { showModal } from '../../components/Modal.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
 import { parsePreferredTime, todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
-import { JOB_STATUS_COLORS } from '../../utils/statusColors.js';
 import { FLAGS } from '../../utils/flags.js';
 import { getVirtualRecurringOccurrences, materializeVirtualOccurrence, collectTemplateChildren, occurrenceDateKey, canonicalSkippedDates } from '../../utils/maintenanceEngine.js';
+import { isCallbackJob } from '../../utils/kpis.js';
+import { customerForDocument, savedCustomerPortalUrl } from '../../utils/portalLinks.js';
 import { getActiveClock, getClockStatusForToday, getBreakState, endShiftFromBreak, formatDuration, clockIn, clockOut } from '../../utils/timeClock.js';
 import { getNotArrived } from '../../utils/payrollExceptions.js';
 
@@ -250,8 +251,11 @@ export function renderScheduleView(container) {
     visibleTechIds = new Set(technicians.map(t => t.id));
   }
   let contextMenu = null;
-  let savedScrollTop = 0;
+  // Account for the sticky technician/day headers so the first visible hour is about 06:00.
+  const PX_PER_HOUR = 32;
+  let savedScrollTop = 7 * PX_PER_HOUR;
   let savedScrollLeft = 0;
+  let hasRenderedCalendar = false;
   let savedSearchResultsScrollTop = 0;
   let isActionMenuOpen = false;
   let isSearchActive = false;
@@ -261,8 +265,60 @@ export function renderScheduleView(container) {
   let expandedTaskNodeIds = new Set(); // per-node expansion of nested (sub-sub-)tasks in search results
 
   // 15-min precision: 1 hour = 32px, so 1 quarter = 8px
-  const PX_PER_HOUR = 32;
   const PX_PER_QUARTER = PX_PER_HOUR / 4; // 8px
+  let nowMarkerTimer = null;
+
+  // Job flag symbols. A card gets at most one, because a one-hour block is only 15px of
+  // content tall and a second mark would push the job number out of view. Both are
+  // monochrome paths in currentColor rather than emoji or colour icons: the card already
+  // spends its fill and its bottom edge on status, so a third hue would break the palette,
+  // while currentColor simply inherits the ink the status tint (or the forecast ghost) is
+  // already using. The <title> child is what names the mark on hover.
+  //
+  //   emergency  the burst — the job form's emergency flag, the one that adds the callout
+  //              fee. Keyed to the fee rather than to the priority field, so the mark reads
+  //              "charged as an emergency" and stays orthogonal to the priority square.
+  //   callback   the U-turn — a return visit, from the same rule the callbacks KPI and the
+  //              jobs list already use: the job's own flag, or a callback/rework/warranty
+  //              type string.
+  const SCHED_FLAGS = {
+    emergency: '<svg class="sched-flag" viewBox="0 0 10 10" role="img" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><title>Emergency callout</title><path d="M5 0v10M0 5h10M1.6 1.6l6.8 6.8M8.4 1.6 1.6 8.4"/></svg>',
+    callback: '<svg class="sched-flag" viewBox="0 0 10 10" role="img"><title>Callback</title><path d="M2.6 2.2v3.4a1.8 1.8 0 0 0 1.8 1.8h3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M6.2 5.6 7.9 7.4 6.2 9.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  };
+
+  // Status name to CSS token suffix. The card's tint and its bottom edge are both read out
+  // of this one key, so a status cannot end up with a fill but no edge; the change-status
+  // dots resolve through it too, so the dot cannot disagree with the card it describes.
+  const STATUS_PAINT_KEYS = {
+    'Pending': 'pending',
+    'Scheduled': 'scheduled',
+    'In Progress': 'progress',
+    'On Hold': 'hold',
+    'Completed': 'completed',
+    'Invoiced': 'invoiced',
+    'Recurring Template': 'template'
+  };
+
+  // The status in words, for the card's title line. Capped at five characters because the
+  // tag shares an 11px line with the job number on a card whose content box can be as
+  // narrow as 104px.
+  const STATUS_SHORT = {
+    'Pending': 'PEND',
+    'Scheduled': 'SCHED',
+    'In Progress': 'PROG',
+    'On Hold': 'HOLD',
+    'Completed': 'DONE',
+    'Invoiced': 'INV',
+    'Recurring Template': 'TMPL'
+  };
+
+  // A dot that is literally the block's own pair of tokens: the tint as the core and the
+  // saturated accent as the ring. Resolved through the tokens rather than through a hex so
+  // the modal, which mounts outside the board, still picks up the dark values.
+  function statusDotHTML(status) {
+    const key = STATUS_PAINT_KEYS[status] || 'hold';
+    return `<span class="sched-status-dot" style="--dot-fill:var(--sched-fill-${key});--dot-accent:var(--sched-accent-${key});"></span>`;
+  }
 
   function snapToQuarter(hours) {
     return Math.round(hours * 4) / 4;
@@ -274,16 +330,73 @@ export function renderScheduleView(container) {
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
   }
 
+  // Weekend columns and rows get a grey canvas rather than a coloured one, so they read as
+  // out-of-hours paper without adding a second hue next to the status fills. Tested on the
+  // date rather than the column index, because day view shows a single day and week view is
+  // not guaranteed to start on a Monday.
+  function isWeekendDay(date) {
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }
+
+  // The grid is a fixed 24-hour canvas, so the current time is just an offset into it.
+  function nowOffset() {
+    const now = new Date();
+    return (now.getHours() + now.getMinutes() / 60) * PX_PER_HOUR;
+  }
+
+  function formatNow() {
+    const now = new Date();
+    return formatHour(now.getHours() + now.getMinutes() / 60);
+  }
+
+  function nowMarkerHTML(modifier = '') {
+    // The line is drawn once per column so it reads as one rule across the row. In
+    // single-technician week view the grid is transposed, so one marker is stretched over
+    // every day column instead.
+    return `<div class="sched-now-line${modifier}" data-now-marker style="top:${nowOffset()}px"></div>`;
+  }
+
+  // The time is labelled in the hours gutter rather than on the line. Sitting on the line put
+  // it over the left wall of a day column, where it covered the start of any job booked on the
+  // hour; the gutter is sticky, so the label also stays put when the grid is scrolled sideways.
+  function nowChipHTML() {
+    return `<span class="sched-now-chip" data-now-marker style="top:${nowOffset()}px">${formatNow()}</span>`;
+  }
+
+  // Nothing else on the grid depends on the clock, so the marker is moved in place on a
+  // timer instead of re-rendering the whole view every minute.
+  function startNowMarker() {
+    if (nowMarkerTimer) { clearInterval(nowMarkerTimer); nowMarkerTimer = null; }
+    const markers = container.querySelectorAll('[data-now-marker]');
+    if (!markers.length) return;
+    const move = () => {
+      const top = `${nowOffset()}px`;
+      const label = formatNow();
+      markers.forEach(el => {
+        el.style.top = top;
+        const chip = el.classList.contains('sched-now-chip') ? el : el.querySelector('.sched-now-chip');
+        if (chip) chip.textContent = label;
+      });
+    };
+    move();
+    nowMarkerTimer = setInterval(move, 30000);
+  }
+
   function saveScroll() {
     const el = document.getElementById('calendar-scroll');
-    if (el) { savedScrollTop = el.scrollTop; savedScrollLeft = el.scrollLeft; }
+    if (el && hasRenderedCalendar) { savedScrollTop = el.scrollTop; savedScrollLeft = el.scrollLeft; }
     const searchEl = document.getElementById('job-search-results');
     if (searchEl) { savedSearchResultsScrollTop = searchEl.scrollTop; }
   }
 
   function restoreScroll() {
     const el = document.getElementById('calendar-scroll');
-    if (el) { el.scrollTop = savedScrollTop; el.scrollLeft = savedScrollLeft; }
+    if (el) {
+      el.scrollTop = savedScrollTop;
+      el.scrollLeft = savedScrollLeft;
+      hasRenderedCalendar = true;
+    }
     const searchEl = document.getElementById('job-search-results');
     if (searchEl) { searchEl.scrollTop = savedSearchResultsScrollTop; }
   }
@@ -533,6 +646,8 @@ export function renderScheduleView(container) {
              endHour,
              status: job.status,
              priority: job.priority,
+             isEmergency: job.isEmergency === true,
+             isCallback: isCallbackJob(job),
              taskName: s.taskName || null,
            });
         }
@@ -577,6 +692,8 @@ export function renderScheduleView(container) {
                   endHour: startHour + duration,
                   status: job.status,
                   priority: job.priority,
+                  isEmergency: job.isEmergency === true,
+                  isCallback: isCallbackJob(job),
                 });
               });
             } else if (job.technicianId) {
@@ -588,13 +705,15 @@ export function renderScheduleView(container) {
                 jobNumber: job.number,
                 customerName: job.customerName,
                 title: job.title,
-                technicianId: isLocalAdmin ? currentUser.id : job.technicianId,
-                dayIdx,
-                startHour,
-                endHour: startHour + duration,
-                status: job.status,
-                priority: job.priority,
-              });
+                  technicianId: isLocalAdmin ? currentUser.id : job.technicianId,
+                  dayIdx,
+                  startHour,
+                  endHour: startHour + duration,
+                  status: job.status,
+                  priority: job.priority,
+                  isEmergency: job.isEmergency === true,
+                  isCallback: isCallbackJob(job),
+                });
             }
           }
         });
@@ -650,6 +769,8 @@ export function renderScheduleView(container) {
               endHour,
               status: hasCollision ? 'Collision' : 'Forecast',
               priority: occ.priority || 'Normal',
+              isEmergency: occ.parentJob ? occ.parentJob.isEmergency === true : false,
+              isCallback: occ.parentJob ? isCallbackJob(occ.parentJob) : false,
               dateStr: occ.scheduledDate
             });
           }
@@ -842,6 +963,7 @@ export function renderScheduleView(container) {
 
   function render() {
     try {
+      if (nowMarkerTimer) { clearInterval(nowMarkerTimer); nowMarkerTimer = null; }
       saveScroll();
       technicians = getTechnicians();
 
@@ -1036,7 +1158,7 @@ export function renderScheduleView(container) {
                   Time
                 </div>
                 ${visibleTechs.map(tech => `
-                  <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
+                  <div class="schedule-tech-header${visibleTechIds.size > 1 ? ' has-tech-tint' : ''}" style="--sched-tech-color:${escapeHTML(tech.color || '#FF5C00')};height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);">
                     <div style="font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px">
                       <div style="width:6px;height:6px;border-radius:50%;background:${escapeHTML(tech.color)};flex-shrink:0"></div>
                       <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px">${escapeHTML(tech.name)}</span>
@@ -1048,16 +1170,19 @@ export function renderScheduleView(container) {
               <!-- Rows: Days -->
               ${days.map((day, dayIdx) => {
       const isToday = day.toDateString() === new Date().toDateString();
+      const weekend = isWeekendDay(day);
+      const headerBg = weekend ? 'var(--sched-weekend-bg)' : 'var(--content-bg)';
+      const gridBg = weekend ? 'var(--sched-weekend-bg)' : 'transparent';
       return `
                   <!-- Day Header Row -->
-                  <div style="display:flex;background:var(--content-bg);border-bottom:1px solid var(--border-color);position:sticky;left:0;z-index:2;width:fit-content;min-width:100%">
-                     <div style="padding:6px 12px;font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};position:sticky;left:0;background:var(--content-bg);">
+                  <div style="display:flex;background:${headerBg};border-bottom:1px solid var(--border-color);position:sticky;left:0;z-index:2;width:fit-content;min-width:100%">
+                     <div style="padding:6px 12px;font-size:var(--font-size-sm);font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};position:sticky;left:0;background:${headerBg};">
                        ${dayNames[day.getDay()]}, ${day.getDate()} ${monthNames[day.getMonth()]}
                      </div>
                   </div>
 
                   <!-- Day Grid -->
-                  <div style="display:grid;grid-template-columns:56px repeat(${visibleTechs.length}, minmax(120px, 1fr));border-bottom:2px solid var(--border-color);width:fit-content;min-width:100%">
+                  <div style="display:grid;grid-template-columns:56px repeat(${visibleTechs.length}, minmax(120px, 1fr));border-bottom:2px solid var(--border-color);background:${gridBg};width:fit-content;min-width:100%">
 
                     <!-- Hours Column (Sticky Left) -->
                     <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
@@ -1066,15 +1191,17 @@ export function renderScheduleView(container) {
                           ${h.toString().padStart(2, '0')}:00
                         </div>
                       `).join('')}
+                      ${isToday ? nowChipHTML() : ''}
                     </div>
 
                     <!-- Technician Columns for this Day -->
-                    ${visibleTechs.map(tech => {
+                    ${visibleTechs.map((tech) => {
         const techBlocks = blocks.filter(b => b.technicianId === tech.id);
         return `
-                        <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
+                        <div class="schedule-day-col${weekend ? ' is-weekend' : ''}${visibleTechIds.size > 1 ? ' has-tech-tint' : ''}" style="--sched-tech-color:${escapeHTML(tech.color || '#FF5C00')};position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
                           ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
-                          ${renderBlocks(techBlocks, dayIdx, tech.color)}
+                          ${renderBlocks(techBlocks, dayIdx)}
+                          ${isToday ? nowMarkerHTML() : ''}
                         </div>
                       `;
       }).join('')}
@@ -1090,8 +1217,9 @@ export function renderScheduleView(container) {
                 </div>
                 ${days.map(day => {
       const isToday = day.toDateString() === new Date().toDateString();
+      const headerBg = isWeekendDay(day) ? 'var(--sched-weekend-bg)' : 'var(--card-bg)';
       return `
-                    <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:var(--card-bg);">
+                    <div style="height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border-color);background:${headerBg};">
                       <div style="font-size:11px;font-weight:600;${isToday ? 'color:var(--color-primary)' : 'color:var(--text-secondary)'};display:flex;align-items:center;gap:6px">
                         <span>${dayNames[day.getDay()]} ${day.getDate()} ${monthNames[day.getMonth()]}</span>
                       </div>
@@ -1101,7 +1229,7 @@ export function renderScheduleView(container) {
               </div>
 
               <!-- Day Grid -->
-              <div style="display:grid;grid-template-columns:56px repeat(${days.length}, minmax(120px, 1fr));width:fit-content;min-width:100%">
+              <div style="display:grid;grid-template-columns:56px repeat(${days.length}, minmax(120px, 1fr));width:fit-content;min-width:100%;position:relative">
                 <!-- Hours Column (Sticky Left) -->
                 <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                   ${hours.map(h => `
@@ -1109,19 +1237,22 @@ export function renderScheduleView(container) {
                       ${h.toString().padStart(2, '0')}:00
                     </div>
                   `).join('')}
+                  ${days.some(d => d.toDateString() === new Date().toDateString()) ? nowChipHTML() : ''}
                 </div>
 
                 <!-- Day Columns for the selected Technician -->
                 ${days.map((day, dayIdx) => {
       const tech = technicians.find(t => t.id === [...visibleTechIds][0]);
       const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+      const isToday = day.toDateString() === new Date().toDateString();
       return `
-                    <div class="schedule-day-col" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
+                    <div class="schedule-day-col${isWeekendDay(day) ? ' is-weekend' : ''}" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
                       ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
-                      ${renderBlocks(techBlocks, dayIdx, tech.color)}
+                      ${renderBlocks(techBlocks, dayIdx)}
                     </div>
                   `;
     }).join('')}
+                ${days.some(day => day.toDateString() === new Date().toDateString()) ? nowMarkerHTML(' sched-now-line-week') : ''}
               </div>
             `}
           </div>
@@ -1171,6 +1302,7 @@ export function renderScheduleView(container) {
     applySelectionStyles();
     updateSelectionBar();
     restoreScroll();
+    startNowMarker();
     renderSearchResultsList();
     } catch (err) {
       console.error("RENDER ERROR:", err);
@@ -1255,7 +1387,6 @@ export function renderScheduleView(container) {
     if (!jobs.length) { showToast('No jobs found for the current selection.', 'error'); return; }
 
     const STATUSES = ['Pending', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Invoiced'];
-    const statusDot = JOB_STATUS_COLORS;
 
     const content = document.createElement('div');
     content.style.padding = '8px 0';
@@ -1266,7 +1397,7 @@ export function renderScheduleView(container) {
           ${STATUSES.map(s => `
             <div class="status-select-item" data-value="${s}" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border:1.5px solid var(--border-color); background:var(--card-bg); border-radius:8px; cursor:pointer; transition:all 0.2s ease;">
               <div style="display:flex; align-items:center; gap:10px;">
-                <span style="width:10px; height:10px; border-radius:50%; background:${statusDot[s]}; flex-shrink:0;"></span>
+                ${statusDotHTML(s)}
                 <span style="font-weight:600; font-size:13px; color:var(--text-primary);">${s}</span>
               </div>
             </div>`).join('')}
@@ -1506,7 +1637,6 @@ export function renderScheduleView(container) {
   // block's status is read from job.status.
   function openChangeStatusModal(job) {
     const STATUSES = ['Pending', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Invoiced'];
-    const statusDot = JOB_STATUS_COLORS;
 
     const content = document.createElement('div');
     content.style.padding = '8px 0';
@@ -1519,7 +1649,7 @@ export function renderScheduleView(container) {
             return `
               <div class="status-select-item ${active ? 'active' : ''}" data-value="${s}" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border:1.5px solid ${active ? 'var(--color-primary)' : 'var(--border-color)'}; background:${active ? 'var(--color-primary-light)' : 'var(--card-bg)'}; border-radius:8px; cursor:pointer; transition:all 0.2s ease;">
                 <div style="display:flex; align-items:center; gap:10px;">
-                  <span style="width:10px; height:10px; border-radius:50%; background:${statusDot[s]}; flex-shrink:0;"></span>
+                  ${statusDotHTML(s)}
                   <span style="font-weight:600; font-size:13px; color:var(--text-primary);">${s}</span>
                 </div>
                 ${active ? '<span class="material-icons-outlined" style="color:var(--color-primary); font-size:18px;">check_circle</span>' : ''}
@@ -2035,107 +2165,32 @@ export function renderScheduleView(container) {
 
 
 
-  function renderBlocks(techBlocks, dayIdx, color) {
-    const safeColor = escapeHTML(color);
-    const priorityBorders = { 'Urgent': '#EF4444', 'High': '#F59E0B' };
-    const isDark = document.documentElement.getAttribute('data-theme-mode') === 'dark';
+  function renderBlocks(techBlocks, dayIdx) {
+    const priorityMarkers = { 'Urgent': 'sched-priority', 'High': 'sched-priority sched-priority-high' };
     return techBlocks
       .filter(b => b.dayIdx === dayIdx)
       .map(b => {
         const top = b.startHour * PX_PER_HOUR;
         const height = Math.max((b.endHour - b.startHour) * PX_PER_HOUR - 2, PX_PER_QUARTER);
-        const statusColors = {
-          'Pending': {
-            border: 'var(--color-warning, #F59E0B)',
-            bg: 'var(--color-warning-bg, rgba(245, 158, 11, 0.08))',
-            text: 'var(--color-warning, #D97706)'
-          },
-          'Scheduled': {
-            border: 'var(--color-info, #3B82F6)',
-            bg: 'var(--color-info-bg, rgba(59, 130, 246, 0.08))',
-            text: 'var(--color-info, #2563EB)'
-          },
-          'In Progress': {
-            border: 'var(--color-primary, #6366F1)',
-            bg: 'var(--color-primary-light, rgba(99, 102, 241, 0.08))',
-            text: 'var(--color-primary, #4F46E5)'
-          },
-          'On Hold': {
-            border: 'var(--text-secondary, #6B7280)',
-            bg: 'var(--content-bg, rgba(107, 114, 128, 0.08))',
-            text: 'var(--text-secondary, #4B5563)'
-          },
-          'Completed': {
-            border: 'var(--color-success, #10B981)',
-            bg: 'var(--color-success-bg, rgba(16, 185, 129, 0.08))',
-            text: 'var(--color-success, #059669)'
-          },
-          'Invoiced': {
-            border: '#9CA3AF',
-            bg: isDark ? 'rgba(55, 65, 81, 0.3)' : 'rgba(243, 244, 246, 0.7)',
-            text: isDark ? '#D1D5DB' : '#6B7280'
-          },
-          'Recurring Template': {
-            border: '#9333ea',
-            bg: 'rgba(147, 51, 234, 0.08)',
-            text: '#9333ea'
-          }
-        };
-
-        let borderColor = priorityBorders[b.priority] || safeColor;
-        let background = `${safeColor}12`;
-        let textColor = safeColor;
-
-        // Custom styling overrides for leave, blockout, meeting
-        if (b.type === 'leave') {
-          if (b.status === 'Approved') {
-            borderColor = '#10B981'; // Green for approved leave
-            background = 'rgba(16, 185, 129, 0.16)';
-            textColor = '#059669';
-          } else if (b.status === 'Denied' || b.status === 'Rejected') {
-            borderColor = '#EF4444'; // Red for denied leave
-            background = 'rgba(239, 68, 68, 0.16)';
-            textColor = '#DC2626';
-          } else {
-            borderColor = '#F59E0B'; // Orange for pending leave
-            background = 'rgba(245, 158, 11, 0.1)';
-            textColor = '#D97706';
-          }
-        } else if (b.type === 'blockout') {
-          borderColor = '#6B7280'; // Gray for blockout
-          background = 'rgba(107, 114, 128, 0.1)';
-          textColor = '#4B5563';
-        } else if (b.type === 'meeting') {
-          borderColor = '#3B82F6'; // Blue for meetings
-          background = 'rgba(59, 130, 246, 0.1)';
-          textColor = '#2563EB';
-        } else if (b.type === 'virtual') {
-          if (b.hasCollision) {
-            borderColor = '#EF4444';
-            background = 'rgba(239, 68, 68, 0.16)';
-            textColor = '#DC2626';
-          } else {
-            borderColor = '#9333ea';
-            background = 'rgba(147, 51, 234, 0.08)';
-            textColor = '#9333ea';
-          }
-        } else {
-          // Standard jobs: use status colors!
-          const colors = statusColors[b.status];
-          if (colors) {
-            borderColor = priorityBorders[b.priority] || colors.border;
-            background = colors.bg;
-            textColor = colors.text;
-          }
-        }
-        // Apply styling for collisions to ALL blocks
-        if (b.hasCollision) {
-          borderColor = '#EF4444';
-          background = 'rgba(239, 68, 68, 0.16)';
-          textColor = '#DC2626';
-        }
-
         const isVirtual = b.type === 'virtual';
+
+        // One paint key per meaning. Keyed so that the meanings that are the same share a
+        // colour (leave-pending and job-pending are both "waiting on someone") and the
+        // ones a glance has to tell apart do not.
+        let paintKey = null;
+        if (b.type === 'leave') {
+          paintKey = b.status === 'Approved' ? 'leave-approved'
+            : (b.status === 'Denied' || b.status === 'Rejected') ? 'leave-denied'
+            : 'leave-pending';
+        } else if (b.type === 'blockout' || b.type === 'meeting') {
+          paintKey = b.type;
+        } else if (!isVirtual) {
+          paintKey = STATUS_PAINT_KEYS[b.status] || 'hold';
+        }
+        // A collision overrides the paint for every committed block. Virtual blocks are
+        // left unpainted so the ghost style keeps them distinct from a real booking.
+        if (b.hasCollision && !isVirtual) paintKey = 'collision';
+
         const timeLabel = `${formatHour(b.startHour)} — ${formatHour(b.endHour)}`;
         let tooltipTitle = b.title;
         
@@ -2152,6 +2207,26 @@ export function renderScheduleView(container) {
         if (!isVirtual && b.hasCollision) {
           tooltipTitle = `⚠️ COLLISION DETECTED: ${tooltipTitle} (Overlaps existing schedule)`;
         }
+
+        // Both channels of the status colour come from the one key, and the block's ink is
+        // a single token: every fill in the palette is light enough to carry it, so there
+        // is nothing to decide per status here.
+        // One symbol per card, ranked: an emergency job is usually also a priority, so
+        // the priority square is the mark that gives way rather than the two of them
+        // fighting over the same 15px of title line.
+        const flagMark = b.isEmergency ? SCHED_FLAGS.emergency
+          : b.isCallback ? SCHED_FLAGS.callback
+          : (priorityMarkers[b.priority] ? `<span class="${priorityMarkers[b.priority]}" title="${escapeHTML(b.priority)} priority"></span>` : '');
+
+        // The status in words, and only where a job status actually painted the card: a
+        // leave, a blockout or a forecast ghost shows no status it does not have. A
+        // collision still prints the real status, since the red tint is the collision
+        // badge's job to explain and the card is still, say, pending.
+        const statusShort = (!isVirtual && STATUS_PAINT_KEYS[b.status]) ? (STATUS_SHORT[b.status] || '') : '';
+
+        const paint = paintKey
+          ? `--sched-fill:var(--sched-fill-${paintKey});--sched-accent:var(--sched-accent-${paintKey});`
+          : '';
 
         return `
           <div class="schedule-block ${b.hasCollision ? 'schedule-block-collision' : ''} ${isVirtual ? 'schedule-block-virtual' : ''}"
@@ -2171,18 +2246,18 @@ export function renderScheduleView(container) {
             style="
               top:${top}px;
               height:${height}px;
-              background:${background};
-              border-color:${borderColor};
-              color:${textColor};
+              ${paint}
               pointer-events:auto;
             ">
-            <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:space-between">
-              <span>${escapeHTML(b.jobNumber)}</span>
-              ${b.hasCollision ? `<span class="virtual-forecast-badge virtual-collision-badge">COLLISION</span>` : (isVirtual ? `<span class="virtual-forecast-badge">FORECAST</span>` : '')}
-              ${b.type === 'leave' && (b.status === 'Approved' || b.status === 'Denied' || b.status === 'Rejected') ? `<span class="virtual-forecast-badge" style="background:${b.status === 'Approved' ? '#10B981' : '#EF4444'};color:white;border:none;">${b.status.toUpperCase()}</span>` : ''}
+            <div style="pointer-events:none;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px">
+              ${flagMark}
+              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.jobNumber)}</span>
+              ${statusShort ? `<span class="sched-status-tag">${statusShort}</span>` : ''}
+              ${b.hasCollision ? `<span class="virtual-forecast-badge sched-badge-onfill" style="margin-left:auto">COLLISION</span>` : (isVirtual ? `<span class="virtual-forecast-badge" style="margin-left:auto">FORECAST</span>` : '')}
+              ${b.type === 'leave' && (b.status === 'Approved' || b.status === 'Denied' || b.status === 'Rejected') ? `<span class="virtual-forecast-badge sched-badge-onfill" style="margin-left:auto">${b.status.toUpperCase()}</span>` : ''}
             </div>
-            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.9;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.customerName || '')}</div>` : ''}
-            ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.7;margin-top:2px">${timeLabel}</div>` : ''}
+            ${height > 20 ? `<div style="pointer-events:none;font-size:10px;opacity:0.95;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.customerName || '')}</div>` : ''}
+            ${height > 36 ? `<div class="schedule-block-time" style="pointer-events:none;font-size:9px;opacity:0.92;margin-top:2px">${timeLabel}</div>` : ''}
             ${!isVirtual ? `<div class="schedule-resize-handle" data-block-job-id="${b.jobId || ''}" data-schedule-id="${b.id}" data-block-type="${b.type}" data-start="${b.startHour}" data-end="${b.endHour}" title="Drag to resize"></div>` : ''}
           </div>
         `;
@@ -2424,6 +2499,72 @@ export function renderScheduleView(container) {
           const job = store.getById('jobs', jobId);
           if (!job) return;
 
+          // A dispatcher opens this from the board to answer "where is this job up to?"
+          // without a trip to the job screen, so the drawer repeats the block that was
+          // clicked — the same status paint, the tasklist progress behind it, and the trail
+          // of what has happened — rather than the four fields it used to show. Everything
+          // below only reads the loaded job record: looking at a job must never change it.
+          const qvStatus = job.status || 'Pending';
+          const qvPaint = STATUS_PAINT_KEYS[qvStatus] || 'hold';
+          const qvAccent = `var(--sched-accent-${qvPaint})`;
+          const qvFill = `var(--sched-fill-${qvPaint})`;
+
+          // Weighted the way the job screen weights its completion bar: a task is worth its
+          // estimated hours times the crew on it, so a two-day task moves the bar further
+          // than a half-hour one.
+          let qvProgress = 0;
+          let qvTaskTotal = 0;
+          let qvTaskDone = 0;
+          if (Array.isArray(job.tasks) && job.tasks.length > 0) {
+            qvTaskTotal = job.tasks.length;
+            qvTaskDone = job.tasks.filter(task => task.status === 'Completed').length;
+            let totalWeight = 0;
+            let earnedWeight = 0;
+            job.tasks.forEach(task => {
+              const weight = (parseFloat(task.estimatedHours) || 1) * (parseInt(task.people, 10) || 1);
+              totalWeight += weight;
+              earnedWeight += weight * ((parseFloat(task.progress) || 0) / 100);
+            });
+            qvProgress = totalWeight > 0 ? Math.round((earnedWeight / totalWeight) * 100) : 0;
+          }
+
+          // Read off the block rather than off job.scheduledDate: the block is the allocation
+          // the dispatcher is actually looking at, and the two part company as soon as a job
+          // has been moved on the board.
+          const qvDate = block.dataset.date || job.scheduledDate || '';
+          const qvStart = parseFloat(block.dataset.start);
+          const qvEnd = parseFloat(block.dataset.end);
+          const qvTechId = block.dataset.techId || job.technicianId;
+          const qvTech = qvTechId ? store.getById('technicians', qvTechId) : null;
+          const qvTechName = (qvTech && qvTech.name) || job.technicianName || 'Unassigned';
+          const qvDateLabel = qvDate
+            ? new Date(`${qvDate}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+            : '';
+          const qvTimeLabel = Number.isFinite(qvStart)
+            ? `${formatHour(qvStart)}\u2013${formatHour(Number.isFinite(qvEnd) ? qvEnd : qvStart + 1)}`
+            : '';
+          const qvWhen = qvDateLabel ? `${qvDateLabel}${qvTimeLabel ? `, ${qvTimeLabel}` : ''}` : 'Not scheduled';
+
+          // Status moves and task completions land in historyLog, staff notes in activityLog.
+          // The job screen merges the two by moving entries between the arrays and saving them
+          // back; this is a read, so the merge happens on a copy instead.
+          const qvActivity = [
+            ...(job.historyLog || []),
+            ...(job.activityLog || []).filter(entry => entry.type !== 'system')
+          ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+          const qvActivityShown = qvActivity.slice(0, 5);
+
+          const qvComms = [...(job.customerActivityLog || [])]
+            .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+          const qvPortalOff = store.getSettings().enableCustomerPortal === false;
+          const qvCustomer = customerForDocument(job);
+          const qvPortalUrl = qvPortalOff ? null : savedCustomerPortalUrl(qvCustomer);
+          const qvCommsNote = qvPortalOff
+            ? 'The customer portal is turned off in Settings, so nothing can arrive here yet.'
+            : (qvPortalUrl
+              ? `${escapeHTML(job.customerName || 'The customer')} can reply through their portal link; replies appear here.`
+              : 'No portal link has been issued to this customer yet.');
+
           showDrawer({
             title: `Job Quick View: ${job.number}`,
             content: `
@@ -2431,6 +2572,19 @@ export function renderScheduleView(container) {
                 <div>
                   <label class="form-label">Title</label>
                   <div class="font-medium" style="font-size:16px">${escapeHTML(job.title || 'Untitled')}</div>
+                  <div style="margin-top:8px;"><span class="qv-status" style="--qv-fill:${qvFill};--qv-accent:${qvAccent};">${statusDotHTML(qvStatus)}${escapeHTML(qvStatus)}</span></div>
+                </div>
+                <div>
+                  <label class="form-label">Tasklist Progress</label>
+                  <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+                    <div class="qv-progress"><div class="qv-progress-fill" style="width:${qvProgress}%;background:${qvAccent};"></div></div>
+                    <span class="font-medium" style="font-size:var(--font-size-sm);min-width:34px;text-align:right;">${qvProgress}%</span>
+                  </div>
+                  <div class="qv-empty" style="margin-top:6px;">${qvTaskTotal ? `${qvTaskDone} of ${qvTaskTotal} tasks complete` : 'No tasklist on this job.'}</div>
+                </div>
+                <div>
+                  <label class="form-label">Scheduled</label>
+                  <div>${escapeHTML(qvWhen)} &middot; ${escapeHTML(qvTechName)}</div>
                 </div>
                 <div>
                   <label class="form-label">Customer</label>
@@ -2442,34 +2596,56 @@ export function renderScheduleView(container) {
                 </div>
                 <div>
                   <label class="form-label">Priority</label>
-                  <div><span class="badge ${job.priority === 'Urgent' || job.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${job.priority || 'Normal'}</span></div>
+                  <div><span class="badge ${job.priority === 'Urgent' || job.priority === 'High' ? 'badge-danger' : 'badge-neutral'}">${escapeHTML(job.priority || 'Normal')}</span></div>
                 </div>
                 <div>
                   <label class="form-label">Notes</label>
-                  <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${escapeHTML(job.notes || 'No notes available')}</div>
+                  <div style="font-size:var(--font-size-sm);white-space:pre-wrap;background:var(--content-bg);padding:12px;border-radius:4px;border:1px solid var(--border-color);">${escapeHTML(job.notes || job.description || 'No notes available')}</div>
                 </div>
                 <div>
-                  <label class="form-label" style="margin-bottom:8px; display:block; border-bottom:1px solid var(--border-color); padding-bottom:4px;">Recent Time Logs</label>
-                  ${(() => {
-                    const timesheets = (store.getAll('timesheets') || []).filter(t => String(t.jobId) === String(jobId));
-                    timesheets.sort((a, b) => new Date(b.date) - new Date(a.date));
-                    const recentLogs = timesheets.slice(0, 5);
-                    if (recentLogs.length === 0) {
-                      return '<div style="font-size:var(--font-size-sm); color:var(--text-tertiary);">No time logged for this job yet.</div>';
-                    }
-                    return recentLogs.map(log => `
-                      <div style="font-size:var(--font-size-sm); padding:8px 0; border-bottom:1px solid var(--border-color);">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                          <span class="font-medium">${escapeHTML(log.technicianName || 'Unknown Tech')}</span>
-                          <span class="text-secondary">${new Date(log.date).toLocaleDateString()}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between;">
-                          <span class="text-secondary">${escapeHTML(log.taskName || log.taskId || 'General')} - ${escapeHTML(log.description || 'No description')}</span>
-                          <span class="font-medium" style="color:var(--color-primary)">${log.hours ? parseFloat(log.hours).toFixed(2) + ' hrs' : '0.00 hrs'}</span>
-                        </div>
-                      </div>
-                    `).join('');
-                  })()}
+                  <div class="qv-section">Recent Job Activity</div>
+                  ${qvActivityShown.length === 0
+                    ? '<div class="qv-empty">No activity recorded for this job yet.</div>'
+                    : qvActivityShown.map(entry => {
+                        const isSystem = entry.type === 'system';
+                        const fileCount = Array.isArray(entry.files) ? entry.files.length : 0;
+                        const icon = isSystem ? 'history' : (fileCount ? 'attachment' : 'chat_bubble_outline');
+                        return `
+                        <div class="qv-entry">
+                          <span class="qv-entry-icon"><span class="material-icons-outlined">${icon}</span></span>
+                          <div style="min-width:0;flex:1;">
+                            <div class="qv-entry-meta">
+                              <span class="qv-entry-author">${escapeHTML(entry.author || (isSystem ? 'System' : 'Staff'))}</span>
+                              <span class="qv-entry-date">${entry.date ? new Date(entry.date).toLocaleString() : ''}</span>
+                            </div>
+                            <div class="qv-entry-body">${escapeHTML(entry.content || '')}</div>
+                            ${fileCount ? `<div class="qv-entry-date" style="margin-top:3px;">${fileCount} attachment${fileCount === 1 ? '' : 's'}</div>` : ''}
+                          </div>
+                        </div>`;
+                      }).join('')
+                  }
+                  ${qvActivity.length > qvActivityShown.length
+                    ? `<div class="qv-empty" style="margin-top:8px;">Showing the 5 most recent of ${qvActivity.length} entries.</div>`
+                    : ''}
+                </div>
+                <div>
+                  <div class="qv-section">Customer Portal Comms${qvComms.length ? ` <span class="qv-count">${qvComms.length}</span>` : ''}</div>
+                  ${qvComms.length === 0
+                    ? '<div class="qv-empty">No customer portal messages yet.</div>'
+                    : qvComms.map(message => `
+                        <div class="qv-entry">
+                          <span class="qv-entry-icon ${message.isCustomer ? 'is-customer' : 'is-office'}"><span class="material-icons-outlined">${message.isCustomer ? 'person' : 'support_agent'}</span></span>
+                          <div style="min-width:0;flex:1;">
+                            <div class="qv-entry-meta">
+                              <span class="qv-entry-author">${escapeHTML(message.author || (message.isCustomer ? 'Customer' : 'Office'))}</span>
+                              <span class="qv-badge">${message.isCustomer ? 'Customer' : 'Office'}</span>
+                              <span class="qv-entry-date">${message.date ? new Date(message.date).toLocaleString() : ''}</span>
+                            </div>
+                            <div class="qv-entry-body">${escapeHTML(message.content || '')}</div>
+                          </div>
+                        </div>`).join('')
+                  }
+                  <div class="qv-note">${qvCommsNote}</div>
                 </div>
               </div>
             `,
@@ -2477,7 +2653,7 @@ export function renderScheduleView(container) {
               { label: 'Close', className: 'btn-secondary', onClick: (close) => close() },
               { label: 'Open Full Job', className: 'btn-primary', onClick: (close) => { close(); router.navigate(`/jobs/${jobId}`); } }
             ],
-            width: 450
+            width: 520
           });
         } else {
           // Leave, blockout, meeting quick view
@@ -3082,7 +3258,7 @@ export function renderScheduleView(container) {
       col.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        col.style.background = 'rgba(27, 109, 224, 0.05)';
+        col.classList.add('is-drop-target');
 
         if (!dragState) return;
 
@@ -3119,7 +3295,7 @@ export function renderScheduleView(container) {
       });
       col.addEventListener('dragleave', (e) => {
         if (!col.contains(e.relatedTarget)) {
-          col.style.background = '';
+          col.classList.remove('is-drop-target');
           const preview = col.querySelector('.schedule-drag-preview');
           if (preview) preview.remove();
         }
@@ -3127,7 +3303,7 @@ export function renderScheduleView(container) {
       col.addEventListener('drop', (e) => {
         const jobs = store.getAll('jobs'); // fresh read
         e.preventDefault();
-        col.style.background = '';
+        col.classList.remove('is-drop-target');
         const preview = col.querySelector('.schedule-drag-preview');
         if (preview) preview.remove();
 

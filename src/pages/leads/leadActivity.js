@@ -83,6 +83,22 @@ export function isLeadActivityImage(file) {
   return !!file && typeof file.type === 'string' && file.type.startsWith('image/');
 }
 
+/** Return a safe browser-viewable URL for an uploaded lead activity file. */
+export function leadActivityFileUrl(file) {
+  if (!file || typeof file.data !== 'string') return '';
+
+  const match = /^data:([^;,]+);base64,/i.exec(file.data);
+  if (!match) return '';
+
+  const mime = match[1].toLowerCase();
+  const allowedMime = /^(?:image\/[\w.+-]+|application\/(?:pdf|msword|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|spreadsheetml\.sheet)|octet-stream))$/;
+  if (!allowedMime.test(mime)) return '';
+  if (file.type && file.type.toLowerCase() !== mime) return '';
+  if (mime === 'application/octet-stream' && !/\.(?:pdf|docx?|xlsx?)$/i.test(file.name || '')) return '';
+
+  return file.data;
+}
+
 /** Human-readable attachment size - falls back to "0 B" for junk input. */
 export function leadActivityFileSize(bytes) {
   const size = Number(bytes) || 0;

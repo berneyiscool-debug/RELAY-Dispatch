@@ -19,7 +19,7 @@ import {
 } from './leadStages.js';
 import {
   addLeadActivityEntry, buildLeadActivityEntry, isLeadActivityImage,
-  leadActivityFileSize, leadActivityInitials, normalizeLeadActivityLog,
+  leadActivityFileSize, leadActivityFileUrl, leadActivityInitials, normalizeLeadActivityLog,
   removeLeadActivityEntry, shouldCollapseLeadActivity,
 } from './leadActivity.js';
 
@@ -29,25 +29,6 @@ import {
 let composerLeadId = null;
 let stagedFiles = [];
 let composerDraft = '';
-
-// Display an uploaded activity image at full size in a centered lightbox modal.
-// Mirrors the jobs detail page so the two feeds behave identically.
-function showImageLightbox(src, name) {
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px';
-
-  const img = document.createElement('img');
-  img.src = src;
-  img.alt = name || 'Image';
-  img.style.cssText = 'max-width:100%;max-height:70vh;object-fit:contain;border-radius:var(--border-radius);background:var(--content-bg)';
-  wrapper.appendChild(img);
-
-  showModal({
-    title: name || 'Image',
-    content: wrapper,
-    size: 'modal-xl'
-  });
-}
 
 function currentUserName() {
   try {
@@ -185,7 +166,7 @@ export function renderLeadDetail(container, { id, tab }) {
               <div class="lead-activity-composer-bar">
                 <label class="btn btn-secondary btn-sm lead-activity-attach" for="lead-activity-file"><span class="material-icons-outlined" style="font-size:14px">attach_file</span> Attach</label>
                 <input type="file" id="lead-activity-file" class="lead-activity-file-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple>
-                <span class="lead-activity-hint">Images open in a viewer; other files are listed by name.</span>
+                <span class="lead-activity-hint">Select an attachment to open it in a new tab.</span>
                 <button type="button" class="btn btn-primary btn-sm" id="lead-activity-post"><span class="material-icons-outlined" style="font-size:14px">send</span> Post</button>
               </div>
             </div>
@@ -206,11 +187,21 @@ export function renderLeadDetail(container, { id, tab }) {
                       ${entry.content ? `<div class="lead-activity-content">${escapeHTML(entry.content)}</div>` : ''}
                       ${entry.files.length === 0 ? '' : `
                         <div class="lead-activity-files">
-                          ${entry.files.map((f, fi) => isLeadActivityImage(f) ? `
-                            <button type="button" class="lead-activity-thumb" data-activity-image="${escapeHTML(entry.id)}" data-file-index="${fi}" title="${escapeHTML(f.name)}" aria-label="View ${escapeHTML(f.name)}"><img src="${f.data}" alt="${escapeHTML(f.name)}"></button>
-                          ` : `
-                            <span class="lead-activity-file"><span class="material-icons-outlined">description</span><span class="lead-activity-file-name">${escapeHTML(f.name)}</span><span class="lead-activity-file-size">${leadActivityFileSize(f.size)}</span></span>
-                          `).join('')}
+                          ${entry.files.map(f => {
+                            const fileUrl = leadActivityFileUrl(f);
+                            const openAttrs = fileUrl
+                              ? `href="${escapeHTML(fileUrl)}" target="_blank" rel="noopener noreferrer"`
+                              : '';
+                            return isLeadActivityImage(f) ? `
+                              ${fileUrl
+                                ? `<a class="lead-activity-thumb" ${openAttrs} title="Open ${escapeHTML(f.name)} in a new tab" aria-label="Open ${escapeHTML(f.name)} in a new tab"><img src="${escapeHTML(fileUrl)}" alt="${escapeHTML(f.name)}"></a>`
+                                : `<span class="lead-activity-thumb is-unavailable" title="This attachment cannot be opened"><img src="${escapeHTML(f.data || '')}" alt="${escapeHTML(f.name)}"></span>`}
+                            ` : `
+                              ${fileUrl
+                                ? `<a class="lead-activity-file-link" ${openAttrs} title="Open ${escapeHTML(f.name)} in a new tab" aria-label="Open ${escapeHTML(f.name)} in a new tab"><span class="lead-activity-file"><span class="material-icons-outlined">description</span><span class="lead-activity-file-name">${escapeHTML(f.name)}</span><span class="lead-activity-file-size">${leadActivityFileSize(f.size)}</span></span></a>`
+                                : `<span class="lead-activity-file"><span class="material-icons-outlined">description</span><span class="lead-activity-file-name">${escapeHTML(f.name)}</span><span class="lead-activity-file-size">${leadActivityFileSize(f.size)}</span></span>`}
+                            `;
+                          }).join('')}
                         </div>
                       `}
                       ${shouldCollapseLeadActivity(entry) ? `
@@ -570,14 +561,6 @@ ${noteBlock('description', 'sticky_note_2', 'Internal Notes', lead.description, 
         const expanded = item.classList.toggle('is-expanded');
         const label = btn.querySelector('.lead-activity-expand-label');
         if (label) label.textContent = expanded ? 'Show less' : 'Show more';
-      });
-    });
-
-    container.querySelectorAll('[data-activity-image]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const entry = (lead.activityLog || []).find(e => e && e.id === btn.dataset.activityImage);
-        const file = entry && Array.isArray(entry.files) ? entry.files[Number(btn.dataset.fileIndex)] : null;
-        if (file) showImageLightbox(file.data, file.name);
       });
     });
 
