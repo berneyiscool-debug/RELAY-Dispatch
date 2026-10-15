@@ -19,6 +19,7 @@ import { emailEnabledFor, sendEmail, emailBlockedReason } from '../../utils/emai
 import { invoiceEmail, receiptEmail, reminderEmail } from '../../utils/emailTemplates.js';
 import { portalUrlForDocument } from '../../utils/portalLinks.js';
 import { documentAttachment } from '../../utils/documentPdf.js';
+import { HOURS_SOURCE, hoursSourceLabel } from '../../utils/invoiceLabour.js';
 
 export function renderInvoiceDetail(container, params) {
   const { id, tab } = params;
@@ -364,6 +365,17 @@ export function renderInvoiceDetail(container, params) {
           <button class="btn btn-secondary btn-sm" id="btn-unlink-quote" data-tooltip="Sever link to original quote, unlocking edit controls for all lines" data-tooltip-pos="left" style="color:var(--color-danger); border-color:rgba(239,68,68,0.2); background:rgba(239,68,68,0.02)">
             <span class="material-icons-outlined" style="font-size:16px; vertical-align:middle; margin-right:4px">link_off</span> Unlink Quote
           </button>
+        </div>
+      ` : ''}
+
+      <!-- Labour came from the timesheets rather than the tasklist estimates -->
+      ${invoice.hoursSource === HOURS_SOURCE.BOOKED ? `
+        <div class="card" style="margin-bottom:var(--space-lg); border-left: 4px solid var(--color-primary); background: var(--color-primary-light); padding: 16px var(--space-lg); display:flex; align-items:center; gap:10px; border-radius:8px">
+          <span class="material-icons-outlined" style="color:var(--color-primary); font-size:24px">schedule</span>
+          <div>
+            <div style="font-weight:normal; color:var(--color-primary-dark); font-size:14px">Labour billed from hours booked in timesheets.</div>
+            <div style="color:var(--text-secondary); font-size:12px; margin-top:2px">Labour source: <strong>${escapeHTML(hoursSourceLabel(invoice.hoursSource))}</strong></div>
+          </div>
         </div>
       ` : ''}
 
