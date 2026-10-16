@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { parseExtraOrigins, resolveReturnUrls } from './returnUrls.js'
 
 // ============================================
 // RELAY — CREATE PAYMENT (Stripe Connect direct charge)
@@ -17,10 +18,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // limited to whoever already holds the invoice id.
 //
 // Request body: { "invoiceId": "...", "successUrl"?, "cancelUrl"? }
+//   successUrl / cancelUrl are only honoured when they point back at RELAY
+//   (returnUrls.js); anything else falls back to the hosted app.
 // Response:      { "url": "https://checkout.stripe.com/...", "sessionId": "cs_..." }
 //
 // Secrets: STRIPE_SECRET_KEY (platform), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 //          RELAY_CONNECT_FEE_BPS? (optional platform fee, basis points of total)
+//          RELAY_RETURN_ORIGINS? (comma-separated extra origins allowed as
+//                                 return URLs, e.g. a preview deploy)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,17 +83,21 @@ serve(async (req) => {
     const feeBps = Number(Deno.env.get('RELAY_CONNECT_FEE_BPS') || '0')
     const applicationFee = feeBps > 0 ? Math.round(cents * feeBps / 10000) : 0
 
-    // The app is published under /app on the public domain, and the Origin header
-    // carries no path — so append it there. Every other origin serves the app from
-    // its root (the Vite dev server, preview deploys), and desktop (file://)
-    // callers send no Origin at all, so the hosted app is the default. The client
-    // normally passes its own URLs; these are only fallbacks.
-    const requestOrigin = (req.headers.get('origin') || 'https://relaydispatch.com.au').replace(/\/+$/, '')
-    const appBase = requestOrigin === 'https://relaydispatch.com.au' ? `${requestOrigin}/app` : requestOrigin
+    // Where Stripe sends the customer afterwards. Public function, so the URLs
+    // are allow-listed: a caller-chosen redirect would turn a genuine checkout
+    // into a phishing hand-off. The client normally passes its own URLs; the
+    // fallbacks cover desktop (file://, no Origin) and rejected values.
+    const returnUrls = resolveReturnUrls({
+      successUrl,
+      cancelUrl,
+      origin: req.headers.get('origin'),
+      invoiceRef: invoice.number || invoice.id,
+      extraOrigins: parseExtraOrigins(Deno.env.get('RELAY_RETURN_ORIGINS')),
+    })
     const form = new URLSearchParams()
     form.set('mode', 'payment')
-    form.set('success_url', successUrl || `${appBase}/#/invoices?paid=${encodeURIComponent(invoice.number || invoice.id)}`)
-    form.set('cancel_url', cancelUrl || `${appBase}/#/invoices`)
+    form.set('success_url', returnUrls.successUrl)
+    form.set('cancel_url', returnUrls.cancelUrl)
     form.set('client_reference_id', String(invoice.id))
     form.set('metadata[invoice_id]', String(invoice.id))
     form.set('metadata[company_id]', String(company.id))
