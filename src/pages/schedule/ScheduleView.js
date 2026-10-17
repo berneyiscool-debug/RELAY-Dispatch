@@ -8,6 +8,7 @@ import { showToast } from '../../components/Notifications.js';
 import { escapeHTML } from '../../utils/security.js';
 import { showDrawer } from '../../components/Drawer.js';
 import { showModal } from '../../components/Modal.js';
+import { showConfirm } from '../../utils/confirmDialog.js';
 import { renderActivityCalendar as renderActivityModule } from './ActivityCalendar.js';
 import { parsePreferredTime, todayLocalISO, toDateKey } from '../../utils/dateUtils.js';
 import { FLAGS } from '../../utils/flags.js';
@@ -261,6 +262,7 @@ export function renderScheduleView(container) {
   let currentDate = new Date();
   const hours = Array.from({ length: 24 }, (_, i) => i); // 00:00–23:00
   let dragState = null;
+  let conflictPromptOpen = false;
   let resizeState = null;
   let selectedScheduleIds = new Set(); // marquee multi-select of schedule blocks
   let marqueeState = null;
@@ -4020,14 +4022,16 @@ export function renderScheduleView(container) {
           if (preview) preview.remove();
         }
       });
-      col.addEventListener('drop', (e) => {
+      col.addEventListener('drop', async (e) => {
         const jobs = store.getAll('jobs'); // fresh read
         e.preventDefault();
         col.classList.remove('is-drop-target');
         const preview = col.querySelector('.schedule-drag-preview');
         if (preview) preview.remove();
 
-        if (!dragState) return;
+        if (!dragState || conflictPromptOpen) return;
+        const dropState = dragState;
+        dragState = null;
 
         const targetTechId = col.dataset.tech;
         const targetDayIdx = parseInt(col.dataset.day);
@@ -4036,15 +4040,15 @@ export function renderScheduleView(container) {
 
         // Calculate drop hour from mouse position — snap to 15-min grid
         const rect = col.getBoundingClientRect();
-        const offsetY = dragState.offsetY || 0;
+        const offsetY = dropState.offsetY || 0;
         const relY = e.clientY - offsetY - rect.top;
         const rawHour = relY / PX_PER_HOUR;
         const dropHour = Math.min(23.75, Math.max(0, snapToQuarter(rawHour)));
 
         const tech = technicians.find(t => t.id === targetTechId);
 
-        if (dragState.type === 'existing' && ['leave', 'blockout', 'meeting'].includes(dragState.blockType)) {
-          const duration = dragState.endHour - dragState.startHour;
+        if (dropState.type === 'existing' && ['leave', 'blockout', 'meeting'].includes(dropState.blockType)) {
+          const duration = dropState.endHour - dropState.startHour;
           const dropEndHour = dropHour + duration;
           const pad = n => n.toString().padStart(2, '0');
           const localDateStr = `${targetDay.getFullYear()}-${pad(targetDay.getMonth() + 1)}-${pad(targetDay.getDate())}`;
@@ -4055,7 +4059,7 @@ export function renderScheduleView(container) {
           const startTimeStr = `${localDateStr}T${pad(startH)}:${pad(startM)}`;
           const finishTimeStr = `${localDateStr}T${pad(endH)}:${pad(endM)}`;
 
-          store.update('schedule', dragState.scheduleId, {
+          store.update('schedule', dropState.scheduleId, {
             technicianId: targetTechId,
             technicianName: tech?.name || '',
             date: localDateStr,
@@ -4066,20 +4070,19 @@ export function renderScheduleView(container) {
             endHour: dropEndHour
           });
 
-          showToast(`Moved ${dragState.blockType.toUpperCase()} entry for ${tech?.name || 'technician'} to ${localDateStr}`, 'success');
-          dragState = null;
+          showToast(`Moved ${dropState.blockType.toUpperCase()} entry for ${tech?.name || 'technician'} to ${localDateStr}`, 'success');
           render();
           return;
         }
 
-        const job = jobs.find(j => j.id === dragState.jobId);
+        const job = jobs.find(j => j.id === dropState.jobId);
 
         if (job) {
           const totalTaskHours = (job.tasks || []).reduce((acc, tsk) => acc + (parseFloat(tsk.estimatedHours) || Number(tsk.hours) || 0), 0);
           const jobDuration = totalTaskHours || 1;
-          const duration = dragState.type === 'existing'
-            ? (dragState.endHour - dragState.startHour)
-            : (dragState.hours || jobDuration);
+          const duration = dropState.type === 'existing'
+            ? (dropState.endHour - dropState.startHour)
+            : (dropState.hours || jobDuration);
 
           const dropEndHour = dropHour + duration;
 
@@ -4088,13 +4091,22 @@ export function renderScheduleView(container) {
           const hasConflict = blocks.some(b =>
             b.technicianId === targetTechId &&
             b.dayIdx === targetDayIdx &&
-            (dragState.scheduleId ? b.id !== dragState.scheduleId : b.jobId !== job.id) &&
+            (dropState.scheduleId ? b.id !== dropState.scheduleId : b.jobId !== job.id) &&
             Math.max(b.startHour, dropHour) < Math.min(b.endHour, dropEndHour)
           );
 
           if (hasConflict) {
-            if (!window.confirm('Technician already has a job scheduled at this time. Proceed anyway?')) {
-              dragState = null;
+            conflictPromptOpen = true;
+            let proceed;
+            try {
+              proceed = await showConfirm(
+                'This technician already has a job scheduled during this time. Move this job anyway?',
+                { title: 'Schedule conflict', confirmLabel: 'Move anyway' }
+              );
+            } finally {
+              conflictPromptOpen = false;
+            }
+            if (!proceed) {
               return;
             }
           }
@@ -4108,18 +4120,18 @@ export function renderScheduleView(container) {
           const startTimeStr = `${localDateStr}T${pad(startH)}:${pad(startM)}`;
           const finishTimeStr = `${localDateStr}T${pad(endH)}:${pad(endM)}`;
 
-          if (dragState.type === 'existing' && dragState.blockType === 'schedule') {
+          if (dropState.type === 'existing' && dropState.blockType === 'schedule') {
             // Group move: work out the day + time shift from the primary block BEFORE
             // it moves, then apply the same delta to every other selected allocation
             // (each keeps its own technician and duration).
-            const group = dragState.group;
+            const group = dropState.group;
             let primaryOrig = null;
             if (group && group.length) {
-              const rec = store.getById('schedule', dragState.scheduleId);
+              const rec = store.getById('schedule', dropState.scheduleId);
               primaryOrig = rec ? { date: rec.date, startHour: rec.startHour } : null;
             }
 
-            store.update('schedule', dragState.scheduleId, {
+            store.update('schedule', dropState.scheduleId, {
               technicianId: targetTechId,
               technicianName: tech?.name || '',
               date: localDateStr,
@@ -4148,7 +4160,7 @@ export function renderScheduleView(container) {
                   startHour: ns,
                   endHour: ne
                 });
-                if (g.id !== dragState.scheduleId) { const gj = store.getById('schedule', g.id); if (gj) syncJobWithSchedules(gj.jobId); }
+                if (g.id !== dropState.scheduleId) { const gj = store.getById('schedule', g.id); if (gj) syncJobWithSchedules(gj.jobId); }
               });
               showToast(`Moved ${group.length + 1} allocations`, 'success');
             } else {
@@ -4167,8 +4179,8 @@ export function renderScheduleView(container) {
               hours: duration,
               startHour: dropHour,
               endHour: dropEndHour,
-              taskId: dragState.taskId || null,
-              taskName: dragState.taskName || null
+              taskId: dropState.taskId || null,
+              taskName: dropState.taskName || null
             });
 
             // Update job's scheduled info
@@ -4184,10 +4196,9 @@ export function renderScheduleView(container) {
           }
         }
 
-        if (dragState && dragState.type === 'unscheduled') {
+        if (dropState.type === 'unscheduled') {
           isSearchActive = false;
         }
-        dragState = null;
         render();
       });
     });
