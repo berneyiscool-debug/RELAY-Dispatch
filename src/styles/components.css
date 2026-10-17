@@ -1626,7 +1626,7 @@ select.badge {
 
   /* Held at the same separation from the dark canvas as the light tint is from its own,
      and checked against every dark status fill so no card is swallowed by the column. */
-  --sched-weekend-bg: #131313;
+  --sched-weekend-bg: #050506;
 
   --sched-halfhour-line: rgba(255, 255, 255, 0.06);
 }
@@ -1802,6 +1802,7 @@ select.badge {
   background-size: 100% 1px;
   background-position: 0 50%;
   background-origin: border-box;
+  background-color: var(--bg-color);
   transition: background var(--transition-fast);
 }
 /* Weekend columns are painted from a class rather than an inline style so the drag
@@ -1823,11 +1824,56 @@ select.badge {
 .schedule-day-col.is-weekend.has-tech-tint {
   background: color-mix(in srgb, var(--sched-tech-color) 4%, var(--sched-weekend-bg));
 }
+.schedule-day-col.has-tech-tint .schedule-hour-slot {
+  background-color: color-mix(in srgb, var(--sched-tech-color) 4%, var(--bg-color));
+}
+.schedule-day-col.is-weekend.has-tech-tint .schedule-hour-slot {
+  background-color: color-mix(in srgb, var(--sched-tech-color) 4%, var(--sched-weekend-bg));
+}
+.schedule-roster-shift-marker {
+  position: absolute;
+  left: 5px;
+  width: 14px;
+  z-index: 0;
+  pointer-events: auto;
+  cursor: help;
+}
+.schedule-roster-shift-marker-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  width: 2px;
+  background: color-mix(in srgb, var(--sched-roster-color) 78%, transparent);
+}
+.schedule-roster-shift-icon {
+  position: absolute;
+  top: -7px;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sched-roster-color);
+  background: color-mix(in srgb, var(--sched-roster-color) 12%, var(--bg-color));
+  font-size: 11px;
+}
+.schedule-day-col.is-weekend .schedule-roster-shift-icon {
+  background: color-mix(in srgb, var(--sched-roster-color) 12%, var(--sched-weekend-bg));
+}
 .schedule-day-col.is-drop-target {
   background: rgba(27, 109, 224, 0.05);
 }
 .schedule-day-col.has-tech-tint.is-drop-target {
   background: rgba(27, 109, 224, 0.05);
+}
+.schedule-day-col.has-tech-tint.is-drop-target .schedule-hour-slot {
+  background-color: color-mix(in srgb, #1b6de0 5%, var(--bg-color));
+}
+.schedule-day-col.is-weekend.has-tech-tint.is-drop-target .schedule-hour-slot {
+  background-color: color-mix(in srgb, #1b6de0 5%, var(--sched-weekend-bg));
 }
 
 
