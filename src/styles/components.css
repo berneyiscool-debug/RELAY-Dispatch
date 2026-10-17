@@ -86,6 +86,71 @@
   color: #ffffff;
 }
 
+/* ---- Segmented control ----
+   Mutually exclusive view switches (Schedule/Activities, Day/Week). Built from the same
+   tokens as .btn so it reads as a control rather than a chip: a recessed track, and the
+   selected segment lifts onto the card surface instead of taking the brand colour. */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 25px;
+  padding: 2px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--border-radius);
+  background: var(--bg-color);
+}
+.segmented-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 19px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.segmented-item:hover {
+  background: rgba(15, 15, 15, 0.05);
+  color: var(--text-primary);
+}
+.segmented-item.active {
+  background: var(--card-bg);
+  border-color: var(--border-color-dark);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+.segmented-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+[data-theme-mode="dark"] .segmented {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme-mode="dark"] .segmented-item {
+  color: var(--text-secondary);
+}
+[data-theme-mode="dark"] .segmented-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+[data-theme-mode="dark"] .segmented-item.active {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
 /* Clock In/Out live indicator */
 .clock-live-indicator {
   display: inline-flex;
@@ -1830,38 +1895,28 @@ select.badge {
 .schedule-day-col.is-weekend.has-tech-tint .schedule-hour-slot {
   background-color: color-mix(in srgb, var(--sched-tech-color) 4%, var(--sched-weekend-bg));
 }
+/* Rostered shift. Drawn as a band across the column rather than a line with a badge: the
+   shift is a window of time, so it fills that window and lets the grid's own hour rules
+   show through. Blocks (z-index 1, opaque) cover the part of the day that is already
+   booked, which leaves the band reading as the rostered time still open — the thing a
+   dispatcher is actually scanning for. The 2px inset rail keeps the shift's start edge
+   visible even where the column tint barely differs from the band. */
 .schedule-roster-shift-marker {
   position: absolute;
-  left: 5px;
-  width: 14px;
+  left: 0;
+  right: 0;
   z-index: 0;
   pointer-events: auto;
   cursor: help;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--sched-roster-color) 4%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--sched-roster-color) 20%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--sched-roster-color) 20%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--sched-roster-color) 55%, transparent);
+  transition: background var(--transition-fast);
 }
-.schedule-roster-shift-marker-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 6px;
-  width: 2px;
-  background: color-mix(in srgb, var(--sched-roster-color) 78%, transparent);
-}
-.schedule-roster-shift-icon {
-  position: absolute;
-  top: -7px;
-  left: 0;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--sched-roster-color);
-  background: color-mix(in srgb, var(--sched-roster-color) 12%, var(--bg-color));
-  font-size: 11px;
-}
-.schedule-day-col.is-weekend .schedule-roster-shift-icon {
-  background: color-mix(in srgb, var(--sched-roster-color) 12%, var(--sched-weekend-bg));
+.schedule-roster-shift-marker:hover {
+  background: color-mix(in srgb, var(--sched-roster-color) 8%, transparent);
 }
 .schedule-day-col.is-drop-target {
   background: rgba(27, 109, 224, 0.05);

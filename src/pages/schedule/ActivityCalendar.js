@@ -132,13 +132,13 @@ export function renderActivityCalendar(container, { getWeekDays, viewMode, curre
             <button class="btn btn-secondary btn-sm" id="btn-next"><span class="material-icons-outlined">chevron_right</span></button>
             <span style="font-weight:600;font-size:var(--font-size-md);margin:0 8px">${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}</span>
           </div>
-          <div class="flex gap-xs" style="margin-right:16px;">
-            <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
-            <button class="toolbar-filter ${calendarType === 'activity' ? 'active' : ''}" data-cal="activity">Activities</button>
+          <div class="segmented" role="group" aria-label="Calendar" style="margin-right:16px;">
+            <button type="button" class="segmented-item ${calendarType === 'schedule' ? 'active' : ''}" aria-pressed="${calendarType === 'schedule'}" data-cal="schedule">Schedule</button>
+            <button type="button" class="segmented-item ${calendarType === 'activity' ? 'active' : ''}" aria-pressed="${calendarType === 'activity'}" data-cal="activity">Activities</button>
           </div>
-          <div class="flex gap-xs">
-            <button class="toolbar-filter ${viewMode === 'day' ? 'active' : ''}" data-view="day">Day</button>
-            <button class="toolbar-filter ${viewMode === 'week' ? 'active' : ''}" data-view="week">Week</button>
+          <div class="segmented" role="group" aria-label="Date range">
+            <button type="button" class="segmented-item ${viewMode === 'day' ? 'active' : ''}" aria-pressed="${viewMode === 'day'}" data-view="day">Day</button>
+            <button type="button" class="segmented-item ${viewMode === 'week' ? 'active' : ''}" aria-pressed="${viewMode === 'week'}" data-view="week">Week</button>
           </div>
         </div>
       </div>
