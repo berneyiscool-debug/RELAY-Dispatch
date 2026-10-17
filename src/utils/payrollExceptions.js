@@ -8,9 +8,9 @@
 //
 // Two questions are asked of this data, and they are deliberately not the same one:
 //
-//   - "Has anyone we expected gone missing right now?" — the presence panel. Time
-//     agnostic on purpose: a dispatch board wants to know immediately, and real
-//     roster rows often carry no start time, so lateness cannot be computed for them.
+//   - "Has anyone whose shift should have started gone missing?" — the presence panel.
+//     It uses each rostered start time and the same grace period as the lateness
+//     exception, so staff aren't shown as missing before they are due.
 //   - "Is this day's record complete and trustworthy?" — the hours grid and the pay
 //     run. Time aware and grace-period based, because payroll should not flag someone
 //     who is a few minutes late.
@@ -24,6 +24,7 @@
 import { store } from '../data/store.js';
 import { todayLocalISO } from './dateUtils.js';
 import { getClockStatusForToday } from './timeClock.js';
+import { getExpectedRosterRowsForDay } from './expectedWorkRoster.js';
 
 export const EXCEPTION = {
   OPEN_SESSION: 'open-session',
@@ -48,11 +49,13 @@ export function isBlocking(type) {
 //
 // A dismissed row is excluded: dismissing says "they genuinely didn't work, and I know
 // why". The roster stops expecting them, so the missing-hours exception clears itself
-// and nothing has to be unwound if the shift later happens after all. The dismissal
-// lives on the roster row (schedule.status) rather than in a table of its own.
+// and nothing has to be unwound if the shift later happens after all. Real schedule
+// rows store that decision on the row; generated roster shifts use a separate
+// per-technician/day dismissal so the reusable template stays intact.
 export function getRosterForDay(dateStr) {
   const byTech = new Map();
-  (store.getAll('schedule') || []).forEach(s => {
+  const scheduleRows = store.getAll('schedule') || [];
+  scheduleRows.forEach(s => {
     if (!s.technicianId) return;
     if (NON_WORK_TYPES.includes(s.type)) return;
     if (s.status === 'dismissed') return;
@@ -61,6 +64,16 @@ export function getRosterForDay(dateStr) {
     const id = String(s.technicianId);
     if (!byTech.has(id)) byTech.set(id, []);
     byTech.get(id).push(s);
+  });
+
+  const dismissed = new Set((store.getAll('expectedWorkRosterDismissals') || [])
+    .filter(item => item.date === dateStr)
+    .map(item => `${item.rosterId}|${item.technicianId}|${item.date}`));
+  getExpectedRosterRowsForDay(store.getAll('expectedWorkRosters') || [], dateStr).forEach(row => {
+    const key = `${row.expectedWorkRosterId}|${row.technicianId}|${row.date}`;
+    if (dismissed.has(key)) return;
+    if (!byTech.has(row.technicianId)) byTech.set(row.technicianId, []);
+    byTech.get(row.technicianId).push(row);
   });
   return byTech;
 }
@@ -85,20 +98,31 @@ export function getSessionsForDay(dateStr) {
 }
 
 // The rostered window for a technician's day: the earliest expected start and the
-// latest expected end across their rows. Rows with no times (the seeded demo rows, and
-// anything created before times were recorded) contribute no window, which means they
-// can still raise "missing hours" once the day is over but can never raise "late".
+// latest expected end across their rows. Generated expected-roster rows keep their
+// date and times separately; schedule rows carry full timestamps. Overnight expected
+// shifts finish on the following day.
 export function getExpectedWindow(rosterRows) {
   let startAt = null;
   let endAt = null;
   rosterRows.forEach(r => {
-    if (r.startTime) {
-      const t = new Date(r.startTime);
-      if (!isNaN(t.getTime()) && (!startAt || t < startAt)) startAt = t;
+    const rowDate = r.date || (r.startTime ? todayLocalISO(new Date(r.startTime)) : null);
+    let rowStart = r.startTime ? new Date(r.startTime) : null;
+    if ((!rowStart || isNaN(rowStart.getTime())) && rowDate && r.expectedStartTime) {
+      rowStart = new Date(`${rowDate}T${r.expectedStartTime}`);
     }
-    if (r.finishTime) {
-      const t = new Date(r.finishTime);
-      if (!isNaN(t.getTime()) && (!endAt || t > endAt)) endAt = t;
+    if (rowStart && !isNaN(rowStart.getTime()) && (!startAt || rowStart < startAt)) {
+      startAt = rowStart;
+    }
+
+    let rowEnd = r.finishTime ? new Date(r.finishTime) : null;
+    if ((!rowEnd || isNaN(rowEnd.getTime())) && rowDate && r.expectedEndTime) {
+      rowEnd = new Date(`${rowDate}T${r.expectedEndTime}`);
+      if (rowStart && !isNaN(rowStart.getTime()) && rowEnd <= rowStart) {
+        rowEnd.setDate(rowEnd.getDate() + 1);
+      }
+    }
+    if (rowEnd && !isNaN(rowEnd.getTime()) && (!endAt || rowEnd > endAt)) {
+      endAt = rowEnd;
     }
   });
   return { startAt, endAt };
@@ -174,20 +198,22 @@ export function deriveExceptions(dateStr, sessions = [], rosterRows = [], now = 
   return out;
 }
 
-// Everyone rostered for work on a day who has not turned up at all, as technician ids.
-// Time agnostic by design — see the header. An open session from an earlier day still
-// means they are on site, which is what this list is about, so it is excluded the same
-// way the presence panel excludes it.
-export function getNotArrived(dateStr, technicianIds) {
+// Rostered technicians whose shift has started (including the grace period) but who
+// have not arrived, as technician ids. An open session from an earlier day still means
+// they are on site, so exclude them just as the presence panel excludes it.
+export function getNotArrived(dateStr, technicianIds, now = new Date()) {
   const roster = getRosterForDay(dateStr);
   const sessions = getSessionsForDay(dateStr);
   const out = [];
 
   technicianIds.forEach(rawId => {
     const id = String(rawId);
-    if (!roster.has(id)) return;
+    const rows = roster.get(id);
+    if (!rows) return;
     if ((sessions.get(id) || []).length > 0) return;
     if (getClockStatusForToday(id).status === 'in') return;
+    const { startAt } = getExpectedWindow(rows);
+    if (!startAt || now < new Date(startAt.getTime() + GRACE_MINUTES * 60000)) return;
     out.push(id);
   });
 

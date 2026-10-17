@@ -330,6 +330,25 @@ export function renderPayrollView(container, params = {}) {
             const stamp = new Date().toISOString();
             const by = actorName(ctx.currentUser);
             rosterRows.forEach(r => {
+              if (r.expectedWorkRosterId) {
+                const existing = (store.getAll('expectedWorkRosterDismissals') || []).find(item =>
+                  String(item.rosterId) === String(r.expectedWorkRosterId)
+                  && String(item.technicianId) === String(r.technicianId)
+                  && item.date === blocker.date
+                );
+                const dismissal = {
+                  rosterId: r.expectedWorkRosterId,
+                  technicianId: String(r.technicianId),
+                  date: blocker.date,
+                  reason,
+                  dismissedBy: by,
+                  updatedAt: stamp
+                };
+                if (existing) store.update('expectedWorkRosterDismissals', existing.id, dismissal);
+                else store.create('expectedWorkRosterDismissals', dismissal);
+                return;
+              }
+
               const existing = (r.notes || '').trim();
               // Notes are appended, never replaced: a dismissal is one more thing that
               // happened to this shift, not a rewrite of its history.

@@ -1,5 +1,3 @@
-import { store } from '../data/store.js';
-
 export function initClockPicker(inputEl) {
   if (!inputEl || inputEl.classList.contains('clock-picker-initialized')) return;
   inputEl.classList.add('clock-picker-initialized');
@@ -205,11 +203,17 @@ function openClockPopup(anchorEl, onSelect) {
   let currentAMPM = 'AM';
 
   if (anchorEl.value) {
-    const match = anchorEl.value.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (match) {
-      currentHour = parseInt(match[1]);
-      currentMinute = parseInt(match[2]);
-      currentAMPM = match[3].toUpperCase();
+    const time24Match = anchorEl.value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    const time12Match = anchorEl.value.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (time24Match) {
+      const hour = Number(time24Match[1]);
+      currentHour = hour % 12 || 12;
+      currentMinute = Number(time24Match[2]);
+      currentAMPM = hour < 12 ? 'AM' : 'PM';
+    } else if (time12Match) {
+      currentHour = parseInt(time12Match[1]);
+      currentMinute = parseInt(time12Match[2]);
+      currentAMPM = time12Match[3].toUpperCase();
     }
   }
 
@@ -272,26 +276,8 @@ function openClockPopup(anchorEl, onSelect) {
       const degrees = hIndex * 30;
       if (hand) hand.style.transform = `rotate(${degrees}deg)`;
     } else {
-      const settings = store.getSettings();
-      const rounding = settings.laborRounding || 15;
-
-      let validMinutes = [];
-      if (rounding === 60) {
-        validMinutes = [0];
-      } else if (rounding === 30) {
-        validMinutes = [0, 30];
-      } else if (rounding === 15) {
-        validMinutes = [0, 15, 30, 45];
-      } else if (rounding === 5) {
-        validMinutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-      } else {
-        // Precise / 1-minute
-        validMinutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-      }
-
-      if (rounding > 1) {
-        currentMinute = Math.round(currentMinute / rounding) * rounding % 60;
-      }
+      const validMinutes = Array.from({ length: 12 }, (_, index) => index * 5);
+      currentMinute = Math.round(currentMinute / 5) * 5 % 60;
 
       validMinutes.forEach((m) => {
         const num = document.createElement('div');
@@ -581,17 +567,18 @@ export function closeAllDatePickerPickers() {
   });
 }
 
-export function initTimeOnlyClockPicker(inputEl) {
+export function initTimeOnlyClockPicker(inputEl, { valueFormat = '12-hour' } = {}) {
   if (!inputEl || inputEl.classList.contains('time-only-clock-picker-initialized')) return;
   inputEl.classList.add('time-only-clock-picker-initialized');
 
   inputEl.readOnly = true;
   inputEl.style.cursor = 'pointer';
-  inputEl.placeholder = 'Select preferred time';
+  const use24HourValue = valueFormat === '24-hour';
+  inputEl.placeholder = use24HourValue ? 'Select time' : 'Select preferred time';
 
   const updateFromSource = () => {
     const val = inputEl.value || '';
-    if (val && !val.includes('AM') && !val.includes('PM')) {
+    if (!use24HourValue && val && !val.includes('AM') && !val.includes('PM')) {
       inputEl.value = formatTo12H(val);
     }
   };
@@ -600,7 +587,7 @@ export function initTimeOnlyClockPicker(inputEl) {
   inputEl.addEventListener('click', (e) => {
     e.stopPropagation();
     openClockPopup(inputEl, (selectedTime) => {
-      inputEl.value = selectedTime;
+      inputEl.value = use24HourValue ? formatTo24H(selectedTime) : selectedTime;
       inputEl.dispatchEvent(new Event('change', { bubbles: true }));
     });
   });

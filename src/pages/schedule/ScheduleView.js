@@ -16,7 +16,29 @@ import { getVirtualRecurringOccurrences, materializeVirtualOccurrence, collectTe
 import { isCallbackJob } from '../../utils/kpis.js';
 import { customerForDocument, savedCustomerPortalUrl } from '../../utils/portalLinks.js';
 import { getActiveClock, getClockStatusForToday, getBreakState, endShiftFromBreak, formatDuration, clockIn, clockOut } from '../../utils/timeClock.js';
-import { getNotArrived } from '../../utils/payrollExceptions.js';
+import { initTimeOnlyClockPicker } from '../../utils/clockPicker.js';
+import { getNotArrived, getRosterForDay } from '../../utils/payrollExceptions.js';
+import {
+  EXPECTED_ROSTER_DAYS,
+  MAX_EXPECTED_ROSTER_REPEAT_WEEKS,
+  findExpectedRosterConflicts,
+  getExpectedRosterDefaultTimes,
+  getExpectedRosterShiftHours,
+  getExpectedRosterShiftBandsForDay,
+  getRosterRepeatWeeks,
+  getExpectedRosterWeeks,
+  getMondayDateKey,
+  isMondayDateKey,
+  normalizeExpectedRosterTime
+} from '../../utils/expectedWorkRoster.js';
+
+const SCHEDULE_HOUR_HEIGHT = 32;
+
+function initScheduleTimePickers(root) {
+  root?.querySelectorAll('[data-schedule-time-picker]').forEach(input => {
+    initTimeOnlyClockPicker(input, { valueFormat: '24-hour' });
+  });
+}
 
 /**
  * Records an occurrence skip against the owning template. The date is stored as
@@ -176,11 +198,11 @@ export function renderScheduleView(container) {
   }
 
   // One row in the presence panel. `metaHTML` is the second line — worked time for
-  // someone on the clock, break time for someone on a break.
-  function presenceRowHTML(tech, metaHTML, { onBreak = false } = {}) {
+  // someone on the clock, break time for someone on a break, or roster context.
+  function presenceRowHTML(tech, metaHTML, { onBreak = false, notOnClock = false } = {}) {
     const shown = visibleTechIds.has(tech.id);
     return `
-      <div class="presence-row${onBreak ? ' is-on-break' : ''}" data-tech-id="${tech.id}" title="Show ${escapeHTML(tech.name)} on the schedule" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border-color);cursor:pointer;background:${shown ? 'var(--color-primary-bg)' : 'transparent'};">
+      <div class="presence-row${onBreak ? ' is-on-break' : ''}${notOnClock ? ' is-not-on-clock' : ''}" data-tech-id="${tech.id}" title="Show ${escapeHTML(tech.name)} on the schedule" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border-color);cursor:pointer;background:${shown ? 'var(--color-primary-bg)' : 'transparent'};">
         <input type="checkbox" class="presence-visible-checkbox" value="${tech.id}" ${shown ? 'checked' : ''} title="Show this column" style="flex-shrink:0;cursor:pointer;margin:0;">
         <div style="min-width:0;flex:1;">
           <div style="display:flex;align-items:center;gap:5px;">
@@ -222,12 +244,18 @@ export function renderScheduleView(container) {
   // jobs read fresh each render — do NOT cache here
 
   // Role-based access: read who is logged in
-  const isTechnician = currentUser.role === 'technician' || (loginMode === 'local' && localStorage.getItem('uiMode') === 'technician');
+  // Demo mode always represents the business owner, regardless of the role on
+  // the real account that entered the isolated demo session.
+  const isTechnician = !store.demoMode && (
+    currentUser.role === 'technician'
+    || (loginMode === 'local' && localStorage.getItem('uiMode') === 'technician')
+  );
   const hasTechRecord = technicians.some(t => t.id === currentUser.id);
   const isLocalAdminTechView = isTechnician && !hasTechRecord;
   // A user who can only ever see their own schedule has no crew to show presence for.
   // Same gate as the technician filter, which the presence panel sits alongside.
   const canSeeCrew = (!isTechnician || isLocalAdminTechView) && !isLocalAdmin;
+  const canManageExpectedRosters = !isTechnician || isLocalAdminTechView;
 
   let viewMode = 'week';
   let calendarType = 'schedule'; // 'schedule' or 'activity'
@@ -262,6 +290,9 @@ export function renderScheduleView(container) {
   let isActionMenuOpen = false;
   let isSearchActive = false;
   let isTechsPanelOpen = false;
+  let techFilterSearchQuery = '';
+  let techFilterRosterId = '';
+  let isPresencePanelCollapsed = true;
   let jobSearchQuery = '';
   let expandedJobTasklistIds = new Set();
   let expandedTaskNodeIds = new Set(); // per-node expansion of nested (sub-sub-)tasks in search results
@@ -269,6 +300,7 @@ export function renderScheduleView(container) {
   // 15-min precision: 1 hour = 32px, so 1 quarter = 8px
   const PX_PER_QUARTER = PX_PER_HOUR / 4; // 8px
   let nowMarkerTimer = null;
+  let attendanceTimer = null;
 
   // Job flag symbols. A card gets at most one, because a one-hour block is only 15px of
   // content tall and a second mark would push the job number out of view. Both are
@@ -963,9 +995,536 @@ export function renderScheduleView(container) {
     bindDragAndDrop(days);
   }
 
+  function openExpectedWorkRosterModal() {
+    if (!canManageExpectedRosters) return;
+    const savedRosters = (store.getAll('expectedWorkRosters') || [])
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const selectableTechnicians = technicians.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const today = todayLocalISO();
+    const defaultStartDate = getMondayDateKey(today);
+    const defaultStartTime = '08:00';
+    const defaultEndTime = '16:00';
+    const makeDefaultWeekShiftTimes = weekPattern => weekPattern.map(selected => (
+      selected ? { startTime: defaultStartTime, endTime: defaultEndTime } : null
+    ));
+    const createNewState = () => ({
+      rosterId: '',
+      name: '',
+      startDate: defaultStartDate,
+      repeatEveryWeeks: 1,
+      shiftHours: 8,
+      defaultStartTime,
+      defaultEndTime,
+      weekPatterns: [[true, true, true, true, true, false, false]],
+      weekShiftTimes: [makeDefaultWeekShiftTimes([true, true, true, true, true, false, false])],
+      technicianIds: []
+    });
+    const stateFromRoster = roster => {
+      const repeatEveryWeeks = getRosterRepeatWeeks(roster) || 1;
+      const defaults = getExpectedRosterDefaultTimes(roster);
+      const weekPatterns = Array.isArray(roster.weekPatterns)
+        ? roster.weekPatterns.map(row => EXPECTED_ROSTER_DAYS.map((_, index) => row?.[index] === true))
+        : [];
+      return {
+        rosterId: String(roster.id),
+        name: roster.name || '',
+        startDate: roster.startDate || defaultStartDate,
+        repeatEveryWeeks,
+        shiftHours: Number(roster.shiftHours) || 8,
+        ...defaults,
+        weekPatterns,
+        weekShiftTimes: weekPatterns.map((weekPattern, weekIndex) =>
+          EXPECTED_ROSTER_DAYS.map((_, dayIndex) => {
+            const savedTimes = roster.weekShiftTimes?.[weekIndex]?.[dayIndex];
+            const startTime = normalizeExpectedRosterTime(savedTimes?.startTime);
+            const endTime = normalizeExpectedRosterTime(savedTimes?.endTime);
+            if (startTime && endTime) return { startTime, endTime };
+            return weekPattern[dayIndex] ? { ...defaults } : null;
+          })
+        ),
+        technicianIds: (Array.isArray(roster.technicianIds) ? roster.technicianIds : []).map(String)
+      };
+    };
+    let state = createNewState();
+    const content = document.createElement('div');
+    content.className = 'expected-roster-editor';
+
+    function weeksForState() {
+      try {
+        return getExpectedRosterWeeks(state.startDate, state.repeatEveryWeeks);
+      } catch {
+        return [];
+      }
+    }
+
+    function ensureWeekPatterns(weekCount) {
+      while (state.weekPatterns.length < weekCount) {
+        const priorWeek = state.weekPatterns[state.weekPatterns.length - 1] || Array.from({ length: 7 }, () => false);
+        state.weekPatterns.push([...priorWeek]);
+      }
+      while (state.weekShiftTimes.length < weekCount) {
+        const priorTimes = state.weekShiftTimes[state.weekShiftTimes.length - 1] || Array.from({ length: 7 }, () => null);
+        state.weekShiftTimes.push(priorTimes.map(times => times ? { ...times } : null));
+      }
+    }
+
+    function updateInheritedDayTimes(kind, previousDefault, nextDefault) {
+      const property = kind === 'start' ? 'startTime' : 'endTime';
+      for (const week of state.weekShiftTimes) {
+        for (const times of week || []) {
+          if (times?.[property] === previousDefault) times[property] = nextDefault;
+        }
+      }
+      content.querySelectorAll(`[data-roster-time-kind="${kind}"]`).forEach(input => {
+        const weekIndex = Number(input.dataset.rosterTimeWeek);
+        const dayIndex = Number(input.dataset.rosterTimeDay);
+        input.value = state.weekShiftTimes[weekIndex]?.[dayIndex]?.[property] || nextDefault;
+      });
+    }
+
+    function syncDefaultTime(kind, value) {
+      const property = kind === 'start' ? 'defaultStartTime' : 'defaultEndTime';
+      const fallback = kind === 'start' ? defaultStartTime : defaultEndTime;
+      const previousDefault = normalizeExpectedRosterTime(state[property]) || fallback;
+      const nextDefault = normalizeExpectedRosterTime(value) || previousDefault;
+      state[property] = nextDefault;
+      if (nextDefault !== previousDefault) {
+        updateInheritedDayTimes(kind, previousDefault, nextDefault);
+      }
+      const input = content.querySelector(`#expected-roster-default-${kind}`);
+      if (input && input.value !== nextDefault) input.value = nextDefault;
+      return nextDefault;
+    }
+
+    function renderShiftTimes() {
+      const timeWeeks = content.querySelector('#expected-roster-time-weeks');
+      if (!timeWeeks) return;
+
+      const previousDetails = [...timeWeeks.querySelectorAll('.expected-roster-time-week')];
+      const openWeeks = previousDetails.length
+        ? new Set(previousDetails.filter(details => details.open).map(details => Number(details.dataset.rosterTimeWeek)))
+        : null;
+      const weeks = weeksForState();
+      ensureWeekPatterns(weeks.length);
+      const firstWeekWithWorkDays = state.weekPatterns.findIndex(week => week.some(Boolean));
+      const rows = weeks.map(week => {
+        const weekIndex = week.weekNumber - 1;
+        const selectedDays = EXPECTED_ROSTER_DAYS
+          .map((day, dayIndex) => ({ day, dayIndex, date: week.dates[dayIndex] }))
+          .filter(({ dayIndex }) => state.weekPatterns[weekIndex]?.[dayIndex]);
+        if (!selectedDays.length) return '';
+
+        const isOpen = openWeeks
+          ? openWeeks.has(weekIndex)
+          : weekIndex === firstWeekWithWorkDays;
+        return `
+          <details class="expected-roster-time-week" data-roster-time-week="${weekIndex}"${isOpen ? ' open' : ''}>
+            <summary>
+              <span class="expected-roster-time-title">
+                <span class="material-icons-outlined expected-roster-time-chevron" aria-hidden="true">expand_more</span>
+                <strong>Week ${week.weekNumber}</strong>
+              </span>
+              <span class="expected-roster-time-count">${selectedDays.length} work ${selectedDays.length === 1 ? 'day' : 'days'}</span>
+            </summary>
+            <div class="expected-roster-time-days">
+              <div class="expected-roster-time-columns" aria-hidden="true">
+                <span></span><span>Start</span><span>Finish</span>
+              </div>
+              ${selectedDays.map(({ day, dayIndex, date }) => {
+                const times = state.weekShiftTimes[weekIndex]?.[dayIndex] || {
+                  startTime: state.defaultStartTime,
+                  endTime: state.defaultEndTime
+                };
+                return `
+                  <div class="expected-roster-time-day">
+                    <div>
+                      <strong>${day}</strong>
+                      <span>${escapeHTML(date)}</span>
+                    </div>
+                    <input class="form-input expected-roster-time-input" id="expected-roster-time-${weekIndex}-${dayIndex}-start" type="text" data-schedule-time-picker required
+                      data-roster-time-week="${weekIndex}" data-roster-time-day="${dayIndex}" data-roster-time-kind="start"
+                      aria-label="${day} ${date} start time" value="${escapeHTML(times.startTime || state.defaultStartTime)}">
+                    <input class="form-input expected-roster-time-input" id="expected-roster-time-${weekIndex}-${dayIndex}-end" type="text" data-schedule-time-picker required
+                      data-roster-time-week="${weekIndex}" data-roster-time-day="${dayIndex}" data-roster-time-kind="end"
+                      aria-label="${day} ${date} finish time" value="${escapeHTML(times.endTime || state.defaultEndTime)}">
+                  </div>`;
+              }).join('')}
+            </div>
+          </details>`;
+      }).join('');
+
+      timeWeeks.innerHTML = rows || '<div class="expected-roster-empty">Select at least one work day to set its shift times.</div>';
+      initScheduleTimePickers(timeWeeks);
+    }
+
+    function renderTechnicianPicker() {
+      const selectedContainer = content.querySelector('#expected-roster-selected-technicians');
+      const resultsContainer = content.querySelector('#expected-roster-technician-results');
+      if (!selectedContainer || !resultsContainer) return;
+
+      const selectedIds = new Set(state.technicianIds);
+      const technicianById = new Map(selectableTechnicians.map(tech => [String(tech.id), tech]));
+      selectedContainer.innerHTML = state.technicianIds.map(id => {
+        const tech = technicianById.get(id);
+        const name = tech?.name || 'Unavailable staff member';
+        return `
+          <span class="expected-roster-selected-technician">
+            <span>${escapeHTML(name)}</span>
+            <button type="button" data-remove-roster-technician="${escapeHTML(id)}" aria-label="Remove ${escapeHTML(name)}">&times;</button>
+          </span>`;
+      }).join('');
+
+      const query = String(content.querySelector('#expected-roster-technician-search')?.value || '').trim().toLocaleLowerCase();
+      const matches = selectableTechnicians.filter(tech => (
+        !selectedIds.has(String(tech.id))
+        && (!query || `${tech.name || ''} ${tech.email || ''}`.toLocaleLowerCase().includes(query))
+      ));
+      resultsContainer.innerHTML = matches.length
+        ? matches.map(tech => `
+            <button type="button" class="expected-roster-technician-result" data-add-roster-technician="${escapeHTML(String(tech.id))}">
+              <span>${escapeHTML(tech.name || 'Unnamed staff member')}</span>
+              <span class="material-icons-outlined" aria-hidden="true">add</span>
+            </button>`).join('')
+        : `<div class="expected-roster-technician-empty">${query ? 'No unselected staff match that search.' : 'All available staff have been added.'}</div>`;
+    }
+
+    function renderEditor() {
+      const weeks = weeksForState();
+      ensureWeekPatterns(weeks.length);
+      const weekRows = weeks.length ? weeks.map(week => {
+        const validDates = week.dates.filter(Boolean);
+        const firstDay = validDates[0];
+        const lastDay = validDates[validDates.length - 1];
+        const dateRange = firstDay && lastDay
+          ? `${new Date(`${firstDay}T12:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short' })}–${new Date(`${lastDay}T12:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short' })}`
+          : '';
+        return `
+          <div class="expected-roster-week">
+            <div class="expected-roster-week-label">
+              <strong>Week ${week.weekNumber}</strong>
+              <span>${escapeHTML(dateRange)}</span>
+            </div>
+            <div class="expected-roster-day-grid">
+              ${EXPECTED_ROSTER_DAYS.map((day, dayIndex) => week.dates[dayIndex]
+                ? `<label class="expected-roster-day${state.weekPatterns[week.weekNumber - 1]?.[dayIndex] ? ' is-active' : ''}" title="${day} ${week.dates[dayIndex]}">
+                    <input type="checkbox" data-roster-week="${week.weekNumber - 1}" data-roster-day="${dayIndex}" aria-label="${day} ${week.dates[dayIndex]}" ${state.weekPatterns[week.weekNumber - 1]?.[dayIndex] ? 'checked' : ''}>
+                    <span aria-hidden="true">${day[0]}</span>
+                  </label>`
+                : '<span class="expected-roster-day is-out-of-range" aria-hidden="true"></span>'
+              ).join('')}
+            </div>
+          </div>`;
+      }).join('') : '<div class="expected-roster-empty">Choose a valid Monday start date and repeat interval to set weekly days.</div>';
+      content.innerHTML = `
+        <div class="expected-roster-intro">
+          Create a recurring schedule of expected hours. The weekly pattern repeats indefinitely from its Monday start date, and appears in attendance and timesheets without creating job blocks.
+        </div>
+        <div class="expected-roster-form-grid">
+          <div class="form-group expected-roster-template-field">
+            <label class="form-label" for="expected-roster-template">Saved roster</label>
+            <select class="form-select" id="expected-roster-template">
+              <option value="" ${state.rosterId ? '' : 'selected'}>New roster</option>
+              ${savedRosters.map(roster => `<option value="${escapeHTML(String(roster.id))}" ${String(roster.id) === state.rosterId ? 'selected' : ''}>${escapeHTML(roster.name || 'Unnamed roster')}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="expected-roster-name">Roster name</label>
+            <input class="form-input" id="expected-roster-name" maxlength="80" value="${escapeHTML(state.name)}" placeholder="e.g. Workshop crew">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="expected-roster-start">Starts on (Monday)</label>
+            <input class="form-input" id="expected-roster-start" type="date" value="${escapeHTML(state.startDate)}">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="expected-roster-repeat-weeks">Repeat every (weeks)</label>
+            <input class="form-input" id="expected-roster-repeat-weeks" type="number" min="1" max="${MAX_EXPECTED_ROSTER_REPEAT_WEEKS}" step="1" value="${escapeHTML(String(state.repeatEveryWeeks))}" aria-describedby="expected-roster-repeat-hint">
+            <p class="expected-roster-field-hint" id="expected-roster-repeat-hint">Choose 1–52 full weeks (52 weeks is about one year).</p>
+          </div>
+          <div class="expected-roster-default-times">
+            <div class="form-group">
+              <label class="form-label" for="expected-roster-default-start">Default start time</label>
+              <input class="form-input expected-roster-time-input" id="expected-roster-default-start" type="text" data-schedule-time-picker required value="${escapeHTML(state.defaultStartTime)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="expected-roster-default-end">Default finish time</label>
+              <input class="form-input expected-roster-time-input" id="expected-roster-default-end" type="text" data-schedule-time-picker required value="${escapeHTML(state.defaultEndTime)}">
+            </div>
+          </div>
+        </div>
+        <section class="expected-roster-section">
+          <div class="expected-roster-section-heading">
+            <div>
+              <h4>Work days</h4>
+              <p>Click or drag across days to select workdays for each week.</p>
+            </div>
+          </div>
+          <div class="expected-roster-weeks">
+            <div class="expected-roster-day-axis" aria-hidden="true">
+              <span></span>
+              <div>${EXPECTED_ROSTER_DAYS.map(day => `<span>${day[0]}</span>`).join('')}</div>
+            </div>
+            ${weekRows}
+          </div>
+        </section>
+        <section class="expected-roster-section">
+          <div class="expected-roster-section-heading">
+            <div>
+              <h4>Shift times</h4>
+              <p>Workdays use the default times above. Expand a week to customize individual days. A finish time earlier than the start time ends the next day.</p>
+            </div>
+          </div>
+          <div class="expected-roster-time-weeks">
+            <div id="expected-roster-time-weeks"></div>
+          </div>
+        </section>
+        <section class="expected-roster-section">
+          <div class="expected-roster-section-heading">
+            <div>
+              <h4>Assign staff</h4>
+              <p>Choose staff for this recurring roster. Search by name or email to narrow the list.</p>
+            </div>
+          </div>
+          <div class="expected-roster-technician-picker">
+            <div id="expected-roster-selected-technicians" class="expected-roster-selected-technicians"></div>
+            <label class="form-label" for="expected-roster-technician-search">Search staff</label>
+            <input class="form-input" id="expected-roster-technician-search" type="search" autocomplete="off" placeholder="Type a name or email">
+            <div id="expected-roster-technician-results" class="expected-roster-technician-results"></div>
+          </div>
+        </section>
+        <div id="expected-roster-error" class="expected-roster-error" role="alert" aria-live="polite"></div>
+      `;
+      renderShiftTimes();
+      initScheduleTimePickers(content);
+      renderTechnicianPicker();
+    }
+
+    renderEditor();
+    let paintingDays = false;
+    let paintingValue = false;
+    let activeDayPointerId = null;
+    let suppressDayClick = false;
+    const setDayValue = (dayElement, checked) => {
+      const input = dayElement?.querySelector('input[data-roster-week]');
+      if (!input) return;
+      const weekIndex = Number(input.dataset.rosterWeek);
+      const dayIndex = Number(input.dataset.rosterDay);
+      ensureWeekPatterns(weekIndex + 1);
+      input.checked = checked;
+      state.weekPatterns[weekIndex][dayIndex] = checked;
+      if (checked && !state.weekShiftTimes[weekIndex][dayIndex]) {
+        state.weekShiftTimes[weekIndex][dayIndex] = {
+          startTime: state.defaultStartTime,
+          endTime: state.defaultEndTime
+        };
+      }
+      dayElement.classList.toggle('is-active', checked);
+      renderShiftTimes();
+    };
+    content.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.pointerType === 'touch') return;
+      const dayElement = event.target.closest('.expected-roster-day');
+      const input = dayElement?.querySelector('input[data-roster-week]');
+      if (!input) return;
+      event.preventDefault();
+      paintingDays = true;
+      activeDayPointerId = event.pointerId;
+      paintingValue = !input.checked;
+      suppressDayClick = true;
+      setDayValue(dayElement, paintingValue);
+      dayElement.closest('.expected-roster-weeks').setPointerCapture(event.pointerId);
+    });
+    content.addEventListener('pointermove', event => {
+      if (!paintingDays || event.pointerId !== activeDayPointerId) return;
+      const dayElement = document.elementFromPoint(event.clientX, event.clientY)?.closest('.expected-roster-day');
+      if (dayElement) setDayValue(dayElement, paintingValue);
+    });
+    const stopPaintingDays = event => {
+      if (!paintingDays || event.pointerId !== activeDayPointerId) return;
+      paintingDays = false;
+      activeDayPointerId = null;
+      window.setTimeout(() => { suppressDayClick = false; }, 0);
+    };
+    content.addEventListener('pointerup', stopPaintingDays);
+    content.addEventListener('pointercancel', stopPaintingDays);
+    content.addEventListener('click', event => {
+      const addButton = event.target.closest('[data-add-roster-technician]');
+      if (addButton) {
+        const id = addButton.dataset.addRosterTechnician;
+        state.technicianIds = [...new Set([...state.technicianIds, id])];
+        const search = content.querySelector('#expected-roster-technician-search');
+        if (search) search.value = '';
+        renderTechnicianPicker();
+        const error = content.querySelector('#expected-roster-error');
+        if (error) error.textContent = '';
+        return;
+      }
+      const removeButton = event.target.closest('[data-remove-roster-technician]');
+      if (removeButton) {
+        const id = removeButton.dataset.removeRosterTechnician;
+        state.technicianIds = state.technicianIds.filter(technicianId => technicianId !== id);
+        renderTechnicianPicker();
+        const error = content.querySelector('#expected-roster-error');
+        if (error) error.textContent = '';
+        return;
+      }
+      if (suppressDayClick && event.detail > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+    content.addEventListener('input', event => {
+      if (event.target.id === 'expected-roster-name') state.name = event.target.value;
+      if (event.target.id === 'expected-roster-technician-search') renderTechnicianPicker();
+      const error = content.querySelector('#expected-roster-error');
+      if (error) error.textContent = '';
+    });
+    content.addEventListener('change', event => {
+      const target = event.target;
+      if (target.id === 'expected-roster-template') {
+        const roster = savedRosters.find(item => String(item.id) === target.value);
+        state = roster ? stateFromRoster(roster) : createNewState();
+        renderEditor();
+      } else if (target.id === 'expected-roster-start') {
+        state.startDate = target.value;
+        renderEditor();
+      } else if (target.id === 'expected-roster-repeat-weeks') {
+        state.repeatEveryWeeks = target.value;
+        renderEditor();
+      } else if (target.id === 'expected-roster-default-start') {
+        syncDefaultTime('start', target.value);
+      } else if (target.id === 'expected-roster-default-end') {
+        syncDefaultTime('end', target.value);
+      } else if (target.matches('[data-roster-time-kind]')) {
+        const weekIndex = Number(target.dataset.rosterTimeWeek);
+        const dayIndex = Number(target.dataset.rosterTimeDay);
+        ensureWeekPatterns(weekIndex + 1);
+        if (!state.weekShiftTimes[weekIndex][dayIndex]) {
+          state.weekShiftTimes[weekIndex][dayIndex] = {
+            startTime: state.defaultStartTime,
+            endTime: state.defaultEndTime
+          };
+        }
+        const property = target.dataset.rosterTimeKind === 'start' ? 'startTime' : 'endTime';
+        state.weekShiftTimes[weekIndex][dayIndex][property] = target.value;
+      } else if (target.matches('[data-roster-week]')) {
+        const weekIndex = Number(target.dataset.rosterWeek);
+        const dayIndex = Number(target.dataset.rosterDay);
+        ensureWeekPatterns(weekIndex + 1);
+        setDayValue(target.closest('.expected-roster-day'), target.checked);
+      }
+      const error = content.querySelector('#expected-roster-error');
+      if (error) error.textContent = '';
+    });
+
+    showModal({
+      title: 'Expected Work Hours',
+      content,
+      size: 'modal-xl',
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary' },
+        {
+          label: 'Save roster',
+          className: 'btn-primary',
+          onClick: async close => {
+            const error = content.querySelector('#expected-roster-error');
+            const fail = (message, toastMessage = message) => {
+              if (error) error.textContent = message;
+              showToast(toastMessage, 'error');
+            };
+            const rosterName = String(state.name || '').trim();
+            const startDate = state.startDate;
+            const repeatEveryWeeks = Number(state.repeatEveryWeeks);
+            const defaultStartTime = syncDefaultTime(
+              'start', content.querySelector('#expected-roster-default-start')?.value
+            );
+            const defaultEndTime = syncDefaultTime(
+              'end', content.querySelector('#expected-roster-default-end')?.value
+            );
+            const shiftHours = getExpectedRosterShiftHours(defaultStartTime, defaultEndTime);
+            const weekCount = weeksForState().length;
+            const weekPatterns = state.weekPatterns.slice(0, weekCount);
+            const weekShiftTimes = weekPatterns.map((week, weekIndex) =>
+              EXPECTED_ROSTER_DAYS.map((_, dayIndex) => {
+                if (!week[dayIndex]) return null;
+                const times = state.weekShiftTimes[weekIndex]?.[dayIndex] || {
+                  startTime: defaultStartTime,
+                  endTime: defaultEndTime
+                };
+                const startTime = normalizeExpectedRosterTime(times.startTime);
+                const endTime = normalizeExpectedRosterTime(times.endTime);
+                return startTime && endTime ? { startTime, endTime } : null;
+              })
+            );
+            const technicianIds = [...new Set(state.technicianIds.map(String))];
+            if (!rosterName) return fail('Enter a name for this roster.');
+            if (!isMondayDateKey(startDate)) return fail('Choose a valid Monday start date.');
+            if (!Number.isInteger(repeatEveryWeeks) || repeatEveryWeeks < 1 || repeatEveryWeeks > MAX_EXPECTED_ROSTER_REPEAT_WEEKS) {
+              return fail(`Set the recurring interval to between 1 and ${MAX_EXPECTED_ROSTER_REPEAT_WEEKS} full weeks.`);
+            }
+            if (weekCount !== repeatEveryWeeks) return fail('The recurring week pattern is invalid. Check the repeat interval.');
+            if (!defaultStartTime || !defaultEndTime || !Number.isFinite(shiftHours) || shiftHours <= 0 || shiftHours > 24) {
+              return fail('Choose valid default start and finish times.');
+            }
+            if (!weekPatterns.some(week => week.some(Boolean))) return fail('Select at least one work day.');
+            const invalidDayTime = weekPatterns.some((week, weekIndex) =>
+              week.some((selected, dayIndex) => selected && !weekShiftTimes[weekIndex]?.[dayIndex])
+            );
+            if (invalidDayTime) return fail('Choose valid start and finish times for each selected workday.');
+
+            let conflicts;
+            try {
+              conflicts = findExpectedRosterConflicts(
+                savedRosters, technicianIds, startDate, repeatEveryWeeks, weekPatterns, state.rosterId || null
+              );
+            } catch {
+              return fail('The repeat interval or start date is invalid.');
+            }
+            if (conflicts.length) {
+              const names = new Map(selectableTechnicians.map(tech => [String(tech.id), tech.name || 'Staff member']));
+              const examples = conflicts.slice(0, 3).map(conflict =>
+                `${names.get(conflict.technicianId) || 'Staff member'} · ${conflict.date} (${conflict.rosterName})`
+              );
+              return fail(
+                `This recurring assignment overlaps another roster: ${examples.join('; ')}${conflicts.length > examples.length ? `; and ${conflicts.length - examples.length} more` : ''}.`,
+                'This recurring assignment overlaps another expected roster.'
+              );
+            }
+
+            const roster = {
+              name: rosterName,
+              startDate,
+              repeatEveryWeeks,
+              weekPatterns,
+              defaultStartTime,
+              defaultEndTime,
+              weekShiftTimes,
+              shiftHours,
+              technicianIds
+            };
+            const saveResult = state.rosterId
+              ? await store.update('expectedWorkRosters', state.rosterId, roster)
+              : store.create('expectedWorkRosters', roster);
+            const saved = saveResult?.record || saveResult;
+            if (saveResult?.ok === false) {
+              return fail('The roster could not be saved. Check your access and try again.');
+            }
+            if (!saved || !store.getById('expectedWorkRosters', saved.id)) {
+              return fail('The roster could not be saved. Check your access and try again.');
+            }
+            showToast('Expected work roster saved.', 'success');
+            close();
+            render();
+          }
+        }
+      ]
+    });
+  }
+
   function render() {
     try {
       if (nowMarkerTimer) { clearInterval(nowMarkerTimer); nowMarkerTimer = null; }
+      if (attendanceTimer) { clearInterval(attendanceTimer); attendanceTimer = null; }
       saveScroll();
       technicians = getTechnicians();
 
@@ -991,6 +1550,36 @@ export function renderScheduleView(container) {
 
     const blocks = getScheduleBlocks();
     const visibleTechs = technicians.filter(t => visibleTechIds.has(t.id));
+    const expectedWorkRosters = store.getAll('expectedWorkRosters') || [];
+    const rosterBandsByDate = new Map();
+    const scheduleDateKey = date => (
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    );
+    const getRosterShiftBands = dateKey => {
+      if (!rosterBandsByDate.has(dateKey)) {
+        rosterBandsByDate.set(dateKey, getExpectedRosterShiftBandsForDay(expectedWorkRosters, dateKey));
+      }
+      return rosterBandsByDate.get(dateKey);
+    };
+    const formatRosterBandTime = minutes => (
+      `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+    );
+    const renderRosterShiftMarkers = (tech, dateKey) => getRosterShiftBands(dateKey)
+      .filter(band => String(band.technicianId) === String(tech.id))
+      .map(band => {
+        const timeLabel = band.continuesFromPreviousDay
+          ? `Continuing until ${formatRosterBandTime(band.endMinutes)}`
+          : band.continuesIntoNextDay
+            ? `${formatRosterBandTime(band.startMinutes)} through midnight`
+            : `${formatRosterBandTime(band.startMinutes)}–${formatRosterBandTime(band.endMinutes)}`;
+        const description = `Rostered shift${band.rosterName ? ` · ${band.rosterName}` : ''} · ${timeLabel}`;
+        return `
+          <div class="schedule-roster-shift-marker" role="img" aria-label="${escapeHTML(description)}" title="${escapeHTML(description)}"
+            style="top:${(band.startMinutes / 60) * SCHEDULE_HOUR_HEIGHT}px;height:${((band.endMinutes - band.startMinutes) / 60) * SCHEDULE_HOUR_HEIGHT}px;--sched-roster-color:${escapeHTML(tech.color || '#FF5C00')}">
+            <span class="schedule-roster-shift-marker-line"></span>
+            ${band.continuesFromPreviousDay ? '' : '<span class="material-icons-outlined schedule-roster-shift-icon" aria-hidden="true">schedule</span>'}
+          </div>`;
+      }).join('');
 
     // Clock in/out attendance state for the current user.
     const activeClock = getActiveClock(currentUser.id);
@@ -998,31 +1587,34 @@ export function renderScheduleView(container) {
     const breakState = getBreakState(currentUser.id);
     const isOnBreak = breakState.onBreak;
 
-    // Presence for the side panel. Derived from `technicians` (already scoped to the
+    // Attendance for the side panel. Derived from `technicians` (already scoped to the
     // company) rather than scanning the timeClocks collection globally, so it can't
-    // leak between companies. Ordered by who arrived first.
-    const onSite = technicians
-      .map(t => ({ tech: t, clock: getClockStatusForToday(t.id) }))
+    // leak between companies. Currently clocked-in crew are ordered by arrival time.
+    const today = todayLocalISO();
+    const attendance = technicians
+      .map(tech => ({ tech, clock: getClockStatusForToday(tech.id), state: getBreakState(tech.id) }));
+    const clockedIn = attendance
       .filter(p => p.clock.status === 'in')
       .sort((a, b) => new Date(a.clock.clockInAt) - new Date(b.clock.clockInAt));
 
-    // Expected on site = rostered onto work today and not turned up at all. Leave,
-    // blockouts and meetings aren't work, so they raise no expectation; the roster never
-    // supplies hours, it only tells us somebody should have arrived. Roster and session
-    // resolution live in payrollExceptions so this panel, the hours grid and the pay run
-    // can't disagree about who was expected or who worked.
-    const today = todayLocalISO();
+    // Only show rostered staff after their shift start and arrival grace period.
+    // Staff who clocked out remain in the separate clocked-out group.
+    const rosteredIds = new Set(getRosterForDay(today).keys());
     const notArrivedIds = new Set(getNotArrived(today, technicians.map(t => t.id)));
-    const expectedNotIn = technicians.filter(t => notArrivedIds.has(String(t.id)));
+    const notClockedIn = technicians
+      .filter(t => rosteredIds.has(String(t.id)) && notArrivedIds.has(String(t.id)))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
-    // Crew who are on site but on a break. They aren't clocked in, so they'd otherwise
-    // vanish from a panel titled "On Site" — which would make it lie by omission for
-    // dispatch. getBreakState returns false for anyone clocked in, so the two lists
-    // can't overlap.
-    const onBreakPeople = technicians
-      .map(t => ({ tech: t, state: getBreakState(t.id) }))
-      .filter(p => p.state.onBreak);
-    const onSiteTotal = onSite.length + onBreakPeople.length;
+    // A break is a completed clock session rather than a missing arrival. Keep those
+    // people visible between the active-clock and not-clocked-in groups.
+    const onBreakPeople = attendance
+      .filter(p => p.state.onBreak && todayLocalISO(new Date(p.state.breakStartedAt)) === today);
+    const onBreakIds = new Set(onBreakPeople.map(p => String(p.tech.id)));
+    const clockedOut = attendance
+      .filter(p => rosteredIds.has(String(p.tech.id))
+        && p.clock.status === 'out'
+        && !onBreakIds.has(String(p.tech.id)))
+      .sort((a, b) => new Date(a.clock.clockOutAt) - new Date(b.clock.clockOutAt));
 
     // SUCCESSFUL RENDER LOG HOOK
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1119,18 +1711,32 @@ export function renderScheduleView(container) {
                 <span style="position:absolute; top:-4px; right:-4px; background:var(--color-primary); color:white; font-size:9px; border-radius:50%; width:14px; height:14px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:1.5px solid var(--content-bg); font-family:var(--font-family); line-height:1; box-sizing:border-box;">${visibleTechIds.size}</span>
               </button>
               ${isTechsPanelOpen ? `
-                <div id="tech-filter-dropdown" class="sidebar-collapsed-flyout" style="position:absolute; top:32px; left:0; width:240px; z-index:var(--z-dropdown); display:flex; flex-direction:column; padding:12px; gap:8px;">
+                <div id="tech-filter-dropdown" class="sidebar-collapsed-flyout" style="position:absolute; top:32px; left:0; width:260px; z-index:var(--z-dropdown); display:flex; flex-direction:column; padding:12px; gap:8px;">
                   <div style="font-size:11px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:4px;">Toggle Visibility</div>
-                  ${technicians.map(t => `
-                    <label style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer; padding:4px 0;">
-                      <input type="checkbox" class="tech-visibility-checkbox" value="${t.id}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
-                      <div style="width:10px; height:10px; border-radius:50%; background:${escapeHTML(t.color)};"></div>
-                      <span style="color:var(--text-primary); font-weight:500;">${escapeHTML(t.name)}</span>
-                    </label>
-                  `).join('')}
+                  <input id="tech-filter-search" class="form-input" type="search" placeholder="Search staff names..." aria-label="Search staff names" value="${escapeHTML(techFilterSearchQuery)}" style="width:100%;height:32px;">
+                  <select id="tech-filter-roster" class="form-select" aria-label="Filter staff by roster" style="width:100%;height:32px;">
+                    <option value="">All rosters</option>
+                    ${expectedWorkRosters.map(roster => `<option value="${escapeHTML(String(roster.id))}" ${String(roster.id) === techFilterRosterId ? 'selected' : ''}>${escapeHTML(roster.name || 'Unnamed roster')}</option>`).join('')}
+                  </select>
+                  <div class="tech-filter-staff-list" style="max-height:220px;overflow-y:auto;">
+                    ${technicians.map(t => `
+                      <label class="tech-filter-staff-row" data-tech-filter-id="${escapeHTML(String(t.id))}" data-tech-filter-name="${escapeHTML(String(t.name || '').toLocaleLowerCase())}" style="display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); cursor:pointer; padding:4px 0;">
+                        <input type="checkbox" class="tech-visibility-checkbox" value="${escapeHTML(String(t.id))}" ${visibleTechIds.has(t.id) ? 'checked' : ''}>
+                        <div style="width:10px; height:10px; border-radius:50%; background:${escapeHTML(t.color)};flex-shrink:0;"></div>
+                        <span style="color:var(--text-primary); font-weight:500;">${escapeHTML(t.name)}</span>
+                      </label>
+                    `).join('')}
+                    <div id="tech-filter-empty" style="display:none;padding:8px 0;font-size:var(--font-size-sm);color:var(--text-tertiary);">No staff match these filters.</div>
+                  </div>
                 </div>
               ` : ''}
             </div>
+          ` : ''}
+
+          ${canManageExpectedRosters ? `
+            <button class="btn-icon expected-hours-launch" id="btn-expected-hours" type="button" title="Manage expected work hours" aria-label="Manage expected work hours">
+              <span class="material-icons-outlined" aria-hidden="true">event_repeat</span>
+            </button>
           ` : ''}
         </div>
 
@@ -1189,7 +1795,7 @@ export function renderScheduleView(container) {
                     <!-- Hours Column (Sticky Left) -->
                     <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                       ${hours.map(h => `
-                        <div style="height:32px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
+                        <div style="height:${SCHEDULE_HOUR_HEIGHT}px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
                           ${h.toString().padStart(2, '0')}:00
                         </div>
                       `).join('')}
@@ -1199,9 +1805,11 @@ export function renderScheduleView(container) {
                     <!-- Technician Columns for this Day -->
                     ${visibleTechs.map((tech) => {
         const techBlocks = blocks.filter(b => b.technicianId === tech.id);
+        const dateKey = scheduleDateKey(day);
         return `
-                        <div class="schedule-day-col${weekend ? ' is-weekend' : ''}${visibleTechIds.size > 1 ? ' has-tech-tint' : ''}" style="--sched-tech-color:${escapeHTML(tech.color || '#FF5C00')};position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
-                          ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                        <div class="schedule-day-col has-tech-tint${weekend ? ' is-weekend' : ''}" style="--sched-tech-color:${escapeHTML(tech.color || '#FF5C00')};position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
+                          ${hours.map(h => `<div class="schedule-hour-slot" style="height:${SCHEDULE_HOUR_HEIGHT}px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                          ${renderRosterShiftMarkers(tech, dateKey)}
                           ${renderBlocks(techBlocks, dayIdx)}
                           ${isToday ? nowMarkerHTML() : ''}
                         </div>
@@ -1235,7 +1843,7 @@ export function renderScheduleView(container) {
                 <!-- Hours Column (Sticky Left) -->
                 <div style="background:var(--card-bg);position:sticky;left:0;z-index:2;border-right:1px solid var(--border-color)">
                   ${hours.map(h => `
-                    <div style="height:32px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
+                    <div style="height:${SCHEDULE_HOUR_HEIGHT}px;border-bottom:1px solid var(--border-color);padding:2px 4px;font-size:10px;color:var(--text-tertiary);text-align:right;display:flex;align-items:flex-start;justify-content:flex-end">
                       ${h.toString().padStart(2, '0')}:00
                     </div>
                   `).join('')}
@@ -1247,9 +1855,11 @@ export function renderScheduleView(container) {
       const tech = technicians.find(t => t.id === [...visibleTechIds][0]);
       const techBlocks = blocks.filter(b => b.technicianId === tech.id);
       const isToday = day.toDateString() === new Date().toDateString();
+      const dateKey = scheduleDateKey(day);
       return `
-                    <div class="schedule-day-col${isWeekendDay(day) ? ' is-weekend' : ''}" style="position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${days[dayIdx].getFullYear()}-${(days[dayIdx].getMonth() + 1).toString().padStart(2, '0')}-${days[dayIdx].getDate().toString().padStart(2, '0')}">
-                      ${hours.map(h => `<div class="schedule-hour-slot" style="height:32px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                    <div class="schedule-day-col has-tech-tint${isWeekendDay(day) ? ' is-weekend' : ''}" style="--sched-tech-color:${escapeHTML(tech.color || '#FF5C00')};position:relative;border-right:1px solid var(--border-color)" data-tech="${tech.id}" data-day="${dayIdx}" data-date="${dateKey}">
+                      ${hours.map(h => `<div class="schedule-hour-slot" style="height:${SCHEDULE_HOUR_HEIGHT}px;border-bottom:1px solid var(--border-color)" data-hour="${h}"></div>`).join('')}
+                      ${renderRosterShiftMarkers(tech, dateKey)}
                       ${renderBlocks(techBlocks, dayIdx)}
                     </div>
                   `;
@@ -1260,35 +1870,72 @@ export function renderScheduleView(container) {
           </div>
 
           ${canSeeCrew ? `
-            <!-- Presence panel: who is on site right now. Ticking a name shows their
-                 column in the grid, clicking a name scrolls to it. -->
-            <aside id="presence-panel" style="border-left:1px solid var(--border-color);background:var(--card-bg);display:flex;flex-direction:column;overflow:hidden;">
-              <div style="padding:10px 12px;border-bottom:1px solid var(--border-color);flex-shrink:0;">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                  <span style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.04em;">On Site</span>
-                  <span style="background:${onSiteTotal ? 'var(--color-primary)' : 'transparent'};color:${onSiteTotal ? '#fff' : 'var(--text-tertiary)'};border:1px solid ${onSiteTotal ? 'transparent' : 'var(--border-color)'};font-size:10px;font-weight:700;border-radius:9px;min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;">${onSiteTotal}</span>
+            <!-- Attendance panel: active clocks first, missing rostered arrivals last.
+                 Ticking a name shows their column; clicking a name scrolls to it. -->
+            <aside id="presence-panel" class="schedule-presence-panel${isPresencePanelCollapsed ? ' is-collapsed' : ''}">
+              <div class="schedule-presence-header">
+                <div class="schedule-presence-header-row">
+                  <span class="schedule-presence-title">Attendance</span>
+                  <span class="schedule-presence-count" title="Scheduled staff not currently clocked in" style="background:${notClockedIn.length + clockedOut.length ? 'color-mix(in srgb, var(--color-warning) 14%, var(--card-bg))' : 'transparent'};color:${notClockedIn.length + clockedOut.length ? 'var(--color-warning)' : 'var(--text-tertiary)'};border:1px solid ${notClockedIn.length + clockedOut.length ? 'var(--color-warning)' : 'var(--border-color)'};">${notClockedIn.length + clockedOut.length}</span>
+                  <button
+                    class="schedule-presence-toggle"
+                    id="btn-toggle-presence"
+                    type="button"
+                    aria-label="${isPresencePanelCollapsed ? 'Expand' : 'Collapse'} attendance panel"
+                    aria-expanded="${!isPresencePanelCollapsed}"
+                    aria-controls="presence-list"
+                    title="${isPresencePanelCollapsed ? 'Expand' : 'Collapse'} attendance panel"
+                  >
+                    <span class="material-icons-outlined" aria-hidden="true">${isPresencePanelCollapsed ? 'chevron_left' : 'chevron_right'}</span>
+                  </button>
                 </div>
-                ${expectedNotIn.length ? `
-                  <div title="${escapeHTML(expectedNotIn.map(t => t.name).join(', '))}" style="margin-top:7px;display:flex;align-items:flex-start;gap:4px;font-size:10px;line-height:1.35;color:var(--color-warning);cursor:help;">
-                    <span class="material-icons-outlined" style="font-size:13px;flex-shrink:0;">error_outline</span>
-                    <span>${expectedNotIn.length} expected, not on site</span>
-                  </div>
-                ` : ''}
               </div>
-              <div style="flex:1;min-height:0;overflow-y:auto;">
-                ${(onSite.length || onBreakPeople.length) ? `
-                  ${onSite.map(({ tech, clock }) => presenceRowHTML(
+              <div id="presence-list" class="schedule-presence-content">
+                <section class="schedule-presence-group" aria-label="Clocked in">
+                  <div class="schedule-presence-group-header">
+                    <span>Clocked In</span>
+                    <span class="schedule-presence-group-count">${clockedIn.length}</span>
+                  </div>
+                  ${clockedIn.length ? clockedIn.map(({ tech, clock }) => presenceRowHTML(
                     tech,
                     `${formatDuration(clock.durationMs)} · from ${new Date(clock.clockInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-                  )).join('')}
-                  ${onBreakPeople.map(({ tech, state }) => presenceRowHTML(
-                    tech,
-                    `On break · ${formatDuration(state.breakDurationMs)}`,
-                    { onBreak: true }
-                  )).join('')}
-                ` : `
-                  <div style="padding:16px 12px;font-size:var(--font-size-sm);color:var(--text-tertiary);text-align:center;">No one is on site.</div>
-                `}
+                  )).join('') : `
+                    <div class="schedule-presence-empty">No one clocked in.</div>
+                  `}
+                  ${onBreakPeople.length ? `
+                    <div class="schedule-presence-subheader">On Break</div>
+                    ${onBreakPeople.map(({ tech, state }) => presenceRowHTML(
+                      tech,
+                      `On break · ${formatDuration(state.breakDurationMs)}`,
+                      { onBreak: true }
+                    )).join('')}
+                  ` : ''}
+                </section>
+                <section class="schedule-presence-group schedule-presence-group-absent" aria-label="Not clocked in">
+                  <div class="schedule-presence-group-header">
+                    <span>Not Clocked In</span>
+                    <span class="schedule-presence-group-count">${notClockedIn.length + clockedOut.length}</span>
+                  </div>
+                  ${notClockedIn.length ? `
+                    <div class="schedule-presence-subheader">Not Clocked In Yet</div>
+                    ${notClockedIn.map(tech => presenceRowHTML(
+                      tech,
+                      'Scheduled today · Has not clocked in',
+                      { notOnClock: true }
+                    )).join('')}
+                  ` : ''}
+                  ${clockedOut.length ? `
+                    <div class="schedule-presence-subheader">Clocked Out</div>
+                    ${clockedOut.map(({ tech, clock }) => presenceRowHTML(
+                      tech,
+                      `Scheduled work today · Clocked out ${new Date(clock.clockOutAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
+                      { notOnClock: true }
+                    )).join('')}
+                  ` : ''}
+                  ${notClockedIn.length || clockedOut.length ? '' : `
+                    <div class="schedule-presence-empty">Everyone rostered is clocked in or on break.</div>
+                  `}
+                </section>
               </div>
             </aside>
           ` : ''}
@@ -1305,6 +1952,23 @@ export function renderScheduleView(container) {
     updateSelectionBar();
     restoreScroll();
     startNowMarker();
+    if (canSeeCrew) {
+      const renderedTechnicianIds = technicians.map(tech => tech.id);
+      const renderedNotArrivedIds = new Set(notClockedIn.map(tech => String(tech.id)));
+      attendanceTimer = setInterval(() => {
+        if (!document.getElementById('schedule-view')) {
+          clearInterval(attendanceTimer);
+          attendanceTimer = null;
+          return;
+        }
+        const currentToday = todayLocalISO();
+        const currentNotArrivedIds = new Set(getNotArrived(currentToday, renderedTechnicianIds));
+        const changed = currentToday !== today
+          || currentNotArrivedIds.size !== renderedNotArrivedIds.size
+          || [...currentNotArrivedIds].some(id => !renderedNotArrivedIds.has(id));
+        if (changed) render();
+      }, 30000);
+    }
     renderSearchResultsList();
     } catch (err) {
       console.error("RENDER ERROR:", err);
@@ -1369,10 +2033,14 @@ export function renderScheduleView(container) {
     return [...selectedScheduleIds].map(id => resolveScheduleOrLegacy(id)).filter(Boolean);
   }
 
-  function bulkUnschedule() {
+  async function bulkUnschedule() {
     const scheds = selectedSchedules();
     if (!scheds.length) return;
-    if (!window.confirm(`Unschedule ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}?`)) return;
+    const confirmed = await showConfirm(
+      `Unschedule ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}?`,
+      { title: 'Unschedule Allocations', confirmLabel: 'Unschedule', danger: true }
+    );
+    if (!confirmed) return;
     const jobIds = new Set();
     scheds.forEach(s => { jobIds.add(s.jobId); store.delete('schedule', s.id); });
     jobIds.forEach(jid => syncJobWithSchedules(jid));
@@ -1750,7 +2418,7 @@ export function renderScheduleView(container) {
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
               <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
-              <input type="time" class="form-input" name="startTime" value="08:00" required />
+              <input type="text" class="form-input" name="startTime" data-schedule-time-picker value="08:00" required />
             </div>
             <div class="form-group">
               <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
@@ -1839,6 +2507,7 @@ export function renderScheduleView(container) {
 
     const form = document.getElementById('drawer-add-job-form');
     if (form) {
+      initScheduleTimePickers(form);
       const jobSelect = form.querySelector('select[name="jobId"]');
       const taskSelect = form.querySelector('select[name="taskId"]');
 
@@ -1920,7 +2589,7 @@ export function renderScheduleView(container) {
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
               <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
-              <input type="time" class="form-input" name="startTime" value="08:00" required />
+              <input type="text" class="form-input" name="startTime" data-schedule-time-picker value="08:00" required />
             </div>
             <div class="form-group">
               <label class="form-label">Hours / Day <span style="color:var(--color-danger)">*</span></label>
@@ -2007,6 +2676,7 @@ export function renderScheduleView(container) {
         }
       ]
     });
+    initScheduleTimePickers(document.getElementById('drawer-add-leave-form'));
   }
 
   function handleAddBlockout() {
@@ -2029,7 +2699,7 @@ export function renderScheduleView(container) {
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
               <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
-              <input type="time" class="form-input" name="startTime" value="12:00" required />
+              <input type="text" class="form-input" name="startTime" data-schedule-time-picker value="12:00" required />
             </div>
             <div class="form-group">
               <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
@@ -2085,6 +2755,7 @@ export function renderScheduleView(container) {
         }
       ]
     });
+    initScheduleTimePickers(document.getElementById('drawer-add-blockout-form'));
   }
 
   function handleAddMeeting() {
@@ -2107,7 +2778,7 @@ export function renderScheduleView(container) {
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
             <div class="form-group">
               <label class="form-label">Start Time <span style="color:var(--color-danger)">*</span></label>
-              <input type="time" class="form-input" name="startTime" value="09:00" required />
+              <input type="text" class="form-input" name="startTime" data-schedule-time-picker value="09:00" required />
             </div>
             <div class="form-group">
               <label class="form-label">Duration (Hours) <span style="color:var(--color-danger)">*</span></label>
@@ -2163,6 +2834,7 @@ export function renderScheduleView(container) {
         }
       ]
     });
+    initScheduleTimePickers(document.getElementById('drawer-add-meeting-form'));
   }
 
 
@@ -2369,6 +3041,11 @@ export function renderScheduleView(container) {
       handleClockToggle();
     });
 
+    container.querySelector('#btn-expected-hours')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openExpectedWorkRosterModal();
+    });
+
     container.querySelector('#btn-start-break')?.addEventListener('click', (e) => {
       e.stopPropagation();
       handleStartBreak();
@@ -2382,6 +3059,53 @@ export function renderScheduleView(container) {
     container.querySelector('#btn-end-shift')?.addEventListener('click', (e) => {
       e.stopPropagation();
       handleEndShiftFromBreak();
+    });
+
+    container.querySelector('#btn-toggle-presence')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isPresencePanelCollapsed = !isPresencePanelCollapsed;
+      render();
+    });
+
+    const applyTechFilterDropdownFilters = () => {
+      const expectedWorkRosters = store.getAll('expectedWorkRosters') || [];
+      const selectedRoster = expectedWorkRosters.find(roster => String(roster.id) === techFilterRosterId);
+      const rosterTechnicianIds = new Set((selectedRoster?.technicianIds || []).map(String));
+      let matchingStaffCount = 0;
+      container.querySelectorAll('.tech-filter-staff-row').forEach(row => {
+        const nameMatches = row.dataset.techFilterName.includes(techFilterSearchQuery.trim().toLocaleLowerCase());
+        const rosterMatches = !techFilterRosterId || rosterTechnicianIds.has(row.dataset.techFilterId);
+        const matches = nameMatches && rosterMatches;
+        row.style.display = matches ? 'flex' : 'none';
+        if (matches) matchingStaffCount += 1;
+      });
+      const emptyMessage = container.querySelector('#tech-filter-empty');
+      if (emptyMessage) emptyMessage.style.display = matchingStaffCount ? 'none' : 'block';
+    };
+    applyTechFilterDropdownFilters();
+
+    container.querySelector('#tech-filter-search')?.addEventListener('input', event => {
+      techFilterSearchQuery = event.target.value;
+      applyTechFilterDropdownFilters();
+    });
+
+    container.querySelector('#tech-filter-roster')?.addEventListener('change', event => {
+      techFilterRosterId = event.target.value;
+      const expectedWorkRosters = store.getAll('expectedWorkRosters') || [];
+      const selectedRoster = expectedWorkRosters.find(roster => String(roster.id) === techFilterRosterId);
+      if (selectedRoster) {
+        const rosterTechnicianIds = new Set((selectedRoster.technicianIds || []).map(String));
+        const rosterTechnicians = technicians
+          .filter(tech => rosterTechnicianIds.has(String(tech.id)))
+          .map(tech => String(tech.id));
+        if (rosterTechnicians.length) {
+          visibleTechIds = new Set(rosterTechnicians);
+          saveVisibleTechs();
+          render();
+          return;
+        }
+      }
+      applyTechFilterDropdownFilters();
     });
 
     container.querySelectorAll('.tech-visibility-checkbox').forEach(cb => {
@@ -3624,6 +4348,9 @@ export function renderScheduleView(container) {
       store.off('technicians', handleStoreChange);
       store.off('jobs', handleStoreChange);
       store.off('schedule', handleStoreChange);
+      store.off('timeClocks', handleStoreChange);
+      store.off('expectedWorkRosters', handleStoreChange);
+      store.off('expectedWorkRosterDismissals', handleStoreChange);
       document.getElementById('sched-selection-bar')?.remove();
       return;
     }
@@ -3632,6 +4359,9 @@ export function renderScheduleView(container) {
   store.on('technicians', handleStoreChange);
   store.on('jobs', handleStoreChange);
   store.on('schedule', handleStoreChange);
+  store.on('timeClocks', handleStoreChange);
+  store.on('expectedWorkRosters', handleStoreChange);
+  store.on('expectedWorkRosterDismissals', handleStoreChange);
 
   render();
 
