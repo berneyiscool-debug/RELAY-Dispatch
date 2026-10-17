@@ -1576,8 +1576,6 @@ export function renderScheduleView(container) {
         return `
           <div class="schedule-roster-shift-marker" role="img" aria-label="${escapeHTML(description)}" title="${escapeHTML(description)}"
             style="top:${(band.startMinutes / 60) * SCHEDULE_HOUR_HEIGHT}px;height:${((band.endMinutes - band.startMinutes) / 60) * SCHEDULE_HOUR_HEIGHT}px;--sched-roster-color:${escapeHTML(tech.color || '#FF5C00')}">
-            <span class="schedule-roster-shift-marker-line"></span>
-            ${band.continuesFromPreviousDay ? '' : '<span class="material-icons-outlined schedule-roster-shift-icon" aria-hidden="true">schedule</span>'}
           </div>`;
       }).join('');
 

@@ -1895,38 +1895,28 @@ select.badge {
 .schedule-day-col.is-weekend.has-tech-tint .schedule-hour-slot {
   background-color: color-mix(in srgb, var(--sched-tech-color) 4%, var(--sched-weekend-bg));
 }
+/* Rostered shift. Drawn as a band across the column rather than a line with a badge: the
+   shift is a window of time, so it fills that window and lets the grid's own hour rules
+   show through. Blocks (z-index 1, opaque) cover the part of the day that is already
+   booked, which leaves the band reading as the rostered time still open — the thing a
+   dispatcher is actually scanning for. The 2px inset rail keeps the shift's start edge
+   visible even where the column tint barely differs from the band. */
 .schedule-roster-shift-marker {
   position: absolute;
-  left: 5px;
-  width: 14px;
+  left: 0;
+  right: 0;
   z-index: 0;
   pointer-events: auto;
   cursor: help;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--sched-roster-color) 7%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--sched-roster-color) 20%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--sched-roster-color) 20%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--sched-roster-color) 55%, transparent);
+  transition: background var(--transition-fast);
 }
-.schedule-roster-shift-marker-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 6px;
-  width: 2px;
-  background: color-mix(in srgb, var(--sched-roster-color) 78%, transparent);
-}
-.schedule-roster-shift-icon {
-  position: absolute;
-  top: -7px;
-  left: 0;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--sched-roster-color);
-  background: color-mix(in srgb, var(--sched-roster-color) 12%, var(--bg-color));
-  font-size: 11px;
-}
-.schedule-day-col.is-weekend .schedule-roster-shift-icon {
-  background: color-mix(in srgb, var(--sched-roster-color) 12%, var(--sched-weekend-bg));
+.schedule-roster-shift-marker:hover {
+  background: color-mix(in srgb, var(--sched-roster-color) 11%, transparent);
 }
 .schedule-day-col.is-drop-target {
   background: rgba(27, 109, 224, 0.05);
