@@ -8,6 +8,9 @@
 
 import { showModal } from '../components/Modal.js';
 
+const pendingConfirmations = new Set();
+const pendingAlerts = new Set();
+
 // pre-line keeps the newlines some prompts rely on to separate a question from
 // its consequence; textContent escapes the message for free.
 function createMessageElement(message) {
@@ -58,7 +61,10 @@ export function showConfirm(message, options = {}) {
     danger = false,
   } = options;
 
-  return openMessageBox({
+  const key = JSON.stringify([message, title, confirmLabel, cancelLabel, danger]);
+  if (pendingConfirmations.has(key)) return Promise.resolve(false);
+
+  const confirmation = openMessageBox({
     title,
     message,
     actions: [
@@ -68,6 +74,8 @@ export function showConfirm(message, options = {}) {
     // Focus the safe choice for destructive prompts so a stray Enter can't delete.
     focusIndex: danger ? 0 : 1,
   });
+  pendingConfirmations.add(key);
+  return confirmation.finally(() => pendingConfirmations.delete(key));
 }
 
 /**
@@ -76,10 +84,15 @@ export function showConfirm(message, options = {}) {
 export function showAlert(message, options = {}) {
   const { title = 'Notice', okLabel = 'OK' } = options;
 
-  return openMessageBox({
+  const key = JSON.stringify([message, title, okLabel]);
+  if (pendingAlerts.has(key)) return Promise.resolve();
+
+  const alert = openMessageBox({
     title,
     message,
     actions: [{ label: okLabel, className: 'btn-primary' }],
     focusIndex: 0,
   });
+  pendingAlerts.add(key);
+  return alert.finally(() => pendingAlerts.delete(key));
 }

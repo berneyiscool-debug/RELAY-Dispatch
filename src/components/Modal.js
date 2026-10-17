@@ -4,7 +4,39 @@
 
 import { escapeHTML } from '../utils/security.js';
 
+const activeModals = new Map();
+
+function getContentKey(content) {
+  if (typeof content === 'string') return content;
+  if (!content) return '';
+
+  const fields = [...(content.querySelectorAll?.('input, textarea, select') || [])].map(field => ({
+    tag: field.tagName,
+    type: field.type,
+    name: field.name,
+    value: field.value,
+    checked: field.checked
+  }));
+
+  return JSON.stringify({
+    html: content.outerHTML || [...(content.childNodes || [])]
+      .map(node => node.outerHTML || node.textContent || '')
+      .join('') || content.textContent || '',
+    fields
+  });
+}
+
 export function showModal({ title, content, size = '', onClose, actions = [] }) {
+  const modalKey = JSON.stringify([
+    title,
+    size,
+    getContentKey(content),
+    actions.map(action => [action.label, action.className || 'btn-secondary'])
+  ]);
+  const existing = activeModals.get(modalKey);
+  if (existing?.overlay.isConnected) return existing;
+  if (existing) activeModals.delete(modalKey);
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
 
@@ -41,10 +73,19 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
   document.body.appendChild(overlay);
 
   // Close handlers
+  let closed = false;
+  let escHandler;
+  const handle = { close: null, modal, overlay };
   const close = () => {
+    if (closed) return;
+    closed = true;
     overlay.remove();
+    document.removeEventListener('keydown', escHandler);
+    if (activeModals.get(modalKey) === handle) activeModals.delete(modalKey);
     if (onClose) onClose();
   };
+  handle.close = close;
+  activeModals.set(modalKey, handle);
 
   modal.querySelector('.modal-close-btn').addEventListener('click', close);
   overlay.addEventListener('click', (e) => {
@@ -60,13 +101,12 @@ export function showModal({ title, content, size = '', onClose, actions = [] }) 
   });
 
   // ESC key
-  const escHandler = (e) => {
+  escHandler = (e) => {
     if (e.key === 'Escape') {
       close();
-      document.removeEventListener('keydown', escHandler);
     }
   };
   document.addEventListener('keydown', escHandler);
 
-  return { close, modal, overlay };
+  return handle;
 }
