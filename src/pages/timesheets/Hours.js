@@ -9,6 +9,8 @@
 //   Breaks  — the gap spent off the clock between sessions. A break is recorded by
 //             closing a session with status 'break', so the break itself is the gap to
 //             the next session, not that session's own duration.
+//   Expected — the saved roster's shift hours; shown for context, never added to worked
+//              or payable hours.
 //   Status  — whether the day's sessions are pending, approved, corrected or rejected
 //   Exceptions — derived from the roster, never stored (utils/payrollExceptions.js)
 //   Leave   — booked on the roster, decided here. Leave is not hours: the booking shows
@@ -51,6 +53,7 @@ const STATUS_BADGE = {
   adjusted: { label: 'Corrected', cls: 'badge-warning' },
   rejected: { label: 'Rejected', cls: 'badge-danger' },
   mixed: { label: 'Mixed', cls: 'badge-info' },
+  scheduled: { label: 'Scheduled', cls: 'badge-info' },
   'no-record': { label: 'No record', cls: 'badge-danger' }
 };
 
@@ -242,12 +245,15 @@ export function renderHoursView(container, params = {}) {
         const key = String(tech.id);
         const sessions = sessionsByTech.get(key) || [];
         const rosterRows = rosterByTech.get(key) || [];
+        const expectedHours = round2(rosterRows.reduce((sum, rosterRow) => (
+          sum + (Number(rosterRow.expectedHours) || 0)
+        ), 0));
         const leave = leaveByDay.get(`${key}|${date}`) || [];
         const exceptions = deriveExceptions(date, sessions, rosterRows, now);
         // A day earns a row when there is something to see: recorded time, a hole where
         // time was expected, or booked leave waiting on a decision. Quiet future days
         // stay out of the way.
-        if (sessions.length === 0 && exceptions.length === 0 && leave.length === 0) return;
+        if (sessions.length === 0 && exceptions.length === 0 && leave.length === 0 && expectedHours === 0) return;
 
         const { sorted, workedMs, breakMs } = dayTotals(sessions, now);
         const payableMs = sorted.reduce((sum, s) => sum + payableHours(s, now) * 3600000, 0);
@@ -264,11 +270,14 @@ export function renderHoursView(container, params = {}) {
           workedMs,
           breakMs,
           payableHours: round2(msToHours(payableMs)),
-          status: leaveOnly ? LEAVE_BADGE[decision] : dayStatus(sorted),
+          status: leaveOnly
+            ? LEAVE_BADGE[decision]
+            : (sorted.length === 0 && expectedHours > 0 ? STATUS_BADGE.scheduled : dayStatus(sorted)),
           exceptions,
           notes: correctionNotes(sorted),
           leave,
           leaveDecision: decision,
+          expectedHours,
           hasBlocking: exceptions.some(e => isBlocking(e.type))
         });
       });
@@ -326,10 +335,10 @@ export function renderHoursView(container, params = {}) {
   }
 
   function exportRows(list, filename) {
-    const csv = [['Date', 'Technician', 'Sessions', 'Clocked Hours', 'Break Hours', 'Counted Hours', 'Corrected Hours', 'Correction Reason', 'Status', 'Exceptions']];
+    const csv = [['Date', 'Technician', 'Sessions', 'Clocked Hours', 'Expected Hours', 'Break Hours', 'Counted Hours', 'Corrected Hours', 'Correction Reason', 'Status', 'Exceptions']];
     list.forEach(r => {
       const base = [r.date, r.tech.name || '', r.sessions.length, round2(msToHours(r.workedMs)),
-        round2(msToHours(r.breakMs)), r.payableHours, '', '', r.status.label,
+        r.expectedHours, round2(msToHours(r.breakMs)), r.payableHours, '', '', r.status.label,
         [...r.exceptions.map(e => e.type), ...(r.leave.length ? [`leave ${r.leaveDecision}`] : [])].join('; ')];
       if (r.notes.length === 0) {
         csv.push(base);
@@ -338,8 +347,8 @@ export function renderHoursView(container, params = {}) {
       // One line per correction so clocked and manual hours stay separable.
       r.notes.forEach((n, i) => {
         const line = i === 0 ? [...base] : base.map(() => '');
-        line[6] = n.hours != null ? n.hours : 0;
-        line[7] = n.note;
+        line[7] = n.hours != null ? n.hours : 0;
+        line[8] = n.note;
         csv.push(line);
       });
     });
@@ -691,7 +700,7 @@ export function renderHoursView(container, params = {}) {
       row = current;
       const now = new Date();
       const sessionsHTML = row.sessions.length === 0
-        ? `<tr><td colspan="6" class="text-tertiary" style="text-align:center; padding:14px;">${row.leave.length ? 'No sessions recorded — this day is booked leave.' : 'No sessions recorded on this day.'}</td></tr>`
+        ? `<tr><td colspan="6" class="text-tertiary" style="text-align:center; padding:14px;">${row.leave.length ? 'No sessions recorded — this day is booked leave.' : (row.expectedHours > 0 ? `No sessions recorded — ${escapeHTML(hoursLabel(row.expectedHours * 3600000))} expected.` : 'No sessions recorded on this day.')}</td></tr>`
         : row.sessions.map(s => {
           const link = mapsLink(s.clockInLocation);
           const status = STATUS_BADGE[s.approvalStatus || 'pending'] || STATUS_BADGE.pending;
@@ -737,6 +746,7 @@ export function renderHoursView(container, params = {}) {
         ${notesHTML}
         <div style="display:flex; gap:14px; font-size:11px; color:var(--text-secondary); margin-bottom:10px; flex-wrap:wrap;">
           <span>Worked <strong>${escapeHTML(formatDuration(row.workedMs))}</strong></span>
+          ${row.expectedHours > 0 ? `<span>Expected <strong>${escapeHTML(hoursLabel(row.expectedHours * 3600000))}</strong></span>` : ''}
           <span>Breaks <strong>${escapeHTML(formatDuration(row.breakMs))}</strong></span>
           ${row.leave.length ? `<span>Leave <strong>${escapeHTML(formatDuration(leaveMs(row.leave)))}</strong></span>` : ''}
           <span>Counted <strong>${row.payableHours}h</strong></span>
@@ -825,13 +835,14 @@ export function renderHoursView(container, params = {}) {
         // Widths are the columns' measured content needs — the header label plus the
         // widest cell — as shares of the table, so every value is legible in full at
         // the app's window size instead of being ellipsised.
-        { key: 'date', label: 'Date', render: (r) => escapeHTML(fmtDay(r.date)), getValue: (r) => r.date, width: '11.7%' },
-        { key: 'techName', label: 'Technician', render: (r) => escapeHTML(r.tech.name || '—'), getValue: (r) => (r.tech.name || '').toLowerCase(), width: '12.8%' },
-        { key: 'sessions', label: 'Sessions', render: sessionsCell, getValue: (r) => r.sessions.length, width: '30.5%' },
-        { key: 'worked', label: 'Worked', render: (r) => (r.workedMs > 0 ? `<span class="font-semibold">${hoursLabel(r.workedMs)}</span>` : hoursLabel(r.workedMs)), getValue: (r) => r.workedMs, width: '8.9%', align: 'right' },
-        { key: 'breaks', label: 'Breaks', render: (r) => hoursLabel(r.breakMs), getValue: (r) => r.breakMs, width: '8.3%', align: 'right' },
-        { key: 'status', label: 'Status', render: statusCell, getValue: (r) => r.status.label, width: '15.4%' },
-        { key: 'exceptions', label: 'Exceptions', render: exceptionsCell, getValue: (r) => (r.exceptions.length ? 1 : 0), width: '12.4%' }
+        { key: 'date', label: 'Date', render: (r) => escapeHTML(fmtDay(r.date)), getValue: (r) => r.date, width: '10%' },
+        { key: 'techName', label: 'Technician', render: (r) => escapeHTML(r.tech.name || '—'), getValue: (r) => (r.tech.name || '').toLowerCase(), width: '12%' },
+        { key: 'sessions', label: 'Sessions', render: sessionsCell, getValue: (r) => r.sessions.length, width: '28%' },
+        { key: 'worked', label: 'Worked', render: (r) => (r.workedMs > 0 ? `<span class="font-semibold">${hoursLabel(r.workedMs)}</span>` : hoursLabel(r.workedMs)), getValue: (r) => r.workedMs, width: '8%', align: 'right' },
+        { key: 'expected', label: 'Expected', render: (r) => r.expectedHours > 0 ? `<span data-tooltip="Expected work roster" data-tooltip-pos="left">${escapeHTML(hoursLabel(r.expectedHours * 3600000))}</span>` : '<span class="text-tertiary">—</span>', getValue: (r) => r.expectedHours, width: '8%', align: 'right' },
+        { key: 'breaks', label: 'Breaks', render: (r) => hoursLabel(r.breakMs), getValue: (r) => r.breakMs, width: '7%' , align: 'right' },
+        { key: 'status', label: 'Status', render: statusCell, getValue: (r) => r.status.label, width: '14%' },
+        { key: 'exceptions', label: 'Exceptions', render: exceptionsCell, getValue: (r) => (r.exceptions.length ? 1 : 0), width: '13%' }
       ],
       data: rows,
       getId: (r) => r.id,
@@ -865,12 +876,14 @@ export function renderHoursView(container, params = {}) {
     // contradict the pay run's own "still needs sign-off" count.
     const undecided = rows.reduce((n, r) => n + r.sessions.filter(s => (s.approvalStatus || 'pending') === 'pending').length, 0);
     const totalWorkedMs = rows.reduce((sum, r) => sum + r.workedMs, 0);
+    const totalExpectedHours = rows.reduce((sum, r) => sum + r.expectedHours, 0);
     const totalBreakMs = rows.reduce((sum, r) => sum + r.breakMs, 0);
     const foot = document.createElement('div');
     foot.style.cssText = 'padding:10px 16px; font-size:11px; color:var(--text-tertiary); display:flex; gap:14px; flex-wrap:wrap;';
     foot.innerHTML = `
       <span>${rows.length} day${rows.length === 1 ? '' : 's'} shown</span>
       <span>Worked ${formatDuration(totalWorkedMs)}</span>
+      ${totalExpectedHours > 0 ? `<span>Expected ${escapeHTML(hoursLabel(totalExpectedHours * 3600000))}</span>` : ''}
       <span>Breaks ${formatDuration(totalBreakMs)}</span>
       ${pendingLeave > 0 ? `<span style="color:var(--color-warning);">${pendingLeave} leave request${pendingLeave === 1 ? '' : 's'} awaiting a decision</span>` : ''}
       ${undecided > 0 ? `<span style="color:var(--color-warning);">${undecided} session${undecided === 1 ? '' : 's'} ${ctx.canApprove ? 'awaiting your decision' : 'still waiting on approval'}</span>` : ''}

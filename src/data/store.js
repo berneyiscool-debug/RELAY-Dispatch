@@ -51,6 +51,8 @@ const TABLE_MAP = {
   documents: 'documents',
   leads: 'leads',
   schedule: 'schedule',
+  expectedWorkRosters: 'expected_work_rosters',
+  expectedWorkRosterDismissals: 'expected_work_roster_dismissals',
   projects: 'projects',
   costCenters: 'cost_centers',
   emailLog: 'email_log',
@@ -584,6 +586,32 @@ const TABLE_COLUMNS = {
     "created_at",
     "updated_at"
   ],
+  expected_work_rosters: [
+    "id",
+    "company_id",
+    "name",
+    "start_date",
+    "repeat_every_weeks",
+    "week_patterns",
+    "default_start_time",
+    "default_end_time",
+    "week_shift_times",
+    "shift_hours",
+    "technician_ids",
+    "created_at",
+    "updated_at"
+  ],
+  expected_work_roster_dismissals: [
+    "id",
+    "company_id",
+    "roster_id",
+    "technician_id",
+    "date",
+    "reason",
+    "dismissed_by",
+    "created_at",
+    "updated_at"
+  ],
   email_log: [
     "id",
     "company_id",
@@ -846,7 +874,7 @@ class DataStore {
       }
 
       const dbName = this.getDBName();
-      const request = window.indexedDB.open(dbName, 8);
+      const request = window.indexedDB.open(dbName, 9);
 
       request.onerror = (e) => {
         console.error('IndexedDB open error:', e.target.error);
@@ -1904,6 +1932,23 @@ class DataStore {
       record.endDate = record.end_date;
       delete record.end_date;
     }
+    if (collection === 'expectedWorkRosters') {
+      if (record.repeat_every_weeks !== undefined) {
+        record.repeatEveryWeeks = parseInt(record.repeat_every_weeks, 10);
+        delete record.repeat_every_weeks;
+      }
+      if (record.week_patterns !== undefined) { record.weekPatterns = record.week_patterns; delete record.week_patterns; }
+      if (record.default_start_time !== undefined) { record.defaultStartTime = record.default_start_time; delete record.default_start_time; }
+      if (record.default_end_time !== undefined) { record.defaultEndTime = record.default_end_time; delete record.default_end_time; }
+      if (record.week_shift_times !== undefined) { record.weekShiftTimes = record.week_shift_times; delete record.week_shift_times; }
+      if (record.shift_hours !== undefined) { record.shiftHours = parseFloat(record.shift_hours); delete record.shift_hours; }
+      if (record.technician_ids !== undefined) { record.technicianIds = record.technician_ids; delete record.technician_ids; }
+    }
+    if (collection === 'expectedWorkRosterDismissals') {
+      if (record.roster_id !== undefined) { record.rosterId = record.roster_id; delete record.roster_id; }
+      if (record.technician_id !== undefined) { record.technicianId = record.technician_id; delete record.technician_id; }
+      if (record.dismissed_by !== undefined) { record.dismissedBy = record.dismissed_by; delete record.dismissed_by; }
+    }
     if (record.current_meter !== undefined) {
       record.currentMeter = parseFloat(record.current_meter);
       delete record.current_meter;
@@ -2471,6 +2516,23 @@ class DataStore {
     if (record.deactivatedAt !== undefined) {
       record.deactivated_at = record.deactivatedAt;
       delete record.deactivatedAt;
+    }
+    if (collection === 'expectedWorkRosters') {
+      if (record.repeatEveryWeeks !== undefined) { record.repeat_every_weeks = record.repeatEveryWeeks; delete record.repeatEveryWeeks; }
+      delete record.end_date;
+      delete record.endDate;
+      delete record.duration;
+      if (record.weekPatterns !== undefined) { record.week_patterns = record.weekPatterns; delete record.weekPatterns; }
+      if (record.defaultStartTime !== undefined) { record.default_start_time = record.defaultStartTime; delete record.defaultStartTime; }
+      if (record.defaultEndTime !== undefined) { record.default_end_time = record.defaultEndTime; delete record.defaultEndTime; }
+      if (record.weekShiftTimes !== undefined) { record.week_shift_times = record.weekShiftTimes; delete record.weekShiftTimes; }
+      if (record.shiftHours !== undefined) { record.shift_hours = record.shiftHours; delete record.shiftHours; }
+      if (record.technicianIds !== undefined) { record.technician_ids = record.technicianIds; delete record.technicianIds; }
+    }
+    if (collection === 'expectedWorkRosterDismissals') {
+      if (record.rosterId !== undefined) { record.roster_id = record.rosterId; delete record.rosterId; }
+      if (record.technicianId !== undefined) { record.technician_id = record.technicianId; delete record.technicianId; }
+      if (record.dismissedBy !== undefined) { record.dismissed_by = record.dismissedBy; delete record.dismissedBy; }
     }
     if (record.userTypeId !== undefined) {
       record.user_type_id = record.userTypeId;
@@ -4407,7 +4469,8 @@ class DataStore {
         'customers', 'assets', 'maintenancePlans', 'taskTemplates', 'quotes', 
         'jobs', 'invoices', 'stock', 'timesheets', 'contractors', 'suppliers', 
         'purchaseOrders', 'notifications', 'formTemplates', 'formInstances', 
-        'kits', 'documents', 'leads', 'schedule', 'projects', 'costCenters', 'emailLog', 'jobMaterials', 'storageLocations', 'kitTypes', 'locationTypes'
+        'kits', 'documents', 'leads', 'schedule', 'expectedWorkRosters', 'expectedWorkRosterDismissals',
+        'projects', 'costCenters', 'emailLog', 'jobMaterials', 'storageLocations', 'kitTypes', 'locationTypes'
       ];
       
       await Promise.all(

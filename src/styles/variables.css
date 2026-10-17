@@ -172,12 +172,9 @@
   --sched-now-ink: #FF5C00;
   --sched-now-contrast: #FFFFFF;
 
-  /* Weekend canvas: neutral rather than tinted. A colour here would have to compete with
-     the status fills for meaning; grey only has to say "not the working week". Held about
-     7 luminance below the content background — a light step, clear enough to read as a
-     separate surface and faint enough to leave the hour rules and the status fills the
-     loudest things in the column. */
-  --sched-weekend-bg: #F4F4F3;
+  /* Weekend canvas stays neutral and reads slightly darker than the regular off-hours
+     fill, keeping the time grid distinct without competing with status colours. */
+  --sched-weekend-bg: #E9E9E7;
 
   /* Half-hour rule. Deliberately a step below the hour rule in contrast: it should be
      findable when looked for and not otherwise. */
