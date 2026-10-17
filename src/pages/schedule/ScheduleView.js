@@ -2033,10 +2033,14 @@ export function renderScheduleView(container) {
     return [...selectedScheduleIds].map(id => resolveScheduleOrLegacy(id)).filter(Boolean);
   }
 
-  function bulkUnschedule() {
+  async function bulkUnschedule() {
     const scheds = selectedSchedules();
     if (!scheds.length) return;
-    if (!window.confirm(`Unschedule ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}?`)) return;
+    const confirmed = await showConfirm(
+      `Unschedule ${scheds.length} allocation${scheds.length > 1 ? 's' : ''}?`,
+      { title: 'Unschedule Allocations', confirmLabel: 'Unschedule', danger: true }
+    );
+    if (!confirmed) return;
     const jobIds = new Set();
     scheds.forEach(s => { jobIds.add(s.jobId); store.delete('schedule', s.id); });
     jobIds.forEach(jid => syncJobWithSchedules(jid));
