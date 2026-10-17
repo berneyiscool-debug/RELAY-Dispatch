@@ -1661,13 +1661,13 @@ export function renderScheduleView(container) {
             ${isClockedIn ? `<span class="clock-live-indicator" title="You are clocked in right now"><span class="clock-live-dot"></span>On the clock</span>` : ''}
             ${isOnBreak ? `<span class="clock-live-indicator is-break" title="You are on a break — break time is not counted as hours"><span class="clock-live-dot"></span>On break</span>` : ''}
           </div>
-          <div class="flex gap-xs">
-            <button class="toolbar-filter ${calendarType === 'schedule' ? 'active' : ''}" data-cal="schedule">Schedule</button>
-            <button class="toolbar-filter ${calendarType === 'activity' ? 'active' : ''}" data-cal="activity">Activities</button>
+          <div class="segmented" role="group" aria-label="Calendar">
+            <button type="button" class="segmented-item ${calendarType === 'schedule' ? 'active' : ''}" aria-pressed="${calendarType === 'schedule'}" data-cal="schedule">Schedule</button>
+            <button type="button" class="segmented-item ${calendarType === 'activity' ? 'active' : ''}" aria-pressed="${calendarType === 'activity'}" data-cal="activity">Activities</button>
           </div>
-          <div class="flex gap-xs">
-            <button class="toolbar-filter ${viewMode === 'day' ? 'active' : ''}" data-view="day">Day</button>
-            <button class="toolbar-filter ${viewMode === 'week' ? 'active' : ''}" data-view="week">Week</button>
+          <div class="segmented" role="group" aria-label="Date range">
+            <button type="button" class="segmented-item ${viewMode === 'day' ? 'active' : ''}" aria-pressed="${viewMode === 'day'}" data-view="day">Day</button>
+            <button type="button" class="segmented-item ${viewMode === 'week' ? 'active' : ''}" aria-pressed="${viewMode === 'week'}" data-view="week">Week</button>
           </div>
         </div>
       </div>

@@ -86,6 +86,71 @@
   color: #ffffff;
 }
 
+/* ---- Segmented control ----
+   Mutually exclusive view switches (Schedule/Activities, Day/Week). Built from the same
+   tokens as .btn so it reads as a control rather than a chip: a recessed track, and the
+   selected segment lifts onto the card surface instead of taking the brand colour. */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 25px;
+  padding: 2px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--border-radius);
+  background: var(--bg-color);
+}
+.segmented-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 19px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.segmented-item:hover {
+  background: rgba(15, 15, 15, 0.05);
+  color: var(--text-primary);
+}
+.segmented-item.active {
+  background: var(--card-bg);
+  border-color: var(--border-color-dark);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+.segmented-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+[data-theme-mode="dark"] .segmented {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme-mode="dark"] .segmented-item {
+  color: var(--text-secondary);
+}
+[data-theme-mode="dark"] .segmented-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+[data-theme-mode="dark"] .segmented-item.active {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
 /* Clock In/Out live indicator */
 .clock-live-indicator {
   display: inline-flex;
