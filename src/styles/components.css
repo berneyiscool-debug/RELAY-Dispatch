@@ -1909,14 +1909,14 @@ select.badge {
   pointer-events: auto;
   cursor: help;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--sched-roster-color) 7%, transparent);
+  background: color-mix(in srgb, var(--sched-roster-color) 6%, transparent);
   border-top: 1px solid color-mix(in srgb, var(--sched-roster-color) 20%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--sched-roster-color) 20%, transparent);
   box-shadow: inset 2px 0 0 color-mix(in srgb, var(--sched-roster-color) 55%, transparent);
   transition: background var(--transition-fast);
 }
 .schedule-roster-shift-marker:hover {
-  background: color-mix(in srgb, var(--sched-roster-color) 11%, transparent);
+  background: color-mix(in srgb, var(--sched-roster-color) 8%, transparent);
 }
 .schedule-day-col.is-drop-target {
   background: rgba(27, 109, 224, 0.05);
