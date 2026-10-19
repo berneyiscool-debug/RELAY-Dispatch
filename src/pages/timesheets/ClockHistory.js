@@ -1,9 +1,10 @@
 // ============================================
-// RELAY — HOURS (the payroll record)
+// RELAY — CLOCK HISTORY (Time Tracking → Clock History)
 // ============================================
-// One row per technician per day for a period. This is the record everything else
-// trusts: timeClocks is the only source of worked time, and nothing here reads job
-// hours or pay rates.
+// One row per technician per day for a period: every clock in and out, the breaks
+// between them, and the approval of those clocked hours. This is the record everything
+// else trusts: timeClocks is the only source of worked time, and nothing here reads job
+// hours or pay rates (Clocked vs Job Hours puts the two side by side).
 //
 //   Worked  — the measured clock total for the day (the sum of its sessions)
 //   Breaks  — the gap spent off the clock between sessions. A break is recorded by
@@ -16,12 +17,13 @@
 //   Leave   — booked on the roster, decided here. Leave is not hours: the booking shows
 //             on the day it falls and deciding it changes nothing about pay.
 //
-// Corrections require a reason and are written onto the sessions with
-// approvedHours/approvedBy/approvedAt/note so the change is auditable and visible to the
-// technician. Correcting is not the same right as deciding: someone holding only the
-// correction right (a technician fixing their own clock) records the figure and the reason
-// against a session that still awaits a decision, so a correction can never sign itself
-// off and the period still has to be approved.
+// Wrong or missing clock times are fixed by editing the times themselves (or entering
+// them by hand for a day with no record). Every edit needs a reason, which is written to
+// the session's note with approvedBy/approvedAt so the change is auditable and visible to
+// the technician. Editing is not the same right as deciding: someone holding only the edit
+// right (a technician fixing their own clock) leaves the session waiting on approval.
+// Older sessions may still carry a corrected figure (approvedHours + note) from before
+// times were editable; those keep showing as Corrected.
 
 import { store } from '../../data/store.js';
 import { showToast } from '../../components/Notifications.js';
@@ -33,8 +35,9 @@ import { escapeHTML } from '../../utils/security.js';
 import { hasPermission } from '../../utils/permissions.js';
 import { formatDuration, mapsLink } from '../../utils/timeClock.js';
 import {
-  EXCEPTION, deriveExceptions, getRosterForDay, getSessionsForDay, isBlocking
+  EXCEPTION, deriveExceptions, getExpectedWindow, getRosterForDay, getSessionsForDay, isBlocking
 } from '../../utils/payrollExceptions.js';
+import { buildManualSessions, editedSessionTimes, timeInputValue } from '../../utils/manualClock.js';
 import {
   actorName, currentMonthRange, datesBetween, dayTotals, downloadCSV, durationMs, fmtDay,
   fmtTime, hoursLabel, isoOf, measuredHours, msToHours, payableHours, round2
@@ -109,9 +112,27 @@ function hourLabel(t) {
   return `${h % 12 === 0 ? 12 : h % 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
 }
 
-/** Every note on a day's leave rows, for the tooltip and the day modal. */
+/** Every note on a day's leave rows, for the day modal. */
 function leaveNote(blocks) {
   return blocks.map(b => (b.notes || '').trim()).filter(Boolean).join(' · ');
+}
+
+/**
+ * A day's sessions in order with the breaks between them, matching dayTotals(): a break
+ * is the gap after a session closed with status 'break', running to the next clock-in
+ * (or to now while it is still going).
+ */
+function breakTimeline(sessions, now) {
+  const items = [];
+  sessions.forEach((s, i) => {
+    items.push({ kind: 'session', session: s });
+    if (s.status !== 'break' || !s.clockOutAt) return;
+    const next = sessions[i + 1];
+    const end = next && next.clockInAt ? next.clockInAt : null;
+    const ms = Math.max(0, (end ? new Date(end).getTime() : now.getTime()) - new Date(s.clockOutAt).getTime());
+    items.push({ kind: 'break', start: s.clockOutAt, end, ms });
+  });
+  return items;
 }
 
 function getContext() {
@@ -144,26 +165,29 @@ function dayStatus(sessions) {
   return STATUS_BADGE.mixed;
 }
 
-/**
- * The status a correction leaves behind. An approver settles the session where it stands;
- * someone correcting without the approval right — a technician fixing their own clock —
- * records the figure and the reason against a session that still awaits a decision, so a
- * correction can never sign itself off.
- */
-function correctionStatus(ctx) {
-  return ctx.canApprove ? 'adjusted' : 'pending';
-}
-
 // Any figure with a reason behind it is a change to the record, whether it settled the
 // session or is still waiting on approval, so both keep their line here.
+// Clock times written or changed by hand also keep their line, with or without a figure.
 function correctionNotes(sessions) {
   return sessions
-    .filter(s => s.approvedHours != null && (s.note || '').trim())
+    .filter(s => (s.approvedHours != null || isManual(s)) && (s.note || '').trim())
     .map(s => ({ status: s.approvalStatus, hours: s.approvedHours, note: s.note.trim(), by: s.approvedBy }));
+}
+
+// Manual entries and edited times carry no extra column (time_clocks has none to spare);
+// their note starts with this prefix, which is how they are told apart from a clocked
+// session that was only re-figured.
+const TIMES_NOTE_PREFIX = 'Clock times entered by hand — ';
+
+function isManual(s) {
+  return String(s.note || '').startsWith(TIMES_NOTE_PREFIX);
 }
 
 /** One stored change as a line of text: "rejected to 0h — no show (Demo Admin)". */
 function noteLabel(n) {
+  if (n.status !== 'rejected' && n.note.startsWith(TIMES_NOTE_PREFIX)) {
+    return `times entered by hand — ${n.note.slice(TIMES_NOTE_PREFIX.length)}${n.by ? ` (${n.by})` : ''}`;
+  }
   const verb = n.status === 'rejected' ? 'rejected to 0h' : `corrected to ${n.hours != null ? n.hours : 0}h`;
   return `${verb} — ${n.note}${n.by ? ` (${n.by})` : ''}`;
 }
@@ -179,33 +203,12 @@ function notesSummary(notes) {
   return [...counts].map(([label, count]) => (count > 1 ? `${label} ×${count}` : label)).join(' | ');
 }
 
-/**
- * Split a corrected day total across the day's sessions in proportion to what each
- * measured. The total is exact — rounding is carried so the last session absorbs the
- * remainder. A day whose sessions measured nothing cannot be scaled, so the whole
- * figure lands on the last session.
- */
-function allocateCorrection(sessions, totalHours, now) {
-  const measured = sessions.map(s => msToHours(durationMs(s, now)));
-  const sum = measured.reduce((a, b) => a + b, 0);
-  if (sum <= 0) {
-    return sessions.map((_, i) => (i === sessions.length - 1 ? round2(totalHours) : 0));
-  }
-  let running = 0;
-  return sessions.map((_, i) => {
-    if (i === sessions.length - 1) return round2(totalHours - running);
-    const v = round2(totalHours * measured[i] / sum);
-    running += v;
-    return v;
-  });
-}
-
-export function renderHoursView(container, params = {}) {
+export function renderClockHistoryView(container, params = {}) {
   const nav = resolveSection(params.tab, params.view);
   const ctx = getContext();
   const month = currentMonthRange();
-  // The period can be set by the URL so the pay run can hand over a single day —
-  // "this one is blocking the run, go and look at it".
+  // The period can be set by the URL (?start=&end=&tech=) so another screen can hand
+  // over a single day — "go and look at this one".
   const state = {
     start: params.start || month.start,
     end: params.end || month.end,
@@ -278,6 +281,7 @@ export function renderHoursView(container, params = {}) {
           leave,
           leaveDecision: decision,
           expectedHours,
+          roster: rosterRows,
           hasBlocking: exceptions.some(e => isBlocking(e.type))
         });
       });
@@ -293,40 +297,38 @@ export function renderHoursView(container, params = {}) {
       // of the day, so the cell shows the leave rather than an empty "no sessions".
       if (row.leave.length > 0) {
         const booked = leaveMs(row.leave);
-        const note = leaveNote(row.leave);
-        const tooltip = `Leave ${leaveWindow(row.leave)}${note ? ` · ${note}` : ''}`;
-        return `<span class="text-secondary" data-tooltip="${escapeHTML(tooltip)}" data-tooltip-pos="left">On leave${booked ? ` · ${escapeHTML(formatDuration(booked))}` : ''}</span>`;
+        return `<span class="text-secondary">On leave${booked ? ` · ${escapeHTML(formatDuration(booked))}` : ''}</span>`;
       }
       return '<span class="text-tertiary">No sessions</span>';
     }
     const ranges = row.sessions.map(s => `${fmtTime(s.clockInAt)}–${s.clockOutAt ? fmtTime(s.clockOutAt) : 'now'}`);
     // Every cell in the shared table is single-line, so the ranges run inline and are
-    // capped to keep the uniform 40px row rhythm. The full list is on the tooltip and in
+    // capped to keep the uniform 40px row rhythm. A capped list shows in full on hover and in
     // the day modal.
     const MAX_RANGES = 2;
     const shown = ranges.slice(0, MAX_RANGES).join(', ') + (ranges.length > MAX_RANGES ? ` +${ranges.length - MAX_RANGES}` : '');
-    return `<span class="text-secondary" data-tooltip="${escapeHTML(ranges.join(' · '))}" data-tooltip-pos="left">${escapeHTML(shown)}</span>`;
+    return ranges.length > MAX_RANGES
+      ? `<span class="text-secondary" data-tooltip="${escapeHTML(ranges.join(', '))}">${escapeHTML(shown)}</span>`
+      : `<span class="text-secondary">${escapeHTML(shown)}</span>`;
   }
 
   function statusCell(row) {
     const badge = `<span class="badge ${row.status.cls}">${escapeHTML(row.status.label)}</span>`;
     if (row.notes.length === 0) return badge;
-    const tooltip = notesSummary(row.notes);
-    return `${badge} <span class="material-icons-outlined text-warning" style="font-size:13px; vertical-align:middle;" data-tooltip="${escapeHTML(tooltip)}" data-tooltip-pos="left">edit_note</span>`;
+    return `${badge} <span class="material-icons-outlined text-warning" style="font-size:13px; vertical-align:middle;" data-tooltip="${escapeHTML(notesSummary(row.notes))}">edit_note</span>`;
   }
 
   function exceptionsCell(row) {
     const badges = row.exceptions.map(e => {
       const badge = EXCEPTION_BADGE[e.type] || { label: e.type, icon: 'info', cls: 'badge-warning' };
-      return `<span class="badge ${badge.cls}" data-tooltip="${escapeHTML(e.detail)}" data-tooltip-pos="left" style="display:inline-flex; align-items:center; gap:3px;">
+      return `<span class="badge ${badge.cls}" data-tooltip="${escapeHTML(e.detail)}" style="display:inline-flex; align-items:center; gap:3px;">
         <span class="material-icons-outlined" style="font-size:12px;">${badge.icon}</span>${escapeHTML(badge.label)}
       </span>`;
     });
     // Worked time and booked leave can share a day. The Status column carries the hours
     // decision, so the leave side is named here instead of being lost in the day modal.
     if (row.sessions.length > 0 && row.leave.length > 0) {
-      const leave = LEAVE_BADGE[row.leaveDecision];
-      badges.unshift(`<span class="badge badge-info" data-tooltip="Leave ${escapeHTML(leaveWindow(row.leave))} — ${escapeHTML(leave.label.toLowerCase())}" data-tooltip-pos="left" style="display:inline-flex; align-items:center; gap:3px;">
+      badges.unshift(`<span class="badge badge-info" style="display:inline-flex; align-items:center; gap:3px;">
         <span class="material-icons-outlined" style="font-size:12px;">beach_access</span>Leave
       </span>`);
     }
@@ -335,9 +337,13 @@ export function renderHoursView(container, params = {}) {
   }
 
   function exportRows(list, filename) {
-    const csv = [['Date', 'Technician', 'Sessions', 'Clocked Hours', 'Expected Hours', 'Break Hours', 'Counted Hours', 'Corrected Hours', 'Correction Reason', 'Status', 'Exceptions']];
+    const csv = [['Date', 'Technician', 'Sessions', 'First In', 'Last Out', 'Clocked Hours', 'Expected Hours', 'Break Hours', 'Approved/Counted Hours', 'Corrected Hours', 'Correction Reason', 'Status', 'Exceptions']];
     list.forEach(r => {
-      const base = [r.date, r.tech.name || '', r.sessions.length, round2(msToHours(r.workedMs)),
+      const first = r.sessions[0];
+      const last = r.sessions[r.sessions.length - 1];
+      const base = [r.date, r.tech.name || '', r.sessions.length,
+        first ? fmtTime(first.clockInAt) : '', last ? (last.clockOutAt ? fmtTime(last.clockOutAt) : 'open') : '',
+        round2(msToHours(r.workedMs)),
         r.expectedHours, round2(msToHours(r.breakMs)), r.payableHours, '', '', r.status.label,
         [...r.exceptions.map(e => e.type), ...(r.leave.length ? [`leave ${r.leaveDecision}`] : [])].join('; ')];
       if (r.notes.length === 0) {
@@ -347,13 +353,40 @@ export function renderHoursView(container, params = {}) {
       // One line per correction so clocked and manual hours stay separable.
       r.notes.forEach((n, i) => {
         const line = i === 0 ? [...base] : base.map(() => '');
-        line[7] = n.hours != null ? n.hours : 0;
-        line[8] = n.note;
+        line[9] = n.hours != null ? n.hours : 0;
+        line[10] = n.note;
         csv.push(line);
       });
     });
     downloadCSV(filename, csv);
     showToast(`Exported ${list.length} day${list.length === 1 ? '' : 's'} to CSV`);
+  }
+
+  /**
+   * The full clock log for a set of days: one line per clock session and one per break
+   * between sessions, so a report can rebuild the day minute by minute.
+   */
+  function exportSessions(list, filename) {
+    const now = new Date();
+    const csv = [['Date', 'Technician', 'Type', 'Start', 'End', 'Hours', 'Approval', 'Approved Hours', 'Approved By', 'Note', 'Latitude', 'Longitude']];
+    let lines = 0;
+    [...list].sort((a, b) => a.date.localeCompare(b.date) || (a.tech.name || '').localeCompare(b.tech.name || '')).forEach(r => {
+      breakTimeline(r.sessions, now).forEach(item => {
+        lines++;
+        if (item.kind === 'break') {
+          csv.push([r.date, r.tech.name || '', 'Break', fmtTime(item.start), item.end ? fmtTime(item.end) : '', round2(msToHours(item.ms)), '', '', '', '', '', '']);
+          return;
+        }
+        const s = item.session;
+        const loc = s.clockInLocation || {};
+        csv.push([r.date, r.tech.name || '', 'Clocked', fmtTime(s.clockInAt), s.clockOutAt ? fmtTime(s.clockOutAt) : '',
+          round2(msToHours(durationMs(s, now))), (STATUS_BADGE[s.approvalStatus || 'pending'] || STATUS_BADGE.pending).label,
+          s.approvedHours != null ? s.approvedHours : '', s.approvedBy || '', s.note || '',
+          loc.lat != null ? loc.lat : '', loc.lng != null ? loc.lng : '']);
+      });
+    });
+    downloadCSV(filename, csv);
+    showToast(`Exported ${lines} clock line${lines === 1 ? '' : 's'} to CSV`);
   }
 
   function buildBulkActions(selectedIds) {
@@ -378,7 +411,7 @@ export function renderHoursView(container, params = {}) {
               if (status === 'approved' || status === 'adjusted') { signedOff++; return; }
               // A figure recorded against a session nobody has decided yet — a technician's
               // own correction — is carried forward rather than measured over the top of
-              // it, which is how it reaches the pay run. A rejection is not a figure to
+              // it, which is how it becomes the approved figure. A rejection is not a figure to
               // carry: approving that day measures it afresh.
               const carried = status === 'rejected' || s.approvedHours == null
                 ? null
@@ -399,12 +432,6 @@ export function renderHoursView(container, params = {}) {
           if (table) table.clearSelection();
           renderTable();
         }
-      });
-      if (ctx.canCorrect) actions.push({
-        label: 'Correct days',
-        icon: 'edit_note',
-        className: 'btn-primary',
-        onClick: () => openCorrectionModal(selected)
       });
       if (ctx.canApprove) actions.push({
         label: 'Reject days',
@@ -451,80 +478,26 @@ export function renderHoursView(container, params = {}) {
 
     if (ctx.canExport) {
       actions.push({
-        label: 'Export CSV',
+        label: 'Export days',
         icon: 'download',
         className: 'btn-secondary',
         onClick: () => {
-          exportRows(selected, `hours_selected_${isoOf(new Date())}.csv`);
+          exportRows(selected, `clock_history_days_selected_${isoOf(new Date())}.csv`);
+          if (table) table.clearSelection();
+        }
+      });
+      actions.push({
+        label: 'Export sessions',
+        icon: 'download',
+        className: 'btn-secondary',
+        onClick: () => {
+          exportSessions(selected, `clock_history_sessions_selected_${isoOf(new Date())}.csv`);
           if (table) table.clearSelection();
         }
       });
     }
 
     return actions;
-  }
-
-  function openCorrectionModal(selectedDays) {
-    const candidates = selectedDays.filter(r => r.sessions.length > 0);
-    if (candidates.length === 0) {
-      showToast('Nothing to correct — these days have no recorded hours');
-      return;
-    }
-    const already = candidates.reduce((sum, r) => sum + r.payableHours, 0);
-    const multi = candidates.some(r => r.sessions.length > 1);
-    // showModal() escapes string content, so rich markup must arrive as an element.
-    const content = document.createElement('div');
-    content.innerHTML = `
-      <div class="form-group" style="margin-bottom:12px;">
-        <label class="form-label">Hours that count, per day</label>
-        <input type="number" class="form-input" id="correction-hours" step="0.25" min="0" value="${round2(already / candidates.length)}">
-        <p style="font-size:11px; color:var(--text-tertiary); margin:6px 0 0;">
-          ${candidates.length === 1 ? 'This day will be set to the figure above.' : `Each of the ${candidates.length} selected days will be set to the figure above.`}
-          ${multi ? ' Days with several sessions are split in proportion to what each session measured.' : ''}
-        </p>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Reason <span style="color:var(--color-danger)">*</span></label>
-        <textarea class="form-input" id="correction-note" rows="3" placeholder="Why are these hours different from the clock?"></textarea>
-      </div>`;
-
-    showModal({
-      title: candidates.length === 1 ? `Correct ${fmtDay(candidates[0].date)}` : `Correct ${candidates.length} days`,
-      size: 'modal-sm',
-      content,
-      actions: [
-        { label: 'Cancel', className: 'btn-secondary' },
-        {
-          label: 'Save correction',
-          className: 'btn-primary',
-          onClick: (close) => {
-            const hours = parseFloat(document.querySelector('#correction-hours')?.value);
-            if (!(hours >= 0)) { showToast('Enter a valid number of hours'); return; }
-            const reason = (document.querySelector('#correction-note')?.value || '').trim();
-            if (!reason) { showToast('A reason is required for a correction'); return; }
-
-            const now = new Date();
-            const stamp = { note: reason, approvedBy: actorName(ctx.currentUser), approvedAt: now.toISOString() };
-            candidates.forEach(row => {
-              const allocations = allocateCorrection(row.sessions, hours, now);
-              row.sessions.forEach((s, i) => {
-                store.update('timeClocks', s.id, {
-                  ...stamp,
-                  approvalStatus: correctionStatus(ctx),
-                  approvedHours: allocations[i]
-                });
-              });
-            });
-            showToast(ctx.canApprove
-              ? `Corrected ${candidates.length} day${candidates.length === 1 ? '' : 's'}`
-              : `Recorded ${candidates.length} correction${candidates.length === 1 ? '' : 's'} — still waiting on approval`);
-            close();
-            if (table) table.clearSelection();
-            renderTable();
-          }
-        }
-      ]
-    });
   }
 
   /**
@@ -611,47 +584,183 @@ export function renderHoursView(container, params = {}) {
     after();
   }
 
-  /** A correction aimed at one session, for when the day total is not in question. */
-  function openSessionHoursModal(session, dayRow, after) {
-    const now = new Date();
+  /**
+   * The approval fields written with a manual entry or a change of times. The new times
+   * are the new measurement, so any earlier figure is dropped. An approver entering them
+   * has decided the hours there and then; anyone else leaves them waiting on approval.
+   */
+  function timesStamp(reason, sessionLike) {
+    const closed = !!sessionLike.clockOutAt;
+    const approve = ctx.canApprove && closed;
+    return {
+      note: `${TIMES_NOTE_PREFIX}${reason}`,
+      approvedBy: actorName(ctx.currentUser),
+      approvedAt: new Date().toISOString(),
+      approvalStatus: approve ? 'approved' : 'pending',
+      approvedHours: approve ? measuredHours(sessionLike, new Date()) : null
+    };
+  }
+
+  /** The first existing session the new times would overlap, or null. */
+  function overlapping(techId, times, ignoreId) {
+    const start = new Date(times.clockInAt).getTime();
+    const end = times.clockOutAt ? new Date(times.clockOutAt).getTime() : Infinity;
+    return (store.getAll('timeClocks') || []).find(c => {
+      if (String(c.technicianId) !== String(techId) || !c.clockInAt) return false;
+      if (ignoreId != null && String(c.id) === String(ignoreId)) return false;
+      const cStart = new Date(c.clockInAt).getTime();
+      const cEnd = c.clockOutAt ? new Date(c.clockOutAt).getTime() : Infinity;
+      return start < cEnd && cStart < end;
+    }) || null;
+  }
+
+  /**
+   * Write clock times for a technician on any day — the fix for a forgotten clock-on and
+   * clock-off, where there is no record at all to correct.
+   */
+  function openEntryModal({ techId = '', date = '', roster = [], after = () => {} } = {}) {
+    const { startAt, endAt } = getExpectedWindow(roster);
+    const techs = ctx.canViewAll
+      ? ctx.technicians
+      : ctx.technicians.filter(t => String(t.id) === String(ctx.currentUser.id));
+    const fixedTech = !ctx.canViewAll || !!techId;
+    const chosen = techId || (techs.length === 1 ? String(techs[0].id) : '');
     const content = document.createElement('div');
     content.innerHTML = `
-      <div style="margin-bottom:12px; font-size:12px; color:var(--text-secondary); line-height:1.6;">
-        ${escapeHTML(dayRow.tech.name || 'Technician')} · ${escapeHTML(fmtDay(dayRow.date))}<br>
-        ${escapeHTML(fmtTime(session.clockInAt))}–${escapeHTML(session.clockOutAt ? fmtTime(session.clockOutAt) : 'still open')},
-        clocked <strong>${escapeHTML(formatDuration(durationMs(session, now)))}</strong> (${measuredHours(session, now).toFixed(2)}h)
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Technician <span style="color:var(--color-danger)">*</span></label>
+          <select class="form-select" id="entry-tech" ${fixedTech && chosen ? 'disabled' : ''}>
+            <option value="">Select technician...</option>
+            ${techs.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(t.id) === String(chosen) ? 'selected' : ''}>${escapeHTML(t.name || '—')}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Date <span style="color:var(--color-danger)">*</span></label>
+          <input type="date" class="form-input" id="entry-date" value="${escapeHTML(date || isoOf(new Date()))}">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Clock in <span style="color:var(--color-danger)">*</span></label>
+          <input type="time" class="form-input" id="entry-in" value="${startAt ? timeInputValue(startAt.toISOString()) : '07:00'}">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Clock out <span style="color:var(--color-danger)">*</span></label>
+          <input type="time" class="form-input" id="entry-out" value="${endAt ? timeInputValue(endAt.toISOString()) : '15:30'}">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Break start</label>
+          <input type="time" class="form-input" id="entry-break-start" value="">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Break end</label>
+          <input type="time" class="form-input" id="entry-break-end" value="">
+        </div>
       </div>
-      <div class="form-group" style="margin-bottom:12px;">
-        <label class="form-label">Hours that count</label>
-        <input type="number" class="form-input" id="session-hours" step="0.25" min="0" value="${payableHours(session, now)}">
-      </div>
+      <p style="font-size:11px; color:var(--text-tertiary); margin:0 0 12px;">
+        A clock-out earlier than the clock-in is taken as the next day. Leave the break empty if none was taken.
+        ${startAt ? ' Times are prefilled from the expected roster.' : ''}
+      </p>
       <div class="form-group">
         <label class="form-label">Reason <span style="color:var(--color-danger)">*</span></label>
-        <textarea class="form-input" id="session-note" rows="3" placeholder="Why are these hours different from the clock?">${escapeHTML(session.note || '')}</textarea>
+        <textarea class="form-input" id="entry-note" rows="2" placeholder="e.g. Forgot to clock on and off — confirmed with supervisor"></textarea>
       </div>`;
 
     showModal({
-      title: 'Correct session',
+      title: 'Add clock times',
       size: 'modal-sm',
       content,
       actions: [
         { label: 'Cancel', className: 'btn-secondary' },
         {
-          label: 'Save correction',
+          label: 'Save times',
           className: 'btn-primary',
           onClick: (close) => {
-            const hours = parseFloat(document.querySelector('#session-hours')?.value);
-            if (!(hours >= 0)) { showToast('Enter a valid number of hours'); return; }
-            const reason = (document.querySelector('#session-note')?.value || '').trim();
-            if (!reason) { showToast('A reason is required for a correction'); return; }
-            store.update('timeClocks', session.id, {
-              approvalStatus: correctionStatus(ctx),
-              approvedHours: round2(hours),
-              note: reason,
-              approvedBy: actorName(ctx.currentUser),
-              approvedAt: new Date().toISOString()
+            const q = sel => content.querySelector(sel)?.value || '';
+            const tech = techs.find(t => String(t.id) === q('#entry-tech'));
+            if (!tech) { showToast('Choose a technician'); return; }
+            const result = buildManualSessions({
+              date: q('#entry-date'), clockIn: q('#entry-in'), clockOut: q('#entry-out'),
+              breakStart: q('#entry-break-start'), breakEnd: q('#entry-break-end')
             });
-            showToast(ctx.canApprove ? 'Session corrected' : 'Correction recorded — still waiting on approval');
+            if (result.error) { showToast(result.error); return; }
+            const reason = q('#entry-note').trim();
+            if (!reason) { showToast('A reason is required for manual clock times'); return; }
+            const clash = result.sessions.map(s => overlapping(tech.id, s)).find(Boolean);
+            if (clash) {
+              showToast(`Overlaps an existing session (${fmtTime(clash.clockInAt)}–${clash.clockOutAt ? fmtTime(clash.clockOutAt) : 'open'}) — edit that one instead`);
+              return;
+            }
+            result.sessions.forEach(s => {
+              store.create('timeClocks', {
+                technicianId: tech.id,
+                technicianName: tech.name,
+                ...s,
+                clockInLocation: null,
+                clockOutLocation: null,
+                ...timesStamp(reason, s)
+              });
+            });
+            showToast(ctx.canApprove
+              ? `Clock times added for ${tech.name}`
+              : `Clock times added for ${tech.name} — waiting on approval`);
+            close();
+            after();
+          }
+        }
+      ]
+    });
+  }
+
+  /** Change one session's clock-in / clock-out — including setting a missed clock-out. */
+  function openEditTimesModal(session, dayRow, after) {
+    const date = isoOf(new Date(session.clockInAt));
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div style="margin-bottom:12px; font-size:12px; color:var(--text-secondary); line-height:1.6;">
+        ${escapeHTML(dayRow.tech.name || 'Technician')} · ${escapeHTML(fmtDay(date))}<br>
+        Recorded ${escapeHTML(fmtTime(session.clockInAt))}–${escapeHTML(session.clockOutAt ? fmtTime(session.clockOutAt) : 'still open')}
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Clock in</label>
+          <input type="time" class="form-input" id="edit-in" value="${timeInputValue(session.clockInAt)}">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Clock out</label>
+          <input type="time" class="form-input" id="edit-out" value="${timeInputValue(session.clockOutAt)}">
+        </div>
+      </div>
+      <p style="font-size:11px; color:var(--text-tertiary); margin:0 0 12px;">Leave clock out empty to keep the session open. A clock-out earlier than the clock-in is taken as the next day.</p>
+      <div class="form-group">
+        <label class="form-label">Reason <span style="color:var(--color-danger)">*</span></label>
+        <textarea class="form-input" id="edit-note" rows="2" placeholder="e.g. Forgot to clock off"></textarea>
+      </div>`;
+
+    showModal({
+      title: 'Edit clock times',
+      size: 'modal-sm',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary' },
+        {
+          label: 'Save times',
+          className: 'btn-primary',
+          onClick: (close) => {
+            const q = sel => content.querySelector(sel)?.value || '';
+            const times = editedSessionTimes({ date, clockIn: q('#edit-in'), clockOut: q('#edit-out') });
+            if (times.error) { showToast(times.error); return; }
+            const reason = q('#edit-note').trim();
+            if (!reason) { showToast('A reason is required to change clock times'); return; }
+            const clash = overlapping(session.technicianId, times, session.id);
+            if (clash) {
+              showToast(`Overlaps another session (${fmtTime(clash.clockInAt)}–${clash.clockOutAt ? fmtTime(clash.clockOutAt) : 'open'})`);
+              return;
+            }
+            // A session closed for a break stays a break; closing an open one ends the
+            // shift, and clearing the clock-out reopens it.
+            const status = !times.clockOutAt ? 'in' : (session.status === 'break' ? 'break' : 'out');
+            store.update('timeClocks', session.id, { ...times, status, ...timesStamp(reason, times) });
+            showToast(ctx.canApprove && times.clockOutAt ? 'Clock times updated' : 'Clock times updated — waiting on approval');
             close();
             after();
           }
@@ -669,19 +778,19 @@ export function renderHoursView(container, params = {}) {
     if (ctx.canApprove) {
       buttons.push(`
       <button class="btn-icon btn-secondary" data-session="${id}" data-act="accept" ${open ? 'disabled' : ''}
-        data-tooltip="${open ? 'Still on the clock — it has to be clocked out before it can be accepted' : (s.approvalStatus === 'pending' && s.approvedHours != null ? 'Accept as clocked — this replaces the correction recorded on this session' : 'Accept as clocked')}" data-tooltip-pos="left">
+        aria-label="${open ? 'Still on the clock — it has to be clocked out before it can be accepted' : (s.approvalStatus === 'pending' && s.approvedHours != null ? 'Accept as clocked — this replaces the correction recorded on this session' : 'Accept as clocked')}" data-tooltip="${open ? 'Still on the clock — it has to be clocked out before it can be accepted' : (s.approvalStatus === 'pending' && s.approvedHours != null ? 'Accept as clocked — this replaces the correction recorded on this session' : 'Accept as clocked')}">
         <span class="material-icons-outlined" style="font-size:15px;">check_circle</span>
       </button>`);
     }
     if (ctx.canCorrect) {
       buttons.push(`
-      <button class="btn-icon btn-secondary" data-session="${id}" data-act="correct" data-tooltip="Correct these hours" data-tooltip-pos="left">
-        <span class="material-icons-outlined" style="font-size:15px;">edit_note</span>
+      <button class="btn-icon btn-secondary" data-session="${id}" data-act="times" aria-label="${open ? 'Edit clock times — set the missed clock-out' : 'Edit clock in / out times'}" data-tooltip="${open ? 'Edit clock times — set the missed clock-out' : 'Edit clock in / out times'}">
+        <span class="material-icons-outlined" style="font-size:15px;">schedule</span>
       </button>`);
     }
     if (ctx.canApprove) {
       buttons.push(`
-      <button class="btn-icon btn-secondary" data-session="${id}" data-act="reject" data-tooltip="Reject — these hours stop counting" data-tooltip-pos="left">
+      <button class="btn-icon btn-secondary" data-session="${id}" data-act="reject" aria-label="Reject — these hours stop counting" data-tooltip="Reject — these hours stop counting">
         <span class="material-icons-outlined" style="font-size:15px;">block</span>
       </button>`);
     }
@@ -701,15 +810,24 @@ export function renderHoursView(container, params = {}) {
       const now = new Date();
       const sessionsHTML = row.sessions.length === 0
         ? `<tr><td colspan="6" class="text-tertiary" style="text-align:center; padding:14px;">${row.leave.length ? 'No sessions recorded — this day is booked leave.' : (row.expectedHours > 0 ? `No sessions recorded — ${escapeHTML(hoursLabel(row.expectedHours * 3600000))} expected.` : 'No sessions recorded on this day.')}</td></tr>`
-        : row.sessions.map(s => {
+        : breakTimeline(row.sessions, now).map(item => {
+          if (item.kind === 'break') {
+            return `<tr style="background:var(--content-bg);">
+            <td class="text-secondary">${escapeHTML(fmtTime(item.start))}</td>
+            <td class="text-secondary">${escapeHTML(item.end ? fmtTime(item.end) : 'on break now')}</td>
+            <td class="num text-secondary">${escapeHTML(formatDuration(item.ms))}</td>
+            <td colspan="3"><span class="badge badge-warning" style="display:inline-flex; align-items:center; gap:3px;"><span class="material-icons-outlined" style="font-size:12px;">free_breakfast</span>Break</span></td>
+          </tr>`;
+          }
+          const s = item.session;
           const link = mapsLink(s.clockInLocation);
           const status = STATUS_BADGE[s.approvalStatus || 'pending'] || STATUS_BADGE.pending;
           return `<tr>
             <td>${escapeHTML(fmtTime(s.clockInAt))}</td>
-            <td>${escapeHTML(s.clockOutAt ? fmtTime(s.clockOutAt) : 'still open')}${s.status === 'break' ? ' <span class="badge badge-warning" style="font-size:9px;">break</span>' : ''}</td>
+            <td>${escapeHTML(s.clockOutAt ? fmtTime(s.clockOutAt) : 'still open')}</td>
             <td class="num">${escapeHTML(formatDuration(durationMs(s, now)))}</td>
             <td><span class="badge ${status.cls}">${escapeHTML(status.label)}</span>${s.approvedHours != null ? ` <span class="text-tertiary" style="font-size:10px;">${s.approvedHours}h counted</span>` : ''}</td>
-            <td>${link ? `<a href="${link}" target="_blank" rel="noopener">Map</a>` : '<span class="text-tertiary">—</span>'}</td>
+            <td>${link ? `<a href="${link}" target="_blank" rel="noopener">Map</a>` : (isManual(s) ? '<span class="text-tertiary">Manual</span>' : '<span class="text-tertiary">—</span>')}</td>
             <td>${sessionActionsCell(s)}</td>
           </tr>`;
         }).join('');
@@ -754,7 +872,7 @@ export function renderHoursView(container, params = {}) {
         <div class="data-table-wrapper">
           <table class="data-table">
             <thead><tr>
-              <th style="width:96px;">In</th><th style="width:96px;">Out</th><th class="num" style="width:84px;">Duration</th><th style="width:240px;">Status</th><th style="width:64px;">Location</th><th style="width:112px; text-align:right;">Actions</th>
+              <th style="width:96px;">In</th><th style="width:96px;">Out</th><th class="num" style="width:84px;">Duration</th><th style="width:240px;">Status</th><th style="width:64px;">Location</th><th style="width:140px; text-align:right;">Actions</th>
             </tr></thead>
             <tbody>${sessionsHTML}</tbody>
           </table>
@@ -773,25 +891,39 @@ export function renderHoursView(container, params = {}) {
       const session = row.sessions.find(s => String(s.id) === btn.dataset.session);
       if (!session) return;
       if (btn.dataset.act === 'accept') acceptSession(session, refresh);
-      else if (btn.dataset.act === 'correct') openSessionHoursModal(session, row, refresh);
+      else if (btn.dataset.act === 'times') openEditTimesModal(session, row, refresh);
       else if (btn.dataset.act === 'reject') rejectSession(session, row, refresh);
     });
 
     paint();
 
     const actions = [{ label: 'Close', className: 'btn-secondary' }];
+    // No record at all (forgot to clock on and off), or a missing piece of the day: write
+    // the times by hand. Reopens on the same day so the new sessions are in view.
+    if (ctx.canCorrect) {
+      actions.unshift({
+        label: row.sessions.length === 0 ? 'Add clock times' : 'Add session',
+        className: row.sessions.length === 0 ? 'btn-primary' : 'btn-secondary',
+        onClick: (close) => {
+          close();
+          openEntryModal({
+            techId: String(row.tech.id),
+            date: row.date,
+            roster: row.roster || [],
+            after: () => {
+              renderTable();
+              const fresh = rows.find(r => r.id === id);
+              if (fresh) openDayModal(fresh);
+            }
+          });
+        }
+      });
+    }
     if (ctx.canApprove && row.sessions.length > 0) {
       actions.unshift({
         label: 'Reject day',
         className: 'btn-danger',
         onClick: () => rejectDays([row], refresh)
-      });
-    }
-    if (ctx.canCorrect && row.sessions.length > 0) {
-      actions.unshift({
-        label: 'Correct hours',
-        className: 'btn-primary',
-        onClick: (close) => { close(); openCorrectionModal([row]); }
       });
     }
     // Leave is decided from the day it falls on, and the decision is the booking's own
@@ -839,7 +971,7 @@ export function renderHoursView(container, params = {}) {
         { key: 'techName', label: 'Technician', render: (r) => escapeHTML(r.tech.name || '—'), getValue: (r) => (r.tech.name || '').toLowerCase(), width: '12%' },
         { key: 'sessions', label: 'Sessions', render: sessionsCell, getValue: (r) => r.sessions.length, width: '28%' },
         { key: 'worked', label: 'Worked', render: (r) => (r.workedMs > 0 ? `<span class="font-semibold">${hoursLabel(r.workedMs)}</span>` : hoursLabel(r.workedMs)), getValue: (r) => r.workedMs, width: '8%', align: 'right' },
-        { key: 'expected', label: 'Expected', render: (r) => r.expectedHours > 0 ? `<span data-tooltip="Expected work roster" data-tooltip-pos="left">${escapeHTML(hoursLabel(r.expectedHours * 3600000))}</span>` : '<span class="text-tertiary">—</span>', getValue: (r) => r.expectedHours, width: '8%', align: 'right' },
+        { key: 'expected', label: 'Expected', render: (r) => r.expectedHours > 0 ? `<span>${escapeHTML(hoursLabel(r.expectedHours * 3600000))}</span>` : '<span class="text-tertiary">—</span>', getValue: (r) => r.expectedHours, width: '8%', align: 'right' },
         { key: 'breaks', label: 'Breaks', render: (r) => hoursLabel(r.breakMs), getValue: (r) => r.breakMs, width: '7%' , align: 'right' },
         { key: 'status', label: 'Status', render: statusCell, getValue: (r) => r.status.label, width: '14%' },
         { key: 'exceptions', label: 'Exceptions', render: exceptionsCell, getValue: (r) => (r.exceptions.length ? 1 : 0), width: '13%' }
@@ -872,8 +1004,7 @@ export function renderHoursView(container, params = {}) {
     // gets its own line instead of being folded into the attention count.
     const pendingLeave = rows.filter(r => r.leave.length > 0 && r.leaveDecision === 'pending').length;
     // Hours nobody has decided yet are not exceptions — they don't make the day need
-    // attention — but they do hold up the pay run, so saying nothing about them would
-    // contradict the pay run's own "still needs sign-off" count.
+    // attention — but they are still unapproved, so the footer says how many remain.
     const undecided = rows.reduce((n, r) => n + r.sessions.filter(s => (s.approvalStatus || 'pending') === 'pending').length, 0);
     const totalWorkedMs = rows.reduce((sum, r) => sum + r.workedMs, 0);
     const totalExpectedHours = rows.reduce((sum, r) => sum + r.expectedHours, 0);
@@ -888,9 +1019,9 @@ export function renderHoursView(container, params = {}) {
       ${pendingLeave > 0 ? `<span style="color:var(--color-warning);">${pendingLeave} leave request${pendingLeave === 1 ? '' : 's'} awaiting a decision</span>` : ''}
       ${undecided > 0 ? `<span style="color:var(--color-warning);">${undecided} session${undecided === 1 ? '' : 's'} ${ctx.canApprove ? 'awaiting your decision' : 'still waiting on approval'}</span>` : ''}
       ${blocking > 0
-        ? `<span style="color:var(--color-danger);">${blocking} day${blocking === 1 ? ' needs' : 's need'} attention before the pay run</span>`
+        ? `<span style="color:var(--color-danger);">${blocking} day${blocking === 1 ? ' needs' : 's need'} attention before approval</span>`
         : (undecided > 0 || pendingLeave > 0
-          ? '<span style="color:var(--color-warning);">No pay blockers — decisions pending</span>'
+          ? '<span style="color:var(--color-warning);">No exceptions — approvals pending</span>'
           : '<span style="color:var(--color-success);">Nothing outstanding in this period</span>')}`;
     tableContainer.appendChild(foot);
   }
@@ -905,8 +1036,14 @@ export function renderHoursView(container, params = {}) {
             <option value="All" ${state.tech === 'All' ? 'selected' : ''}>All Technicians</option>
             ${ctx.technicians.map(t => `<option value="${escapeHTML(String(t.id))}" ${String(state.tech) === String(t.id) ? 'selected' : ''}>${escapeHTML(t.name || '—')}</option>`).join('')}
           </select>` : ''}
-          ${ctx.canExport ? `<button class="btn btn-sm btn-secondary" id="btn-export-hours"  data-tooltip="Export this period to CSV" data-tooltip-pos="left" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
-            <span class="material-icons-outlined" style="font-size:13px;">download</span> Export CSV
+          ${ctx.canCorrect ? `<button class="btn btn-sm btn-primary" id="btn-add-clock" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">add</span> Add clock times
+          </button>` : ''}
+          ${ctx.canExport ? `<button class="btn btn-sm btn-secondary" id="btn-export-hours" data-tooltip="One line per technician per day: clocked, breaks, approved hours and status" data-tooltip-pos="bottom" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">download</span> Export days
+          </button>
+          <button class="btn btn-sm btn-secondary" id="btn-export-sessions" data-tooltip="One line per clock in/out and per break, for detailed reports" data-tooltip-pos="bottom" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <span class="material-icons-outlined" style="font-size:13px;">download</span> Export sessions
           </button>` : ''}
         </div>
       </div>
@@ -932,7 +1069,17 @@ export function renderHoursView(container, params = {}) {
       renderTable();
     });
     container.querySelector('#btn-export-hours')?.addEventListener('click', () => {
-      exportRows(rows, `hours_${state.start}_${state.end}.csv`);
+      exportRows(rows, `clock_history_days_${state.start}_${state.end}.csv`);
+    });
+    container.querySelector('#btn-add-clock')?.addEventListener('click', () => {
+      openEntryModal({
+        techId: state.tech !== 'All' ? String(state.tech) : '',
+        date: state.start === state.end ? state.start : isoOf(new Date()),
+        after: () => renderTable()
+      });
+    });
+    container.querySelector('#btn-export-sessions')?.addEventListener('click', () => {
+      exportSessions(rows, `clock_history_sessions_${state.start}_${state.end}.csv`);
     });
 
     showData = true;

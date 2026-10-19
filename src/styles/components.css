@@ -306,7 +306,7 @@
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-.btn-icon:hover {
+.btn-icon:hover:not(:disabled) {
   background: var(--bg-color);
   color: var(--text-primary);
 }
@@ -2449,126 +2449,88 @@ body > .searchable-select-dropdown {
 }
 
 /* ============================================================
-   RELAY — PREMIUM GLASSMORPHIC CSS TOOLTIPS
-   ============================================================ */
+   RELAY — TOOLTIPS (utils/tooltip.js)
+   ============================================================
+   One bubble on <body>, position:fixed and above every layer, so it is never clipped
+   by a scrolling table, card or modal and never slides under a sticky header. The
+   script places it against the viewport and sets data-placement + --arrow. */
 
-/* Tooltip Host container */
-[data-tooltip] {
-  position: relative;
-  cursor: pointer;
-}
-
-/* Tooltip Bubble element */
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%) translateY(4px) scale(0.95);
-  background: rgba(25, 28, 30, 0.9) !important; /* Premium Dark Glass */
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-  color: #ffffff !important;
-  padding: 6px 12px !important;
-  font-size: 11px !important;
-  font-weight: 500 !important;
-  border-radius: 6px !important;
-  white-space: nowrap !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
-  pointer-events: none !important;
+.relay-tooltip {
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  z-index: var(--z-tooltip);
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(25, 28, 30, 0.94);
+  color: #ffffff;
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
-  z-index: 9999 !important;
+  transform: scale(0.97);
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
-
-/* Tooltip Little Arrow pointer */
-[data-tooltip]::before {
-  content: '';
+.relay-tooltip.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.relay-tooltip-arrow {
   position: absolute;
-  bottom: calc(100% + 2px);
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  border-width: 6px 6px 0;
-  border-style: solid;
-  border-color: rgba(25, 28, 30, 0.9) transparent transparent !important;
-  pointer-events: none !important;
-  opacity: 0;
-  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
-  z-index: 9999 !important;
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
 }
-
-/* Elevate the host stacking context on hover so tooltips always appear on top */
-[data-tooltip]:hover {
-  z-index: 10000 !important;
+.relay-tooltip[data-placement="top"] .relay-tooltip-arrow {
+  top: 100%;
+  left: var(--arrow);
+  margin-left: -6px;
+  border-top-color: rgba(25, 28, 30, 0.94);
+  border-bottom-width: 0;
 }
-
-/* Trigger Hover states */
-[data-tooltip]:hover::after,
-[data-tooltip]:hover::before {
-  opacity: 1 !important;
-  transform: translateX(-50%) translateY(0) scale(1) !important;
+.relay-tooltip[data-placement="bottom"] .relay-tooltip-arrow {
+  bottom: 100%;
+  left: var(--arrow);
+  margin-left: -6px;
+  border-bottom-color: rgba(25, 28, 30, 0.94);
+  border-top-width: 0;
 }
-
-/* Right-aligned Tooltips */
-[data-tooltip-pos="right"]::after {
-  bottom: 50% !important;
-  left: calc(100% + 8px) !important;
-  transform: translateY(50%) translateX(-4px) scale(0.95) !important;
+.relay-tooltip[data-placement="left"] .relay-tooltip-arrow {
+  left: 100%;
+  top: var(--arrow);
+  margin-top: -6px;
+  border-left-color: rgba(25, 28, 30, 0.94);
+  border-right-width: 0;
 }
-[data-tooltip-pos="right"]::before {
-  bottom: 50% !important;
-  left: calc(100% + 2px) !important;
-  transform: translateY(50%) translateX(-4px) !important;
-  border-width: 6px 6px 6px 0 !important;
-  border-color: transparent rgba(25, 28, 30, 0.9) transparent transparent !important;
+.relay-tooltip[data-placement="right"] .relay-tooltip-arrow {
+  right: 100%;
+  top: var(--arrow);
+  margin-top: -6px;
+  border-right-color: rgba(25, 28, 30, 0.94);
+  border-left-width: 0;
 }
-[data-tooltip-pos="right"]:hover::after,
-[data-tooltip-pos="right"]:hover::before {
-  transform: translateY(50%) translateX(0) scale(1) !important;
+/* A disabled button saying why it is disabled has to be hoverable. Disabled controls
+   still never fire click, so this only lets the tooltip in. */
+.btn[data-tooltip]:disabled,
+.btn-icon[data-tooltip]:disabled {
+  pointer-events: auto;
+  cursor: not-allowed;
 }
-
-/* Left-aligned Tooltips */
-[data-tooltip-pos="left"]::after {
-  bottom: 50% !important;
-  right: calc(100% + 8px) !important;
-  left: auto !important;
-  transform: translateY(50%) translateX(4px) scale(0.95) !important;
+[data-theme-mode="dark"] .relay-tooltip {
+  background: rgba(39, 39, 42, 0.97);
+  border-color: rgba(255, 255, 255, 0.14);
 }
-[data-tooltip-pos="left"]::before {
-  bottom: 50% !important;
-  right: calc(100% + 2px) !important;
-  left: auto !important;
-  transform: translateY(50%) translateX(4px) !important;
-  border-width: 6px 0 6px 6px !important;
-  border-color: transparent transparent transparent rgba(25, 28, 30, 0.9) !important;
-}
-[data-tooltip-pos="left"]:hover::after,
-[data-tooltip-pos="left"]:hover::before {
-  transform: translateY(50%) translateX(0) scale(1) !important;
-}
-
-/* Bottom-aligned Tooltips */
-[data-tooltip-pos="bottom"]::after {
-  bottom: auto !important;
-  top: calc(100% + 8px) !important;
-  left: 50% !important;
-  right: auto !important;
-  transform: translateX(-50%) translateY(-4px) scale(0.95) !important;
-}
-[data-tooltip-pos="bottom"]::before {
-  bottom: auto !important;
-  top: calc(100% + 2px) !important;
-  left: 50% !important;
-  right: auto !important;
-  transform: translateX(-50%) translateY(-4px) !important;
-  border-width: 0 6px 6px !important;
-  border-color: transparent transparent rgba(25, 28, 30, 0.9) transparent !important;
-}
-[data-tooltip-pos="bottom"]:hover::after,
-[data-tooltip-pos="bottom"]:hover::before {
-  transform: translateX(-50%) translateY(0) scale(1) !important;
-}
+[data-theme-mode="dark"] .relay-tooltip[data-placement="top"] .relay-tooltip-arrow { border-top-color: rgba(39, 39, 42, 0.97); }
+[data-theme-mode="dark"] .relay-tooltip[data-placement="bottom"] .relay-tooltip-arrow { border-bottom-color: rgba(39, 39, 42, 0.97); }
+[data-theme-mode="dark"] .relay-tooltip[data-placement="left"] .relay-tooltip-arrow { border-left-color: rgba(39, 39, 42, 0.97); }
+[data-theme-mode="dark"] .relay-tooltip[data-placement="right"] .relay-tooltip-arrow { border-right-color: rgba(39, 39, 42, 0.97); }
 
 /* ============================================================
    TOOLBAR BULK ACTIONS CAPSULE SYSTEM
@@ -4615,32 +4577,44 @@ button.widget-picker-card {
   .lead-activity-staged-name { max-width: 140px; }
 }
 
-/* ---- Demo mode banner (components/DemoBanner.js) ---- */
-.demo-banner {
+/* ---- Demo mode pill beside the top-bar logo (components/DemoBanner.js) ---- */
+.demo-pill-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-  padding: 8px var(--space-lg);
-  background: var(--color-primary-light);
-  border-bottom: 1px solid var(--color-primary);
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.4;
+  margin-right: auto; /* keep it beside the logo; the actions stay right */
 }
-.demo-banner-tag {
-  flex-shrink: 0;
-  padding: 2px 8px;
+.demo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 9px;
+  border: none;
   border-radius: 999px;
   background: var(--color-primary-ink);
   color: #fff;
+  font: inherit;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
+  cursor: pointer;
 }
-.demo-banner-text { flex: 1 1 320px; min-width: 0; }
-.demo-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.demo-pill:hover { filter: brightness(1.08); }
+.demo-pill .material-icons-outlined { font-size: 14px; }
+.demo-pill-menu {
+  left: 0;
+  right: auto;
+  top: calc(100% + 6px);
+  width: 280px;
+}
+.demo-pill-menu-text {
+  padding: 6px 14px 8px;
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.demo-pill-menu-text strong { color: var(--text-primary); }
 
 /* List opened from a dashboard KPI card (utils/kpiListFilter.js) */
 .kpi-filter-bar { margin: 0 0 10px; }

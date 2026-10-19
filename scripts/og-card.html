@@ -6,17 +6,17 @@
 <meta name="robots" content="noindex">
 <style>
   @font-face {
-    font-family: 'Inter';
+    font-family: 'IBM Plex Sans';
     font-style: normal;
-    font-weight: 100 900;
+    font-weight: 100 700;
     font-display: block;
-    src: url('../site/assets/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+    src: url('../site/assets/fonts/ibm-plex-sans-latin-wght-normal.woff2') format('woff2-variations');
   }
   html, body { margin: 0; }
   body {
     padding: 24px;
     background: #f2f2f0;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
     color: #5c5c5a;
     font-size: 13px;
   }
@@ -54,8 +54,8 @@
   const DOT = '#dcdcda';
 
   const EYEBROW = 'Built in Australia for Australian trades';
-  const HEADLINE = 'Software that competes, without the sting.';
-  const SUB = 'Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer.';
+  const HEADLINE = 'Job software for tradies, without the sting.';
+  const SUB = 'Quotes, scheduling, invoices, job costing and a customer portal in one app. Free forever for one user on your own computer.';
 
   const H1_SIZE = 44;
   const H1_LH = H1_SIZE * 1.1;
@@ -142,7 +142,7 @@
   }
 
   function drawPill(text, x, y) {
-    ctx.font = '500 11px Inter, system-ui, sans-serif';
+    ctx.font = '500 11px IBM Plex Sans, system-ui, sans-serif';
     ctx.letterSpacing = '0.5px';
     const label = text.toUpperCase();
     const padX = 12;
@@ -168,7 +168,7 @@
     ctx.letterSpacing = '0px';
   }
 
-  function drawShot(atlas) {
+  function drawShot(shot) {
     ctx.save();
     ctx.shadowColor = 'rgba(15,15,15,0.10)';
     ctx.shadowBlur = 48;
@@ -183,7 +183,7 @@
     ctx.clip();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(atlas, 0, 0, 1440, 900, SHOT.x, SHOT.y, SHOT.w, SHOT.h);
+    ctx.drawImage(shot, 0, 0, shot.naturalWidth, shot.naturalHeight, SHOT.x, SHOT.y, SHOT.w, SHOT.h);
     ctx.restore();
 
     roundRect(SHOT.x + 0.5, SHOT.y + 0.5, SHOT.w - 1, SHOT.h - 1, 7.5);
@@ -194,24 +194,24 @@
 
   async function draw() {
     await Promise.all([
-      document.fonts.load('700 ' + H1_SIZE + 'px Inter'),
-      document.fonts.load('400 ' + SUB_SIZE + 'px Inter'),
-      document.fonts.load('500 11px Inter'),
+      document.fonts.load('700 ' + H1_SIZE + 'px IBM Plex Sans'),
+      document.fonts.load('400 ' + SUB_SIZE + 'px IBM Plex Sans'),
+      document.fonts.load('500 11px IBM Plex Sans'),
     ]);
     await document.fonts.ready;
 
     const logo = await loadImage('../site/assets/img/logo-relay.svg');
-    const atlas = await loadImage('../site/assets/preview/atlas-00.webp');
+    const shot = await loadImage('../site/assets/screens/dashboard.webp');
     if (logo.decode) await logo.decode();
-    if (atlas.decode) await atlas.decode();
+    if (shot.decode) await shot.decode();
 
     ctx.textBaseline = 'middle';
 
-    ctx.font = '700 ' + H1_SIZE + 'px Inter, system-ui, sans-serif';
+    ctx.font = '700 ' + H1_SIZE + 'px IBM Plex Sans, system-ui, sans-serif';
     ctx.letterSpacing = '-1.1px';
     const headline = wrap(HEADLINE, COPY_W);
 
-    ctx.font = '400 ' + SUB_SIZE + 'px Inter, system-ui, sans-serif';
+    ctx.font = '400 ' + SUB_SIZE + 'px IBM Plex Sans, system-ui, sans-serif';
     ctx.letterSpacing = '0px';
     const sub = wrap(SUB, COPY_W);
 
@@ -232,17 +232,17 @@
     cursor += PILL_H + ITEM_GAP;
 
     ctx.fillStyle = INK;
-    ctx.font = '700 ' + H1_SIZE + 'px Inter, system-ui, sans-serif';
+    ctx.font = '700 ' + H1_SIZE + 'px IBM Plex Sans, system-ui, sans-serif';
     ctx.letterSpacing = '-1.1px';
     fillLines(headline, PAD, cursor, H1_LH);
     ctx.letterSpacing = '0px';
     cursor += headline.length * H1_LH + ITEM_GAP;
 
     ctx.fillStyle = INK_2;
-    ctx.font = '400 ' + SUB_SIZE + 'px Inter, system-ui, sans-serif';
+    ctx.font = '400 ' + SUB_SIZE + 'px IBM Plex Sans, system-ui, sans-serif';
     fillLines(sub, PAD, cursor, SUB_LH);
 
-    drawShot(atlas);
+    drawShot(shot);
 
     const dataUrl = canvas.toDataURL('image/png');
     window.__ogCard = dataUrl;

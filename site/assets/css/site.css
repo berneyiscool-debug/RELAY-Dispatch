@@ -1,21 +1,21 @@
 /* RELAY Dispatch marketing site
    Plain CSS, no framework. Mirrors the approved design:
-   Inter only, #fbfbfa page, white cards with grey header strips,
+   IBM Plex Sans (the app's typeface), #fbfbfa page, white cards with grey header strips,
    6px / 8px radii, orange #FF5C00 for primary actions. */
 
 @font-face {
-  font-family: 'Inter';
+  font-family: 'IBM Plex Sans';
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 100 700;
   font-display: swap;
-  src: url('../fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  src: url('../fonts/ibm-plex-sans-latin-wght-normal.woff2') format('woff2-variations');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 :root {
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   --ink: #1a1a1a;
   --ink-2: #5c5c5a;
@@ -397,10 +397,10 @@ section[id] {
   color: var(--ink-3);
 }
 
-/* ---------- app preview ---------- */
+/* ---------- app screenshots ---------- */
 
-.preview {
-  position: relative;
+.shot {
+  margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -408,67 +408,53 @@ section[id] {
   box-shadow: var(--shadow-lg);
 }
 
-.preview__frame {
-  position: relative;
-  aspect-ratio: 1440 / 900;
-  overflow: hidden;
-  background: var(--canvas);
-}
-
-/* The global focus ring sits outside the box, which `overflow: hidden` would
-   clip here, so the ring is drawn inside the frame instead. */
-.preview__frame:focus-visible {
-  outline: 2px solid var(--orange-ink);
-  outline-offset: -2px;
-}
-
-/* The sprite box is pinned to the atlas geometry rather than left to the
-   intrinsic ratio of whichever bitmap is loaded. `--tiles` is the atlas's tile
-   count, so the box is always exactly that many screens tall and
-   `translateY(-tile / tiles * 100%)` lands on a tile boundary. Letting the box
-   follow the bitmap meant a swap painted the outgoing atlas into the incoming
-   box for a moment, which reads as the screen sliding into place.
-
-   No transition either, on purpose: changing screen moves the sprite with
-   `translateY` and application screenshots should cut rather than slide. */
-.preview__shot {
-  position: absolute;
-  left: 0;
-  top: 0;
+.shot img {
   display: block;
   width: 100%;
-  max-width: none;
-  height: calc(100% * var(--tiles, 1));
 }
 
-.preview__hotspot {
-  position: absolute;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  cursor: pointer;
-  touch-action: manipulation;
-  /* No transition: the demo swaps screens instantly, tint included. */
+/* ---------- tour ---------- */
+
+.tour {
+  border-top: 1px solid var(--line);
 }
 
-.preview__hotspot:hover {
-  background: rgba(255, 92, 0, 0.12);
+.tour__inner {
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: 72px 24px;
 }
 
-.preview__hotspot:focus-visible {
-  outline: 2px solid var(--orange-ink);
-  outline-offset: -2px;
-  background: rgba(255, 92, 0, 0.16);
+.tour__sub {
+  max-width: 40em;
+  margin: 0 0 16px;
+  font-size: 17px;
+  color: var(--ink-2);
 }
 
-.preview__hotspot:active {
-  background: rgba(255, 92, 0, 0.22);
+.tour__row {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: center;
+  gap: 48px;
+  padding: 40px 0;
 }
 
-.preview[data-busy='true'] .preview__hotspot {
-  cursor: progress;
+.tour__row:nth-of-type(even) .tour__copy {
+  order: 2;
+}
+
+.tour__copy h3 {
+  margin-bottom: 10px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.tour__copy p {
+  font-size: 16px;
+  color: var(--ink-2);
 }
 
 /* ---------- apps strip ---------- */
@@ -1104,6 +1090,7 @@ section[id] {
   }
 
   .features__inner,
+  .tour__inner,
   .free__inner,
   .pricing__inner,
   .compare__inner,
@@ -1116,6 +1103,17 @@ section[id] {
     gap: 32px;
   }
 
+  /* Screenshot under its copy, whichever side it sat on. */
+  .tour__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 28px 0;
+  }
+
+  .tour__row:nth-of-type(even) .tour__copy {
+    order: 0;
+  }
+
   .h2,
   .legal h1 {
     font-size: 30px;
@@ -1123,8 +1121,33 @@ section[id] {
 }
 
 @media (max-width: 560px) {
-  .nav-links a {
-    padding: 8px 10px;
+  /* One row on phones: the sticky header was three rows (~160px) here. The
+     section links go, since the page is one short scroll; the account buttons
+     stay beside the logo. */
+  .site-header__inner {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+
+  .site-header__brand img {
+    height: 20px;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
+  .nav-actions {
+    flex-wrap: nowrap;
+  }
+
+  .nav-actions .btn {
+    padding-inline: 12px;
+  }
+
+  .nav-actions .btn svg {
+    display: none;
   }
 
   .hero h1 {
@@ -1157,8 +1180,7 @@ section[id] {
 }
 
 @media print {
-  .site-header,
-  .preview__hotspot {
+  .site-header {
     display: none;
   }
 }

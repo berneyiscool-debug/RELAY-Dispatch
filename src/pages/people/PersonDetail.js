@@ -34,7 +34,8 @@ export function renderPersonDetail(container, { id, tab }) {
   const quotes = store.getAll('quotes').filter(q => q.customerId === id);
   const invoices = store.getAll('invoices').filter(i => i.customerId === id);
 
-  let activeTab = tab || 'details';
+  // The sidebar calls this tab "overview"; the page renders it as "details".
+  let activeTab = (tab === 'overview' ? 'details' : tab) || 'details';
 
   function render() {
     const totalBilled = invoices.reduce((sum, i) => sum + (i.total || 0), 0);

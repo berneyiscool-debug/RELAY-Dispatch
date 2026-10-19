@@ -143,6 +143,9 @@ export function generateDocument(type, data) {
   if (type === 'form') {
     return generateFormDocument(data);
   }
+  if (type === 'tasklist') {
+    return generateTasklistDocument(data);
+  }
 
   const isQuote = type === 'quote';
   const statusColors = DOC_STATUS_COLORS;
@@ -492,14 +495,27 @@ function generateFormDocument(data) {
         return;
       }
       
-      const val = data.responses[f.id];
+      const val = (data.responses || {})[f.id];
+
+      // Checkboxes print as they look on the form: a tick box beside its label,
+      // ticked or left empty.
+      if (f.type === 'checkbox') {
+        formHtml += `
+          <div style="grid-column: span ${fSpan}; display:flex; align-items:center; gap:8px; font-size:13px; color:#1E293B; page-break-inside:avoid">
+            ${tickBoxHtml(!data.blank && !!val)}<span>${escapeHTML(f.label)}</span>
+          </div>
+        `;
+        return;
+      }
+
       let valHtml = '';
-      if (f.type === 'signature') {
-        valHtml = val ? `<div style="font-family:'Brush Script MT', cursive; font-size:24px; padding:10px; border:1px solid #E4E9F0; border-radius:4px; text-align:center">${escapeHTML(val)}</div>` : '<div style="padding:10px; border:1px dashed #E4E9F0; color:#8A97A8; font-style:italic; text-align:center">No signature</div>';
-      } else if (f.type === 'checkbox') {
-        valHtml = `<div style="font-weight:600; color:${val ? '#10B981' : '#EF4444'}">${val ? 'YES / CHECKED' : 'NO / UNCHECKED'}</div>`;
+      if (data.blank) {
+        valHtml = blankFieldHtml(f);
+      } else if (f.type === 'signature') {
+        valHtml = val ? `<div style="font-family:'Brush Script MT', cursive; font-size:24px; padding:10px; border:1px solid #CBD5E1; border-radius:4px; text-align:center">${escapeHTML(val)}</div>` : `<div style="${BLANK_LINE}; height:44px"></div>`;
       } else {
-        valHtml = `<div style="padding:8px 12px; border:1px solid #E4E9F0; border-radius:4px; background:#F8FAFC; min-height:34px; font-size:12px">${val ? escapeHTML(val).replace(/\n/g, '<br/>') : '<span style="color:#8A97A8;font-style:italic">No response</span>'}</div>`;
+        const shown = f.type === 'date' && val ? formatDate(val) : val;
+        valHtml = `<div style="padding:8px 12px; border:1px solid #CBD5E1; border-radius:4px; background:#ffffff; min-height:${f.type === 'textarea' ? 64 : 34}px; font-size:12px; color:#1E293B">${shown ? escapeHTML(String(shown)).replace(/\n/g, '<br/>') : ''}</div>`;
       }
 
       formHtml += `
@@ -522,7 +538,7 @@ function generateFormDocument(data) {
         ${data.template.description ? `<div style="font-size:13px; color:#5A6B7F; margin-top:6px; line-height:1.6">${escapeHTML(data.template.description)}</div>` : ''}
       </div>
 
-      <div class="pdf-info-grid" style="margin-bottom:32px">
+      ${data.blank ? blankHeaderHtml(['Job reference', 'Customer', 'Completed by', 'Date']) : `<div class="pdf-info-grid" style="margin-bottom:32px">
         <div class="pdf-info-col">
           <div class="pdf-info-label">Job Reference</div>
           <div class="pdf-info-value-lg">${escapeHTML(data.jobNumber)}</div>
@@ -538,11 +554,96 @@ function generateFormDocument(data) {
             <span class="pdf-info-value">${formatDate(data.submittedAt)}</span>
           </div>
         </div>
-      </div>
+      </div>`}
 
       ${formHtml}
     </div>
   `;
+}
+
+// ---- Blank, print-and-fill-by-hand sheets -----------------------------------
+
+const BLANK_LINE = 'border-bottom:1px solid #94A3B8; height:28px';
+const TICK_BOX = '<span style="display:inline-block; width:14px; height:14px; border:1.5px solid #475569; border-radius:2px; vertical-align:middle; margin-right:6px"></span>';
+
+// A printed tick box. Drawn with CSS borders (not a font glyph) so it renders
+// the same in the browser, the print dialog and the html2canvas PDF capture.
+function tickBoxHtml(checked) {
+  return `<span style="position:relative; display:inline-block; flex-shrink:0; width:16px; height:16px; border:1.5px solid #334155; border-radius:3px; box-sizing:border-box; background:${checked ? '#1E293B' : '#ffffff'}">${checked
+    ? '<span style="position:absolute; left:4px; top:0.5px; width:5px; height:9px; border:solid #ffffff; border-width:0 2px 2px 0; transform:rotate(45deg)"></span>'
+    : ''}</span>`;
+}
+
+function blankHeaderHtml(labels) {
+  return `
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px 28px; margin-bottom:28px">
+      ${labels.map(l => `
+        <div>
+          <div style="font-size:10px; font-weight:700; color:#5A6B7F; text-transform:uppercase; letter-spacing:0.5px">${escapeHTML(l)}</div>
+          <div style="${BLANK_LINE}"></div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function blankFieldHtml(f) {
+  if (f.type === 'select' && Array.isArray(f.options) && f.options.length) {
+    return `<div style="display:flex; flex-wrap:wrap; gap:6px 18px; font-size:12px; color:#1E293B">${f.options.map(o => `<span>${TICK_BOX}${escapeHTML(o)}</span>`).join('')}</div>`;
+  }
+  if (f.type === 'signature') {
+    return `<div style="${BLANK_LINE}; height:44px"></div>`;
+  }
+  if (f.type === 'date') {
+    return '<div style="font-size:13px; color:#94A3B8; letter-spacing:2px; padding-top:8px">____ / ____ / ________</div>';
+  }
+  const lines = f.type === 'textarea' ? 3 : 1;
+  return Array.from({ length: lines }, () => `<div style="${BLANK_LINE}"></div>`).join('');
+}
+
+/**
+ * A tasklist template as a printable checklist: each phase with its tasks to
+ * tick off, and blank boxes for any readings the task records.
+ */
+export function generateTasklistDocument(template) {
+  const phases = Array.isArray(template.tasks) ? template.tasks : [];
+  const body = phases.map(phase => {
+    const subs = Array.isArray(phase.subTasks) ? phase.subTasks : [];
+    return `
+      <div style="margin-bottom:22px; border:1px solid #CBD5E1; border-radius:6px; overflow:hidden; page-break-inside:avoid">
+        <div style="background:#F8FAFC; padding:10px 16px; border-bottom:1px solid #CBD5E1; font-weight:700; color:#1E293B; font-size:14px; text-transform:uppercase; letter-spacing:0.5px">
+          ${escapeHTML(phase.name || 'Phase')}
+        </div>
+        <div style="padding:6px 16px">
+          ${subs.length ? subs.map(t => `
+            <div style="padding:9px 0; border-bottom:1px solid #EEF2F6">
+              <div style="display:flex; align-items:center; gap:4px; font-size:13px; color:#1E293B">
+                ${TICK_BOX}<span style="flex:1">${escapeHTML(t.name || '')}</span>
+                <span style="font-size:11px; color:#5A6B7F">Initials</span>
+                <span style="display:inline-block; width:60px; border-bottom:1px solid #94A3B8; height:16px; margin-left:6px"></span>
+              </div>
+              ${(Array.isArray(t.valueFields) ? t.valueFields : []).map(v => `
+                <div style="display:flex; align-items:center; gap:8px; margin:8px 0 2px 26px; font-size:12px; color:#334155">
+                  <span style="flex:1">${escapeHTML(v.label || '')}${(v.min !== '' && v.min != null) || (v.max !== '' && v.max != null) ? ` <span style="color:#8A97A8">(${v.min !== '' && v.min != null ? `min ${escapeHTML(String(v.min))}` : ''}${(v.min !== '' && v.min != null) && (v.max !== '' && v.max != null) ? ', ' : ''}${v.max !== '' && v.max != null ? `max ${escapeHTML(String(v.max))}` : ''})</span>` : ''}</span>
+                  <span style="display:inline-block; width:110px; border-bottom:1px solid #94A3B8; height:18px"></span>
+                  <span style="width:52px; color:#5A6B7F">${escapeHTML(v.unit || '')}</span>
+                </div>`).join('')}
+            </div>`).join('') : '<div style="padding:10px 0; color:#8A97A8; font-size:12px">No tasks in this phase.</div>'}
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="pdf-page">
+      <div style="margin-bottom:24px; padding-bottom:18px; border-bottom:2px solid #E4E9F0">
+        <div style="font-size:22px; font-weight:800; color:#1A2332">${escapeHTML(template.name || 'Tasklist')}</div>
+        ${template.description ? `<div style="font-size:13px; color:#5A6B7F; margin-top:6px; line-height:1.6">${escapeHTML(template.description)}</div>` : ''}
+      </div>
+      ${blankHeaderHtml(['Job reference', 'Site / customer', 'Completed by', 'Date'])}
+      ${body || '<div style="color:#8A97A8">This tasklist has no tasks yet.</div>'}
+      <div style="margin-top:28px; display:grid; grid-template-columns:1fr 1fr; gap:28px">
+        <div><div style="font-size:10px; font-weight:700; color:#5A6B7F; text-transform:uppercase; letter-spacing:0.5px">Signature</div><div style="${BLANK_LINE}; height:44px"></div></div>
+        <div><div style="font-size:10px; font-weight:700; color:#5A6B7F; text-transform:uppercase; letter-spacing:0.5px">Notes</div><div style="${BLANK_LINE}"></div><div style="${BLANK_LINE}"></div></div>
+      </div>
+    </div>`;
 }
 
 export function formatDate(dateStr) {

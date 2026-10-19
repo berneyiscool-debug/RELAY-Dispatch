@@ -4,6 +4,10 @@
 
 import { escapeHTML } from '../../utils/security.js';
 import { store } from '../../data/store.js';
+import { downloadDocument, resolveRenderable } from '../../utils/documentActions.js';
+import { showToast } from '../../components/Notifications.js';
+import { generateDocument, getPrintStyles } from '../../components/PrintPreview.js';
+import { fontFaceCss } from '../../utils/fonts.js';
 
 export function renderDocumentViewer(container) {
   let docData = null;
@@ -14,6 +18,17 @@ export function renderDocumentViewer(container) {
     }
   } catch (e) {
     console.error('Failed to parse document data:', e);
+  }
+
+  // Invoices, quotes and completed forms are drawn from their record as the
+  // printed page, so there is no file URL to resolve.
+  if (docData && docData.render) {
+    const source = resolveRenderable(docData.render);
+    if (source) {
+      renderWithData({ ...docData, html: printableHtml(source) });
+      return installCleanup();
+    }
+    docData = null;
   }
 
   if (!docData || !docData.url) {
@@ -60,36 +75,64 @@ export function renderDocumentViewer(container) {
         </div>
       `;
     });
+    installCleanup();
     return;
   }
 
   renderWithData(docData);
+  installCleanup();
+
+  function printableHtml({ type, data }) {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8" />
+      <style>${fontFaceCss()}</style>
+      <style>${getPrintStyles(store.getSettings() || {})}</style>
+      <style>html, body { background:#ffffff; margin:0; }</style>
+    </head><body>${generateDocument(type, data)}</body></html>`;
+  }
+
+  // Saved HTML documents (e.g. from the print dialog) arrive as data: URLs.
+  function decodeHtmlDataUrl(url) {
+    const m = /^data:text\/html(;[^,]*)?,(.*)$/s.exec(url || '');
+    if (!m) return null;
+    try {
+      return /;base64/.test(m[1] || '') ? atob(m[2]) : decodeURIComponent(m[2]);
+    } catch {
+      return null;
+    }
+  }
 
   function renderWithData(data) {
-    const isImage = data.type && data.type.startsWith('image/');
-    const isPdf = data.type === 'application/pdf' || data.name.toLowerCase().endsWith('.pdf');
+    const savedHtml = data.html ? null : decodeHtmlDataUrl(data.url);
+    const page = data.html || savedHtml;
+    const isImage = !page && data.type && data.type.startsWith('image/');
+    const isPdf = !page && (data.type === 'application/pdf' || (data.name || '').toLowerCase().endsWith('.pdf'));
+    const icon = page ? 'description' : isImage ? 'image' : isPdf ? 'picture_as_pdf' : 'description';
 
     container.innerHTML = `
       <div style="display: flex; flex-direction: column; height: 100vh; background: var(--bg-color);">
         <div class="page-header" style="background: var(--content-bg); border-bottom: 1px solid var(--border-color); padding: 12px 24px; margin: 0;">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex: 1; gap: 16px; min-width: 0;">
             <div style="display: flex; align-items: center; gap: 12px;">
               <div style="width: 40px; height: 40px; background: var(--bg-color); border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color);">
-                <span class="material-icons-outlined" style="color: var(--color-primary);">${isImage ? 'image' : isPdf ? 'picture_as_pdf' : 'description'}</span>
+                <span class="material-icons-outlined" style="color: var(--color-primary);">${icon}</span>
               </div>
               <div>
                 <h2 style="margin: 0; font-size: 16px;">${escapeHTML(data.name || 'View Document')}</h2>
                 <div class="text-secondary" style="font-size: 12px;">Read-Only View</div>
               </div>
             </div>
-            <div>
+            <div class="doc-viewer-actions">
+              ${page ? `<button class="btn btn-secondary btn-sm" id="doc-viewer-print" data-tooltip="Print this document" data-tooltip-pos="bottom"><span class="material-icons-outlined">print</span> Print</button>` : ''}
+              <button class="btn btn-primary btn-sm" id="doc-viewer-download" data-tooltip="Download to this computer" data-tooltip-pos="bottom"><span class="material-icons-outlined">download</span> Download</button>
               <button class="btn btn-secondary btn-sm" data-close-window data-tooltip="Close viewer tab" data-tooltip-pos="left">Close</button>
             </div>
           </div>
         </div>
         
         <div style="flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 24px;">
-          ${isImage ? `
+          ${page ? `
+            <iframe id="doc-viewer-page" title="${escapeHTML(data.name || 'Document')}" ${savedHtml ? 'sandbox="allow-same-origin allow-modals"' : ''} style="width: 210mm; max-width: 100%; height: 100%; border: none; box-shadow: var(--shadow-md); border-radius: 4px; background: white;"></iframe>
+          ` : isImage ? `
             <img src="${escapeHTML(data.url)}" style="max-width: 100%; max-height: 100%; box-shadow: var(--shadow-md); border-radius: 4px;" alt="${escapeHTML(data.name)}" />
           ` : isPdf ? `
             <iframe src="${escapeHTML(data.url)}" style="width: 100%; height: 100%; border: none; box-shadow: var(--shadow-md); border-radius: 4px; background: white;"></iframe>
@@ -98,13 +141,33 @@ export function renderDocumentViewer(container) {
               <span class="material-icons-outlined" style="font-size: 48px; color: var(--text-tertiary); margin-bottom: 16px;">description</span>
               <h4>Cannot preview this file type</h4>
               <p class="text-secondary" style="margin-bottom: 24px;">This file type (${escapeHTML(data.type || 'Unknown')}) cannot be previewed in the browser.</p>
-              <a href="${escapeHTML(data.url)}" download="${escapeHTML(data.name)}" class="btn btn-primary" data-tooltip="Download document to computer" data-tooltip-pos="top">Download File</a>
+              <button class="btn btn-primary" data-viewer-download data-tooltip="Download document to computer" data-tooltip-pos="top">Download File</button>
             </div>
           `}
         </div>
       </div>
     `;
-    
+
+    const frame = container.querySelector('#doc-viewer-page');
+    if (frame) frame.srcdoc = page;
+    const printBtn = container.querySelector('#doc-viewer-print');
+    if (printBtn && frame) printBtn.addEventListener('click', () => frame.contentWindow.print());
+
+    // Download the original record rather than the resolved URL, so local-sync
+    // files are re-read and storage URLs are fetched as a blob with the real name.
+    container.querySelectorAll('#doc-viewer-download, [data-viewer-download]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await downloadDocument(docData);
+        } catch (err) {
+          showToast(`Could not download: ${err.message || err}`, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
     // Make this full screen by hiding the standard app shell elements just for this route
     setTimeout(() => {
       const sidebar = document.querySelector('.sidebar');
@@ -124,7 +187,11 @@ export function renderDocumentViewer(container) {
   }
   
   // Cleanup on unmount (if they navigate away instead of closing)
-  const cleanup = () => {
+  function installCleanup() {
+    window.addEventListener('hashchange', cleanup);
+  }
+
+  function cleanup() {
     const sidebar = document.querySelector('.sidebar');
     const topbar = document.querySelector('.topbar');
     const breadcrumb = document.getElementById('breadcrumb');
@@ -139,6 +206,5 @@ export function renderDocumentViewer(container) {
       mainContent.style.overflow = '';
     }
     window.removeEventListener('hashchange', cleanup);
-  };
-  window.addEventListener('hashchange', cleanup);
+  }
 }
