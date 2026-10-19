@@ -171,7 +171,7 @@ defineAction({
   summarize: (input, result) => result
     ? `${result.template.name} on job ${result.job.number}: ${result.filledCount} field${result.filledCount === 1 ? '' : 's'} filled from ${result.scan.name}${result.flagged.length ? `, ${result.flagged.length} to check` : ''}. Saved as a draft for review.`
     : `Fill a form on ${input.job} from a scan.`,
-  artifacts: (result) => [{ label: `Review ${result.template.name}`, path: `/jobs/${result.job.id}?tab=forms&review=${result.formInstance.id}` }],
+  artifacts: (result) => [{ label: `Review ${result.template.name}`, path: `/jobs/${result.job.id}?tab=forms&form=${result.formInstance.id}` }],
   async run(input, ctx = {}) {
     const job = resolveJob(input.job);
     const scan = resolveScan(job, input.attachment);
@@ -217,7 +217,7 @@ defineAction({
       filledCount: mapped.filled.length,
       filled: mapped.filled,
       flagged,
-      reviewPath: `/jobs/${job.id}?tab=forms&review=${formInstance.id}`,
+      reviewPath: `/jobs/${job.id}?tab=forms&form=${formInstance.id}`,
     };
   },
 });

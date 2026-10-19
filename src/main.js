@@ -7,6 +7,7 @@ import './styles/components.css';
 import './styles/layout.css';
 import './styles/settings.css';
 import './styles/docEditor.css';
+import './styles/documents.css';
 
 import { router } from './router.js';
 import { store } from './data/store.js';
@@ -25,6 +26,7 @@ import { checkMaintenancePlans, scheduleEngineChecks } from './utils/maintenance
 import { createSidebar, updateSidebarActive } from './components/Sidebar.js';
 import { createTopBar } from './components/TopBar.js';
 import { initLucideIcons } from './utils/icons.js';
+import { initTooltips } from './utils/tooltip.js';
 import { clearListSearch } from './utils/listSearch.js';
 import { createBreadcrumb } from './components/Breadcrumb.js';
 import { initDatePicker } from './utils/clockPicker.js';
@@ -239,6 +241,7 @@ app.appendChild(appBody);
 
 // Swap Material Icon glyphs for Lucide SVGs (initial pass + live for dynamic content).
 initLucideIcons();
+initTooltips();
 
 // The trial clock is refreshed on sign-in and on every page load, so a trial
 // that lapsed while the tab sat open flips to read-only without a reload.
@@ -533,6 +536,12 @@ function renderPage(handler) {
       mainContent.classList.add('non-dashboard-schedule-page');
     }
 
+    // A record's details page (/jobs/:id, /quotes/:id, …) sits in one rounded
+    // panel that fills the content area (see .is-detail-page in layout.css).
+    const routeParts = hash.slice(1).split('?')[0].split('/').filter(Boolean);
+    const isDetailPage = routeParts.length === 2 && routeParts[1] !== 'new' && DETAIL_PAGE_RESOURCES.has(routeParts[0]);
+    mainContent.classList.toggle('is-detail-page', isDetailPage);
+
     const result = handler(mainContent, params);
     // Lazy routes hand back a promise; a chunk that fails to load (offline install,
     // bad deploy) must not leave the user staring at a blank page.
@@ -548,6 +557,12 @@ function renderPage(handler) {
     }
   };
 }
+
+// Sections whose /:section/:id route is a record's details page.
+const DETAIL_PAGE_RESOURCES = new Set([
+  'jobs', 'quotes', 'invoices', 'people', 'contractors', 'suppliers', 'leads',
+  'assets', 'stock', 'purchase-orders', 'kits', 'projects',
+]);
 
 // Resolves a route handler that lives in its own chunk. `load` is the dynamic
 // import, `name` the render export, and `mapParams` covers the handful of routes
@@ -846,7 +861,7 @@ router.onNavigate = (path, params) => {
           '/notifications': 'Notifications',
           '/quotes': 'Quotes',
           '/jobs': 'Jobs',
-          '/timesheets': 'Timesheets',
+          '/timesheets': 'Time Tracking',
           '/assets': 'Assets',
           '/schedule': 'Schedule',
           '/contractors': 'Contractors',

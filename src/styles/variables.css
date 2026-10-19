@@ -112,6 +112,7 @@
   --z-dropdown: 1000;
   --z-modal: 2000;
   --z-toast: 3000;
+  --z-tooltip: 10000;
 
   /* ---- Schedule Block Paint ----
      The schedule grid is the one place in RELAY that uses colour as data rather than

@@ -1,6 +1,11 @@
 // ============================================
-// RELAY — TIMESHEETS LIST & MANAGEMENT
+// RELAY — TIME TRACKING (entry) + JOB HOURS
 // ============================================
+// /timesheets is the Time Tracking area. This file routes its three screens and owns
+// the Job Hours list itself:
+//   clock   → Clock History (ClockHistory.js)
+//   jobs    → Job Hours (below)
+//   compare → Clocked vs Job Hours (ClockedVsJobs.js)
 
 import { store } from '../../data/store.js';
 import { router } from '../../router.js';
@@ -14,9 +19,10 @@ import { createDataTable } from '../../components/DataTable.js';
 import { createDateRangeFilter } from '../../utils/dateRangeFilter.js';
 import { todayLocalISO } from '../../utils/dateUtils.js';
 import { setListSearch } from '../../utils/listSearch.js';
-import { renderAttendanceView } from './Attendance.js';
-import { renderHoursView } from './Hours.js';
-import { renderPayrollView } from './Payroll.js';
+import { renderClockHistoryView } from './ClockHistory.js';
+import { renderClockedVsJobsView } from './ClockedVsJobs.js';
+import { hoursOf } from '../../utils/jobTimeLedger.js';
+import { downloadCSV } from '../../utils/hoursMath.js';
 import { resolveSection, sectionTitle } from '../../utils/timesheetSections.js';
 import { readKpiListFilter, mountKpiFilterChip } from '../../utils/kpiListFilter.js';
 
@@ -51,6 +57,7 @@ export function renderTimesheetsList(container, params = {}) {
   if (kpiFilter) { filterStartDate = ''; filterEndDate = ''; }
 
   let selectedIds = [];
+  let sortBy = 'date_desc';
 
   // Pagination — shares the global page-size preference key with the DataTable component
   // so the footer looks and behaves identically to the other list pages.
@@ -69,24 +76,13 @@ export function renderTimesheetsList(container, params = {}) {
   }
 
   function render() {
-    if (nav.section === 'hours') {
-      renderHoursView(container, params);
+    if (nav.section === 'clock') {
+      renderClockHistoryView(container, params);
       return;
     }
 
-    if (nav.section === 'payroll') {
-      // The pay run is its own screen now; the roster-vs-worked comparison stays with
-      // the attendance views until the surplus ones are retired.
-      if (nav.view === 'variance') {
-        renderAttendanceView(container, params);
-        return;
-      }
-      renderPayrollView(container, params);
-      return;
-    }
-
-    if (nav.section === 'attendance') {
-      renderAttendanceView(container, params);
+    if (nav.section === 'compare') {
+      renderClockedVsJobsView(container, params);
       return;
     }
 
@@ -119,7 +115,7 @@ export function renderTimesheetsList(container, params = {}) {
       dateTechFiltered = dateTechFiltered.filter(t => (t.date ? t.date.split('T')[0] : '') <= filterEndDate);
     }
 
-    const filteredData = dateTechFiltered;
+    const filteredData = sortEntries(dateTechFiltered);
 
     const allFilteredIds = filteredData.map(t => t.id);
     const allSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedIds.includes(id));
@@ -134,18 +130,22 @@ export function renderTimesheetsList(container, params = {}) {
     const pageStart = (currentPage - 1) * pageSize;
     const pagedData = filteredData.slice(pageStart, pageStart + pageSize);
 
-    // Group by date (current page only)
+    // Group by date (current page only). Sorted by something other than date, the
+    // list is one group so the chosen order is not broken up by day headers.
+    const byDate = sortBy.startsWith('date');
     const groups = [];
     pagedData.forEach(t => {
       const d = new Date(t.date);
-      const dateStr = d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const dateStr = byDate
+        ? d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+        : 'All entries';
       let group = groups.find(g => g.dateStr === dateStr);
       if (!group) {
         group = { dateStr, items: [], total: 0 };
         groups.push(group);
       }
       group.items.push(t);
-      group.total += (t.hours || 0);
+      group.total += hoursOf(t);
     });
     const allJobs = store.getAll('jobs') || [];
     const jobMap = new Map(allJobs.map(j => [j.id, j]));
@@ -193,11 +193,11 @@ export function renderTimesheetsList(container, params = {}) {
         <h1>${sectionTitle(nav.section)}</h1>
         <div class="page-header-actions" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
           <div id="date-range-mount" style="display:inline-flex; align-items:center;"></div>
-          <select id="filter-sort-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;" title="Sort Timesheets">
-            <option value="date_desc">Sort: Newest First</option>
-            <option value="date_asc">Sort: Oldest First</option>
-            <option value="technician_asc">Sort: Technician (A-Z)</option>
-            <option value="hours_desc">Sort: Hours (High-Low)</option>
+          <select id="filter-sort-select" class="form-select" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;" title="Sort job hours">
+            <option value="date_desc" ${sortBy === 'date_desc' ? 'selected' : ''}>Sort: Newest First</option>
+            <option value="date_asc" ${sortBy === 'date_asc' ? 'selected' : ''}>Sort: Oldest First</option>
+            <option value="technician_asc" ${sortBy === 'technician_asc' ? 'selected' : ''}>Sort: Technician (A-Z)</option>
+            <option value="hours_desc" ${sortBy === 'hours_desc' ? 'selected' : ''}>Sort: Hours (High-Low)</option>
           </select>
           ${(currentUser.role === 'admin' || currentUser.role === 'manager' || isLocalAdmin) ? `
           <select class="form-select" id="filter-tech" style="height:25px; font-size:11px; padding:0 18px 0 8px; width:145px; margin:0; align-self:center;">
@@ -212,8 +212,11 @@ export function renderTimesheetsList(container, params = {}) {
               return html;
             })()}
           </select>` : ''}
+          <button class="btn btn-sm btn-secondary" id="btn-export-job-hours" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;" ${totalRows === 0 ? 'disabled' : ''}>
+            <span class="material-icons-outlined" style="font-size:13px;">download</span> <span class="btn-label">Export CSV</span>
+          </button>
           ${hasPermission('Timesheets', 'create') ? `
-            <button class="btn btn-sm btn-primary" id="btn-log-time" data-tooltip="${(isLocalAdmin || !['admin', 'manager', 'office'].includes(currentUser.role)) ? 'Log a new timesheet entry' : 'Manually enter a timesheet record for another employee'}" data-tooltip-pos="left" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
+            <button class="btn btn-sm btn-primary" id="btn-log-time" style="height:25px; font-size:11px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; margin:0; align-self:center;">
               <span class="material-icons-outlined" style="font-size:13px;">add</span> <span class="btn-label">Log Time</span>
             </button>
           ` : ''}
@@ -225,8 +228,8 @@ export function renderTimesheetsList(container, params = {}) {
         ${groups.length === 0 ? `
         <div class="empty-state">
           <span class="material-icons-outlined">schedule</span>
-          <h3>No timesheets found</h3>
-          <p>Try adjusting your filters or log a new time entry.</p>
+          <h3>No job hours found</h3>
+          <p>Try adjusting your filters or log time against a job.</p>
         </div>
         ` : `
         <div class="data-table-wrapper">
@@ -243,7 +246,7 @@ export function renderTimesheetsList(container, params = {}) {
             </thead>
             <tbody>
               ${groups.map(group => `
-                <tr class="group-header" style="background:var(--content-bg);">
+                <tr class="dt-group-row">
                   <td></td>
                   <td colspan="4">${group.dateStr}</td>
                   <td class="num" style="color:var(--color-primary)">${group.total.toFixed(2)} hrs</td>
@@ -273,7 +276,7 @@ export function renderTimesheetsList(container, params = {}) {
                     <td>${escapeHTML(t.technicianName)}</td>
                     <td><a href="#/jobs/${t.jobId}" class="cell-link" title="${escapeHTML(jobLabel)}">${escapeHTML(jobLabel)}</a></td>
                     <td><span class="text-secondary truncate" style="max-width:200px;display:inline-block">${escapeHTML(t.taskName || t.phaseName || t.task_name || '—')}</span></td>
-                    <td class="num">${(t.hours ?? t.durationHours ?? t.duration_hours ?? 0).toFixed(2)}</td>
+                    <td class="num">${hoursOf(t).toFixed(2)}</td>
                   </tr>
                 `;}).join('')}
               `).join('')}
@@ -287,6 +290,16 @@ export function renderTimesheetsList(container, params = {}) {
     `;
 
     // Filter events
+    container.querySelector('#filter-sort-select')?.addEventListener('change', (e) => {
+      sortBy = e.target.value;
+      currentPage = 1;
+      render();
+    });
+
+    container.querySelector('#btn-export-job-hours')?.addEventListener('click', () => {
+      exportEntries(filteredData, `job_hours_${filterStartDate || 'all'}_${filterEndDate || 'all'}.csv`);
+    });
+
     container.querySelector('#filter-tech')?.addEventListener('change', (e) => {
       filterTechId = e.target.value;
       render();
@@ -462,50 +475,12 @@ export function renderTimesheetsList(container, params = {}) {
 
     const triggerExportSelected = () => {
       if (selectedIds.length === 0) return;
-
-      const allTimesheets = getCombinedTimesheets();
-      const selectedEntries = allTimesheets.filter(t => selectedIds.includes(t.id));
-
+      const selectedEntries = filteredData.filter(t => selectedIds.includes(t.id));
       if (selectedEntries.length === 0) {
         showToast('No entries found to export', 'error');
         return;
       }
-
-      // Generate CSV
-      const headers = ['Date', 'Technician', 'Job Number', 'Task Name', 'Start Time', 'Finish Time', 'Hours', 'Description'];
-      const csvRows = [headers.join(',')];
-
-      selectedEntries.forEach(entry => {
-        const start = entry.startTime ? new Date(entry.startTime).toLocaleString() : '';
-        const finish = entry.finishTime ? new Date(entry.finishTime).toLocaleString() : '';
-        
-        const row = [
-          entry.date || '',
-          `"${(entry.technicianName || '').replace(/"/g, '""')}"`,
-          `"${(entry.jobNumber || '').replace(/"/g, '""')}"`,
-          `"${(entry.taskName || '').replace(/"/g, '""')}"`,
-          `"${start}"`,
-          `"${finish}"`,
-          entry.hours || 0,
-          `"${(entry.description || '').replace(/"/g, '""')}"`
-        ];
-        csvRows.push(row.join(','));
-      });
-
-      const csvContent = csvRows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      const dateLabel = todayLocalISO();
-      link.setAttribute('download', `RELAY_Selected_Timesheets_${dateLabel}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      showToast(`Exported ${selectedEntries.length} selected timesheets to CSV!`, 'success');
+      exportEntries(selectedEntries, `job_hours_selected_${todayLocalISO()}.csv`);
       selectedIds = [];
       render();
     };
@@ -526,6 +501,44 @@ export function renderTimesheetsList(container, params = {}) {
     container.querySelector('#btn-log-time')?.addEventListener('click', () => {
       openLogTimeModal();
     });
+  }
+
+  function sortEntries(list) {
+    const sorted = [...list];
+    const day = t => (t.date ? String(t.date).slice(0, 10) : '');
+    if (sortBy === 'date_asc') sorted.sort((a, b) => day(a).localeCompare(day(b)));
+    else if (sortBy === 'technician_asc') sorted.sort((a, b) => (a.technicianName || '').localeCompare(b.technicianName || '') || day(b).localeCompare(day(a)));
+    else if (sortBy === 'hours_desc') sorted.sort((a, b) => hoursOf(b) - hoursOf(a));
+    else sorted.sort((a, b) => day(b).localeCompare(day(a)));
+    return sorted;
+  }
+
+  // One row per booking, with the job and customer spelled out so the file stands on
+  // its own in a spreadsheet or reporting tool.
+  function exportEntries(entries, filename) {
+    const jobMap = new Map((store.getAll('jobs') || []).map(j => [j.id, j]));
+    const time = v => {
+      const m = String(v || '').match(/T(\d{2}:\d{2})/);
+      return m ? m[1] : '';
+    };
+    const csv = [['Date', 'Technician', 'Job Number', 'Job Title', 'Customer', 'Task', 'Start', 'Finish', 'Hours', 'Description']];
+    entries.forEach(entry => {
+      const job = jobMap.get(entry.jobId);
+      csv.push([
+        entry.date ? String(entry.date).slice(0, 10) : '',
+        entry.technicianName || '',
+        job?.number || entry.jobNumber || '',
+        job?.title || entry.jobTitle || '',
+        job?.customerName || '',
+        entry.taskName || entry.phaseName || entry.task_name || '',
+        time(entry.startTime),
+        time(entry.finishTime),
+        hoursOf(entry).toFixed(2),
+        entry.description || ''
+      ]);
+    });
+    downloadCSV(filename, csv);
+    showToast(`Exported ${entries.length} job hour entr${entries.length === 1 ? 'y' : 'ies'} to CSV`, 'success');
   }
 
   function openEditModal(timesheetId) {

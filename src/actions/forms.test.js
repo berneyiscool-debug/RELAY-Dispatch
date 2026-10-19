@@ -99,7 +99,7 @@ describe('fill_form_from_scan', () => {
     assert.equal(fi.scan.fileName, 'jsa-photo.jpg');
     assert.ok(result.flagged.some((f) => f.label === 'Detailed Control Measures'));
     assert.match(out.summary, /Saved as a draft/);
-    assert.equal(out.artifacts[0].path, `/jobs/${job.id}?tab=forms&review=${fi.id}`);
+    assert.equal(out.artifacts[0].path, `/jobs/${job.id}?tab=forms&form=${fi.id}`);
   });
 
   test('a named form skips detection and updates the attached draft in place', async () => {

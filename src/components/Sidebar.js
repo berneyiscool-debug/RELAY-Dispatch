@@ -46,13 +46,13 @@ const navItems = [
     items: [
       { id: 'assets', icon: 'precision_manufacturing', label: 'Assets', path: '/assets' },
       { id: 'stock', icon: 'inventory_2', label: 'Stock', path: '/stock', hasChildren: true },
-      { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders', dividerAfter: true },
-      { id: 'timesheets', icon: 'schedule', label: 'Time & Pay', path: '/timesheets', hasChildren: true },
+      { id: 'purchase-orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/purchase-orders' },
     ],
   },
   {
     category: 'Admin', id: 'cat-admin', icon: 'bolt',
     items: [
+      { id: 'timesheets', icon: 'schedule', label: 'Time Tracking', path: '/timesheets', hasChildren: true },
       { id: 'documents', icon: 'folder', label: 'Documents', path: '/documents', hasChildren: true },
       { id: 'reports', icon: 'bar_chart', label: 'Reports', path: '/reports', hasChildren: true, dividerAfter: true },
       { id: 'settings', icon: 'settings', label: 'Settings', path: '/settings', hasChildren: true },
@@ -174,7 +174,7 @@ export function createSidebar() {
       return;
     }
 
-    // A parent tab in a nested menu (Time & Pay sections) opens its own level, exactly
+    // A parent tab in a nested menu opens its own level, exactly
     // like a rail category opening a submenu. The click still navigates, so menu and page
     // agree; the level above stays one back-button away.
     const drillBtn = e.target.closest('.submenu-item[data-drill-open]');
@@ -419,26 +419,15 @@ export function getContextualMenu(hash, panelEl) {
     };
   }
 
-  // Documents List (/documents)
+  // Documents List (/documents). Folders are browsed inside the page's own
+  // file explorer, so the panel is just the header with a way back to Admin.
   if (resource === 'documents' && !id) {
-    const currentTab = activeTab || 'All Documents';
     return {
       railId: 'cat-admin',
       headerTitle: 'Document Center',
       icon: 'folder',
-      items: [
-        { id: 'All Documents', icon: 'dashboard', label: 'All Documents', path: '/documents?tab=All%20Documents' },
-        { id: 'Company Docs', icon: 'domain', label: 'Company Docs', path: '/documents?tab=Company%20Docs' },
-        { id: 'Health & Safety', icon: 'health_and_safety', label: 'Health & Safety', path: '/documents?tab=Health%20&%20Safety' },
-        { id: 'Templates', icon: 'file_copy', label: 'Templates', path: '/documents?tab=Templates' },
-        { id: 'Job Attachments', icon: 'build', label: 'Job Attachments', path: '/documents?tab=Job%20Attachments' },
-        { id: 'Customer Attachments', icon: 'people', label: 'Customer Attachments', path: '/documents?tab=Customer%20Attachments' },
-        { id: 'Digital Forms', icon: 'assignment', label: 'Digital Forms', path: '/documents?tab=Digital%20Forms' },
-        { id: 'Invoices', icon: 'receipt_long', label: 'Invoices', path: '/documents?tab=Invoices' },
-        { id: 'Quotes', icon: 'request_quote', label: 'Quotes', path: '/documents?tab=Quotes' },
-        { id: 'Purchase Orders', icon: 'shopping_cart', label: 'Purchase Orders', path: '/documents?tab=Purchase%20Orders' }
-      ],
-      activeTab: currentTab
+      backSection: 'cat-admin',
+      items: [],
     };
   }
 
@@ -484,29 +473,17 @@ export function getContextualMenu(hash, panelEl) {
     };
   }
 
-  // Time & Pay (/timesheets) — the sections inside it. A section with more than one
-  // screen (see utils/timesheetSections.js) opens as a second menu level, so the panel
-  // is three deep here: rail category → sections → that section's screens.
+  // Time Tracking (/timesheets) — its three screens, one plain link each.
   if (resource === 'timesheets' && !id) {
-    const { section, view } = resolveSection(activeTab, params.get('view'));
-    const items = sectionNav();
-
-    // The route is the source of truth for which level is open; `panelDrill` only
-    // remembers a deliberate step back out of a parent (see the panel sync below).
-    const backedOut = panelDrill && panelDrill.root === section ? panelDrill.path : null;
-    const openPath = backedOut || openChain(items, [section, view]);
-
+    const { section } = resolveSection(activeTab);
     return {
-      railId: 'cat-resources',
-      headerTitle: 'Time & Pay',
+      railId: 'cat-admin',
+      headerTitle: 'Time Tracking',
       icon: 'schedule',
-      backSection: 'cat-resources',
-      backLabel: 'Back to Resources',
-      items,
-      openPath,
-      drill: { root: section, path: openPath },
-      activeTab: section,
-      activeView: view
+      backSection: 'cat-admin',
+      backLabel: 'Back to Admin',
+      items: sectionNav(),
+      activeTab: section
     };
   }
 
@@ -761,7 +738,7 @@ export function getContextualMenu(hash, panelEl) {
 // Render a contextual submenu's items. Supports three shapes:
 //   1. Flat list of { id, icon, label, path, ... } page links.
 //   2. Nested list: an item carrying `children` opens them as the next level of the same
-//      panel (the panel's `openPath` says which level is showing). Used by Time & Pay.
+//      panel (the panel's `openPath` says which level is showing).
 //   3. Grouped drill-down: `groups` = [{ id, label, icon, items: [...] }] with an
 //      optional `openGroupId`. When a group is open, only its items render (the
 //      header back button returns to the group list); otherwise the groups render

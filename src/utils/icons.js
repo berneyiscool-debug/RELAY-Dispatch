@@ -176,6 +176,7 @@ const MAP = {
   precision_manufacturing: 'Factory',
   price_check: 'BadgeCheck',
   print: 'Printer',
+  punch_clock: 'ClipboardClock',
   psychology: 'Brain',
   radio_button_unchecked: 'Circle',
   rainy: 'CloudRain',
