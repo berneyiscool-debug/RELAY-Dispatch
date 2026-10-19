@@ -50,7 +50,14 @@ function showImageLightbox(src, name) {
   });
 }
 
-export function renderJobDetail(container, { id, tab }) {
+// A photo or PDF upload brny can read a hand-filled form from.
+function isFormScanFile(f) {
+  if (!f || !f.data) return false;
+  const type = String(f.type || '').toLowerCase();
+  return type.startsWith('image/') || type === 'application/pdf' || /\.(png|jpe?g|webp|gif|pdf)$/i.test(f.name || '');
+}
+
+export function renderJobDetail(container, { id, tab, review }) {
   const job = store.getById('jobs', id);
   if (!job) {
     container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Job not found</h3></div>';
@@ -3765,7 +3772,7 @@ export function renderJobDetail(container, { id, tab }) {
                     ${log.content ? `<div style="font-size:var(--font-size-sm);white-space:pre-wrap;margin-bottom:8px">${escapeHTML(log.content)}</div>` : ''}
                     ${log.files && log.files.length ? `
                       <div style="display:flex; flex-wrap:wrap; gap:8px">
-                        ${log.files.map(f => `
+                        ${log.files.map((f, fileIdx) => `
                           <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--border-color);padding:8px;border-radius:4px;background:var(--card-bg);width:fit-content;max-width:100%">
                              ${f.type && f.type.startsWith('image/') ?
         `<div class="activity-image-thumb" data-img-index="${activityImages.push({ data: f.data, name: f.name }) - 1}" title="Click to enlarge" style="width:40px;height:40px;background:url('${escapeHTML(f.data)}') center/cover;border-radius:4px;cursor:pointer"></div>` :
@@ -3775,6 +3782,7 @@ export function renderJobDetail(container, { id, tab }) {
                                <div class="truncate font-medium" style="font-size:var(--font-size-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${escapeHTML(f.name)}">${escapeHTML(f.name)}</div>
                                <div class="text-secondary" style="font-size:10px">${(f.size / 1024).toFixed(1)} KB</div>
                              </div>
+                             ${isFormScanFile(f) ? `<button type="button" class="btn btn-ghost btn-sm btn-scan-to-form" data-scan-key="${escapeHTML(`${log.id}:${fileIdx}`)}" data-scan-name="${escapeHTML(f.name || '')}" title="Have brny read this hand-filled form into a draft" style="display:flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px"><span class="material-icons-outlined" style="font-size:16px">document_scanner</span>Fill a form from this scan</button>` : ''}
                            </div>
                         `).join('')}
                       </div>
@@ -3936,6 +3944,10 @@ export function renderJobDetail(container, { id, tab }) {
           const img = activityImages[parseInt(thumb.dataset.imgIndex, 10)];
           if (img) showImageLightbox(img.data, img.name);
         });
+      });
+
+      tc.querySelectorAll('.btn-scan-to-form').forEach(btn => {
+        btn.addEventListener('click', () => showScanToFormModal(btn.dataset.scanKey, btn.dataset.scanName));
       });
 
       tc.querySelectorAll('.btn-delete-activity').forEach(btn => {
@@ -4676,6 +4688,10 @@ export function renderJobDetail(container, { id, tab }) {
 
   render();
 
+  // brny links a scanned form here (`?tab=forms&review=<instance>`) so the
+  // person lands straight on the draft it filled.
+  if (review && store.getById('formInstances', review)) showFillFormModal(review);
+
   function r(label, value, opts = {}) {
     return `
       <div class="detail-row">
@@ -4714,7 +4730,10 @@ export function renderJobDetail(container, { id, tab }) {
       return `
                   <tr>
                     <td class="font-medium">${escapeHTML(template?.name || 'Unknown Form')}</td>
-                    <td><span class="badge ${isComplete ? 'badge-success' : 'badge-warning'}">${fi.status}</span></td>
+                    <td>
+                      <span class="badge ${isComplete ? 'badge-success' : 'badge-warning'}">${fi.status}</span>
+                      ${!isComplete && fi.scan && !fi.scan.reviewedAt ? `<span class="badge badge-info" title="Filled by brny from ${escapeHTML(fi.scan.fileName || 'a scan')}" style="margin-left:4px">From scan · review${Object.keys(fi.scan.flags || {}).length ? ` ${Object.keys(fi.scan.flags).length}` : ''}</span>` : ''}
+                    </td>
                     <td>${submitter ? escapeHTML(`${submitter.firstName} ${submitter.lastName}`) : '—'}</td>
                     <td style="font-size:12px; color:var(--text-tertiary)">${fi.submittedAt ? new Date(fi.submittedAt).toLocaleDateString() : '—'}</td>
                     <td style="text-align:right">
@@ -4853,6 +4872,74 @@ export function renderJobDetail(container, { id, tab }) {
     });
   }
 
+  // Hand-filled paper form → draft formInstance. brny reads the upload, saves
+  // a Pending draft, and the fill modal opens on it for review: nothing is
+  // completed until the person checks the flagged fields and signs it off.
+  function showScanToFormModal(scanKey, scanName) {
+    const templates = store.getAll('formTemplates') || [];
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <p style="margin:0 0 16px; font-size:14px; color:var(--text-secondary)">
+        brny will read <strong>${escapeHTML(scanName || 'this upload')}</strong> and fill a draft of the matching form on this job.
+        You'll review it — anything brny wasn't sure of is highlighted — before it's completed.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="scan-form-template">Which form is it?</label>
+        <select class="form-select" id="scan-form-template">
+          <option value="">Detect from the sheet</option>
+          ${templates.map(t => `<option value="${escapeHTML(t.id)}">${escapeHTML(t.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div id="scan-form-status" role="status" style="font-size:13px; margin-top:12px; min-height:18px"></div>
+    `;
+    const status = content.querySelector('#scan-form-status');
+    let busy = false;
+
+    showModal({
+      title: 'Fill a form from this scan',
+      content,
+      actions: [
+        { label: 'Cancel', className: 'btn-secondary', onClick: c => { if (!busy) c(); } },
+        {
+          label: 'Read scan',
+          className: 'btn-primary',
+          onClick: async (close) => {
+            if (busy) return;
+            busy = true;
+            const form = content.querySelector('#scan-form-template').value;
+            status.style.color = 'var(--text-secondary)';
+            status.textContent = 'brny is reading the scan…';
+            try {
+              const { executeAction } = await import('../../actions/index.js');
+              const { result } = await executeAction('fill_form_from_scan', { job: id, attachment: scanKey, ...(form ? { form } : {}) }, { source: 'ui' });
+              close();
+              const flagged = result.flagged.length;
+              showToast(`${result.template.name}: ${result.filledCount} field${result.filledCount === 1 ? '' : 's'} filled${flagged ? `, ${flagged} to check` : ''}. Review before completing.`, 'success');
+              router.navigate(result.reviewPath);
+            } catch (err) {
+              busy = false;
+              status.style.color = 'var(--color-danger)';
+              status.textContent = err && err.code === 'ambiguous'
+                ? "brny couldn't tell which form this is. Pick it above and try again."
+                : (err && err.message) || 'brny could not read that scan.';
+            }
+          }
+        }
+      ]
+    });
+  }
+
+  // The upload a scanned draft was read from (`<activityLog entry id>:<file index>`).
+  function scanUploadByKey(key) {
+    const at = String(key || '').lastIndexOf(':');
+    if (at < 0) return null;
+    const entryId = key.slice(0, at);
+    const entry = ((store.getById('jobs', id) || {}).activityLog || []).find(l => String(l.id) === entryId);
+    if (!entry) return null;
+    const files = entry.type === 'attachment' && entry.file ? [entry.file] : (entry.files || []);
+    return files[Number(key.slice(at + 1))] || null;
+  }
+
   function showAttachFormModal() {
     const allTemplates = store.getAll('formTemplates');
     const existingInstances = store.getAll('formInstances').filter(fi => fi.jobId === id);
@@ -4912,6 +4999,27 @@ export function renderJobDetail(container, { id, tab }) {
     const fi = instances.find(i => i.id === instanceId);
     const template = store.getById('formTemplates', fi.templateId);
     const isComplete = fi.status === 'Completed';
+    // A draft brny filled from a scan carries what it was unsure of; those
+    // fields are outlined with the reason until the person signs it off.
+    const scanReview = !isComplete && fi.scan && !fi.scan.reviewedAt ? fi.scan : null;
+    const scanFlags = (scanReview && scanReview.flags) || {};
+    const flaggedCount = Object.keys(scanFlags).length;
+    const scanFile = scanReview ? scanUploadByKey(scanReview.attachmentKey) : null;
+    const scanImage = scanFile && String(scanFile.type || '').startsWith('image/') ? scanFile : null;
+    const flagNote = (fieldId) => {
+      const flag = scanFlags[fieldId];
+      if (!flag) return '';
+      const colour = flag.level === 'check' ? 'var(--color-warning)' : 'var(--color-danger)';
+      return `<div class="scan-flag-note" style="display:flex; gap:6px; align-items:flex-start; margin-top:6px; font-size:12px; color:${colour}">
+          <span class="material-icons-outlined" style="font-size:16px">${flag.level === 'check' ? 'visibility' : 'help_outline'}</span>
+          <span>${escapeHTML(flag.message || 'Check this against the sheet.')}${flag.suggestion ? ` brny read: <em>“${escapeHTML(flag.suggestion)}”</em>` : ''}</span>
+        </div>`;
+    };
+    const flagStyle = (fieldId) => {
+      const flag = scanFlags[fieldId];
+      if (!flag) return '';
+      return `outline:2px solid ${flag.level === 'check' ? 'var(--color-warning)' : 'var(--color-danger)'}; outline-offset:4px; border-radius:4px;`;
+    };
 
     const content = document.createElement('div');
 
@@ -4920,6 +5028,18 @@ export function renderJobDetail(container, { id, tab }) {
         <h3 style="margin:0">${escapeHTML(template.name)}</h3>
         <div style="font-size:14px; color:var(--text-secondary); margin-top:6px">${escapeHTML(template.description || '')}</div>
       </div>
+      ${scanReview ? `
+        <div class="scan-review-banner" style="display:flex; gap:10px; align-items:flex-start; padding:12px 16px; margin-bottom:20px; border-radius:8px; background:var(--color-info-bg); border:1px solid var(--color-info); color:var(--color-info); font-size:13px">
+          <span class="material-icons-outlined" style="font-size:20px">document_scanner</span>
+          <div>
+            <strong>Filled by brny from ${escapeHTML(scanReview.fileName || 'a scan')}.</strong>
+            ${flaggedCount
+              ? `${flaggedCount} field${flaggedCount === 1 ? '' : 's'} highlighted below need${flaggedCount === 1 ? 's' : ''} checking against the paper copy.`
+              : 'Check the answers against the paper copy.'}
+            Nothing is final until you Complete &amp; Sign.
+          </div>
+          ${scanImage ? `<button type="button" class="btn btn-secondary btn-sm" id="btn-view-scan" style="margin-left:auto; flex-shrink:0">View scan</button>` : ''}
+        </div>` : ''}
       <form id="active-job-form">
         <div style="display:flex; flex-direction:column; gap:24px">
           ${(template.sections || []).map(sec => {
@@ -4981,9 +5101,10 @@ export function renderJobDetail(container, { id, tab }) {
         }
 
         return `
-                    <div class="form-group" style="margin:0; grid-column: span ${fSpan}">
+                    <div class="form-group${scanFlags[f.id] ? ' scan-flagged' : ''}" style="margin:0; grid-column: span ${fSpan}; ${flagStyle(f.id)}">
                       ${f.type !== 'checkbox' ? `<label class="form-label" style="font-weight:500">${escapeHTML(f.label)} ${f.required ? '<span style="color:var(--color-danger)">*</span>' : ''}</label>` : ''}
                       ${fieldHtml}
+                      ${flagNote(f.id)}
                     </div>
                   `;
       }).join('')}
@@ -5027,6 +5148,10 @@ export function renderJobDetail(container, { id, tab }) {
         submittedBy: complete ? JSON.parse(localStorage.getItem('currentUser'))?.id : currentInstances[idx].submittedBy,
         submittedAt: complete ? new Date().toISOString() : currentInstances[idx].submittedAt
       };
+      // Signing off a scanned draft is the review: its flags stop showing.
+      if (complete && currentInstances[idx].scan && !currentInstances[idx].scan.reviewedAt) {
+        currentInstances[idx].scan = { ...currentInstances[idx].scan, reviewedAt: new Date().toISOString() };
+      }
 
       store.save('formInstances', currentInstances);
       showToast(complete ? 'Form submitted successfully' : 'Draft saved successfully', 'success');
@@ -5092,5 +5217,7 @@ export function renderJobDetail(container, { id, tab }) {
       size: 'modal-xl',
       actions
     });
+
+    content.querySelector('#btn-view-scan')?.addEventListener('click', () => showImageLightbox(scanImage.data, scanImage.name));
   }
 }
