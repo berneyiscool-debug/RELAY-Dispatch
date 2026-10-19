@@ -13,7 +13,7 @@ if (location.hash.startsWith('#/')) {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RELAY Dispatch — job software for Australian trades</title>
-<meta name="description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $18 + GST per user a month.">
+<meta name="description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $24 + GST per user a month.">
 <link rel="canonical" href="https://relaydispatch.com.au/">
 <meta name="theme-color" content="#ffffff">
 
@@ -21,7 +21,7 @@ if (location.hash.startsWith('#/')) {
 <meta property="og:site_name" content="RELAY Dispatch">
 <meta property="og:locale" content="en_AU">
 <meta property="og:title" content="RELAY Dispatch — job software for Australian trades">
-<meta property="og:description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $18 + GST per user a month.">
+<meta property="og:description" content="Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer, or add your crew with cloud sync from $24 + GST per user a month.">
 <meta property="og:url" content="https://relaydispatch.com.au/">
 <meta property="og:image" content="https://relaydispatch.com.au/assets/img/og.png">
 <meta property="og:image:width" content="1200">
@@ -31,7 +31,7 @@ if (location.hash.startsWith('#/')) {
 
 <link rel="icon" href="assets/img/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="assets/img/favicon.png">
-<link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/ibm-plex-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/css/site.css">
 
 <script type="application/ld+json">
@@ -42,7 +42,7 @@ if (location.hash.startsWith('#/')) {
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "Windows, Web",
   "url": "https://relaydispatch.com.au/",
-  "description": "Scheduling, quotes, invoices, job costing and a customer portal for Australian trades. Free for one user on your own computer; cloud plans from $18 per user a month plus GST.",
+  "description": "Scheduling, quotes, invoices, job costing and a customer portal for Australian trades. Free for one user on your own computer; cloud plans from $24 per user a month plus GST.",
   "offers": [
     {
       "@type": "Offer",
@@ -54,14 +54,14 @@ if (location.hash.startsWith('#/')) {
     {
       "@type": "Offer",
       "name": "Cloud",
-      "price": "18",
+      "price": "24",
       "priceCurrency": "AUD",
       "description": "Per user per month, plus GST. Includes a 14-day free trial."
     },
     {
       "@type": "Offer",
       "name": "Cloud+",
-      "price": "21",
+      "price": "27",
       "priceCurrency": "AUD",
       "description": "Per user per month, plus GST. Includes a 14-day free trial."
     }
@@ -106,26 +106,22 @@ if (location.hash.startsWith('#/')) {
   <section id="top" class="hero">
     <div class="hero__inner">
       <span class="hero__pill">Built in Australia for Australian trades</span>
-      <h1>Software that competes, without the sting.</h1>
-      <p class="hero__sub">Scheduling, quotes, invoices, job costing and a customer portal in one app. Free forever on your own computer. Add your crew and cloud sync from $18 + GST per user a month.</p>
-      <div class="hero__actions">
-        <a class="btn btn--lg btn--primary" href="#download">
+      <h1>Job software for tradies, without the sting.</h1>
+      <p class="hero__sub">Quotes, scheduling, invoices, job costing and a customer portal in one app. Free forever for one user on your own computer. Bring the crew online from $24 + GST per user a month.</p>
+      <div class="hero__actions" data-platform-pair>
+        <a class="btn btn--lg btn--primary" href="#download" data-download>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
           Download free for Windows
         </a>
-        <a class="btn btn--lg btn--title btn--secondary" href="/app/#/login">Try Cloud free for 14 days</a>
+        <a class="btn btn--lg btn--title btn--secondary" href="/app/#/login" data-browser>Try Cloud free for 14 days</a>
       </div>
       <p class="hero__note">No card for the free version. No contracts. No setup fees.</p>
 
       <div class="hero__preview">
-        <div class="preview" id="app-preview" data-busy="false">
-          <div class="preview__frame" id="preview-frame" role="group" aria-label="Interactive preview of RELAY Dispatch with demo data">
-            <img class="preview__shot" id="preview-shot" src="assets/preview/hero.webp" alt="Mock version of RELAY Dispatch, Dashboard, showing demo data" width="1440" height="900" fetchpriority="high" decoding="async">
-          </div>
-        </div>
-        <p class="preview__caption">A mock version of RELAY Dispatch with demo data. Click the menus, open any record and flick through its tabs.</p>
-        <p class="visually-hidden" role="status" id="preview-status"></p>
-        <noscript><p class="preview__caption">Turn on JavaScript for the interactive preview, or <a href="/app/#/login">open the app</a>.</p></noscript>
+        <figure class="shot">
+          <img src="assets/screens/dashboard.webp" srcset="assets/screens/dashboard-1080.webp 1080w, assets/screens/dashboard.webp 2160w" sizes="(max-width: 1128px) calc(100vw - 48px), 1080px" alt="The RELAY Dispatch dashboard: revenue, overdue invoices and active jobs along the top, with today's schedule, recent leads and a job status chart below" width="2160" height="1350" fetchpriority="high">
+        </figure>
+        <p class="preview__caption">RELAY Dispatch running Harbourline Electrical &amp; Air, the made-up business in the demo.</p>
       </div>
     </div>
   </section>
@@ -133,11 +129,11 @@ if (location.hash.startsWith('#/')) {
   <section class="apps" aria-label="RELAY apps">
     <div class="apps__grid">
       <div class="apps__row">
-        <img src="assets/img/logo-relay-dispatch.png" alt="RELAY Dispatch" width="1418" height="708">
+        <img src="assets/img/logo-relay-dispatch.png" alt="RELAY Dispatch" width="511" height="105">
         <p>For the office. Runs on Windows or in your browser.</p>
       </div>
       <div class="apps__row">
-        <img src="assets/img/logo-relay-groundwork.png" alt="RELAY Groundwork" width="1418" height="708">
+        <img src="assets/img/logo-relay-groundwork.png" alt="RELAY Groundwork" width="751" height="103">
         <p>A mobile app for the crew on site. <span class="chip">Coming soon</span></p>
       </div>
     </div>
@@ -203,6 +199,54 @@ if (location.hash.startsWith('#/')) {
     </div>
   </section>
 
+  <section class="tour" aria-labelledby="tour-heading">
+    <div class="tour__inner">
+      <p class="eyebrow">Inside RELAY</p>
+      <h2 class="h2" id="tour-heading">See it before you install it</h2>
+      <p class="tour__sub">Screens from the current version, running the demo business.</p>
+
+      <div class="tour__row">
+        <div class="tour__copy">
+          <h3>The whole crew's day on one screen</h3>
+          <p>Every tech gets a column. Drag jobs in, see who's free and where they're headed, then plan the run with Route.</p>
+        </div>
+        <figure class="shot">
+          <img src="assets/screens/schedule-1080.webp" srcset="assets/screens/schedule-1080.webp 1080w, assets/screens/schedule.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="The schedule in day view, with a column for each crew member and today's jobs blocked out by time" width="2160" height="1350" loading="lazy">
+        </figure>
+      </div>
+
+      <div class="tour__row">
+        <div class="tour__copy">
+          <h3>Quotes in minutes, not evenings</h3>
+          <p>Add materials, labour and kits in sections, with subtotals and your own labour rates. Send it and the customer can approve it online.</p>
+        </div>
+        <figure class="shot">
+          <img src="assets/screens/quote-1080.webp" srcset="assets/screens/quote-1080.webp 1080w, assets/screens/quote.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="A sent quote for ducted air conditioning, split into equipment and installation sections with line items and subtotals" width="2160" height="1350" loading="lazy">
+        </figure>
+      </div>
+
+      <div class="tour__row">
+        <div class="tour__copy">
+          <h3>Know what every job made</h3>
+          <p>The quoted price against the labour and materials actually spent, with gross profit and margin while the job is still running.</p>
+        </div>
+        <figure class="shot">
+          <img src="assets/screens/job-1080.webp" srcset="assets/screens/job-1080.webp 1080w, assets/screens/job.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="A job's financials tab showing the quoted price, costs so far, gross profit and margin, and a budget tracker" width="2160" height="1350" loading="lazy">
+        </figure>
+      </div>
+
+      <div class="tour__row">
+        <div class="tour__copy">
+          <h3>Reports that say what changed</h3>
+          <p>Revenue, money owed, quote win rate and lead conversion, with RELAY Insights pointing out what's going well and what needs a look.</p>
+        </div>
+        <figure class="shot">
+          <img src="assets/screens/reports-1080.webp" srcset="assets/screens/reports-1080.webp 1080w, assets/screens/reports.webp 2160w" sizes="(max-width: 900px) calc(100vw - 40px), 640px" alt="The business overview report with RELAY Insights, total revenue, outstanding invoices, quote win rate and charts of jobs and invoices by status" width="2160" height="1350" loading="lazy">
+        </figure>
+      </div>
+    </div>
+  </section>
+
   <section class="free">
     <div class="free__inner">
       <div class="free__copy">
@@ -259,8 +303,8 @@ if (location.hash.startsWith('#/')) {
   <section id="pricing" class="pricing">
     <div class="pricing__inner">
       <p class="eyebrow">Pricing</p>
-      <h2 class="h2">Per user, per month, plus GST</h2>
-      <p class="pricing__sub">No seat minimums, no lock-in contracts and no implementation fee. Cloud plans start with a 14-day free trial.</p>
+      <h2 class="h2">Free for one. From $24 a user for the crew.</h2>
+      <p class="pricing__sub">Prices are per user, per month, plus GST. No seat minimums, no lock-in contracts and no setup fee. Cloud plans start with a 14-day free trial.</p>
 
       <div class="plans">
         <article class="plan">
@@ -285,11 +329,11 @@ if (location.hash.startsWith('#/')) {
         <article class="plan plan--featured">
           <p class="plan__head">
             <span>Cloud</span>
-            <span>Most popular</span>
+            <span>Best for crews</span>
           </p>
           <div class="plan__body">
             <p class="plan__price">
-              <span class="plan__amount">$18</span>
+              <span class="plan__amount">$24</span>
               <span class="plan__unit">+ GST per user / month</span>
             </p>
             <p class="plan__for">For crews. Everyone in sync, in the office and on site.</p>
@@ -299,7 +343,7 @@ if (location.hash.startsWith('#/')) {
               <li>Online card payments and customer and contractor portals</li>
               <li>Send quotes and invoices from RELAY email</li>
               <li>brny AI assistant</li>
-              <li>New features included as they're released, like the Groundwork mobile app and the leads marketplace</li>
+              <li>New features as they're released, including the Groundwork mobile app and access to the leads marketplace</li>
             </ul>
             <a class="btn btn--md btn--primary btn--block plan__cta" href="/app/#/login">Start 14-day free trial</a>
           </div>
@@ -309,7 +353,7 @@ if (location.hash.startsWith('#/')) {
           <p class="plan__head">Cloud+</p>
           <div class="plan__body">
             <p class="plan__price">
-              <span class="plan__amount">$21</span>
+              <span class="plan__amount">$27</span>
               <span class="plan__unit">+ GST per user / month</span>
             </p>
             <p class="plan__for">For busy offices that want brny doing more of the admin.</p>
@@ -324,7 +368,7 @@ if (location.hash.startsWith('#/')) {
         </article>
       </div>
 
-      <p class="pricing__note">Prices are in AUD and exclude GST. Including GST, Cloud is $19.80 and Cloud+ is $23.10 per user a month.</p>
+      <p class="pricing__note">Prices are in AUD and exclude GST. Including GST, Cloud is $26.40 and Cloud+ is $29.70 per user a month.</p>
     </div>
   </section>
 
@@ -348,39 +392,39 @@ if (location.hash.startsWith('#/')) {
           <tbody>
             <tr>
               <th scope="row">Price per user / month</th>
-              <td class="is-relay">$18–$21 + GST</td>
-              <td>$48–$62 AUD</td>
+              <td class="is-relay">$24–$27 + GST</td>
+              <td>$48–$62 + GST</td>
               <td>Quote only</td>
             </tr>
             <tr>
               <th scope="row">Free plan</th>
               <td class="is-relay">Yes, forever</td>
-              <td>[check]</td>
-              <td>[check]</td>
+              <td>No, 14-day trial</td>
+              <td>No, demo only</td>
             </tr>
             <tr>
               <th scope="row">Annual contract</th>
               <td class="is-relay">No</td>
-              <td>[check]</td>
-              <td>Yes</td>
+              <td>No, month to month</td>
+              <td>Monthly or annual billing</td>
             </tr>
             <tr>
               <th scope="row">Setup fee</th>
               <td class="is-relay">No</td>
-              <td>[check]</td>
+              <td>No</td>
               <td>Yes</td>
             </tr>
             <tr>
               <th scope="row">Works offline</th>
               <td class="is-relay">Yes</td>
-              <td>[check]</td>
-              <td>[check]</td>
+              <td>No</td>
+              <td>Mobile app only</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <p class="compare__note">Competitor details from their public pricing pages, [month year]. Prices change, so check theirs before you decide.</p>
+      <p class="compare__note">Competitor details from their own pricing and help pages, October 2026. Prices change, so check theirs before you decide.</p>
     </div>
   </section>
 
@@ -398,7 +442,7 @@ if (location.hash.startsWith('#/')) {
 
         <article class="roadmap__card">
           <span class="chip">Coming soon</span>
-          <img src="assets/img/logo-relay-groundwork.png" alt="RELAY Groundwork" width="1418" height="708">
+          <img src="assets/img/logo-relay-groundwork.png" alt="RELAY Groundwork" width="751" height="103">
           <h3>The mobile app for techs</h3>
           <p>A simple app for techs on site: today's jobs, photos, forms and sign-offs.</p>
         </article>
@@ -421,15 +465,15 @@ if (location.hash.startsWith('#/')) {
   <section id="download" class="cta">
     <div class="cta__inner">
       <div class="cta__card">
-        <img src="assets/img/logo-relay-dispatch.png" alt="RELAY Dispatch" width="1418" height="708">
+        <img src="assets/img/logo-relay-dispatch.png" alt="RELAY Dispatch" width="511" height="105">
         <h2>Get your evenings back from the paperwork.</h2>
         <p class="cta__sub">Download the free app and have your first job booked in tonight. Or start a Cloud trial and bring the crew along.</p>
-        <div class="cta__actions">
-          <a class="btn btn--lg btn--primary" id="download-exe" href="https://github.com/berneyiscool-debug/RELAY-Dispatch/releases" data-installer aria-label="Download free for Windows">
+        <div class="cta__actions" data-platform-pair>
+          <a class="btn btn--lg btn--primary" id="download-exe" href="https://github.com/berneyiscool-debug/RELAY-Dispatch/releases" data-installer data-download aria-label="Download free for Windows">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
             <span data-installer-label>Download free for Windows</span>
           </a>
-          <a class="btn btn--lg btn--title btn--secondary" href="/app/#/login">Use it in your browser</a>
+          <a class="btn btn--lg btn--title btn--secondary" href="/app/#/login" data-browser>Use it in your browser</a>
         </div>
         <p class="cta__note">The installer isn't code-signed yet, so Windows may warn about an unknown publisher. Choose More info, then Run anyway.</p>
       </div>
@@ -453,7 +497,7 @@ if (location.hash.startsWith('#/')) {
   </div>
 </footer>
 
-<script src="assets/js/preview.js" defer></script>
+
 <script src="assets/js/home.js" defer></script>
 </body>
 </html>

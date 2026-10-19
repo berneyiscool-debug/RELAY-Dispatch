@@ -776,6 +776,55 @@
   overflow: hidden !important;
 }
 
+/* Record details pages (/jobs/:id, /quotes/:id, … — class set in main.js): the
+   whole content area becomes a lightly grey surface, edge to edge, that the
+   section boxes below sit on. The padding beats the list-page full-bleed
+   rules above. */
+#main-content.is-detail-page {
+  --detail-panel-bg: color-mix(in srgb, var(--bg-color) 55%, var(--card-bg));
+  --detail-header-bg: color-mix(in srgb, var(--bg-color) 35%, var(--card-bg));
+  padding: 12px 14px !important;
+  background: var(--detail-panel-bg);
+}
+@media (max-width: 768px) {
+  #main-content.is-detail-page {
+    padding: 10px 8px !important;
+  }
+}
+
+/* Inside the panel each section is its own white box (cards are flattened to
+   a bottom rule everywhere else). Only one level deep: a card inside a card
+   stays flat so the page never turns into boxes within boxes within boxes. */
+#main-content.is-detail-page .card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-md);
+}
+#main-content.is-detail-page .card > .card-header {
+  background: var(--detail-header-bg);
+  border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+}
+#main-content.is-detail-page .card .card {
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+}
+#main-content.is-detail-page .card .card > .card-header {
+  background: transparent;
+  border-radius: 0;
+}
+/* The record's header strip (name, status, key facts) is a box of its own
+   too: .detail-header on most pages, the top .page-header on jobs. */
+#main-content.is-detail-page .detail-header,
+#main-content.is-detail-page > .page-header {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--card-border) !important;
+  border-radius: var(--border-radius-md) !important;
+  padding: 10px 14px !important;
+  margin: 0 0 12px !important;
+  box-shadow: none !important;
+}
+
 /* ---- Page content wrapper ---- */
 .page-content-wrapper {
   flex: 1 1 auto;
@@ -3675,15 +3724,6 @@ body.relay-assistant-open .relay-topbar-actions {
   transition: width var(--sidebar-transition), min-width var(--sidebar-transition);
 }
 .sidebar.two-level.submenu-open .sidebar-submenu { width: 190px; min-width: 190px; }
-
-/* Greyed-out submenu items (cloud-only or not-yet-shipped) show their tooltip to the right
-   of the item box, which lands past the panel edge — and these two containers clip their
-   overflow, so the bubble was never visible. Let them overflow only while such an item is
-   hovered, and only while the submenu is open, so the collapse animation keeps its clipping. */
-.sidebar.two-level.submenu-open .sidebar-submenu:has(.gated-nav-item:hover),
-.sidebar.two-level.submenu-open .sidebar-submenu:has(.gated-nav-item:hover) .submenu-nav {
-  overflow: visible;
-}
 
 /* Logo in the rail */
 .sidebar.two-level .sidebar-logo { justify-content: flex-start; padding: 0 14px; gap: 10px; border-bottom: 1px solid var(--border-color); }

@@ -240,7 +240,7 @@ the conflict scan keep their own inline prompts and never see a personality.
 - **Installer & Updates:** electron-builder + electron-updater — packages into a Windows NSIS Installer (.exe); installed builds check GitHub Releases in the background and prompt to restart when an update is ready
 - **Local storage:** browser localStorage (offline-first)
 - **Fonts:** self-hosted via `@fontsource` (IBM Plex Sans and IBM Plex Mono for the app
-  UI, Inter for customer documents and the marketing site, Material Icons Outlined, plus
+  UI and the marketing site, Inter for customer documents, Material Icons Outlined, plus
   the document faces) — bundled with the build, so nothing is fetched from a CDN
 - **Cloud backend:** Supabase (Postgres, Auth, Storage) — Cloud mode only
 - **Charts/PDF:** print-friendly HTML render pipeline
@@ -361,13 +361,12 @@ wording there, never in HTML.
 
 ```
 site/
-  index.html                  homepage (10 sections, one page)
+  index.html                  homepage (11 sections, one page)
   assets/css/site.css         all site styles; design tokens at the top
-  assets/js/home.js           sticky-header height + the download button
-  assets/js/preview.js        the interactive app preview
-  assets/fonts/               Inter, self-hosted variable font
+  assets/js/home.js           sticky-header height, the CTA order off Windows, the download button
+  assets/fonts/               IBM Plex Sans (latin, variable weight), copied from @fontsource-variable
   assets/img/                 logos, favicon, og.png
-  assets/preview/             screenshot atlases, screens.json, screens-index.json, hero.webp
+  assets/screens/             app screenshots (generated, see below)
 ```
 
 `assets/js/desktopApp.js` is not in that list on purpose — it lives in
@@ -385,17 +384,14 @@ npx serve .        # then open http://localhost:3000/site/
 
 Two rules keep the page honest:
 
-- **Everything visible is transcribed from the approved design.** The homepage
-  was built by transcribing the design artifact's text nodes and diffing the
-  result against the page token by token until every design token appeared, in
-  order. If you edit copy, keep that property: the page should introduce no
-  wording of its own. A handful of extra tokens are expected and deliberate —
-  the page title, the skip link, the `<caption>` on the comparison table, the
-  `<noscript>` warning and the footer's contact address.
+- **The design was the starting point, not a lock.** The homepage was first
+  transcribed from the approved design artifact token by token. Copy has since
+  been edited on the page itself (October 2026), so `site/index.html` is now
+  the source of truth for the wording.
 - **Nothing is promised that does not exist.** Xero, Groundwork and the leads
-  marketplace sit under "Coming next". The app preview runs on the fictional
-  demo company Ridgeline Electrical — no real customer names or testimonials
-  anywhere. Prices are $18 / $21 per user per month + GST, with the inc-GST
+  marketplace sit under "Coming next". The screenshots show the fictional
+  demo company Harbourline Electrical & Air — no real customer names or testimonials
+  anywhere. Prices are $24 / $27 per user per month + GST, with the inc-GST
   figures in small print.
 
 The published contact address is `support@relaydispatch.com.au`. It appears in
@@ -412,70 +408,46 @@ by accident:
 | --- | --- | --- |
 | `[Business name]`, `ABN [number]` | homepage footer | the operating entity's legal details |
 | `[COMPANY NAME]`, `[ACN]`, `[ABN]`, `[REGISTERED ADDRESS]`, `[POSTCODE]`, `[EFFECTIVE DATE]` | `ENTITY` in `src/pages/legal/content.js` | entity details and effective date for all four legal documents; while any remain, the generated pages carry a draft banner and `noindex` |
-| `[month year]` | compare-table note | the month the competitor prices were checked, and the legal revision date |
-| `[check]` (six cells) | compare table | Tradify and Simpro prices re-verified, with their GST treatment stated |
 
-#### The app preview and its assets
+#### App screenshots
 
-The preview is a sprite. Each atlas is a 1440 px-wide vertical strip of screen
-tiles, and a fixed-height window shows one tile at a time by translating the
-image. Hotspots are real `<button>`s positioned in percentages over the tile, so
-the preview is operable by mouse, touch and keyboard (Tab to a hotspot, Enter to
-activate).
+The hero and the "Inside RELAY" tour use plain screenshots of the current app
+running the demo business (`src/data/demoDataset.js`). They replaced an
+interactive sprite preview in October 2026: it went stale with every app
+change, weighed about 7 MB and could not be used on a phone.
 
-Three groups of files under `site/assets/preview/` are **produced by the capture
-pipeline**, not hand-written, and must be regenerated when the app's screens
-change:
-
-| File | Size | Role |
-| --- | --- | --- |
-| `atlas-00.webp` … `atlas-15.webp` | ~7 MB total | the screen tiles |
-| `screens.json` | ~200 KB | every screen and hotspot (272 screens, 3 421 hotspots) |
-| `screens-index.json` | ~15 KB | the first-paint subset (16 screens, 233 hotspots) |
-
-`screens.json` is deliberately **not** fetched on page load. It costs 4–5
-Lighthouse performance points and nothing above the fold needs it. On load the
-page fetches `screens-index.json` — dashboard, schedule and the 14 list screens,
-all of which live in atlas 0 — and pulls the full dataset only when a visitor
-clicks into a screen that needs it. Atlas 0 is warmed during idle so the first
-click is instant; the other 15 atlases load on demand, which is what keeps the
-initial payload at roughly half a megabyte instead of 7 MB.
-
-`screens-index.json` is derived, never edited by hand:
+Every screen is generated, never hand-edited, by
+`scripts/capture-site-screens.cjs`. With the dev server running:
 
 ```bash
-npm run build:preview-index   # scripts/build-preview-index.mjs
+npm run dev
+npm run capture:screens
 ```
 
-The script keeps every screen whose key has at most one colon (dashboard,
-schedule and the `L:<name>` lists) and **fails loudly if any of them lives outside
-atlas 0**, because the first-paint guarantee depends on that invariant. Re-run it
-after regenerating `screens.json`.
+It opens the app in an Electron window, signs in as a throwaway local owner in
+demo mode, and writes each screen to `site/assets/screens/` at 2160 px
+(`<name>.webp`) and 1080 px (`<name>-1080.webp`) wide. The page picks between
+them with `srcset`. A few things keep the shots looking like a normal working
+day:
 
-`hero.webp` (1440 × 900, ~55 KB) is tile 0 of atlas 0, and exists purely for
-first paint — the same pixels as the first atlas tile, so swapping the `src` to
-the real atlas on first navigation is invisible. Without it the 1440 × 14400
-atlas is the largest contentful paint and Lantern models it at its natural size
-(20.7 megapixels), which alone dragged mobile performance from 98 to 78.
+- The page clock is pinned to the most recent weekday at 10:30, because the demo
+  is dated relative to the day it loads and a weekend run has an empty Today.
+- Detail screens pick their record by what it is (the biggest in-progress job,
+  the largest sent quote) rather than by id, since ids move with the date. This
+  reads the store through the dev server, so the script needs `npm run dev`
+  rather than a production build.
+- The demo banner is removed. On the dashboard, the Technician Map is dropped
+  when the build has no Google Maps key (`VITE_GOOGLE_MAPS_BROWSER_KEY`),
+  because it would show an error note instead of a map.
 
-Screens cut rather than slide. `preview.js` moves the sprite with `translateY`,
-so any `transition` on `.preview__shot` would interpolate every screen change;
-there is none, and no `@keyframes` or `animation` anywhere in `site/`. The sprite
-box is pinned to atlas geometry as well — `height: calc(100% * var(--tiles, 1))`,
-with `--tiles` set from the screen record — instead of following the loaded
-bitmap's intrinsic ratio. A box that tracked the bitmap resized mid-swap and
-painted the outgoing atlas at the incoming offset for a frame, which reads as the
-screen sliding into place. `swapAtlas()` sets `src`, `--tiles` and the offset in
-a single task once the incoming bitmap is fetched, guarded by the screen the
-latest interaction asked for. `shot.decode()` is not usable as that gate: it
-never settles while the document is not being rendered.
+Re-run it whenever a captured screen changes visibly.
 
 #### Regenerating the share card
 
 `site/assets/img/og.png` (1200 × 630) is drawn on a canvas by
 `scripts/og-card.html` rather than exported from a design tool. Serve the repo
-root — the page loads the Inter variable font and the cut-out logo from
-`site/assets/`, so it needs the repo mounted, not `site/`:
+root — the page loads the IBM Plex Sans font, the logo and the dashboard
+screenshot from `site/assets/`, so it needs the repo mounted, not `site/`:
 
 ```bash
 npx serve .
@@ -483,34 +455,26 @@ npx serve .
 
 #### Known deviations and limitations
 
-- **One deliberate copy deviation.** The hero headline reads *"Software that
-  competes, without the sting."*, not the design's *"The job software the big
-  players use. At a price that doesn't sting."* The design's line asserts an
-  installed base that does not exist yet — the site ships with no customers and
-  no testimonials by design — so that claim was removed rather than softened.
-  This is the only copy that differs: comparing the artboard against
-  `site/index.html` token by token, 857 of 868 design tokens match in order, and
-  all eleven that do not belong to that one sentence.
+- **No claims about an installed base.** The design's headline, *"The job
+  software the big players use. At a price that doesn't sting."*, and its "Most
+  popular" plan badge both imply customers the business does not have yet, so
+  neither ships. The hero reads *"Job software for tradies, without the sting."*
+  and the Cloud plan is badged "Best for crews".
 - **One deliberate colour deviation.** The featured plan's call-to-action is
   `#C2410C`, not the design's `#FF5C00`. White on `#FF5C00` is 3.09:1, which
   fails WCAG AA for 16 px bold text; `#C2410C` is 5.18:1. The small header button
   takes the same ink for the same reason. The 19 px hero and closing CTAs keep
   `#FF5C00`, which passes as large text (3.10:1 against a 3:1 threshold).
-- **`target-size` cannot be satisfied on phones.** Lighthouse's mobile
-  accessibility audit flags the five always-visible preview hotspots (~45 × 9 px
-  at 412 px wide). They are sized from the atlas geometry: a hotspot is 4.1 % of
-  the frame height, so a 24 px tall target would need a phone about 934 px wide,
-  and their ~9.7 px pitch means enlarging the hit areas would make them overlap —
-  trading a size failure for a tap-accuracy one. Every hotspot is still fully
-  reachable and operable by keyboard. This is the only failing audit on mobile;
-  the page scores **98 performance / 96 accessibility / 100 best practices / 100
-  SEO**.
-- **Placeholders are visible on purpose.** The footer's business name, ABN and
-  contact email, the Tradify/Simpro comparison cells and the pricing
-  verification month render as bracketed placeholders until the real values are
-  supplied. The Tradify and Simpro figures in particular must be re-checked
-  against those vendors' own pricing pages — including which month they were
-  checked in, and whether their prices include GST — before launch.
+- **Placeholders are visible on purpose.** The footer's business name and ABN
+  render as bracketed placeholders until the real values are supplied.
+- **The comparison table is dated.** The Tradify and Simpro cells were checked
+  in October 2026 against the vendors' own pages: Tradify's AU pricing page
+  (Lite/Pro/Plus at $48/$52/$62 ex GST, month to month, 14-day trial, no setup
+  fee) and its help article "Does Tradify Work Offline?" (it does not); Simpro's
+  pricing page (quote only, monthly or annual billing, a setup fee, a demo
+  rather than a trial) and its mobile help guide (the mobile app works offline).
+  Re-check them, and the month in the table's note, whenever the page is
+  revised.
 
 ### Building the Desktop Installer
 ```bash

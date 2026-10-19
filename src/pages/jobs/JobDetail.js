@@ -50,7 +50,7 @@ function showImageLightbox(src, name) {
   });
 }
 
-export function renderJobDetail(container, { id, tab }) {
+export function renderJobDetail(container, { id, tab, form }) {
   const job = store.getById('jobs', id);
   if (!job) {
     container.innerHTML = '<div class="empty-state"><span class="material-icons-outlined">error</span><h3>Job not found</h3></div>';
@@ -62,6 +62,9 @@ export function renderJobDetail(container, { id, tab }) {
   const sb = JOB_STATUS_BADGES;
   const pb = PRIORITY_BADGES;
   let activeTab = tab || 'overview';
+  // A link straight to one of this job's forms (?tab=forms&form=<instance id>,
+  // e.g. "Open record" in the Document Center) opens it once the tab renders.
+  let pendingFormId = form || null;
   let taskExpandedPath = [0];
   let taskViewPath = [];
   let isInfoPanelEditing = false;
@@ -1225,6 +1228,12 @@ export function renderJobDetail(container, { id, tab }) {
 
     if (activeTab === 'forms') {
       renderFormsTab(tc);
+      if (pendingFormId) {
+        const formId = pendingFormId;
+        pendingFormId = null;
+        const fi = store.getById('formInstances', formId);
+        if (fi && fi.jobId === id && store.getById('formTemplates', fi.templateId)) showFillFormModal(formId);
+      }
       return;
     }
 
@@ -4703,7 +4712,7 @@ export function renderJobDetail(container, { id, tab }) {
                 <th>Status</th>
                 <th>Submitted By</th>
                 <th>Date</th>
-                <th style="width:100px; text-align:right">Action</th>
+                <th style="width:140px; text-align:right">Action</th>
               </tr>
             </thead>
             <tbody>

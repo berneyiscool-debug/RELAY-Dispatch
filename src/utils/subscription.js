@@ -4,8 +4,8 @@
 // The account-tier layer that sits above the old binary local-vs-cloud gate.
 //
 //   free       — offline/local account (IndexedDB, `acct_` id). $0. No cloud row.
-//   cloud      — $18 / active user / month. Core cloud features.
-//   cloud_plus — $21 / active user / month. Adds Deputy Max (the expandable
+//   cloud      — $24 / active user / month. Core cloud features.
+//   cloud_plus — $27 / active user / month. Adds Deputy Max (the expandable
 //                full-workspace Deputy window). Cloud gets the same Deputy,
 //                minimized-only.
 //
