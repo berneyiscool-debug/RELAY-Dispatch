@@ -1001,16 +1001,21 @@ function repairMailerSettings() {
     .catch((err) => console.warn('Mailer settings repair skipped:', err));
 }
 
+// The document viewer tab shows a page handed over by the tab that opened it,
+// so it is drawn at once and waits for the store itself only where it needs to.
+const resolvesEarly = window.location.hash.startsWith('#/document/view');
+if (resolvesEarly) router.resolve();
+
 if (store.initPromise && typeof store.initPromise.then === 'function') {
   store.initPromise
     .then(() => {
       repairMailerSettings();
       migrateJobNumberPrefix();
-      router.resolve();
+      if (!resolvesEarly) router.resolve();
     })
     .catch((err) => {
       console.error('Failed to initialize data store:', err);
-      router.resolve();
+      if (!resolvesEarly) router.resolve();
     });
 } else {
   router.resolve();
