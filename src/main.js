@@ -34,6 +34,7 @@ import { hasPermission } from './utils/permissions.js';
 import { subscriptionRequired } from './utils/subscription.js';
 import { mountTrialBanner, unmountTrialBanner } from './components/TrialBanner.js';
 import { mountDemoBanner, unmountDemoBanner } from './components/DemoBanner.js';
+import { bindWalkthroughListeners, refreshWalkthrough } from './components/Walkthrough.js';
 import { initSearchableSelects } from './utils/searchableSelect.js';
 import { storageGet, storageSet } from './utils/persist.js';
 import { setSessionUser, clearSessionUser } from './pages/auth/session.js';
@@ -915,6 +916,13 @@ router.onNavigate = (path, params) => {
 
   updateSidebarActive(path);
   createBreadcrumb(path);
+
+  // The new-user guide follows the user between pages; it hides itself on
+  // public and portal routes and whenever it is not switched on.
+  if (currentUser) {
+    bindWalkthroughListeners();
+    setTimeout(refreshWalkthrough, 0);
+  }
 };
 
 // Handle logout events globally

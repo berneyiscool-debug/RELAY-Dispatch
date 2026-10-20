@@ -3,8 +3,8 @@
  *
  * The log lives as an `activityLog` array ON the lead record (the same shape
  * the jobs page uses for job.activityLog) so it travels with store.update()
- * and through the cloud column whitelist instead of the cache-only 'activity'
- * collection, which has no object store and no table.
+ * and through the cloud column whitelist. The shared 'activity' collection is a
+ * separate one-line audit trail (stage changes, conversions), not this feed.
  *
  * DOM-free on purpose - this module is imported directly by node --test, so it
  * only transforms plain data. The markup builders stay in LeadDetail.js.

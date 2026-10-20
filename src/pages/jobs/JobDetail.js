@@ -3,6 +3,7 @@
 // ============================================
 
 import { store } from '../../data/store.js';
+import { logActivity } from '../../actions/context.js';
 import { router } from '../../router.js';
 import { showModal } from '../../components/Modal.js';
 import { showDrawer } from '../../components/Drawer.js';
@@ -5163,16 +5164,12 @@ export function renderJobDetail(container, { id, tab, form }) {
       renderFormsTab(container.querySelector('#tab-content'));
 
       // Log activity
-      const activity = store.getAll('activity') || [];
-      activity.push({
-        id: Date.now(),
-        jobId: id,
+      logActivity({
+        recordType: 'job',
+        recordId: id,
         type: complete ? 'form_submission' : 'form_draft_saved',
         text: complete ? `Form "${template.name}" submitted.` : `Form "${template.name}" draft was saved.`,
-        user: JSON.parse(localStorage.getItem('currentUser'))?.name,
-        timestamp: new Date().toISOString()
       });
-      store.save('activity', activity);
     };
 
     const actions = [];
