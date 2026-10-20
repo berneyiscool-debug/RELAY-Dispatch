@@ -343,6 +343,51 @@ describe('xero integration migration', () => {
       assert.deepEqual(await jobs(), [{ entity: 'invoice', entity_id: 'INV-2', action: 'upsert', status: 'pending' }]);
     });
 
+    test('a broken Xero queue never stops an invoice or customer being saved', async () => {
+      await connect(COMPANY_A);
+      await insertInvoice('INV-1', { status: 'Draft' });
+      await db.query(`INSERT INTO public.customers (id, company_id, company) VALUES ('cust-linked', '${COMPANY_A}', 'Linked Co')`);
+      await asRole('service_role', () => db.query("UPDATE public.customers SET xero_contact_id = 'c-1' WHERE id = 'cust-linked'"));
+      await db.exec(`
+        CREATE OR REPLACE FUNCTION public.xero_enqueue(p_company_id uuid, p_entity text, p_entity_id text, p_action text)
+        RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $f$
+        BEGIN RAISE EXCEPTION 'simulated Xero queue failure'; END $f$;
+      `);
+      try {
+        // A client sending an invoice, a webhook marking one paid, a new invoice and
+        // a customer edit: all of them must still save.
+        await asUser(ADMIN_A, () => db.query("UPDATE public.invoices SET status = 'Sent' WHERE id = 'INV-1'"));
+        await asRole('service_role', () => db.query("UPDATE public.invoices SET status = 'Paid' WHERE id = 'INV-1'"));
+        await insertInvoice('INV-2', { status: 'Sent' });
+        await db.query("UPDATE public.customers SET company = 'Linked Co Pty' WHERE id = 'cust-linked'");
+        assert.deepEqual(
+          await rows('SELECT id, status FROM public.invoices ORDER BY id'),
+          [{ id: 'INV-1', status: 'Paid' }, { id: 'INV-2', status: 'Sent' }]
+        );
+        assert.deepEqual(await rows("SELECT company FROM public.customers WHERE id = 'cust-linked'"), [{ company: 'Linked Co Pty' }]);
+        assert.deepEqual(await jobs(), []);
+      } finally {
+        await db.exec(MIGRATION); // restores the real xero_enqueue
+      }
+      await db.query("UPDATE public.invoices SET title = 'Back to normal' WHERE id = 'INV-2'");
+      assert.deepEqual(await jobs(), [{ entity: 'invoice', entity_id: 'INV-2', action: 'upsert', status: 'pending' }]);
+    });
+
+    test('a broken connection lookup fails open too', async () => {
+      await connect(COMPANY_A);
+      await db.exec(`
+        CREATE OR REPLACE FUNCTION public.xero_company_connected(p_company_id uuid)
+        RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $f$
+        BEGIN RAISE EXCEPTION 'simulated lookup failure'; END $f$;
+      `);
+      try {
+        await insertInvoice('INV-1', { status: 'Sent' });
+        assert.equal((await rows('SELECT count(*)::int AS n FROM public.invoices'))[0].n, 1);
+      } finally {
+        await db.exec(MIGRATION);
+      }
+    });
+
     test('linked customers push detail changes; unlinked customers wait for an invoice', async () => {
       await connect(COMPANY_A);
       await db.query(`

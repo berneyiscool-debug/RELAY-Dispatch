@@ -249,59 +249,66 @@ BEGIN
   IF current_setting('relay.xero_sync', true) = 'true' THEN
     RETURN NEW;
   END IF;
-  IF NOT public.xero_company_connected(NEW.company_id) THEN
-    RETURN NEW;
-  END IF;
 
-  IF TG_OP = 'INSERT' THEN
-    content_changed := true;
-    became_paid := NEW.status = 'Paid';
-    became_void := false;
-  ELSE
-    content_changed :=
-         NEW.status        IS DISTINCT FROM OLD.status
-      OR NEW.number        IS DISTINCT FROM OLD.number
-      OR NEW.title         IS DISTINCT FROM OLD.title
-      OR NEW.customer_id   IS DISTINCT FROM OLD.customer_id
-      OR NEW.customer_name IS DISTINCT FROM OLD.customer_name
-      OR NEW.job_id        IS DISTINCT FROM OLD.job_id
-      OR NEW.line_items    IS DISTINCT FROM OLD.line_items
-      OR NEW.subtotal      IS DISTINCT FROM OLD.subtotal
-      OR NEW.tax           IS DISTINCT FROM OLD.tax
-      OR NEW.total         IS DISTINCT FROM OLD.total
-      OR NEW.due_date      IS DISTINCT FROM OLD.due_date;
-    became_paid := NEW.status = 'Paid' AND OLD.status IS DISTINCT FROM 'Paid';
-    became_void := NEW.status = 'Void' AND OLD.status IS DISTINCT FROM 'Void';
-  END IF;
-
-  -- Updates that only touched xero_* (worker results) or unrelated columns.
-  IF NOT content_changed THEN
-    RETURN NEW;
-  END IF;
-
-  IF NEW.status = 'Draft' THEN
-    RETURN NEW;
-  END IF;
-
-  IF NEW.status = 'Void' THEN
-    IF became_void AND NEW.xero_invoice_id IS NOT NULL THEN
-      PERFORM public.xero_enqueue(NEW.company_id, 'invoice', NEW.id, 'void');
+  -- Fail open: a Xero problem must never stop an invoice or customer being
+  -- saved. The change is logged and can be re-sent with Retry in Settings.
+  BEGIN
+    IF NOT public.xero_company_connected(NEW.company_id) THEN
+      RETURN NEW;
     END IF;
-    RETURN NEW;
-  END IF;
 
-  xero_has_payment :=
-       NEW.xero_status = 'PAID'
-    OR NEW.xero_payment_ids <> '{}'::jsonb
-    OR (TG_OP = 'UPDATE' AND NEW.xero_amount_due IS NOT NULL AND NEW.xero_amount_due < OLD.total);
+    IF TG_OP = 'INSERT' THEN
+      content_changed := true;
+      became_paid := NEW.status = 'Paid';
+      became_void := false;
+    ELSE
+      content_changed :=
+           NEW.status        IS DISTINCT FROM OLD.status
+        OR NEW.number        IS DISTINCT FROM OLD.number
+        OR NEW.title         IS DISTINCT FROM OLD.title
+        OR NEW.customer_id   IS DISTINCT FROM OLD.customer_id
+        OR NEW.customer_name IS DISTINCT FROM OLD.customer_name
+        OR NEW.job_id        IS DISTINCT FROM OLD.job_id
+        OR NEW.line_items    IS DISTINCT FROM OLD.line_items
+        OR NEW.subtotal      IS DISTINCT FROM OLD.subtotal
+        OR NEW.tax           IS DISTINCT FROM OLD.tax
+        OR NEW.total         IS DISTINCT FROM OLD.total
+        OR NEW.due_date      IS DISTINCT FROM OLD.due_date;
+      became_paid := NEW.status = 'Paid' AND OLD.status IS DISTINCT FROM 'Paid';
+      became_void := NEW.status = 'Void' AND OLD.status IS DISTINCT FROM 'Void';
+    END IF;
 
-  IF NEW.xero_invoice_id IS NULL OR NOT xero_has_payment THEN
-    PERFORM public.xero_enqueue(NEW.company_id, 'invoice', NEW.id, 'upsert');
-  END IF;
+    -- Updates that only touched xero_* (worker results) or unrelated columns.
+    IF NOT content_changed THEN
+      RETURN NEW;
+    END IF;
 
-  IF became_paid THEN
-    PERFORM public.xero_enqueue(NEW.company_id, 'invoice', NEW.id, 'pay');
-  END IF;
+    IF NEW.status = 'Draft' THEN
+      RETURN NEW;
+    END IF;
+
+    IF NEW.status = 'Void' THEN
+      IF became_void AND NEW.xero_invoice_id IS NOT NULL THEN
+        PERFORM public.xero_enqueue(NEW.company_id, 'invoice', NEW.id, 'void');
+      END IF;
+      RETURN NEW;
+    END IF;
+
+    xero_has_payment :=
+         NEW.xero_status = 'PAID'
+      OR NEW.xero_payment_ids <> '{}'::jsonb
+      OR (TG_OP = 'UPDATE' AND NEW.xero_amount_due IS NOT NULL AND NEW.xero_amount_due < OLD.total);
+
+    IF NEW.xero_invoice_id IS NULL OR NOT xero_has_payment THEN
+      PERFORM public.xero_enqueue(NEW.company_id, 'invoice', NEW.id, 'upsert');
+    END IF;
+
+    IF became_paid THEN
+      PERFORM public.xero_enqueue(NEW.company_id, 'invoice', NEW.id, 'pay');
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'relay xero: could not queue sync for invoice % (%): %', NEW.id, SQLSTATE, SQLERRM;
+  END;
 
   RETURN NEW;
 END;
@@ -327,17 +334,25 @@ BEGIN
   IF NEW.xero_contact_id IS NULL THEN
     RETURN NEW;
   END IF;
-  IF NEW.company       IS NOT DISTINCT FROM OLD.company
-     AND NEW.first_name IS NOT DISTINCT FROM OLD.first_name
-     AND NEW.last_name  IS NOT DISTINCT FROM OLD.last_name
-     AND NEW.email      IS NOT DISTINCT FROM OLD.email
-     AND NEW.phone      IS NOT DISTINCT FROM OLD.phone
-     AND NEW.address    IS NOT DISTINCT FROM OLD.address THEN
-    RETURN NEW;
-  END IF;
-  IF public.xero_company_connected(NEW.company_id) THEN
-    PERFORM public.xero_enqueue(NEW.company_id, 'contact', NEW.id, 'upsert');
-  END IF;
+
+  -- Fail open: a Xero problem must never stop an invoice or customer being
+  -- saved. The change is logged and can be re-sent with Retry in Settings.
+  BEGIN
+    IF NEW.company       IS NOT DISTINCT FROM OLD.company
+       AND NEW.first_name IS NOT DISTINCT FROM OLD.first_name
+       AND NEW.last_name  IS NOT DISTINCT FROM OLD.last_name
+       AND NEW.email      IS NOT DISTINCT FROM OLD.email
+       AND NEW.phone      IS NOT DISTINCT FROM OLD.phone
+       AND NEW.address    IS NOT DISTINCT FROM OLD.address THEN
+      RETURN NEW;
+    END IF;
+    IF public.xero_company_connected(NEW.company_id) THEN
+      PERFORM public.xero_enqueue(NEW.company_id, 'contact', NEW.id, 'upsert');
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'relay xero: could not queue sync for customer % (%): %', NEW.id, SQLSTATE, SQLERRM;
+  END;
+
   RETURN NEW;
 END;
 $$;
