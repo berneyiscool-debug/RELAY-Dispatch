@@ -22,6 +22,7 @@ import './purchasing.js';
 import './notifications.js';
 import './todos.js';
 import './reads.js';
+import './forms.js';
 import './conversation.js';
 
 export { executeAction, toToolResult, getAction, hasAction, listActions, listAvailableActions, toToolDefinitions } from './registry.js';
