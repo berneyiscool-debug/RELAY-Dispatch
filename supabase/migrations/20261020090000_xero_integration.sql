@@ -362,6 +362,14 @@ CREATE TRIGGER customers_xero_enqueue
   AFTER UPDATE ON public.customers
   FOR EACH ROW EXECUTE FUNCTION public.customers_xero_enqueue();
 
+-- Trigger functions are never called directly; keep them off the API surface
+-- (the security advisor flags SECURITY DEFINER functions the API roles can run).
+-- Triggers still fire: EXECUTE is checked when the trigger is created, not run.
+REVOKE ALL ON FUNCTION public.invoices_xero_enqueue() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.invoices_xero_enqueue() FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.customers_xero_enqueue() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.customers_xero_enqueue() FROM anon, authenticated;
+
 -- ── 7. Worker RPCs (service role only) ───────────────────────────────
 -- Claim due jobs for relay-xero-sync. SKIP LOCKED lets overlapping worker runs
 -- share the queue; a job stuck in 'running' for 10 minutes (a worker that died

@@ -218,6 +218,19 @@ describe('xero integration migration', () => {
         );
       });
     });
+
+    test('API roles hold no EXECUTE on any Xero SECURITY DEFINER function except the status call', async () => {
+      const { rows: exposed } = await db.query(`
+        SELECT p.proname, r.rolname
+          FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace AND n.nspname = 'public'
+          CROSS JOIN (VALUES ('anon'), ('authenticated')) AS r(rolname)
+         WHERE p.prosecdef AND p.proname ~ 'xero'
+           AND has_function_privilege(r.rolname, p.oid, 'EXECUTE')
+         ORDER BY 1, 2
+      `);
+      assert.deepEqual(exposed, [{ proname: 'xero_connection_status', rolname: 'authenticated' }]);
+    });
   });
 
   describe('column guard', () => {
